@@ -70,8 +70,8 @@ pub struct AcceptanceEvaluationStatus {
 /// What a completion would do with the newest evaluation right now.
 #[derive(Debug)]
 pub enum AcceptanceEvaluationReadiness {
-    /// The policy is legacy: no evaluation is consulted.
-    Legacy,
+    /// The policy is self-asserted: no evaluation is consulted.
+    SelfAsserted,
     /// A fresh, all-pass evaluation completion would consume; the seal will
     /// carry its citations.
     Ready(Box<AcceptanceEvaluation>),
@@ -368,8 +368,8 @@ impl SqliteStore {
         source_fingerprint: Option<&str>,
     ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
         let policy = SqliteStore::load_acceptance_evaluation_policy_on(&self.connection)?;
-        if policy.is_legacy() {
-            return Ok(AcceptanceEvaluationReadiness::Legacy);
+        if policy.is_self_asserted() {
+            return Ok(AcceptanceEvaluationReadiness::SelfAsserted);
         }
         let item = load_work_item(&self.connection, work_id)?;
         Ok(
@@ -445,7 +445,7 @@ impl SqliteStore {
     }
 
     /// The evaluation a completion seal binds, validated against the seal;
-    /// `None` for a legacy seal.
+    /// `None` for a self-asserted seal.
     ///
     /// # Errors
     ///
@@ -529,7 +529,7 @@ fn latest_run_id_on(
 /// The seal-to-evaluation binding every seal consumer checks: a bound
 /// evaluation exists as a canonical object, names the sealed work and run,
 /// sits on the run feed at or before the completion cut, passes everywhere,
-/// and derives exactly the sealed acceptance vector. Legacy seals bind none.
+/// and derives exactly the sealed acceptance vector. Self-asserted seals bind none.
 ///
 /// # Errors
 ///
@@ -746,7 +746,7 @@ fn admit_mode(
     policy: &AcceptanceEvaluationPolicy,
     mode: AcceptanceEvaluationMode,
 ) -> Result<(), StoreError> {
-    if policy.is_legacy() {
+    if policy.is_self_asserted() {
         return Err(refused(
             item.work_id,
             "the project policy does not enable acceptance evaluation; completion stays self-asserted",

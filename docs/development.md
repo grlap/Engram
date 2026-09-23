@@ -42,9 +42,8 @@ This project tracks its work in Engram — the fourteen agent words, documented 
   else, so nothing is re-applied by hand after one.
 - Every `HostControlRequest` variant is strict: the paired TermAl consumer must
   send exactly the current field set for every operation, with no additive or
-  legacy fields. The no-agent-grants build is paired with the coordinated
-  TermAl update that also removes the former
-  `obligation_waive.authority_grant` field; do not land either side alone and
+  legacy fields. This cleanup is paired with the coordinated
+  TermAl update that removes the `obligation_waive` operation; do not land either side alone and
   do not add a legacy-frame compatibility shim.
 
 ## Quality gates
@@ -311,7 +310,7 @@ items, not inline TODOs.
 
 Use the spec's vocabulary consistently: *memory* (identity), *version*
 (immutable record), *packet* (delivery unit), *task* (local operational
-unit), *lease* (exclusive expiring claim), *cursor* (ordered task-feed
+unit), *work claim* (fenced execution responsibility), *cursor* (ordered task-feed
 position), *contribution* (one participant's finalization input), *report*
 (frozen publication artifact), *receipt* (adapter's durable publication
 acknowledgment). Don't introduce synonyms.

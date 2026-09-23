@@ -31,9 +31,9 @@ an agent can ignore is enforcement.
 
 | System | Owns | Does not own |
 | --- | --- | --- |
-| Engram | Local work graph and readiness, task-bound execution admission, context obligations, claims, participant coordination, scoped leases, checkpoints, handoffs, evidence, completion, and publication intents | Model/process supervision or source-control policy |
+| Engram | Local work graph and readiness, task-bound execution admission, context obligations, claims, participant coordination, checkpoints, handoffs, evidence, completion, and publication intents | Model/process supervision or source-control policy |
 | Host runtime | Session/process lifecycle, prompt injection, tool interception, wake-up delivery, user approvals | Engram's durable task truth or policy decisions |
-| Agent | Reasoning and proposed work within a granted envelope | Self-authorizing a turn, lease, acknowledgement, or external side effect |
+| Agent | Reasoning and proposed work within a granted envelope | Self-authorizing a turn, acknowledgement, or external side effect |
 | External adapter | Optional immutable intake snapshot and explicitly authorized publication | Live local work truth, silent refresh, or process coordination |
 
 Engram derives and ranks ready local work. The host or model chooses among the
@@ -74,12 +74,12 @@ Effect classes also carry a non-configurable minimum assurance. `observe` and
 project policy floor and every requested effect floor. Binding remains
 observable in shadow mode:
 the bind receipt reports `effective_mediated_effects`, the declared set capped
-by host assurance, while evaluation and lease acquisition refuse effects above
-that cap with `control_assurance_insufficient`. Assurance refusals at both
-boundaries are policy decisions carrying an effect-naming `ControlDirective`,
-never transport error envelopes. Mediation-envelope refusals also return the
-declared and assurance-capped effective effect sets so one host renderer can
-explain the same decision at turn and lease boundaries. A
+by host assurance, while turn evaluation refuses effects above
+that cap with `control_assurance_insufficient`. Assurance refusals are policy
+decisions carrying an effect-naming `ControlDirective`, never transport error
+envelopes. Mediation-envelope refusals also return the declared and
+assurance-capped effective effect sets so one host renderer can
+explain the turn decision. A
 `capability_not_permitted` directive names the excluded effect but omits
 `required_assurance`: raising assurance cannot add an effect that the active
 policy does not support.
@@ -138,7 +138,6 @@ handoff_pending ── accepted/released ──→ exited
         └───────── canceled/expired ───→ sync_required
 
 ready → completion_required → participant_ready → exited
-                                  └── optional finalizer_open → exited
 ```
 
 - `unbound`: the session has no active task reference. Only binding and
@@ -147,8 +146,8 @@ ready → completion_required → participant_ready → exited
   deltas are outstanding, a project-policy or work-admission epoch changed, or
   the host
   restarted. Only recovery capabilities are available.
-- `ready`: all blocking directives are acknowledged and required leases are
-  either held or can be requested with the intended action.
+- `ready`: all blocking directives are acknowledged and the requested turn
+  remains subject to the current capability and work-claim checks.
 - `turn_open`: one unexpired turn grant exists. Replaying the same turn intent
   returns the same grant; a different intent under the same idempotency key is
   a conflict.
@@ -158,20 +157,16 @@ ready → completion_required → participant_ready → exited
   directive ids and capabilities named by the refusal. Its checkpoint returns
   to `sync_required`; Engram reevaluates durable state before `ready`.
 - `handoff_pending`: the session has declared the work transferable but the
-  lease transition and handoff checkpoint have not both completed.
+  work-claim transition and handoff checkpoint have not both completed.
 - `completion_required`: local completion requires the session to checkpoint,
-  release or transfer its leases, satisfy evidence obligations, and
+  satisfy evidence obligations and
   contribute.
 - `participant_ready`: the contribution is frozen and the participant is no
   longer permitted to perform ordinary execution mutations. The designated
-  report assembler may later acquire a separate `ReportAssemblyClaim` and
-  receive a narrowly scoped finalizer grant;
+  report assembler may later acquire a separate `ReportAssemblyClaim`;
   an attributed completion abort before the seal sends participants back to
   `sync_required`, while a later report-assembly abort does not reopen work.
-- `finalizer_open`: one designated participant may assemble and polish the
-  report from the immutable completion seal under a fenced
-  `ReportAssemblyClaim` without reopening ordinary execution.
-- `exited`: no active grant or lease remains. Rejoining begins at
+- `exited`: no active grant remains. Rejoining begins at
   `sync_required`.
 
 `blocked` is not a catch-all session phase. A refusal names the precise
@@ -185,6 +180,13 @@ batch operations, but may not weaken their semantics.
 
 ### 1. Register and bind
 
+The shipped host `session_bind(external_ref, title)` resolves a shared control
+anchor by project and external reference. `control_sessions` holds the binding;
+there is no separate compatibility-task lifecycle, participant roster or join
+event. The retained wire field `task_id` identifies this scope, and
+`control_changes` preserves its ordered shared history. Binding itself emits no
+history event. Exact local-work claims remain a separate authority boundary.
+
 `session_bind` records the asserted actor, host session, control-assurance
 level, declared mediated capabilities, and an optional exact work binding:
 `root_execution_id`, `work_id`, `run_id`, `work_revision`, `claim_id`, and
@@ -195,14 +197,14 @@ directly as `work_update:claim.receipt.control_binding` and
 execution and work item. Here `work_revision` is the work item's revision
 returned at the top of the claim receipt, not the claim object's revision. A host
 may first seed a local root from a user request or an optional external
-snapshot. Binding never requires an external reference. V1 has one ordinary
+snapshot. Local work never requires an external reference. V1 has one ordinary
 executor per `WorkRun`; an ordinary turn additionally requires that session's
 live claim on the focused run. Other root members may inspect permitted root
 memory and communicate, or claim distinct child runs for parallel work, but
 membership does not authorize mutation/completion of another executor's run.
 Initial roles come from a user/host authority reference or the active control
 policy. While active, the root coordinator may change the expected roster
-under that authority and its live root-run coordination lease. Joining or
+under that authority and its live root-run work claim. Joining or
 changing the roster during `completion_pending` requires an attributed abort
 and a new synchronization cut.
 
@@ -223,7 +225,7 @@ TurnIntent {
 ```
 
 The expected revision is only an optimistic-concurrency guard. Context,
-cursor, policy, membership, and lease facts come from Engram's durable state;
+cursor, policy, membership, and claim facts come from Engram's durable state;
 caller fields are never accepted as proof that a precondition is true.
 
 Feed and delivery positions have different identities:
@@ -247,12 +249,10 @@ The decision is a grant, defer, or refusal:
 ```text
 TurnGrant {
   grant_id, intent_hash, work_id, work_revision, run_id, session_id, turn_id
-  purpose: ordinary | recovery | finalizer
+  purpose: ordinary | recovery
   authority_basis:
     ordinary { work_claim_id, work_claim_fence }
     recovery { directive_ids[], authority_refs[] }
-    finalizer { completion_seal_hash, assembly_id, assembly_generation,
-                assembly_revision, assembly_claim_id, assembly_claim_fence }
   basis_feed_positions[]        # FeedPosition
   basis_delivery_position       # DeliveryPosition
   basis_project_policy_epoch, basis_work_admission_epoch
@@ -260,7 +260,6 @@ TurnGrant {
   packet_hash
   required_injections[]          # exact delivery token + bounded payload
   capability_envelope[]
-  resource_lease_fences[]        # lease_id + fencing_epoch + expiry
   expires_at
   directives[]
 }
@@ -287,7 +286,7 @@ delta already attached**, not a refusal telling the agent to call another
 tool. Immediately before dispatching the prompt, the host calls
 `turn_begin(grant_id, delivery_tokens[])`. In one transaction Engram rechecks
 grant expiry, project-policy epoch, work-admission epoch, work revision, the
-purpose-specific authority basis, resource-lease fences, optional portable
+purpose-specific authority basis, optional portable
 writer epoch/validation deadline, the session blocking watermark, and each
 exact token, then records a **tentative** delivery position
 and source-feed progress vector and activates the grant. Without that transition the host must
@@ -314,12 +313,12 @@ evaluation with `turn_already_open` until checkpoint/reconciliation completes.
 
 A grant is an immutable, fingerprinted operational record while live. It is
 bound to one task, session, turn intent, both control epochs, capability
-envelope, and lease fences; it is not a bearer token transferable to another
+envelope, and work-claim fence; it is not a bearer token transferable to another
 session. Restart invalidates issued-but-unbegun authority. A begun grant stays
 durable only until checkpoint/reconciliation, including the narrowly
 redeliverable recovery case above, so completed, expired, and superseded grants
 still need not become permanent canonical memory. State-changing grant
-supersession, delivery, checkpoint, lease, action, handoff, and finalization
+supersession, delivery, checkpoint, action, handoff, and finalization
 transitions emit immutable canonical events.
 
 Evaluation order is fixed so refusals are deterministic and do not leak later
@@ -336,8 +335,8 @@ state through an earlier failure:
    acknowledged, preserving dense task-local cursor ranges and an omission
    manifest; partial pages authorize only recovery turns, and the final page
    attaches the context snapshot at the delivered head;
-6. verify required resource ownership, fence, and expiry for the requested
-   capability envelope; and
+6. verify the requested capability envelope and normalize supplied resource
+   intents (which confer no exclusive ownership); and
 7. verify no checkpoint, unknown action, handoff, contribution, or
    finalization obligation is outstanding.
 
@@ -352,7 +351,7 @@ Refusal does not mean the host must deadlock or bypass the gate. Directives are
 classified by executor:
 
 - **host-automatic** — deliver context, apply a delta page, wait, report an
-  already-known action outcome, renew a safe lease;
+  already-known action outcome;
 - **human-only** — supply missing authority, choose a policy exception,
   reconcile an ambiguous non-idempotent side effect;
 - **agent recovery turn** — reason about a pinned conflict, choose a resource
@@ -403,7 +402,6 @@ Kinds include:
 - `load_context`
 - `apply_delta`
 - `resolve_pinned_conflict`
-- `acquire_lease` / `renew_lease`
 - `checkpoint_turn`
 - `release_or_handoff`
 - `wait`
@@ -444,7 +442,7 @@ An `ActionGrant` is single-use and bound to the request fingerprint. The
 authorization transaction rechecks work revision/run state, grant expiry, project-policy
 epoch, work-admission epoch, optional portable writer epoch/validation
 deadline, the purpose-specific authority basis,
-resource-lease fencing epochs and expiry, session/run status, the
+session/run status, the
 session-specific blocking watermark, and outstanding checkpoint obligations.
 It denies an action when relevant state changed after the turn began.
 
@@ -454,9 +452,9 @@ Effect classes are deliberately small and host-neutral:
 | --- | --- | --- |
 | `observe` | Read files, search memory, inspect status | Allowed after required policy context is loaded |
 | `communicate` | Root-work-shared capture, contributor message | Requires root-execution membership; becomes an ordered event |
-| `coordinate` | Acquire an Engram-internal coordination lease | Requires `turn_gated` assurance and is not a model-turn capability |
-| `mutate_local` | Write a mediated workspace or run a mutating local tool | Requires a compatible execution lease on the supplied resource subject |
-| `mutate_shared` | Change shared work/run coordination state | Requires membership plus the appropriate scoped lease |
+| `coordinate` | Reserved internal coordination effect | Not a model-turn capability; no resource-lease API |
+| `mutate_local` | Write a mediated workspace or run a mutating local tool | Requires host/user authority and adequate declared mediation; resource intents do not reserve ownership |
+| `mutate_shared` | Change shared work/run coordination state | Requires membership and explicit authority; not shipped in the turn policy |
 | `external_side_effect` | Publish a report or invoke an external write adapter | Requires an explicit durable intent, user/policy authority, and idempotency key |
 | `lifecycle` | Handoff, waive, complete, finalize | Requires the named lifecycle capability and barrier preconditions; finalization additionally binds a `ReportAssemblyClaim` |
 
@@ -474,7 +472,7 @@ ResourceSubject =
   Logical { namespace, segments[], coverage: exact | tree }
 ```
 
-The host maps tool targets into subjects; the core validates and compares
+The host maps tool targets into subjects; the core normalizes and validates
 them. Path segments are project-relative, `/`-separated, Unicode NFC, and
 normalized under the project's immutable `sensitive | case_folded` path
 policy selected at initialization; folded mode uses locale-independent Unicode
@@ -508,20 +506,22 @@ not close the final check/use race. Its filesystem coverage is therefore
 or disclose that downgrade. A post-turn workspace fingerprint detects
 out-of-band or unmediated writes but never upgrades detection into prevention.
 
-`exact` overlaps only the same normalized subject; `tree` overlaps itself and
+`exact` describes one normalized subject; `tree` describes it and its
 component-boundary descendants. Logical namespaces use the same segment and
-coverage rules. Multiple worktrees therefore conflict on the same logical
-project path instead of silently diverging through absolute paths. Host
-identity and handle retention remain asserted context at V1 assurance, but
-normalization, binding comparison, and conflict semantics are core logic and
-are exhaustively fixture-tested.
+coverage vocabulary. The shipped core does not compute subject overlap or
+coverage authority. Multiple worktrees therefore describe the same logical
+project path rather than unrelated absolute paths. This is not a resource
+lock. Host identity and handle retention remain asserted context at V1
+assurance, but
+normalization and binding comparison are core logic. Per-action mediation
+remains target design, not shipped enforcement.
 
 If a generic shell command's write set cannot be conservatively mapped,
 policy requires a broad `Path { segments: [], coverage: tree }` workspace
-lease or refuses the mutation.
+subject or refuses the mutation.
 Because not every host can prevent out-of-band writes, the host records a
 workspace fingerprint at turn boundaries and reports changed logical paths.
-Changes outside held lease subjects create an attributed reconciliation event.
+Changes outside the declared subjects create an attributed reconciliation event.
 Where prevention is impossible, the assurance claim is detection, not control.
 
 ### 5. Begin and record the action
@@ -531,9 +531,9 @@ creates an `in_flight` record immediately before the host invokes the
 capability. In that same transaction it rechecks the complete authorization
 basis: parent turn and grant state/expiry, project-policy and work-admission
 epochs, session blocking watermark, work/run/participant phase, mediated
-capability-map revision, request fingerprint, every authority reference, and
-each lease's subject/holder/fence/expiry. For filesystem effects it also
-compares the execution-bound `ResolutionBinding` digest and requires the host
+capability-map revision, request fingerprint, and every authority reference.
+For filesystem effects it also compares the execution-bound
+`ResolutionBinding` digest and requires the host
 to invoke through the retained handles. A stale basis refuses without
 consuming the grant. Transports may combine authorize-and-begin in one call but
 may not omit the begin-time checks. `action_complete(ActionOutcome)` records success, failure, a
@@ -566,7 +566,6 @@ TurnCheckpoint {
   capture_hashes[]
   blocker_refs[]
   next_intent: continue | wait | handoff | contribute | exit
-  lease_disposition
 }
 ```
 
@@ -583,11 +582,11 @@ the project, root, and run feeds atomically with the checkpoint receipt.
 
 The same private checkpoint may mint up to 16 `verification_evidence` objects
 and four `environment_evidence` objects. Verification cites its producer by
-canonical observation hash or by an `observation_id` in the same request.
+canonical observation id or by an `observation_id` in the same request.
 Storage derives the run/source binding, command fingerprint, result, producer
 session, and times from that observation; a missing producer is a named
 `verification_producer_not_found` request fault. Verification may also cite an
-environment object by hash or by same-request index. That object must name the
+environment object by id or by same-request index. That object must name the
 same run and source revision.
 
 Environment evidence may use the opaque fingerprint form. The structured
@@ -641,15 +640,12 @@ and deterministic typed guidance. Generic readiness strings remain separate.
 A fresh session reconstructs the same summaries from canonical history rather
 than trusting a prior response.
 
-A waiver may be requested through the operator CLI or the host-private
-`obligation_waive` JSON-lines operation, never through MCP or `work_update`.
-It carries an attributed reason but no work grant. The private request is bound to the
-session's exact live `WorkRun` and expected definition. Its canonical
-resolution records the server-fixed session actor beside the asserted
-`waived_by` human; that assertion is not authentication.
-Policy refusals are typed as `waiver_not_admitted`, `obligation_not_open`, or
-`definition_changed`, and exact retries replay exactly. Agent-facing pages and
-the host receipt omit the reason. Completion evaluates the
+A waiver may be requested through the operator CLI, never through the removed
+host-private operation, MCP or a direct `work_update` waiver variant.
+The shell request carries an attributed reason but no work grant; its actor
+and `waived_by` human are asserted, not authenticated. Revising or dropping an
+acceptance binding still resolves its open obligation with retained history.
+Agent-facing pages omit the reason. Completion evaluates the
 cut-aware open set at the exact pre-seal run-feed cut. Terminal definitions are
 frozen into the seal as exact definition/resolution id pairs under obligation
 schema V1, and completion success reconstructs its page from that sealed basis.
@@ -685,7 +681,7 @@ capture continues to feed peer deltas, handoffs, and report input.
 The host should collect a `TurnResult` beside the ordinary model response and
 submit one checkpoint operation, not require a second bookkeeping dialogue.
 It pre-populates tool/action receipts; the agent adds typed captures, blocker
-references, a bounded next-intent enum, and lease disposition. Meaningful
+references and a bounded next-intent enum. Meaningful
 progress prose is captured once as typed memory and cited by hash; the
 checkpoint is not a second status ledger. No raw reasoning trace or transcript
 is required. If the structured result is absent or invalid, Engram keeps the
@@ -719,15 +715,13 @@ Ordinary peer notes advance the root-work feed but do not revoke an
 already-running local action. A
 project-policy or work-admission epoch change invalidates affected grants
 immediately. `action_authorize` always rechecks both, so a newly arrived hard
-constraint cannot be bypassed by a long-lived turn grant. Lease ownership
-changes are fenced independently; expiry invalidates the relevant grant
-without advancing either epoch.
+constraint cannot be bypassed by a long-lived turn grant. Work-claim
+ownership changes are fenced independently.
 
 The packet fingerprint reproduces delivered content, dense named feed positions order
 changes, the project-policy epoch invalidates global rules, the work-admission
 epoch invalidates work/run rules and lifecycle, the claim fence invalidates
-stale responsibility, and a resource-lease fence invalidates old mutation
-authority. None substitutes for another.
+stale responsibility. None substitutes for another.
 
 Every work/run event stores intrinsic type plus optional audience and normalized
 resource selectors. A named, versioned built-in classifier derives effective
@@ -736,7 +730,7 @@ session-specific `blocking_watermark`:
 
 | Impact | Examples | Effect |
 | --- | --- | --- |
-| `blocking` | Applicable pinned change/contradiction, claim or lease recovery, completion pending, addressed handoff | Must be injected or reconciled before the affected ordinary turn/action |
+| `blocking` | Applicable pinned change/contradiction, claim recovery, completion pending, addressed handoff | Must be injected or reconciled before the affected ordinary turn/action |
 | `advisory` | Peer decision or finding relevant to the session's resource intent | Bundled into the next turn when budget permits; omission is visible and may cross a configured threshold |
 | `informational` | Unrelated progress and routine lifecycle facts | Delivered opportunistically; never blocks by count alone |
 
@@ -759,7 +753,7 @@ matching resource event is independently classified blocking.
 Control uses two explicit persistence tiers:
 
 - **canonical state-changing events** — delivery acknowledgements,
-  checkpoints, lease ownership, action begin/receipts, handoffs, policy
+  checkpoints, action begin/receipts, handoffs, policy
   activation, finalization, and recovery. They follow ordinary work retention
   and are the source for rebuilding projections;
 - **bounded operational records** — live/expired turn and action grants plus
@@ -771,8 +765,7 @@ The minimum records are:
 
 - `ControlPolicy`: version and hash, control mode, mediated effect classes,
   project epoch, classifier version, synchronization rules, grant TTLs,
-  degraded-envelope rules, portable writer-validation maximum age, and
-  lease-conflict policy. Machine
+  degraded-envelope rules and portable writer-validation maximum age. Machine
   policy is never inferred from documentation prose.
 - `ParticipantRecord` and `SessionProgress`: asserted actor and role, expected
   contribution, join/leave state, durable phase, staged/tentative/checkpointed
@@ -783,12 +776,11 @@ The minimum records are:
   token, and CAS advancement described above.
 - `WorkClaim`: work/run holder, assignment reference, expiry, revision,
   monotonic claim fence, and transfer/recovery lifecycle.
-- `ResourceLease` and `HandoffOffer`: canonical subject set, mode, holder, expiry,
-  revision, fencing epoch, and transfer lifecycle.
+- `HandoffOffer`: exact work-claim handoff, recipient, expiry, and transfer lifecycle.
 - `ReportAssembly` and `ReportAssemblyClaim`: root completion-seal id,
   assembly generation/state/revision, designated holder, expiry, revision,
   monotonic fence, and handoff/recovery lifecycle. This is post-completion
-  authority and is never a substitute for a work claim or resource lease.
+  authority and is never a substitute for a work claim.
 - `PortableWriterState`: configured mode, lineage/head, local store instance,
   writer state/epoch, last remote validation time/result, maximum validation
   age, and released/read-only state. Remote mismatch or validation expiry
@@ -835,7 +827,7 @@ A shipped assurance update runs through
 `engram control-policy set-required-assurance`. It creates a new immutable
 policy version plus an
 attributed canonical authority-decision object—not one arbitrary task's
-coordination lease. V1 records the operator identity as asserted host context;
+work claim. V1 records the operator identity as asserted host context;
 authenticated `project_policy_admin` mediation remains unavailable and is
 reported as an unavailable authority-mediation capability by `doctor`; the
 setter also warns that the specific supplied identity is asserted rather than
@@ -864,7 +856,7 @@ Policy history is ordered exclusively by `policy_epoch`. `activated_at` and
 authority `decided_at` are attribution timestamps; clock skew does not reorder
 the immutable chain or block activation.
 
-The bind/evaluate/begin/lease hot path verifies the selected version's
+The bind/evaluate/begin hot path verifies the selected version's
 canonical hash and projection bytes, matches its selector scalars, and uses an
 indexed successor probe to refuse a rolled-back head. It deliberately does not
 walk predecessor objects because prior versions do not participate in a
@@ -894,61 +886,20 @@ capability. Unknown versions or ambiguous precedence fail closed.
 ## Coordination and parallel work
 
 Root-execution membership grants visibility, not write ownership. V1 assigns
-one ordinary executor and one claim to each `WorkRun`; multi-session
-parallelism comes from distinct child runs. Within each claimed run, scoped
-resource leases keep work responsibility separate from mutation authority:
+one ordinary executor and one fenced work claim to each `WorkRun`; parallel
+sessions claim distinct child runs. Claims schedule execution and protect
+work/run mutations. They do not authorize filesystem or external writes:
+those remain subject to host/user authority.
 
-- **intent lease** — an advisory reservation taken before work so peers do not
-  independently plan the same resource change;
-- **exclusive execution lease** — converts intent on first mutation and
-  authorizes one session to mutate the resource;
-- **coordination lease** — authorizes exclusive task-level transitions such as
-  roster changes, waivers, or beginning completion while the run is live;
-- **shared analysis** — needs membership and synchronization but no exclusive
-  mutation lease.
+Resource leases, acquisition/release operations, and lease fences have been
+removed. `resource_intents: []` remains valid; supplied subjects are normalized
+but do not reserve paths or prevent overlapping edits. Sessions coordinate
+their source ownership explicitly, including while a test/review input is frozen.
 
-Leases name one or more canonical `ResourceSubject`s, mode, holder, revision,
-expiry, and retry key. Resource identity, collision detection, and fence
-history are project-wide rather than task-local, so distinct tasks cannot both
-authorize the same path. For different holders, any overlapping `intent` or
-`exclusive` subject conflicts:
-
-| Existing \ requested | `intent` | `exclusive` |
-| --- | --- | --- |
-| `intent` | conflict | conflict |
-| `exclusive` | conflict | conflict |
-
-The same holder may idempotently repeat a claim. Converting its intent to
-exclusive is one compare-and-swap transaction that rechecks every subject and
-keeps the ownership fence. Multi-subject acquisition or conversion is sorted
-canonically and all-or-nothing; no partial lease set is observable.
-Independent subjects can run in parallel when their executors hold distinct
-child-run claims. Work claims prevent duplicate execution of a local work
-item; scoped leases separately authorize resource mutation. Neither may be
-inferred from the other.
-
-Renewal, release, handoff, expiry recovery, and force recovery are
-compare-and-swap transitions. Ownership transfer or recovery increments a
-monotonic fencing epoch; renewal may increment a record revision without
-changing that epoch. Each transition emits an immutable event. Grants bind
-`lease_id + fencing_epoch`; revision exists only for
-compare-and-swap updates, while current holder and expiry are rechecked at
-action authorization. Normal renewal does not invalidate an otherwise valid
-grant merely because its CAS revision changed. A handoff is complete only when
-the outgoing checkpoint and claim/lease transfer agree; the incoming executor
-starts at `sync_required` and cannot inherit the previous session's
-unacknowledged delivery position, source-feed progress vector, or turn grant.
-A stale holder's old fence is
-rejected even if its process resumes later.
-
-Successful mediated actions implicitly heartbeat their leases. A host-reported
-pause suspends expiry up to a policy-bounded `max_suspension`; pause remains a
-host fact, not an Engram process state. After that bound the lease becomes
-`recoverable`, not silently free. Takeover requires an attributed recovery and
-increments the fence; a returning holder receives a blocking recovery event
-and cannot mutate until it reconciles. The small wait-for graph is checked on
-multi-resource acquisition; a cycle refuses the younger request with a
-rescope/handoff directive rather than adding scheduling or fairness policy.
+A handoff transfers work responsibility under the claim fence. The incoming
+session must synchronize independently; it never inherits the previous
+session's unacknowledged delivery or live turn grant. Stale claims cannot
+mutate the run after handoff or recovery.
 
 ## Failure and recovery behavior
 
@@ -962,17 +913,17 @@ stricter but cannot weaken non-overridable cells:
 | Store corruption or unknown safety schema | Diagnostic-only | Closed | Closed | Closed | Closed |
 | Portable writer epoch unknown/stale/expired | Open | Closed | Closed | Closed | Closed |
 | Unsafe pinned packet (budget overflow) | Recovery-only | Recovery capture only | Closed | Closed | Closed |
-| Lease conflict, expiry, or stale fence | Open | Capture allowed | Defer | Defer or deny | Closed |
+| Stale work-claim fence | Open | As the work contract permits | Refuse the bound turn | Refuse | Closed |
 | Unknown prior action outcome | Open | Unrelated capture only | Unrelated work only | Closed when related | Closed when related |
 | User/host denial or missing authority | As host permits | Closed for denied capability | Closed for denied capability | Closed | Closed |
 
 `degraded_open` is never silent fail-open. While Engram is healthy it may issue
 a cached `DegradedEnvelope` bound to session, policy hash/epoch, capability and
-resource bounds, lease ids/fences, expiry, maximum actions/bytes, and the host
+resource bounds, work-claim basis, expiry, maximum actions/bytes, and the host
 mediation map. The host may use it only for policy-designated reversible local
 work; without a valid envelope it fails closed. The host does not independently
 reconstruct or widen Engram policy while the service is unavailable.
-Envelope expiry may not exceed any basis grant or lease expiry, is capped by a
+Envelope expiry may not exceed any basis grant expiry, is capped by a
 short built-in maximum, and is invalidated by any project/task epoch
 notification the host receives. An unavailable service cannot extend it or
 suspend its clock.
@@ -997,14 +948,14 @@ a scoped recovery turn may capture any durable semantic finding through the
 ordinary typed-memory path.
 
 On recovery the session returns to `sync_required`, uploads debt idempotently,
-replays deltas, verifies current policy and leases, fingerprints touched
+replays deltas, verifies current policy and claims, fingerprints touched
 resources, and records `accepted | conflict | operator_required` reconciliation
 for each entry. Shared/external/lifecycle actions remain unavailable until all
 debt is terminal.
 
 Recovery capabilities remain available where disclosure permits: inspect the
 refusal, load context, read deltas, acknowledge delivery, resolve a
-contradiction, reconcile an unknown action, renew or release a lease, wait,
+contradiction, reconcile an unknown action, wait,
 contribute, and request an attributed human exception. A refusal distinguishes
 `defer` (contention with retry/wake conditions) from `deny` (authority or
 safety prohibition), so the host does not turn normal contention into an
@@ -1022,25 +973,19 @@ pass.
 
 - Host or Engram restart invalidates unexpired in-memory delivery assumptions;
   the durable session resumes at `sync_required`.
-- Turn, lease, delivery, action, and checkpoint requests use independent
+- Turn, delivery, action, and checkpoint requests use independent
   idempotency keys bound to canonical intent fingerprints and, for begin and
   checkpoint, the exact grant id.
 - Exact decision retries while the result is retained return that result.
-  A refused `lease_acquire` is therefore sticky under its key even after an
-  assurance or policy-epoch change; a fresh key re-evaluates current policy,
-  while changing intent under the old key is a conflict. Acquisition intent
-  includes the current session-bind generation, so an old key conflicts after
-  rebind instead of replaying obsolete authority. Within one bind generation,
-  a host must not reuse a successful acquisition key after terminal release;
-  it mints a fresh key for a new reservation.
+  A policy change needs a fresh evaluation key; changing intent under an old
+  key is a conflict.
   After grant/result pruning, the durable request-key tombstone returns
   `expired_request`; it never treats the old key as fresh. Reuse with a
   different intent is always a conflict until the task's explicit retention
   boundary. Canonical action/publication receipts keep their durable retry
   semantics.
-- Expired unbegun grants write a terminal tombstone and never resurrect. Lease ownership transfer or recovery
-  increments the fencing epoch and invalidates grants bound to the old fence;
-  an ordinary renewal revision does not.
+- Expired unbegun grants never resurrect. Work-claim transfer or recovery
+  advances its fence; old claims cannot authorize new turns.
 - Only an `in_flight` action created by a successful `action_begin` can become
   `outcome_unknown`. An issued but unbegun grant expires unused. Idempotent
   adapters reconcile unknown outcomes by their durable request key; other
@@ -1054,7 +999,7 @@ In the target controlled-completion path, `work_complete` enters
 `completion_pending`. That transaction freezes the
 executor checkpoint obligation, advances the work admission epoch, and denies
 new ordinary execution mutation grants. Engram then drains in-flight actions,
-releases or transfers every resource lease, and terminalizes the work claim
+terminalizes the work claim
 while allowing reconciliation and abort. Root completion additionally
 freezes the `RootExecution` contributor roster and every required child seal
 or explicit reason-attributed disposed-child waiver. Only
@@ -1065,12 +1010,13 @@ results, and evidence ids. A root seal also binds required child seals or
 disposed-child waivers, contributions, decisions, and attributed participant
 waivers. It makes the work completed; an
 attributed abort before the seal returns it to `open`. The shipped alpha only
-accepts the zero-linked-state path: it requires empty action-outcome and
-resource-lease drain sets and creates the seal atomically. It refuses nonempty
-drains until this control integration ships.
+accepts the zero-linked-state path: it requires empty action-outcome drains
+and creates the seal atomically. Nonempty action drains remain unsupported.
+The historical resource-lease drain field remains empty; the lease engine
+and its live authority have been removed.
 
 Before any new seal is frozen, every obligation definition whose trigger is at
-or before the completion cut must have a satisfied or host-authorized waived
+or before the completion cut must have a satisfied or operator-attributed waived
 resolution at or before that same cut. The final checkpoint must acknowledge
 the typed verification evidence. Required child seals are decoded and checked
 recursively; every accepted child seal carries the exact current obligation
@@ -1078,8 +1024,7 @@ and environment schema bindings.
 
 An executor may seal its run only after its last turn is checkpointed, all
 material outcomes are known, its host-confirmed source-feed progress reaches
-the frozen cut, and its resource leases are released or explicitly
-transferred. A root contributor may mark ready only after its claimed child
+the frozen cut. A root contributor may mark ready only after its claimed child
 run has sealed or its omission is authorized. Contribution and readiness
 events before the root seal do not move the cut.
 Discovery of new execution work atomically aborts completion, invalidates the
@@ -1088,11 +1033,10 @@ barrier, advances the work admission epoch, and requires a later fresh cut.
 Optional report finalization consumes the immutable completion seal; it does
 not drain execution a second time. Engram creates a `ReportAssembly` anchored
 to the root seal and issues a fenced `ReportAssemblyClaim` to the designated
-finalizer. A narrowly scoped `finalizer` turn grant binds the seal id,
-assembly generation/revision, and live assembly-claim fence. It cannot reopen
-ordinary workspace mutation, and it requires no completed-run work claim or
-resource lease. Final report freeze requires that grant, the seal, and the
-assembly claim; it terminalizes the claim.
+assembler. This planned assembly claim binds the seal and assembly generation,
+requires no completed-run work claim, and cannot authorize workspace mutation.
+Report freeze terminalizes the assembly claim. There is no finalizer turn purpose
+or phase in the host protocol.
 Publication remains a separately authorized external side effect. Its intent
 binds the frozen report hash, target, and idempotency key. An attributed report
 abort before `report_ready` abandons only assembly; it does not reopen the
@@ -1111,7 +1055,7 @@ A conforming host adapter must:
    delivering task prompts;
 3. call `turn_evaluate` and inject all blocking directives before each turn;
 4. prevent ordinary prompts while the session is not `ready`, while allowing
-   only a matching recovery or finalizer prompt under its scoped grant;
+   only a matching recovery prompt under its scoped grant;
 5. in action-gated mode, intercept every declared material capability and
    require and begin a matching single-use action grant;
 6. report action outcomes even when the model turn later fails;
@@ -1159,28 +1103,29 @@ surface uses the stable spellings defined by `ControlRefusalCode`:
 `control_policy_missing`, `control_assurance_insufficient`,
 `capability_not_permitted`, `task_unbound`, `task_access_denied`,
 `policy_epoch_changed`, `task_admission_epoch_changed`,
-`pinned_budget_exceeded`, `lease_required`,
+`pinned_budget_exceeded`,
 `context_required`, `delta_required`, `delivery_invalid`,
 `checkpoint_required`, `recovery_required`, `turn_already_open`,
 `turn_purpose_mismatch`, `lifecycle_hold`, `participant_not_ready`,
 `action_outcome_unknown`, `missing_authority`, `grant_expired`,
-`grant_not_begun`, `grant_scope_mismatch`, `stale_fence`, `resource_remapped`, and
-`session_exited`. The current persisted alpha cannot yet emit
+`grant_not_begun`, `grant_scope_mismatch`, `stale_fence`, `resource_remapped`,
+`session_exited`, and `lease_required`. The `lease_required` code is retained
+only for replay of historical saved refusals; current evaluation never produces
+it. The current persisted alpha cannot yet emit
 `action_outcome_unknown` or `missing_authority`: action-outcome tracking and
 organizational authority mediation are not wired, and effects requiring them
-remain outside the supported policy envelope. Lease contention is a typed
-`defer` decision rather than a refusal code.
+remain outside the supported policy envelope.
 
 ## Preconditions in the current implementation
 
-The Phase 0 shadow evaluator and integrity-checked observation log remain.
+The pure evaluator remains; the obsolete persisted shadow-observation log is removed.
 The current host-control alpha additionally ships a built-in safe policy,
 durable control sessions, optional exact `WorkRun` claim bindings,
 transactional context snapshots, persisted turn decisions and short-lived
 grants, begin-time freshness/delivery rechecks, canonical execution
 observations, and canonical checkpoint events. A separate `engram control` JSON-lines process
 implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`, and
-`turn_checkpoint`, plus scoped `lease_acquire` and `lease_release`; none is
+`turn_checkpoint`; none is
 exposed through agent-facing MCP. Exact retry
 evidence survives process restart, while unbegun authority is invalidated and
 the session returns to `sync_required`. Each open rotates an internal
@@ -1191,27 +1136,14 @@ payload.
 `doctor` verifies canonical intent/result bytes plus their redundant row
 bindings.
 
-The alpha grants `observe`, `communicate`, and lease-backed, turn-gated
-`mutate_local`. An exclusive execution lease covers a normalized path or
-logical resource tree, becomes an immutable task-feed event, and contributes
-its id, subject, expiry, and monotonic overlap fence to a turn grant. Begin
-rechecks that exact live basis. Conflicting acquisition defers; release and
-later acquisition advance the fence. Once a mutation grant is begun, every
-lease in its basis remains pinned until checkpoint: explicit release refuses,
-and an overlapping acquisition continues to defer after nominal expiry with
-`checkpoint_required: true`. Restart preserves that pin. Checkpoint closes the
-uncertain turn atomically, after which an expired or released scope can move to
-the next holder under a higher fence. The store persists one host path policy
-on the first open that resolved the project root's filesystem identity
-(host-supplied or probed on the real filesystem) and refuses later resolved
-openers with different path semantics; an opener that could not resolve the
-identity refuses path leases rather than guessing. The
-storage boundary binds path subjects to the session project, NFC-normalizes
-them, applies that persisted case policy, and under Windows rules rejects
-trailing-dot/space, alternate-data-stream, reserved-device, and 8.3-shaped
-aliases. Host adapters remain responsible for resolving symlink/hard-link
-identity before constructing a resource subject. Engram also rejects a task
-rebind while old active leases remain. Every task event is treated as
+The alpha grants `observe`, `communicate`, and turn-gated `mutate_local`.
+It checks declared mediation, assurance floors, and any exact work-claim binding.
+Resource leases and host obligation waiver are removed. Supplied resource intents
+are project-bound and normalized; an empty list is valid and no list reserves
+exclusive ownership. The persisted host path policy refuses unresolved or
+inconsistent filesystem identity rather than guessing path semantics.
+The host remains responsible for path resolution and actual mutation authority.
+Every task event is treated as
 begin-blocking until the impact classifier ships, which is conservative but
 can over-deliver. A re-bind to the task a session already has keeps its
 confirmed position and moves past the run of its own events that directly
@@ -1240,41 +1172,39 @@ true in the core, not only in wrappers:
   come from one consistent SQLite read transaction; begin rechecks that basis
   and rejects drift before execution without putting private object identities
   on a shared feed;
-- every behaviorally relevant task/memory/lease/lifecycle transition advances
+- every behaviorally relevant task/memory/lifecycle transition advances
   the authoritative feed and its head projection, and delta requests cannot
   jump or acknowledge undelivered ranges;
 - capture, claim, task transition, and publication entry points validate work
   existence/state, root-execution membership, focused-run claim, and
-  applicable grant/lease/assembly-claim rules;
-- the minimum scoped execution lease is extended with renew, explicit handoff,
-  intent conversion, durable expiry/recovery, suspension, and host path-remap
-  identity binding; and
+  applicable grant/assembly-claim rules;
+- per-action mediation must retain execution-bound path resolution; and
 - work/run states, contributions and completion seal are wired on a real
   restart-safe path. The optional report freeze, durable publication intent
   and adapter receipt remain deferred; any future publication capability must
   be proved end to end before it can claim controlled finalization.
 
 Until those are process-tested, the existing MCP loop remains advisory. The
-host-control alpha can authorize only a declared local-mutation *turn* under a
-live lease; it cannot authorize an individual tool action, shared/external
-effects, lifecycle transitions, or finalization.
+host-control alpha can authorize only a declared local-mutation *turn*; it
+cannot authorize an individual tool action, shared/external effects, lifecycle
+transitions, or finalization.
 
 ## Delivery sequence
 
 | Phase | Deliverable | Honest control claim |
 | --- | --- | --- |
 | 0 — observe and replay | Safe policy bootstrap, daemon/thin client, host mediation map, decision log, latency/false-refusal baseline; control decisions are shadow-only and never weaken existing user/host denials or shipped packet safety errors | Advisory observation only |
-| 1 — repair prerequisites | Transactional context snapshots, consistent task cursor, real task transitions, scoped lease lifecycle, contribution barrier; optional publication remains deferred | No new control claim |
+| 1 — repair prerequisites | Transactional context snapshots, consistent task cursor, work transitions, contribution barrier; optional publication remains deferred | No new control claim |
 | 2 — freshness mediation | Impact-classed events, durable tentative/checkpointed delivery, recovery grants, pre-turn inline packet/delta, compaction re-delivery, checkpoint; enforce only unknown-schema, unsafe-packet, and failed-required-injection refusals | `turn_gated` delivery plus the minimal non-overridable refusal set |
-| 3 — scoped coordination | Normalized resource leases, intent/exclusive modes, suspension, handoff, recovery/fencing, out-of-band detection | `turn_gated` coordination |
+| 3 — scoped coordination | Fenced work claims, handoff/recovery, and explicit source ownership | Work scheduling, not resource locking |
 | 4 — widen refusal and action gate | Enable the broader replay-proven closed turn-refusal set, degraded-envelope matrix, and action authorization/begin/outcome mediator | `action_gated` for the declared capability set |
-| 5 — controlled completion/finalization | Stable completion cut, recovery/finalizer grants, contribution barrier; any future optional report freeze and receipted publication must be proved end to end | End-to-end controlled local loop |
+| 5 — controlled completion/finalization | Stable completion cut, recovery grants, contribution barrier; any future optional report freeze and receipted publication must be proved end to end | End-to-end controlled local loop |
 
 The current implementation deliberately process-tests a narrow
-`observe`/`communicate` lifecycle plus lease-backed local-mutation turns while
+`observe`/`communicate` lifecycle plus turn-gated local-mutation turns while
 Phase 1 is still incomplete. That validates the host protocol, restart
-semantics, overlap fencing, and the first coordination path early; it does not
-skip action mediation, the complete lease lifecycle, report, or entry-point
+semantics and work-claim fencing; it does not
+skip action mediation, report, or entry-point
 prerequisites or widen the honest deployment claim.
 
 Each phase needs process-level tests with a deliberately non-cooperative test

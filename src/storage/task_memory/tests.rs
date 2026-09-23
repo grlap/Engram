@@ -54,7 +54,7 @@ fn context_omissions_are_exact_then_losslessly_aggregated() {
 fn context_assembly_never_hides_old_pinned_memory_behind_search_limits() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let task_id = TaskId::new();
-    install_memory_task(&store, task_id, &["agent-a"]);
+    install_memory_task(&mut store, task_id, &["agent-a"]);
     let mut pinned_request = note_request(
         task_id,
         "agent-a",
@@ -102,62 +102,87 @@ fn sessions_rendezvous_using_only_the_external_reference() {
     let project = ProjectId("project-a".into());
     let now = Utc::now();
     let first = store
-        .start_task(
+        .bind_test_control_scope(
             &project,
             "dummy:TASK-7",
             "Dogfood the memory loop",
             &SessionId("eval-a".into()),
-            actor("eval-a"),
+            &actor("eval-a"),
             now,
         )
         .unwrap();
     let peer = store
-        .join_task(
+        .bind_test_control_scope(
             &project,
             "dummy:TASK-7",
+            "Peer control scope",
             &SessionId("eval-b".into()),
-            actor("eval-b"),
+            &actor("eval-b"),
             now + TimeDelta::milliseconds(1),
         )
         .unwrap();
     let replay = store
-        .join_task(
+        .bind_test_control_scope(
             &project,
             "dummy:TASK-7",
+            "Peer control scope",
             &SessionId("eval-b".into()),
-            actor("eval-b"),
+            &actor("eval-b"),
             now + TimeDelta::milliseconds(2),
         )
         .unwrap();
 
-    assert_eq!(first.task.task_id, peer.task.task_id);
-    assert_eq!(peer.task.participants.len(), 2);
-    assert_eq!(peer.cursor, replay.cursor);
-    assert!(!replay.joined);
+    assert_eq!(first.status.task_id, peer.status.task_id);
+    assert_eq!(peer.status.task_id, replay.status.task_id);
+    assert_eq!(peer.status.confirmed_cursor, replay.status.confirmed_cursor);
     assert_eq!(
         store
-            .task_changes_since(first.task.task_id, ChangeCursor::default(), 20)
-            .unwrap()
-            .len(),
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM control_sessions WHERE task_id = ?1",
+                [first.status.task_id.0.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
         2
     );
-    assert!(matches!(
-        store.join_task(
+    assert_eq!(
+        store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE name IN
+         ('tasks', 'task_participants', 'session_bindings', 'task_changes', 'task_control_state')",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        store
+            .control_changes_since(first.status.task_id, ChangeCursor::default(), 20)
+            .unwrap()
+            .len(),
+        0
+    );
+    let other = store
+        .bind_test_control_scope(
             &project,
             "dummy:MISSING",
+            "Peer control scope",
             &SessionId("eval-c".into()),
-            actor("eval-c"),
+            &actor("eval-c"),
             now,
-        ),
-        Err(StoreError::TaskReferenceNotFound(_))
-    ));
+        )
+        .unwrap();
+    assert_ne!(other.status.task_id, first.status.task_id);
 }
 
 #[test]
 fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let task_id = TaskId::new();
-    install_memory_task(&store, task_id, &["context-agent"]);
+    install_memory_task(&mut store, task_id, &["context-agent"]);
     let before = test_database_shape_snapshot(&store.connection).expect("initial shape");
     let mut request = note_request(
         task_id,
@@ -257,7 +282,7 @@ fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
 fn note_capture_is_idempotent_searchable_and_explainable() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let task_id = TaskId::new();
-    install_memory_task(&store, task_id, &["session-a", "session-b"]);
+    install_memory_task(&mut store, task_id, &["session-a", "session-b"]);
     let request = note_request(
         task_id,
         "session-a",
@@ -315,7 +340,7 @@ fn note_capture_is_idempotent_searchable_and_explainable() {
 fn note_idempotency_keys_are_scoped_to_the_calling_session() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let task_id = TaskId::new();
-    install_memory_task(&store, task_id, &["session-a", "session-b"]);
+    install_memory_task(&mut store, task_id, &["session-a", "session-b"]);
     let first = note_request(
         task_id,
         "session-a",
@@ -346,7 +371,7 @@ fn note_idempotency_keys_are_scoped_to_the_calling_session() {
 fn private_task_scratch_never_enters_the_peer_feed() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let task_id = TaskId::new();
-    install_memory_task(&store, task_id, &["agent-a", "agent-b"]);
+    install_memory_task(&mut store, task_id, &["agent-a", "agent-b"]);
     let request = note_request(
         task_id,
         "agent-a",
@@ -390,7 +415,7 @@ fn private_task_scratch_never_enters_the_peer_feed() {
     );
     assert!(
         store
-            .task_changes_since(task_id, ChangeCursor::default(), 20)
+            .control_changes_since(task_id, ChangeCursor::default(), 20)
             .unwrap()
             .is_empty()
     );
@@ -411,22 +436,23 @@ fn context_delta_show_and_private_scope_survive_restart() {
     let (task_id, first_receipt, packet, expected_delta, private_hash) = {
         let mut store = SqliteStore::open(&database).unwrap();
         let task = store
-            .start_task(
+            .bind_test_control_scope(
                 &project,
                 "dummy:TASK-7",
                 "Dogfood",
                 &session_a,
-                actor("eval-a"),
+                &actor("eval-a"),
                 now,
             )
             .unwrap();
-        let task_id = task.task.task_id;
+        let task_id = task.status.task_id;
         store
-            .join_task(
+            .bind_test_control_scope(
                 &project,
                 "dummy:TASK-7",
+                "Peer control scope",
                 &session_b,
-                actor("eval-b"),
+                &actor("eval-b"),
                 now + TimeDelta::milliseconds(1),
             )
             .unwrap();
@@ -562,7 +588,7 @@ fn context_delta_show_and_private_scope_survive_restart() {
 fn memory_projection_rebuilds_from_canonical_objects() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let task_id = TaskId::new();
-    install_memory_task(&store, task_id, &["agent-a", "agent-b"]);
+    install_memory_task(&mut store, task_id, &["agent-a", "agent-b"]);
     let request = note_request(
         task_id,
         "agent-a",
@@ -595,7 +621,7 @@ fn generic_memory_search_excludes_terminal_head_statuses() {
     for status in [MemoryStatus::Retracted, MemoryStatus::Expired] {
         let mut store = SqliteStore::open_in_memory().expect("store");
         let task_id = TaskId::new();
-        install_memory_task(&store, task_id, &["agent-a", "agent-b"]);
+        install_memory_task(&mut store, task_id, &["agent-a", "agent-b"]);
         let status_name = enum_name(status).expect("status name");
         let request = note_request(
             task_id,

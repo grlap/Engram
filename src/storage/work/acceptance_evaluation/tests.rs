@@ -8,9 +8,8 @@ use super::super::test_support::*;
 use super::*;
 use crate::domain::{
     AcceptanceEvaluationMode as Mode, AcceptanceSourceBasis, CompletionSeal, ControlWorkBinding,
-    IssuedTurnGrant, LeaseKind, LeaseMode, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
+    IssuedTurnGrant, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
     RecordGateEvidenceRequest, ResourceCoverage, ResourceSubject, ReviseWorkRequest, WorkClaim,
-    WorkLeaseDecision,
 };
 
 fn policy(modes: &[Mode], mechanical: MechanicalBasis, fresh: bool) -> AcceptanceEvaluationPolicy {
@@ -348,21 +347,6 @@ impl HostSession {
                 .expect("checkpoint synchronization turn"),
             ControlTurnCheckpointDecision::Checkpointed { .. }
         ));
-        let lease = store
-            .acquire_work_lease(
-                &host.project_id,
-                &host.session_id,
-                &host.connection_token,
-                &host.routing_token,
-                LeaseKind::Execution,
-                LeaseMode::Exclusive,
-                &host.subject,
-                3_600,
-                "lease-host-session",
-                at(second + 4),
-            )
-            .expect("acquire execution lease");
-        assert!(matches!(lease, WorkLeaseDecision::Granted { .. }));
         host
     }
 
@@ -565,21 +549,21 @@ fn fixture(project: &str) -> Fixture {
     }
 }
 
-// B01, B04, B27: the policy defaults to the legacy path, activates under one
+// B01, B04, B27: the policy defaults to the self-asserted path, activates under one
 // audited epoch, replays identical operations, and gates modes by explicit
 // membership rather than rank.
 #[test]
-fn policy_defaults_legacy_and_admits_only_listed_modes() {
+fn policy_defaults_self_asserted_and_admits_only_listed_modes() {
     let mut fixture = fixture("project-evaluation-policy");
     let store = &mut fixture.store;
     assert!(
         store
             .acceptance_evaluation_policy()
             .expect("read bootstrap policy")
-            .is_legacy()
+            .is_self_asserted()
     );
     let note = fixture.evidence.clone();
-    let legacy = refusal(record(
+    let self_asserted = refusal(record(
         store,
         &request(
             &fixture.work,
@@ -596,8 +580,8 @@ fn policy_defaults_legacy_and_admits_only_listed_modes() {
         ),
     ));
     assert!(
-        legacy.contains("does not enable acceptance evaluation"),
-        "{legacy}"
+        self_asserted.contains("does not enable acceptance evaluation"),
+        "{self_asserted}"
     );
 
     let first = enable(
@@ -609,7 +593,7 @@ fn policy_defaults_legacy_and_admits_only_listed_modes() {
         6,
     );
     assert!(first.changed);
-    assert!(first.previous_acceptance_evaluation.is_legacy());
+    assert!(first.previous_acceptance_evaluation.is_self_asserted());
     let replay = enable(
         store,
         &[Mode::IndependentSession],
@@ -698,20 +682,20 @@ fn policy_defaults_legacy_and_admits_only_listed_modes() {
     );
 }
 
-// B01, B27: a legacy project seals exactly as before and binds no evaluation.
+// B01, B27: a self-asserted project seals exactly as before and binds no evaluation.
 #[test]
-fn legacy_completion_seals_without_an_evaluation_binding() {
-    let mut fixture = fixture("project-legacy-completion");
+fn self_asserted_completion_seals_without_an_evaluation_binding() {
+    let mut fixture = fixture("project-self-asserted-completion");
     let seal = complete(
         &mut fixture.store,
         &fixture.work,
         &fixture.claim,
         "runner",
         &fixture.evidence,
-        "complete-legacy",
+        "complete-self-asserted",
         5,
     )
-    .expect("legacy completion");
+    .expect("self-asserted completion");
     assert_eq!(seal.acceptance_evaluation, None);
     assert_eq!(
         fixture
@@ -720,7 +704,7 @@ fn legacy_completion_seals_without_an_evaluation_binding() {
             .expect("status read"),
         None
     );
-    // A legacy seal binds nothing and scans healthy under the binding check.
+    // A self-asserted seal binds nothing and scans healthy under the binding check.
     let report = fixture.store.verify_all().expect("scan");
     assert!(report.is_healthy(), "{report:?}");
 }
@@ -1824,9 +1808,9 @@ fn source_freshness_binds_the_host_fingerprint() {
 }
 
 // B32, B01: a policy change after the record makes it stale; returning to the
-// legacy policy restores self-asserted completion and ignores evaluations.
+// self-asserted policy restores self-asserted completion and ignores evaluations.
 #[test]
-fn policy_changes_invalidate_and_legacy_restores_self_assertion() {
+fn policy_changes_invalidate_and_self_asserted_restores_self_assertion() {
     let mut fixture = fixture("project-evaluation-policy-change");
     let store = &mut fixture.store;
     enable(
@@ -1880,15 +1864,15 @@ fn policy_changes_invalidate_and_legacy_restores_self_assertion() {
             reason: AcceptanceStaleReason::Policy
         }
     ));
-    let legacy = enable(
+    let self_asserted = enable(
         store,
         &[],
         MechanicalBasis::Asserted,
         false,
-        "return-to-legacy",
+        "return-to-self-asserted",
         9,
     );
-    assert!(legacy.acceptance_evaluation.is_legacy());
+    assert!(self_asserted.acceptance_evaluation.is_self_asserted());
     let seal = checkpoint_then_complete(
         store,
         &work,
@@ -1897,10 +1881,10 @@ fn policy_changes_invalidate_and_legacy_restores_self_assertion() {
         std::slice::from_ref(&evidence),
         true,
         None,
-        "complete-legacy-again",
+        "complete-self-asserted-again",
         10,
     )
-    .expect("legacy completion after the policy returns");
+    .expect("self-asserted completion after the policy returns");
     assert_eq!(seal.acceptance_evaluation, None);
 }
 

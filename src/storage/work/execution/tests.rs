@@ -148,24 +148,6 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         segments: vec!["src".into()],
         coverage: crate::domain::ResourceCoverage::Tree,
     };
-    let lease = store
-        .acquire_work_lease(
-            &work.project_id,
-            &session_id,
-            &connection_token,
-            &control_binding.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            60,
-            "lease-control-work",
-            at(7),
-        )
-        .expect("acquire bound execution lease");
-    assert!(matches!(
-        lease,
-        crate::domain::WorkLeaseDecision::Granted { .. }
-    ));
     let decision = store
         .evaluate_control_turn(
             &work.project_id,

@@ -111,10 +111,7 @@ fn page(kind: VerificationKind, state: WorkObligationState) -> WorkObligationPag
             resolution: None,
             evidence: None,
             waived_by: None,
-            guidance: WorkObligationGuidance::RecordVerificationThenCheckpoint {
-                requirement,
-                host_waiver_requestable: true,
-            },
+            guidance: WorkObligationGuidance::RecordVerificationThenCheckpoint { requirement },
         }],
         omitted_count: 0,
     }

@@ -27,15 +27,15 @@ engram.db
   work_feed_heads / work_feed_entries # shipped typed dense project/root/run feeds
   work_operation_results # local-work idempotency receipts
   work_session_state # mutable ambient focus + processed project-feed cursor; never authority
-  task_changes # dense task-local feed positions plus an internal global row sequence
+  control_anchors # shared project + external-reference rendezvous, not work items
+  control_changes # dense scope-local feed positions plus an internal global row sequence
   context_deliveries # target dense per-session delivery + exact source ranges
   control_sessions     # durable host routing, phase, cursors, epochs
   control_connections  # current host-process generation; fences predecessors
   control_turn_results # idempotent enforced decisions
   control_turn_grants  # short-lived issued/begun/completed authority
   control_turn_grant_supersessions # immutable old-grant -> replacement audit
-  control_work_leases  # scoped live/released lease projection + fences
-  control_operation_results # begin/checkpoint/lease retry receipts
+  control_operation_results # begin/checkpoint retry receipts; historical receipts retained
   control_policy_operation_results # store-scoped operator-policy receipts
   report_assemblies / report_assembly_claims # target post-completion authority
   projections  # exact-current heads/status plus rebuildable indexes and FTS5
@@ -91,21 +91,18 @@ Existing different-build stores still refuse ordinary open; cutover and any
 live-store operation need a separate operator decision.
 
 The host-private alpha adds `control_sessions`, `control_turn_results`,
-`control_turn_grants`, `control_turn_grant_supersessions`,
-`control_work_leases`, and
+`control_turn_grants`, `control_turn_grant_supersessions`, and
 `control_operation_results`. Their intent and result payloads use canonical
-bytes even though live grants and leases are operational rather than durable
+bytes even though live grants are operational rather than durable
 memory. Intent fingerprints enforce retry equality; the replacement-decision
 fingerprint binds a grant supersession. Uncompared payload checksums are not
-stored. Acquisition/release emits a canonical
-`work_lease_event`; a successful checkpoint emits a canonical
+stored. The resource-lease engine and its table are removed; existing audit
+records remain readable. A successful checkpoint emits a canonical
 `turn_checkpoint_event`. Superseding an issued grant records exactly one
 immutable transition binding the old grant and request to the replacement
 decision, reason, and time. Each projection and its audit event commit together.
-Expired leases stop covering new grants without erasing their historical fence.
-Path resources are project-bound and normalized before they enter these rows;
-cross-task rebind is rejected while an active lease remains. Replacement host
-connections atomically rotate `control_connections`, making requests from a
+Path resource intents are project-bound and normalized, but confer no exclusive
+ownership. Replacement host connections atomically rotate `control_connections`, making requests from a
 still-live predecessor fail closed.
 Store-scoped policy administration uses a separate
 `control_policy_operation_results` table because operator updates do not belong
@@ -133,13 +130,18 @@ turn begin/checkpoint, while the final page also binds the context packet.
 Task events larger than the single-object delivery limit are rejected before
 they enter the task feed.
 
-`task_changes.task_cursor` is dense and local to one task; an internal
+`control_changes.task_cursor` is dense and local to one control anchor; an internal
 `sequence` is only a SQLite row identity. Ordinary open refuses different-build
 schemas before mutation; explicit [full-store migration](full-store-migration.md)
 exports unchanged rows and imports into a new current-schema database. It never
 silently renumbers durable cursors. The retired whole-task advisory claim and
 unused publication tables are omitted only by the importer's named retirement
-rules, with row-count reporting; current host task bindings remain.
+rules, with row-count reporting. Control sessions bind directly to a shared
+`control_anchors` row, optionally with an exact local-work claim. There is no
+compatibility-task lifecycle, participant roster, or duplicate session-binding
+table. The retained `task_id` field names the control scope in existing host
+records and memory scopes; it is not a local work item. Conversion preserves
+these ids and the ordered feed unchanged.
 First-class work uses `work_feed_heads` and `work_feed_entries` to allocate a
 typed dense `feed_kind + feed_id + position` for project, root-work, and
 run-execution feeds in the same transaction as each
@@ -345,9 +347,9 @@ required on the hot execution path; `doctor` reports the actual mode, remote
 head, recovery point, unpushed lag, degraded pushes, and writer assumption.
 
 Portable restore rebuilds SQLite but never restores live authority. Work
-claims, resource leases, control sessions/grants, delivery progress, and
+claims, control sessions/grants, delivery progress, and
 agent-private scratch do not cross hosts; unfinished claim history becomes
-recoverable and leases must be reacquired. Remote divergence refuses rather
+recoverable. Remote divergence refuses rather
 than merging dense feed sequences. A manifest binds one consistent read cut,
 parent head, feed heads, export policy, writer instance/state, and monotonic
 writer epoch. Release publishes a CAS-protected `released` head and freezes

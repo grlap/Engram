@@ -72,7 +72,7 @@ fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
             .control_diagnostics()
             .expect("initial diagnostics")
             .acceptance_evaluation
-            .is_legacy(),
+            .is_self_asserted(),
         "a new store reports the self-asserted path"
     );
     let evaluated = AcceptanceEvaluationPolicy {
@@ -1545,32 +1545,6 @@ fn action_gated_requirement_refuses_every_v1_host_fail_closed() {
         )
         .expect("activate action-gated requirement");
 
-    let action_floor_lease = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &turn_gated.status.session_id,
-            &turn_gated.connection_token,
-            &turn_gated.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &crate::domain::ResourceSubject::Path {
-                project_id: ProjectId("project-a".into()),
-                segments: vec!["src".into()],
-                coverage: crate::domain::ResourceCoverage::Tree,
-            },
-            60,
-            "lease-under-action-policy",
-            now + TimeDelta::seconds(2),
-        )
-        .expect("action-gated project floor is a lease decision");
-    assert!(matches!(
-        action_floor_lease,
-        WorkLeaseDecision::Refuse { directive }
-            if directive.code == ControlRefusalCode::ControlAssuranceInsufficient
-                && directive.effect.is_none()
-                && directive.required_assurance == Some(ControlAssurance::ActionGated)
-    ));
-
     assert!(matches!(
         store
             .evaluate_control_turn(
@@ -1624,118 +1598,9 @@ fn action_gated_requirement_refuses_every_v1_host_fail_closed() {
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "the lease epoch fixture keeps the refused replay and adopted fresh-key path adjacent"
+    reason = "one persisted lifecycle test pins bind caps and turn admission together"
 )]
-fn lease_epoch_refusal_is_sticky_and_adopts_for_a_fresh_key() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let binding = bind_control_for(
-        &mut store,
-        "lease-epoch-host",
-        "bind-lease-epoch-host",
-        &[EffectClass::Observe, EffectClass::MutateLocal],
-        now,
-    );
-    complete_control_turn(
-        &mut store,
-        &binding,
-        "sync-lease-epoch-host",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-    let current = store.control_diagnostics().expect("current policy");
-    store
-        .set_required_control_assurance(
-            ControlAssurance::Advisory,
-            &actor("lease-epoch-admin"),
-            "policy-lease-epoch",
-            Some(&current.active_policy),
-            now + TimeDelta::seconds(2),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("activate epoch two");
-    let subject = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into()],
-        coverage: crate::domain::ResourceCoverage::Tree,
-    };
-
-    let stale = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            60,
-            "stale-epoch-lease",
-            now + TimeDelta::seconds(3),
-        )
-        .expect("stale epoch is a lease decision");
-    assert!(matches!(
-        &stale,
-        WorkLeaseDecision::Refuse { directive }
-            if directive.code == ControlRefusalCode::PolicyEpochChanged
-    ));
-    assert_eq!(
-        store
-            .control_status(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                now + TimeDelta::seconds(3),
-            )
-            .expect("status after lease epoch refusal")
-            .epochs
-            .project_policy,
-        ProjectPolicyEpoch(2)
-    );
-    assert_eq!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &subject,
-                60,
-                "stale-epoch-lease",
-                now + TimeDelta::seconds(4),
-            )
-            .expect("sticky stale-epoch replay"),
-        stale
-    );
-    assert!(matches!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &subject,
-                60,
-                "fresh-epoch-lease",
-                now + TimeDelta::seconds(5),
-            )
-            .expect("fresh key re-evaluates after epoch adoption"),
-        WorkLeaseDecision::Granted { .. }
-    ));
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "one persisted lifecycle test pins bind caps, replayable lease refusal, and turn admission together"
-)]
-fn advisory_effect_floor_refuses_mutation_and_execution_lease() {
+fn advisory_effect_floor_refuses_mutation() {
     let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
@@ -1791,45 +1656,6 @@ fn advisory_effect_floor_refuses_mutation_and_execution_lease() {
         segments: vec!["src".into()],
         coverage: crate::domain::ResourceCoverage::Tree,
     };
-    let lease_refusal = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &advisory.status.session_id,
-            &advisory.connection_token,
-            &advisory.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            60,
-            "lease-advisory-effect-host",
-            now + TimeDelta::seconds(2),
-        )
-        .expect("policy refusal is a lease decision");
-    assert!(matches!(
-        &lease_refusal,
-        WorkLeaseDecision::Refuse { directive }
-            if directive.code
-                == crate::domain::ControlRefusalCode::ControlAssuranceInsufficient
-                && directive.effect == Some(EffectClass::MutateLocal)
-                && directive.required_assurance == Some(ControlAssurance::TurnGated)
-    ));
-    assert_eq!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &advisory.status.session_id,
-                &advisory.connection_token,
-                &advisory.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &subject,
-                60,
-                "lease-advisory-effect-host",
-                now + TimeDelta::seconds(3),
-            )
-            .expect("replay policy refusal"),
-        lease_refusal
-    );
     let decision = store
         .evaluate_control_turn(
             &ProjectId("project-a".into()),
@@ -1877,23 +1703,6 @@ fn advisory_effect_floor_refuses_mutation_and_execution_lease() {
         Vec::new(),
         now + TimeDelta::seconds(6),
     );
-    let WorkLeaseDecision::Granted { .. } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &turn_gated.status.session_id,
-            &turn_gated.connection_token,
-            &turn_gated.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            60,
-            "lease-turn-gated-effect-host",
-            now + TimeDelta::seconds(7),
-        )
-        .expect("turn-gated execution lease")
-    else {
-        panic!("turn-gated host must acquire an execution lease");
-    };
     assert!(matches!(
         store
             .evaluate_control_turn(

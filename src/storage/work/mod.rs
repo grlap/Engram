@@ -183,18 +183,6 @@ struct WorkObligationWaiverFingerprint<'a> {
     idempotency_key: &'a str,
 }
 
-#[derive(Serialize)]
-struct ControlWorkObligationWaiverFingerprint<'a> {
-    control_schema_version: u16,
-    session_id: &'a SessionId,
-    bind_intent_hash: &'a str,
-    obligation_id: WorkObligationId,
-    expected_definition: &'a ObjectId,
-    waived_by: &'a str,
-    reason: &'a str,
-    idempotency_key: &'a str,
-}
-
 #[derive(Clone, Debug, Serialize)]
 struct WorkRelationBasis {
     schema_version: u16,

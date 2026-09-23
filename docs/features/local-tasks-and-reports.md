@@ -12,7 +12,7 @@ An Engram `RootExecution` coordinates the live multi-session execution of one
 root and its descendants. Each `WorkRun` is the execution generation for one
 item in the [local work graph](local-work-system.md), with one ordinary
 executor and at most one live claim in V1. The run owns that executor's
-checkpoint, evidence, resource leases, and completion state; parallel
+checkpoint, evidence, and completion state; parallel
 sessions claim distinct child runs. The root execution owns the contributor
 roster and root completion barrier. Shared working memory belongs to the
 stable root work item—not either execution record—and survives reopened
@@ -32,15 +32,12 @@ barrier/report types and dummy publication adapter have been removed. Consult
 - A stable project id resolves every session and isolated worktree to one
   host-local store.
 - Root membership grants visibility, not execution ownership. One executor
-  claims each `WorkRun`; parallel sessions claim distinct child runs. An
-  execution lease covers canonical project-relative path or logical subjects;
-  a coordination lease covers exclusive open-run lifecycle changes; shared
-  analysis requires neither. Report assembly uses its own post-completion
-  claim, not a retained coordination lease.
-- Lease claim is atomic and idempotent, with revision, monotonic ownership
-  fence, expiry, heartbeat, explicit handoff/release, and audited recovery.
-  Independent resource subjects may proceed concurrently; a stale holder cannot
-  act after transfer or recovery.
+  claims each `WorkRun`; parallel sessions claim distinct child runs.
+  Claims schedule execution; host/user authority governs mutation. The resource
+  lease engine is removed. Planned report assembly uses its own post-completion
+  claim.
+- Work claims are fenced and support expiry, explicit handoff, and recovery.
+  A stale holder cannot mutate the work run after transfer or recovery.
 - Every work/run mutation appends an immutable event with a dense position in
   its named feed. Peers request deltas after their last processed feed
   position; a host mailbox may
@@ -69,19 +66,19 @@ not_requested → finalization_pending → report_ready → publishing → publi
   reason-attributed, audited participant waiver by a project-bound session.
   The target controlled path enters
   `completion_pending` to deny new ordinary mutation while the host reconciles
-  actions and releases/transfers linked leases; nonempty drains are refused in
+  actions; nonempty drains are refused in
   the current alpha.
   `completion_seal` atomically captures the dense run-feed cut, accepted work
-  revision, run/claim fences, reconciled action outcomes, released/transferred
-  leases, acceptance results, and evidence ids. A root seal also binds the
+  revision, run/claim fences, reconciled action outcomes, acceptance results,
+  and evidence ids. Its historical resource-lease drain field remains empty. A root seal also binds the
   required child seal ids and aggregate roster/decisions/waivers. Discovery
   of more work before the seal aborts to `open`. Reopen after completion
   creates a new run generation while preserving root-work memory.
 - **Finalize** is optional and consumes the immutable `CompletionSeal`; it
   never drains execution again. Engram creates a `ReportAssembly` anchored to
   the root seal and gives the designated holder a fenced
-  `ReportAssemblyClaim`. A narrow finalizer grant binds the seal id, assembly
-  generation/revision, and claim fence, then deterministically buckets
+  `ReportAssemblyClaim` bound to the seal and assembly generation. Assembly
+  deterministically buckets
   root-work memories and completion contributions into report sections for
   one polishing pass. It cannot authorize ordinary workspace mutation.
   Reaching
@@ -101,10 +98,9 @@ not_requested → finalization_pending → report_ready → publishing → publi
 An executor can satisfy run completion only after the work item's required
 children and prerequisites are complete or explicitly waived, its last turn
 is checkpointed, its session delivery position/source-feed vector reaches the
-completion cut, every action has a known outcome, and every resource lease was
-released or transferred. Root completion additionally consumes required
+completion cut, and every action has a known outcome. Root completion additionally consumes required
 child seals and the root contribution roster. Report freeze requires the
-completion seal plus a live `ReportAssemblyClaim` and matching finalizer grant;
+completion seal plus a live `ReportAssemblyClaim`;
 publication is a separately authorized external effect. `report_ready` is the
 irreversible bytes/fingerprint boundary. A publication intent separately freezes
 target and idempotency key; later corrections create a superseding report.

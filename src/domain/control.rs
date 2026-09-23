@@ -1,4 +1,4 @@
-//! Behavioral-control types: policy, session phases, leases, verification
+//! Behavioral-control types: policy, session phases, verification
 //! evidence, obligation rules, turn and action grants, and resource subjects.
 
 use chrono::{DateTime, Utc};
@@ -11,7 +11,7 @@ use crate::ObjectId;
 
 use super::{
     AcceptanceEvaluationPolicy, ActorContext, ChangeCursor, ContextPacket, ProjectId,
-    RootExecutionId, SessionId, TaskDelta, TaskId, TaskState, WorkClaimId, WorkId, WorkRunId,
+    RootExecutionId, SessionId, TaskDelta, TaskId, WorkClaimId, WorkId, WorkRunId,
 };
 
 /// Monotonic invalidation epoch for the active project control policy.
@@ -71,8 +71,11 @@ pub struct ProjectPolicyAuthorityDecision {
     pub required_assurance: ControlAssurance,
     pub obligation_rule_set: ObjectId,
     /// Acceptance-evaluation policy in force after this decision; omitted
-    /// bytes mean the legacy self-asserted path.
-    #[serde(default, skip_serializing_if = "AcceptanceEvaluationPolicy::is_legacy")]
+    /// bytes mean the self-asserted path.
+    #[serde(
+        default,
+        skip_serializing_if = "AcceptanceEvaluationPolicy::is_self_asserted"
+    )]
     pub acceptance_evaluation: AcceptanceEvaluationPolicy,
     pub authorized_by: ActorContext,
     pub decided_at: DateTime<Utc>,
@@ -90,9 +93,12 @@ pub struct ControlPolicy {
     pub grant_ttl_seconds: i64,
     pub obligation_rule_set: ObjectId,
     /// Per-project acceptance-evaluation policy; omitted bytes mean the
-    /// legacy self-asserted completion path, so earlier policy objects keep
+    /// self-asserted completion path, so earlier policy objects keep
     /// their exact bytes and hashes.
-    #[serde(default, skip_serializing_if = "AcceptanceEvaluationPolicy::is_legacy")]
+    #[serde(
+        default,
+        skip_serializing_if = "AcceptanceEvaluationPolicy::is_self_asserted"
+    )]
     pub acceptance_evaluation: AcceptanceEvaluationPolicy,
     pub authority: ObjectId,
     pub activated_at: DateTime<Utc>,
@@ -111,7 +117,6 @@ pub enum SessionPhase {
     HandoffPending,
     ContributionRequired,
     ParticipantReady,
-    FinalizerOpen,
     Exited,
 }
 
@@ -121,7 +126,6 @@ pub enum SessionPhase {
 pub enum TurnPurpose {
     Ordinary,
     Recovery,
-    Finalizer,
 }
 
 /// Material effect classes used by host capability mediation.
@@ -130,7 +134,7 @@ pub enum TurnPurpose {
 pub enum EffectClass {
     Observe,
     Communicate,
-    /// Engram-internal coordination such as fenced task-level leases.
+    /// Engram-internal coordination, separate from filesystem mutation.
     Coordinate,
     MutateLocal,
     MutateShared,
@@ -180,7 +184,6 @@ pub enum ControlRefusalCode {
     PolicyEpochChanged,
     TaskAdmissionEpochChanged,
     PinnedBudgetExceeded,
-    LeaseRequired,
     ContextRequired,
     DeltaRequired,
     DeliveryInvalid,
@@ -197,6 +200,8 @@ pub enum ControlRefusalCode {
     GrantScopeMismatch,
     StaleFence,
     ResourceRemapped,
+    /// Historical saved refusals only; current evaluation has no lease requirement.
+    LeaseRequired,
     SessionExited,
 }
 
@@ -216,7 +221,6 @@ impl ControlRefusalCode {
             Self::PolicyEpochChanged => "policy_epoch_changed",
             Self::TaskAdmissionEpochChanged => "task_admission_epoch_changed",
             Self::PinnedBudgetExceeded => "pinned_budget_exceeded",
-            Self::LeaseRequired => "lease_required",
             Self::ContextRequired => "context_required",
             Self::DeltaRequired => "delta_required",
             Self::DeliveryInvalid => "delivery_invalid",
@@ -233,6 +237,7 @@ impl ControlRefusalCode {
             Self::GrantScopeMismatch => "grant_scope_mismatch",
             Self::StaleFence => "stale_fence",
             Self::ResourceRemapped => "resource_remapped",
+            Self::LeaseRequired => "lease_required",
             Self::SessionExited => "session_exited",
         }
     }
@@ -265,118 +270,6 @@ pub struct DeliveryPage {
     pub has_more: bool,
     pub content_digest: ObjectId,
     pub delivery_token: String,
-}
-
-/// Purpose of a lease in the task control protocol.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LeaseKind {
-    Execution,
-    Coordination,
-}
-
-/// Whether a lease reserves intent or exclusively authorizes mutation.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LeaseMode {
-    Intent,
-    Exclusive,
-}
-
-/// Complete lease basis captured by a turn or action grant.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct LeaseBasis {
-    pub lease_id: String,
-    pub holder: SessionId,
-    pub kind: LeaseKind,
-    pub mode: LeaseMode,
-    pub subject: ResourceSubject,
-    pub fence: i64,
-    pub expires_at: DateTime<Utc>,
-}
-
-/// Durable resource-scoped lease used by the host turn envelope.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WorkLease {
-    pub control_schema_version: u16,
-    pub lease_id: String,
-    pub task_id: TaskId,
-    pub holder: SessionId,
-    pub kind: LeaseKind,
-    pub mode: LeaseMode,
-    pub subject: ResourceSubject,
-    pub fence: i64,
-    pub revision: i64,
-    pub idempotency_key: String,
-    pub expires_at: DateTime<Utc>,
-}
-
-impl WorkLease {
-    /// Converts the current lease projection into grant-bound authority.
-    #[must_use]
-    pub fn basis(&self) -> LeaseBasis {
-        LeaseBasis {
-            lease_id: self.lease_id.clone(),
-            holder: self.holder.clone(),
-            kind: self.kind,
-            mode: self.mode,
-            subject: self.subject.clone(),
-            fence: self.fence,
-            expires_at: self.expires_at,
-        }
-    }
-}
-
-/// Result of one atomic resource claim.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum WorkLeaseDecision {
-    Granted {
-        lease: WorkLease,
-    },
-    Refuse {
-        directive: ControlDirective,
-    },
-    Defer {
-        holder: SessionId,
-        conflicting_lease_id: String,
-        expires_at: DateTime<Utc>,
-        /// The conflicting lease is pinned by a begun turn. Expiry alone
-        /// cannot transfer its fence until that turn is checkpointed.
-        #[serde(default)]
-        checkpoint_required: bool,
-    },
-}
-
-/// Immutable task-feed event for resource lease acquisition or release.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkLeaseTransition {
-    Acquired,
-    Released,
-    Expired,
-}
-
-/// Immutable task-feed event for resource lease acquisition or release.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WorkLeaseEvent {
-    pub schema_version: u16,
-    pub task_id: TaskId,
-    pub lease: WorkLease,
-    pub transition: WorkLeaseTransition,
-    pub actor: ActorContext,
-    pub created_at: DateTime<Utc>,
-}
-
-/// Idempotent receipt after releasing one held resource lease.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WorkLeaseReleaseReceipt {
-    pub lease_id: String,
-    pub task_id: TaskId,
-    pub holder: SessionId,
-    pub fence: i64,
-    pub cursor: ChangeCursor,
-    pub released_at: DateTime<Utc>,
 }
 
 /// Canonical intent supplied by the host before one model turn.
@@ -478,14 +371,8 @@ pub struct ExecutionObservation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExecutionObservationReference {
-    #[serde(rename = "object_hash")]
-    ObjectId {
-        #[serde(rename = "object_hash")]
-        object_id: ObjectId,
-    },
-    ObservationId {
-        observation_id: String,
-    },
+    ObjectId { object_id: ObjectId },
+    ObservationId { observation_id: String },
 }
 
 /// Host-declared class of one verification command or check.
@@ -546,14 +433,8 @@ pub struct EnvironmentComponents {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EnvironmentEvidenceReference {
-    #[serde(rename = "object_hash")]
-    ObjectId {
-        #[serde(rename = "object_hash")]
-        object_id: ObjectId,
-    },
-    Index {
-        index: usize,
-    },
+    ObjectId { object_id: ObjectId },
+    Index { index: usize },
 }
 
 /// Host-private request to capture the environment identity used for one exact
@@ -708,7 +589,7 @@ pub struct TurnEvaluationInput {
     pub session_id: SessionId,
     pub task_id: Option<TaskId>,
     pub participant_membership: ParticipantMembership,
-    pub task_state: Option<TaskState>,
+    pub anchor_exists: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_binding: Option<ControlWorkBinding>,
     /// Whether storage revalidated `work_binding` against the current work,
@@ -738,7 +619,6 @@ pub struct TurnEvaluationInput {
     pub has_unknown_action_outcome: bool,
     pub authority_satisfied: bool,
     pub capability_map_revision: i64,
-    pub leases: Vec<LeaseBasis>,
     pub intent: TurnIntent,
     pub evaluated_at: DateTime<Utc>,
     pub grant_ttl_seconds: i64,
@@ -787,7 +667,6 @@ pub struct TurnGrantBasis {
     pub requested_effects: Vec<EffectClass>,
     #[serde(default)]
     pub resource_intents: Vec<ResourceSubject>,
-    pub leases: Vec<LeaseBasis>,
     pub expires_at: DateTime<Utc>,
 }
 
@@ -804,7 +683,6 @@ pub enum TurnDecision {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlDeferCode {
-    LeaseConflict,
     DecisionBusy,
 }
 
@@ -947,14 +825,13 @@ pub struct TurnBeginSnapshot {
     pub work_binding_current: bool,
     pub phase: SessionPhase,
     pub participant_membership: ParticipantMembership,
-    pub task_state: Option<TaskState>,
+    pub anchor_exists: bool,
     pub grant_state: TurnGrantState,
     pub current_epochs: ControlEpochs,
     pub current_head: ChangeCursor,
     pub context_current: bool,
     pub capability_map_revision: i64,
     pub delivery_tokens: Vec<String>,
-    pub leases: Vec<LeaseBasis>,
     pub observed_at: DateTime<Utc>,
 }
 
@@ -1215,61 +1092,6 @@ impl ResourceSubject {
                     && !segment.contains(['/', '\\', '\0'])
             })
     }
-
-    /// Whether this lease subject fully covers a requested action subject.
-    #[must_use]
-    pub fn covers(&self, requested: &Self) -> bool {
-        let (same_root, lease_segments, lease_coverage, requested_segments, requested_coverage) =
-            match (self, requested) {
-                (
-                    Self::Path {
-                        project_id: lease_project,
-                        segments: lease_segments,
-                        coverage: lease_coverage,
-                    },
-                    Self::Path {
-                        project_id: requested_project,
-                        segments: requested_segments,
-                        coverage: requested_coverage,
-                    },
-                ) => (
-                    lease_project == requested_project,
-                    lease_segments,
-                    lease_coverage,
-                    requested_segments,
-                    requested_coverage,
-                ),
-                (
-                    Self::Logical {
-                        namespace: lease_namespace,
-                        segments: lease_segments,
-                        coverage: lease_coverage,
-                    },
-                    Self::Logical {
-                        namespace: requested_namespace,
-                        segments: requested_segments,
-                        coverage: requested_coverage,
-                    },
-                ) => (
-                    lease_namespace == requested_namespace,
-                    lease_segments,
-                    lease_coverage,
-                    requested_segments,
-                    requested_coverage,
-                ),
-                (Self::Path { .. }, Self::Logical { .. })
-                | (Self::Logical { .. }, Self::Path { .. }) => return false,
-            };
-
-        same_root
-            && match lease_coverage {
-                ResourceCoverage::Exact => {
-                    matches!(requested_coverage, ResourceCoverage::Exact)
-                        && lease_segments == requested_segments
-                }
-                ResourceCoverage::Tree => requested_segments.starts_with(lease_segments),
-            }
-    }
 }
 
 fn windows_path_segment_is_unambiguous(segment: &str) -> bool {
@@ -1314,7 +1136,6 @@ pub struct ActionGrantBasis {
     pub epochs: ControlEpochs,
     pub blocking_watermark: ChangeCursor,
     pub capability_map_revision: i64,
-    pub leases: Vec<LeaseBasis>,
     pub resolution_binding_digest: Option<ObjectId>,
     pub expires_at: DateTime<Utc>,
 }
@@ -1370,7 +1191,6 @@ pub struct ActionBeginSnapshot {
     pub current_epochs: ControlEpochs,
     pub acknowledged_blocking_watermark: ChangeCursor,
     pub capability_map_revision: i64,
-    pub leases: Vec<LeaseBasis>,
     pub resolution_binding_digest: Option<ObjectId>,
     pub resolution_assurance: ResolutionAssurance,
     pub observed_at: DateTime<Utc>,
@@ -1424,30 +1244,6 @@ mod tests {
                 .has_valid_shape()
             );
         }
-    }
-
-    #[test]
-    fn tree_resource_subject_covers_only_component_descendants() {
-        let project_id = ProjectId("project-a".into());
-        let tree = ResourceSubject::Path {
-            project_id: project_id.clone(),
-            segments: vec!["src".into()],
-            coverage: ResourceCoverage::Tree,
-        };
-        let child = ResourceSubject::Path {
-            project_id: project_id.clone(),
-            segments: vec!["src".into(), "control.rs".into()],
-            coverage: ResourceCoverage::Exact,
-        };
-        let sibling = ResourceSubject::Path {
-            project_id,
-            segments: vec!["src-old".into()],
-            coverage: ResourceCoverage::Exact,
-        };
-
-        assert!(tree.covers(&child));
-        assert!(!tree.covers(&sibling));
-        assert!(!child.covers(&tree));
     }
 
     #[test]

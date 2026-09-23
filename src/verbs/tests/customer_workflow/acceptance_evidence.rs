@@ -438,6 +438,10 @@ fn criterion_disclosure_restored_completion_states_unavailability_without_counts
     let explanation =
         "this store holds no per-criterion evidence record for this restored completion";
     assert_eq!(show.value["acceptance_evidence_unavailable"], explanation);
+    assert_eq!(show.value["acceptance"]["provenance"], "unavailable");
+    assert!(show.text().contains(
+        "acceptance: provenance unavailable (completion provenance could not be established)"
+    ));
     assert!(show.text().contains(explanation));
     assert!(!show.text().contains("criteria unlinked"));
     assert!(!show.text().contains("criterion 1:"));
@@ -1029,6 +1033,18 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
         assert!(emitted_receipt_bytes(&done) < MAX_AGENT_WORK_RESPONSE_BYTES);
         for (input, healthy) in read_inputs.iter().zip(healthy_reads) {
             let readable = verbs.show_records(&reference, input, at(4)).unwrap();
+            assert_eq!(healthy.value["acceptance"]["provenance"], "self_asserted");
+            assert_eq!(readable.value["acceptance"]["provenance"], "unavailable");
+            assert!(
+                readable
+                    .text()
+                    .contains("acceptance: provenance unavailable")
+            );
+            assert!(
+                !readable
+                    .text()
+                    .contains("sealed evaluation could not be read")
+            );
             assert!(!readable.owed);
             assert!(readable.value.get("acceptance_evidence").is_none());
             assert_eq!(
@@ -1046,9 +1062,10 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
             assert!(!text.contains("criteria unlinked"));
             assert!(emitted_receipt_bytes(&readable) < MAX_AGENT_WORK_RESPONSE_BYTES);
             // All item, note/history rows, navigation and read-cut data survive;
-            // only the failed advisory disclosure changes on either read path.
+            // only acceptance provenance and its failed advisory disclosure change.
             let without_disclosure = |mut value: serde_json::Value| {
                 let fields = value.as_object_mut().unwrap();
+                fields.remove("acceptance");
                 fields.remove("acceptance_evidence");
                 fields.remove("acceptance_evidence_unavailable");
                 fields.remove("acceptance_evidence_error_class");

@@ -18,7 +18,7 @@ fresh store can load. It is the deterministic work-graph recovery snapshot the
 [sqlite store](sqlite-store.md) brief promises. The shipped save/load pair
 replaces archive-and-script capture for stores whose builds share the
 runtime-derived format fingerprint. It restores planning, never execution: no
-run, root execution, claim, lease, seal, checkpoint, waiver, or native evidence
+run, root execution, claim, seal, checkpoint, waiver, or native evidence
 object is ever created by a load. It is not `portable`, not a live sync path,
 and not canonical-object interchange.
 
@@ -324,7 +324,7 @@ lands, or nothing does.
   order, with the current body current and every original actor retained.
   Missing, duplicate or out-of-order revision numbers, backwards timestamps,
   or any history on a retired key refuse the whole load before writes.
-- No claim, lease, session, cursor, grant, or scratch is created.
+- No claim, session, cursor, grant, or scratch is created.
 - One audit event records the load: snapshot body hash, as-of cut, exporting
   build, `widened` and its reason, destination redacted counts, loading actor,
   session, and load time.

@@ -13,6 +13,92 @@ use crate::{
 };
 
 #[test]
+fn unresolved_path_identity_refuses_evaluation_without_writes_but_admits_logical_intents() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store =
+        SqliteStore::open_in_memory_with_host_path_identity(None).expect("unresolved store");
+    let binding = bind_control_for(
+        &mut store,
+        "unresolved-evaluate",
+        "bind-unresolved-evaluate",
+        &[EffectClass::Observe, EffectClass::MutateLocal],
+        now,
+    );
+    complete_control_turn(
+        &mut store,
+        &binding,
+        "unresolved-evaluate-sync",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        now + TimeDelta::seconds(1),
+    );
+    let counts = |store: &SqliteStore| {
+        store
+            .connection
+            .query_row(
+                "SELECT (SELECT count(*) FROM control_turn_results),
+                        (SELECT count(*) FROM control_turn_grants),
+                        (SELECT count(*) FROM control_turn_grant_supersessions)",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .expect("control row counts")
+    };
+    let before = counts(&store);
+    let intent = TurnIntent {
+        idempotency_key: "unresolved-path-evaluate".into(),
+        intent_fingerprint: ObjectId::from_canonical_bytes(b"unresolved-path-evaluate"),
+        purpose: TurnPurpose::Ordinary,
+        requested_effects: vec![EffectClass::MutateLocal],
+        resource_intents: vec![ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: ResourceCoverage::Tree,
+        }],
+    };
+    assert!(matches!(
+        store.evaluate_control_turn(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            &intent,
+            now + TimeDelta::seconds(2),
+        ),
+        Err(StoreError::HostPathIdentityUnresolved)
+    ));
+    assert_eq!(counts(&store), before);
+
+    let logical = ResourceSubject::Logical {
+        namespace: "engram".into(),
+        segments: vec!["report".into()],
+        coverage: ResourceCoverage::Exact,
+    };
+    let grant = complete_control_turn(
+        &mut store,
+        &binding,
+        "unresolved-logical-evaluate",
+        vec![EffectClass::MutateLocal],
+        vec![logical.clone()],
+        now + TimeDelta::seconds(3),
+    );
+    assert_eq!(grant.basis.resource_intents, vec![logical]);
+    assert_eq!(counts(&store), (before.0 + 1, before.1 + 1, before.2));
+    assert!(
+        store
+            .verify_all()
+            .expect("doctor after evaluation")
+            .is_healthy()
+    );
+}
+
+#[test]
 fn environment_components_are_redactor_inspected_before_canonicalization() {
     let components = EnvironmentComponents {
         toolchain: "reject-me-toolchain".into(),
@@ -322,11 +408,12 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
     ));
     let private_writer = SessionId("private-writer".into());
     store
-        .join_task(
+        .bind_test_control_scope(
             &ProjectId("project-a".into()),
             "dummy:CONTROL-HOST-1",
+            "Peer control scope",
             &private_writer,
-            actor("private-writer"),
+            &actor("private-writer"),
             now,
         )
         .expect("join a concurrent session for the same logical agent");
@@ -538,14 +625,27 @@ fn rebinding_skips_only_the_sessions_own_task_events() {
 
     // Another writer's event appended before a re-bind is still delivered.
     store
-        .join_task(
+        .bind_test_control_scope(
             &ProjectId("project-a".into()),
             "dummy:CONTROL-HOST-1",
+            "Peer control scope",
             &SessionId("peer-session".into()),
-            actor("peer-session"),
+            &actor("peer-session"),
             later + TimeDelta::seconds(2),
         )
         .expect("a peer joins the same task");
+    store
+        .capture_note(
+            &note_request(
+                rebound.status.task_id,
+                "peer-session",
+                "Decision: peer update before rebind.",
+                "peer-before-rebind",
+                NoteVisibility::Shared,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("peer change remains undelivered");
     let before = store
         .control_status(
             &ProjectId("project-a".into()),
@@ -593,9 +693,30 @@ fn rebinding_skips_only_the_sessions_own_task_events() {
         .iter()
         .map(|change| change.object_kind.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(kinds, ["task_joined_event", "memory_assertion_event"]);
+    assert_eq!(kinds, ["memory_assertion_event", "memory_assertion_event"]);
 
     // A bind to another task still delivers that task's feed from the start.
+    let other_scope_peer = bind_control_for_task(
+        &mut store,
+        "other-scope-peer",
+        "bind-other-scope-peer",
+        "dummy:CONTROL-HOST-2",
+        &effects,
+        later + TimeDelta::seconds(8),
+    );
+    let peer_note = store
+        .capture_note(
+            &note_request(
+                other_scope_peer.status.task_id,
+                "other-scope-peer",
+                "Decision: peer note in the other scope before binding.",
+                "other-scope-note",
+                NoteVisibility::Shared,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("seed the new scope's feed");
+    assert!(peer_note.cursor.expect("shared note cursor") > ChangeCursor::default());
     let elsewhere = bind_control_for_task(
         &mut store,
         "control-session",
@@ -605,6 +726,7 @@ fn rebinding_skips_only_the_sessions_own_task_events() {
         later + TimeDelta::seconds(10),
     );
     assert_ne!(elsewhere.status.task_id, first.status.task_id);
+    assert_eq!(elsewhere.status.task_id, other_scope_peer.status.task_id);
     let grant = complete_control_turn(
         &mut store,
         &elsewhere,
@@ -613,1028 +735,17 @@ fn rebinding_skips_only_the_sessions_own_task_events() {
         Vec::new(),
         later + TimeDelta::seconds(11),
     );
-    let page = &grant.delivery.as_ref().expect("feed delivery").page;
+    let delivery = grant.delivery.as_ref().expect("feed delivery");
+    let page = &delivery.page;
     assert_eq!(page.from_cursor, ChangeCursor::default());
     assert!(page.to_cursor > page.from_cursor);
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "the lease test preserves acquire, mutation, conflict, release, and fencing order"
-)]
-fn scoped_work_leases_gate_mutation_and_fence_transfer() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().unwrap();
-    let effects = [
-        EffectClass::Observe,
-        EffectClass::Communicate,
-        EffectClass::MutateLocal,
-    ];
-    let session_a = bind_control_for(&mut store, "lease-a", "bind-lease-a", &effects, now);
-    let session_b = bind_control_for(&mut store, "lease-b", "bind-lease-b", &effects, now);
-    complete_control_turn(
-        &mut store,
-        &session_a,
-        "sync-lease-a",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
+    assert!(
+        delivery
+            .delta
+            .changes
+            .iter()
+            .any(|change| change.object_id == peer_note.assertion)
     );
-    let lease_subject = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into()],
-        coverage: crate::domain::ResourceCoverage::Tree,
-    };
-    let lease_a = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &lease_subject,
-            300,
-            "lease-src-a",
-            now + TimeDelta::seconds(2),
-        )
-        .unwrap();
-    let WorkLeaseDecision::Granted { lease: lease_a } = lease_a else {
-        panic!("first non-conflicting lease must grant");
-    };
-    assert_projection_bytes(
-        &store,
-        "SELECT lease_json FROM control_work_leases WHERE lease_id = ?1",
-        [&lease_a.lease_id],
-        &lease_a,
-    );
-    assert_eq!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &session_a.status.session_id,
-                &session_a.connection_token,
-                &session_a.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &lease_subject,
-                300,
-                "lease-src-a",
-                now + TimeDelta::seconds(2),
-            )
-            .unwrap(),
-        WorkLeaseDecision::Granted {
-            lease: lease_a.clone()
-        }
-    );
-    assert!(matches!(
-        store.acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &lease_subject,
-            299,
-            "lease-src-a",
-            now + TimeDelta::seconds(2),
-        ),
-        Err(StoreError::ControlOperationIdempotencyConflict { .. })
-    ));
-    complete_control_turn(
-        &mut store,
-        &session_a,
-        "mutate-lease-a",
-        vec![EffectClass::MutateLocal],
-        vec![crate::domain::ResourceSubject::Path {
-            project_id: ProjectId("project-a".into()),
-            segments: vec!["src".into(), "lib.rs".into()],
-            coverage: crate::domain::ResourceCoverage::Exact,
-        }],
-        now + TimeDelta::seconds(3),
-    );
-
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "sync-lease-b",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(4),
-    );
-    assert!(matches!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &session_b.status.session_id,
-                &session_b.connection_token,
-                &session_b.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &lease_subject,
-                300,
-                "lease-src-b-conflict",
-                now + TimeDelta::seconds(5),
-            )
-            .unwrap(),
-        WorkLeaseDecision::Defer { .. }
-    ));
-    assert!(matches!(
-        store.release_work_lease(
-            &ProjectId("project-a".into()),
-            &session_b.status.session_id,
-            &session_b.connection_token,
-            &session_b.routing_token,
-            &lease_a.lease_id,
-            "wrong-holder-release",
-            now + TimeDelta::seconds(6),
-        ),
-        Err(StoreError::WorkLeaseNotHeld { .. })
-    ));
-    let released = store
-        .release_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            &lease_a.lease_id,
-            "release-src-a",
-            now + TimeDelta::seconds(6),
-        )
-        .unwrap();
-    let mut terminal_lease = lease_a.clone();
-    terminal_lease.revision += 1;
-    assert_projection_bytes(
-        &store,
-        "SELECT lease_json FROM control_work_leases WHERE lease_id = ?1",
-        [&lease_a.lease_id],
-        &terminal_lease,
-    );
-    assert_projection_bytes(
-        &store,
-        "SELECT result_json FROM control_operation_results
-         WHERE session_id = ?1 AND operation = 'lease_release' AND idempotency_key = ?2",
-        [&session_a.status.session_id.0, "release-src-a"],
-        &released,
-    );
-    assert_eq!(
-        store
-            .release_work_lease(
-                &ProjectId("project-a".into()),
-                &session_a.status.session_id,
-                &session_a.connection_token,
-                &session_a.routing_token,
-                &lease_a.lease_id,
-                "release-src-a",
-                now + TimeDelta::seconds(6),
-            )
-            .unwrap(),
-        released
-    );
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "resync-lease-b",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(7),
-    );
-    let transferred = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_b.status.session_id,
-            &session_b.connection_token,
-            &session_b.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &lease_subject,
-            300,
-            "lease-src-b",
-            now + TimeDelta::seconds(8),
-        )
-        .unwrap();
-    let WorkLeaseDecision::Granted { lease: lease_b } = transferred else {
-        panic!("released scope must transfer");
-    };
-    assert_eq!(lease_b.fence, lease_a.fence + 1);
-    assert_eq!(lease_b.holder, session_b.status.session_id);
-    assert!(store.verify_all().unwrap().is_healthy());
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "the regression preserves two task bindings, conflict, release, and project-wide fence transfer in one sequence"
-)]
-fn resource_lease_conflicts_and_fences_span_tasks_within_a_project() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().unwrap();
-    let effects = [EffectClass::Observe, EffectClass::MutateLocal];
-    let session_a = bind_control_for_task(
-        &mut store,
-        "project-lease-a",
-        "bind-project-lease-a",
-        "dummy:PROJECT-LEASE-A",
-        &effects,
-        now,
-    );
-    let session_b = bind_control_for_task(
-        &mut store,
-        "project-lease-b",
-        "bind-project-lease-b",
-        "dummy:PROJECT-LEASE-B",
-        &effects,
-        now,
-    );
-    assert_ne!(session_a.status.task_id, session_b.status.task_id);
-    complete_control_turn(
-        &mut store,
-        &session_a,
-        "sync-project-lease-a",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "sync-project-lease-b",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(2),
-    );
-    let subject = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into(), "shared.rs".into()],
-        coverage: crate::domain::ResourceCoverage::Exact,
-    };
-    let WorkLeaseDecision::Granted { lease: first } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            300,
-            "project-lease-first",
-            now + TimeDelta::seconds(3),
-        )
-        .unwrap()
-    else {
-        panic!("the first task must acquire the project resource");
-    };
-    assert!(matches!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &session_b.status.session_id,
-                &session_b.connection_token,
-                &session_b.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &subject,
-                300,
-                "project-lease-conflict",
-                now + TimeDelta::seconds(4),
-            )
-            .unwrap(),
-        WorkLeaseDecision::Defer {
-            conflicting_lease_id,
-            ..
-        } if conflicting_lease_id == first.lease_id
-    ));
-    store
-        .release_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            &first.lease_id,
-            "release-project-lease-first",
-            now + TimeDelta::seconds(5),
-        )
-        .unwrap();
-    let WorkLeaseDecision::Granted { lease: second } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_b.status.session_id,
-            &session_b.connection_token,
-            &session_b.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            300,
-            "project-lease-second",
-            now + TimeDelta::seconds(6),
-        )
-        .unwrap()
-    else {
-        panic!("the second task must acquire the released project resource");
-    };
-    assert_eq!(second.task_id, session_b.status.task_id);
-    assert_eq!(second.fence, first.fence + 1);
-    assert!(store.verify_all().unwrap().is_healthy());
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "the expiry test preserves grant, expiry, unwind, and fence continuity"
-)]
-fn expired_lease_invalidates_unbegun_turn_and_preserves_fence_history() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().unwrap();
-    let effects = [EffectClass::Observe, EffectClass::MutateLocal];
-    let binding = bind_control_for(&mut store, "expiry-a", "bind-expiry-a", &effects, now);
-    complete_control_turn(
-        &mut store,
-        &binding,
-        "sync-expiry-a",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-    let subject = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into()],
-        coverage: crate::domain::ResourceCoverage::Tree,
-    };
-    let WorkLeaseDecision::Granted { lease: first } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            5,
-            "lease-expiry-first",
-            now + TimeDelta::seconds(2),
-        )
-        .unwrap()
-    else {
-        panic!("initial lease must grant");
-    };
-    let decision = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &TurnIntent {
-                idempotency_key: "turn-before-lease-expiry".into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(b"turn-before-lease-expiry"),
-                purpose: crate::domain::TurnPurpose::Ordinary,
-                requested_effects: vec![EffectClass::MutateLocal],
-                resource_intents: vec![crate::domain::ResourceSubject::Path {
-                    project_id: ProjectId("project-a".into()),
-                    segments: vec!["src".into(), "lib.rs".into()],
-                    coverage: crate::domain::ResourceCoverage::Exact,
-                }],
-            },
-            now + TimeDelta::seconds(3),
-        )
-        .unwrap();
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("live lease must authorize the mutation turn");
-    };
-    assert!(matches!(
-        store
-            .begin_control_turn(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                &grant.grant_id,
-                &[],
-                "begin-after-lease-expiry",
-                now + TimeDelta::seconds(8),
-            )
-            .unwrap(),
-        ControlTurnBeginDecision::Refuse {
-            code: crate::domain::ControlRefusalCode::StaleFence
-        }
-    ));
-    assert_eq!(
-        store
-            .control_status(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                now + TimeDelta::seconds(8),
-            )
-            .unwrap()
-            .phase,
-        SessionPhase::Ready
-    );
-    let head_before_takeover = ChangeCursor(
-        store
-            .connection
-            .query_row(
-                "SELECT COALESCE(MAX(task_cursor), 0) FROM task_changes
-                 WHERE task_id = ?1",
-                [binding.status.task_id.0.to_string()],
-                |row| row.get(0),
-            )
-            .unwrap(),
-    );
-    let WorkLeaseDecision::Granted { lease: second } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            5,
-            "lease-expiry-second",
-            now + TimeDelta::seconds(9),
-        )
-        .unwrap()
-    else {
-        panic!("expired scope must be acquirable");
-    };
-    assert_eq!(second.fence, first.fence + 1);
-    assert_eq!(
-        store
-            .connection
-            .query_row(
-                "SELECT state FROM control_work_leases WHERE lease_id = ?1",
-                [&first.lease_id],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap(),
-        "expired"
-    );
-    let (confirmed, blocking): (i64, i64) = store
-        .connection
-        .query_row(
-            "SELECT confirmed_cursor, blocking_watermark FROM control_sessions
-             WHERE session_id = ?1",
-            [&binding.status.session_id.0],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(confirmed, head_before_takeover.0);
-    assert_eq!(blocking, head_before_takeover.0 + 2);
-    let delta = store
-        .task_delta(
-            &ProjectId("project-a".into()),
-            binding.status.task_id,
-            &binding.status.session_id,
-            "agent",
-            head_before_takeover,
-            10,
-        )
-        .unwrap();
-    assert_eq!(delta.changes.len(), 2);
-    let expired: WorkLeaseEvent = serde_json::from_value(delta.changes[0].object.clone()).unwrap();
-    let acquired: WorkLeaseEvent = serde_json::from_value(delta.changes[1].object.clone()).unwrap();
-    assert_eq!(expired.lease.lease_id, first.lease_id);
-    assert_eq!(expired.transition, WorkLeaseTransition::Expired);
-    assert_eq!(acquired.lease.lease_id, second.lease_id);
-    assert_eq!(acquired.transition, WorkLeaseTransition::Acquired);
-    assert_eq!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &subject,
-                5,
-                "lease-expiry-second",
-                now + TimeDelta::seconds(10),
-            )
-            .unwrap(),
-        WorkLeaseDecision::Granted {
-            lease: second.clone()
-        }
-    );
-    assert!(matches!(
-        store.release_work_lease(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &first.lease_id,
-            "release-expired-first",
-            now + TimeDelta::seconds(10),
-        ),
-        Err(StoreError::WorkLeaseExpired { .. })
-    ));
-    assert!(store.verify_all().unwrap().is_healthy());
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "the hostile sequence proves a begun turn pins explicit release and expiry transfer until checkpoint"
-)]
-fn begun_mutation_turn_pins_its_lease_until_checkpoint() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let directory = crate::test_support::temp_home().expect("temp directory");
-    let database = directory.path().join("lease-pin.sqlite3");
-    let mut store = SqliteStore::open(&database).unwrap();
-    let effects = [EffectClass::Observe, EffectClass::MutateLocal];
-    let session_a = bind_control_for(&mut store, "pin-a", "bind-pin-a", &effects, now);
-    let session_b = bind_control_for(&mut store, "pin-b", "bind-pin-b", &effects, now);
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "sync-pin-b",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-    complete_control_turn(
-        &mut store,
-        &session_a,
-        "sync-pin-a",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(2),
-    );
-    let subject = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into()],
-        coverage: crate::domain::ResourceCoverage::Tree,
-    };
-    let WorkLeaseDecision::Granted { lease: first } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            5,
-            "pin-first",
-            now + TimeDelta::seconds(3),
-        )
-        .unwrap()
-    else {
-        panic!("the first lease must grant");
-    };
-    let decision = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            &TurnIntent {
-                idempotency_key: "pin-mutation-turn".into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(b"pin-mutation-turn"),
-                purpose: crate::domain::TurnPurpose::Ordinary,
-                requested_effects: vec![EffectClass::MutateLocal],
-                resource_intents: vec![crate::domain::ResourceSubject::Path {
-                    project_id: ProjectId("project-a".into()),
-                    segments: vec!["src".into(), "lib.rs".into()],
-                    coverage: crate::domain::ResourceCoverage::Exact,
-                }],
-            },
-            now + TimeDelta::seconds(4),
-        )
-        .unwrap();
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("the mutation turn must grant");
-    };
-    let delivery_tokens = grant
-        .delivery
-        .iter()
-        .map(|delivery| delivery.page.delivery_token.clone())
-        .collect::<Vec<_>>();
-    assert!(matches!(
-        store
-            .begin_control_turn(
-                &ProjectId("project-a".into()),
-                &session_a.status.session_id,
-                &session_a.connection_token,
-                &session_a.routing_token,
-                &grant.grant_id,
-                &delivery_tokens,
-                "begin-pinned-turn",
-                now + TimeDelta::seconds(5),
-            )
-            .unwrap(),
-        ControlTurnBeginDecision::Begin { .. }
-    ));
-    drop(store);
-    let mut store = SqliteStore::open(&database).expect("restart store");
-    let resumed_connection = store
-        .resume_control_connection(&session_a.status.session_id, now + TimeDelta::seconds(6))
-        .expect("resume begun-turn holder");
-    assert!(matches!(
-        store.release_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &resumed_connection,
-            &session_a.routing_token,
-            &first.lease_id,
-            "release-while-pinned",
-            now + TimeDelta::seconds(6),
-        ),
-        Err(StoreError::InvalidControlSession(message))
-            if message.contains("checkpoint the turn")
-    ));
-
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "sync-pin-b-after-acquire",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(7),
-    );
-    assert!(matches!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &session_b.status.session_id,
-                &session_b.connection_token,
-                &session_b.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &subject,
-                30,
-                "pin-second-deferred",
-                now + TimeDelta::seconds(9),
-            )
-            .unwrap(),
-        WorkLeaseDecision::Defer {
-            checkpoint_required: true,
-            ..
-        }
-    ));
-    assert!(matches!(
-        store
-            .checkpoint_control_turn(
-                &ProjectId("project-a".into()),
-                &session_a.status.session_id,
-                &resumed_connection,
-                &session_a.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Continue,
-                "checkpoint-pinned-turn",
-                now + TimeDelta::seconds(10),
-            )
-            .unwrap(),
-        ControlTurnCheckpointDecision::Checkpointed { .. }
-    ));
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "sync-pin-b-after-checkpoint",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(11),
-    );
-    let WorkLeaseDecision::Granted { lease: second } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_b.status.session_id,
-            &session_b.connection_token,
-            &session_b.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            30,
-            "pin-second-granted",
-            now + TimeDelta::seconds(12),
-        )
-        .unwrap()
-    else {
-        panic!("checkpointed expired scope must transfer");
-    };
-    assert_eq!(second.fence, first.fence + 1);
-    assert_eq!(second.holder, session_b.status.session_id);
-    assert!(store.verify_all().unwrap().is_healthy());
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "the hostile sequence checks aliases, project binding, rebind rollback, and release"
-)]
-fn resource_aliases_and_active_leases_remain_task_isolated() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory_with_host_path_identity(Some(HostPathPolicy {
-        case_fold_paths: true,
-        windows_alias_rules: false,
-    }))
-    .unwrap();
-    let effects = [EffectClass::Observe, EffectClass::MutateLocal];
-    let session_a = bind_control_for(&mut store, "alias-a", "bind-alias-a", &effects, now);
-    let session_b = bind_control_for(&mut store, "alias-b", "bind-alias-b", &effects, now);
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "sync-alias-b",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-    complete_control_turn(
-        &mut store,
-        &session_a,
-        "sync-alias-a",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(2),
-    );
-    let composed = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["\u{17f}rc".into(), "caf\u{e9}.rs".into()],
-        coverage: crate::domain::ResourceCoverage::Exact,
-    };
-    let WorkLeaseDecision::Granted { lease } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &composed,
-            300,
-            "lease-alias-a",
-            now + TimeDelta::seconds(4),
-        )
-        .unwrap()
-    else {
-        panic!("first normalized subject must grant");
-    };
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "resync-alias-b",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(4),
-    );
-    let decomposed = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into(), "cafe\u{301}.rs".into()],
-        coverage: crate::domain::ResourceCoverage::Exact,
-    };
-    assert!(matches!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &session_b.status.session_id,
-                &session_b.connection_token,
-                &session_b.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &decomposed,
-                300,
-                "lease-alias-b",
-                now + TimeDelta::seconds(5),
-            )
-            .unwrap(),
-        WorkLeaseDecision::Defer { .. }
-    ));
-    let wrong_project = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-b".into()),
-        segments: vec!["src".into()],
-        coverage: crate::domain::ResourceCoverage::Tree,
-    };
-    assert!(matches!(
-        store.acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_b.status.session_id,
-            &session_b.connection_token,
-            &session_b.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &wrong_project,
-            300,
-            "lease-wrong-project",
-            now + TimeDelta::seconds(6),
-        ),
-        Err(StoreError::InvalidControlSession(_))
-    ));
-    assert!(matches!(
-        store.bind_control_session(
-            &ProjectId("project-a".into()),
-            "dummy:OTHER-TASK",
-            "A different task",
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &actor("alias-a"),
-            ControlAssurance::TurnGated,
-            &effects,
-            1,
-            "rebind-alias-a",
-            now + TimeDelta::seconds(7),
-        ),
-        Err(StoreError::InvalidControlSession(_))
-    ));
-    assert_eq!(
-        store
-            .control_status(
-                &ProjectId("project-a".into()),
-                &session_a.status.session_id,
-                &session_a.connection_token,
-                &session_a.routing_token,
-                now + TimeDelta::seconds(8),
-            )
-            .unwrap()
-            .task_id,
-        session_a.status.task_id
-    );
-    let rebound = store
-        .bind_control_session(
-            &ProjectId("project-a".into()),
-            "dummy:OTHER-TASK",
-            "A different task",
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &actor("alias-a"),
-            ControlAssurance::TurnGated,
-            &effects,
-            1,
-            "rebind-after-expiry",
-            now + TimeDelta::seconds(304),
-        )
-        .unwrap();
-    assert_ne!(rebound.status.task_id, session_a.status.task_id);
-    assert_eq!(
-        store
-            .connection
-            .query_row(
-                "SELECT state FROM control_work_leases WHERE lease_id = ?1",
-                [&lease.lease_id],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap(),
-        "expired"
-    );
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "the exit regression preserves synchronization, acquisition, checkpoint terminalization, and fenced reacquisition order"
-)]
-fn exiting_a_control_session_releases_its_leases_for_the_next_holder() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().unwrap();
-    let effects = [EffectClass::Observe, EffectClass::MutateLocal];
-    let session_a = bind_control_for(&mut store, "exit-a", "bind-exit-a", &effects, now);
-    let session_b = bind_control_for(&mut store, "exit-b", "bind-exit-b", &effects, now);
-    complete_control_turn(
-        &mut store,
-        &session_a,
-        "sync-exit-a",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "sync-exit-b",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(2),
-    );
-    complete_control_turn(
-        &mut store,
-        &session_a,
-        "resync-exit-a",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(3),
-    );
-    let subject = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into()],
-        coverage: crate::domain::ResourceCoverage::Tree,
-    };
-    let WorkLeaseDecision::Granted { lease: first } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            300,
-            "lease-before-exit",
-            now + TimeDelta::seconds(4),
-        )
-        .unwrap()
-    else {
-        panic!("the first session must acquire the lease");
-    };
-    let decision = store
-        .evaluate_control_turn(
-            &ProjectId("project-a".into()),
-            &session_a.status.session_id,
-            &session_a.connection_token,
-            &session_a.routing_token,
-            &TurnIntent {
-                idempotency_key: "turn-before-exit".into(),
-                intent_fingerprint: ObjectId::from_canonical_bytes(b"turn-before-exit"),
-                purpose: crate::domain::TurnPurpose::Ordinary,
-                requested_effects: vec![EffectClass::Observe],
-                resource_intents: Vec::new(),
-            },
-            now + TimeDelta::seconds(5),
-        )
-        .unwrap();
-    let ControlTurnDecision::Grant { grant } = decision else {
-        panic!("the exit turn must grant");
-    };
-    let delivery_tokens = grant
-        .delivery
-        .iter()
-        .map(|delivery| delivery.page.delivery_token.clone())
-        .collect::<Vec<_>>();
-    assert!(matches!(
-        store
-            .begin_control_turn(
-                &ProjectId("project-a".into()),
-                &session_a.status.session_id,
-                &session_a.connection_token,
-                &session_a.routing_token,
-                &grant.grant_id,
-                &delivery_tokens,
-                "begin-before-exit",
-                now + TimeDelta::seconds(6),
-            )
-            .unwrap(),
-        ControlTurnBeginDecision::Begin { .. }
-    ));
-    assert!(matches!(
-        store
-            .checkpoint_control_turn(
-                &ProjectId("project-a".into()),
-                &session_a.status.session_id,
-                &session_a.connection_token,
-                &session_a.routing_token,
-                &grant.grant_id,
-                TurnNextIntent::Exit,
-                "checkpoint-exit",
-                now + TimeDelta::seconds(7),
-            )
-            .unwrap(),
-        ControlTurnCheckpointDecision::Checkpointed {
-            receipt: TurnCheckpointReceipt {
-                phase: SessionPhase::Exited,
-                ..
-            }
-        }
-    ));
-    assert_eq!(
-        store
-            .connection
-            .query_row(
-                "SELECT state FROM control_work_leases WHERE lease_id = ?1",
-                [&first.lease_id],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap(),
-        "released"
-    );
-    complete_control_turn(
-        &mut store,
-        &session_b,
-        "sync-after-exit",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(8),
-    );
-    let WorkLeaseDecision::Granted { lease: second } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session_b.status.session_id,
-            &session_b.connection_token,
-            &session_b.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            300,
-            "lease-after-exit",
-            now + TimeDelta::seconds(9),
-        )
-        .unwrap()
-    else {
-        panic!("the second session must acquire the released scope");
-    };
-    assert_eq!(second.fence, first.fence + 1);
 }
 
 #[test]
@@ -1725,7 +836,133 @@ fn task_only_control_checkpoint_cannot_append_execution_observations() {
 }
 
 #[test]
-fn turn_gated_observe_only_session_cannot_reserve_undeclared_effects() {
+fn turn_gated_mutation_allows_empty_resource_intents_without_lease_basis() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let binding = bind_control_for(
+        &mut store,
+        "mutation-host",
+        "bind-mutation-host",
+        &[EffectClass::Observe, EffectClass::MutateLocal],
+        now,
+    );
+    complete_control_turn(
+        &mut store,
+        &binding,
+        "sync-mutation-host",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        now + TimeDelta::seconds(1),
+    );
+    let grant = complete_control_turn(
+        &mut store,
+        &binding,
+        "empty-intent-mutation",
+        vec![EffectClass::MutateLocal],
+        Vec::new(),
+        now + TimeDelta::seconds(2),
+    );
+    assert_eq!(
+        grant.basis.requested_effects,
+        vec![EffectClass::MutateLocal]
+    );
+    assert!(grant.basis.resource_intents.is_empty());
+    let value = serde_json::to_value(&grant).unwrap();
+    assert!(value["basis"].as_object().unwrap().get("leases").is_none());
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn mutation_resource_intents_are_normalized_and_cross_project_intents_have_no_effects() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory_with_host_path_identity(Some(HostPathPolicy {
+        case_fold_paths: true,
+        windows_alias_rules: false,
+    }))
+    .unwrap();
+    let binding = bind_control_for(
+        &mut store,
+        "normalization-host",
+        "bind-normalization-host",
+        &[EffectClass::Observe, EffectClass::MutateLocal],
+        now,
+    );
+    complete_control_turn(
+        &mut store,
+        &binding,
+        "sync-normalization-host",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        now + TimeDelta::seconds(1),
+    );
+    let subject =
+        |project: &str, directory: &str, name: &str| crate::domain::ResourceSubject::Path {
+            project_id: ProjectId(project.into()),
+            segments: vec![directory.into(), name.into()],
+            coverage: crate::domain::ResourceCoverage::Exact,
+        };
+    for (key, resource, seconds) in [
+        (
+            "decomposed",
+            subject("project-a", "SRC", "Cafe\u{301}.RS"),
+            2,
+        ),
+        ("case-alias", subject("project-a", "src", "CAFÉ.rs"), 3),
+    ] {
+        // Aliases belong in separate requests: duplicate normalized subjects
+        // in one intent are invalid under the evaluator's uniqueness rule.
+        let grant = complete_control_turn(
+            &mut store,
+            &binding,
+            key,
+            vec![EffectClass::MutateLocal],
+            vec![resource],
+            now + TimeDelta::seconds(seconds),
+        );
+        assert_eq!(
+            grant.basis.resource_intents,
+            vec![subject("project-a", "src", "café.rs")]
+        );
+    }
+    let effects = |store: &SqliteStore| -> (i64, i64, i64) {
+        store
+            .connection
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM control_turn_results),
+                    (SELECT COUNT(*) FROM control_turn_grants),
+                    (SELECT COUNT(*) FROM control_turn_grant_supersessions)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap()
+    };
+    let before = effects(&store);
+    let error = store
+        .evaluate_control_turn(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            &TurnIntent {
+                idempotency_key: "cross-project-mutation".into(),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"cross-project-mutation"),
+                purpose: TurnPurpose::Ordinary,
+                requested_effects: vec![EffectClass::MutateLocal],
+                resource_intents: vec![subject("project-b", "src", "main.rs")],
+            },
+            now + TimeDelta::seconds(4),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(error, StoreError::InvalidControlSession(ref reason)
+        if reason == "turn resource intent is invalid or belongs to another project")
+    );
+    assert_eq!(effects(&store), before);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn turn_gated_observe_only_session_refuses_undeclared_mutation() {
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open_in_memory().expect("store");
     let binding = bind_control_for(
@@ -1748,54 +985,6 @@ fn turn_gated_observe_only_session_cannot_reserve_undeclared_effects() {
         segments: vec!["src".into()],
         coverage: crate::domain::ResourceCoverage::Tree,
     };
-
-    for (kind, effect, key) in [
-        (
-            crate::domain::LeaseKind::Execution,
-            EffectClass::MutateLocal,
-            "observe-only-execution-lease",
-        ),
-        (
-            crate::domain::LeaseKind::Coordination,
-            EffectClass::Coordinate,
-            "observe-only-coordination-lease",
-        ),
-    ] {
-        let decision = store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                kind,
-                crate::domain::LeaseMode::Exclusive,
-                &subject,
-                60,
-                key,
-                now + TimeDelta::seconds(2),
-            )
-            .expect("mediation refusal is a lease decision");
-        let WorkLeaseDecision::Refuse { directive } = decision else {
-            panic!("observe-only host must not reserve {effect:?}");
-        };
-        assert_eq!(
-            directive.code,
-            ControlRefusalCode::ControlAssuranceInsufficient
-        );
-        assert_eq!(directive.effect, Some(effect));
-        assert_eq!(
-            directive.required_assurance,
-            Some(ControlAssurance::TurnGated)
-        );
-        assert_eq!(
-            directive.declared_mediated_effects,
-            Some(vec![EffectClass::Observe])
-        );
-        assert_eq!(
-            directive.effective_mediated_effects,
-            Some(vec![EffectClass::Observe])
-        );
-    }
 
     let turn = store
         .evaluate_control_turn(
@@ -1825,137 +1014,6 @@ fn turn_gated_observe_only_session_cannot_reserve_undeclared_effects() {
         directive.effective_mediated_effects,
         Some(vec![EffectClass::Observe])
     );
-}
-
-#[test]
-fn turn_gated_coordinate_session_can_acquire_a_coordination_lease() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let binding = bind_control_for(
-        &mut store,
-        "coordinate-host",
-        "bind-coordinate-host",
-        &[EffectClass::Observe, EffectClass::Coordinate],
-        now,
-    );
-    complete_control_turn(
-        &mut store,
-        &binding,
-        "sync-coordinate-host",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-
-    let decision = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            crate::domain::LeaseKind::Coordination,
-            crate::domain::LeaseMode::Exclusive,
-            &crate::domain::ResourceSubject::Path {
-                project_id: ProjectId("project-a".into()),
-                segments: vec!["coordination".into()],
-                coverage: crate::domain::ResourceCoverage::Tree,
-            },
-            60,
-            "coordinate-lease",
-            now + TimeDelta::seconds(2),
-        )
-        .expect("coordination lease decision");
-    assert!(matches!(
-        decision,
-        WorkLeaseDecision::Granted { lease }
-            if lease.kind == crate::domain::LeaseKind::Coordination
-    ));
-}
-
-#[test]
-fn lease_acquire_replay_is_scoped_to_the_current_bind_generation() {
-    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let binding = bind_control_for(
-        &mut store,
-        "lease-rebind-host",
-        "bind-lease-rebind-host",
-        &[EffectClass::Observe, EffectClass::MutateLocal],
-        now,
-    );
-    complete_control_turn(
-        &mut store,
-        &binding,
-        "sync-lease-rebind-host",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        now + TimeDelta::seconds(1),
-    );
-    let subject = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into()],
-        coverage: crate::domain::ResourceCoverage::Tree,
-    };
-    let WorkLeaseDecision::Granted { lease } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            60,
-            "bind-scoped-acquire",
-            now + TimeDelta::seconds(2),
-        )
-        .expect("initial lease")
-    else {
-        panic!("initial lease must grant");
-    };
-    store
-        .release_work_lease(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            &lease.lease_id,
-            "release-before-rebind",
-            now + TimeDelta::seconds(3),
-        )
-        .expect("release initial lease");
-    let rebound = store
-        .bind_control_session(
-            &ProjectId("project-a".into()),
-            "dummy:CONTROL-HOST-1",
-            "Exercise the host control lifecycle",
-            &binding.status.session_id,
-            &binding.connection_token,
-            &actor("lease-rebind-host"),
-            ControlAssurance::TurnGated,
-            &[EffectClass::Observe],
-            2,
-            "rebind-lease-rebind-host",
-            now + TimeDelta::seconds(4),
-        )
-        .expect("rebind session");
-
-    assert!(matches!(
-        store.acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &rebound.status.session_id,
-            &binding.connection_token,
-            &rebound.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            60,
-            "bind-scoped-acquire",
-            now + TimeDelta::seconds(5),
-        ),
-        Err(StoreError::ControlOperationIdempotencyConflict { operation, key })
-            if operation == "lease_acquire" && key == "bind-scoped-acquire"
-    ));
 }
 
 #[test]
@@ -2020,246 +1078,49 @@ fn bind_control_session_refuses_an_oversized_session_before_effects() {
     assert_eq!(sessions_after, sessions_before);
 }
 
-fn bind_now() -> chrono::DateTime<Utc> {
-    Utc.timestamp_millis_opt(1_700_000_000_000).unwrap()
-}
-
-fn refuse_start_or_join_before_effects(
-    join: bool,
-    participant: &SessionId,
-    actor_session: Option<&SessionId>,
-) {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let now = bind_now();
-    let project = ProjectId("project-bind-admit".into());
-    if join {
-        store
-            .start_task(
+#[test]
+fn direct_binding_admits_session_byte_boundary_and_refuses_oversized_actor() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let project = ProjectId("project-a".into());
+    for session in ["s".repeat(64), "é".repeat(32)] {
+        let binding = store
+            .bind_test_control_scope(
                 &project,
-                "dummy:BIND-ADMIT",
-                "Seed task",
-                &SessionId("starter".into()),
-                actor("starter"),
+                "boundary",
+                "Boundary",
+                &SessionId(session.clone()),
+                &actor(&session),
                 now,
             )
-            .expect("seed task");
+            .expect("64 UTF-8 bytes bind");
+        assert_eq!(
+            store.bound_task(&project, &SessionId(session)).unwrap(),
+            binding.status.task_id
+        );
+        let before = crate::storage::test_database_shape_snapshot(&store.connection).unwrap();
+        let oversized_session = "é".repeat(33);
+        let error = store
+            .bind_control_session(
+                &project,
+                "must-not-create",
+                "Invalid actor",
+                &binding.status.session_id,
+                "unused: oversized actor refuses before connection lookup",
+                &actor(&oversized_session),
+                ControlAssurance::TurnGated,
+                &[EffectClass::Observe],
+                1,
+                "invalid-actor",
+                now,
+            )
+            .unwrap_err();
+        assert!(matches!(error, StoreError::InvalidWork(ref reason)
+            if reason == crate::SessionIdAdmissionError::TooLong.as_str()));
+        assert!(!error.to_string().contains(&oversized_session));
+        assert_eq!(
+            crate::storage::test_database_shape_snapshot(&store.connection).unwrap(),
+            before
+        );
     }
-    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
-    let mut ctx = actor("valid-actor");
-    if let Some(session) = actor_session {
-        ctx.session_id = Some(session.clone());
-    }
-    let error = if join {
-        store.join_task(&project, "dummy:BIND-ADMIT", participant, ctx, now)
-    } else {
-        store.start_task(
-            &project,
-            "dummy:BIND-ADMIT",
-            "Should not bind",
-            participant,
-            ctx,
-            now,
-        )
-    }
-    .expect_err("oversized bind identity");
-    assert!(matches!(
-        error,
-        StoreError::InvalidWork(ref reason)
-            if reason == crate::SessionIdAdmissionError::TooLong.as_str()
-    ));
-    let echoed = actor_session.unwrap_or(participant);
-    assert!(!error.to_string().contains(&echoed.0));
-    assert_eq!(
-        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
-        before,
-        "oversized start/join must not persist tasks, participants, bindings, or events"
-    );
-}
-
-#[test]
-fn start_task_refuses_an_ascii65_participant_before_effects() {
-    refuse_start_or_join_before_effects(false, &ascii65_session(), None);
-}
-
-#[test]
-fn start_task_refuses_a_utf8_oversized_participant_before_effects() {
-    refuse_start_or_join_before_effects(false, &utf8_oversized_session(), None);
-}
-
-#[test]
-fn start_task_refuses_an_ascii65_actor_session_before_effects() {
-    refuse_start_or_join_before_effects(
-        false,
-        &SessionId("valid-participant".into()),
-        Some(&ascii65_session()),
-    );
-}
-
-#[test]
-fn start_task_refuses_a_utf8_oversized_actor_session_before_effects() {
-    refuse_start_or_join_before_effects(
-        false,
-        &SessionId("valid-participant".into()),
-        Some(&utf8_oversized_session()),
-    );
-}
-
-#[test]
-fn join_task_refuses_an_ascii65_participant_before_effects() {
-    refuse_start_or_join_before_effects(true, &ascii65_session(), None);
-}
-
-#[test]
-fn join_task_refuses_a_utf8_oversized_participant_before_effects() {
-    refuse_start_or_join_before_effects(true, &utf8_oversized_session(), None);
-}
-
-#[test]
-fn join_task_refuses_an_ascii65_actor_session_before_effects() {
-    refuse_start_or_join_before_effects(
-        true,
-        &SessionId("valid-joiner".into()),
-        Some(&ascii65_session()),
-    );
-}
-
-#[test]
-fn join_task_refuses_a_utf8_oversized_actor_session_before_effects() {
-    refuse_start_or_join_before_effects(
-        true,
-        &SessionId("valid-joiner".into()),
-        Some(&utf8_oversized_session()),
-    );
-}
-
-#[test]
-fn start_task_preserves_an_exact_64_byte_participant() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let session = exact_64_session(b'p');
-    store
-        .start_task(
-            &ProjectId("project-bind-admit".into()),
-            "dummy:BIND-64-P",
-            "Max participant",
-            &SessionId(session.clone()),
-            actor("valid-actor"),
-            bind_now(),
-        )
-        .expect("admitted participant");
-    let stored: String = store
-        .connection
-        .query_row("SELECT session_id FROM task_participants", [], |row| {
-            row.get(0)
-        })
-        .expect("participant");
-    assert_eq!(stored, session);
-}
-
-#[test]
-fn start_task_preserves_an_exact_64_byte_actor_session() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let session = exact_64_session(b'a');
-    let mut ctx = actor("valid-actor");
-    ctx.session_id = Some(SessionId(session.clone()));
-    store
-        .start_task(
-            &ProjectId("project-bind-admit".into()),
-            "dummy:BIND-64-A",
-            "Max actor",
-            &SessionId("valid-participant".into()),
-            ctx,
-            bind_now(),
-        )
-        .expect("admitted actor session");
-    let bytes: Vec<u8> = store
-        .connection
-        .query_row(
-            "SELECT canonical_json FROM objects WHERE object_kind = 'task_started_event'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("started event");
-    let event: crate::domain::TaskStartedEvent = serde_json::from_slice(&bytes).expect("decode");
-    assert_eq!(
-        event.actor.session_id.as_ref().map(|id| id.0.as_str()),
-        Some(session.as_str())
-    );
-}
-
-#[test]
-fn join_task_preserves_an_exact_64_byte_participant() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let now = bind_now();
-    let project = ProjectId("project-bind-admit".into());
-    store
-        .start_task(
-            &project,
-            "dummy:BIND-64-JOIN-P",
-            "Seed",
-            &SessionId("starter".into()),
-            actor("starter"),
-            now,
-        )
-        .expect("seed");
-    let session = exact_64_session(b'j');
-    store
-        .join_task(
-            &project,
-            "dummy:BIND-64-JOIN-P",
-            &SessionId(session.clone()),
-            actor("valid-actor"),
-            now,
-        )
-        .expect("admitted join participant");
-    let stored: String = store
-        .connection
-        .query_row(
-            "SELECT session_id FROM task_participants WHERE session_id = ?1",
-            [&session],
-            |row| row.get(0),
-        )
-        .expect("joined participant");
-    assert_eq!(stored, session);
-}
-
-#[test]
-fn join_task_preserves_an_exact_64_byte_actor_session() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let now = bind_now();
-    let project = ProjectId("project-bind-admit".into());
-    store
-        .start_task(
-            &project,
-            "dummy:BIND-64-JOIN-A",
-            "Seed",
-            &SessionId("starter".into()),
-            actor("starter"),
-            now,
-        )
-        .expect("seed");
-    let session = exact_64_session(b'k');
-    let mut ctx = actor("valid-actor");
-    ctx.session_id = Some(SessionId(session.clone()));
-    store
-        .join_task(
-            &project,
-            "dummy:BIND-64-JOIN-A",
-            &SessionId("valid-joiner".into()),
-            ctx,
-            now,
-        )
-        .expect("admitted join actor session");
-    let bytes: Vec<u8> = store
-        .connection
-        .query_row(
-            "SELECT canonical_json FROM objects WHERE object_kind = 'task_joined_event'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("joined event");
-    let event: crate::domain::TaskJoinedEvent = serde_json::from_slice(&bytes).expect("decode");
-    assert_eq!(
-        event.actor.session_id.as_ref().map(|id| id.0.as_str()),
-        Some(session.as_str())
-    );
 }

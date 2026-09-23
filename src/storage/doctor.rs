@@ -7,9 +7,8 @@ use super::{
     MemoryVersion, ObjectId, ObligationRuleSetUpdateReceipt, OptionalExtension, SCHEMA_VERSION,
     Scope, SessionId, SqliteStore, StoreError, StoredControlGrantRow, StoredControlOperation,
     StoredControlPolicyOperation, StoredControlTurnResult, StoredTurnGrantSupersession,
-    StoredWorkLeaseRow, Transaction, TurnGrantState, TurnGrantSupersession,
-    TurnGrantSupersessionReason, enum_name, params, parse_enum,
-    validate_keyed_project_memory_shape,
+    Transaction, TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, enum_name,
+    params, parse_enum, validate_keyed_project_memory_shape,
 };
 
 #[cfg(test)]
@@ -195,30 +194,6 @@ impl SqliteStore {
                     "control_turn_grant_supersession:{}",
                     stored.superseded_grant_id
                 ));
-            }
-        }
-
-        let mut lease_statement = self.connection.prepare(
-            "SELECT lease_id, task_id, holder_session_id, lease_json, state, expires_at_ms
-             FROM control_work_leases ORDER BY lease_id",
-        )?;
-        let lease_rows = lease_statement.query_map([], |row| {
-            Ok(StoredWorkLeaseRow {
-                lease_id: row.get(0)?,
-                task_id: row.get(1)?,
-                holder_session_id: row.get(2)?,
-                lease_json: row.get(3)?,
-                state: row.get(4)?,
-                expires_at_ms: row.get(5)?,
-            })
-        })?;
-        for row in lease_rows {
-            let stored = row?;
-            report.checked_control_records += 1;
-            if Self::decode_work_lease_row(&stored).is_err() {
-                report
-                    .invalid_control_records
-                    .push(format!("control_work_lease:{}", stored.lease_id));
             }
         }
 
@@ -700,6 +675,8 @@ impl SqliteStore {
                 .get("idempotency_key")
                 .and_then(serde_json::Value::as_str)
                 == Some(stored.idempotency_key.as_str())
+            // Lease and host-waiver operation names below are historical receipts
+            // only. Import retains them; no current host operation produces them.
             && match stored.operation.as_str() {
                 "turn_begin" | "turn_checkpoint" | "lease_acquire" | "obligation_waive" => result
                     .get("decision")

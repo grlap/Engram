@@ -54,7 +54,7 @@ struct Cli {
     /// control-session-inspect). Omit to
     /// probe the root's real filesystem; supply it when probing is impossible
     /// or the host knows better. Agent work, MCP, graph, backup, restore and import
-    /// do not probe. Unresolved identity refuses path leases instead of guessing.
+    /// do not probe. Unresolved identity refuses path-bearing control requests instead of guessing.
     #[arg(long, env = "ENGRAM_HOST_PATH_POLICY", value_enum)]
     host_path_policy: Option<HostPathPolicyArg>,
     #[command(subcommand)]
@@ -358,11 +358,11 @@ enum ControlPolicyCommand {
     /// Activate the acceptance-evaluation policy: which evaluator modes may
     /// record verdicts, what backs a mechanical pass, and whether completion
     /// must present a fresh host source fingerprint. An empty mode list
-    /// restores legacy self-asserted completion through the same audited
+    /// restores self-asserted completion through the same audited
     /// transition.
     SetAcceptanceEvaluation {
         /// Allowed evaluator modes, comma-separated: same-session, sub-agent,
-        /// independent-session. Omit for the legacy self-asserted path.
+        /// independent-session. Omit for the self-asserted path.
         #[arg(long, value_name = "MODE[,MODE]", value_delimiter = ',', num_args = 0..)]
         modes: Vec<String>,
         /// What an observed or asserted mechanical pass may cite.

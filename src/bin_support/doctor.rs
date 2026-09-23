@@ -104,7 +104,7 @@ pub(crate) fn doctor(
             describe_host_path_policy(stored)
         ),
         (Some(stored), None) => println!(
-            "Host path policy: {} (persisted; this opener could not resolve the project root, so path leases would be refused)",
+            "Host path policy: {} (persisted; this opener could not resolve the project root, so path-bearing control requests would be refused)",
             describe_host_path_policy(stored)
         ),
         (None, Some(resolved)) => println!(
@@ -112,7 +112,7 @@ pub(crate) fn doctor(
             describe_host_path_policy(resolved)
         ),
         (None, None) => println!(
-            "Host path policy: unresolved; path leases are refused until --host-path-policy is supplied"
+            "Host path policy: unresolved; path-bearing control requests are refused until --host-path-policy is supplied"
         ),
     }
     emit_control_limitations(&control);
@@ -426,7 +426,7 @@ fn assemble_doctor_json_report(
 /// One operator line saying whether completion needs a recorded evaluation,
 /// and under which modes; the JSON report carries the same policy.
 fn acceptance_evaluation_line(policy: &engram::AcceptanceEvaluationPolicy) -> String {
-    if policy.is_legacy() {
+    if policy.is_self_asserted() {
         return "Acceptance evaluation: off; completion is self-asserted".to_owned();
     }
     let modes = policy

@@ -2,8 +2,9 @@
 //!
 //! `export_json` writes every row of a store to a JSON Lines file.
 //! `import_json` creates a new store in the current format and inserts those
-//! rows by column name. Record ids travel as they are: nothing is recomputed,
-//! and no link is rewritten because a record changed shape.
+//! rows by column name. Record ids and links travel unchanged. Explicit named
+//! stored-field conversions rewrite only their supported shapes and update
+//! the corresponding content comparisons, never record identities.
 //!
 //! Search indexes are left out and rebuilt. SQLite guards the bytes on disk;
 //! after the rows are in, the ordinary doctor checks what they mean.
@@ -22,8 +23,10 @@ use serde_json::Value as Json;
 
 use crate::SqliteStore;
 
+mod record_fields;
 #[cfg(test)]
 mod tests;
+pub use record_fields::RewrittenField;
 
 const FORMAT: &str = "engram-json-export";
 
@@ -87,17 +90,29 @@ fn destination_column<'a>(table: &str, column: &'a str) -> &'a str {
         .map_or(column, |(_, _, destination)| *destination)
 }
 
+/// The direct-control conversion preserves scope ids and feed positions.
+fn destination_table(table: &str) -> &str {
+    match table {
+        "tasks" => "control_anchors",
+        "task_changes" => "control_changes",
+        _ => table,
+    }
+}
+
 /// Columns the current format retired, as (table, column). Export writes them
 /// as the source holds them; import names each one it met, with the number of
 /// values it carried, and stores nothing for it. Any other column the current
 /// format lacks is refused by name.
 const RETIRED_COLUMNS: &[(&str, &str)] = &[
+    ("tasks", "state"),
+    ("tasks", "event_cursor"),
+    ("tasks", "created_at_ms"),
+    ("tasks", "updated_at_ms"),
     // A fingerprint of the staged delivery page that nothing ever compared;
     // the page itself and its delivery token are what a session needs.
     ("work_session_state", "tentative_delivery_payload_hash"),
     ("control_turn_grants", "grant_hash"),
     ("control_turn_grant_supersessions", "supersession_hash"),
-    ("control_work_leases", "lease_hash"),
     ("control_operation_results", "result_hash"),
     ("control_policy_operation_results", "result_hash"),
 ];
@@ -114,6 +129,19 @@ fn is_retired_column(table: &str, column: &str) -> bool {
 /// Canonical objects and task-feed history are still copied unchanged.
 fn retired_table_columns(table: &str) -> Option<&'static [&'static str]> {
     match table {
+        "control_work_leases" => Some(&[
+            "lease_id",
+            "task_id",
+            "holder_session_id",
+            "lease_json",
+            "state",
+            "expires_at_ms",
+            "lease_hash",
+        ]),
+        "task_participants" => Some(&["task_id", "session_id", "joined_at_ms"]),
+        "session_bindings" => Some(&["session_id", "task_id", "bound_at_ms"]),
+        // Merged into control_anchors after all rows have been imported.
+        "task_control_state" => Some(&["task_id", "admission_epoch"]),
         "task_claims" => Some(&[
             "task_id",
             "lease_id",
@@ -297,6 +325,8 @@ pub struct ImportReport {
     pub checked_pending_deliveries: u64,
     /// Retired columns the file carried, each with the values it held.
     pub retired_fields: Vec<RetiredField>,
+    /// Named stored reply fields converted under their existing record ids.
+    pub rewritten_fields: Vec<RewrittenField>,
 }
 
 fn quoted(identifier: &str) -> String {
@@ -820,8 +850,10 @@ fn lines(
         .map(|line| Ok(serde_json::from_str::<Line>(&line?)?)))
 }
 
-fn header_of(file: &Path) -> Result<Header, MigrationError> {
-    match lines(file)?.next() {
+fn header_of(
+    lines: &mut impl Iterator<Item = Result<Line, MigrationError>>,
+) -> Result<Header, MigrationError> {
+    match lines.next() {
         Some(Ok(Line::Header(header))) if header.format == FORMAT => Ok(header),
         Some(Err(error)) => Err(error),
         _ => Err(refused(
@@ -845,7 +877,8 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
         return Err(refused("import destination already exists"));
     }
     refuse_sidecars(out)?;
-    let header = header_of(file)?;
+    let mut source = lines(file)?;
+    let header = header_of(&mut source)?;
 
     // The reserved file is private from the moment it exists, and SQLite keeps
     // an existing file's permissions — including on the journals it creates
@@ -860,10 +893,19 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     let transaction = connection.transaction()?;
     // Rows arrive table by table; references are checked once, at commit.
     transaction.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
+    transaction.execute_batch(
+        "CREATE TEMP TABLE conversion_epochs (
+             task_id TEXT PRIMARY KEY NOT NULL, admission_epoch INTEGER NOT NULL);
+         CREATE TEMP TABLE conversion_membership (
+             session_id TEXT NOT NULL, task_id TEXT NOT NULL,
+             participant INTEGER NOT NULL DEFAULT 0, binding INTEGER NOT NULL DEFAULT 0,
+             PRIMARY KEY (session_id, task_id));",
+    )?;
 
     let mut inserts = HashMap::new();
     let mut omitted = HashMap::new();
     let mut declared_names = std::collections::HashSet::new();
+    let mut destination_names = std::collections::HashSet::new();
     let mut tables = Vec::new();
     let mut left_out = header.left_out.clone();
     let mut retired_fields: Vec<RetiredField> = Vec::new();
@@ -884,6 +926,11 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             }
         }
         if let Some(known) = retired_table_columns(&table.name) {
+            if table.name == "control_work_leases" && table.rows != 0 {
+                return Err(refused(
+                    "control_work_leases is populated; resource lease retirement requires an empty table",
+                ));
+            }
             for column in &table.columns {
                 if !known.contains(&column.as_str()) {
                     return Err(refused(format!(
@@ -895,7 +942,11 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             left_out.push(LeftOut {
                 name: table.name.clone(),
                 rows: table.rows,
-                reason: "explicitly retired operational table; rows remain in the source export, not the new store".into(),
+                reason: if table.name == "task_control_state" {
+                    "admission epochs merged into control_anchors".into()
+                } else {
+                    "explicitly retired operational table; rows remain in the source export, not the new store".into()
+                },
             });
             omitted.insert(table.name.clone(), (table.columns.clone(), 0_u64));
             continue;
@@ -934,11 +985,17 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                 )));
             }
         }
-        admit_destination(&transaction, &table.name, &destination_columns)?;
-        transaction.execute(&format!("DELETE FROM {}", quoted(&table.name)), [])?;
+        let destination = destination_table(&table.name);
+        if !destination_names.insert(destination) {
+            return Err(refused(format!(
+                "multiple source tables map to {destination}"
+            )));
+        }
+        admit_destination(&transaction, destination, &destination_columns)?;
+        transaction.execute(&format!("DELETE FROM {}", quoted(destination)), [])?;
         let insert = format!(
             "INSERT INTO {} ({}) VALUES ({})",
-            quoted(&table.name),
+            quoted(destination),
             destination_columns
                 .iter()
                 .map(|column| quoted(column))
@@ -954,7 +1011,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             (transaction.prepare(&insert)?, columns, retired, 0_u64),
         );
         tables.push(TableRows {
-            name: table.name.clone(),
+            name: destination.into(),
             columns: destination_columns,
             rows: table.rows,
         });
@@ -962,7 +1019,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
 
     let mut seen = 0_u64;
     let mut ended = None;
-    for line in lines(file)?.skip(1) {
+    for line in source {
         match line? {
             Line::Header(_) => return Err(refused("the file has a second header")),
             Line::End { .. } if ended.is_some() => {
@@ -975,6 +1032,12 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             Line::Row { table, mut values } => {
                 seen += 1;
                 if let Some((columns, count)) = omitted.get_mut(&table) {
+                    if table == "control_work_leases" {
+                        return Err(refused(
+                            "control_work_leases contains a row; resource lease retirement requires an empty table",
+                        ));
+                    }
+                    stage_control_conversion(&transaction, &table, &values)?;
                     validate_omitted_row(&table, columns, values)?;
                     *count += 1;
                     continue;
@@ -989,6 +1052,9 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                         refused(format!("a row of table {table} lacks column {column}"))
                     })?;
                     let non_null = !value.is_null();
+                    if table == "tasks" && column == "state" && value != "active" {
+                        return Err(refused("tasks.state is not the supported active state"));
+                    }
                     decode(value).map_err(|error| match error {
                         MigrationError::Refused(reason) => refused(format!(
                             "column {column} of a row of table {table}: {reason}"
@@ -1057,6 +1123,14 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             )));
         }
     }
+    let old_membership = header.tables.iter().any(|table| {
+        matches!(
+            table.name.as_str(),
+            "tasks" | "task_participants" | "session_bindings"
+        )
+    });
+    merge_control_anchors(&transaction, old_membership)?;
+    let rewritten_fields = record_fields::convert(&transaction)?;
     restore_sequences(&transaction, &header.sequences, &inserted)?;
     transaction.commit()?;
     let damage: String = connection.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
@@ -1087,10 +1161,118 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
         checked_work_records: report.checked_work_records,
         checked_pending_deliveries: pending,
         retired_fields,
+        rewritten_fields,
     })
 }
 
-/// Admits a file table into the destination that carries its name.
+/// Retain only conversion inputs from the same stream whose cells and counts
+/// are validated by import. Any later validation failure rolls these back too.
+fn stage_control_conversion(
+    transaction: &rusqlite::Transaction<'_>,
+    table: &str,
+    values: &serde_json::Map<String, Json>,
+) -> Result<(), MigrationError> {
+    match table {
+        "task_control_state" => {
+            let id = values
+                .get("task_id")
+                .and_then(Json::as_str)
+                .ok_or_else(|| refused("task_control_state lacks a text task_id"))?;
+            let epoch = values
+                .get("admission_epoch")
+                .and_then(Json::as_i64)
+                .filter(|epoch| *epoch > 0)
+                .ok_or_else(|| refused("task_control_state lacks a positive admission_epoch"))?;
+            let inserted = transaction.execute(
+                    "INSERT OR IGNORE INTO conversion_epochs (task_id, admission_epoch) VALUES (?1, ?2)",
+                    rusqlite::params![id, epoch],
+                )?;
+            if inserted != 1 {
+                return Err(refused(
+                    "task_control_state contains duplicate task_id rows",
+                ));
+            }
+        }
+        "session_bindings" | "task_participants" => {
+            let id = values
+                .get("task_id")
+                .and_then(Json::as_str)
+                .ok_or_else(|| refused(format!("{table} lacks a text task_id")))?;
+            let session = values
+                .get("session_id")
+                .and_then(Json::as_str)
+                .ok_or_else(|| refused(format!("{table} lacks a text session_id")))?;
+            let column = if table == "session_bindings" {
+                "binding"
+            } else {
+                "participant"
+            };
+            transaction.execute(
+                &format!(
+                    "INSERT INTO conversion_membership (session_id, task_id, {column})
+                         VALUES (?1, ?2, 1) ON CONFLICT(session_id, task_id)
+                         DO UPDATE SET {column} = 1"
+                ),
+                rusqlite::params![session, id],
+            )?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn merge_control_anchors(
+    transaction: &rusqlite::Transaction<'_>,
+    old_membership: bool,
+) -> Result<(), MigrationError> {
+    let orphan_epoch: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM conversion_epochs AS e
+         WHERE NOT EXISTS(SELECT 1 FROM control_anchors AS a WHERE a.task_id = e.task_id))",
+        [],
+        |row| row.get(0),
+    )?;
+    if orphan_epoch {
+        return Err(refused(
+            "task_control_state references a missing control anchor",
+        ));
+    }
+    transaction.execute_batch(
+        "UPDATE control_anchors SET admission_epoch =
+             (SELECT admission_epoch FROM conversion_epochs WHERE task_id = control_anchors.task_id)
+         WHERE task_id IN (SELECT task_id FROM conversion_epochs);",
+    )?;
+    if old_membership {
+        let unrepresented: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversion_membership AS m WHERE binding = 1
+             AND NOT EXISTS(SELECT 1 FROM control_sessions AS s
+                            WHERE s.session_id = m.session_id AND s.task_id = m.task_id))",
+            [],
+            |row| row.get(0),
+        )?;
+        if unrepresented {
+            return Err(refused(
+                "session_bindings contains a binding not represented by control_sessions",
+            ));
+        }
+        let missing: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM control_sessions AS s
+             WHERE NOT EXISTS(SELECT 1 FROM conversion_membership AS m
+                              WHERE m.session_id = s.session_id AND m.task_id = s.task_id
+                                AND m.participant = 1 AND m.binding = 1))",
+            [],
+            |row| row.get(0),
+        )?;
+        if missing {
+            return Err(refused(
+                "control_sessions contains a binding without matching task_participants and session_bindings rows",
+            ));
+        }
+    }
+    transaction.execute_batch("DROP TABLE conversion_membership; DROP TABLE conversion_epochs;")?;
+    Ok(())
+}
+
+/// Admits a file table into its mapped destination.
 ///
 /// The destination must be an ordinary table, since only one holds copied rows:
 /// a search index or one of its shadow tables is derived from other rows and
@@ -1161,6 +1343,7 @@ fn restore_sequences(
         if !inserted.contains_key(name) {
             continue;
         }
+        let name = destination_table(name);
         let updated = transaction.execute(
             "UPDATE sqlite_sequence SET seq = max(seq, ?2) WHERE name = ?1",
             rusqlite::params![name, sequence],

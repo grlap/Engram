@@ -38,8 +38,8 @@ impl SqliteStore {
 
     /// Opens a local database without asserting the project root's filesystem
     /// identity: work and memory operations proceed against any persisted
-    /// policy, and path-bearing leases fail closed. Agent-facing services that
-    /// never lease paths open this way so they cannot disagree with the
+    /// policy, and path-bearing control requests fail closed. Agent-facing services
+    /// that do not submit path intents open this way so they cannot disagree with the
     /// resolved policy the host bound.
     ///
     /// # Errors
@@ -486,7 +486,7 @@ impl SqliteStore {
             .optional()?)
     }
 
-    /// The policy that normalizes one lease subject: logical subjects never
+    /// The policy that normalizes one resource intent: logical subjects never
     /// need one, path subjects need the resolved identity.
     pub(super) fn path_policy_for(
         &self,
@@ -540,7 +540,7 @@ impl SqliteStore {
     /// Opens a store with an explicit embedding-host filesystem identity policy.
     ///
     /// The first opener persists the policy. Later openers must present the
-    /// same policy so resource lease identities cannot drift between hosts.
+    /// same policy so resource intent identities cannot drift between hosts.
     ///
     /// # Errors
     ///
@@ -613,7 +613,7 @@ impl SqliteStore {
         }
         let allow_initialization = !store_has_schema;
         work::preflight_schema(&connection, allow_initialization)?;
-        if Self::sqlite_table_exists(&connection, "task_changes")? {
+        if Self::sqlite_table_exists(&connection, "control_changes")? {
             Self::require_task_local_cursor_schema(&connection)?;
         }
         Self::preflight_host_path_policy(&connection, host_path_policy)?;
@@ -740,29 +740,15 @@ impl SqliteStore {
                  active_count INTEGER NOT NULL CHECK(active_count >= 0),
                  change_position INTEGER NOT NULL CHECK(change_position >= 0)
              ) STRICT;
-             CREATE TABLE IF NOT EXISTS tasks (
+             CREATE TABLE IF NOT EXISTS control_anchors (
                  task_id TEXT PRIMARY KEY,
                  project_id TEXT NOT NULL,
                  external_ref TEXT NOT NULL,
                  title TEXT NOT NULL,
-                 state TEXT NOT NULL,
-                 event_cursor INTEGER NOT NULL DEFAULT 0,
-                 created_at_ms INTEGER NOT NULL,
-                 updated_at_ms INTEGER NOT NULL,
+                 admission_epoch INTEGER NOT NULL DEFAULT 1,
                  UNIQUE(project_id, external_ref)
              ) STRICT;
-             CREATE TABLE IF NOT EXISTS task_participants (
-                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
-                 session_id TEXT NOT NULL,
-                 joined_at_ms INTEGER NOT NULL,
-                 PRIMARY KEY(task_id, session_id)
-             ) STRICT;
-             CREATE TABLE IF NOT EXISTS session_bindings (
-                 session_id TEXT PRIMARY KEY,
-                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
-                 bound_at_ms INTEGER NOT NULL
-              ) STRICT;
-              CREATE TABLE IF NOT EXISTS task_changes (
+              CREATE TABLE IF NOT EXISTS control_changes (
                   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                   task_id TEXT NOT NULL,
                   task_cursor INTEGER NOT NULL CHECK(task_cursor > 0),
@@ -796,10 +782,6 @@ impl SqliteStore {
                  created_at_ms INTEGER NOT NULL,
                  UNIQUE(operation, idempotency_key)
              ) STRICT;
-             CREATE TABLE IF NOT EXISTS task_control_state (
-                 task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
-                 admission_epoch INTEGER NOT NULL
-             ) STRICT;
              CREATE TABLE IF NOT EXISTS control_connections (
                  session_id TEXT PRIMARY KEY,
                  connection_token TEXT NOT NULL,
@@ -813,7 +795,7 @@ impl SqliteStore {
              CREATE TABLE IF NOT EXISTS control_sessions (
                  session_id TEXT PRIMARY KEY,
                  project_id TEXT NOT NULL,
-                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 task_id TEXT NOT NULL REFERENCES control_anchors(task_id),
                  root_execution_id TEXT,
                  work_id TEXT,
                  run_id TEXT,
@@ -842,7 +824,7 @@ impl SqliteStore {
              CREATE TABLE IF NOT EXISTS control_turn_results (
                  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                  session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
-                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 task_id TEXT NOT NULL REFERENCES control_anchors(task_id),
                  idempotency_key TEXT NOT NULL,
                  intent_hash TEXT NOT NULL,
                  intent_json BLOB NOT NULL,
@@ -854,7 +836,7 @@ impl SqliteStore {
              CREATE TABLE IF NOT EXISTS control_turn_grants (
                  grant_id TEXT PRIMARY KEY,
                  session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
-                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 task_id TEXT NOT NULL REFERENCES control_anchors(task_id),
                  request_key TEXT NOT NULL,
                  grant_json BLOB NOT NULL,
                  state TEXT NOT NULL,
@@ -868,7 +850,7 @@ impl SqliteStore {
                  superseded_grant_id TEXT PRIMARY KEY
                      REFERENCES control_turn_grants(grant_id),
                  session_id TEXT NOT NULL,
-                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 task_id TEXT NOT NULL REFERENCES control_anchors(task_id),
                  replacement_request_key TEXT NOT NULL,
                  replacement_decision_hash TEXT NOT NULL,
                  supersession_json BLOB NOT NULL,
@@ -877,17 +859,6 @@ impl SqliteStore {
                  FOREIGN KEY(session_id, replacement_request_key)
                      REFERENCES control_turn_results(session_id, idempotency_key)
              ) STRICT;
-             CREATE TABLE IF NOT EXISTS control_work_leases (
-                 lease_id TEXT PRIMARY KEY,
-                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
-                 holder_session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
-                 lease_json BLOB NOT NULL,
-                 state TEXT NOT NULL,
-                 expires_at_ms INTEGER NOT NULL,
-                 UNIQUE(holder_session_id, lease_id)
-             ) STRICT;
-             CREATE INDEX IF NOT EXISTS control_work_leases_task_state
-                 ON control_work_leases(task_id, state, expires_at_ms);
              CREATE TABLE IF NOT EXISTS control_operation_results (
                  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                  session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
@@ -937,8 +908,8 @@ impl SqliteStore {
         Self::require_task_local_cursor_schema(&connection)?;
         if !core_schema_complete {
             connection.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS task_changes_task_cursor
-                 ON task_changes(task_id, task_cursor)",
+                "CREATE UNIQUE INDEX IF NOT EXISTS control_changes_task_cursor
+                 ON control_changes(task_id, task_cursor)",
                 [],
             )?;
         }
@@ -1486,12 +1457,10 @@ impl SqliteStore {
                  ON memory_heads(project_id, task_id, work_id, agent_id, status);
              CREATE INDEX IF NOT EXISTS memory_heads_work_scope
                  ON memory_heads(project_id, work_id, agent_id, status);
-             CREATE UNIQUE INDEX IF NOT EXISTS task_changes_task_cursor
-                 ON task_changes(task_id, task_cursor);
+             CREATE UNIQUE INDEX IF NOT EXISTS control_changes_task_cursor
+                 ON control_changes(task_id, task_cursor);
              CREATE INDEX IF NOT EXISTS control_sessions_work_run
                  ON control_sessions(project_id, run_id, session_id);
-             CREATE INDEX IF NOT EXISTS control_work_leases_task_state
-                  ON control_work_leases(task_id, state, expires_at_ms);
              CREATE TABLE IF NOT EXISTS project_memory_advertisements (
                  project_id TEXT NOT NULL,
                  session_id TEXT NOT NULL,
@@ -1952,23 +1921,17 @@ impl SqliteStore {
     }
 
     fn has_path_bearing_control_state(connection: &Connection) -> Result<bool, StoreError> {
-        for (table, column) in [
-            ("control_work_leases", "lease_json"),
-            ("control_turn_grants", "grant_json"),
-        ] {
-            let table_exists = connection.query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-                [table],
+        let table_exists = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'control_turn_grants')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if table_exists {
+            return Ok(connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM control_turn_grants WHERE CAST(grant_json AS TEXT) LIKE '%\"kind\":\"path\"%')",
+                [],
                 |row| row.get::<_, bool>(0),
-            )?;
-            if table_exists {
-                let query = format!(
-                    "SELECT EXISTS(SELECT 1 FROM {table} WHERE CAST({column} AS TEXT) LIKE '%\"kind\":\"path\"%')"
-                );
-                if connection.query_row(&query, [], |row| row.get::<_, bool>(0))? {
-                    return Ok(true);
-                }
-            }
+            )?);
         }
         Ok(false)
     }
@@ -1976,7 +1939,7 @@ impl SqliteStore {
     fn require_task_local_cursor_schema(connection: &Connection) -> Result<(), StoreError> {
         let has_task_cursor = connection.query_row(
             "SELECT EXISTS(
-                 SELECT 1 FROM pragma_table_info('task_changes')
+                 SELECT 1 FROM pragma_table_info('control_changes')
                  WHERE name = 'task_cursor'
              )",
             [],
@@ -1986,7 +1949,7 @@ impl SqliteStore {
             return Ok(());
         }
         Err(StoreError::InvalidTaskProjection(
-            "task_changes does not match the current task-local cursor schema".into(),
+            "control_changes does not match the current task-local cursor schema".into(),
         ))
     }
 }

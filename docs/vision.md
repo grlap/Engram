@@ -81,7 +81,7 @@ cross-host team sync remains later (see
   coexist visibly as *contested* until an attributed resolution supersedes
   them — never last-writer-wins.
 - **Local authority while working, explicit at every remote boundary.** Live
-  claims, leases, grants, delivery state, and agent-private scratch stay on the
+  claims, grants, delivery state, and agent-private scratch stay on the
   active host. A configured portable target may receive a sensitivity-filtered
   shared work projection for sequential handoff; publication separately sends
   a frozen report or explicit work projection under an idempotent receipt. See

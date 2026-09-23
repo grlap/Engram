@@ -25,8 +25,8 @@ use super::planning::{
     add_root_contribution, apply_work_relation_transition, assert_actor_session, assert_revision,
     encode_state, expect_root_contributor, first_unaccounted_root_contributor, normalize_text,
     persist_claim, persist_operation_result, persist_root_execution, persist_work_item,
-    persist_work_run, unique_hashes, validate_control_work_binding_on, validate_live_claim_on,
-    validated_current_work_relation_basis, waive_root_contributor, work_relation_fingerprint,
+    persist_work_run, unique_hashes, validate_live_claim_on, validated_current_work_relation_basis,
+    waive_root_contributor, work_relation_fingerprint,
 };
 use super::query::{
     active_root_execution, active_root_execution_optional, completion_recovery_snapshot_on,
@@ -35,10 +35,10 @@ use super::query::{
     load_work_run, parse_work_id, parse_work_run_id, work_completed_by_restored_record_on,
 };
 use super::{
-    CompleteWorkStorageResult, ControlWorkObligationWaiverFingerprint, EvidenceProjectionRow,
-    MAX_COMPLETION_ENVIRONMENT_EVIDENCE, MAX_OPEN_COMPLETION_OBLIGATIONS, ObligationProjectionRow,
-    WorkEventDraft, WorkObligationRecord, WorkObligationWaiverFingerprint, WorkRelationBasis,
-    WorkRelationBlockerBasis, empty_work_relation_basis,
+    CompleteWorkStorageResult, EvidenceProjectionRow, MAX_COMPLETION_ENVIRONMENT_EVIDENCE,
+    MAX_OPEN_COMPLETION_OBLIGATIONS, ObligationProjectionRow, WorkEventDraft, WorkObligationRecord,
+    WorkObligationWaiverFingerprint, WorkRelationBasis, WorkRelationBlockerBasis,
+    empty_work_relation_basis,
 };
 use crate::{
     CanonicalObject, ObjectId, RestoredRecord,
@@ -53,9 +53,8 @@ use crate::{
         WorkClaim, WorkClaimState, WorkCompletionRecoveryCause, WorkDisposition, WorkEvent,
         WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem,
         WorkLifecycle, WorkObligation, WorkObligationId, WorkObligationResolution,
-        WorkObligationResolutionEvent, WorkObligationState, WorkObligationWaiverDecision,
-        WorkObligationWaiverReceipt, WorkObligationWaiverRefusalCode, WorkRun, WorkRunId,
-        WorkRunState, WorkTransition,
+        WorkObligationResolutionEvent, WorkObligationState, WorkRun, WorkRunId, WorkRunState,
+        WorkTransition,
     },
     memory::Redactor,
 };
@@ -285,7 +284,7 @@ impl SqliteStore {
         {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
-                reason: "V1 completion drain accepts only a zero-linked-state attestation until action and resource projections are linked to work runs".into(),
+                reason: "V1 completion drain accepts only a zero-linked-state attestation: action outcomes are not yet linked to work runs, and the historical resource-lease drain field must be empty".into(),
             });
         }
         let incomplete = incomplete_prerequisite_projections(&transaction, item.work_id)?;
@@ -621,210 +620,6 @@ impl SqliteStore {
         )?;
         transaction.commit()?;
         Ok(CompleteWorkStorageResult::Completed(Box::new(seal)))
-    }
-
-    /// Resolves one exact open obligation through a bound host-control session.
-    /// Policy refusals are frozen as typed results under the control-operation
-    /// idempotency key; transport, routing, and integrity faults remain errors.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when the session capabilities are invalid, the
-    /// request key conflicts, or canonical storage cannot be verified.
-    #[allow(clippy::too_many_arguments)]
-    pub fn waive_bound_work_obligation<R: Redactor>(
-        &mut self,
-        project_id: &crate::domain::ProjectId,
-        session_id: &SessionId,
-        connection_token: &str,
-        routing_token: &str,
-        obligation_id: WorkObligationId,
-        expected_definition: &ObjectId,
-        waived_by: &str,
-        reason: &str,
-        actor: &crate::domain::ActorContext,
-        idempotency_key: &str,
-        waived_at: DateTime<Utc>,
-        redactor: &R,
-    ) -> Result<WorkObligationWaiverDecision, StoreError> {
-        let request = WaiveWorkObligationRequest {
-            obligation_id,
-            expected_definition: expected_definition.clone(),
-            waived_by: waived_by.to_owned(),
-            reason: reason.to_owned(),
-            actor: actor.clone(),
-            idempotency_key: idempotency_key.to_owned(),
-            waived_at,
-        };
-        inspect_work_request(redactor, &request, &request.actor)?;
-        let waived_by = normalize_text(&request.waived_by, "obligation waiver actor")?;
-        let reason = normalize_text(&request.reason, "obligation waiver reason")?;
-        let transaction = self.begin_work_mutation()?;
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let session = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        Self::verify_control_session(&session, project_id, routing_token)?;
-        if actor.session_id.as_ref() != Some(session_id) || actor.actor_id != session.actor.actor_id
-        {
-            return Err(StoreError::InvalidControlSession(
-                "obligation waiver actor is not the server-fixed control session".into(),
-            ));
-        }
-        let intent = CanonicalObject::freeze(&ControlWorkObligationWaiverFingerprint {
-            control_schema_version: crate::CONTROL_SCHEMA_VERSION,
-            session_id,
-            bind_intent_hash: &session.bind_intent_hash,
-            obligation_id,
-            expected_definition,
-            waived_by: &request.waived_by,
-            reason: &request.reason,
-            idempotency_key,
-        })?;
-        if let Some(replay) = Self::replay_control_operation(
-            &transaction,
-            session_id,
-            "obligation_waive",
-            idempotency_key,
-            intent.key(),
-        )? {
-            transaction.commit()?;
-            return Ok(replay);
-        }
-        let record = load_work_obligation_by_id_on(&transaction, obligation_id)?;
-        let binding_admitted = session.work_binding.as_ref().is_some_and(|binding| {
-            binding.run_id == record.obligation.run_id
-                && binding.work_id == record.obligation.work_id
-                && binding.root_execution_id == record.obligation.root_execution_id
-        });
-        if !binding_admitted {
-            let decision = WorkObligationWaiverDecision::Refused {
-                code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
-                obligation_id,
-                current_definition: Some(record.definition_id),
-                remedy: "bind the host control session to the live claim for this obligation run"
-                    .into(),
-            };
-            Self::persist_control_operation(
-                &transaction,
-                session_id,
-                "obligation_waive",
-                idempotency_key,
-                &intent,
-                &decision,
-                waived_at,
-            )?;
-            transaction.commit()?;
-            return Ok(decision);
-        }
-        let binding = session.work_binding.as_ref().ok_or_else(|| {
-            StoreError::InvalidControlProjection(
-                "admitted obligation waiver lost its work binding".into(),
-            )
-        })?;
-        if let Err(error) = validate_control_work_binding_on(
-            &transaction,
-            project_id,
-            session_id,
-            binding,
-            waived_at,
-        ) {
-            if matches!(error, StoreError::ControlWorkBindingStale { .. }) {
-                let decision = WorkObligationWaiverDecision::Refused {
-                    code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
-                    obligation_id,
-                    current_definition: Some(record.definition_id),
-                    remedy: "reread the live claim, then bind the current work generation".into(),
-                };
-                Self::persist_control_operation(
-                    &transaction,
-                    session_id,
-                    "obligation_waive",
-                    idempotency_key,
-                    &intent,
-                    &decision,
-                    waived_at,
-                )?;
-                transaction.commit()?;
-                return Ok(decision);
-            }
-            return Err(error);
-        }
-        if record.definition_id != *expected_definition {
-            let decision = WorkObligationWaiverDecision::Refused {
-                code: WorkObligationWaiverRefusalCode::DefinitionChanged,
-                obligation_id,
-                current_definition: Some(record.definition_id),
-                remedy:
-                    "reread obligation_page and retry only after reviewing the current definition"
-                        .into(),
-            };
-            Self::persist_control_operation(
-                &transaction,
-                session_id,
-                "obligation_waive",
-                idempotency_key,
-                &intent,
-                &decision,
-                waived_at,
-            )?;
-            transaction.commit()?;
-            return Ok(decision);
-        }
-        if record.state != WorkObligationState::Open {
-            let decision = WorkObligationWaiverDecision::Refused {
-                code: WorkObligationWaiverRefusalCode::ObligationNotOpen,
-                obligation_id,
-                current_definition: Some(record.definition_id),
-                remedy: "reread obligation_page; this obligation already has a terminal resolution"
-                    .into(),
-            };
-            Self::persist_control_operation(
-                &transaction,
-                session_id,
-                "obligation_waive",
-                idempotency_key,
-                &intent,
-                &decision,
-                waived_at,
-            )?;
-            transaction.commit()?;
-            return Ok(decision);
-        }
-        let event = WorkObligationResolutionEvent {
-            schema_version: SCHEMA_VERSION,
-            project_id: record.obligation.project_id.clone(),
-            obligation_id,
-            definition: record.definition_id.clone(),
-            run_id: record.obligation.run_id,
-            resolution: WorkObligationResolution::Waived {
-                waived_by: waived_by.clone(),
-                reason,
-            },
-            actor: request.actor,
-            created_at: waived_at,
-        };
-        let resolution = append_obligation_resolution_on(&transaction, &record, &event)?;
-        let decision = WorkObligationWaiverDecision::Waived {
-            receipt: WorkObligationWaiverReceipt {
-                obligation_id,
-                definition: record.definition_id,
-                resolution,
-                state: WorkObligationState::Waived,
-                waived_by,
-                waived_at,
-            },
-        };
-        Self::persist_control_operation(
-            &transaction,
-            session_id,
-            "obligation_waive",
-            idempotency_key,
-            &intent,
-            &decision,
-            waived_at,
-        )?;
-        transaction.commit()?;
-        Ok(decision)
     }
 
     /// Resolves one exact open obligation through an attributed local shell

@@ -273,7 +273,7 @@ fn evaluate_accepts_the_locators_show_prints_and_refuses_observations() {
 }
 
 // Review 5 (Medium): completion provenance distinguishes an evaluated seal
-// from legacy self-assertion in `done`, completed `show`, and bounded `next`.
+// from self-assertion in `done`, completed `show`, and bounded `next`.
 #[test]
 fn done_show_and_next_disclose_completion_provenance() {
     let directory = crate::test_support::temp_home().expect("temp directory");
@@ -293,28 +293,32 @@ fn done_show_and_next_disclose_completion_provenance() {
         SessionId("peer".into()),
         None,
     );
-    let legacy = prepare(&verbs, &database, &project, "Legacy item", 0);
+    let self_asserted = prepare(&verbs, &database, &project, "Self-asserted item", 0);
     let completed = verbs
-        .done(done_input(&legacy.work_ref), at(3))
-        .expect("legacy done");
+        .done(done_input(&self_asserted.work_ref), at(3))
+        .expect("self-asserted done");
     assert!(!completed.owed, "{}", completed.text());
     assert!(
         completed
             .text()
-            .contains("acceptance: self-asserted (legacy)"),
+            .lines()
+            .any(|line| line == "acceptance: self-asserted"),
         "{}",
         completed.text()
     );
     assert_eq!(completed.value["acceptance"]["provenance"], "self_asserted");
-    let shown = verbs.show(&legacy.work_ref, at(4)).expect("show legacy");
+    let shown = verbs
+        .show(&self_asserted.work_ref, at(4))
+        .expect("show self-asserted");
     assert!(
-        shown.text().contains("acceptance: self-asserted (legacy)"),
+        shown
+            .text()
+            .lines()
+            .any(|line| line == "acceptance: self-asserted"),
         "{}",
         shown.text()
     );
-    // The documented exception: a legacy completed show keeps its exact JSON
-    // shape; only the text line names the self-assertion.
-    assert!(shown.value.get("acceptance").is_none(), "{}", shown.value);
+    assert_eq!(shown.value["acceptance"]["provenance"], "self_asserted");
 
     enable(
         &database,

@@ -439,7 +439,7 @@ impl SqliteStore {
 
     /// Activates one acceptance-evaluation policy under a new epoch, keeping
     /// the required assurance and obligation rule set unchanged. An empty
-    /// allowed-mode set restores the legacy self-asserted completion path.
+    /// allowed-mode set restores the self-asserted completion path.
     ///
     /// # Errors
     ///

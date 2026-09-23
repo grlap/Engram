@@ -47,7 +47,7 @@ knowledge graph or process scheduler.**
 - Optional sequential cross-machine portability with scheduled durable push,
   explicit handoff/restore, divergence refusal, and no live-authority transfer.
 - Host-enforced turn admission and material-action authorization: context,
-  peer-delta, lease, checkpoint, and finalization obligations are protocol
+  peer-delta, checkpoint, and finalization obligations are protocol
   preconditions rather than optional agent habits.
 - An optional polished final report per completed root, published only under a
   separately authorized durable receipt.
@@ -262,7 +262,7 @@ A `WorkRun` is one execution generation for one work item. V1 gives
 it exactly one ordinary executor and at most one live `WorkClaim`; parallel
 sessions execute distinct child runs under the same root execution. A run
 owns its ordered execution feed, executor checkpoint, evidence, claim,
-resource leases, and completion state. Root members without that run's claim
+and completion state. Root members without that run's claim
 may inspect permitted root memory and communicate but cannot mutate or
 complete the run. V1 permits one active run per item. Reopen creates a new run
 generation so old claims, grants, and evidence cannot revive. The shared
@@ -274,8 +274,9 @@ execution state. Memory scope does not recursively nest with the work graph.
 The target durable work lifecycle is `proposed → open → completion_pending →
 completed | cancelled | superseded`; an attributed completion abort returns
 to `open`. The shipped alpha seals `open → completed` directly only when its
-linked action-outcome and resource-lease drain sets are empty; it refuses a
-nonempty drain until controlled `completion_pending` ships. Availability
+linked action-outcome drains are empty; the historical resource-lease drain
+field stays empty. It refuses a nonempty action-outcome drain until controlled
+`completion_pending` ships. Availability
 (`ready`, `claimed`, `active`, `blocked`, `deferred`,
 `waiting`) is a derived projection. Completion binds the accepted work
 revision, run generation, claim fence, checkpoint position, acceptance
@@ -294,28 +295,18 @@ execution fence their old runs immediately. They must be disposed leaf-first
 before root reopen; the new root generation never silently inherits an old
 child run.
 
-**Claims schedule; leases authorize mutation.** A resource lease can be
-issued only to a session holding a live claim whose work scope covers the
-resource. Mutating work uses fenced execution leases over canonical
-project-relative path or versioned logical subjects; absolute worktree paths
-are forbidden. An intent lease reserves planned mutation; a coordination
-lease authorizes exclusive run/report transitions; shared analysis needs no
-exclusive resource lease. Releasing, handing off, or recovering a claim bumps
-its fence and transactionally revokes or transfers dependent leases. Lease
-claim, renewal, handoff, release, and recovery use compare-and-swap revisions,
-monotonic fencing epochs, expiry/heartbeat, and idempotency keys. Every
-behaviorally relevant transition appends an immutable work/run event even
-when its current view is a mutable projection.
-
-Mediated actions heartbeat implicitly. A host-reported pause suspends expiry
-only through a bounded `max_suspension`; afterward ownership is recoverable,
-not silently free. Recovery is attributed, increments fences, and forces a
-returning holder to reconcile. Pause remains host process state.
+**Claims schedule execution, not filesystem mutation.** A work claim protects
+the work/run lifecycle with a holder, expiry, and fencing epoch. Handoff and
+recovery advance the fence so stale holders cannot mutate the run.
+Host/user authority governs filesystem and external effects. Resource leases,
+their acquisition/release operations, and lease-bound grants have been removed.
+Supplied resource intents are normalized scope descriptions, not locks; an
+empty list remains valid. Each behaviorally relevant work transition appends
+an immutable event.
 
 **Completion is the execution barrier.** In the target controlled path, `work_complete` enters
 `completion_pending`, denies new ordinary mutation, drains in-flight actions,
-terminalizes the run claim, releases or transfers every dependent resource
-lease, and waits for its executor checkpoint or an authorized decision. A
+terminalizes the run claim and waits for its executor checkpoint or an authorized decision. A
 root barrier additionally freezes the expected `RootExecution` contributor
 roster and waits for required child seals or explicit disposed-child waivers
 (the shipped work-graph snapshot adds restored child completions as the
@@ -361,11 +352,11 @@ Optional report finalization consumes the completed run's `CompletionSeal`;
 it never quiesces or drains execution a second time. Participant completion
 contributions and attributed, audited waivers are already bound to the cut. The
 host creates a `ReportAssembly` anchored to the root seal and acquires a
-fenced `ReportAssemblyClaim` for its designated finalizer. This post-completion
-claim is neither a `WorkClaim` nor a `ResourceLease`, requires no live work
-claim, and permits no ordinary workspace mutation. The narrow finalizer grant
-binds the seal id, assembly generation/revision, and assembly-claim fence
-for deterministic assembly and one polishing pass. Handoff or recovery bumps
+fenced `ReportAssemblyClaim` for its designated assembler. This planned
+post-completion claim is not a `WorkClaim`, requires no live execution claim,
+and permits no ordinary workspace mutation. It binds the seal and assembly
+generation for deterministic assembly and one polishing pass. The host
+protocol has no finalizer turn purpose or phase. Handoff or recovery bumps
 that fence. Reaching `report_ready` terminalizes the claim and freezes
 immutable bytes and a report hash. A publication intent and idempotency key
 exist only when a target is requested; retry sends the same bytes, and
@@ -392,7 +383,6 @@ sync_required -> recovery_open -> checkpoint_required -> sync_required
                                                        +-- reevaluate -> ready
 
 ready -> completion_required -> participant_ready -> exited
-                                  +-- optional finalizer_open -> exited
 ```
 
 Before a turn, the core deterministically evaluates store and schema health,
@@ -400,13 +390,13 @@ the declared control policy, root-execution membership, focused work/run,
 work revision, claim fence and run state, exact context-delivery
 acknowledgements, host-confirmed delivery position and source-feed progress,
 applicable
-pinned context, lease fences, and outstanding checkpoints. It returns one of:
+pinned context and outstanding checkpoints. It returns one of:
 
 - a short-lived `TurnGrant` bound to one canonical turn intent, session,
   work item/revision, run generation, claim fence, context packet,
   named source-feed position vector, host-confirmed session delivery position,
   project-policy and work-admission epochs, optional portable writer epoch and
-  validation deadline, mediated capability envelope, resource-lease fences,
+  validation deadline, mediated capability envelope,
   expiry,
   and any exact bounded context/delta injections still required; or
 - a typed refusal with stable code, blocking directives, and the capabilities
@@ -423,8 +413,8 @@ The common pre-turn path grants with missing context/deltas inlined; it does
 not refuse merely to tell the agent to call another retrieval tool.
 Immediately before prompt dispatch, `turn_begin` atomically rechecks grant
 expiry, project-policy
-epoch, work-admission epoch, work revision, claim fence, resource-lease
-fences, the optional portable writer epoch/validation deadline, and the
+epoch, work-admission epoch, work revision, claim fence,
+the optional portable writer epoch/validation deadline, and the
 session blocking watermark,
 then records those exact delivery tokens as **tentative** and activates the grant. Checkpoint
 atomically promotes the contiguous session delivery position and its exact
@@ -440,12 +430,11 @@ An action-gated host obtains a single-use `ActionGrant` immediately before a
 material capability call. It is bound to the parent turn, effect class,
 canonical structured resource subjects, authority references, and request
 fingerprint. Authorization rechecks the session blocking watermark as well as
-policy and lease fences. A transactional `action_begin` fences replay and
+policy and work-claim fences. A transactional `action_begin` fences replay and
 atomically rechecks the complete grant basis: parent/grant state and expiry,
 project-policy and work-admission epochs, optional portable writer
 epoch/validation deadline, blocking watermark, session/run phase, work
-revision and claim fence, capability-map revision, request fingerprint, authority references,
-and every lease subject/holder/fence/expiry. A stale basis refuses without
+revision and claim fence, capability-map revision, request fingerprint, and authority references. A stale basis refuses without
 consuming the grant. `action_complete` stores a minimal redacted
 receipt. A crash after begin but before a terminal receipt produces
 `outcome_unknown`, never an assumed failure or blind retry. Read-only
@@ -463,7 +452,7 @@ coverage as detection-only rather than `action_gated`.
 
 Turn completion is one structured checkpoint, not a second status dialogue.
 The host supplies recorded action receipts; the agent adds durable findings,
-typed blocker references, a bounded next-intent value, and lease disposition
+typed blocker references and a bounded next-intent value
 beside its ordinary response. Meaningful progress prose is captured once as
 typed memory and cited by hash. The checkpoint drives deltas, handoff
 material, and report input without storing raw reasoning traces or creating
@@ -497,7 +486,7 @@ delivery, not that Engram proved model comprehension.
 
 Work/run events store intrinsic type plus audience/resource selectors. A named
 built-in classifier derives per-session admission impact and blocking
-watermark: `blocking` events such as an applicable pinned change, lease
+watermark: `blocking` events such as an applicable pinned change, claim
 recovery, freeze, or addressed handoff must be injected or reconciled before
 the affected operation; `advisory` events are bundled under budget with
 visible omission and create a next-turn `delta_backlog` obligation only after
@@ -510,12 +499,12 @@ The packet fingerprint reproduces content; the event cursor orders behaviorally
 relevant work/run changes; a project policy epoch invalidates grants after global
 control/mediation changes; a work admission epoch invalidates grants after
 applicable pinned-rule, participant-access, work-revision, claim, or run-state
-changes; resource-lease fencing epochs invalidate grants after ownership changes. These values are not
+changes; work-claim fences invalidate old execution ownership. These values are not
 interchangeable. Unknown safety-relevant schema or policy versions block
 admission rather than being ignored.
 
 State-changing control transitions are idempotent and emit immutable canonical
-events; current session, delivery, action, and lease records are durable
+events; current session, delivery, and action records are durable
 operational projections. Live grants and high-volume allow/refusal diagnostics are
 immutable operational records with bounded retention, not canonical memory;
 restart discards their authority. Compact durable request-key tombstones bind
@@ -554,7 +543,7 @@ activates an id alone. No MCP or model-turn operation can administer it.
 Unknown schemas, unknown fields or triggers, duplicate rule identities, and
 missing selected objects fail closed.
 Every active run rechecks that shared epoch at turn/action boundaries—no
-single work claim or resource lease controls project policy. Host/user
+single work claim controls project policy. Host/user
 authority is the ceiling; control policy and work-applicable pinned rules may
 only restrict it. External action intents cite durable authority references bound to work/run, effect,
 payload fingerprint, and validity window.
@@ -563,7 +552,7 @@ Failure policy is capability-specific. Observation remains available where
 disclosure permits. On a decision-service deadline or clean unavailability,
 policy may allow only reversible local work as `degraded_open` under a
 previously issued unexpired envelope bound to policy/epoch, mediation map,
-resources, lease fences, and action/debt limits. The host durably spools typed
+resources, work-claim basis, and action/debt limits. The host durably spools typed
 `DegradedActionDebt` for idempotent upload and reconciliation; communication
 remains closed while Engram is unavailable, and the host must not create an
 offline message ledger. After recovery, a scoped recovery turn may capture a
@@ -584,7 +573,7 @@ The project policy is a floor, not the only assurance check. `observe` and
 `communicate` require `advisory`; internal `coordinate`, mutation,
 external-side-effect, and lifecycle effects require at least `turn_gated`. A
 bind records the declared mediated set and returns its assurance-capped
-effective subset; evaluation and lease acquisition refuse effects above that
+effective subset; turn evaluation refuses effects above that
 subset. Policy epochs, not wall-clock timestamps, order immutable policy
 history; activation and decision timestamps are attribution only.
 
@@ -616,7 +605,7 @@ its own dense per-session sequence over emitted pages. "Contiguous" always means
 positions in one named feed; a global SQLite row id may be useful internally
 but is never a cursor. This identity is fixed by the work graph so
 safety CAS never depends on sparse cross-feed numbering.
-Current sessions, delivery progress, leases, actions, finalization barriers,
+Current sessions, delivery progress, actions, finalization barriers,
 and indexes are mutable projections, but their safety-relevant transitions
 are auditable through canonical events. Live grants and decision diagnostics
 occupy a separate bounded operational tier and never become peer context. The
@@ -692,7 +681,7 @@ PortableManifest {
 
 Routine cadence pushes preserve the active writer epoch. A cross-machine move
 uses `engram portable release`: checkpoint/exit every local control session,
-make unfinished work claims recoverable, release every resource lease,
+make unfinished work claims recoverable,
 invalidate grants/delivery authority, advance the writer epoch, publish a
 `released` manifest by head CAS, and make that local store mutation-read-only.
 The next host runs `engram portable acquire`, restores the exact released head,
@@ -727,12 +716,11 @@ flush/handoff followed by `engram portable restore` of that head. Normal
 active execution never reads the remote as a second live database.
 
 Portable state never restores execution authority. Live work claims,
-resource leases, control sessions, grants, action state, delivery progress,
+control sessions, grants, action state, delivery progress,
 and agent-private scratch are excluded. Immutable claim lifecycle events may
 be retained for audit and fencing history, but an unfinished prior-host claim
-restores as `recoverable`; attributed recovery advances its generation/fence,
-and resource leases must be reacquired. Inert lease lifecycle audit events may
-cross, but never rebuild an active lease. This prevents a user from locking
+restores as `recoverable`; attributed recovery advances its generation/fence.
+Historical resource-lease audit events confer no live authority. This prevents a user from locking
 their new machine out with authority held by the old one.
 
 Portable projection is closed, not an arbitrary filtered object subset:
@@ -1064,7 +1052,6 @@ engram report show <root-ref>                engram report publish <root-ref> # 
 
 # control diagnostics and recovery (§2.7)
 engram control status                       engram control explain <decision-id>
-engram lease renew <resource>               engram lease release <resource>
 engram action reconcile <action-id>
 
 # optional external adapters (§9)
@@ -1140,35 +1127,24 @@ turn_checkpoint     session_heartbeat   session_exit
 
 Current implementation status: `engram control` ships the JSON-lines subset
 `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`, and
-`turn_checkpoint`, plus `lease_acquire` and `lease_release`, for the built-in
-`observe`/`communicate`/internal-`coordinate`/lease-backed-`mutate_local`
-policy. `coordinate` is a lease-boundary effect, not a model-turn capability.
-It persists exact retry evidence across restart. Lease acquisition applies the
-active project floor first, then the per-effect floor, declared/effective
-mediation, supported-effect set, and policy epoch before any reservation event;
-policy refusals are sticky under their bind-scoped idempotency key, an
-older-bind key conflicts, and an epoch refusal atomically adopts the new epoch
-for a fresh-key retry. A successful acquisition key is not reused after
-terminal release within the same bind. It invalidates unbegun grants when a new
-control connection opens, fails stale begin-time rechecks closed, and binds a
-local-mutation turn to the live exclusive execution lease and overlap fence
-covering each declared resource. A begun mutation turn pins its bound leases:
-release refuses and successor acquisition defers across nominal expiry until
-the begun grant is checkpointed, preserving the fence across restart.
-Replacement connections fence live
-predecessors; begun grants remain checkpoint-required and discoverable, with
-the exact frozen grant returned only for safely replayable observe-only partial
-recovery. Path
-subjects are bound to the project and conservatively NFC/case normalized,
-and cross-task rebind is rejected while active leases remain. The remaining
-operations and all individual action/shared/external/lifecycle authority are
-not yet shipped;
-`action_gated` declarations are rejected.
+`turn_checkpoint`, for the built-in `observe`/`communicate`/`mutate_local`
+policy. Internal `coordinate` is not a model-turn capability. The policy
+checks project/effect assurance floors, declared mediation, supported effects,
+and current epochs. Resource leases and host obligation waiver are removed.
+Resource intents may be empty; supplied subjects are project-bound and normalized,
+not exclusive reservations.
+
+Exact retry evidence survives restart. New connections fence predecessors and
+invalidate unbegun grants. Begun grants remain checkpoint-required and
+discoverable, with the frozen payload returned only for safely replayable
+observe-only partial recovery. The remaining protocol operations and individual
+action/shared/external/lifecycle authority are not shipped; `action_gated`
+declarations are rejected.
 Every `HostControlRequest` variant is strict: the paired consumer must send
 exactly the current field set for every operation. Any additive, unknown, or
 removed request field is an `invalid_request` refusal that names the request
-kind and offending field, including the former grant field on
-`obligation_waive`. This pre-release request-shape revision is coordinated
+kind and offending field. The former `obligation_waive` operation is removed.
+This pre-release request-shape revision is coordinated
 atomically with the live TermAl consumer. There is deliberately no
 version-negotiation or legacy-frame shim: the paired consumer must update all
 host-frame shapes before this Engram build lands.
@@ -1236,8 +1212,8 @@ local gateway. It is never exposed as an agent-callable way to mint grants.
 The host must bind a local work item/run before delivering a task prompt, obtain a `TurnGrant`
 before every ordinary model turn, inject all required deliveries/directives,
 activate them through `turn_begin`, and persist
-a checkpoint before the next turn. A scoped recovery/finalizer grant may
-admit only its named repair/report prompt while ordinary turns remain denied.
+a checkpoint before the next turn. A scoped recovery grant may
+admit only its named repair prompt while ordinary turns remain denied.
 An `action_gated` host must additionally
 intercept every declared material capability, obtain and begin a matching
 single-use action grant, and record its outcome even if the model turn later
@@ -1335,7 +1311,7 @@ Report finalization is an optional path after local work completion (§2.6).
 It consumes the run's immutable `CompletionSeal`; it never quiesces or drains
 execution again. The root seal already proves every expected contributor
 supplied a required child seal or authorized omission, reconciled every action
-outcome, released or transferred resource leases, contributed, and satisfied
+outcome, contributed, and satisfied
 acceptance, and closed every obligation applicable at the exact completion cut
 with a bound terminal resolution—or an attributed, audited waiver by a
 project-bound session records the omission. New seals also cite the exact
@@ -1348,11 +1324,10 @@ freeze supersedes that run and aborts assembly; reopening after `report_ready`
 requires a superseding report rather than mutating frozen bytes.
 
 After the barrier, Engram creates a `ReportAssembly` anchored to the root
-`CompletionSeal`. The designated finalizer holds a fenced
-`ReportAssemblyClaim`; this authority is distinct from the terminalized work
-claim and released execution/resource leases. Its finalizer grant binds the
-seal id, assembly generation/revision, and assembly-claim fence and is
-restricted to deterministic report assembly and polishing. It cannot
+`CompletionSeal`. The designated assembler holds a fenced
+`ReportAssemblyClaim`; this planned authority is distinct from the terminalized
+work claim and binds the seal and assembly generation. It is restricted to
+deterministic report assembly and polishing. It cannot
 authorize ordinary execution mutation. Only then is the report **frozen at
 `report_ready`**—an immutable object with a `report_hash`—and the assembly
 claim terminalizes. If publication is requested, a separate immutable intent
@@ -1415,7 +1390,7 @@ evaluation harness:
 
 | Phase | Contents |
 | --- | --- |
-| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from resource leases, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; scoped resource leases, handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts; deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
+| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts; deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
 | **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction; completed-work retention compaction; budget and ready-ranking tuning; optional configured external backup automation. |
 | **v2+** | Optional live cross-host `Sync`/team backend; real GitHub/Jira/proprietary source and publication adapters; optional embeddings; comments/link-backs; real Redactor/DLP; Postgres/service `Store`; Signer-based attestation; envelope encryption for crypto-shredding. |
 
@@ -1440,7 +1415,7 @@ Codex::AgentMemory):
 | Cross-host storage / team scope | V1 starts local and adds optional sequential `portable` handoff for one active host. Concurrent team scope remains deferred with its design preserved (§3.3). |
 | Redaction backend | None selected. Port + safe defaults ship; the no-op development implementation is visibly labeled and implies no compliance assurance (§7). |
 | Architecture refinement | Local work graph plus dual-layer memory/report model; final report and publication are optional state machines after local completion (§1, §2.6, §9.5). |
-| Multi-session operating model | Normal in V1 on one host. Root-work memory is shared by default; agent scratch is private. Each `WorkRun` has one ordinary executor/claim, parallel sessions claim distinct children under a `RootExecution`, and claims/leases, typed source/delivery positions, contributions, child seals, and a completion barrier are V1 primitives. |
+| Multi-session operating model | Normal in V1 on one host. Root-work memory is shared by default; agent scratch is private. Each `WorkRun` has one ordinary executor/claim, parallel sessions claim distinct children under a `RootExecution`, and claims, typed source/delivery positions, contributions, child seals, and a completion barrier are V1 primitives. |
 | Product seam | Engram owns host-local work from creation/decomposition through completion. External intake, storage/sync, and publication are independent optional ports. One capture generates work delta, handoff, evidence, and report inputs. |
 | Behavioral control | Engram decides task-bound readiness and capability eligibility; the host enforces those decisions at turn and declared tool boundaries. MCP alone is advisory. Effective authority is the intersection of Engram and user/host policy (§2.7, §8.3). |
 
@@ -1489,6 +1464,7 @@ outcomes:
 | Round-7 Codex verification | Independent read-only verification found four implementation-blocking ambiguities: finalizer authority survived a terminal work claim, participant plurality conflicted with a singular run claim, scalar cursors lacked feed identity, and separately acyclic hierarchy/prerequisite graphs could still create a completion deadlock. | Add fenced post-completion `ReportAssemblyClaim`; make one executor own each child `WorkRun` under a root aggregate; type source feed positions separately from session delivery positions; cycle-check explicit prerequisites plus implicit required-child completion edges as one graph. | **Adopted before implementation.** No external storage is required by any correction (§2.6–2.7, §3.1, §9.5). |
 | Round-8 portability correction | Greg stated that Engram starts local but must persist remotely, that he moves between machines, and that repository scale may reach hundreds of developers. He agreed to a canonical human-readable work projection and proposed a branch. | Engram::Opus separated restore-only backup, sequential portability, and concurrent sync; recommended a dedicated plumbing ref rather than a branch/working tree, scheduled push with visible lag, divergence refusal, sensitivity filtering, and no transfer of live claims/leases. | **Adopted as the transport-neutral contract:** optional V1 `portable` mode has one active host, explicit handoff/restore, head CAS, and no live-authority transfer. A private dedicated Git ref is the recommended personal transport; organization-scale substrate remains a product choice (§3.2–3.4, §7, §9.2–9.4) → Draft 0.8. |
 | Round-8 portability verification | Independent Codex verification and Engram::Opus both found that push-time CAS alone did not protect restore/startup and that sensitivity-filtered content-addressed projections could sever object/feed references. | Add writer-epoch release/acquire, exact-base restore, bounded startup/resume validation, and honest forced-takeover detection; require executable shared-state closure, separately hashed exclusion stubs, dense feed placeholders, export pass-or-exclude, coverage diagnostics, and policy-hash equality on acquire. | **Adopted before portable implementation.** Steps 1–4 remain independent of remote storage; the portable step must satisfy these conformance rules (§2.7, §3.2, §7, §9.2–9.4). |
+| Cleanup correction (2026-09-23) | Greg approved direct control-session binding, resource-lease and host-waiver removal, finalizer turn removal, object-id naming, and self-asserted acceptance disclosure. | Current contracts above supersede the lease/finalizer mechanisms described in the historical rows of this table; optional report assembly remains deferred. | Approved cleanup; paired host changes and explicit store conversion are required before deployment. |
 
 ## Appendix B — Beads verdict
 

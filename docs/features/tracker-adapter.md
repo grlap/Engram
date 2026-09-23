@@ -59,9 +59,9 @@ cross-host coordination; none is intake/publication.
 
 Portable payloads include shared canonical objects, the work graph, feed
 ordering, schemas, and permitted evidence references. They exclude live work
-claims, resource leases, control sessions/grants, delivery progress, and
+claims, control sessions/grants, delivery progress, and
 agent-private scratch. Restore invalidates old execution authority: unfinished
-prior-host claims are recoverable and leases must be reacquired. A configured
+prior-host claims are recoverable. A configured
 cadence and clean-session flush create durable receipts; `doctor` surfaces
 remote head, lag, and degraded pushes.
 

@@ -84,7 +84,7 @@ fn evaluate_input(
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "one scenario walks the legacy refusal, the record, the completion refusals, and the seal in order"
+    reason = "one scenario walks the self-asserted refusal, the record, the completion refusals, and the seal in order"
 )]
 fn evaluate_records_under_policy_and_completion_consumes_it() {
     let directory = crate::test_support::temp_home().expect("temp directory");
@@ -131,7 +131,7 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
     let citation = vec![evidence.as_str().to_owned()];
     let work_ref = root.short_ref.clone();
 
-    let legacy = service
+    let self_asserted = service
         .work_evaluate_on(
             &evaluate_input(
                 &work_ref,
@@ -141,10 +141,10 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
             ),
             at(3),
         )
-        .expect_err("the legacy policy refuses evaluations");
+        .expect_err("the self-asserted policy refuses evaluations");
     assert!(
-        matches!(&legacy, StoreError::AcceptanceEvaluationRefused { reason, .. } if reason.contains("does not enable")),
-        "{legacy:?}"
+        matches!(&self_asserted, StoreError::AcceptanceEvaluationRefused { reason, .. } if reason.contains("does not enable")),
+        "{self_asserted:?}"
     );
 
     enable(&database, &[AcceptanceEvaluationMode::SameSession], 4);

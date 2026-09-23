@@ -54,7 +54,7 @@ a precondition for valid local execution.
 | --- | --- | --- |
 | Engram | Local work graph, readiness, dependencies, decomposition, claims, execution memory, evidence, completion, and publication intents | Starting/stopping model processes or silently changing external systems |
 | Host runtime | Model/session lifecycle, prompt delivery, tool interception, user approvals, and enforcement of Engram grants | Reimplementing work readiness or granting authority independently |
-| Agent or human | Goals, judgment, proposed plans, evidence, and choices allowed by current authority | Self-minting claims, leases, grants, waivers, or publication permission |
+| Agent or human | Goals, judgment, proposed plans, evidence, and choices allowed by current authority | Self-minting claims, grants, waivers, or publication permission |
 | External adapter | Explicit source snapshot, optional backup/portable/sync, or separately authorized export/publication | Becoming an undeclared dependency or continuously mirroring tracker state |
 
 The host may choose a model and start a process. Engram determines which local
@@ -161,8 +161,7 @@ sibling or descendant focus in the same root.
 
 A `WorkRun` is one execution generation for exactly one work item. In V1 it
 has exactly one ordinary executor and at most one live `WorkClaim`. It owns
-that executor's ordered execution feed, checkpoints, evidence, resource
-leases, and completion state. Parallel sessions execute distinct child work
+that executor's ordered execution feed, checkpoints, evidence, and completion state. Parallel sessions execute distinct child work
 runs under the same `RootExecution`; they do not share mutation authority for
 one run. Root members that do not claim the focused run may inspect permitted
 root memory and communicate, but cannot receive an ordinary mutation or
@@ -306,18 +305,12 @@ an authored local title and outcome; it does not map external fields into
 local work. Refresh records an immutable source-change notice that applies
 nothing. It never overwrites local state or implicitly reopens/completes work.
 
-### Claim and resource lease
+### Work claims
 
-These are deliberately different:
-
-- A **work claim** reserves responsibility for a work item or run. It prevents
-  duplicate execution and supports assignment, heartbeat, handoff, expiry,
-  and recovery. It does not authorize file or external mutation.
-- A **resource lease** is fenced authority over canonical path or logical
-  subjects in the project namespace. Conflict detection and fence continuity
-  span every task in that project, while the lease's task id remains binding
-  and audit metadata. A mutation grant must bind the live lease fences. It says
-  nothing about whether the overall work item is complete.
+A **work claim** reserves responsibility for a work item or run. It prevents
+duplicate execution and supports assignment, heartbeat, handoff, expiry,
+and recovery. It does not authorize file or external mutation. The separate
+resource-lease engine has been removed; hosts and users retain mutation authority.
 
 A successful note, update, evidence, checkpoint, or handoff by the current
 holder advances work-claim expiry to at least one hour after that mutation
@@ -356,9 +349,8 @@ with no later mutation has no expiry event even though readers already treat
 the offer as expired. Taking over from a different, unaccounted holder still
 requires attributed recovery.
 
-A session normally needs the work claim before an ordinary execution turn and
-the relevant resource lease immediately before mutation. Shared analysis may
-need a claim but no exclusive resource lease. Root-level observation and
+A work-bound execution turn must carry the live work claim. Shared analysis
+may use an independent child claim; resource leases are not required. Root-level observation and
 communication may instead use `RootExecution` membership; membership never
 authorizes mutation or completion of another executor's run.
 
@@ -375,9 +367,8 @@ that is not a seal: a child loaded completed carries an inert
 `RestoredRecord`, the parent seal lists it under `restored_child_completions`
 beside its required seals and waivers, and report assembly refuses a root
 whose completion transitively rests on one. Sealing terminalizes
-the run's `WorkClaim` and releases or transfers every dependent
-`ResourceLease`; completed execution authority is never kept alive for report
-work.
+the run's `WorkClaim`; completed execution authority is never kept alive for
+report work. Resource leases have been removed.
 
 Every new seal also declares completion-obligation schema V1 and records the
 exact `(definition, terminal resolution)` pairs applicable at its pre-seal
@@ -416,9 +407,10 @@ ReportAssemblyClaim {
 }
 ```
 
-The assembly claim is not a work claim or resource lease and does not permit
-ordinary workspace mutation. A finalizer grant binds the completion-seal
-hash, assembly generation and revision, and live assembly-claim fence.
+The planned assembly claim is not a work claim and does not permit
+ordinary workspace mutation. Assembly binds the completion seal,
+assembly generation and revision, and live assembly-claim fence; no finalizer
+turn purpose or phase exists in the host protocol.
 Handoff, expiry, and recovery advance that fence. Reaching `report_ready`
 terminalizes the claim and freezes the report bytes.
 
@@ -438,8 +430,7 @@ completed --reopen--> open with a new WorkRun generation
 ```
 
 The target controlled-completion lifecycle inserts `completion_pending`
-between `open` and `completed` only when Engram must drain mediated actions or
-linked resource leases. That state is not emitted by the shipped zero-linked-
+between `open` and `completed` only when Engram must drain mediated actions. That state is not emitted by the shipped zero-linked-
 state completion path.
 
 Availability is a derived projection over the open item:
@@ -534,11 +525,11 @@ when actual completion accepts their restored completion proofs.
 
 Every completed run has a `CompletionSeal`: accepted work revision, run and
 claim fences, dense completion-cut position, executor checkpoint state,
-reconciled action outcomes, released/transferred resource leases, acceptance
+reconciled action outcomes, acceptance
 results, evidence ids, and the exact terminal obligation basis. The shipped
 seal also carries the exact bounded environment-evidence id set at that cut.
 `work_complete` requires the linked
-action-outcome and resource-lease drain sets to be empty, terminalizes the work
+action-outcome drains and the historical resource-lease drain field to be empty, terminalizes the work
 claim, and seals atomically. A root seal also consumes each required child seal
 or explicit reason-attributed disposed-child waiver and all root contributions.
 Before that seal can land, every descendant claim and handoff offer must be
@@ -643,9 +634,9 @@ revision and idempotency key.
 - Cross-project hierarchy and prerequisites are out of V1. An external or
   cross-project dependency is represented as a typed blocker with provenance,
   not a fake local edge.
-- A resource lease can be issued only to a session with a live claim covering
+- A work-bound control grant requires a live claim covering
   that work. Releasing, handing off, or recovering the claim increments its
-  fence and revokes or transfers its dependent leases transactionally.
+  fence and invalidates stale work-bound authority.
 
 Every admitted change appends a canonical `WorkEvent`. New events bind the
 complete post-transition prerequisite and active-blocker basis by hash, so a
@@ -812,7 +803,7 @@ section selector over `focus`, `ready`, `catalog`, `changes`, `memories`,
 excluding `changes` performs no delivery staging. Ready and catalog candidate selection
 uses bounded, maintained SQLite projections and decodes only the rows selected
 by the requested limit and filters. Those two sections are advisory: lifecycle
-mutations still verify the exact hash-bound item, run, claim, lease,
+mutations still verify the exact hash-bound item, run, claim,
 and relation basis they consume under their write transaction, while `engram
 doctor` exhaustively verifies the derived catalog and relation indexes against
 retained canonical history. For change delivery it verifies
@@ -878,7 +869,7 @@ length-admitted. Historical stored ids are not rewritten.
 The transaction that creates a new process-default session row pays for one
 index-bounded reclamation page of at most 64 older inactive rows and their
 protocol attempts; operations under an existing row take the primary-key path
-and do no retention scan. Recent activity, an explicit task binding, staged
+and do no retention scan. Recent activity, an explicit control-session binding, staged
 delivery, a pending protocol attempt, a live claim, or an open handoff offer
 prevents reclamation. Those tables are operational only; canonical work,
 events, evidence, and result objects remain intact.
@@ -898,13 +889,13 @@ advisory read snapshot after staging and may observe a newer concurrent commit.
 Advisory focus is selected from the session binding inside that snapshot;
 the top-level session and delivery token still describe the separately staged
 change range. Lifecycle mutations always
-revalidate their revision, claim, lease, authority, and canonical projection
+revalidate their revision, claim, authority, and canonical projection
 basis under the write lock. The exact projected change page and its staged
 omission count are stored canonically beside the tentative cursor and opaque
 token; that count names entries left unconsumed for the next page, not entries
 discarded from the current response by its byte budget. Staging
 compare-and-swaps the confirmed cursor, empty pending slot, focused work, and
-task binding under the SQLite write lock; a focus or task rebind that commits
+control-scope binding under the SQLite write lock; a focus or scope rebind that commits
 first forces projection to restart on the new read basis.
 
 Model-originated mutations may supply a caller-stable idempotency key, which
@@ -1175,10 +1166,10 @@ evidence/resolution, and deterministic typed guidance. Neither MCP nor
 command is an operator-intended convention, not an authenticated boundary: it
 has no grant token or run-binding check, so any local process with the binary
 and store access can invoke it. The host-private `obligation_waive` operation
-is the enforced alternative; its native control session must be bound to the
-same live run. Canonical resolution records asserted `waived_by` attribution
-and either the shell caller's asserted actor or the private session's
-server-fixed actor, while agent pages and the receipt omit the reason. At the
+has been removed. Revising or dropping an acceptance binding still clears its
+open obligation through an audited work update. Canonical resolutions retain
+their recorded actors and asserted `waived_by` attribution; agent pages omit
+the reason. At the
 exact pre-seal cut, every applicable definition must
 have a satisfied or waived resolution at or before that cut. Otherwise
 `work_complete` returns the typed `open_work_obligations` result with the
@@ -1728,11 +1719,11 @@ retain inert completion summaries, not native acceptance-result vectors;
 restored-record-only completions explicitly state that this store holds no
 per-criterion evidence record, without inventing a count or naming criteria.
 
-Until action outcomes and resource leases are linked to `WorkRun`, V1 accepts
-only a **zero-linked-state** completion-drain attestation. An
-agent cannot complete by supplying arbitrary action hashes or lease names.
-The later host-enforcement slice replaces that temporary empty attestation
-with exact reconciled action and released/transferred lease projections.
+Until action outcomes are linked to `WorkRun`, V1 accepts only a
+**zero-linked-state** completion-drain attestation. Its historical resource-lease
+field remains empty; removing the lease engine does not fabricate a drain.
+An agent cannot complete by supplying arbitrary action ids or lease names.
+Later host enforcement may bind exact reconciled action outcomes.
 
 ## Behavioral-control integration
 
@@ -1743,7 +1734,6 @@ short-lived grant. That control-plane grant binds:
 ```text
 work_id + work_revision + run_id
 claim_id + claim_fence
-resource lease ids + fences
 project policy epoch + work admission epoch
 basis feed positions[] + session delivery position
 capability envelope + expiry
@@ -1764,7 +1754,7 @@ The SDK removes ceremony from the model loop:
 3. `after_action` records the minimal outcome receipt even if the model turn
    later fails.
 4. `after_turn` persists the model's structured checkpoint and reconciles
-   claims/leases before another turn.
+   work-claim state before another turn.
 
 Unchanged work context is represented by a small cursor/hash receipt, not
 repeated prose. Refusals name the exact condition and safe recovery operation.
@@ -1858,8 +1848,8 @@ lag, and a visible degraded state after failure. Moving machines is an
 explicit project-level release/acquire around restore of that exact head. A
 portable manifest binds its parent, consistent source cut, feed heads,
 export-policy hash, writer instance, and monotonic writer epoch. Release
-checkpoints/exits local sessions, makes unfinished claims recoverable, releases
-leases, invalidates grants/delivery authority, CAS-publishes a `released`
+checkpoints/exits local sessions, makes unfinished claims recoverable,
+invalidates grants/delivery authority, CAS-publishes a `released`
 manifest, and makes the old store mutation-read-only. Acquire CAS-publishes a
 new active instance/epoch before enabling local writes. Crash takeover is an
 attributed recovery. The remote is not read as a second live database during
@@ -1885,12 +1875,11 @@ must instead add per-origin ordering or a server sequencer and remains later.
 
 Portable/backup payloads contain canonical shared objects, the local work
 graph, feed ordering, evidence references, schemas, and a manifest. They never
-restore a live `WorkClaim`, `ResourceLease`, control session, delivery state,
+restore a live `WorkClaim`, control session, delivery state,
 or grant. Immutable claim lifecycle facts may remain for audit, but an
 unfinished old-host claim restores as `recoverable`; a new host performs an
-attributed recovery and advances the generation/fence. Resource leases must
-be reacquired. Inert lease lifecycle audit events may cross, but never rebuild
-an active lease. Agent-private scratch never enters a portable payload.
+attributed recovery and advances the generation/fence. Historical lease audit
+events confer no live authority. Agent-private scratch never enters a portable payload.
 
 The projection must be closed under executable shared-state references. Every
 object required to rebuild the work graph, readiness, policy, root context,
@@ -1946,7 +1935,7 @@ daily workflow it covers, kept for anyone arriving from the previous tracker
 | `bd ready` | `work_next` with typed readiness reasons |
 | `bd show`, search/list | Explicit `show REF` plus `ls`/`search` query views, without focus selection |
 | `bd dep add`, blocked | prerequisite edges and typed blockers through `update --after` / `--drop-after` |
-| assignee vs. `bd update --claim` | durable assignment vs. fenced live claim; resource mutation still needs leases |
+| assignee vs. `bd update --claim` | durable assignment vs. fenced live claim; resource mutation still needs host/user authority |
 | notes/design/acceptance | typed work fields plus work-scoped shared/private memory and evidence |
 | comments and handoff | one checkpoint feeding deltas, handoff, and report input |
 | `bd close`, reopen, supersede | one-call evidence capture/seal when compact, or explicit evidence/checkpoint steps; audited reopen/cancel/supersede events through `update --supersede-with` |
@@ -1989,7 +1978,7 @@ The smallest coherent implementation sequence is:
 1. Define dense per-feed cursor identity, then add canonical work
    items/events, graph projections, local roots, hierarchy, prerequisites,
    ready queries, claims, and evidence-gated completion.
-2. Bind the existing task/run, memory feed, resource leases, and turn grants to
+2. Bind the control scope/work run, memory feed, and turn grants to
    work revisions and claim fences.
 3. Ship the six-operation agent protocol plus administrative CLI/query views,
    assignment, deferral, human decisions, and use Engram to track its own

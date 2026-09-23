@@ -796,7 +796,6 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
     let guidance = if record.state == WorkObligationState::Open {
         WorkObligationGuidance::RecordVerificationThenCheckpoint {
             requirement: record.obligation.requirement.clone(),
-            host_waiver_requestable: true,
         }
     } else {
         WorkObligationGuidance::None

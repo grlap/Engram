@@ -156,16 +156,16 @@ fn staged_work_delivery_cas_binds_the_current_task() {
     let payload = CanonicalObject::freeze(&entries).expect("test delivery payload");
     let session = SessionId("task-bound-delivery".into());
     let task = store
-        .start_task(
+        .bind_test_control_scope(
             &work.project_id,
             "dummy:DELIVERY-TASK-CAS",
             "Delivery task CAS",
             &session,
-            actor("task-bound-delivery"),
+            &actor("task-bound-delivery"),
             at(1),
         )
         .expect("task binding")
-        .task;
+        .status;
 
     assert!(
         store

@@ -3087,7 +3087,7 @@ test("CLI words translate the same ambient lifecycle service", (t) => {
     assert.equal(notedJson.full_detail, `engram work show '${workRef}' --notes`);
 
     const done = cliText(engramHome, actor, "done");
-    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nasserted 1 acceptance criterion satisfied; completion changed no criterion\nacceptance: self-asserted \(legacy\)\nfull detail: engram work show 'w-[0-9a-f]{12}'\ncriterion evidence: 1 of 1 criteria unlinked \(1 shown\)\n  criterion 1: no evidence linked to this criterion\nreminders: none\nnext:\n/u);
+    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nasserted 1 acceptance criterion satisfied; completion changed no criterion\nacceptance: self-asserted\nfull detail: engram work show 'w-[0-9a-f]{12}'\ncriterion evidence: 1 of 1 criteria unlinked \(1 shown\)\n  criterion 1: no evidence linked to this criterion\nreminders: none\nnext:\n/u);
     assert.match(done, /\s+engram work next/u);
     const doneJson = cliJson(engramHome, actor, "done");
     assert.match(doneJson.seal, HASH);

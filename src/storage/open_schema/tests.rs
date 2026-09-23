@@ -102,7 +102,7 @@ fn centralized_schema_versions_match_fresh_store_projections_and_policy_objects(
     );
 
     let task_id = TaskId::new();
-    install_memory_task(&store, task_id, &["schema-agent"]);
+    install_memory_task(&mut store, task_id, &["schema-agent"]);
     let receipt = store
         .capture_note(
             &note_request(
@@ -567,12 +567,12 @@ fn store_persists_and_enforces_one_host_path_identity_policy() {
         .expect("remove policy binding");
     unsafe_connection
         .execute(
-            "INSERT INTO control_work_leases (
-                 lease_id, task_id, holder_session_id, lease_json,
-                 state, expires_at_ms
-              ) VALUES ('existing-path', 'task', 'session',
-                       CAST('{\"subject\":{\"kind\":\"path\"}}' AS BLOB),
-                       'active', 1)",
+            "INSERT INTO control_turn_grants (
+                 grant_id, task_id, session_id, request_key, grant_json,
+                 state, issued_at_ms, expires_at_ms
+              ) VALUES ('existing-path', 'task', 'session', 'request',
+                       CAST('{\"basis\":{\"resource_intents\":[{\"kind\":\"path\"}]}}' AS BLOB),
+                       'issued', 0, 1)",
             [],
         )
         .expect("insert existing path-bearing state");
@@ -703,12 +703,12 @@ fn backup_copies_a_live_store_and_verifies_the_copy() {
     let project = ProjectId("backup-project".into());
     let session = SessionId("backup-session".into());
     store
-        .start_task(
+        .bind_test_control_scope(
             &project,
             "dummy:BACKUP-1",
             "Backup fixture",
             &session,
-            actor("backup-agent"),
+            &actor("backup-session"),
             Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
         )
         .expect("fixture task");
@@ -735,7 +735,7 @@ fn backup_copies_a_live_store_and_verifies_the_copy() {
 }
 
 #[test]
-fn unresolved_path_identity_refuses_path_leases_but_not_logical_ones() {
+fn unresolved_path_identity_refuses_paths_but_not_logical_subjects() {
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store =
         SqliteStore::open_in_memory_with_host_path_identity(None).expect("unresolved store");
@@ -756,18 +756,7 @@ fn unresolved_path_identity_refuses_path_leases_but_not_logical_ones() {
         coverage: crate::domain::ResourceCoverage::Tree,
     };
     assert!(matches!(
-        store.acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session.status.session_id,
-            &session.connection_token,
-            &session.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &path,
-            300,
-            "lease-unresolved-path",
-            now + TimeDelta::seconds(2),
-        ),
+        store.path_policy_for(&path),
         Err(StoreError::HostPathIdentityUnresolved)
     ));
     let logical = crate::domain::ResourceSubject::Logical {
@@ -775,23 +764,7 @@ fn unresolved_path_identity_refuses_path_leases_but_not_logical_ones() {
         segments: vec!["report".into()],
         coverage: crate::domain::ResourceCoverage::Exact,
     };
-    assert!(matches!(
-        store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &session.status.session_id,
-                &session.connection_token,
-                &session.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &logical,
-                300,
-                "lease-unresolved-logical",
-                now + TimeDelta::seconds(3),
-            )
-            .expect("logical leases need no path identity"),
-        WorkLeaseDecision::Granted { .. }
-    ));
+    assert!(store.path_policy_for(&logical).is_ok());
     // A persisted policy is still binding for a later resolved opener,
     // while an unresolved opener may read the same store.
     let directory = crate::test_support::temp_home().expect("temp directory");
@@ -819,86 +792,27 @@ fn unresolved_path_identity_refuses_path_leases_but_not_logical_ones() {
 }
 
 #[test]
-fn case_aliases_conflict_only_under_a_folding_policy() {
-    for (case_fold_paths, expect_conflict) in [(true, true), (false, false)] {
-        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-        let mut store = SqliteStore::open_in_memory_with_host_path_identity(Some(HostPathPolicy {
+fn case_aliases_normalize_only_under_a_folding_policy() {
+    for case_fold_paths in [true, false] {
+        let policy = HostPathPolicy {
             case_fold_paths,
             windows_alias_rules: false,
-        }))
-        .expect("explicit policy store");
-        let effects = [EffectClass::Observe, EffectClass::MutateLocal];
-        let session_a = bind_control_for(&mut store, "case-a", "bind-case-a", &effects, now);
-        let session_b = bind_control_for(&mut store, "case-b", "bind-case-b", &effects, now);
-        complete_control_turn(
-            &mut store,
-            &session_b,
-            "sync-case-b",
-            vec![EffectClass::Observe],
-            Vec::new(),
-            now + TimeDelta::seconds(1),
-        );
-        complete_control_turn(
-            &mut store,
-            &session_a,
-            "sync-case-a",
-            vec![EffectClass::Observe],
-            Vec::new(),
-            now + TimeDelta::seconds(2),
-        );
+        };
         let lower = crate::domain::ResourceSubject::Path {
             project_id: ProjectId("project-a".into()),
             segments: vec!["src".into(), "Main.rs".into()],
             coverage: crate::domain::ResourceCoverage::Exact,
         };
-        assert!(matches!(
-            store
-                .acquire_work_lease(
-                    &ProjectId("project-a".into()),
-                    &session_a.status.session_id,
-                    &session_a.connection_token,
-                    &session_a.routing_token,
-                    crate::domain::LeaseKind::Execution,
-                    crate::domain::LeaseMode::Exclusive,
-                    &lower,
-                    300,
-                    "lease-case-a",
-                    now + TimeDelta::seconds(3),
-                )
-                .expect("first lease"),
-            WorkLeaseDecision::Granted { .. }
-        ));
-        complete_control_turn(
-            &mut store,
-            &session_b,
-            "resync-case-b",
-            vec![EffectClass::Observe],
-            Vec::new(),
-            now + TimeDelta::seconds(3),
-        );
         let upper = crate::domain::ResourceSubject::Path {
             project_id: ProjectId("project-a".into()),
             segments: vec!["SRC".into(), "main.RS".into()],
             coverage: crate::domain::ResourceCoverage::Exact,
         };
-        let decision = store
-            .acquire_work_lease(
-                &ProjectId("project-a".into()),
-                &session_b.status.session_id,
-                &session_b.connection_token,
-                &session_b.routing_token,
-                crate::domain::LeaseKind::Execution,
-                crate::domain::LeaseMode::Exclusive,
-                &upper,
-                300,
-                "lease-case-b",
-                now + TimeDelta::seconds(4),
-            )
-            .expect("second lease decision");
+        let project = ProjectId("project-a".into());
         assert_eq!(
-            matches!(decision, WorkLeaseDecision::Defer { .. }),
-            expect_conflict,
-            "case_fold_paths={case_fold_paths} decided {decision:?}"
+            lower.normalized_for_project_with_policy(&project, policy)
+                == upper.normalized_for_project_with_policy(&project, policy),
+            case_fold_paths
         );
     }
 }
@@ -949,28 +863,6 @@ fn unresolved_opener_cannot_begin_a_path_bearing_grant() {
         Vec::new(),
         now + TimeDelta::seconds(1),
     );
-    let subject = crate::domain::ResourceSubject::Path {
-        project_id: ProjectId("project-a".into()),
-        segments: vec!["src".into()],
-        coverage: crate::domain::ResourceCoverage::Tree,
-    };
-    let WorkLeaseDecision::Granted { .. } = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &session.status.session_id,
-            &session.connection_token,
-            &session.routing_token,
-            crate::domain::LeaseKind::Execution,
-            crate::domain::LeaseMode::Exclusive,
-            &subject,
-            60,
-            "ub-lease",
-            now + TimeDelta::seconds(2),
-        )
-        .unwrap()
-    else {
-        panic!("the lease must grant on the resolved opener");
-    };
     let ControlTurnDecision::Grant { grant } = store
         .evaluate_control_turn(
             &ProjectId("project-a".into()),
@@ -1232,7 +1124,7 @@ fn explicit_projection_repair_rebuilds_existing_object_fts_content() {
     let database = directory.path().join("engram.db");
     let mut store = SqliteStore::open(&database).expect("initialize current store");
     let task_id = TaskId::new();
-    install_memory_task(&store, task_id, &["fts-agent"]);
+    install_memory_task(&mut store, task_id, &["fts-agent"]);
     let receipt = store
         .capture_note(
             &note_request(

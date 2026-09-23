@@ -13,6 +13,8 @@ use crate::{
     memory::DevelopmentNoopRedactor,
 };
 
+mod control_conversion;
+
 /// Retired operational rows are fixture data, never a schema opened by the
 /// current product. Export must still carry all of them without interpretation.
 fn with_retired_tables(path: &Path) {
@@ -89,6 +91,90 @@ fn with_retired_tables(path: &Path) {
         "INSERT INTO objects (object_id, object_kind, canonical_json) VALUES (?1, 'task_claim_event', ?2)",
         rusqlite::params![event.key().as_str(), event.bytes()],
     ).expect("historical audit");
+}
+
+#[test]
+fn resource_lease_retirement_admits_only_empty_known_tables() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("store.jsonl");
+    populated(&source);
+    let connection = Connection::open(&source).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE control_work_leases (
+            lease_id TEXT PRIMARY KEY, task_id TEXT, holder_session_id TEXT,
+            lease_json BLOB, state TEXT, expires_at_ms INTEGER, lease_hash TEXT
+        ) STRICT;",
+        )
+        .unwrap();
+    export_json(&source, &file).unwrap();
+    let target = directory.path().join("empty.db");
+    let report = import_json(&file, &target).unwrap();
+    assert!(
+        report
+            .left_out
+            .iter()
+            .any(|table| table.name == "control_work_leases" && table.rows == 0)
+    );
+    assert!(!rows(&target).contains_key("control_work_leases"));
+
+    connection
+        .execute(
+            "INSERT INTO control_work_leases (lease_id) VALUES ('retained-authority')",
+            [],
+        )
+        .unwrap();
+    let file = directory.path().join("populated.jsonl");
+    export_json(&source, &file).unwrap();
+    let refused_target = directory.path().join("populated.db");
+    assert!(
+        import_json(&file, &refused_target)
+            .unwrap_err()
+            .to_string()
+            .contains("requires an empty table")
+    );
+    assert!(!refused_target.exists());
+
+    // A false zero in the header must not allow an actual authority row through.
+    let mut document: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    document[0]["engram_export"]["tables"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|table| table["name"] == "control_work_leases")
+        .unwrap()["rows"] = Json::from(0);
+    fs::write(
+        &file,
+        document
+            .iter()
+            .map(Json::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    assert!(
+        import_json(&file, &refused_target)
+            .unwrap_err()
+            .to_string()
+            .contains("contains a row")
+    );
+    assert!(!refused_target.exists());
+
+    connection.execute_batch("DELETE FROM control_work_leases; ALTER TABLE control_work_leases ADD COLUMN unknown_authority TEXT;").unwrap();
+    let unknown = directory.path().join("unknown.jsonl");
+    export_json(&source, &unknown).unwrap();
+    assert!(
+        import_json(&unknown, &refused_target)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown_authority")
+    );
+    assert!(!refused_target.exists());
 }
 
 #[test]
@@ -597,7 +683,7 @@ fn mapped_record_link_columns(
     let current = current_record_link_columns(connection)?;
     let mapped: BTreeSet<RecordLinkColumn> = mappings
         .iter()
-        .map(|(table, _, destination)| ((*table).into(), (*destination).into()))
+        .map(|(table, _, destination)| (destination_table(table).into(), (*destination).into()))
         .collect();
     if mapped.len() != mappings.len() {
         return Err("duplicate record-link mapping destination".into());
@@ -704,15 +790,17 @@ fn rewrite_record_link_columns(
 ) -> RecordLinkExercise {
     let mut exercised = RecordLinkExercise::default();
     for (table, old, current) in mappings {
+        let destination = destination_table(table);
         let Some(declaration) = document[0]["engram_export"]["tables"]
             .as_array_mut()
             .expect("exported tables")
             .iter_mut()
-            .find(|entry| entry["name"] == *table)
+            .find(|entry| entry["name"] == destination)
         else {
             continue;
         };
-        let link = ((*table).into(), (*current).into());
+        let link = (destination.into(), (*current).into());
+        declaration["name"] = Json::String((*table).into());
         let column = declaration["columns"]
             .as_array_mut()
             .expect("declared columns")
@@ -722,9 +810,10 @@ fn rewrite_record_link_columns(
         *column = Json::String((*old).into());
         assert!(exercised.header.insert(link.clone()));
         for line in document.iter_mut().skip(1) {
-            if line["row"]["table"] != *table {
+            if line["row"]["table"] != destination {
                 continue;
             }
+            line["row"]["table"] = Json::String((*table).into());
             let values = line["row"]["values"].as_object_mut().unwrap();
             let value = values.remove(*current).expect("mapped row value");
             if !value.is_null() {
@@ -1181,7 +1270,7 @@ fn missing_required_import_columns_are_named_before_inserting_rows() {
     assert!(!target.exists());
 }
 
-fn populated_control(path: &Path) {
+fn populated_control(path: &Path) -> crate::storage::test_support::TestControlBinding {
     use crate::domain::*;
     use crate::storage::test_support::{bind_control_for, complete_control_turn};
     populated(path);
@@ -1211,25 +1300,15 @@ fn populated_control(path: &Path) {
         vec![],
         now,
     );
-    let lease = store
-        .acquire_work_lease(
-            &ProjectId("project-a".into()),
-            &binding.status.session_id,
-            &binding.connection_token,
-            &binding.routing_token,
-            LeaseKind::Execution,
-            LeaseMode::Exclusive,
-            &ResourceSubject::Path {
-                project_id: ProjectId("project-a".into()),
-                segments: vec!["src".into()],
-                coverage: ResourceCoverage::Tree,
-            },
-            300,
-            "migration-lease",
-            now + chrono::Duration::seconds(1),
-        )
-        .unwrap();
-    assert!(matches!(lease, WorkLeaseDecision::Granted { .. }));
+    let mut note = crate::storage::test_support::note_request(
+        binding.status.task_id,
+        "control-session",
+        "Observation: preserve this peer delta",
+        "migration-delta",
+        NoteVisibility::Shared,
+    );
+    note.created_at = now + chrono::Duration::seconds(1);
+    store.capture_note(&note, &DevelopmentNoopRedactor).unwrap();
     for (index, key) in ["migration-first", "migration-replacement"]
         .iter()
         .enumerate()
@@ -1263,6 +1342,119 @@ fn populated_control(path: &Path) {
         )
         .unwrap();
     assert!(store.verify_all().unwrap().is_healthy());
+    binding
+}
+
+fn preceding_control_tables(connection: &Connection) {
+    connection
+        .execute_batch(
+            "ALTER TABLE control_anchors RENAME TO tasks;
+         ALTER TABLE control_changes RENAME TO task_changes;
+         CREATE TABLE task_control_state AS SELECT task_id, admission_epoch FROM tasks;
+         ALTER TABLE tasks DROP COLUMN admission_epoch;
+         ALTER TABLE tasks ADD COLUMN state TEXT NOT NULL DEFAULT 'active';
+         ALTER TABLE tasks ADD COLUMN event_cursor INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE tasks ADD COLUMN created_at_ms INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE tasks ADD COLUMN updated_at_ms INTEGER NOT NULL DEFAULT 0;
+         UPDATE tasks SET event_cursor = (SELECT COALESCE(MAX(task_cursor), 0)
+             FROM task_changes WHERE task_changes.task_id = tasks.task_id);
+         CREATE TABLE task_participants AS
+             SELECT task_id, session_id, updated_at_ms AS joined_at_ms FROM control_sessions;
+         CREATE TABLE session_bindings AS
+             SELECT session_id, task_id, updated_at_ms AS bound_at_ms FROM control_sessions;",
+        )
+        .unwrap();
+}
+
+#[test]
+fn direct_control_conversion_preserves_populated_history_and_bindings() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("store.jsonl");
+    let target = directory.path().join("target.db");
+    populated_control(&source);
+    let expected = rows(&source);
+    let connection = Connection::open(&source).unwrap();
+    preceding_control_tables(&connection);
+    let sequence_mark: i64 = connection
+        .query_row(
+            "UPDATE sqlite_sequence SET seq = (SELECT MAX(sequence) + 1000 FROM task_changes)
+             WHERE name = 'task_changes' RETURNING seq",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    drop(connection);
+    export_json(&source, &file).unwrap();
+    let imported = import_json(&file, &target).expect("direct binding conversion");
+    let converted = Connection::open(&target).unwrap();
+    let sequence: (i64, i64) = converted
+        .query_row(
+            "SELECT (SELECT seq FROM sqlite_sequence WHERE name = 'control_changes'),
+                    (SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'task_changes')",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(sequence, (sequence_mark, 0));
+    drop(converted);
+    let actual = rows(&target);
+    for (table, expected_rows) in &expected {
+        if table != "work_schema_metadata" {
+            assert_eq!(&actual[table], expected_rows, "retained table {table}");
+        }
+    }
+    for table in [
+        "tasks",
+        "task_changes",
+        "task_participants",
+        "session_bindings",
+        "task_control_state",
+    ] {
+        assert!(!actual.contains_key(table), "obsolete table {table}");
+    }
+    for table in [
+        "task_participants",
+        "session_bindings",
+        "task_control_state",
+    ] {
+        assert!(
+            imported
+                .left_out
+                .iter()
+                .any(|entry| entry.name == table && entry.rows > 0)
+        );
+    }
+    assert_eq!(
+        imported
+            .retired_fields
+            .iter()
+            .filter(|field| field.table == "tasks")
+            .count(),
+        4
+    );
+
+    // Refuse a binding that cannot be represented by the retained control
+    // session. Conversion must not silently revoke a former memory scope.
+    let connection = Connection::open(&source).unwrap();
+    connection
+        .execute(
+            "UPDATE session_bindings SET session_id = 'unrepresented-session'",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+    let invalid = directory.path().join("unrepresented.jsonl");
+    export_json(&source, &invalid).unwrap();
+    let refused_target = directory.path().join("refused.db");
+    let error = import_json(&invalid, &refused_target)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("not represented by control_sessions"),
+        "{error}"
+    );
+    assert!(!refused_target.exists());
 }
 
 #[test]
@@ -1597,7 +1789,21 @@ fn import_refuses_without_publishing_anything() {
         (
             "unknown column",
             Box::new(|mut lines| {
-                lines[0] = lines[0].replace("\"object_kind\"", "\"object_flavour\"");
+                let mut header: Json = serde_json::from_str(&lines[0]).unwrap();
+                let objects = header["engram_export"]["tables"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|table| table["name"] == "objects")
+                    .unwrap();
+                let column = objects["columns"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|column| **column == "object_kind")
+                    .unwrap();
+                *column = Json::from("object_flavour");
+                lines[0] = serde_json::to_string(&header).unwrap();
                 lines
             }),
             "column object_flavour of table objects has no place",
@@ -2120,6 +2326,100 @@ fn staged_pending_delivery(database: &Path) -> (ProjectId, crate::SessionId) {
         "the fixture needs a page staged but unacknowledged"
     );
     (project, session)
+}
+
+/// Named stored reply fields convert while record identity and user bodies stay intact.
+#[test]
+fn stored_reply_id_fields_convert_without_changing_ids_links_or_user_bodies() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let target = directory.path().join("target.db");
+    let file = directory.path().join("store.jsonl");
+    staged_pending_delivery(&source);
+    let expected = rows(&source);
+    let connection = Connection::open(&source).unwrap();
+    let mut rewritten = 0;
+    for (table, column, filter) in [
+        (
+            "objects",
+            "canonical_json",
+            "object_kind = 'work_protocol_result'",
+        ),
+        ("work_protocol_attempts", "result_json", "1"),
+        (
+            "work_session_state",
+            "tentative_delivery_payload",
+            "tentative_delivery_payload IS NOT NULL",
+        ),
+    ] {
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT rowid, {column} FROM {table} WHERE {filter}"
+            ))
+            .unwrap();
+        let mut selected = statement.query([]).unwrap();
+        while let Some(row) = selected.next().unwrap() {
+            let rowid: i64 = row.get(0).unwrap();
+            let bytes: Vec<u8> = row.get(1).unwrap();
+            let mut value: Json = serde_json::from_slice(&bytes).unwrap();
+            let changes = if table == "work_session_state" {
+                value.get_mut("changes")
+            } else {
+                value.pointer_mut("/focus/history/items")
+            };
+            let mut count = 0;
+            if let Some(changes) = changes.and_then(Json::as_array_mut) {
+                for change in changes {
+                    let entry = change["entry"].as_object_mut().unwrap();
+                    let id = entry.remove("object_id").unwrap();
+                    entry.insert("object_hash".into(), id);
+                    count += 1;
+                }
+            }
+            if count != 0 {
+                connection
+                    .execute(
+                        &format!("UPDATE {table} SET {column} = ?1 WHERE rowid = ?2"),
+                        rusqlite::params![
+                            crate::canonical::canonical_bytes(&value).unwrap(),
+                            rowid
+                        ],
+                    )
+                    .unwrap();
+                rewritten += count;
+            }
+        }
+    }
+    assert!(rewritten > 0);
+    drop(connection);
+    export_json(&source, &file).unwrap();
+    let report = import_json(&file, &target).unwrap();
+    assert_eq!(
+        report
+            .rewritten_fields
+            .iter()
+            .map(|entry| entry.values)
+            .sum::<u64>(),
+        rewritten
+    );
+    assert!(
+        report
+            .rewritten_fields
+            .iter()
+            .any(|entry| entry.object_kind.as_deref() == Some("work_protocol_result"))
+    );
+    let actual = rows(&target);
+    for table in [
+        "objects",
+        "work_protocol_attempts",
+        "work_session_state",
+        "work_feed_entries",
+    ] {
+        assert_eq!(
+            actual[table], expected[table],
+            "{table}: ids, bodies and links unchanged"
+        );
+    }
 }
 
 /// The confirmed cursor, the cursor a page is staged through, and its capability.
@@ -2963,7 +3263,7 @@ fn a_malformed_staged_page_is_refused_without_printing_it() {
     // the id it named must not come back either.
     let unknown_record = "f".repeat(32);
     let mut wrong_record = page.clone();
-    wrong_record["changes"][0]["entry"]["object_hash"] = Json::String(unknown_record.clone());
+    wrong_record["changes"][0]["entry"]["object_id"] = Json::String(unknown_record.clone());
     let shapes = [
         (
             "a page that is one string",
@@ -3080,8 +3380,8 @@ fn an_autoincrement_mark_above_the_surviving_rows_is_carried_across() {
     Connection::open(&source)
         .expect("source")
         .execute_batch(
-            "DELETE FROM sqlite_sequence WHERE name = 'task_changes';
-             INSERT INTO sqlite_sequence (name, seq) VALUES ('task_changes', 1000);",
+            "DELETE FROM sqlite_sequence WHERE name = 'control_changes';
+             INSERT INTO sqlite_sequence (name, seq) VALUES ('control_changes', 1000);",
         )
         .expect("a mark above every surviving row");
     let file = directory.path().join("export.jsonl");
@@ -3091,7 +3391,7 @@ fn an_autoincrement_mark_above_the_surviving_rows_is_carried_across() {
     let mark: i64 = Connection::open(&target)
         .expect("target")
         .query_row(
-            "SELECT seq FROM sqlite_sequence WHERE name = 'task_changes'",
+            "SELECT seq FROM sqlite_sequence WHERE name = 'control_changes'",
             [],
             |row| row.get(0),
         )

@@ -97,8 +97,8 @@ A project policy epoch changes when control policy or mediation changes; a
 work admission epoch changes when applicable pinned policy, root membership,
 work revision/claim, or run lifecycle changes. Packet hashes reproduce
 content, dense feed positions order changes, the two scoped epochs revoke
-grants, the claim fence revokes stale responsibility, and resource-lease
-fences revoke stale mutation authority; none substitutes for another.
+grants, and the claim fence revokes stale work responsibility; none substitutes
+for another. Resource intents do not grant exclusive mutation authority.
 
 Every packet ends with proposed and stale item counts so review pressure is
 visible during normal work rather than hidden behind a separate queue command.

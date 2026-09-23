@@ -42,7 +42,7 @@ open; export from a coherent copy when the store is in use.
 The file is JSON Lines:
 
 ```text
-{"engram_export":{"format":"engram-json-export","exported_at":"…","tables":[{"name":"objects","columns":["object_id","object_kind","canonical_json","created_at"],"rows":3}],"sequences":{"task_changes":48},"left_out":[…]}}
+{"engram_export":{"format":"engram-json-export","exported_at":"…","tables":[{"name":"objects","columns":["object_id","object_kind","canonical_json","created_at"],"rows":3}],"sequences":{"control_changes":48},"left_out":[…]}}
 {"row":{"table":"objects","values":{"object_id":"…","object_kind":"work_event","canonical_json":{"json":{…}},"created_at":"…"}}}
 {"end":{"rows":3}}
 ```
@@ -101,7 +101,6 @@ for is never dropped in silence. Explicit retirement is limited to:
   `retired_fields` with its non-null value count; the rest of each row is
   imported.
 - Uncompared control checksums: `control_turn_grants.grant_hash`,
-  `control_work_leases.lease_hash`,
   `control_turn_grant_supersessions.supersession_hash`, and `result_hash` in
   `control_operation_results` and `control_policy_operation_results`.
   Each is reported under `retired_fields` with its non-null value count.
@@ -117,11 +116,52 @@ for is never dropped in silence. Explicit retirement is limited to:
   observations and memory contradictions, which no production path ever
   wrote. Import reports each under `left_out` with its row count and does not
   recreate it.
+- `task_participants` and `session_bindings`: the redundant compatibility-task
+  roster and binding projection. Current membership comes directly from
+  `control_sessions`. Import reports their row counts and refuses a binding
+  not represented by the retained control session, rather than silently losing
+  access to its scope. Conversely, every retained control session must have
+  both a matching participant and binding row in the old format; inconsistent
+  membership refuses rather than silently granting access to a scope.
+- `tasks.state`, `tasks.event_cursor`, `tasks.created_at_ms`, and
+  `tasks.updated_at_ms`: redundant task lifecycle metadata, reported with
+  non-null value counts. Only the supported `active` state is admitted.
+
+Resource-lease retirement is explicit: only an empty `control_work_leases`
+table is omitted, with its row count reported. Empty `basis.leases` fields
+in saved grants and decision copies are removed, and decision/supersession
+content comparisons are updated together. A populated table or nonempty
+lease basis refuses; neither is discarded. On this refusal, keep using the
+source build and store; do not remove historical rows to force conversion.
+Work claims and acceptance-revision
+waiver history are preserved. Historical `lease_required` refusal decisions
+remain readable and replay unchanged, including their attribution and compared
+fingerprints. Current evaluation never produces that code; retaining saved
+decisions does not restore resource leases or their host operations.
+Historical `control_operation_results` receipts for `lease_acquire`,
+`lease_release`, and `obligation_waive` are retained unchanged and checked by
+doctor. These are saved history, not supported host operations or live authority.
+
+The direct-binding conversion maps `tasks` to `control_anchors` with the same
+id, project, external reference and title. `task_control_state.admission_epoch`
+is merged into that anchor and its row count is reported under `left_out` with
+the merge reason. `task_changes` becomes `control_changes`, preserving every
+row, local cursor, object reference and sequence high-water mark. The importer
+refuses overlapping old/new table declarations. This scope-binding change rewrites no canonical object,
+and no old task table remains in the destination. Host `task_id` fields still
+name the same scope, so retained grants, cursors and memory references
+need no identity translation.
+
+The header, copied rows, epochs and membership marks come from one validated
+input stream. Conversion data is staged only in transaction-local temporary
+tables and merged after row validation, regardless of source table order; import
+does not reopen the file to obtain a second version of those values.
 
 Export still carries all retired data unchanged. Import validates retired rows
 and their declared counts, and refuses any column outside the explicit retired
 column set for that table. Canonical objects, including historical task claim
-and report records, keep their ids, bytes and links. The new database holds
+and report records, keep their ids and links. Bytes change only for the named
+stored reply fields below. The new database holds
 only the current schema, not an archived copy of the retired tables. Keep the
 source database and JSON export to retain those operational rows. Every other
 unknown table or column still refuses by name. A store written by a design
@@ -133,14 +173,27 @@ from `*_hash` to `*_id`, including `objects.object_hash` to `object_id`.
 The handoff record link becomes `offer_object_id`, distinct from the existing
 operational `offer_id`. Only the per-table mappings in the importer are
 accepted; arbitrary suffix substitutions are not. Declaring both old and new
-names for one destination column refuses. Id values and canonical JSON bytes
-are unchanged, and missing required destination columns refuse by name.
-The Rust record-reference type is `ObjectId`. Existing serialized host/record
-fields such as `object_hash` retain their exact wire spelling, explicitly
-through Serde, so this database conversion does not change TermAl's protocol
-or reinterpret pending delivery pages.
+names for one destination column refuses. Id values are unchanged, and missing
+required destination columns refuse by name. The Rust record-reference type
+is `ObjectId`. Host and graph fields now use `object_id`, and full-memory
+replies use `version_id` and `assertion_id`. No old-name aliases remain.
+Coordinate the host protocol cutover with TermAl.
 
-That wire-field preservation does not preserve the separate work-graph snapshot
+The one-time stored reply conversion renames `object_hash` to `object_id` in
+`work_protocol_result` objects' `focus.history.items[].entry`, matching
+`work_protocol_attempts.result_json`, staged work delivery `changes[].entry`,
+and saved control grants' `delivery.delta.changes[]` (also inside saved turn
+decisions). Checkpoint retry intents convert the tagged producer/environment
+references in `verification_evidence`. Record ids, links, cursor positions and
+delivery tokens stay unchanged. Arbitrary user bodies and unrelated object
+kinds are not traversed. Both spellings at a converted field refuse.
+Delivery-content, decision and checkpoint-intent fingerprints are recomputed
+for the changed serialized content, with matching supersession comparison bindings updated;
+these are comparisons, not record identities. Import reports the affected
+table, column, object kind, field and value count under `rewritten_fields`.
+There is no retained old-format copy in the destination.
+
+This rename also changes the separate work-graph snapshot
 format fingerprint. The generated JSON Schema includes the renamed Rust type's
 definition name and references, so this cleanup deliberately changes that
 fingerprint and the new build refuses older graph snapshot files. Use the
@@ -203,7 +256,8 @@ converts with the last build that could.
    refuses a destination that has a `-wal`, `-shm` or `-journal` file beside
    it before it stages anything; the swap in the next step is the operator's
    and no check here can see it.
-4. Inspect the import report, including `left_out` and `retired_fields`, before
+4. Inspect the import report, including `left_out`, `retired_fields` and
+   `rewritten_fields`, before
    deciding to activate it. Move the old file aside as the backup **together
    with its `-wal` and `-shm` files**: they hold committed data until the next
    checkpoint and belong to that file alone. Put the new file in its place
@@ -211,7 +265,9 @@ converts with the last build that could.
    finds at a database's name to that database.
 5. Start the consumers again.
 
-Current work claims, leases, grants and delivery state are carried as they
-are; the retired whole-task advisory claim tables above are not. The imported
+Current work claims, grants and delivery state retain their identities; the
+explicit field conversions above update their supported shapes. The empty
+resource-lease table and retired whole-task advisory claim tables are omitted
+as specified above. The imported
 store is the same store on the same host: do not run it beside its source,
 and do not treat it as authority on another host.

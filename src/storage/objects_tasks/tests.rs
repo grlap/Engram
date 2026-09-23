@@ -43,14 +43,14 @@ fn task_cursor_arithmetic_refuses_overflow() {
     store
         .connection
         .execute(
-            "DELETE FROM task_changes WHERE task_id = ?1",
+            "DELETE FROM control_changes WHERE task_id = ?1",
             [binding.status.task_id.0.to_string()],
         )
         .expect("clear task feed fixture");
     store
         .connection
         .execute(
-            "INSERT INTO task_changes (task_id, task_cursor, object_kind, object_id)
+            "INSERT INTO control_changes (task_id, task_cursor, object_kind, object_id)
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 binding.status.task_id.0.to_string(),
@@ -138,7 +138,7 @@ fn a_stored_id_keeps_its_kind_and_bytes() {
 }
 
 #[test]
-fn task_changes_are_ordered() {
+fn control_changes_are_ordered() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let task_id = TaskId::new();
     let first = Example {
@@ -160,7 +160,7 @@ fn task_changes_are_ordered() {
     assert!(second_cursor > first_cursor);
     assert_eq!(
         store
-            .task_changes_since(task_id, first_cursor, 100)
+            .control_changes_since(task_id, first_cursor, 100)
             .unwrap(),
         vec![TaskChange {
             cursor: second_cursor,
@@ -179,16 +179,16 @@ fn task_local_cursors_keep_exact_host_delivery_dense_across_interleaved_tasks() 
     let binding = bind_control(&mut store, now);
     let task_a = binding.status.task_id;
     let task_b = store
-        .start_task(
+        .bind_test_control_scope(
             &ProjectId("project-a".into()),
             "dummy:CONTROL-HOST-2",
             "Interleave another task",
             &SessionId("other-session".into()),
-            actor("other-session"),
+            &actor("other-session"),
             now + TimeDelta::milliseconds(1),
         )
         .expect("second task")
-        .task
+        .status
         .task_id;
     store
         .capture_note(
@@ -217,7 +217,7 @@ fn task_local_cursors_keep_exact_host_delivery_dense_across_interleaved_tasks() 
 
     for task_id in [task_a, task_b] {
         let changes = store
-            .task_changes_since(task_id, ChangeCursor(0), 100)
+            .control_changes_since(task_id, ChangeCursor(0), 100)
             .expect("task-local changes");
         assert!(changes.iter().enumerate().all(|(offset, change)| {
             change.cursor.0 == i64::try_from(offset).expect("small test offset") + 1
@@ -262,6 +262,20 @@ fn host_delivery_refuses_a_gap_in_the_task_local_feed() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let binding = bind_control(&mut store, now);
+    // Binding no longer creates a lifecycle event; create both feed rows
+    // explicitly so removing the first leaves a real gap before the head.
+    store
+        .capture_note(
+            &note_request(
+                binding.status.task_id,
+                "control-session",
+                "Decision: create the first task-local event.",
+                "gap-note-first",
+                NoteVisibility::Shared,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("first task note");
     store
         .capture_note(
             &note_request(
@@ -278,16 +292,16 @@ fn host_delivery_refuses_a_gap_in_the_task_local_feed() {
         .connection
         .query_row(
             "SELECT COALESCE(MAX(task_cursor), 0)
-             FROM task_changes WHERE task_id = ?1",
+             FROM control_changes WHERE task_id = ?1",
             [binding.status.task_id.0.to_string()],
             |row| row.get::<_, i64>(0).map(ChangeCursor),
         )
         .expect("task head");
-    assert!(head.0 > 1);
+    assert_eq!(head.0, 2);
     store
         .connection
         .execute(
-            "DELETE FROM task_changes WHERE task_id = ?1 AND task_cursor = 1",
+            "DELETE FROM control_changes WHERE task_id = ?1 AND task_cursor = 1",
             [binding.status.task_id.0.to_string()],
         )
         .expect("create corrupt task-feed gap");
@@ -317,11 +331,12 @@ fn another_agents_private_capture_does_not_invalidate_or_enter_a_grant() {
     let binding = bind_control(&mut store, now);
     let peer_session = SessionId("private-peer".into());
     store
-        .join_task(
+        .bind_test_control_scope(
             &ProjectId("project-a".into()),
             "dummy:CONTROL-HOST-1",
+            "Peer control scope",
             &peer_session,
-            actor("private-peer"),
+            &actor("private-peer"),
             now,
         )
         .expect("join private peer");

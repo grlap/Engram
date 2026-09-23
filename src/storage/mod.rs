@@ -223,7 +223,7 @@ use thiserror::Error;
 use crate::domain::MemoryRecord;
 use crate::{
     CanonicalObject, ObjectId,
-    control::{LeasePolicyInput, effective_mediated_effects, evaluate_lease_policy},
+    control::effective_mediated_effects,
     domain::{
         ActorContext, AssuranceLevel, Authority, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextItem,
         ContextOmission, ContextOmissionSummary, ContextPacket, ContextPacketHeader,
@@ -233,28 +233,26 @@ use crate::{
         DeliveryPage, DeltaItem, EffectClass, EnvironmentComponents, EnvironmentEvidence,
         EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservation,
         ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome,
-        ForgetProjectMemoryRequest, HostPathPolicy, IssuedTurnGrant, LocalTask,
-        MAX_PROJECT_MEMORY_BODY_BYTES, MAX_PROJECT_MEMORY_KEY_BYTES,
-        MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
-        MemoryId, MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest,
-        NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation,
-        PacketSafety, ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
+        ForgetProjectMemoryRequest, HostPathPolicy, IssuedTurnGrant, MAX_PROJECT_MEMORY_BODY_BYTES,
+        MAX_PROJECT_MEMORY_KEY_BYTES, MAX_PROJECT_MEMORY_QUERY_BYTES,
+        MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent, MemoryId, MemoryKind, MemoryStatus,
+        MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
+        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation, PacketSafety,
+        ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
         ProjectMemoryListRow, ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision,
         ProjectPolicyEpoch, ProjectPolicyOperation, RememberProjectMemoryRequest, SCHEMA_VERSION,
-        Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskBindReceipt,
-        TaskDelta, TaskId, TaskJoinedEvent, TaskStartedEvent, TaskState, TurnBeginDecision,
-        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
-        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
-        TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent,
-        TurnNextIntent, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
-        VerificationResult, WorkCompletionRecoveryCause, WorkLease, WorkLeaseDecision,
-        WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkReferenceCandidate,
+        Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskDelta, TaskId,
+        TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
+        TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
+        TurnEvaluationInput, TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason,
+        TurnIntent, TurnNextIntent, VerificationEvidence, VerificationEvidenceInput,
+        VerificationKind, VerificationResult, WorkCompletionRecoveryCause, WorkReferenceCandidate,
     },
     memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
     schema::{
         CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
         CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION, CONTROL_POLICY_SCHEMA_VERSION,
-        CONTROL_POLICY_STATE_SCHEMA_VERSION, WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION,
+        CONTROL_POLICY_STATE_SCHEMA_VERSION,
     },
 };
 
@@ -292,9 +290,8 @@ const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("index", "memory_heads_work_scope"),
     ("table", "project_memory_state"),
     ("table", "project_memory_advertisements"),
-    ("index", "task_changes_task_cursor"),
+    ("index", "control_changes_task_cursor"),
     ("index", "control_sessions_work_run"),
-    ("index", "control_work_leases_task_state"),
 ];
 
 const DIFFERENT_BUILD_STORE_MESSAGE: &str = "the store schema is not recognized by this Engram build; use the Engram build that owns this store; this build cannot convert its schema";
@@ -653,26 +650,6 @@ fn environment_evidence_inputs_are_empty(value: &&[EnvironmentEvidenceInput]) ->
 }
 
 #[derive(Serialize)]
-struct WorkLeaseAcquireFingerprint<'a> {
-    fingerprint_schema_version: u16,
-    session_id: &'a SessionId,
-    bind_intent_hash: &'a str,
-    kind: crate::domain::LeaseKind,
-    mode: crate::domain::LeaseMode,
-    subject: &'a crate::domain::ResourceSubject,
-    ttl_seconds: i64,
-    idempotency_key: &'a str,
-}
-
-#[derive(Serialize)]
-struct WorkLeaseReleaseFingerprint<'a> {
-    control_schema_version: u16,
-    session_id: &'a SessionId,
-    lease_id: &'a str,
-    idempotency_key: &'a str,
-}
-
-#[derive(Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 #[allow(
     clippy::enum_variant_names,
@@ -731,13 +708,9 @@ pub enum StoreError {
     RedactionRefused(String),
     #[error("memory projection contains invalid data: {0}")]
     InvalidMemoryProjection(String),
-    #[error("no local task is bound to external reference {0:?}")]
-    TaskReferenceNotFound(String),
-    #[error("external task reference and title must not be empty")]
-    InvalidTaskBinding,
     #[error("task projection contains invalid data: {0}")]
     InvalidTaskProjection(String),
-    #[error("session {0:?} has no active Engram task binding")]
+    #[error("session {0:?} has no control scope binding")]
     NoActiveTask(String),
     #[error("session {session:?} is not a participant of task {task:?}")]
     TaskAccessDenied { task: TaskId, session: String },
@@ -772,7 +745,7 @@ pub enum StoreError {
     #[error("control session input is invalid: {0}")]
     InvalidControlSession(String),
     #[error(
-        "the project root's filesystem identity is unresolved, so path leases are refused; pass --host-path-policy case_fold|case_sensitive or set ENGRAM_HOST_PATH_POLICY"
+        "the project root's filesystem identity is unresolved, so path intents are refused; pass --host-path-policy case_fold|case_sensitive or set ENGRAM_HOST_PATH_POLICY"
     )]
     HostPathIdentityUnresolved,
     #[error("session {0:?} has no host-private control binding")]
@@ -803,15 +776,6 @@ pub enum StoreError {
     EnvironmentBasisMismatch(String),
     #[error("turn grant {0:?} does not exist")]
     ControlTurnGrantNotFound(String),
-    #[error("work lease {0:?} does not exist")]
-    WorkLeaseNotFound(String),
-    #[error("work lease {lease_id:?} is not held by session {session:?}")]
-    WorkLeaseNotHeld { lease_id: String, session: String },
-    #[error("work lease {lease_id:?} expired at {expired_at}")]
-    WorkLeaseExpired {
-        lease_id: String,
-        expired_at: DateTime<Utc>,
-    },
     #[error("control projection contains invalid data: {0}")]
     InvalidControlProjection(String),
     #[error("active control policy changed: expected {expected}, current policy is {current}")]
@@ -1362,15 +1326,6 @@ struct StoredControlPolicyOperation {
     result_json: Vec<u8>,
 }
 
-struct StoredWorkLeaseRow {
-    lease_id: String,
-    task_id: String,
-    holder_session_id: String,
-    lease_json: Vec<u8>,
-    state: String,
-    expires_at_ms: i64,
-}
-
 impl IntegrityReport {
     /// Whether every stored object passed canonicalization and digest checks.
     #[must_use]
@@ -1563,6 +1518,6 @@ pub struct SqliteStore {
     /// transaction so a process with a non-current view cannot write.
     work_schema_version: i64,
     /// The project root's filesystem identity for this opener. `None` means
-    /// unresolved: reads and work proceed, path leases fail closed.
+    /// unresolved: reads and work proceed, path intents fail closed.
     host_path_policy: Option<HostPathPolicy>,
 }

@@ -254,10 +254,9 @@ impl FromStr for WorkNextSection {
 }
 
 /// One source record at an exact project-feed position, exposed as an
-/// authority-redacted projection. The serialized `entry.object_hash` field
-/// (`object_id` in Rust) is that record's id; a
-/// page is admitted by decoding it and by dense-interval agreement, and the
-/// compact `delivery` is projected from the record, not fingerprinted.
+/// authority-redacted projection. The serialized `entry.object_id` field is
+/// that record's id; a page is admitted by decoding it and by dense-interval
+/// agreement, and the compact `delivery` is projected from the record, not fingerprinted.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkChange {
     /// Transient canonical producer attribution for outer display only. Hydrated
@@ -294,7 +293,7 @@ pub enum WorkChangeProjection {
 }
 
 /// Compact, non-canonical description of one verified source object. Fetch
-/// content by the serialized `entry.object_hash` (`object_id` in Rust)
+/// content by the serialized `entry.object_id`
 /// through an authorized object-specific read
 /// when more detail is needed.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -491,8 +490,8 @@ pub struct WorkFocusView {
     #[serde(skip)]
     pub(crate) acceptance_evidence_error_class: Option<&'static str>,
     /// Why a completed item's sealed provenance could not be read: the seal
-    /// exists but its bound evaluation fails the shared check. A legacy seal
-    /// carries no class, so its intentional omission stays distinguishable.
+    /// exists but its bound evaluation fails the shared check. A readable
+    /// self-asserted seal has explicit provenance and no error class.
     #[serde(skip)]
     pub(crate) acceptance_provenance_error_class: Option<&'static str>,
     /// Newest acceptance evaluation on the open item's run, with the freshness
@@ -683,7 +682,6 @@ pub struct WorkObligationPage {
 pub enum WorkObligationGuidance {
     RecordVerificationThenCheckpoint {
         requirement: crate::VerificationRequirement,
-        host_waiver_requestable: bool,
     },
     None,
 }

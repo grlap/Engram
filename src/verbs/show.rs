@@ -399,9 +399,10 @@ pub(super) fn acceptance_provenance_line(
     use crate::work_service::WorkAcceptanceProvenance;
     match provenance {
         None => {
-            "acceptance: provenance unavailable (the sealed evaluation could not be read)".into()
+            "acceptance: provenance unavailable (completion provenance could not be established)"
+                .into()
         }
-        Some(WorkAcceptanceProvenance::SelfAsserted) => "acceptance: self-asserted (legacy)".into(),
+        Some(WorkAcceptanceProvenance::SelfAsserted) => "acceptance: self-asserted".into(),
         Some(WorkAcceptanceProvenance::Evaluated(details)) => format!(
             "acceptance: evaluated ({}, {}) by {}",
             details.mode.word(),
@@ -817,11 +818,7 @@ pub(super) fn show_lines(
     }
     // A completed item says where its sealed acceptance came from, and names
     // the error class when that read failed.
-    if work.lifecycle == WorkLifecycle::Completed
-        && (view.acceptance_provenance.is_some()
-            || view.acceptance_provenance_error_class.is_some()
-            || view.acceptance_evidence.is_some())
-    {
+    if work.lifecycle == WorkLifecycle::Completed {
         lines.push(acceptance_provenance_line(
             view.acceptance_provenance.as_ref(),
             identity,
@@ -1101,21 +1098,20 @@ pub(super) fn show_receipt_value(
                 identity,
             )
         }),
-        // Legacy completions keep their existing JSON shape; the text line
-        // still says self-asserted. An evaluated seal adds the block, and a
-        // seal whose evaluation binding failed the shared check discloses
-        // that as unavailable with its error class, never as the legacy shape.
+        // Completed items use one provenance shape. Missing or unreadable
+        // completion evidence is unavailable, never inferred self-assertion.
         acceptance: match (
             view.acceptance_provenance.as_ref(),
             view.acceptance_provenance_error_class,
         ) {
-            (Some(provenance @ crate::work_service::WorkAcceptanceProvenance::Evaluated(_)), _) => {
-                Some(acceptance_provenance_value(Some(provenance), identity))
-            }
+            (Some(provenance), _) => Some(acceptance_provenance_value(Some(provenance), identity)),
             (None, Some(class)) => Some(serde_json::json!({
                 "provenance": "unavailable",
                 "error_class": class,
             })),
+            (None, None) if work.lifecycle == WorkLifecycle::Completed => {
+                Some(acceptance_provenance_value(None, identity))
+            }
             _ => None,
         },
         acceptance_evidence: view

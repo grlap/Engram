@@ -83,7 +83,7 @@ authority token. `status` is `matched` when stored and resolved policies agree,
 `unresolved` when the opener cannot resolve one, or `unbound` when it resolved
 one but none is stored. A present mismatch refuses. Existing refusal for
 path-bearing state without a stored binding remains. Unresolved reads do not
-gain path-lease authority and unbound reads do not persist a binding. The global
+gain resolved path identity and unbound reads do not persist a binding. The global
 `--host-path-policy` override is supported; otherwise the existing filesystem
 probe resolves the project root's identity.
 Omitting the CLI override requests that probe; it does not skip resolution.
@@ -91,7 +91,7 @@ For the CLI, `resolved:null` / `status:"unresolved"` means that probe failed.
 The library also permits a caller to pass no identity deliberately. The status
 does not encode the probe's detailed error; stderr supplies that diagnostic.
 In either case the stored policy has not been compared with a resolved identity.
-`ready:true` admits the scoped store read, not path-lease readiness. Hosts must
+`ready:true` admits the scoped store read, not readiness for path-bearing control requests. Hosts must
 inspect this status when their intended operation requires resolved identity.
 
 Project identity uses normal explicit project-file/home routing; it is not

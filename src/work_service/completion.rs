@@ -326,7 +326,7 @@ impl LocalWorkService {
                         .flat_map(|verdict| verdict.evidence.iter().cloned()),
                 );
             }
-            crate::storage::AcceptanceEvaluationReadiness::Legacy => {}
+            crate::storage::AcceptanceEvaluationReadiness::SelfAsserted => {}
         }
         let capture = input.capture;
         let prepared = self.prepare_completion_evidence(

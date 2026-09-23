@@ -4,7 +4,7 @@
 //! support the host-private persisted lifecycle, whose storage transaction is
 //! responsible for minting and consuming authority.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 use chrono::TimeDelta;
 use serde::Serialize;
@@ -16,9 +16,8 @@ use crate::{
         BuiltinObligationTrigger, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextPacket,
         ControlAssurance, ControlDirective, ControlHealth, ControlRefusalCode,
         DirectiveSatisfaction, DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
-        LeaseBasis, LeaseKind, LeaseMode, OBLIGATION_RULE_SET_SCHEMA_VERSION,
-        ObligationRuleDefinition, ObligationRuleSet, ObservedActionBeginDecision,
-        ObservedTurnDecision, PacketSafety, ParticipantMembership, ProjectPolicyEpoch,
+        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition, ObligationRuleSet,
+        ObservedActionBeginDecision, ObservedTurnDecision, PacketSafety, ParticipantMembership,
         SessionPhase, TaskDelta, TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision,
         TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState,
         TurnPurpose, VerificationEvidence, VerificationEvidenceMismatch, VerificationRequirement,
@@ -290,87 +289,6 @@ pub(crate) fn effective_mediated_effects(
         .collect()
 }
 
-/// Immutable inputs for one lease-boundary policy decision.
-pub(crate) struct LeasePolicyInput<'a> {
-    pub request_key: &'a str,
-    pub host_assurance: ControlAssurance,
-    pub declared_mediated_effects: &'a [EffectClass],
-    pub project_required_assurance: ControlAssurance,
-    pub policy_effects: &'a [EffectClass],
-    pub session_policy_epoch: ProjectPolicyEpoch,
-    pub active_policy_epoch: ProjectPolicyEpoch,
-    pub effect: EffectClass,
-}
-
-/// Pure lease-boundary refusal plus whether the persisted session may adopt
-/// the current project-policy epoch after recording that refusal.
-pub(crate) struct LeasePolicyRefusal {
-    pub directive: ControlDirective,
-    pub adopt_project_policy_epoch: bool,
-}
-
-/// Applies the same project, intrinsic-effect, mediation, capability, and
-/// epoch ladder used by turn admission without performing I/O.
-pub(crate) fn evaluate_lease_policy(
-    input: &LeasePolicyInput<'_>,
-) -> Result<Vec<EffectClass>, LeasePolicyRefusal> {
-    let effective =
-        effective_mediated_effects(input.host_assurance, input.declared_mediated_effects);
-    let refuse = |code, effect, required_assurance, adopt_project_policy_epoch| {
-        Err(LeasePolicyRefusal {
-            directive: control_directive(
-                input.request_key,
-                code,
-                effect,
-                required_assurance,
-                Some(input.declared_mediated_effects),
-                Some(&effective),
-            ),
-            adopt_project_policy_epoch,
-        })
-    };
-    if !input
-        .host_assurance
-        .covers(input.project_required_assurance)
-    {
-        return refuse(
-            ControlRefusalCode::ControlAssuranceInsufficient,
-            None,
-            Some(input.project_required_assurance),
-            false,
-        );
-    }
-    let effect_required = minimum_assurance_for_effect(input.effect);
-    if !input.host_assurance.covers(effect_required) {
-        return refuse(
-            ControlRefusalCode::ControlAssuranceInsufficient,
-            Some(input.effect),
-            Some(effect_required),
-            false,
-        );
-    }
-    if !effective.contains(&input.effect) {
-        return refuse(
-            ControlRefusalCode::ControlAssuranceInsufficient,
-            Some(input.effect),
-            Some(effect_required),
-            false,
-        );
-    }
-    if !input.policy_effects.contains(&input.effect) {
-        return refuse(
-            ControlRefusalCode::CapabilityNotPermitted,
-            Some(input.effect),
-            None,
-            false,
-        );
-    }
-    if input.session_policy_epoch != input.active_policy_epoch {
-        return refuse(ControlRefusalCode::PolicyEpochChanged, None, None, true);
-    }
-    Ok(effective)
-}
-
 #[derive(Serialize)]
 struct ControlDeliveryContent<'a> {
     context: Option<&'a ContextPacket>,
@@ -473,7 +391,7 @@ pub fn evaluate_turn_begin(
             code: ControlRefusalCode::TaskAccessDenied,
         };
     }
-    if snapshot.task_state.is_none() || matches!(grant.basis.purpose, TurnPurpose::Finalizer) {
+    if !snapshot.anchor_exists {
         return TurnBeginDecision::Refuse {
             code: ControlRefusalCode::LifecycleHold,
         };
@@ -512,28 +430,6 @@ pub fn evaluate_turn_begin(
             code: ControlRefusalCode::GrantScopeMismatch,
         };
     }
-    let Some(current_leases) = lease_map(&snapshot.leases) else {
-        return TurnBeginDecision::Refuse {
-            code: ControlRefusalCode::StaleFence,
-        };
-    };
-    if basis.leases.iter().any(|granted| {
-        current_leases
-            .get(granted.lease_id.as_str())
-            .is_none_or(|current| {
-                current.holder != basis.session_id
-                    || current.kind != granted.kind
-                    || current.mode != granted.mode
-                    || current.subject != granted.subject
-                    || current.fence != granted.fence
-                    || current.expires_at <= snapshot.observed_at
-            })
-    }) {
-        return TurnBeginDecision::Refuse {
-            code: ControlRefusalCode::StaleFence,
-        };
-    }
-
     let expected_tokens: Vec<_> = basis
         .inline_delivery
         .iter()
@@ -557,7 +453,7 @@ pub fn evaluate_turn_begin(
 
 /// Checks whether a begun turn can transition to a durable checkpoint.
 ///
-/// Checkpoint deliberately does not recheck expiry, policy epochs, or lease
+/// Checkpoint deliberately does not recheck expiry, policy epochs, or claim
 /// fences: begin already admitted the turn, and checkpoint must preserve its
 /// durable progress while closing that authority. Any next turn is evaluated
 /// against fresh epochs and fences.
@@ -745,62 +641,7 @@ fn action_authority_refusal(
     {
         return Some(ControlRefusalCode::MissingAuthority);
     }
-    let (Some(snapshot_fences), Some(grant_fences)) =
-        (lease_map(&snapshot.leases), lease_map(&grant.leases))
-    else {
-        return Some(ControlRefusalCode::StaleFence);
-    };
-    for (lease_id, grant_lease) in grant_fences {
-        let Some(current_lease) = snapshot_fences.get(lease_id) else {
-            return Some(ControlRefusalCode::StaleFence);
-        };
-        if current_lease.holder != grant.session_id
-            || grant_lease.holder != grant.session_id
-            || grant_lease.lease_id.trim().is_empty()
-            || current_lease.kind != grant_lease.kind
-            || current_lease.mode != grant_lease.mode
-            || current_lease.subject != grant_lease.subject
-            || current_lease.fence != grant_lease.fence
-            || current_lease.fence < 0
-            || !current_lease.subject.has_valid_shape()
-            || !grant_lease.subject.has_valid_shape()
-            || current_lease.expires_at <= snapshot.observed_at
-            || grant_lease.expires_at <= snapshot.observed_at
-        {
-            return Some(ControlRefusalCode::StaleFence);
-        }
-    }
-    if !leases_cover_action(grant, snapshot) {
-        return Some(ControlRefusalCode::LeaseRequired);
-    }
-
     None
-}
-
-fn leases_cover_action(grant: &ActionGrantBasis, snapshot: &ActionBeginSnapshot) -> bool {
-    let required_kind = match grant.effect {
-        EffectClass::MutateLocal | EffectClass::MutateShared => Some(LeaseKind::Execution),
-        EffectClass::Lifecycle => Some(LeaseKind::Coordination),
-        EffectClass::Observe
-        | EffectClass::Communicate
-        | EffectClass::Coordinate
-        | EffectClass::ExternalSideEffect => None,
-    };
-    let Some(required_kind) = required_kind else {
-        return true;
-    };
-
-    grant.resource_subjects.iter().all(|resource| {
-        grant.leases.iter().any(|granted_lease| {
-            snapshot.leases.iter().any(|current_lease| {
-                current_lease.lease_id == granted_lease.lease_id
-                    && current_lease.holder == grant.session_id
-                    && matches!(current_lease.mode, LeaseMode::Exclusive)
-                    && current_lease.kind == required_kind
-                    && current_lease.subject.covers(resource)
-            })
-        })
-    })
 }
 
 fn action_resolution_refusal(
@@ -832,12 +673,11 @@ fn action_resolution_refusal(
     None
 }
 
-/// A finalizer turn never matches: no task ever leaves the active state.
+/// A begun action must stay in the phase of the turn that admitted it.
 const fn action_phase_matches(purpose: TurnPurpose, phase: SessionPhase) -> bool {
     match purpose {
         TurnPurpose::Ordinary => matches!(phase, SessionPhase::TurnOpen),
         TurnPurpose::Recovery => matches!(phase, SessionPhase::RecoveryOpen),
-        TurnPurpose::Finalizer => false,
     }
 }
 
@@ -850,16 +690,6 @@ fn same_unique_strings(left: &[String], right: &[String]) -> bool {
 fn effects_are_unique(effects: &[EffectClass]) -> bool {
     let unique: HashSet<_> = effects.iter().collect();
     unique.len() == effects.len()
-}
-
-fn lease_map(leases: &[LeaseBasis]) -> Option<BTreeMap<&str, &LeaseBasis>> {
-    let mut mapped = BTreeMap::new();
-    for lease in leases {
-        if mapped.insert(lease.lease_id.as_str(), lease).is_some() {
-            return None;
-        }
-    }
-    Some(mapped)
 }
 
 #[allow(
@@ -911,7 +741,7 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
     let Some(task_id) = input.task_id else {
         return refusal(input, ControlRefusalCode::TaskUnbound);
     };
-    if input.task_state.is_none() {
+    if !input.anchor_exists {
         return refusal(input, ControlRefusalCode::TaskUnbound);
     }
     if !matches!(input.participant_membership, ParticipantMembership::Member) {
@@ -958,10 +788,6 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
             Some(&effective_mediation),
         );
     }
-    if !turn_leases_cover_resources(input) {
-        return refusal(input, ControlRefusalCode::LeaseRequired);
-    }
-
     let (delivery_cursor, inline_delivery) = match evaluate_delivery(input) {
         Ok(delivery) => delivery,
         Err(code) => return refusal(input, code),
@@ -1016,7 +842,6 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
             capability_map_revision: input.capability_map_revision,
             requested_effects: input.intent.requested_effects.clone(),
             resource_intents: input.intent.resource_intents.clone(),
-            leases: input.leases.clone(),
             expires_at,
         }),
     }
@@ -1056,49 +881,10 @@ fn turn_input_has_invalid_shape(input: &TurnEvaluationInput) -> bool {
             .any(|(index, resource)| input.intent.resource_intents[..index].contains(resource))
         || !effects_are_unique(&input.policy_effects)
         || !effects_are_unique(&input.mediated_effects)
-        || lease_map(&input.leases).is_none()
-        || input.leases.iter().any(|lease| {
-            lease.fence < 0
-                || lease.lease_id.trim().is_empty()
-                || lease.holder.0.trim().is_empty()
-                || lease.holder != input.session_id
-                || lease.expires_at <= input.evaluated_at
-                || !lease.subject.has_valid_shape()
-        })
 }
 
 fn control_work_binding_has_valid_shape(binding: &crate::domain::ControlWorkBinding) -> bool {
     binding.work_revision > 0 && binding.claim_fence > 0
-}
-
-fn turn_leases_cover_resources(input: &TurnEvaluationInput) -> bool {
-    let requires_execution = input
-        .intent
-        .requested_effects
-        .iter()
-        .any(|effect| matches!(effect, EffectClass::MutateLocal | EffectClass::MutateShared));
-    let requires_coordination = input
-        .intent
-        .requested_effects
-        .contains(&EffectClass::Lifecycle);
-    if !requires_execution && !requires_coordination {
-        return true;
-    }
-    if input.intent.resource_intents.is_empty() {
-        return false;
-    }
-
-    let resources_have = |kind| {
-        input.intent.resource_intents.iter().all(|resource| {
-            input.leases.iter().any(|lease| {
-                lease.kind == kind
-                    && matches!(lease.mode, LeaseMode::Exclusive)
-                    && lease.subject.covers(resource)
-            })
-        })
-    };
-    (!requires_execution || resources_have(LeaseKind::Execution))
-        && (!requires_coordination || resources_have(LeaseKind::Coordination))
 }
 
 fn first_uncovered_effect(
@@ -1195,10 +981,7 @@ const fn phase_refusal(
         SessionPhase::ContributionRequired | SessionPhase::ParticipantReady => {
             return Some(ControlRefusalCode::ParticipantNotReady);
         }
-        SessionPhase::Ready
-        | SessionPhase::SyncRequired
-        | SessionPhase::RecoveryOpen
-        | SessionPhase::FinalizerOpen => {}
+        SessionPhase::Ready | SessionPhase::SyncRequired | SessionPhase::RecoveryOpen => {}
     }
 
     match purpose {
@@ -1208,7 +991,6 @@ const fn phase_refusal(
             SessionPhase::SyncRequired | SessionPhase::RecoveryOpen => {
                 Some(ControlRefusalCode::RecoveryRequired)
             }
-            SessionPhase::FinalizerOpen => Some(ControlRefusalCode::LifecycleHold),
             _ => Some(ControlRefusalCode::TurnPurposeMismatch),
         },
         TurnPurpose::Recovery => {
@@ -1220,9 +1002,6 @@ const fn phase_refusal(
                 Some(ControlRefusalCode::TurnPurposeMismatch)
             }
         }
-        // No task ever leaves the active state, so a finalizer turn has no
-        // phase in which it can run.
-        TurnPurpose::Finalizer => Some(ControlRefusalCode::TurnPurposeMismatch),
     }
 }
 
@@ -1232,10 +1011,6 @@ const fn effect_fits_purpose(purpose: TurnPurpose, effect: EffectClass) -> bool 
         TurnPurpose::Recovery => {
             matches!(effect, EffectClass::Observe | EffectClass::Communicate)
         }
-        TurnPurpose::Finalizer => matches!(
-            effect,
-            EffectClass::Observe | EffectClass::Communicate | EffectClass::Lifecycle
-        ),
     }
 }
 
@@ -1281,7 +1056,7 @@ fn assurance_refusal(
     }
 }
 
-/// Builds the common policy-decision directive used by turn and lease gates.
+/// Builds the common policy-decision directive used by turn gates.
 #[must_use]
 pub(crate) fn control_directive(
     request_key: &str,
@@ -1331,7 +1106,6 @@ fn directive_shape(
         | ControlRefusalCode::TaskAccessDenied
         | ControlRefusalCode::PolicyEpochChanged
         | ControlRefusalCode::TaskAdmissionEpochChanged
-        | ControlRefusalCode::LeaseRequired
         | ControlRefusalCode::ContextRequired
         | ControlRefusalCode::DeltaRequired
         | ControlRefusalCode::DeliveryInvalid
@@ -1345,6 +1119,7 @@ fn directive_shape(
         | ControlRefusalCode::GrantScopeMismatch
         | ControlRefusalCode::StaleFence
         | ControlRefusalCode::ResourceRemapped
+        | ControlRefusalCode::LeaseRequired
         | ControlRefusalCode::SessionExited => (
             DirectiveTarget::Host,
             DirectiveSatisfaction::HostTransition,
@@ -1364,8 +1139,7 @@ mod tests {
             ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, ActionGrantState,
             AuthorityState, ControlAssurance, ControlEpochs, DeliveryPage, ParentTurnState,
             ParticipantMembership, ProjectId, ProjectPolicyEpoch, ResolutionAssurance,
-            ResourceCoverage, ResourceSubject, SessionId, TaskAdmissionEpoch, TaskId, TaskState,
-            TurnIntent,
+            ResourceCoverage, ResourceSubject, SessionId, TaskAdmissionEpoch, TaskId, TurnIntent,
         },
     };
 
@@ -1381,7 +1155,7 @@ mod tests {
             work_binding: None,
             work_binding_current: true,
             participant_membership: ParticipantMembership::Member,
-            task_state: Some(TaskState::Active),
+            anchor_exists: true,
             phase: SessionPhase::Ready,
             health: ControlHealth::Healthy,
             active_policy_known: true,
@@ -1406,7 +1180,6 @@ mod tests {
             has_unknown_action_outcome: false,
             authority_satisfied: true,
             capability_map_revision: 3,
-            leases: Vec::new(),
             intent: TurnIntent {
                 idempotency_key: "turn-a".into(),
                 intent_fingerprint: hash("turn intent"),
@@ -1451,15 +1224,6 @@ mod tests {
             coverage: ResourceCoverage::Exact,
         }];
         let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-        let leases = vec![LeaseBasis {
-            lease_id: "lease-a".into(),
-            holder: session_id.clone(),
-            kind: LeaseKind::Execution,
-            mode: LeaseMode::Exclusive,
-            subject: subjects[0].clone(),
-            fence: 7,
-            expires_at: now + TimeDelta::seconds(60),
-        }];
         let binding = Some(hash("resolution binding"));
         let grant = ActionGrantBasis {
             control_schema_version: CONTROL_SCHEMA_VERSION,
@@ -1475,7 +1239,6 @@ mod tests {
             epochs,
             blocking_watermark: ChangeCursor(12),
             capability_map_revision: 3,
-            leases: leases.clone(),
             resolution_binding_digest: binding.clone(),
             expires_at: now + TimeDelta::seconds(30),
         };
@@ -1496,7 +1259,6 @@ mod tests {
             current_epochs: epochs,
             acknowledged_blocking_watermark: ChangeCursor(12),
             capability_map_revision: 3,
-            leases,
             resolution_binding_digest: binding,
             resolution_assurance: ResolutionAssurance::PinnedThroughInvocation,
             observed_at: now,
@@ -1579,7 +1341,7 @@ mod tests {
     }
 
     #[test]
-    fn advisory_mutation_refuses_even_with_declared_effect_and_live_lease() {
+    fn advisory_mutation_refuses_even_with_declared_effect() {
         let mut input = input();
         let subject = ResourceSubject::Path {
             project_id: ProjectId("project-a".into()),
@@ -1588,16 +1350,6 @@ mod tests {
         };
         input.intent.requested_effects = vec![EffectClass::MutateLocal];
         input.intent.resource_intents = vec![subject.clone()];
-        input.leases = vec![LeaseBasis {
-            lease_id: "lease-effect-floor".into(),
-            holder: input.session_id.clone(),
-            kind: LeaseKind::Execution,
-            mode: LeaseMode::Exclusive,
-            subject,
-            fence: 1,
-            expires_at: input.evaluated_at + TimeDelta::seconds(60),
-        }];
-
         let observation = observe_turn(&input);
         let TurnDecision::Refuse { directive } = observation.decision else {
             panic!("advisory mutation must refuse");
@@ -1654,7 +1406,7 @@ mod tests {
             Some(ControlRefusalCode::GrantScopeMismatch)
         );
         let TurnDecision::Refuse { directive } = observe_turn(&input).decision else {
-            panic!("coordinate must remain lease-boundary only");
+            panic!("coordinate is not a model turn capability");
         };
         assert_eq!(directive.effect, Some(EffectClass::Coordinate));
     }
@@ -1703,48 +1455,6 @@ mod tests {
         assert_eq!(directive.required_assurance, None);
         assert_eq!(directive.declared_mediated_effects, Some(all_effects()));
         assert_eq!(directive.effective_mediated_effects, Some(all_effects()));
-    }
-
-    #[test]
-    fn lease_policy_uses_the_same_assurance_capability_and_epoch_ladder() {
-        let declared = vec![EffectClass::Observe, EffectClass::MutateLocal];
-        let policy_effects = vec![EffectClass::Observe];
-        let refusal = evaluate_lease_policy(&LeasePolicyInput {
-            request_key: "lease_acquire:lease-a",
-            host_assurance: ControlAssurance::TurnGated,
-            declared_mediated_effects: &declared,
-            project_required_assurance: ControlAssurance::TurnGated,
-            policy_effects: &policy_effects,
-            session_policy_epoch: ProjectPolicyEpoch(2),
-            active_policy_epoch: ProjectPolicyEpoch(2),
-            effect: EffectClass::MutateLocal,
-        })
-        .expect_err("unsupported lease effect must refuse");
-        assert_eq!(
-            refusal.directive.code,
-            ControlRefusalCode::CapabilityNotPermitted
-        );
-        assert_eq!(refusal.directive.effect, Some(EffectClass::MutateLocal));
-        assert_eq!(refusal.directive.required_assurance, None);
-        assert!(!refusal.adopt_project_policy_epoch);
-
-        let policy_effects = vec![EffectClass::Observe, EffectClass::MutateLocal];
-        let refusal = evaluate_lease_policy(&LeasePolicyInput {
-            request_key: "lease_acquire:lease-b",
-            host_assurance: ControlAssurance::TurnGated,
-            declared_mediated_effects: &declared,
-            project_required_assurance: ControlAssurance::TurnGated,
-            policy_effects: &policy_effects,
-            session_policy_epoch: ProjectPolicyEpoch(1),
-            active_policy_epoch: ProjectPolicyEpoch(2),
-            effect: EffectClass::MutateLocal,
-        })
-        .expect_err("stale lease epoch must refuse");
-        assert_eq!(
-            refusal.directive.code,
-            ControlRefusalCode::PolicyEpochChanged
-        );
-        assert!(refusal.adopt_project_policy_epoch);
     }
 
     #[test]
@@ -1895,80 +1605,13 @@ mod tests {
     }
 
     #[test]
-    fn finalizer_turns_are_refused_at_evaluation_begin_and_action() {
-        for phase in [SessionPhase::Ready, SessionPhase::FinalizerOpen] {
-            let mut finalizer = input();
-            finalizer.phase = phase;
-            finalizer.intent.purpose = TurnPurpose::Finalizer;
-            assert_eq!(
-                refusal_code(&observe_turn(&finalizer)),
-                Some(ControlRefusalCode::TurnPurposeMismatch),
-                "{phase:?}"
-            );
-        }
-
-        let TurnDecision::Grant { basis } = observe_turn(&input()).decision else {
-            panic!("an ordinary turn is granted");
-        };
-        let ordinary = IssuedTurnGrant {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            grant_id: "turn-grant-a".into(),
-            request_key: "turn-a".into(),
-            basis: (*basis).clone(),
-            delivery: None,
-            issued_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
-        };
-        let snapshot = TurnBeginSnapshot {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            session_id: basis.session_id.clone(),
-            task_id: basis.task_id,
-            work_binding: None,
-            work_binding_current: true,
-            phase: SessionPhase::TurnOpen,
-            participant_membership: ParticipantMembership::Member,
-            task_state: Some(TaskState::Active),
-            grant_state: TurnGrantState::Issued,
-            current_epochs: ControlEpochs {
-                project_policy: basis.project_policy_epoch,
-                task_admission: basis.task_admission_epoch,
-            },
-            current_head: basis.confirmed_cursor,
-            context_current: true,
-            capability_map_revision: basis.capability_map_revision,
-            delivery_tokens: Vec::new(),
-            leases: Vec::new(),
-            observed_at: Utc.timestamp_millis_opt(1_700_000_000_001).unwrap(),
-        };
-        let mut finalizer = ordinary.clone();
-        finalizer.basis.purpose = TurnPurpose::Finalizer;
+    fn removed_finalizer_vocabulary_is_not_admitted() {
+        assert!(serde_json::from_str::<TurnPurpose>("\"finalizer\"").is_err());
+        assert!(serde_json::from_str::<SessionPhase>("\"finalizer_open\"").is_err());
         assert_eq!(
-            evaluate_turn_begin(&finalizer, &snapshot),
-            TurnBeginDecision::Refuse {
-                code: ControlRefusalCode::LifecycleHold
-            }
+            serde_json::from_str::<TurnPurpose>("\"ordinary\"").unwrap(),
+            TurnPurpose::Ordinary
         );
-        assert_ne!(
-            evaluate_turn_begin(&ordinary, &snapshot),
-            TurnBeginDecision::Refuse {
-                code: ControlRefusalCode::LifecycleHold
-            }
-        );
-
-        // A finalizer-compatible effect, so only the unconditional finalizer
-        // refusal (not an effect or phase mismatch) can explain the hold.
-        let (mut grant, mut action_snapshot) = action();
-        grant.turn_purpose = TurnPurpose::Finalizer;
-        grant.effect = EffectClass::Observe;
-        action_snapshot.turn_purpose = TurnPurpose::Finalizer;
-        action_snapshot.effect = EffectClass::Observe;
-        for phase in [SessionPhase::TurnOpen, SessionPhase::FinalizerOpen] {
-            action_snapshot.phase = phase;
-            assert_eq!(
-                action_refusal_code(&grant, &action_snapshot),
-                Some(ControlRefusalCode::LifecycleHold),
-                "{phase:?}"
-            );
-        }
     }
 
     #[test]
@@ -1985,7 +1628,7 @@ mod tests {
     }
 
     #[test]
-    fn action_begin_rechecks_epochs_watermark_and_fences() {
+    fn action_begin_rechecks_epochs_and_watermark() {
         let (grant, snapshot) = action();
 
         let mut stale_epoch = snapshot.clone();
@@ -2000,13 +1643,6 @@ mod tests {
         assert_eq!(
             action_refusal_code(&grant, &stale_delivery),
             Some(ControlRefusalCode::DeltaRequired)
-        );
-
-        let mut stale_fence = snapshot;
-        stale_fence.leases[0].fence += 1;
-        assert_eq!(
-            action_refusal_code(&grant, &stale_fence),
-            Some(ControlRefusalCode::StaleFence)
         );
     }
 
@@ -2030,32 +1666,14 @@ mod tests {
     }
 
     #[test]
-    fn mutation_requires_live_holder_owned_covering_lease() {
+    fn mutation_still_requires_matching_authority() {
         let (grant, snapshot) = action();
-
-        let mut missing_grant = grant.clone();
-        missing_grant.leases.clear();
-        let mut missing_snapshot = snapshot.clone();
-        missing_snapshot.leases.clear();
+        assert_eq!(action_refusal_code(&grant, &snapshot), None);
+        let mut missing = snapshot.clone();
+        missing.authority_references.clear();
         assert_eq!(
-            action_refusal_code(&missing_grant, &missing_snapshot),
-            Some(ControlRefusalCode::LeaseRequired)
-        );
-
-        let mut expired = snapshot.clone();
-        expired.leases[0].expires_at = expired.observed_at;
-        assert_eq!(
-            action_refusal_code(&grant, &expired),
-            Some(ControlRefusalCode::StaleFence)
-        );
-
-        let mut wrong_holder_grant = grant.clone();
-        wrong_holder_grant.leases[0].holder = SessionId("other-session".into());
-        let mut wrong_holder_snapshot = snapshot;
-        wrong_holder_snapshot.leases[0].holder = SessionId("other-session".into());
-        assert_eq!(
-            action_refusal_code(&wrong_holder_grant, &wrong_holder_snapshot),
-            Some(ControlRefusalCode::StaleFence)
+            action_refusal_code(&grant, &missing),
+            Some(ControlRefusalCode::MissingAuthority)
         );
     }
 

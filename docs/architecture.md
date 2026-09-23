@@ -54,8 +54,8 @@ representations. `control.rs` owns deterministic turn, turn-begin,
 turn-checkpoint, and action-begin decisions. `storage/` atomically derives
 work/run lifecycle, membership, context, and named feed heads; persists sessions and
 short-lived grants; consumes grants at begin; and emits canonical checkpoint
-events. `host.rs` is the thin JSON-lines host transport. Scoped leases, action
-grant persistence, and finalization projections remain later phases. Front
+events. `host.rs` is the thin JSON-lines host transport. Action
+grant persistence and report-assembly projections remain later phases. Front
 ends translate requests; they do not decide eligibility.
 
 ## Object model
@@ -65,8 +65,8 @@ versions, events (approve, retract, verify, tombstone, resolve), edges, and
 evidence. Objects serialize as RFC 8785 (JCS) canonical JSON; an object's id
 is a random UUID minted when it is stored, never derived from its bytes, and
 links hold that id. A SHA-256 over canonical bytes is only a content
-fingerprint for comparing content. Readers accept the exact supported schema; policy changes append new
-objects and never rewrite an existing object.
+fingerprint for comparing content. Readers accept the exact supported schema;
+policy changes append new objects and never rewrite an existing object.
 
 A **memory** is a stable id plus an append-only chain of versions with parent
 links. Status (`proposed`, `active`, `stale`, `expired`, `retracted`,
@@ -77,12 +77,12 @@ field. See
 A **work item** is a stable local planning identity in a parent forest and
 completion-dependency DAG. A **root execution** aggregates parallel child
 runs, contributions, and required completion seals. A **work run** is one
-live execution generation for one item with one executor/claim, resource
-leases, evidence, and completion state. Root-scoped shared memory belongs to
+live execution generation for one item with one executor/claim, evidence,
+and completion state. Root-scoped shared memory belongs to
 the stable root work item, not either execution record. Assignment plans
-future responsibility, a claim schedules live execution, and a resource
-lease authorizes mutation; none is a substitute for another. Post-completion
-report assembly uses a separate fenced assembly claim. See
+future responsibility and a claim schedules live execution; neither grants
+filesystem or external-action authority. Resource leases have been removed.
+Post-completion report assembly uses a separate fenced assembly claim. See
 [local work system](features/local-work-system.md).
 
 ## Storage
@@ -111,15 +111,21 @@ transactions, and atomic compare-and-swap operations support multiple
 processes. Project, root-work, and run-execution feeds each allocate a dense
 typed `FeedPosition` with their event transaction. The work protocol stages
 and acknowledges an exact dense project-feed cursor. Host-control delivery
-uses the task-local cursor and stamps focused project/root/run heads into the
+uses the control-scope-local cursor and stamps focused project/root/run heads into the
 context packet; begin rejects a changed focus or head vector. A separate
 dense `DeliveryPosition` with exact multi-feed source ranges remains the
 broader target. Global SQLite row ids are not cursors.
 The shipped host-control alpha adds mutable session and turn-grant projections
 plus canonical checkpoint events. The target extends these with delivery,
-scoped lease, action, and report-barrier projections. Live grants and
+action and report-barrier projections. Live grants and
 high-volume decisions use bounded noncanonical operational storage; only
 behaviorally relevant transitions enter the peer delta feed.
+
+Host session binding resolves one shared control anchor by project and external
+reference, without creating a compatibility task. `control_sessions` owns the
+binding and optional exact work-claim basis; `control_changes` owns ordered
+peer events. Existing `task_id` fields retain their scope identity for stored
+history and memory applicability, not a second task lifecycle.
 
 ### Portable and synchronized backends
 
@@ -129,9 +135,9 @@ requires an empty or exact-head destination, advances a writer epoch under
 parent-head compare-and-swap, and enables the next host only after activation.
 Portable startup/resume and a bounded cadence validate that remote epoch;
 divergence refuses and forced crash takeover has an explicit detection window,
-not a distributed-lock claim. Restore never activates live claims, resource
-leases, grants, delivery state, or agent-private scratch. Executable shared
-state is transitively closed; safe stubs/placeholders preserve excluded
+not a distributed-lock claim. Restore never activates live claims, grants,
+delivery state, or agent-private scratch. Executable shared state is
+transitively closed; safe stubs/placeholders preserve excluded
 provenance and feed positions without rewriting canonical bytes.
 For personal/private Git the recommended transport is a dedicated plumbing
 ref—not a branch or working-tree file. An access-controlled internal object
@@ -169,7 +175,7 @@ values never enter any shared history—vault references only.
    positions. Later turns request only peer deltas after those positions. See
    [context packets](features/context-packets.md).
 6. **Coordinate and complete**: each session claims its own child `WorkRun`,
-   separately claims resource leases for mutation, appends decisions/evidence
+   appends decisions/evidence
    to root-shared memory, checkpoints, and explicitly hands off. A
    `RootExecution` consumes required child seals, explicit reason-attributed
    waivers for disposed required children, and contributions. Host
@@ -189,8 +195,9 @@ The CLI (`engram …`) and agent-facing MCP expose the six-operation ambient
 work protocol, memory, diagnostics, and coordination requests. A separate
 host-private API handles binding, turn
 evaluation/begin, delivery acknowledgement, action
-authorization/begin/completion, checkpoint, heartbeat, and exit. The host owns prompt/tool mediation and
-notifications; Engram owns durable protocol state and decisions. See
+authorization/begin/completion, checkpoint, heartbeat, and exit. The host owns
+prompt/tool mediation and notifications; Engram owns durable protocol state
+and decisions. See
 [CLI & MCP](features/cli-and-mcp.md).
 
 The reusable Host Enforcement SDK implements that private lifecycle once and
@@ -205,11 +212,11 @@ map and latency/degraded-mode diagnostics are surfaced through `engram doctor`.
 
 The currently shipped MCP slice is advisory. The separate host-private
 transport process-tests restart-safe turn grant/begin/checkpoint behavior for
-`observe`, `communicate`, and local-mutation turns under scoped exclusive
-execution leases. Grants bind the current lease fence and begin rechecks it,
-but a deployment may describe itself as `turn_gated` only when its runtime
-makes that channel mandatory before every prompt. No shipped deployment may
-claim `action_gated` yet.
+`observe`, `communicate`, and turn-gated local mutation. Supplied resource
+intents are normalized, not exclusive resource reservations. A deployment may
+describe itself as `turn_gated` only when its runtime makes that channel
+mandatory before every prompt. No shipped deployment may claim `action_gated`
+yet.
 
 ## Security posture
 

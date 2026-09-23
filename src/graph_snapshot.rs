@@ -210,7 +210,6 @@ pub struct WorkGraphSnapshotHistory {
 pub enum WorkGraphSnapshotRecordPayload {
     /// Canonical restored records will be carried verbatim once load ships.
     Restored {
-        #[serde(rename = "object_hash")]
         object_id: ObjectId,
         canonical_json: Value,
     },
@@ -571,7 +570,6 @@ enum StrictRecord {
     Restored {
         work_id: WorkId,
         generation_index: usize,
-        #[serde(rename = "object_hash")]
         object_id: ObjectId,
         canonical_json: Value,
     },

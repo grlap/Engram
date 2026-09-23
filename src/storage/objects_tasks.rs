@@ -1,12 +1,12 @@
 use super::{
-    CanonicalObject, ChangeCursor, Connection, DateTime, DeltaItem, DeserializeOwned, LocalTask,
+    CanonicalObject, ChangeCursor, Connection, DateTime, DeltaItem, DeserializeOwned,
     MAX_CONTROL_DELIVERY_EVENTS, MAX_CONTROL_DELIVERY_OBJECT_BYTES, MAX_TASK_CHANGE_OBJECT_BYTES,
-    MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow, ObjectId, OptionalExtension,
-    SCHEMA_VERSION, Scope, SessionId, SqliteStore, StoreError, TaskDelta, TaskId, TaskState,
-    Transaction, lookup_project_memory_on, params, parse_enum,
+    MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow, ObjectId, OptionalExtension, Scope,
+    SqliteStore, StoreError, TaskDelta, TaskId, Transaction, lookup_project_memory_on, params,
+    parse_enum,
 };
 #[cfg(test)]
-use super::{MemoryAssertionEvent, Serialize, TaskChange, TransactionBehavior};
+use super::{MemoryAssertionEvent, Serialize, SessionId, TaskChange, TransactionBehavior};
 
 #[cfg(test)]
 mod tests;
@@ -57,7 +57,7 @@ impl SqliteStore {
             None,
             1_000,
         )?;
-        let changes = self.task_changes_since(task_id, after, limit)?;
+        let changes = self.control_changes_since(task_id, after, limit)?;
         let mut items = Vec::with_capacity(changes.len());
         for change in changes {
             let object: serde_json::Value = self
@@ -125,7 +125,7 @@ impl SqliteStore {
     /// Returns [`StoreError`] when SQLite cannot read the feed or a stored
     /// object id is invalid.
     #[cfg(test)]
-    pub fn task_changes_since(
+    pub fn control_changes_since(
         &self,
         task_id: TaskId,
         after: ChangeCursor,
@@ -133,7 +133,7 @@ impl SqliteStore {
     ) -> Result<Vec<TaskChange>, StoreError> {
         let mut statement = self.connection.prepare(
             "SELECT task_cursor, object_kind, object_id
-             FROM task_changes
+             FROM control_changes
              WHERE task_id = ?1 AND task_cursor > ?2
              ORDER BY task_cursor
              LIMIT ?3",
@@ -181,7 +181,7 @@ impl SqliteStore {
         let raw = {
             let mut statement = transaction.prepare(
                 "SELECT task_cursor, object_kind, object_id
-                 FROM task_changes
+                 FROM control_changes
                  WHERE task_id = ?1 AND task_cursor > ?2 AND task_cursor <= ?3
                  ORDER BY task_cursor",
             )?;
@@ -263,7 +263,7 @@ impl SqliteStore {
     ) -> Result<ChangeCursor, StoreError> {
         let mut statement = transaction.prepare(
             "SELECT change.task_cursor, LENGTH(object.canonical_json)
-             FROM task_changes change
+             FROM control_changes change
              JOIN objects object ON object.object_id = change.object_id
              WHERE change.task_id = ?1 AND change.task_cursor > ?2
              ORDER BY change.task_cursor
@@ -357,68 +357,6 @@ impl SqliteStore {
             });
         }
         CanonicalObject::stored(hash, bytes).map(Some)
-    }
-
-    pub(super) fn load_task(
-        transaction: &Transaction<'_>,
-        task_id: TaskId,
-    ) -> Result<LocalTask, StoreError> {
-        let (project_id, title, external_ref, state, cursor, created_at_ms, updated_at_ms): (
-            String,
-            String,
-            String,
-            String,
-            i64,
-            i64,
-            i64,
-        ) = transaction.query_row(
-            "SELECT project_id, title, external_ref, state, event_cursor,
-                    created_at_ms, updated_at_ms
-             FROM tasks WHERE task_id = ?1",
-            [task_id.0.to_string()],
-            |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                    row.get(5)?,
-                    row.get(6)?,
-                ))
-            },
-        )?;
-        let mut statement = transaction.prepare(
-            "SELECT session_id FROM task_participants
-             WHERE task_id = ?1 ORDER BY joined_at_ms, session_id",
-        )?;
-        let participants = statement
-            .query_map([task_id.0.to_string()], |row| {
-                row.get::<_, String>(0).map(SessionId)
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        let created_at = DateTime::from_timestamp_millis(created_at_ms).ok_or_else(|| {
-            StoreError::InvalidTaskProjection(format!(
-                "invalid task created-at timestamp {created_at_ms}"
-            ))
-        })?;
-        let updated_at = DateTime::from_timestamp_millis(updated_at_ms).ok_or_else(|| {
-            StoreError::InvalidTaskProjection(format!(
-                "invalid task updated-at timestamp {updated_at_ms}"
-            ))
-        })?;
-        Ok(LocalTask {
-            schema_version: SCHEMA_VERSION,
-            project_id: crate::domain::ProjectId(project_id),
-            task_id,
-            title,
-            external_ref: Some(external_ref),
-            participants,
-            state: parse_enum::<TaskState>(&state)?,
-            event_cursor: ChangeCursor(cursor),
-            created_at,
-            updated_at,
-        })
     }
 
     pub(super) fn decode_memory_summary(
@@ -614,7 +552,7 @@ impl SqliteStore {
         let task_id_text = task_id.0.to_string();
         if let Some(cursor) = transaction
             .query_row(
-                "SELECT task_cursor FROM task_changes
+                "SELECT task_cursor FROM control_changes
              WHERE task_id = ?1 AND object_id = ?2",
                 params![task_id_text, object.key().as_str()],
                 |row| row.get(0),
@@ -624,7 +562,7 @@ impl SqliteStore {
             return Ok(ChangeCursor(cursor));
         }
         let current = transaction.query_row(
-            "SELECT MAX(task_cursor) FROM task_changes WHERE task_id = ?1",
+            "SELECT MAX(task_cursor) FROM control_changes WHERE task_id = ?1",
             [&task_id_text],
             |row| row.get::<_, Option<i64>>(0),
         )?;
@@ -632,7 +570,7 @@ impl SqliteStore {
             StoreError::InvalidTaskProjection("task change cursor overflowed".into())
         })?;
         transaction.execute(
-            "INSERT INTO task_changes (
+            "INSERT INTO control_changes (
                  task_id, task_cursor, object_kind, object_id
              ) VALUES (?1, ?2, ?3, ?4)",
             params![task_id_text, cursor, object_kind, object.key().as_str()],

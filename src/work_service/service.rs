@@ -824,8 +824,8 @@ impl LocalWorkService {
         // read from the frozen seal through the shared binding check.
         // A readable seal whose evaluation binding fails that check is
         // disclosed by class rather than swallowed, so a broken evaluated
-        // binding never reads like a legacy omission. An unreadable seal
-        // keeps the legacy read shape; the evidence read discloses it.
+        // binding never reads like self-assertion. Missing provenance is
+        // reported as unavailable; the evidence read supplies diagnostics.
         let (acceptance_provenance, acceptance_provenance_error_class) =
             if matches!(text, FocusText::Full)
                 && status.work.lifecycle == crate::WorkLifecycle::Completed
@@ -851,7 +851,7 @@ impl LocalWorkService {
             };
         // Agent detail for an open item under an evaluated policy: the
         // evidence basis an evaluator passes back, and the newest record with
-        // the freshness completion would apply now. Legacy projects keep their
+        // the freshness completion would apply now. Self-asserted projects keep their
         // unchanged show shape.
         let (acceptance_evaluation, evidence_basis) = if status.work.lifecycle
             == crate::domain::WorkLifecycle::Open

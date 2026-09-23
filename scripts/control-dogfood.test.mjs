@@ -31,12 +31,6 @@ const libraryFile = {
   segments: ["src", "lib.rs"],
   coverage: "exact",
 };
-const manifestFile = {
-  kind: "path",
-  project_id: projectId,
-  segments: ["Cargo.toml"],
-  coverage: "exact",
-};
 
 function fingerprint(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -544,47 +538,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
       ).decision,
       "checkpointed",
     );
-    const advisoryLease = ok(
-      await advisory.request({
-        operation: "lease_acquire",
-        routing_token: advisoryBinding.routing_token,
-        kind: "execution",
-        mode: "exclusive",
-        subject: sourceTree,
-        ttl_seconds: 60,
-        idempotency_key: "lease-advisory-src",
-      }),
-    );
-    assert.equal(advisoryLease.decision, "refuse");
-    assert.equal(
-      advisoryLease.directive.code,
-      "control_assurance_insufficient",
-    );
-    assert.equal(advisoryLease.directive.effect, "mutate_local");
-    assert.equal(advisoryLease.directive.required_assurance, "turn_gated");
-    assert.deepEqual(advisoryLease.directive.declared_mediated_effects, [
-      "observe",
-      "communicate",
-      "mutate_local",
-    ]);
-    assert.deepEqual(advisoryLease.directive.effective_mediated_effects, [
-      "observe",
-      "communicate",
-    ]);
-    assert.deepEqual(
-      ok(
-        await advisory.request({
-          operation: "lease_acquire",
-          routing_token: advisoryBinding.routing_token,
-          kind: "execution",
-          mode: "exclusive",
-          subject: sourceTree,
-          ttl_seconds: 60,
-          idempotency_key: "lease-advisory-src",
-        }),
-      ),
-      advisoryLease,
-    );
     const advisoryMutation = ok(
       await advisory.request({
         operation: "turn_evaluate",
@@ -829,14 +782,8 @@ test("host control survives restart and gates turn dispatch", async (t) => {
       firstDecision.grant.delivery.delta.cursor,
       firstDecision.grant.delivery.page.to_cursor,
     );
-    assert.ok(
-      firstDecision.grant.delivery.delta.changes.some(
-        (change) => change.object_kind === "task_started_event",
-      ),
-    );
-    firstDecision.grant.delivery.delta.changes.forEach((change, index) => {
-      assert.equal(change.cursor, index + 1);
-    });
+    // Binding a control scope creates no compatibility task or join events.
+    assert.deepEqual(firstDecision.grant.delivery.delta.changes, []);
     const grant = firstDecision.grant;
     const issuedStatus = ok(
       await client.request({
@@ -934,60 +881,12 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     );
     assert.equal(checkpointed.decision, "checkpointed");
 
-    const mutation = ok(
-      await client.request({
-        operation: "turn_evaluate",
-        routing_token: binding.routing_token,
-        idempotency_key: "turn-host-mutation",
-        intent_fingerprint: fingerprint("turn-host-mutation"),
-        purpose: "ordinary",
-        requested_effects: ["mutate_local"],
-      }),
-    );
-    assert.equal(mutation.decision, "refuse");
-    assert.equal(mutation.directive.code, "lease_required");
-
-    const acquired = ok(
-      await client.request({
-        operation: "lease_acquire",
-        routing_token: binding.routing_token,
-        kind: "execution",
-        mode: "exclusive",
-        subject: sourceTree,
-        ttl_seconds: 60,
-        idempotency_key: "lease-host-a-src",
-      }),
-    );
-    assert.equal(acquired.decision, "granted");
-    assert.equal(acquired.lease.fence, 1);
-    assert.deepEqual(
-      ok(
-        await client.request({
-          operation: "lease_acquire",
-          routing_token: binding.routing_token,
-          kind: "execution",
-          mode: "exclusive",
-          subject: sourceTree,
-          ttl_seconds: 60,
-          idempotency_key: "lease-host-a-src",
-        }),
-      ),
-      acquired,
-    );
-    const conflictingAcquire = await client.request({
-      operation: "lease_acquire",
-      routing_token: binding.routing_token,
-      kind: "execution",
-      mode: "exclusive",
-      subject: libraryFile,
-      ttl_seconds: 60,
-      idempotency_key: "lease-host-a-src",
-    });
-    assert.equal(conflictingAcquire.status, "error");
-    assert.equal(
-      conflictingAcquire.error.code,
-      "control_operation_idempotency_conflict",
-    );
+    for (const operation of ["lease_acquire", "lease_release"]) {
+      const removed = await client.request({ operation, routing_token: binding.routing_token });
+      assert.equal(removed.status, "error");
+      assert.equal(removed.error.code, "invalid_request");
+      assert.match(removed.error.message, /unknown variant/);
+    }
 
     peer = new ControlClient(engramHome, "host-b");
     const peerBinding = ok(
@@ -1037,50 +936,29 @@ test("host control survives restart and gates turn dispatch", async (t) => {
       ).decision,
       "checkpointed",
     );
-    const peerLease = ok(
-      await peer.request({
-        operation: "lease_acquire",
-        routing_token: peerBinding.routing_token,
-        kind: "execution",
-        mode: "exclusive",
-        subject: manifestFile,
-        ttl_seconds: 60,
-        idempotency_key: "lease-host-b-manifest",
-      }),
-    );
-    assert.equal(peerLease.decision, "granted");
-
-    const mutationWithLease = ok(
+    const mutationTurn = ok(
       await client.request({
         operation: "turn_evaluate",
         routing_token: binding.routing_token,
-        idempotency_key: "turn-host-mutation-with-lease",
-        intent_fingerprint: fingerprint("turn-host-mutation-with-lease"),
+        idempotency_key: "turn-host-mutation-resource",
+        intent_fingerprint: fingerprint("turn-host-mutation-resource"),
         purpose: "ordinary",
         requested_effects: ["mutate_local"],
         resource_intents: [libraryFile],
       }),
     );
-    assert.equal(mutationWithLease.decision, "grant");
-    assert.ok(
-      mutationWithLease.grant.delivery.delta.changes.some(
-        (change) => change.object_kind === "work_lease_event",
-      ),
-    );
-    assert.equal(mutationWithLease.grant.basis.leases.length, 1);
-    assert.equal(
-      mutationWithLease.grant.basis.leases[0].lease_id,
-      acquired.lease.lease_id,
-    );
+    assert.equal(mutationTurn.decision, "grant");
+    assert.equal(Object.hasOwn(mutationTurn.grant.basis, "leases"), false);
+    assert.ok(mutationTurn.grant.delivery, "peer checkpoint requires a delivery page");
+    assert.equal(typeof mutationTurn.grant.delivery.page.delivery_token, "string");
+    assert.notEqual(mutationTurn.grant.delivery.page.delivery_token, "");
     const mutationBegun = ok(
       await client.request({
         operation: "turn_begin",
         routing_token: binding.routing_token,
-        grant_id: mutationWithLease.grant.grant_id,
-        delivery_tokens: [
-          mutationWithLease.grant.delivery.page.delivery_token,
-        ],
-        idempotency_key: "begin-host-mutation-with-lease",
+        grant_id: mutationTurn.grant.grant_id,
+        delivery_tokens: [mutationTurn.grant.delivery.page.delivery_token],
+        idempotency_key: "begin-host-mutation-resource",
       }),
     );
     assert.equal(mutationBegun.decision, "begin");
@@ -1088,22 +966,12 @@ test("host control survives restart and gates turn dispatch", async (t) => {
       await client.request({
         operation: "turn_checkpoint",
         routing_token: binding.routing_token,
-        grant_id: mutationWithLease.grant.grant_id,
+        grant_id: mutationTurn.grant.grant_id,
         next_intent: "continue",
-        idempotency_key: "checkpoint-host-mutation-with-lease",
+        idempotency_key: "checkpoint-host-mutation-resource",
       }),
     );
     assert.equal(mutationCheckpointed.decision, "checkpointed");
-
-    const released = ok(
-      await client.request({
-        operation: "lease_release",
-        routing_token: binding.routing_token,
-        lease_id: acquired.lease.lease_id,
-        idempotency_key: "release-host-a-src",
-      }),
-    );
-    assert.equal(released.lease_id, acquired.lease.lease_id);
 
     const status = ok(
       await client.request({
@@ -1482,19 +1350,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
       "checkpointed",
     );
 
-    const boundLease = ok(
-      await client.request({
-        operation: "lease_acquire",
-        routing_token: bound.routing_token,
-        kind: "execution",
-        mode: "exclusive",
-        subject: sourceTree,
-        ttl_seconds: 60,
-        idempotency_key: "lease-bound-run-src",
-      }),
-    );
-    assert.equal(boundLease.decision, "granted");
-
     const observedTurn = ok(
       await client.request({
         operation: "turn_evaluate",
@@ -1681,15 +1536,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
       evidence: [verificationEvidence],
       idempotency_key: "bound-contribution-checkpoint",
     });
-    const releasedBoundLease = ok(
-      await client.request({
-        operation: "lease_release",
-        routing_token: bound.routing_token,
-        lease_id: boundLease.lease.lease_id,
-        idempotency_key: "release-bound-run-src",
-      }),
-    );
-    assert.equal(releasedBoundLease.lease_id, boundLease.lease.lease_id);
     cliWork(engramHome, actor, "update", {
       kind: "release",
       reason: "exercise stale control binding",
@@ -1869,31 +1715,17 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.notEqual(pinnedRuleStaleCas.status, 0);
     assert.match(pinnedRuleStaleCas.stderr, /active control policy changed/);
 
-    const stalePolicyLease = ok(
-      await client.request({
-        operation: "lease_acquire",
-        routing_token: rebound.routing_token,
-        kind: "execution",
-        mode: "exclusive",
-        subject: sourceTree,
-        ttl_seconds: 60,
-        idempotency_key: "lease-bound-completion-src-stale-policy",
-      }),
-    );
-    assert.equal(stalePolicyLease.decision, "refuse");
-    assert.equal(stalePolicyLease.directive.code, "policy_epoch_changed");
-    const completionLease = ok(
-      await client.request({
-        operation: "lease_acquire",
-        routing_token: rebound.routing_token,
-        kind: "execution",
-        mode: "exclusive",
-        subject: sourceTree,
-        ttl_seconds: 60,
-        idempotency_key: "lease-bound-completion-src",
-      }),
-    );
-    assert.equal(completionLease.decision, "granted");
+    const stalePolicyTurn = ok(await client.request({
+      operation: "turn_evaluate",
+      routing_token: rebound.routing_token,
+      idempotency_key: "bound-completion-stale-policy",
+      intent_fingerprint: fingerprint("bound-completion-stale-policy"),
+      purpose: "ordinary",
+      requested_effects: ["observe"],
+      resource_intents: [],
+    }));
+    assert.equal(stalePolicyTurn.decision, "refuse");
+    assert.equal(stalePolicyTurn.directive.code, "policy_epoch_changed");
     const finalMutationTurn = ok(
       await client.request({
         operation: "turn_evaluate",
@@ -1960,6 +1792,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       openNextItem.guidance.action,
       "record_verification_then_checkpoint",
     );
+    assert.equal(Object.hasOwn(openNextItem.guidance, "host_waiver_requestable"), false);
     cliWorkAcknowledge(engramHome, actor, openNext);
     const openFocus = cliWorkFocus(
       engramHome,
@@ -2309,8 +2142,8 @@ test("work-bound control records observations and rebinds after a stale fence", 
             },
             check_kind: "test",
             environment: {
-              kind: "object_hash",
-              object_hash: pinnedEnvironment,
+              kind: "object_id",
+              object_id: pinnedEnvironment,
             },
             summary: "host observed the final source verification",
             refs: ["command:control-dogfood-final-check"],
@@ -2346,18 +2179,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
         (item) => item.state === "satisfied",
       ).length,
       2,
-    );
-
-    assert.equal(
-      ok(
-        await client.request({
-          operation: "lease_release",
-          routing_token: rebound.routing_token,
-          lease_id: completionLease.lease.lease_id,
-          idempotency_key: "release-bound-completion-src",
-        }),
-      ).lease_id,
-      completionLease.lease.lease_id,
     );
 
     const stockRuleSet = {
@@ -2420,14 +2241,22 @@ test("work-bound control records observations and rebinds after a stale fence", 
       pinnedEnvironment,
     );
 
+    const removedWaiver = await client.request({
+      operation: "obligation_waive",
+      routing_token: "removed-operation",
+    });
+    assert.equal(removedWaiver.status, "error");
+    assert.equal(removedWaiver.error.code, "invalid_request");
+    assert.match(removedWaiver.error.message, /obligation_waive/);
+
     const waiverProposed = cliWork(
       engramHome,
       actor,
       "propose",
       {
         kind: "root",
-        title: "Exercise host-private obligation waiver",
-        outcome: "A human-attributed host waiver resolves one exact obligation",
+        title: "Exercise operator obligation waiver",
+        outcome: "A human-attributed operator waiver resolves one exact obligation",
         acceptance: ["The typed waiver is replayable and agent-inaccessible"],
         work_kind: "chore",
         idempotency_key: "waiver-root",
@@ -2449,7 +2278,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       await client.request({
         operation: "session_bind",
         external_ref: "local-work:host-waiver-dogfood",
-        title: "Host-private obligation waiver",
+        title: "Operator obligation waiver",
         assurance: "turn_gated",
         mediated_effects: ["observe", "mutate_local"],
         work_binding: waiverBinding,
@@ -2494,18 +2323,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ).decision,
       "checkpointed",
     );
-    const waiverLease = ok(
-      await client.request({
-        operation: "lease_acquire",
-        routing_token: waiverBound.routing_token,
-        kind: "execution",
-        mode: "exclusive",
-        subject: sourceTree,
-        ttl_seconds: 60,
-        idempotency_key: "lease-host-waiver-src",
-      }),
-    );
-    assert.equal(waiverLease.decision, "granted");
     const waiverMutationTurn = ok(
       await client.request({
         operation: "turn_evaluate",
@@ -2596,49 +2413,51 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.match(forbiddenAgentWaiver.stderr, /unknown variant|waive_obligation/);
 
     const humanOperator = "dogfood-human-operator";
-    const wrongDefinitionWaiver = ok(
-      await client.request({
-        operation: "obligation_waive",
-        routing_token: waiverBound.routing_token,
-        obligation_id: waiverOpen.obligation_id,
-        expected_definition: fingerprint("wrong-obligation-definition"),
-        waived_by: humanOperator,
-        reason: "human reviewed the exact final mutation",
-        idempotency_key: "host-waiver-wrong-definition",
-      }),
+    const waiverReason = "human reviewed the exact final mutation";
+    const operatorWaive = (definition, key) =>
+      spawnSync(
+        binary,
+        [
+          "--home",
+          engramHome,
+          "authority",
+          "waive-obligation",
+          "--obligation-id",
+          waiverOpen.obligation_id,
+          "--expected-definition",
+          definition,
+          "--waived-by",
+          humanOperator,
+          "--reason",
+          waiverReason,
+          "--idempotency-key",
+          key,
+        ],
+        { cwd: root, encoding: "utf8", windowsHide: true },
+      );
+    const wrongDefinitionWaiver = operatorWaive(
+      rollbackRuleReceipt.obligation_rule_set,
+      "operator-waiver-wrong-definition",
     );
-    assert.equal(wrongDefinitionWaiver.decision, "refused");
-    assert.equal(wrongDefinitionWaiver.code, "definition_changed");
-    assert.equal(
-      wrongDefinitionWaiver.current_definition,
+    assert.notEqual(wrongDefinitionWaiver.status, 0);
+    assert.match(wrongDefinitionWaiver.stderr, /definition changed/);
+    const waived = operatorWaive(waiverOpen.definition, "operator-waiver-success");
+    assert.equal(waived.status, 0, waived.stderr);
+    assert.match(waived.stderr, /identity is asserted context/);
+    const waiverReceipt = JSON.parse(waived.stdout);
+    assert.equal(waiverReceipt.resolution.waived_by, humanOperator);
+    const waiverReplay = operatorWaive(
       waiverOpen.definition,
+      "operator-waiver-success",
     );
-    const waiverRequest = {
-      operation: "obligation_waive",
-      routing_token: waiverBound.routing_token,
-      obligation_id: waiverOpen.obligation_id,
-      expected_definition: waiverOpen.definition,
-      waived_by: humanOperator,
-      reason: "human reviewed the exact final mutation",
-      idempotency_key: "host-waiver-success",
-    };
-    const waived = ok(await client.request(waiverRequest));
-    assert.equal(waived.decision, "waived");
-    assert.equal(waived.receipt.waived_by, humanOperator);
-    assert.equal(waived.receipt.state, "waived");
-    assert.equal(
-      JSON.stringify(waived).includes(waiverRequest.reason),
-      false,
+    assert.equal(waiverReplay.status, 0, waiverReplay.stderr);
+    assert.deepEqual(JSON.parse(waiverReplay.stdout), waiverReceipt);
+    const terminalWaiver = operatorWaive(
+      waiverOpen.definition,
+      "operator-waiver-terminal",
     );
-    assert.deepEqual(ok(await client.request(waiverRequest)), waived);
-    const terminalWaiver = ok(
-      await client.request({
-        ...waiverRequest,
-        idempotency_key: "host-waiver-already-terminal",
-      }),
-    );
-    assert.equal(terminalWaiver.decision, "refused");
-    assert.equal(terminalWaiver.code, "obligation_not_open");
+    assert.notEqual(terminalWaiver.status, 0);
+    assert.match(terminalWaiver.stderr, /already terminal/);
 
     const waivedFocus = cliWorkFocus(
       engramHome,
@@ -2650,6 +2469,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       waivedFocus.obligation_page.items[0].waived_by,
       humanOperator,
     );
+    assert.equal(JSON.stringify(waivedFocus).includes(waiverReason), false);
     const waiverCompleted = cliWork(
       engramHome,
       actor,
@@ -2660,7 +2480,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
           refs: ["test:control-dogfood-host-waiver"],
         },
         acceptance: [
-          { satisfied: true, note: "the host-private waiver path is verified" },
+          { satisfied: true, note: "the operator waiver path is verified" },
         ],
         idempotency_key: "host-waiver-completion",
       },
@@ -2670,17 +2490,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(
       waiverCompleted.obligation_page.items[0].waived_by,
       humanOperator,
-    );
-    assert.equal(
-      ok(
-        await client.request({
-          operation: "lease_release",
-          routing_token: waiverBound.routing_token,
-          lease_id: waiverLease.lease.lease_id,
-          idempotency_key: "release-host-waiver-src",
-        }),
-      ).lease_id,
-      waiverLease.lease.lease_id,
     );
 
     const freshSatisfied = cliWorkFocus(

@@ -52,7 +52,7 @@ pub(super) const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
       AND stale.session_id != ?4
       AND stale.tentative_delivery_token IS NULL
       AND NOT EXISTS (
-          SELECT 1 FROM session_bindings AS binding
+          SELECT 1 FROM control_sessions AS binding
           WHERE binding.session_id = stale.session_id
       )
       AND NOT EXISTS (
@@ -860,9 +860,8 @@ impl SqliteStore {
             .transpose()?;
         let bound_task_id = transaction
             .query_row(
-                "SELECT b.task_id FROM session_bindings b JOIN tasks t
-                   ON t.task_id = b.task_id
-                 WHERE b.session_id = ?1 AND t.project_id = ?2",
+                "SELECT task_id FROM control_sessions
+                 WHERE session_id = ?1 AND project_id = ?2",
                 params![session_id.0, project_id.0],
                 |row| row.get::<_, String>(0),
             )

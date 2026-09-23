@@ -73,12 +73,12 @@ their presence in a file alone does not prove delivery.
   position is distinct from its source-feed progress vector. Global row ids
   and hashes are not safety cursors.
 - Assignment is future intent; a fenced work claim schedules live execution;
-  a fenced resource lease authorizes mutation. Never conflate them. Handoff
+  claims do not grant filesystem or external-action authority. Handoff
   and recovery are explicit, with immutable and audited events.
 - V1 has one ordinary executor/claim per `WorkRun`; parallel sessions claim
   distinct child runs under a `RootExecution` aggregate.
 - Do not complete a root until `CompletionSeal` binds the dense run-feed cut,
-  required child seals, contributions, reconciled actions/leases, acceptance,
+  required child seals, contributions, reconciled actions, acceptance,
   and evidence, or an attributed, audited waiver by a project-bound session
   accounts for an omission. Planned report assembly consumes that seal under a
   separate fenced `ReportAssemblyClaim`, without retaining completed-run
@@ -97,7 +97,7 @@ their presence in a file alone does not prove delivery.
 - SQLite is canonical on the active host. Planned external backup may raise
   `local_backed_up`; planned `portable` mode provides one-active-host handoff with
   scheduled push, writer-epoch release/acquire under remote-head CAS,
-  divergence refusal, and no transfer of live claims, leases, grants, delivery
+  divergence refusal, and no transfer of live claims, grants, delivery
   state, or private scratch. Release freezes old-host mutation; acquire must succeed before
   new-host mutation; portable startup/resume must validate the remote epoch.
   The portable projection must close every executable shared-state reference;
@@ -139,16 +139,42 @@ obsolete task_claims, task_claim_intents, and publication_intents tables
 control_observations, memory_contradictions, memory_contradiction_edges, and
 contradiction_intents tables (retired 2026-09-22 with the final conversion
 Greg approved). Import reports retired column value counts and retired table
-row counts; canonical objects and ids remain unchanged. Unknown columns in a
+row counts. These retirements preserve canonical objects and ids; the separate
+named record-field conversion below changes only its specified bytes and
+content comparisons, never ids or links. Unknown columns in a
 retired table still refuse. These retirements also include the uncompared
 control checksums: `control_turn_grants.grant_hash`,
-`control_work_leases.lease_hash`,
 `control_turn_grant_supersessions.supersession_hash`, and `result_hash` in
 `control_operation_results` and `control_policy_operation_results`.
 Their non-null value counts are reported; payloads and compared replay
 fingerprints are retained. Record-link column renames are explicit per-table
-import mappings, preserving ids and canonical bytes, not a generic alias rule.
+import mappings, not a generic alias rule. Column renaming itself preserves ids
+and canonical bytes; the separate stored-field conversion is described below.
 These lists are the whole of that authority; export does not filter retired data.
+The direct-control-binding conversion additionally maps tasks to control
+anchors and task_changes to control_changes, preserving ids and feed positions,
+and merges task_control_state admission epochs into the anchors. It retires
+task_participants and session_bindings with row counts, refusing a binding not
+represented by control_sessions or a control session without both matching
+participant and binding rows in the old format. It reports retired tasks state/event_cursor/
+created_at_ms/updated_at_ms values; only active state is admitted. Canonical
+objects are not rewritten by these table mappings; no compatibility-task table
+is retained.
+Separately, the approved record-field conversion rewrites object_hash to
+object_id in saved work-protocol replies/history, pending delivery entries,
+control grant/decision deltas and checkpoint evidence references. It preserves
+every record id and link, reports named fields/kinds/value counts, and updates
+content comparisons for the rewritten replies. It never traverses arbitrary
+user bodies, accepts no old-name alias, and retains no old-format copy.
+The approved lease removal additionally omits only an empty control_work_leases
+table and removes empty basis.leases fields from stored control grants and
+decisions, updating their compared decision fingerprints. Populated lease
+tables or nonempty lease bases refuse; import reports the omissions.
+Historical lease_required refusal decisions remain readable and replay unchanged;
+current evaluation never produces that code or restores lease operations.
+Historical control_operation_results receipts for lease_acquire, lease_release,
+and obligation_waive are also retained unchanged and checked by doctor; their
+retention does not restore the removed host operations or live authority.
 The operator stops store consumers, keeps the old file as the backup, and
 swaps the files; see
 [full store migration](docs/features/full-store-migration.md).

@@ -96,7 +96,7 @@ its fixed capability envelope and explicit unavailable fields for action
 gating, organizational-authority mediation, and action-outcome tracking; it
 does not claim a complete mediation map. A host-held session routing token
 prevents accidental
-cross-session request mix-ups, but neither the token nor a lease is a security
+cross-session request mix-ups, but neither the token nor a work claim is a security
 boundary: a caller that bypasses the host or can directly mutate the store is
 outside Engram's V1 assurance.
 
@@ -107,7 +107,7 @@ objects under minted ids. There is no separate audit channel to fall out of
 sync with the data.
 
 Control decisions and transitions also use immutable intent fingerprints and
-receipts, while current sessions, grants, leases, and action state remain
+receipts, while current sessions, grants, and action state remain
 durable operational projections. A new database receives the built-in policy
 atomically; partial, missing, different-build, or corrupt control storage and
 unknown safety-relevant policy/event schemas fail closed for every

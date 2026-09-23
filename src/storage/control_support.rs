@@ -10,8 +10,7 @@ use super::{
     OptionalExtension, PendingTurnGrantSupersession, ProjectPolicyAuthorityDecision,
     ProjectPolicyEpoch, ProjectPolicyOperation, RawControlSession, Redactor, Serialize, SessionId,
     SessionPhase, SqliteStore, StoreError, StoredControlSession, StoredTurnGrant,
-    StoredWorkLeaseRow, TaskAdmissionEpoch, TaskId, TaskState, Transaction, TurnGrantState, Utc,
-    WorkLease, WorkLeaseDecision, enum_name, params, parse_enum,
+    TaskAdmissionEpoch, TaskId, Transaction, TurnGrantState, Utc, enum_name, params, parse_enum,
     safely_redeliverable_partial_recovery, work,
 };
 
@@ -27,7 +26,7 @@ impl SqliteStore {
         task_id: TaskId,
     ) -> Result<ChangeCursor, StoreError> {
         let cursor = transaction.query_row(
-            "SELECT COALESCE(MAX(task_cursor), 0) FROM task_changes WHERE task_id = ?1",
+            "SELECT COALESCE(MAX(task_cursor), 0) FROM control_changes WHERE task_id = ?1",
             [task_id.0.to_string()],
             |row| row.get(0),
         )?;
@@ -54,8 +53,8 @@ impl SqliteStore {
         Ok(projection)
     }
 
-    /// The active acceptance-evaluation policy in canonical form; the legacy
-    /// self-asserted path when the active policy carries none.
+    /// The active acceptance-evaluation policy in canonical form; defaults to
+    /// self-asserted when the active policy carries none.
     pub(in crate::storage) fn load_acceptance_evaluation_policy_on(
         connection: &Connection,
     ) -> Result<crate::domain::AcceptanceEvaluationPolicy, StoreError> {
@@ -334,7 +333,7 @@ impl SqliteStore {
         let acceptance_changed = previous.is_some_and(|previous| {
             current.acceptance_evaluation != previous.acceptance_evaluation
         }) || (previous.is_none()
-            && !current.acceptance_evaluation.is_legacy());
+            && !current.acceptance_evaluation.is_self_asserted());
         if envelope_changed || invalid_epoch_one || rule_set_changed || acceptance_changed {
             return Err(StoreError::InvalidControlProjection(
                 "a SetRequiredAssurance policy transition changed a preserved policy field".into(),
@@ -745,200 +744,39 @@ impl SqliteStore {
         Ok(exists == 1)
     }
 
-    pub(super) fn begun_turn_pinning_lease(
-        connection: &Connection,
-        session_id: &SessionId,
-        lease_id: &str,
-    ) -> Result<Option<String>, StoreError> {
-        let grant_ids = {
-            let mut statement = connection.prepare(
-                "SELECT grant_id FROM control_turn_grants
-                 WHERE session_id = ?1 AND state = 'begun'
-                 ORDER BY issued_at_ms, grant_id",
-            )?;
-            statement
-                .query_map([session_id.0.as_str()], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        if grant_ids.len() > 1 {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "control session {:?} has more than one begun turn",
-                session_id.0
-            )));
-        }
-        let Some(grant_id) = grant_ids.into_iter().next() else {
-            return Ok(None);
-        };
-        let grant = Self::load_turn_grant(connection, session_id, &grant_id)?.ok_or_else(|| {
-            StoreError::InvalidControlProjection(format!(
-                "begun turn {grant_id:?} disappeared while checking lease {lease_id:?}"
-            ))
-        })?;
-        if !matches!(grant.state, TurnGrantState::Begun) {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "turn {grant_id:?} is not begun while checking lease {lease_id:?}"
-            )));
-        }
-        Ok(grant
-            .grant
-            .basis
-            .leases
-            .iter()
-            .any(|lease| lease.lease_id == lease_id)
-            .then_some(grant_id))
-    }
-
     pub(super) fn session_is_current_participant(
         connection: &Connection,
         project_id: &crate::domain::ProjectId,
         task_id: TaskId,
         session_id: &SessionId,
     ) -> Result<bool, StoreError> {
-        let current = connection.query_row(
-            "SELECT EXISTS(
-                 SELECT 1 FROM tasks t JOIN task_participants p
-                   ON p.task_id = t.task_id
-                 JOIN session_bindings b
-                   ON b.task_id = t.task_id AND b.session_id = p.session_id
-                 WHERE t.task_id = ?1 AND t.project_id = ?2
-                   AND p.session_id = ?3
-             )",
-            params![task_id.0.to_string(), project_id.0, session_id.0],
-            |row| row.get::<_, i64>(0),
-        )?;
-        Ok(current == 1)
-    }
-
-    pub(super) fn task_state_on(
-        connection: &Connection,
-        project_id: &crate::domain::ProjectId,
-        task_id: TaskId,
-    ) -> Result<TaskState, StoreError> {
-        let state = connection.query_row(
-            "SELECT state FROM tasks WHERE task_id = ?1 AND project_id = ?2",
-            params![task_id.0.to_string(), project_id.0],
-            |row| row.get::<_, String>(0),
-        )?;
-        parse_enum(&state)
-    }
-
-    pub(super) fn resource_subjects_overlap(
-        left: &crate::domain::ResourceSubject,
-        right: &crate::domain::ResourceSubject,
-    ) -> bool {
-        left.covers(right) || right.covers(left)
-    }
-
-    fn work_lease_rows(
-        connection: &Connection,
-        task_id: TaskId,
-    ) -> Result<Vec<StoredWorkLeaseRow>, StoreError> {
-        let mut statement = connection.prepare(
-            "SELECT lease_id, task_id, holder_session_id, lease_json, state, expires_at_ms
-             FROM control_work_leases WHERE task_id = ?1 ORDER BY lease_id",
-        )?;
-        let rows = statement.query_map([task_id.0.to_string()], |row| {
-            Ok(StoredWorkLeaseRow {
-                lease_id: row.get(0)?,
-                task_id: row.get(1)?,
-                holder_session_id: row.get(2)?,
-                lease_json: row.get(3)?,
-                state: row.get(4)?,
-                expires_at_ms: row.get(5)?,
-            })
-        })?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(StoreError::Sqlite)
-    }
-
-    pub(super) fn project_work_lease_rows(
-        connection: &Connection,
-        project_id: &crate::domain::ProjectId,
-    ) -> Result<Vec<StoredWorkLeaseRow>, StoreError> {
-        let mut statement = connection.prepare(
-            "SELECT lease.lease_id, lease.task_id, lease.holder_session_id,
-                    lease.lease_json, lease.state, lease.expires_at_ms
-             FROM control_work_leases lease
-             JOIN tasks task ON task.task_id = lease.task_id
-             WHERE task.project_id = ?1
-             ORDER BY lease.lease_id",
-        )?;
-        let rows = statement.query_map([&project_id.0], |row| {
-            Ok(StoredWorkLeaseRow {
-                lease_id: row.get(0)?,
-                task_id: row.get(1)?,
-                holder_session_id: row.get(2)?,
-                lease_json: row.get(3)?,
-                state: row.get(4)?,
-                expires_at_ms: row.get(5)?,
-            })
-        })?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(StoreError::Sqlite)
-    }
-
-    pub(super) fn work_lease_row(
-        connection: &Connection,
-        lease_id: &str,
-    ) -> Result<Option<StoredWorkLeaseRow>, StoreError> {
         connection
             .query_row(
-                "SELECT lease_id, task_id, holder_session_id, lease_json, state, expires_at_ms
-                 FROM control_work_leases WHERE lease_id = ?1",
-                [lease_id],
-                |row| {
-                    Ok(StoredWorkLeaseRow {
-                        lease_id: row.get(0)?,
-                        task_id: row.get(1)?,
-                        holder_session_id: row.get(2)?,
-                        lease_json: row.get(3)?,
-                        state: row.get(4)?,
-                        expires_at_ms: row.get(5)?,
-                    })
-                },
+                "SELECT EXISTS(
+                 SELECT 1 FROM control_sessions s
+                 JOIN control_anchors a ON a.task_id = s.task_id
+                 WHERE s.task_id = ?1 AND s.project_id = ?2
+                   AND a.project_id = ?2 AND s.session_id = ?3
+             )",
+                params![task_id.0.to_string(), project_id.0, session_id.0],
+                |row| row.get(0),
             )
-            .optional()
             .map_err(StoreError::Sqlite)
     }
 
-    pub(super) fn decode_work_lease_row(row: &StoredWorkLeaseRow) -> Result<WorkLease, StoreError> {
-        let lease: WorkLease = Self::decode_json_projection(&row.lease_json)?;
-        if lease.control_schema_version != CONTROL_SCHEMA_VERSION
-            || lease.lease_id != row.lease_id
-            || lease.task_id.0.to_string() != row.task_id
-            || lease.holder.0 != row.holder_session_id
-            || lease.expires_at.timestamp_millis() != row.expires_at_ms
-            || lease.fence <= 0
-            || lease.revision <= 0
-            || !lease.subject.has_valid_shape()
-            || !matches!(row.state.as_str(), "active" | "released" | "expired")
-        {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "work lease {:?} is not bound to its row",
-                row.lease_id
-            )));
-        }
-        Ok(lease)
-    }
-
-    pub(super) fn active_work_lease_bases(
+    pub(super) fn control_anchor_exists(
         connection: &Connection,
+        project_id: &crate::domain::ProjectId,
         task_id: TaskId,
-        session_id: &SessionId,
-        now: DateTime<Utc>,
-    ) -> Result<Vec<crate::domain::LeaseBasis>, StoreError> {
-        Self::work_lease_rows(connection, task_id)?
-            .into_iter()
-            .filter(|row| row.state == "active")
-            .map(|row| Self::decode_work_lease_row(&row))
-            .filter_map(|lease| match lease {
-                Ok(lease) if lease.holder == *session_id && lease.expires_at > now => {
-                    Some(Ok(lease.basis()))
-                }
-                Ok(_) => None,
-                Err(error) => Some(Err(error)),
-            })
-            .collect()
+    ) -> Result<bool, StoreError> {
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM control_anchors
+             WHERE task_id = ?1 AND project_id = ?2)",
+                params![task_id.0.to_string(), project_id.0],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Sqlite)
     }
 
     pub(super) fn expire_unbegun_turn(
@@ -1179,27 +1017,6 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub(super) fn refuse_work_lease(
-        transaction: &Transaction<'_>,
-        session_id: &SessionId,
-        idempotency_key: &str,
-        intent: &CanonicalObject,
-        directive: crate::domain::ControlDirective,
-        now: DateTime<Utc>,
-    ) -> Result<WorkLeaseDecision, StoreError> {
-        let decision = WorkLeaseDecision::Refuse { directive };
-        Self::persist_control_operation(
-            transaction,
-            session_id,
-            "lease_acquire",
-            idempotency_key,
-            intent,
-            &decision,
-            now,
-        )?;
-        Ok(decision)
-    }
-
     #[allow(
         clippy::too_many_arguments,
         reason = "operation idempotency rows bind every independent key component"
@@ -1237,46 +1054,13 @@ impl SqliteStore {
         Ok(())
     }
 
-    fn ensure_task_participant_on(
-        connection: &Connection,
-        project_id: &crate::domain::ProjectId,
-        task_id: TaskId,
-        session_id: &SessionId,
-    ) -> Result<(), StoreError> {
-        let participant: Option<i64> = connection
-            .query_row(
-                "SELECT 1 FROM tasks t JOIN task_participants p
-                   ON p.task_id = t.task_id
-                 WHERE t.task_id = ?1 AND t.project_id = ?2
-                   AND p.session_id = ?3",
-                params![task_id.0.to_string(), project_id.0, session_id.0],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if participant.is_none() {
-            return Err(StoreError::TaskAccessDenied {
-                task: task_id,
-                session: session_id.0.clone(),
-            });
-        }
-        Ok(())
-    }
-
     pub(super) fn ensure_active_task_on(
         connection: &Connection,
         project_id: &crate::domain::ProjectId,
         task_id: TaskId,
         session_id: &SessionId,
     ) -> Result<(), StoreError> {
-        Self::ensure_task_participant_on(connection, project_id, task_id, session_id)?;
-        let bound_task = connection
-            .query_row(
-                "SELECT task_id FROM session_bindings WHERE session_id = ?1",
-                [session_id.0.as_str()],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?;
-        if bound_task.as_deref() != Some(task_id.0.to_string().as_str()) {
+        if !Self::session_is_current_participant(connection, project_id, task_id, session_id)? {
             return Err(StoreError::TaskAccessDenied {
                 task: task_id,
                 session: session_id.0.clone(),

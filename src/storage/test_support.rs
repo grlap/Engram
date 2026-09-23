@@ -110,39 +110,54 @@ pub(super) fn note_request(
     }
 }
 
-pub(super) fn install_memory_task(store: &SqliteStore, task_id: TaskId, sessions: &[&str]) {
-    let now = Utc::now().timestamp_millis();
+impl SqliteStore {
+    pub(crate) fn bind_test_control_scope(
+        &mut self,
+        project: &ProjectId,
+        external_ref: &str,
+        title: &str,
+        session: &SessionId,
+        actor: &ActorContext,
+        now: DateTime<Utc>,
+    ) -> Result<ControlSessionBinding, StoreError> {
+        let connection = self.resume_control_connection(session, now)?;
+        self.bind_control_session(
+            project,
+            external_ref,
+            title,
+            session,
+            &connection,
+            actor,
+            ControlAssurance::TurnGated,
+            &[EffectClass::Observe, EffectClass::Communicate],
+            1,
+            &uuid::Uuid::new_v4().to_string(),
+            now,
+        )
+    }
+}
+
+pub(super) fn install_memory_task(store: &mut SqliteStore, task_id: TaskId, sessions: &[&str]) {
+    let external_ref = format!("memory-test:{task_id:?}");
     store
         .connection
         .execute(
-            "INSERT INTO tasks (
-                 task_id, project_id, external_ref, title, state,
-                 event_cursor, created_at_ms, updated_at_ms
-             ) VALUES (?1, 'project-a', ?2, 'Memory test', 'active', 0, ?3, ?3)",
-            params![
-                task_id.0.to_string(),
-                format!("memory-test:{task_id:?}"),
-                now
-            ],
+            "INSERT INTO control_anchors (task_id, project_id, external_ref, title)
+         VALUES (?1, 'project-a', ?2, 'Memory test')",
+            params![task_id.0.to_string(), external_ref],
         )
-        .expect("install memory test task");
+        .expect("install memory scope");
     for session in sessions {
         store
-            .connection
-            .execute(
-                "INSERT INTO task_participants (task_id, session_id, joined_at_ms)
-                 VALUES (?1, ?2, ?3)",
-                params![task_id.0.to_string(), session, now],
+            .bind_test_control_scope(
+                &ProjectId("project-a".into()),
+                &external_ref,
+                "Memory test",
+                &SessionId((*session).into()),
+                &actor(session),
+                Utc::now(),
             )
-            .expect("install memory test participant");
-        store
-            .connection
-            .execute(
-                "INSERT INTO session_bindings (session_id, task_id, bound_at_ms)
-                 VALUES (?1, ?2, ?3)",
-                params![session, task_id.0.to_string(), now],
-            )
-            .expect("install memory test binding");
+            .expect("bind memory scope");
     }
 }
 

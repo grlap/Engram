@@ -12,7 +12,7 @@ complete with evidence → optionally freeze/publish → review promotion
 candidates.**
 
 Control ships progressively: first observe/replay with every decision allowed,
-then repair the task/cursor/lease/finalization prerequisites, then mediate
+then repair the work/cursor/completion prerequisites, then mediate
 freshness, and only then enable a replay-proven refusal set and action gates.
 This keeps false refusals and hook latency measurable before Engram can block
 work.
@@ -25,11 +25,10 @@ measured at three commands and no JSON, hashes, fences, or keys, and every
 receipt ends with `reminders` and `next`. The separate JSON-lines host service
 process-tests a
 restart-safe `session_bind → turn_evaluate → turn_begin → turn_checkpoint`
-loop with transactional context and stale-grant refusal. It also process-tests
-exclusive resource acquisition/release, overlap fencing, denial of unleased
-local mutation, and a lease-backed local-mutation turn. Per-action mediation,
-the full lease recovery/handoff lifecycle, and controlled finalization remain
-on the V1 path below.
+loop with transactional context and stale-grant refusal, plus turn-gated local
+mutation. Resource leases, host obligation waiver, and the finalizer turn
+purpose/phase have been removed. Per-action mediation and optional report
+assembly remain deferred.
 
 - Rust core; local SQLite canonical store (append-only, minted record ids)
   with stable project identity, WAL multi-process access, ordered task events,
@@ -41,13 +40,12 @@ on the V1 path below.
   model protocol —
   [local work system](features/local-work-system.md)
 - Behavioral control: deterministic turn decisions, typed recovery
-  directives, inline packet/delta delivery, recovery/finalizer grants,
+  directives, inline packet/delta delivery, recovery grants,
   checkpoints, effect-specific degraded debt, mediation coverage reporting,
   and honest advisory/turn-gated/action-gated assurance —
   [behavioral control plane](features/behavioral-control-plane.md)
 - Same-host multi-session roots: one executor/claim per child `WorkRun` under a
-  `RootExecution`, work claims distinct from normalized resource-scoped fenced
-  leases, suspension-aware expiry, explicit handoff, root-shared memory,
+  `RootExecution`, fenced work claims, explicit handoff, root-shared memory,
   contribution/child-seal barrier, and a separate fenced report-assembly claim
 - Context packets: budgets, fail-closed pinned tier, omission manifest,
   packet fingerprint, typed source-feed vectors plus independent
@@ -85,7 +83,7 @@ on the V1 path below.
   cadence, visible lag/degradation, writer-epoch validation at startup/resume,
   exact-base restore, divergence refusal, complete shared-state projection with
   explicit exclusion stubs/feed placeholders, and no transfer of live
-  claims/leases/grants/private scratch. `doctor` reports `local`,
+  claims/grants/private scratch. `doctor` reports `local`,
   `local_backed_up`, `portable`, or later `synchronized` honestly.
 
 The local-work acceptance test is operational and running: this repository

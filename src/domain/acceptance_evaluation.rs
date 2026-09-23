@@ -159,7 +159,7 @@ impl MechanicalBasis {
 }
 
 /// Per-project acceptance-evaluation policy, carried by the immutable control
-/// policy. Empty `allowed_modes` is the legacy self-asserted path.
+/// policy. Empty `allowed_modes` is the self-asserted path.
 #[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AcceptanceEvaluationPolicy {
@@ -175,16 +175,16 @@ pub struct AcceptanceEvaluationPolicy {
 }
 
 impl AcceptanceEvaluationPolicy {
-    /// Whether the project keeps the legacy self-asserted completion path.
+    /// Whether the project keeps the self-asserted completion path.
     #[must_use]
-    pub fn is_legacy(&self) -> bool {
+    pub fn is_self_asserted(&self) -> bool {
         self.allowed_modes.is_empty()
     }
 
     /// Whether the project requires an evaluation before completion.
     #[must_use]
     pub fn is_evaluated(&self) -> bool {
-        !self.is_legacy()
+        !self.is_self_asserted()
     }
 
     /// Whether the policy admits this mode.
@@ -194,7 +194,7 @@ impl AcceptanceEvaluationPolicy {
     }
 
     /// Canonical form: deduplicated modes in declaration order. An empty mode
-    /// list is the legacy policy whatever the other fields say, so it is the
+    /// list is the self-asserted policy whatever the other fields say, so it is the
     /// default value: the canonical policy bytes omit it, and the requested,
     /// stored, and read policies agree.
     #[must_use]

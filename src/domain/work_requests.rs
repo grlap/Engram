@@ -10,8 +10,7 @@ use crate::ObjectId;
 use super::{
     AcceptanceResult, ActorContext, ChildRequirement, CompletionDrainAttestation, ProjectId,
     SessionId, WorkBlockerKind, WorkClaim, WorkClaimId, WorkHandoffOfferId, WorkId, WorkItem,
-    WorkItemKind, WorkObligationId, WorkObligationState, WorkOrigin, WorkPlanningAuthority,
-    WorkRunId,
+    WorkItemKind, WorkObligationId, WorkOrigin, WorkPlanningAuthority, WorkRunId,
 };
 
 /// Request to create a root or child work item.
@@ -530,41 +529,4 @@ pub struct WaiveWorkObligationRequest {
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub waived_at: DateTime<Utc>,
-}
-
-/// Stable host-private policy refusal for an obligation waiver request.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkObligationWaiverRefusalCode {
-    WaiverNotAdmitted,
-    ObligationNotOpen,
-    DefinitionChanged,
-}
-
-/// Redacted durable receipt for a host-authorized obligation waiver.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WorkObligationWaiverReceipt {
-    pub obligation_id: WorkObligationId,
-    pub definition: ObjectId,
-    pub resolution: ObjectId,
-    pub state: WorkObligationState,
-    pub waived_by: String,
-    pub waived_at: DateTime<Utc>,
-}
-
-/// Host-private result. Policy outcomes are replayable typed values; routing,
-/// token, and idempotency faults remain transport errors.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum WorkObligationWaiverDecision {
-    Waived {
-        receipt: WorkObligationWaiverReceipt,
-    },
-    Refused {
-        code: WorkObligationWaiverRefusalCode,
-        obligation_id: WorkObligationId,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        current_definition: Option<ObjectId>,
-        remedy: String,
-    },
 }

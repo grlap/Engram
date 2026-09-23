@@ -799,7 +799,7 @@ Rules that matter:
   independent evaluator that later takes the run cannot consume its own
   pass. `done` and the completed item's `show` say where the sealed
   acceptance came from (`evaluated (<mode>, <assurance>) by <evaluator>` or
-  `self-asserted (legacy)`); `add --evaluation-mode MODE` pins a task's mode
+  `self-asserted`); `add --evaluation-mode MODE` pins a task's mode
   from creation, `update REF --evaluation-mode MODE` pins it later, and
   `--clear-evaluation-mode` releases it. `show` prints the pin as
   `evaluation mode:` and its JSON carries it as `status.work.evaluation_mode`,
@@ -875,7 +875,7 @@ and a host picks per project:
 - **Turn-gated** (`turn_gated`, the optional tier of the checklist and of
   [shipped today](../shipped.md)) — behavioral control: the host-private
   JSON-lines turn channel below (bind, evaluate, begin, checkpoint), dispatch
-  withheld until a turn is granted, resource leases for writers, obligations
+  withheld until a turn is granted, fenced work claims, obligations
   before completion. Opt-in per project, off by default, for hosts that need
   enforcement rather than coordination.
 
@@ -1240,22 +1240,16 @@ engram authority waive-obligation \
   --idempotency-key <retry-key>
 ```
 
-The equivalent native-host operation is `obligation_waive` on the private
-JSON-lines channel. Its request names the routing token, exact obligation and
-definition ids, asserted `waived_by` human, bounded reason,
-and idempotency key. The control session must be bound to that obligation's
-live run. Policy outcomes are typed as `waiver_not_admitted`,
-`obligation_not_open`, or `definition_changed`; transport, token, and
-same-key/different-intent faults remain request errors. A committed retry
-replays the exact result. The canonical resolution keeps the server-fixed
-session actor beside the asserted human attribution, while the receipt omits
-the reason.
+There is no equivalent host-private JSON-lines operation: `obligation_waive`
+has been removed. Revising or dropping an acceptance binding still clears its
+open obligation through the ordinary audited work update. Existing resolution
+history remains readable.
 
 MCP and `work_update` cannot request a work-obligation waiver, and agent-facing
 projections omit its reason. That surface separation is not authentication:
 the shell command has no credential or run-binding check, so any local process
-with the binary and store access can invoke it. Only the private JSON-lines
-operation enforces the live control-session/run binding described above.
+with the binary and store access can invoke it. Removing the host-private
+operation does not make the retained shell command authenticated.
 
 ### MCP tools
 
@@ -1356,7 +1350,7 @@ The `--blocked`/`blocked_only` filter is independent of derived availability:
 it returns work with an active blocker or incomplete prerequisite even when
 the item is deferred or its lifecycle is closed.
 Source changes retain dense positions and explicit compact summaries instead
-of canonical work snapshots or memory bodies. A change's `object_hash` is the
+of canonical work snapshots or memory bodies. A change's `object_id` is the
 id of the source record the summary was projected from; it names that record
 and says nothing about the summary's content. Restricted
 work memory, and work memory outside the session's currently focused verified
@@ -1538,14 +1532,11 @@ principal. The shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
-| `session_bind` | Start/join the compatibility task, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `sync_required`; a re-bind to the task the session already has keeps its confirmed position and moves past the events that session wrote itself, so another writer's event is still delivered, while a first bind or a bind to another task delivers its feed from the start |
+| `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `sync_required`; a re-bind to the same anchor keeps its confirmed position and moves past only contiguous events that session wrote itself, stopping before a peer event; a first bind or a bind to another anchor delivers its feed from the start. Binding creates no task or join event. |
 | `session_status` | Read current phase, cursors, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and any safely redeliverable partial recovery grant |
-| `lease_acquire` | Atomically grant or defer a normalized resource lease and append its fenced task event |
-| `lease_release` | Release a lease held by this session and append its fenced task event |
 | `turn_evaluate` | Derive membership/context/head/policy from SQLite and persist a decision plus optional grant |
 | `turn_begin` | Recheck freshness and exact delivery token, then consume the issued grant |
 | `turn_checkpoint` | Promote tentative delivery, atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
-| `obligation_waive` | Resolve one exact open obligation on the session's bound run under dedicated human-attributed waiver authority |
 
 The bind response supplies the `routing_token` used on later calls. A granted
 turn carries an exact dense task delta under `grant.delivery.delta`. The final
@@ -1584,8 +1575,8 @@ check. A malformed, cross-project, or currently peer-owned bind fails as
 session but whose revision, fence, claim, handoff, run, root execution, or
 expiry moved before bind fails as `stale_fence`, telling the adapter to reread
 and rebind. The same movement after bind refuses evaluation or begin with
-`stale_fence`. Omitting `work_binding` retains the compatibility task-only
-channel, but that session cannot append run execution observations.
+`stale_fence`. Omitting `work_binding` binds only the shared control scope,
+without a work-claim binding; that session cannot append run execution observations.
 
 `turn_checkpoint.observations` accepts at most 64 host facts containing
 `observation_id`, `action_fingerprint`, `effect`, `outcome`, and
@@ -1600,7 +1591,7 @@ run-execution feeds in the same transaction as the control checkpoint.
 
 `turn_checkpoint.verification_evidence` accepts at most 16 host-minted checks.
 Each entry supplies `producer_observation` as either
-`{ kind: "object_hash", object_hash }` or
+`{ kind: "object_id", object_id }` or
 `{ kind: "observation_id", observation_id }`, plus `check_kind`, optional
 `summary`, and bounded `refs`. Storage derives the check fingerprint, outcome,
 source/run/session binding, and timestamps from the producer; an unknown
@@ -1616,7 +1607,7 @@ nonempty, limited to 256 bytes, inspected by the configured redactor, and are
 asserted host context rather than attestation. Do not place secrets in them.
 
 A verification may cite an environment as
-`{ kind: "object_hash", object_hash }` or
+`{ kind: "object_id", object_id }` or
 `{ kind: "index", index }`, where the index addresses the same request's
 ordered environment list. The referenced object must belong to the same run
 and source revision. The current built-in test requirement does not require a
@@ -1676,57 +1667,21 @@ This control operation is deliberately named `turn_checkpoint`; the local-work
 lifecycle operation `checkpoint_work` remains the separate run-progress and
 evidence checkpoint.
 
-The built-in alpha policy grants `observe`, `communicate`, Engram-internal
-`coordinate` leases, and lease-backed `mutate_local` to a session whose
-declared assurance first meets the active project requirement, whose
-effect-specific assurance floor is then met, and whose mediated effects cover
-the request. `coordinate` is accepted only at the lease boundary and is not a
-model-turn capability. The bind receipt exposes
-`effective_mediated_effects`: the declared set capped by the host's assurance.
-`observe` and `communicate` may remain effective for an advisory host;
-`coordinate` and `mutate_local` require at least `turn_gated` even when the
-project floor is advisory. Before reserving anything, `lease_acquire` applies
-that same policy ladder: the project floor, then the effect floor, the declared
-and assurance-capped mediation sets, the active policy's supported effects,
-and the session policy epoch. A project-floor refusal carries no effect; an
-effect-floor refusal names the first failing effect and its intrinsic floor. A
-stale epoch returns `policy_epoch_changed` and is adopted atomically; retrying
-that exact key still returns the stored refusal, while a fresh key re-evaluates
-and may proceed. Acquisition fingerprints have their own schema version and
-include the current bind generation, so a pre-upgrade retry or reuse after
-`session_bind` is an explicit idempotency conflict. Within one bind, do not
-reuse a successful acquisition key after release; mint a new key for a new
-reservation. A local-mutation intent must name one or more
-normalized resources, all covered by a live exclusive `execution` lease held
-by that session. The grant freezes the lease fence and `turn_begin` rechecks
-it. Shared mutation, external, and lifecycle requests fail closed, and an
-`action_gated` bind is rejected because per-tool action authorization is not
-shipped. A decision-service process does not by itself prove control: the
-embedding runtime may claim `turn_gated` only when it withholds every prompt
-until this sequence succeeds.
+The built-in policy grants `observe`, `communicate`, and turn-gated
+`mutate_local`. A session must meet the project and effect assurance floors,
+and declare mediation covering the requested effect. The bind receipt exposes
+`effective_mediated_effects`, capped by the host's assurance. Internal
+`coordinate` is not a model-turn capability. Shared/external/lifecycle effects
+and `action_gated` bindings remain unavailable.
 
-For a repository path, the lease subject uses the stable project id and path
-segments, for example:
+Resource leases and the host `obligation_waive` operation are removed.
+`turn_evaluate` still accepts `resource_intents: []`; supplied resource subjects
+are project-bound and normalized, but do not acquire exclusive ownership.
+Host/user authority still governs file and external mutation. The only turn
+purposes are `ordinary` and `recovery`; purpose `finalizer` and session phase
+`finalizer_open` are removed and not accepted.
 
-```json
-{
-  "operation": "lease_acquire",
-  "routing_token": "from-session_bind",
-  "kind": "execution",
-  "mode": "exclusive",
-  "subject": {
-    "kind": "path",
-    "project_id": "value-from-.engram-project",
-    "segments": ["src"],
-    "coverage": "tree"
-  },
-  "ttl_seconds": 60,
-  "idempotency_key": "claim-src-for-turn-42"
-}
-```
-
-The matching `turn_evaluate` supplies exact or tree `resource_intents` beneath
-that subject. The core rejects a different embedded project id and
+For path resource intents, the core rejects a different embedded project id and
 NFC-normalizes every segment. Path-bearing host commands (`init`, `doctor`, `control`, `authority`,
 `control-policy`, `readiness`, `control-session-inspect`) resolve the project root's filesystem identity before
 opening the store: `--host-path-policy case_fold|case_sensitive`
@@ -1739,24 +1694,14 @@ read-only [readiness](host-readiness.md) never binds it and explicitly reports
 an unbound or unresolved identity. Later
 resolved openers must present the same one, and a mismatch names both. An
 opener that could not resolve the identity (unwritable or missing root) still
-reads and tracks work, but every path lease is refused with
+reads and tracks work, but path-bearing control requests are refused with
 `host_path_identity_unresolved` instead of guessing. Windows alias rules
 (reserved names, alternate data stream syntax, trailing-dot/space aliases,
 known 8.3 aliases) follow the running operating system. `doctor` reports the
-persisted and resolved policy. Lease expiry immediately removes authority;
-releasing and later reacquiring an overlapping subject advances the
-project-wide resource fence even when the new holder belongs to another task.
-A session must release active leases before rebinding to another task; expired
-rows are audited and terminalized automatically, and an `Exit` checkpoint
-releases live rows. The
-alpha conservatively treats all overlapping leases from different holders as
-conflicts even when `mode: shared`; mutation grants still require
-`mode: exclusive`. Renewal, intent-to-exclusive
-conversion, explicit handoff, suspension, and audited recovery remain planned.
+persisted and resolved policy.
 
 Action authorization/begin/completion, standalone delivery acknowledgement,
-lease renewal/handoff/recovery, heartbeat, and independent exit remain
-planned protocol operations.
+heartbeat, and independent exit remain planned protocol operations.
 
 Hooks can integrate the shipped turn boundary. Full action gating needs a wrapper,
 gateway, or native host integration around every declared material tool. If a
@@ -1830,7 +1775,7 @@ operator CLI, verifies both versions through `doctor`, binds, evaluates,
 restarts before begin, proves the old grant cannot begin,
 resynchronizes, checkpoints, checks mutation denial, and probes a wrong
 routing token. Host action control,
-report finalization/publication, scoped lease renewal/handoff/release, review
+report finalization/publication, review
 actions, history, explicit contradiction resolution, and the remaining
 administrative CLI remain planned surfaces. They must reuse this core rather
 than fork its semantics.

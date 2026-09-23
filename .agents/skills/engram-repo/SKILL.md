@@ -49,8 +49,8 @@ contract and keep the change narrow.
   handoff may restore it on the next active host.
 - Agent scope is private; task scope is shared among participants and is the
   default for execution findings.
-- Assignment is future intent; fenced work claims schedule execution; fenced
-  resource leases authorize mutation. Never infer one from another. Every
+- Assignment is future intent; fenced work claims schedule execution, not
+  filesystem or external-action authority. Every
   handoff/recovery transition emits an immutable event.
 - Packet fingerprints reproduce content; typed dense positions in named
   project, root-work, and run-execution feeds order deltas. A session's dense
@@ -59,7 +59,7 @@ contract and keep the change narrow.
 - V1 has one ordinary executor/claim per `WorkRun`; parallel sessions claim
   distinct child runs under a `RootExecution` aggregate.
 - Root completion requires a `CompletionSeal` over the dense run-feed cut,
-  required child seals, contributions, reconciled actions/leases, acceptance,
+  required child seals, contributions, reconciled actions, acceptance,
   and evidence, or an attributed, audited waiver by a project-bound session.
   Planned report assembly consumes the seal under a separate fenced
   `ReportAssemblyClaim`, without retaining completed-run authority or draining
@@ -74,7 +74,7 @@ contract and keep the change narrow.
   release/acquire under remote-head CAS, explicit restore, and divergence
   refusal. Release freezes old-host mutation; acquire must succeed before
   new-host mutation, and portable startup/resume validates the remote epoch.
-  Never restore live work claims, resource leases, control grants/delivery
+  Never restore live work claims, control grants/delivery
   state, or agent-private scratch. Portable executable shared state must be
   transitively closed; excluded provenance uses explicit stubs/placeholders,
   never dangling references or rewritten canonical bytes.

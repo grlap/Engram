@@ -19,6 +19,7 @@ const INTERNAL_FIELDS = new Set([
   "last_checkpoint",
   "memories",
   "object_hash",
+  "object_id",
   "obligation_page",
   "offer_id",
   "parent_id",

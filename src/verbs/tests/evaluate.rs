@@ -159,7 +159,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
             ),
             at(3),
         )
-        .expect_err("the legacy policy refuses evaluate");
+        .expect_err("the self-asserted policy refuses evaluate");
     assert!(
         matches!(
             refused.error,

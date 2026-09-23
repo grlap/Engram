@@ -33,7 +33,7 @@ pub(crate) fn host_path_probe_warning_line(error: &dyn std::fmt::Display) -> Str
     format!(
         "WARNING: {}",
         terminal_error_line(&format!(
-            "{error}; path leases are refused until --host-path-policy case_fold|case_sensitive (or ENGRAM_HOST_PATH_POLICY) is supplied"
+            "{error}; path-bearing control requests are refused until --host-path-policy case_fold|case_sensitive (or ENGRAM_HOST_PATH_POLICY) is supplied"
         ))
     )
 }

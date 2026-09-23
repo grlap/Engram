@@ -49,7 +49,6 @@ pub struct FeedPosition {
 pub struct WorkFeedEntry {
     pub position: FeedPosition,
     pub object_kind: String,
-    #[serde(rename = "object_hash")]
     pub object_id: ObjectId,
 }
 
@@ -927,10 +926,12 @@ pub enum WorkPlanningAuthority {
     Project,
 }
 
-/// Attributed host statement that action and resource authority is drained.
+/// Attributed host statement that action outcomes are reconciled.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompletionDrainAttestation {
     pub reconciled_action_outcomes: Vec<ObjectId>,
+    /// Historical resource-lease drain field. Completion requires it to remain
+    /// empty and refuses nonempty values; the resource-lease engine is removed.
     pub released_resource_leases: Vec<String>,
 }
 
@@ -977,7 +978,7 @@ pub struct CompletionSeal {
     pub evidence: Vec<ObjectId>,
     pub acceptance: Vec<AcceptanceResult>,
     /// The passing acceptance evaluation this seal derived its acceptance
-    /// vector from; absent for legacy self-asserted completions.
+    /// vector from; absent for self-asserted completions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceptance_evaluation: Option<ObjectId>,
     pub obligation_schema_version: u16,

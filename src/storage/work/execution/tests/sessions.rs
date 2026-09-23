@@ -18,17 +18,24 @@ fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_autho
     let mut first = SqliteStore::open(&database).expect("first store");
     let binder = SessionId("retention-binder".into());
     first
-        .start_task(
+        .bind_test_control_scope(
             &project,
             "retention-task",
             "Retention task",
             &binder,
-            actor(&binder.0),
+            &actor(&binder.0),
             at(0),
         )
         .expect("task session bind");
     first
-        .join_task(&project, "retention-task", &bound, actor(&bound.0), at(0))
+        .bind_test_control_scope(
+            &project,
+            "retention-task",
+            "Retention task",
+            &bound,
+            &actor(&bound.0),
+            at(0),
+        )
         .expect("explicit process session binding");
     let root = first
         .create_work(

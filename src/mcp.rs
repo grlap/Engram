@@ -797,7 +797,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "session_id": session,
         }),
         StoreError::MemoryAccessDenied(hash) | StoreError::MemoryNotFound(hash) => {
-            json!({ "object_hash": hash })
+            json!({ "object_id": hash })
         }
         StoreError::ProjectMemoryExists(key) => json!({
             "key": key,
@@ -1028,7 +1028,6 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::NoteIdempotencyConflict(_) => "note_idempotency_conflict",
         StoreError::NoActiveTask(_) => "no_active_task",
-        StoreError::TaskReferenceNotFound(_) => "task_reference_not_found",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::MemoryAccessDenied(_) => "memory_access_denied",
         StoreError::MemoryNotFound(_) | StoreError::ProjectMemoryNotFound(_) => "memory_not_found",
@@ -1076,7 +1075,6 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::ObjectKindMismatch { .. }
         | StoreError::InvalidStoredKey(_)
         | StoreError::InvalidMemoryProjection(_)
-        | StoreError::InvalidTaskBinding
         | StoreError::InvalidTaskProjection(_)
         | StoreError::InvalidControlSession(_)
         | StoreError::HostPathIdentityUnresolved
@@ -1094,9 +1092,6 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::EnvironmentEvidenceNotFound(_)
         | StoreError::EnvironmentBasisMismatch(_)
         | StoreError::ControlTurnGrantNotFound(_)
-        | StoreError::WorkLeaseNotFound(_)
-        | StoreError::WorkLeaseNotHeld { .. }
-        | StoreError::WorkLeaseExpired { .. }
         | StoreError::DifferentBuildSchema
         | StoreError::InvalidControlProjection(_)
         | StoreError::ControlPolicyConflict { .. }

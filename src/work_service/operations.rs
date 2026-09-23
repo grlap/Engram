@@ -518,7 +518,7 @@ pub struct WorkCompletedReceipt {
     pub obligation_page: WorkObligationPage,
 }
 
-/// Where a sealed acceptance vector came from: the legacy self-assertion or
+/// Where a sealed acceptance vector came from: the self-assertion or
 /// an evaluation the seal binds. Read from the frozen seal and its validated
 /// evaluation, never from the completing caller; the evaluator identity and
 /// mode stay at the assurance they were recorded with.

@@ -15,10 +15,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    ActorContext, ControlAssurance, ControlWorkBinding, DevelopmentNoopRedactor, EffectClass,
-    EnvironmentEvidenceInput, ExecutionObservationInput, HostPathPolicy, LeaseKind, LeaseMode,
-    ObjectId, ProjectId, ResourceSubject, SessionId, SqliteStore, TurnIntent, TurnPurpose,
-    VerificationEvidenceInput, WorkObligationId,
+    ActorContext, ControlAssurance, ControlWorkBinding, EffectClass, EnvironmentEvidenceInput,
+    ExecutionObservationInput, HostPathPolicy, ObjectId, ProjectId, SessionId, SqliteStore,
+    TurnIntent, TurnPurpose, VerificationEvidenceInput,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
     storage::StoreError,
 };
@@ -45,29 +44,6 @@ pub enum HostControlRequest {
     },
     SessionStatus {
         routing_token: String,
-    },
-    LeaseAcquire {
-        routing_token: String,
-        kind: LeaseKind,
-        mode: LeaseMode,
-        subject: ResourceSubject,
-        ttl_seconds: i64,
-        idempotency_key: String,
-    },
-    LeaseRelease {
-        routing_token: String,
-        lease_id: String,
-        idempotency_key: String,
-    },
-    /// Host/operator-only waiver of one exact open execution obligation. This
-    /// operation is deliberately absent from agent-facing work and MCP input.
-    ObligationWaive {
-        routing_token: String,
-        obligation_id: String,
-        expected_definition: String,
-        waived_by: String,
-        reason: String,
-        idempotency_key: String,
     },
     TurnEvaluate {
         routing_token: String,
@@ -161,7 +137,7 @@ impl HostControlServer {
     }
 
     /// Opens the project store with the project root's resolved filesystem
-    /// identity (`None` when unresolved: path leases then fail closed) and
+    /// identity (`None` when unresolved: path intents then fail closed) and
     /// fixes asserted host context for this connection.
     ///
     /// # Errors
@@ -240,78 +216,6 @@ impl HostControlServer {
                     &self.connection_token,
                     &routing_token,
                     now,
-                )?)
-                .map_err(StoreError::Json)
-            }
-            HostControlRequest::LeaseAcquire {
-                routing_token,
-                kind,
-                mode,
-                subject,
-                ttl_seconds,
-                idempotency_key,
-            } => serde_json::to_value(self.store.acquire_work_lease(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &routing_token,
-                kind,
-                mode,
-                &subject,
-                ttl_seconds,
-                &idempotency_key,
-                now,
-            )?)
-            .map_err(StoreError::Json),
-            HostControlRequest::LeaseRelease {
-                routing_token,
-                lease_id,
-                idempotency_key,
-            } => serde_json::to_value(self.store.release_work_lease(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &routing_token,
-                &lease_id,
-                &idempotency_key,
-                now,
-            )?)
-            .map_err(StoreError::Json),
-            HostControlRequest::ObligationWaive {
-                routing_token,
-                obligation_id,
-                expected_definition,
-                waived_by,
-                reason,
-                idempotency_key,
-            } => {
-                let obligation_id =
-                    WorkObligationId(uuid::Uuid::parse_str(&obligation_id).map_err(|_| {
-                        StoreError::InvalidControlSession("obligation_id must be a UUID".into())
-                    })?);
-                let expected_definition =
-                    ObjectId::from_str(&expected_definition).map_err(|_| {
-                        StoreError::InvalidControlSession(
-                            "expected_definition must be a lowercase SHA-256 digest".into(),
-                        )
-                    })?;
-                let actor = self.actor(
-                    "obligation_waive",
-                    "present a host-authorized human obligation waiver",
-                );
-                serde_json::to_value(self.store.waive_bound_work_obligation(
-                    &self.project_id,
-                    &self.session_id,
-                    &self.connection_token,
-                    &routing_token,
-                    obligation_id,
-                    &expected_definition,
-                    &waived_by,
-                    &reason,
-                    &actor,
-                    &idempotency_key,
-                    now,
-                    &DevelopmentNoopRedactor,
                 )?)
                 .map_err(StoreError::Json)
             }
@@ -572,9 +476,6 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::EnvironmentEvidenceNotFound(_) => "environment_evidence_not_found",
         StoreError::EnvironmentBasisMismatch(_) => "environment_basis_mismatch",
         StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
-        StoreError::WorkLeaseNotFound(_) => "work_lease_not_found",
-        StoreError::WorkLeaseNotHeld { .. } => "work_lease_not_held",
-        StoreError::WorkLeaseExpired { .. } => "work_lease_expired",
         StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
         StoreError::DifferentBuildSchema | StoreError::InvalidControlProjection(_) => {
             "control_projection_invalid"
@@ -606,8 +507,6 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::EmptyNote
         | StoreError::RedactionRefused(_)
         | StoreError::InvalidMemoryProjection(_)
-        | StoreError::TaskReferenceNotFound(_)
-        | StoreError::InvalidTaskBinding
         | StoreError::InvalidTaskProjection(_)
         | StoreError::NoActiveTask(_)
         | StoreError::MemoryNotFound(_)
@@ -684,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn obligation_waiver_frames_reject_removed_or_unknown_fields() {
+    fn removed_host_obligation_waiver_is_refused() {
         let clean = serde_json::json!({
             "operation": "obligation_waive",
             "routing_token": "routing-token",
@@ -694,18 +593,10 @@ mod tests {
             "reason": "reviewed exception",
             "idempotency_key": "waive-once"
         });
-        assert!(matches!(
-            parse_host_control_request(&serde_json::to_vec(&clean).expect("encode clean frame")),
-            Ok(HostControlRequest::ObligationWaive { .. })
-        ));
-
-        let mut legacy = clean;
-        legacy["authority_grant"] = Value::String("b".repeat(64));
-        let error =
-            parse_host_control_request(&serde_json::to_vec(&legacy).expect("encode legacy frame"))
-                .expect_err("removed authority field must fail closed");
+        let error = parse_host_control_request(&serde_json::to_vec(&clean).expect("encode frame"))
+            .expect_err("removed operation must fail closed");
         assert!(error.contains("obligation_waive"));
-        assert!(error.contains("authority_grant"));
+        assert!(error.contains("unknown variant"));
     }
 
     #[test]
@@ -720,19 +611,19 @@ mod tests {
         assert!(error.contains("duplicate field"));
 
         let duplicate_nested = br#"{
-            "operation":"lease_acquire",
+            "operation":"turn_evaluate",
             "routing_token":"routing-token",
-            "kind":"execution",
-            "mode":"exclusive",
-            "subject":{
+            "purpose":"ordinary",
+            "intent_fingerprint":"unused",
+            "requested_effects":["observe"],
+            "resource_intents":[{
                 "kind":"logical",
                 "namespace":"workspace",
                 "namespace":"other-workspace",
                 "segments":["src"],
                 "coverage":"exact"
-            },
-            "ttl_seconds":60,
-            "idempotency_key":"lease-once"
+            }],
+            "idempotency_key":"turn-once"
         }"#;
         let error = parse_host_control_request(duplicate_nested)
             .expect_err("duplicate nested field must fail closed");
@@ -781,25 +672,25 @@ mod tests {
         assert!(error.contains("componentz"));
 
         let extra_resource_field = serde_json::json!({
-            "operation": "lease_acquire",
+            "operation": "turn_evaluate",
             "routing_token": "routing-token",
-            "kind": "execution",
-            "mode": "exclusive",
-            "subject": {
+            "purpose": "ordinary",
+            "intent_fingerprint": "a".repeat(64),
+            "requested_effects": ["observe"],
+            "resource_intents": [{
                 "kind": "logical",
                 "namespace": "workspace",
                 "segments": ["src"],
                 "coverage": "exact",
                 "unexpected": true
-            },
-            "ttl_seconds": 60,
-            "idempotency_key": "lease-once"
+            }],
+            "idempotency_key": "turn-once"
         });
         let error = parse_host_control_request(
             &serde_json::to_vec(&extra_resource_field).expect("encode extra resource field"),
         )
         .expect_err("unknown resource-subject field must fail closed");
-        assert!(error.contains("lease_acquire"));
+        assert!(error.contains("turn_evaluate"));
         assert!(error.contains("unexpected"));
     }
 

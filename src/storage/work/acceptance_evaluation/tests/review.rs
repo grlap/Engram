@@ -599,10 +599,14 @@ fn seal_evaluation_binding_is_validated_per_relationship() {
             .map(|evaluation| evaluation.attempt_key),
         Some(passing.record.attempt_key.clone())
     );
-    // Legacy: no binding to check.
-    let mut legacy = seal.clone();
-    legacy.acceptance_evaluation = None;
-    assert!(binding(store, &legacy).expect("legacy seal").is_none());
+    // Self-asserted: no binding to check.
+    let mut self_asserted = seal.clone();
+    self_asserted.acceptance_evaluation = None;
+    assert!(
+        binding(store, &self_asserted)
+            .expect("self-asserted seal")
+            .is_none()
+    );
     // Missing object.
     let mut missing = seal.clone();
     missing.acceptance_evaluation = Some(ObjectId::from_canonical_bytes(b"no such evaluation"));
@@ -887,27 +891,27 @@ fn sub_agent_identity_fields_are_bounded_at_the_store() {
     );
 }
 
-// Review 9 (Low): an empty mode list is the legacy policy whatever the other
+// Review 9 (Low): an empty mode list is the self-asserted policy whatever the other
 // flags say; requested, stored, and read policies agree.
 #[test]
-fn legacy_policy_normalizes_its_other_fields_and_round_trips() {
-    let mut fx = fixture("project-evaluation-legacy-normalization");
+fn self_asserted_policy_normalizes_its_other_fields_and_round_trips() {
+    let mut fx = fixture("project-evaluation-self-asserted-normalization");
     let store = &mut fx.store;
-    let flagged_legacy = AcceptanceEvaluationPolicy {
+    let flagged_self_asserted = AcceptanceEvaluationPolicy {
         allowed_modes: Vec::new(),
         mechanical_basis: MechanicalBasis::Observed,
         require_source_freshness: true,
     };
     let unchanged = store
         .set_acceptance_evaluation_policy(
-            &flagged_legacy,
+            &flagged_self_asserted,
             &actor("policy-admin"),
-            "legacy-with-flags",
+            "self-asserted-with-flags",
             None,
             at(5),
             &DevelopmentNoopRedactor,
         )
-        .expect("an empty mode list is the legacy policy");
+        .expect("an empty mode list is the self-asserted policy");
     assert!(!unchanged.changed);
     assert_eq!(
         unchanged.acceptance_evaluation,
@@ -928,14 +932,14 @@ fn legacy_policy_normalizes_its_other_fields_and_round_trips() {
     );
     let back = store
         .set_acceptance_evaluation_policy(
-            &flagged_legacy,
+            &flagged_self_asserted,
             &actor("policy-admin"),
-            "back-to-legacy",
+            "back-to-self-asserted",
             None,
             at(7),
             &DevelopmentNoopRedactor,
         )
-        .expect("return to legacy");
+        .expect("return to self-asserted");
     assert!(back.changed);
     assert_eq!(
         back.acceptance_evaluation,
@@ -955,7 +959,7 @@ fn legacy_policy_normalizes_its_other_fields_and_round_trips() {
         .expect("policy bytes");
     assert!(
         !String::from_utf8_lossy(&stored).contains("acceptance_evaluation"),
-        "legacy bytes must omit the field"
+        "self-asserted bytes must omit the field"
     );
 }
 
@@ -1533,7 +1537,7 @@ fn a_seal_binding_an_older_pass_under_a_newer_blocking_evaluation_is_refused() {
 
 // Round 8 (Low): a completed item whose evaluated seal binding cannot be
 // read discloses an unavailable provenance with its error class, distinct
-// from a legacy seal's intentional omission; the item stays readable and the
+// from a self-asserted seal's intentional omission; the item stays readable and the
 // doctor still reports the corruption.
 #[test]
 fn a_broken_evaluated_seal_binding_is_disclosed_as_unavailable_provenance() {

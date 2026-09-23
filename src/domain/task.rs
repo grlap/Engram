@@ -1,4 +1,4 @@
-//! Host-local task bindings, context packets, and task deltas.
+//! Context packets and shared control-scope deltas.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -7,17 +7,9 @@ use serde_json::Value;
 use crate::ObjectId;
 
 use super::{
-    ActorContext, Authority, ChangeCursor, FeedPosition, MemoryAssertionEvent, MemoryId,
-    MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, ProjectId, SessionId, TaskId, WorkId,
+    Authority, ChangeCursor, FeedPosition, MemoryAssertionEvent, MemoryId, MemoryKind,
+    MemoryStatus, MemorySummary, MemoryVersion, ProjectId, TaskId, WorkId,
 };
-
-/// Local task lifecycle. A bound task is always active; no transition out of
-/// that state exists.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskState {
-    Active,
-}
 
 /// Header returned with a context packet. The hash reproduces content; the
 /// cursor orders later peer changes.
@@ -111,9 +103,7 @@ pub struct ContextPacket {
 /// Authorized full-memory view with its initial activation event.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MemoryRecord {
-    #[serde(rename = "version_hash")]
     pub version_id: ObjectId,
-    #[serde(rename = "assertion_hash")]
     pub assertion_id: ObjectId,
     pub version: MemoryVersion,
     pub assertion: MemoryAssertionEvent,
@@ -124,7 +114,6 @@ pub struct MemoryRecord {
 pub struct DeltaItem {
     pub cursor: ChangeCursor,
     pub object_kind: String,
-    #[serde(rename = "object_hash")]
     pub object_id: ObjectId,
     pub memory: Option<MemorySummary>,
     pub object: Value,
@@ -138,51 +127,4 @@ pub struct TaskDelta {
     pub after: ChangeCursor,
     pub cursor: ChangeCursor,
     pub changes: Vec<DeltaItem>,
-}
-
-/// Local operational task; this is a reference to, never a mirror of, an
-/// external ticket.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct LocalTask {
-    pub schema_version: u16,
-    pub project_id: ProjectId,
-    pub task_id: TaskId,
-    pub title: String,
-    pub external_ref: Option<String>,
-    pub participants: Vec<SessionId>,
-    pub state: TaskState,
-    pub event_cursor: ChangeCursor,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-/// Immutable creation event for a local task bound to an external reference.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TaskStartedEvent {
-    pub schema_version: u16,
-    pub task_id: TaskId,
-    pub project_id: ProjectId,
-    pub title: String,
-    pub external_ref: String,
-    pub participant: SessionId,
-    pub actor: ActorContext,
-    pub created_at: DateTime<Utc>,
-}
-
-/// Immutable event emitted the first time another session joins a task.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TaskJoinedEvent {
-    pub schema_version: u16,
-    pub task_id: TaskId,
-    pub participant: SessionId,
-    pub actor: ActorContext,
-    pub created_at: DateTime<Utc>,
-}
-
-/// Ref-bound task result shared by CLI and MCP.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TaskBindReceipt {
-    pub task: LocalTask,
-    pub joined: bool,
-    pub cursor: ChangeCursor,
 }

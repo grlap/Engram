@@ -210,4 +210,9 @@ fn host_path_policy_help_names_path_bearing_host_commands() {
         "{help}"
     );
     assert!(help.contains("do not probe"), "{help}");
+    assert!(
+        normalized.contains("refuses path-bearing control requests"),
+        "{help}"
+    );
+    assert!(!help.contains("path leases"), "{help}");
 }

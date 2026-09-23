@@ -7,226 +7,59 @@ use super::{
     EffectClass, EnvironmentComponents, EnvironmentEvidence, EnvironmentEvidenceInput,
     EnvironmentEvidenceReference, ExecutionObservation, ExecutionObservationInput,
     ExecutionObservationReference, ExecutionOutcome, HashMap, HashSet, IssuedTurnGrant,
-    LeasePolicyInput, MAX_CONTROL_DELIVERY_BYTES, MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT,
+    MAX_CONTROL_DELIVERY_BYTES, MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT,
     MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT, MAX_TYPED_EVIDENCE_REF_BYTES,
     MAX_TYPED_EVIDENCE_REFS, MAX_TYPED_EVIDENCE_SUMMARY_BYTES,
     MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT, ObjectId, OptionalExtension, PacketSafety,
     ParticipantMembership, Redactor, SCHEMA_VERSION, SessionId, SessionPhase, SqliteStore,
-    StoreError, StoredControlSession, StoredWorkLeaseRow, TaskAdmissionEpoch, TaskBindReceipt,
-    TaskId, TaskJoinedEvent, TaskStartedEvent, TaskState, Transaction, TransactionBehavior,
-    TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
-    TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
-    TurnEvaluationInput, TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason,
-    TurnIntent, TurnIntentFingerprint, TurnNextIntent, Utc, VerificationEvidence,
-    VerificationEvidenceInput, VerificationKind, VerificationResult,
-    WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION, WorkLease, WorkLeaseAcquireFingerprint,
-    WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseFingerprint, WorkLeaseReleaseReceipt,
-    WorkLeaseTransition, effective_mediated_effects, enum_name, evaluate_lease_policy, params,
-    parse_enum, work,
+    StoreError, TaskAdmissionEpoch, TaskId, Transaction, TransactionBehavior, TurnBeginDecision,
+    TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
+    TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
+    TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent,
+    TurnIntentFingerprint, TurnNextIntent, Utc, VerificationEvidence, VerificationEvidenceInput,
+    VerificationKind, VerificationResult, effective_mediated_effects, enum_name, params, work,
 };
 
 #[cfg(test)]
 mod tests;
 
 impl SqliteStore {
-    /// Starts a task or joins the existing task already bound to the same
-    /// project and external reference. The reference is the public rendezvous
-    /// key; callers never need to relay Engram's UUID out of band.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when required binding data is empty or the
-    /// atomic task/event write fails.
-    #[cfg(test)]
-    pub fn start_task(
-        &mut self,
-        project_id: &crate::domain::ProjectId,
-        external_ref: &str,
-        title: &str,
-        participant: &SessionId,
-        actor: ActorContext,
-        now: DateTime<Utc>,
-    ) -> Result<TaskBindReceipt, StoreError> {
-        if external_ref.trim().is_empty() || title.trim().is_empty() {
-            return Err(StoreError::InvalidTaskBinding);
-        }
-        self.bind_task(
-            project_id,
-            external_ref.trim(),
-            Some(title.trim()),
-            participant,
-            actor,
-            now,
-        )
-    }
-
-    /// Joins an existing task using only its external reference.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError::TaskReferenceNotFound`] when no matching task
-    /// exists, or another storage error when joining cannot commit.
-    #[cfg(test)]
-    pub fn join_task(
-        &mut self,
-        project_id: &crate::domain::ProjectId,
-        external_ref: &str,
-        participant: &SessionId,
-        actor: ActorContext,
-        now: DateTime<Utc>,
-    ) -> Result<TaskBindReceipt, StoreError> {
-        if external_ref.trim().is_empty() {
-            return Err(StoreError::InvalidTaskBinding);
-        }
-        self.bind_task(
-            project_id,
-            external_ref.trim(),
-            None,
-            participant,
-            actor,
-            now,
-        )
-    }
-
-    #[cfg(test)]
-    fn bind_task(
-        &mut self,
-        project_id: &crate::domain::ProjectId,
-        external_ref: &str,
-        create_title: Option<&str>,
-        participant: &SessionId,
-        actor: ActorContext,
-        now: DateTime<Utc>,
-    ) -> Result<TaskBindReceipt, StoreError> {
-        crate::storage::admit_session_id(participant)?;
-        if let Some(session) = &actor.session_id {
-            crate::storage::admit_session_id(session)?;
-        }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let receipt = Self::bind_task_on(
-            &transaction,
-            project_id,
-            external_ref,
-            create_title,
-            participant,
-            actor,
-            now,
-        )?;
-        transaction.commit()?;
-        Ok(receipt)
-    }
-
-    fn bind_task_on(
+    /// Resolves the host's project-local rendezvous directly. This scope has
+    /// no task lifecycle or participant roster; `control_sessions` owns binding.
+    fn bind_control_anchor(
         transaction: &Transaction<'_>,
         project_id: &crate::domain::ProjectId,
         external_ref: &str,
-        create_title: Option<&str>,
-        participant: &SessionId,
-        actor: ActorContext,
-        now: DateTime<Utc>,
-    ) -> Result<TaskBindReceipt, StoreError> {
-        let existing_task: Option<String> = transaction
-            .query_row(
-                "SELECT task_id FROM tasks
-                 WHERE project_id = ?1 AND external_ref = ?2",
-                params![project_id.0, external_ref],
-                |row| row.get(0),
-            )
-            .optional()?;
-
-        let (task_id, joined, cursor) = if let Some(stored_task_id) = existing_task {
-            let task_uuid = uuid::Uuid::parse_str(&stored_task_id)
-                .map_err(|error| StoreError::InvalidTaskProjection(error.to_string()))?;
-            let task_id = TaskId(task_uuid);
-            let inserted = transaction.execute(
-                "INSERT OR IGNORE INTO task_participants
-                 (task_id, session_id, joined_at_ms) VALUES (?1, ?2, ?3)",
-                params![stored_task_id, participant.0, now.timestamp_millis()],
-            )?;
-            let cursor = if inserted == 1 {
-                let event = TaskJoinedEvent {
-                    schema_version: SCHEMA_VERSION,
-                    task_id,
-                    participant: participant.clone(),
-                    actor,
-                    created_at: now,
-                };
-                let object = CanonicalObject::mint(&event)?;
-                Self::insert_object(transaction, "task_joined_event", &object)?;
-                Self::insert_task_change(transaction, task_id, "task_joined_event", &object)?
-            } else {
-                Self::latest_task_cursor(transaction, task_id)?
-            };
-            (task_id, inserted == 1, cursor)
-        } else {
-            let title = create_title
-                .ok_or_else(|| StoreError::TaskReferenceNotFound(external_ref.to_owned()))?;
-            let task_id = TaskId::new();
-            transaction.execute(
-                "INSERT INTO tasks (
-                     task_id, project_id, external_ref, title, state,
-                     event_cursor, created_at_ms, updated_at_ms
-                 ) VALUES (?1, ?2, ?3, ?4, 'active', 0, ?5, ?5)",
-                params![
-                    task_id.0.to_string(),
-                    project_id.0,
-                    external_ref,
-                    title,
-                    now.timestamp_millis(),
-                ],
-            )?;
-            transaction.execute(
-                "INSERT INTO task_participants
-                 (task_id, session_id, joined_at_ms) VALUES (?1, ?2, ?3)",
-                params![task_id.0.to_string(), participant.0, now.timestamp_millis()],
-            )?;
-            let event = TaskStartedEvent {
-                schema_version: SCHEMA_VERSION,
-                task_id,
-                project_id: project_id.clone(),
-                title: title.into(),
-                external_ref: external_ref.into(),
-                participant: participant.clone(),
-                actor,
-                created_at: now,
-            };
-            let object = CanonicalObject::mint(&event)?;
-            Self::insert_object(transaction, "task_started_event", &object)?;
-            let cursor =
-                Self::insert_task_change(transaction, task_id, "task_started_event", &object)?;
-            (task_id, true, cursor)
-        };
+        title: &str,
+    ) -> Result<TaskId, StoreError> {
         transaction.execute(
-            "UPDATE tasks SET event_cursor = ?2, updated_at_ms = ?3
-             WHERE task_id = ?1",
-            params![task_id.0.to_string(), cursor.0, now.timestamp_millis()],
+            "INSERT INTO control_anchors (task_id, project_id, external_ref, title)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(project_id, external_ref) DO NOTHING",
+            params![
+                TaskId::new().0.to_string(),
+                project_id.0,
+                external_ref,
+                title
+            ],
         )?;
-        transaction.execute(
-            "INSERT INTO session_bindings (session_id, task_id, bound_at_ms)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(session_id) DO UPDATE SET
-                 task_id = excluded.task_id,
-                 bound_at_ms = excluded.bound_at_ms",
-            params![participant.0, task_id.0.to_string(), now.timestamp_millis()],
+        let id: String = transaction.query_row(
+            "SELECT task_id FROM control_anchors WHERE project_id = ?1 AND external_ref = ?2",
+            params![project_id.0, external_ref],
+            |row| row.get(0),
         )?;
-        let task = Self::load_task(transaction, task_id)?;
-        Ok(TaskBindReceipt {
-            task,
-            joined,
-            cursor,
-        })
+        uuid::Uuid::parse_str(&id)
+            .map(TaskId)
+            .map_err(|error| StoreError::InvalidTaskProjection(error.to_string()))
     }
 
-    /// Resolves the task most recently bound by this session. Bindings are a
-    /// durable local projection so restarting an MCP process does not require
-    /// the agent to relay Engram's task UUID again.
+    /// Resolves the control scope most recently bound by this session.
+    /// The retained `TaskId` identifies the scope, not a task lifecycle.
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError::NoActiveTask`] when the session has not started
-    /// or joined a task in this project.
+    /// Returns [`StoreError::NoActiveTask`] when the session has no control
+    /// binding in this project.
     pub fn bound_task(
         &self,
         project_id: &crate::domain::ProjectId,
@@ -235,9 +68,8 @@ impl SqliteStore {
         let stored: Option<String> = self
             .connection
             .query_row(
-                "SELECT b.task_id FROM session_bindings b JOIN tasks t
-                   ON t.task_id = b.task_id
-                 WHERE b.session_id = ?1 AND t.project_id = ?2",
+                "SELECT task_id FROM control_sessions
+                 WHERE session_id = ?1 AND project_id = ?2",
                 params![session_id.0, project_id.0],
                 |row| row.get(0),
             )
@@ -248,7 +80,7 @@ impl SqliteStore {
             .map_err(|error| StoreError::InvalidTaskProjection(error.to_string()))
     }
 
-    /// Binds a host-private control session to a local task and rotates any
+    /// Binds a host-private control session to a shared scope and rotates any
     /// prior live, unbegun authority for that runtime session.
     ///
     /// The returned routing token prevents accidental cross-session request
@@ -290,7 +122,7 @@ impl SqliteStore {
         )
     }
 
-    /// Binds a host-private control session to both its compatibility task and
+    /// Binds a host-private control session to a shared external reference and
     /// an exact live local-work claim basis.
     ///
     /// # Errors
@@ -396,75 +228,35 @@ impl SqliteStore {
                 now,
             )?;
         }
-        if let Some(existing) = &existing {
-            if matches!(existing.phase, SessionPhase::TurnOpen)
-                && Self::session_has_begun_turn(&transaction, session_id)?
-            {
-                return Err(StoreError::InvalidControlSession(
-                    "a begun turn must be checkpointed before rebinding".into(),
-                ));
-            }
-            let target_task: Option<String> = transaction
-                .query_row(
-                    "SELECT task_id FROM tasks WHERE project_id = ?1 AND external_ref = ?2",
-                    params![project_id.0, external_ref],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            let changes_task = target_task
-                .as_deref()
-                .is_none_or(|task_id| task_id != existing.task_id.0.to_string());
-            Self::terminalize_session_work_leases(&transaction, existing, now, true)?;
-            if changes_task
-                && transaction.query_row(
-                    "SELECT EXISTS(
-                         SELECT 1 FROM control_work_leases
-                         WHERE holder_session_id = ?1 AND state = 'active'
-                           AND expires_at_ms > ?2
-                     )",
-                    params![session_id.0.as_str(), now.timestamp_millis()],
-                    |row| row.get::<_, i64>(0),
-                )? == 1
-            {
-                return Err(StoreError::InvalidControlSession(
-                    "release every active work lease before rebinding to another task".into(),
-                ));
-            }
+        if let Some(existing) = &existing
+            && matches!(existing.phase, SessionPhase::TurnOpen)
+            && Self::session_has_begun_turn(&transaction, session_id)?
+        {
+            return Err(StoreError::InvalidControlSession(
+                "a begun turn must be checkpointed before rebinding".into(),
+            ));
         }
 
-        let task = Self::bind_task_on(
-            &transaction,
-            project_id,
-            external_ref,
-            Some(title),
-            session_id,
-            actor.clone(),
-            now,
-        )?;
+        let task_id = Self::bind_control_anchor(&transaction, project_id, external_ref, title)?;
         let policy = Self::load_active_control_policy(&transaction)?;
-        transaction.execute(
-            "INSERT OR IGNORE INTO task_control_state (task_id, admission_epoch)
-             VALUES (?1, 1)",
-            [task.task.task_id.0.to_string()],
-        )?;
         let admission_epoch = transaction.query_row(
-            "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",
-            [task.task.task_id.0.to_string()],
+            "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
+            [task_id.0.to_string()],
             |row| row.get::<_, i64>(0),
         )?;
         let previous_revision = existing.as_ref().map_or(0, |session| session.revision);
         let routing_token = uuid::Uuid::now_v7().to_string();
-        let head = Self::latest_task_cursor(&transaction, task.task.task_id)?;
+        let head = Self::latest_task_cursor(&transaction, task_id)?;
         // A host re-binds a live session every few hours, and every turn adds
         // one checkpoint to the task feed. Replaying the whole feed would
         // outgrow one delivery page after enough turns and refuse every
         // ordinary turn. A re-bind to the same task therefore keeps its
-        // confirmed position and moves past the events this session wrote
-        // itself; another writer's event is still delivered.
+        // confirmed position and skips only contiguous events this session
+        // wrote itself, stopping before the first peer event for delivery.
         let confirmed_cursor = match &existing {
-            Some(session) if session.task_id == task.task.task_id => Self::own_task_events_end(
+            Some(session) if session.task_id == task_id => Self::own_task_events_end(
                 &transaction,
-                task.task.task_id,
+                task_id,
                 session.confirmed_cursor,
                 session_id,
             )?,
@@ -516,7 +308,7 @@ impl SqliteStore {
             params![
                 session_id.0,
                 project_id.0,
-                task.task.task_id.0.to_string(),
+                task_id.0.to_string(),
                 work_binding.map(|binding| binding.root_execution_id.0.to_string()),
                 work_binding.map(|binding| binding.work_id.0.to_string()),
                 work_binding.map(|binding| binding.run_id.0.to_string()),
@@ -565,7 +357,7 @@ impl SqliteStore {
         let mut statement = transaction.prepare(
             "SELECT change.task_cursor,
                     json_extract(object.canonical_json, '$.actor.session_id')
-             FROM task_changes change
+             FROM control_changes change
              JOIN objects object ON object.object_id = change.object_id
              WHERE change.task_id = ?1 AND change.task_cursor > ?2
              ORDER BY change.task_cursor",
@@ -663,528 +455,12 @@ impl SqliteStore {
         Ok(connection_token)
     }
 
-    /// Atomically acquires one normalized resource lease for a synchronized
-    /// control session.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] for invalid routing, unsafe resource shapes,
-    /// unsynchronized sessions, idempotency conflicts, or persistence errors.
-    #[allow(
-        clippy::too_many_arguments,
-        clippy::too_many_lines,
-        reason = "lease acquisition validates routing, synchronization, conflicts, and audit event atomically"
-    )]
-    pub fn acquire_work_lease(
-        &mut self,
-        project_id: &crate::domain::ProjectId,
-        session_id: &SessionId,
-        connection_token: &str,
-        routing_token: &str,
-        kind: crate::domain::LeaseKind,
-        mode: crate::domain::LeaseMode,
-        subject: &crate::domain::ResourceSubject,
-        ttl_seconds: i64,
-        idempotency_key: &str,
-        now: DateTime<Utc>,
-    ) -> Result<WorkLeaseDecision, StoreError> {
-        if !(1..=3_600).contains(&ttl_seconds) || idempotency_key.trim().is_empty() {
-            return Err(StoreError::InvalidControlSession(
-                "lease TTL or idempotency key is invalid".into(),
-            ));
-        }
-        let subject = subject
-            .normalized_for_project_with_policy(project_id, self.path_policy_for(subject)?)
-            .ok_or_else(|| {
-                StoreError::InvalidControlSession(
-                    "lease subject is invalid or belongs to another project".into(),
-                )
-            })?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let session = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        Self::verify_control_session(&session, project_id, routing_token)?;
-        let intent = CanonicalObject::freeze(&WorkLeaseAcquireFingerprint {
-            fingerprint_schema_version: WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION,
-            session_id,
-            bind_intent_hash: &session.bind_intent_hash,
-            kind,
-            mode,
-            subject: &subject,
-            ttl_seconds,
-            idempotency_key,
-        })?;
-        if let Some(replay) = Self::replay_control_operation(
-            &transaction,
-            session_id,
-            "lease_acquire",
-            idempotency_key,
-            intent.key(),
-        )? {
-            transaction.commit()?;
-            return Ok(replay);
-        }
-        let policy = Self::load_active_control_policy(&transaction)?;
-        let lease_effect = match kind {
-            crate::domain::LeaseKind::Execution => EffectClass::MutateLocal,
-            crate::domain::LeaseKind::Coordination => EffectClass::Coordinate,
-        };
-        let directive_key = format!("lease_acquire:{idempotency_key}");
-        if let Err(refusal) = evaluate_lease_policy(&LeasePolicyInput {
-            request_key: &directive_key,
-            host_assurance: session.assurance,
-            declared_mediated_effects: &session.mediated_effects,
-            project_required_assurance: policy.required_assurance,
-            policy_effects: &policy.supported_effects,
-            session_policy_epoch: session.epochs.project_policy,
-            active_policy_epoch: policy.epoch,
-            effect: lease_effect,
-        }) {
-            let decision = Self::refuse_work_lease(
-                &transaction,
-                session_id,
-                idempotency_key,
-                &intent,
-                refusal.directive,
-                now,
-            )?;
-            if refusal.adopt_project_policy_epoch {
-                transaction.execute(
-                    "UPDATE control_sessions SET
-                         project_policy_epoch = ?2,
-                         revision = revision + 1, updated_at_ms = ?3
-                     WHERE session_id = ?1",
-                    params![session_id.0, policy.epoch.0, now.timestamp_millis()],
-                )?;
-            }
-            transaction.commit()?;
-            return Ok(decision);
-        }
-        let head = Self::latest_task_cursor(&transaction, session.task_id)?;
-        if !matches!(session.phase, SessionPhase::Ready)
-            || session.confirmed_cursor != head
-            || !Self::session_is_current_participant(
-                &transaction,
-                project_id,
-                session.task_id,
-                session_id,
-            )?
-        {
-            return Err(StoreError::InvalidControlSession(
-                "lease acquisition requires a synchronized ready participant on an active task"
-                    .into(),
-            ));
-        }
-        // A bound task is always active; reading it still refuses a stored
-        // state this build does not know.
-        Self::task_state_on(&transaction, project_id, session.task_id)?;
-
-        let rows = Self::project_work_lease_rows(&transaction, project_id)?;
-        let decoded = rows
-            .iter()
-            .map(Self::decode_work_lease_row)
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut active = Vec::new();
-        let mut expired_predecessor = false;
-        for (row, lease) in rows.iter().zip(&decoded) {
-            if row.state != "active" {
-                continue;
-            }
-            let checkpoint_required =
-                Self::begun_turn_pinning_lease(&transaction, &lease.holder, &lease.lease_id)?
-                    .is_some();
-            if lease.expires_at <= now
-                && !checkpoint_required
-                && Self::resource_subjects_overlap(&lease.subject, &subject)
-            {
-                Self::terminalize_work_lease(
-                    &transaction,
-                    row,
-                    lease.clone(),
-                    WorkLeaseTransition::Expired,
-                    &session.actor,
-                    now,
-                )?;
-                expired_predecessor = true;
-                continue;
-            }
-            if lease.expires_at > now || checkpoint_required {
-                active.push((lease, checkpoint_required));
-            }
-        }
-        if active.iter().any(|(lease, _)| {
-            lease.holder == *session_id && Self::resource_subjects_overlap(&lease.subject, &subject)
-        }) {
-            return Err(StoreError::InvalidControlSession(
-                "the session already holds an overlapping lease with a different basis".into(),
-            ));
-        }
-        if let Some((conflict, checkpoint_required)) = active.iter().find(|(lease, _)| {
-            lease.holder != *session_id && Self::resource_subjects_overlap(&lease.subject, &subject)
-        }) {
-            let decision = WorkLeaseDecision::Defer {
-                holder: conflict.holder.clone(),
-                conflicting_lease_id: conflict.lease_id.clone(),
-                expires_at: conflict.expires_at,
-                checkpoint_required: *checkpoint_required,
-            };
-            Self::persist_control_operation(
-                &transaction,
-                session_id,
-                "lease_acquire",
-                idempotency_key,
-                &intent,
-                &decision,
-                now,
-            )?;
-            transaction.commit()?;
-            return Ok(decision);
-        }
-        let fence = decoded
-            .iter()
-            .filter(|lease| Self::resource_subjects_overlap(&lease.subject, &subject))
-            .map(|lease| lease.fence)
-            .max()
-            .unwrap_or(0)
-            + 1;
-        let lease = WorkLease {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            lease_id: uuid::Uuid::now_v7().to_string(),
-            task_id: session.task_id,
-            holder: session_id.clone(),
-            kind,
-            mode,
-            subject,
-            fence,
-            revision: 1,
-            idempotency_key: idempotency_key.into(),
-            expires_at: now + chrono::TimeDelta::seconds(ttl_seconds),
-        };
-        let lease_json = crate::canonical::canonical_bytes(&lease)?;
-        transaction.execute(
-            "INSERT INTO control_work_leases (
-                 lease_id, task_id, holder_session_id, lease_json,
-                 state, expires_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, 'active', ?5)",
-            params![
-                lease.lease_id,
-                lease.task_id.0.to_string(),
-                lease.holder.0,
-                lease_json,
-                lease.expires_at.timestamp_millis(),
-            ],
-        )?;
-        let event = WorkLeaseEvent {
-            schema_version: SCHEMA_VERSION,
-            task_id: session.task_id,
-            lease: lease.clone(),
-            transition: WorkLeaseTransition::Acquired,
-            actor: session.actor.clone(),
-            created_at: now,
-        };
-        let event_object = CanonicalObject::mint(&event)?;
-        Self::insert_object(&transaction, "work_lease_event", &event_object)?;
-        let cursor = Self::insert_task_change(
-            &transaction,
-            session.task_id,
-            "work_lease_event",
-            &event_object,
-        )?;
-        transaction.execute(
-            "UPDATE control_sessions SET
-                 confirmed_cursor = ?2, blocking_watermark = ?3,
-                 revision = revision + 1, updated_at_ms = ?4
-             WHERE session_id = ?1",
-            params![
-                session_id.0,
-                if expired_predecessor {
-                    session.confirmed_cursor.0
-                } else {
-                    cursor.0
-                },
-                cursor.0,
-                now.timestamp_millis()
-            ],
-        )?;
-        let decision = WorkLeaseDecision::Granted { lease };
-        Self::persist_control_operation(
-            &transaction,
-            session_id,
-            "lease_acquire",
-            idempotency_key,
-            &intent,
-            &decision,
-            now,
-        )?;
-        transaction.commit()?;
-        Ok(decision)
-    }
-
-    /// Releases one held resource lease and appends its fenced transition.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] for invalid routing, ownership, idempotency, or
-    /// persistence failures.
-    #[allow(
-        clippy::too_many_arguments,
-        clippy::too_many_lines,
-        reason = "lease release updates the projection and task-feed audit event atomically"
-    )]
-    pub fn release_work_lease(
-        &mut self,
-        project_id: &crate::domain::ProjectId,
-        session_id: &SessionId,
-        connection_token: &str,
-        routing_token: &str,
-        lease_id: &str,
-        idempotency_key: &str,
-        now: DateTime<Utc>,
-    ) -> Result<WorkLeaseReleaseReceipt, StoreError> {
-        let intent = CanonicalObject::freeze(&WorkLeaseReleaseFingerprint {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            session_id,
-            lease_id,
-            idempotency_key,
-        })?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let session = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        Self::verify_control_session(&session, project_id, routing_token)?;
-        if let Some(replay) = Self::replay_control_operation(
-            &transaction,
-            session_id,
-            "lease_release",
-            idempotency_key,
-            intent.key(),
-        )? {
-            transaction.commit()?;
-            return Ok(replay);
-        }
-        let row = Self::work_lease_row(&transaction, lease_id)?
-            .ok_or_else(|| StoreError::WorkLeaseNotFound(lease_id.into()))?;
-        let lease = Self::decode_work_lease_row(&row)?;
-        if lease.holder != *session_id || lease.task_id != session.task_id {
-            return Err(StoreError::WorkLeaseNotHeld {
-                lease_id: lease_id.into(),
-                session: session_id.0.clone(),
-            });
-        }
-        if row.state == "expired" {
-            return Err(StoreError::WorkLeaseExpired {
-                lease_id: lease_id.into(),
-                expired_at: lease.expires_at,
-            });
-        }
-        if row.state != "active" {
-            return Err(StoreError::WorkLeaseNotHeld {
-                lease_id: lease_id.into(),
-                session: session_id.0.clone(),
-            });
-        }
-        if let Some(grant_id) = Self::begun_turn_pinning_lease(&transaction, session_id, lease_id)?
-        {
-            return Err(StoreError::InvalidControlSession(format!(
-                "work lease {lease_id:?} is pinned by begun turn {grant_id:?}; checkpoint the turn before releasing the lease"
-            )));
-        }
-        if lease.expires_at <= now {
-            let cursor = Self::terminalize_work_lease(
-                &transaction,
-                &row,
-                lease.clone(),
-                WorkLeaseTransition::Expired,
-                &session.actor,
-                now,
-            )?;
-            transaction.execute(
-                "UPDATE control_sessions SET blocking_watermark = ?2,
-                     revision = revision + 1, updated_at_ms = ?3
-                 WHERE session_id = ?1",
-                params![session_id.0, cursor.0, now.timestamp_millis()],
-            )?;
-            transaction.commit()?;
-            return Err(StoreError::WorkLeaseExpired {
-                lease_id: lease_id.into(),
-                expired_at: lease.expires_at,
-            });
-        }
-        let head = Self::latest_task_cursor(&transaction, session.task_id)?;
-        let cursor = Self::terminalize_work_lease(
-            &transaction,
-            &row,
-            lease.clone(),
-            WorkLeaseTransition::Released,
-            &session.actor,
-            now,
-        )?;
-        let confirmed_cursor =
-            if session.confirmed_cursor == head && matches!(session.phase, SessionPhase::Ready) {
-                cursor
-            } else {
-                session.confirmed_cursor
-            };
-        transaction.execute(
-            "UPDATE control_sessions SET
-                 confirmed_cursor = ?2, blocking_watermark = ?3,
-                 revision = revision + 1, updated_at_ms = ?4
-             WHERE session_id = ?1",
-            params![
-                session_id.0,
-                confirmed_cursor.0,
-                cursor.0,
-                now.timestamp_millis(),
-            ],
-        )?;
-        let receipt = WorkLeaseReleaseReceipt {
-            lease_id: lease_id.into(),
-            task_id: session.task_id,
-            holder: session_id.clone(),
-            fence: lease.fence,
-            cursor,
-            released_at: now,
-        };
-        Self::persist_control_operation(
-            &transaction,
-            session_id,
-            "lease_release",
-            idempotency_key,
-            &intent,
-            &receipt,
-            now,
-        )?;
-        transaction.commit()?;
-        Ok(receipt)
-    }
-
-    fn terminalize_session_work_leases(
-        transaction: &Transaction<'_>,
-        session: &StoredControlSession,
-        now: DateTime<Utc>,
-        expired_only: bool,
-    ) -> Result<Vec<ChangeCursor>, StoreError> {
-        let rows = {
-            let mut statement = transaction.prepare(
-                "SELECT lease_id, task_id, holder_session_id, lease_json,
-                        state, expires_at_ms
-                 FROM control_work_leases
-                 WHERE holder_session_id = ?1 AND state = 'active'
-                   AND (?2 = 0 OR expires_at_ms <= ?3)
-                 ORDER BY lease_id",
-            )?;
-            statement
-                .query_map(
-                    params![
-                        session.session_id.0,
-                        i64::from(expired_only),
-                        now.timestamp_millis()
-                    ],
-                    |row| {
-                        Ok(StoredWorkLeaseRow {
-                            lease_id: row.get(0)?,
-                            task_id: row.get(1)?,
-                            holder_session_id: row.get(2)?,
-                            lease_json: row.get(3)?,
-                            state: row.get(4)?,
-                            expires_at_ms: row.get(5)?,
-                        })
-                    },
-                )?
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        let mut cursors = Vec::with_capacity(rows.len());
-        for row in rows {
-            let lease = Self::decode_work_lease_row(&row)?;
-            if lease.task_id != session.task_id || lease.holder != session.session_id {
-                return Err(StoreError::InvalidControlProjection(format!(
-                    "work lease {} is not bound to its holder session",
-                    lease.lease_id
-                )));
-            }
-            let expired = lease.expires_at <= now;
-            let transition = if expired {
-                WorkLeaseTransition::Expired
-            } else {
-                WorkLeaseTransition::Released
-            };
-            cursors.push(Self::terminalize_work_lease(
-                transaction,
-                &row,
-                lease,
-                transition,
-                &session.actor,
-                now,
-            )?);
-        }
-        Ok(cursors)
-    }
-
-    fn terminalize_work_lease(
-        transaction: &Transaction<'_>,
-        row: &StoredWorkLeaseRow,
-        mut lease: WorkLease,
-        transition: WorkLeaseTransition,
-        actor: &ActorContext,
-        now: DateTime<Utc>,
-    ) -> Result<ChangeCursor, StoreError> {
-        let state = match transition {
-            WorkLeaseTransition::Released => "released",
-            WorkLeaseTransition::Expired => "expired",
-            WorkLeaseTransition::Acquired => {
-                return Err(StoreError::InvalidControlProjection(
-                    "an acquired work lease cannot be terminalized".into(),
-                ));
-            }
-        };
-        if row.state != "active" || row.lease_id != lease.lease_id {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "work lease {} was not active during terminalization",
-                lease.lease_id
-            )));
-        }
-        lease.revision += 1;
-        let lease_json = crate::canonical::canonical_bytes(&lease)?;
-        let changed = transaction.execute(
-            "UPDATE control_work_leases SET lease_json = ?2, state = ?3
-             WHERE lease_id = ?1 AND state = 'active'",
-            params![lease.lease_id, lease_json, state],
-        )?;
-        if changed != 1 {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "work lease {} was not active during terminalization",
-                lease.lease_id
-            )));
-        }
-        let event = WorkLeaseEvent {
-            schema_version: SCHEMA_VERSION,
-            task_id: lease.task_id,
-            lease,
-            transition,
-            actor: actor.clone(),
-            created_at: now,
-        };
-        let event_object = CanonicalObject::mint(&event)?;
-        Self::insert_object(transaction, "work_lease_event", &event_object)?;
-        Self::insert_task_change(
-            transaction,
-            event.task_id,
-            "work_lease_event",
-            &event_object,
-        )
-    }
-
     /// Evaluates and persists one host-enforced turn request from durable
     /// policy, membership, lifecycle, and context state.
     ///
     /// The built-in alpha policy grants `observe`, `communicate`, and
-    /// turn-gated `mutate_local`. Local mutation requires a live exclusive
-    /// execution lease covering every declared resource intent.
+    /// turn-gated `mutate_local`. Local mutation requires policy permission
+    /// and declared host mediation for every requested effect.
     ///
     /// # Errors
     ///
@@ -1262,33 +538,20 @@ impl SqliteStore {
                 .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
         }
         let policy = Self::load_active_control_policy(&transaction)?;
-        let task_state = transaction
-            .query_row(
-                "SELECT state FROM tasks WHERE task_id = ?1 AND project_id = ?2",
-                params![session.task_id.0.to_string(), project_id.0],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
-            .map(|state| parse_enum::<TaskState>(&state))
-            .transpose()?;
-        let membership = transaction.query_row(
-            "SELECT EXISTS(
-                 SELECT 1 FROM task_participants
-                 WHERE task_id = ?1 AND session_id = ?2
-             ) AND EXISTS(
-                 SELECT 1 FROM session_bindings
-                 WHERE task_id = ?1 AND session_id = ?2
-             )",
-            params![session.task_id.0.to_string(), session_id.0],
-            |row| row.get::<_, i64>(0),
+        let anchor_exists = Self::control_anchor_exists(&transaction, project_id, session.task_id)?;
+        let membership = Self::session_is_current_participant(
+            &transaction,
+            project_id,
+            session.task_id,
+            session_id,
         )?;
         let task_admission_epoch = transaction.query_row(
-            "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",
+            "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
             [session.task_id.0.to_string()],
             |row| row.get::<_, i64>(0),
         )?;
         let head = Self::latest_task_cursor(&transaction, session.task_id)?;
-        let page_to = if membership == 1 && session.confirmed_cursor < head {
+        let page_to = if membership && session.confirmed_cursor < head {
             Some(Self::task_delivery_page_end(
                 &transaction,
                 session.task_id,
@@ -1298,7 +561,7 @@ impl SqliteStore {
             None
         };
         let has_more = page_to.is_some_and(|page_to| page_to < head);
-        let (mut packet_safety, context) = if membership == 1 && !has_more {
+        let (mut packet_safety, context) = if membership && !has_more {
             match Self::build_context_on(
                 &transaction,
                 project_id,
@@ -1352,15 +615,6 @@ impl SqliteStore {
             packet_safety = PacketSafety::DeliveryBudgetExceeded;
             delivery = None;
         }
-        let leases = Self::active_work_lease_bases(&transaction, session.task_id, session_id, now)?
-            .into_iter()
-            .filter(|lease| {
-                intent
-                    .resource_intents
-                    .iter()
-                    .any(|resource| lease.subject.covers(resource))
-            })
-            .collect();
         let work_binding_current = Self::control_work_binding_is_current(
             &transaction,
             project_id,
@@ -1374,12 +628,12 @@ impl SqliteStore {
             task_id: Some(session.task_id),
             work_binding: session.work_binding.clone(),
             work_binding_current,
-            participant_membership: if membership == 1 {
+            participant_membership: if membership {
                 ParticipantMembership::Member
             } else {
                 ParticipantMembership::NotMember
             },
-            task_state,
+            anchor_exists,
             phase: session.phase,
             health: ControlHealth::Healthy,
             active_policy_known: true,
@@ -1401,7 +655,6 @@ impl SqliteStore {
             has_unknown_action_outcome: false,
             authority_satisfied: true,
             capability_map_revision: session.capability_map_revision,
-            leases,
             intent: intent.clone(),
             evaluated_at: now,
             grant_ttl_seconds: policy.grant_ttl_seconds,
@@ -1556,7 +809,6 @@ impl SqliteStore {
                     .resource_intents
                     .iter()
                     .any(|subject| matches!(subject, crate::domain::ResourceSubject::Path { .. }))
-                    || !grant.grant.basis.leases.is_empty()
             })
         {
             return Err(StoreError::HostPathIdentityUnresolved);
@@ -1575,36 +827,18 @@ impl SqliteStore {
             .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
         let policy = Self::load_active_control_policy(&transaction)?;
         let task_admission_epoch = transaction.query_row(
-            "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",
+            "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
             [session.task_id.0.to_string()],
             |row| row.get::<_, i64>(0),
         )?;
         let head = Self::latest_task_cursor(&transaction, session.task_id)?;
-        let (task_state, membership) = transaction.query_row(
-            "SELECT t.state,
-                    EXISTS(
-                        SELECT 1 FROM task_participants
-                        WHERE task_id = t.task_id AND session_id = ?2
-                    ) AND EXISTS(
-                        SELECT 1 FROM session_bindings
-                        WHERE task_id = t.task_id AND session_id = ?2
-                    )
-             FROM tasks t WHERE t.task_id = ?1 AND t.project_id = ?3",
-            params![session.task_id.0.to_string(), session_id.0, project_id.0],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        let anchor_exists = Self::control_anchor_exists(&transaction, project_id, session.task_id)?;
+        let membership = Self::session_is_current_participant(
+            &transaction,
+            project_id,
+            session.task_id,
+            session_id,
         )?;
-        let current_leases =
-            Self::active_work_lease_bases(&transaction, session.task_id, session_id, now)?
-                .into_iter()
-                .filter(|lease| {
-                    grant
-                        .grant
-                        .basis
-                        .leases
-                        .iter()
-                        .any(|granted| granted.lease_id == lease.lease_id)
-                })
-                .collect();
         let context_current = if let Some(context) = grant
             .grant
             .delivery
@@ -1643,12 +877,12 @@ impl SqliteStore {
             work_binding: session.work_binding.clone(),
             work_binding_current,
             phase: session.phase,
-            participant_membership: if membership == 1 {
+            participant_membership: if membership {
                 ParticipantMembership::Member
             } else {
                 ParticipantMembership::NotMember
             },
-            task_state: Some(parse_enum(&task_state)?),
+            anchor_exists,
             grant_state: grant.state,
             current_epochs: ControlEpochs {
                 project_policy: policy.epoch,
@@ -1658,7 +892,6 @@ impl SqliteStore {
             context_current,
             capability_map_revision: session.capability_map_revision,
             delivery_tokens: delivery_tokens.to_vec(),
-            leases: current_leases,
             observed_at: now,
         };
         let decision = match crate::control::evaluate_turn_begin(&grant.grant, &snapshot) {
@@ -2075,9 +1308,6 @@ impl SqliteStore {
                         &transaction,
                         &evidence,
                     )?);
-                }
-                if matches!(next_intent, TurnNextIntent::Exit) {
-                    Self::terminalize_session_work_leases(&transaction, &session, now, false)?;
                 }
                 let event = TurnCheckpointEvent {
                     schema_version: SCHEMA_VERSION,

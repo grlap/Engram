@@ -335,7 +335,11 @@ A host that wants Engram to admit every model turn uses the host-private
 JSON-lines control channel (`session_bind → turn_evaluate → turn_begin →
 turn_checkpoint`) and withholds the prompt until Engram grants and begins the
 turn. Every frame is strict: exactly the current field set, no additive or
-legacy fields. Action gating, organizational-authority mediation, and
+legacy fields. Resource-lease acquisition/release, host obligation waiver,
+and the finalizer purpose/phase are removed; hosts must not send those frames.
+An empty resource_intents list remains valid. Control sessions bind directly
+by project and external reference, without starting a compatibility task.
+Action gating, organizational-authority mediation, and
 action-outcome reconciliation are planned and fail closed today; see the
 [behavioral control plane](features/behavioral-control-plane.md).
 

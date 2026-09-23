@@ -43,7 +43,7 @@ model itself.
   remain the only ways forward. An explicit override authority, if ever wanted,
   is designed separately before it is implemented.
 - **Default unchanged.** Projects without an acceptance-evaluation policy keep
-  the existing path; its receipts now name it `self-asserted (legacy)`.
+  the existing path; its receipts now name it `self-asserted`.
 
 ## Modes
 
@@ -52,7 +52,7 @@ security ladder; policy expresses compatibility explicitly.
 
 | Mode | Who evaluates | Identity relation to the completing session | Assurance recorded |
 | --- | --- | --- | --- |
-| `same_session` | the completing session itself, as an explicit continuation | same session id | asserted self-evaluation; distinct from the legacy self-asserted path because a real per-criterion record exists |
+| `same_session` | the completing session itself, as an explicit continuation | same session id | asserted self-evaluation; distinct from the self-asserted path because a real per-criterion record exists |
 | `sub_agent` | an evaluator spawned under the completing session | same or host-assigned session id, plus a distinct `execution_identity` and a host-attested `parent_session` | asserted; a host channel may later raise it, the core never infers it |
 | `independent_session` | a separate session, possibly a different model or provider | session id differs from the claim holder and from every recorded executor session of the run | asserted independence enforced structurally on session identity |
 
@@ -68,13 +68,13 @@ existing immutable authority/epoch/compare-and-swap path with a new
 
 ```text
 acceptance_evaluation {
-  allowed_modes: [same_session | sub_agent | independent_session]  # empty = legacy path
+  allowed_modes: [same_session | sub_agent | independent_session]  # empty = self-asserted path
   mechanical_basis: asserted | observed     # minimum evidence for a pass on an observed-type basis
   require_source_freshness: bool            # completion must present a matching source fingerprint
 }
 ```
 
-- Empty `allowed_modes` is the default and keeps the legacy self-asserted
+- Empty `allowed_modes` is the default and keeps the self-asserted
   completion. Any non-empty set switches the project to evaluated completion.
 - `allowed_modes` is a set, not a floor. "Independent only" is
   `[sub_agent, independent_session]`; "exactly this mode" is a one-element set.
@@ -288,11 +288,11 @@ Under an evaluated policy `done`:
    text and in the completed item's `show` text, with
    `acceptance: {provenance, evaluation, mode, assurance, evaluator,
    evaluator_model}` in `done` JSON and in the completed item's `show` JSON.
-   Legacy completions report `acceptance: self-asserted (legacy)` in both
-   texts and `acceptance: {provenance: self_asserted}` in `done` JSON only:
-   a legacy completed item's `show` JSON keeps its exact pre-feature shape
-   (no `acceptance` key), so hosts reading legacy items see no new field and
-   the seal-failure read invariance holds. The evaluator label is the
+   Self-asserted completions report `acceptance: self-asserted` in both
+   texts and `acceptance: {provenance: self_asserted}` in both `done` and
+   completed `show` JSON. Every completed item has an `acceptance` block;
+   missing or unreadable completion provenance is `unavailable`, not inferred
+   self-assertion. The evaluator label is the
    recorded asserted display identity, nothing stronger, and the
    `<assurance>` is the completing actor's assurance as sealed in the
    acceptance vector (asserted in V1), not a claim about the evaluator.
@@ -300,10 +300,10 @@ Under an evaluated policy `done`:
    shared check is disclosed rather than silently omitted: `show` prints
    `acceptance: provenance unavailable (…)` with `diagnostic class: <class>`
    and its JSON carries `acceptance: {provenance: unavailable, error_class}`,
-   so a broken evaluated binding never reads like a legacy omission, while
-   `doctor` and completion stay strict. A seal that cannot be read at all
-   keeps the legacy read shape and is disclosed through the criterion
-   evidence read's diagnostic class, as before.
+   so a broken evaluated binding never reads like self-assertion, while
+   `doctor` and completion stay strict. An unreadable seal or restored history
+   without a seal also reports `provenance: unavailable`; criterion-evidence
+   diagnostics retain the specific read failure when available.
 
 Refusals extend the typed recovery causes; each carries one recovery command:
 
@@ -354,7 +354,7 @@ newest evaluation on the run feed; "fresh" means F1–F7 hold.
 | S2 failed | `E` fresh, some verdict `fail` | refuse `AcceptanceFailed` | corrective work → new `evaluate` → S1/S2/S3/S4; a revision → S0 |
 | S3 insufficient | `E` fresh, some `insufficient_evidence`, none `fail` | refuse `AcceptanceInsufficientEvidence` | record evidence → new `evaluate` |
 | S4 needs human | `E` fresh, some `needs_human`, none `fail`/`insufficient` | refuse `AcceptanceNeedsHuman` | a human decision, expressed as a separately authorized `update --accept` (revision → S0) or cancellation |
-| L legacy | policy has no allowed modes | existing path; receipt says self-asserted (legacy) | policy update |
+| L self-asserted | policy has no allowed modes | existing path; receipt says self-asserted | policy update |
 
 `evaluate` itself refuses under R1–R9 without changing state. Precedence when a
 mixed evaluation exists: `fail` before `insufficient_evidence` before
@@ -367,7 +367,7 @@ tests cite the row identifier in a nearby comment.
 
 | Row | Fixture | Expected |
 | --- | --- | --- |
-| B01 | legacy policy (no allowed modes); `done` without evaluation | seals as today; receipt names `self-asserted (legacy)`; `evaluate` refuses "policy does not enable acceptance evaluation" |
+| B01 | self-asserted policy (no allowed modes); `done` without evaluation | seals as today; receipt names `self-asserted`; `evaluate` refuses "policy does not enable acceptance evaluation" |
 | B02 | evaluated policy; no evaluation; `done` | refuse `MissingAcceptanceEvaluation` for criterion 1; command names `evaluate`; no seal, no capture side effects beyond the existing pending attempt |
 | B03 | `same_session` allowed; evaluator = holder; all `pass` (judgment) | record accepted; `done` seals; seal binds the evaluation; receipt `evaluated (same_session, asserted)` |
 | B04 | policy `[sub_agent, independent_session]`; same-session record | refuse at write; nothing appended |
@@ -393,7 +393,7 @@ tests cite the row identifier in a nearby comment.
 | B24 | attempt identity: same key + same payload; same key + changed payload; new key + same payload; keyless identical resend; the same explicit key on another item | replay / refuse / new object / replay / a separate attempt |
 | B25 | evaluated policy; `done` with explicit acceptance or `--link` | refuse with guidance naming `evaluate` (`work_criterion_link_invalid` for links); the run feed head does not move |
 | B26 | evaluator failure modeled as no record | `done` refuses `MissingAcceptanceEvaluation`; no fallback |
-| B27 | seals and policies recorded before this feature | read unchanged; doctor healthy; legacy receipts |
+| B27 | seals and policies recorded before this feature | read unchanged; doctor healthy; self-asserted receipts |
 | B28 | `done "summary"` capture and its checkpoint after the evaluation | still fresh; seal binds the evaluation |
 | B29 | `show` and `next` on an evaluated item | per-criterion newest verdict, basis, evaluator label, mode, and freshness; `done` receipt names the path |
 | B30 | host-owned (not a core test): TermAl evaluator spawn, attested sub-agent identity, fingerprint at completion, observed build via the control channel | documented in the host item; end-to-end acceptance stays open until exercised |
@@ -405,14 +405,14 @@ tests cite the row identifier in a nearby comment.
 | B36 | seal re-frozen to bind another run's evaluation, with its completion event and run projection re-frozen too | doctor reports `completion_seal:<id>:acceptance_evaluation_binding`; an evaluated completion is healthy end to end before the forgery |
 | B37 | policy version re-frozen to disagree with its authority decision on `acceptance_evaluation` | the version does not load ("authority is invalid"); doctor reports `control_policy_version:<id>` and leaves the audited operation receipt healthy |
 | B38 | evaluator model segment blank, over 128 bytes, or with a control character, submitted to the core | refuse at write; run feed unchanged |
-| B39 | `set-acceptance-evaluation` with an empty mode list and non-default other fields, from legacy and from an evaluated policy | normalizes to the legacy policy; requested, stored (bytes omit the field), and read policies agree; `changed: false` when already legacy |
+| B39 | `set-acceptance-evaluation` with an empty mode list and non-default other fields, from self-asserted and from an evaluated policy | normalizes to the self-asserted policy; requested, stored (bytes omit the field), and read policies agree; `changed: false` when already self-asserted |
 | B40 | `work_run_evidence.verification_result` disagrees with the canonical `VerificationEvidence` | `evaluate` refuses with an invalid-projection error; nothing is admitted from the column |
 | B41 | citations as `show --notes --gates` prints them: a gate and a holder note together (judgment); a non-holder observation; another item's note; an artifact path | accepted, the record keeps the full ids / refused naming the locator and "observation" / refused ("not a note/gate on this item") / refused ("not the recorded evidence identity") |
 | B42 | `require_source_freshness`; `show` after an evaluation with a fingerprint; `done` without one | `show` reports the fingerprint as checked at `done`, not stale; `done` refuses `source` and the remedy names `--source-fingerprint` |
-| B43 | legacy and evaluated completions read through `done`, completed `show`, and `next --peek` on the focused evaluated item | `acceptance: self-asserted (legacy)` in `done` and `show` text with `provenance: self_asserted` in `done` JSON and no `acceptance` key in the legacy `show` JSON / `acceptance: evaluated (same_session, asserted) by <evaluator>` with the JSON `acceptance` block in both; `next` prints `evaluation: <mode> P/N pass, fresh` under the focus |
+| B43 | self-asserted and evaluated completions read through `done`, completed `show`, and `next --peek` on the focused evaluated item | `acceptance: self-asserted` in `done` and `show` text with `provenance: self_asserted` in both `done` and completed `show` JSON / `acceptance: evaluated (same_session, asserted) by <evaluator>` with the JSON `acceptance` block in both; `next` prints `evaluation: <mode> P/N pass, fresh` under the focus |
 | B44 | `update --evaluation-mode same_session`, then `--clear-evaluation-mode`, then a clear on the already unpinned item | `show` history and a peer's `next` deltas carry two `revised` entries naming `evaluation mode` and one reading `no planning change` |
 | B45 | `add` with an empty or whitespace `--evaluation-mode` for a root and for a `--under` child; omitted; a valid word | refused before any effect (no item, project feed and focus unchanged) / created without a pin / created pinned |
-| B46 | completed evaluated item whose bound evaluation object no longer decodes | `show` still reads: text `acceptance: provenance unavailable (…)` with `diagnostic class: <class>`, JSON `acceptance: {provenance: unavailable, error_class}`; `doctor` reports the store unhealthy; a legacy `show` keeps no `acceptance` key |
+| B46 | completed evaluated item whose bound evaluation object no longer decodes | `show` still reads: text `acceptance: provenance unavailable (…)` with `diagnostic class: <class>`, JSON `acceptance: {provenance: unavailable, error_class}`; `doctor` reports the store unhealthy; a self-asserted completed `show` returns `acceptance: {provenance: self_asserted}` |
 | B47 | direct core completion under an evaluated policy whose evidence set omits a cited object / carries it; the service `done` with a narrower explicit evidence set while the fresh pass cites a note and host-minted verification evidence | refused ("cites evidence outside the completion evidence set"), item stays open / seals with the citation in `seal.evidence`; the service unions the citations, so the seal names them and the completion checkpoint acknowledges them |
 | B48 | seal re-frozen to bind an older pass while a newer `fail` or `needs_human` evaluation sits before the completion cut; the unforged seal; the bounded newest read with a cut before the newest record | doctor reports `completion_seal:<id>:acceptance_evaluation_binding`, the shared check refuses ("is not the newest evaluation … at the completion cut"), `show` reads with `provenance: unavailable` / healthy / returns the older record, excluding anything after the cut |
 | B49 | MCP `update` with action `revise` and a supplied `evaluation_mode` (valid or blank); action `evaluation_mode` with a word, then omitted | `invalid_argument` on `evaluation_mode` before any effect, item, feed, and focus unchanged / pinned, then cleared, both named in history |
@@ -434,7 +434,7 @@ revision from `show` (exactly as `done --link`), `--evidence-basis` the
 run-feed position `show` prints beside it under an evaluated policy, which the
 evaluator read through, and `LOCATOR` a note/gate locator from `show --notes
 --gates` or the full id of host-minted verification or environment evidence
-(R7). Legacy projects keep their unchanged `show` shape. MCP `evaluate` takes
+(R7). Open items in self-asserted projects keep their unchanged `show` shape. MCP `evaluate` takes
 the same data as `mode`, `acceptance_basis`, `evidence_basis`, `verdicts:
 [{criterion, verdict, basis, rationale, evidence: [locator]}]`, and the
 optional fields. The receipt is a bounded projection of the immutable record,
@@ -484,7 +484,7 @@ identity assurance beyond the recorded one.
 
 Operators enable the feature with
 `engram control-policy set-acceptance-evaluation --modes M[,M] --mechanical-basis asserted|observed [--require-source-freshness] --authorized-by ACTOR --idempotency-key KEY`;
-an empty mode list restores the legacy path through the same audited
+an empty mode list restores the self-asserted path through the same audited
 transition.
 Changing this policy does not require justification text. The operator,
 selected policy, compare-and-swap basis and retry key remain explicit;
@@ -526,7 +526,8 @@ until the host integration exists.
 No durable DDL change: the evaluation is a canonical object with a run-feed
 entry; the policy field is part of the canonical policy object; the task mode
 lives in the item's canonical projection; the seal gains an optional field.
-Each new field is omitted from canonical bytes when it holds its legacy value,
+Each new field is omitted from canonical bytes when it holds its default value
+(self-asserted policy, absent task mode or absent seal evaluation),
 so records written without the feature re-serialize to the same bytes; the
 policy-history replay and seal tests exercise that. Nothing more is claimed:
 opening a store written by a different build stays governed by the generic
@@ -545,7 +546,7 @@ selection, the freshness rules, completion enforcement with the recovery
 causes above, the `evaluate` word on the CLI and MCP, and the `show` and
 `next` disclosures. Storage tests cover the boundary matrix rows with fixtures,
 including host-minted observed evidence through the control checkpoint
-protocol. The bootstrap policy stays legacy; no project has the feature
+protocol. The bootstrap policy stays self-asserted; no project has the feature
 enabled.
 
 The first read-only review pair (2026-09-17) produced twelve corrections,
@@ -555,7 +556,7 @@ shared seal-to-evaluation binding check with its doctor label and the
 authority-to-policy comparison (B36, B37), completion provenance in `done`,
 `show`, and `next` (B43), `done --source-fingerprint` with source checks at
 `done` rather than at read (F4, B42), core evaluator-model bounds (R9),
-legacy policy normalization (B39), the exact attempt key in the preflight and
+self-asserted policy normalization (B39), the exact attempt key in the preflight and
 item-scoped explicit keys with a run-scoped content identity (R8), canonical
 verification classification (R10), and doctor's decoding of
 `set_acceptance_evaluation` receipts, which the fixtures' positive controls
