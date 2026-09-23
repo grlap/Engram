@@ -24,13 +24,9 @@ configuration, tuned against the [evaluation harness](../spec.md#10-evaluation--
 
 ## Fail closed
 
-The pinned tier is never silently truncated **and never self-contradictory**.
-Packet construction fails before the agent acts when the pinned tier cannot
-fit its budget, or when an unresolved contradiction stands between two
-applicable hard/firm pinned records — delivering both would ask the model to
-improvise policy precedence. The error names the records needing merge,
-demotion, or resolution. A dropped convention is a nuisance; a dropped or
-ambiguous "never do X" is an incident.
+The pinned tier is never silently truncated. Packet construction fails before
+the agent acts when the pinned tier cannot fit its budget. A dropped
+convention is a nuisance; a dropped "never do X" is an incident.
 
 ## The index tier
 
@@ -48,16 +44,11 @@ decisions: an old, recently-verified decision outranks a new, unverified one.
 
 ## Reproducibility
 
-Every packet has a content hash; `engram context explain <packet-id>` shows
-exactly what was included, omitted, and why. Every packet item carries its
-retrieval reason and evidence pointers, so an agent can cite — and a human
-can audit — the chain from context back to source.
-
-The packet fingerprint is a receipt, not an access capability. Explanation returns
-packet bodies only to the same project and owning agent while every task or
-exact work-item anchor in the packet remains active for the requesting
-session. Rebinding a task or changing work focus makes the old anchored packet
-unexplainable even though its immutable bytes remain stored.
+Every packet is stored as an immutable record with a content fingerprint.
+Every packet item carries its retrieval reason and evidence pointers, and the
+packet lists what it omitted, so an agent can cite — and a human can audit —
+the chain from context back to source. The fingerprint is a receipt, not an
+access capability; no command returns a stored packet by its fingerprint.
 
 The packet also carries typed `FeedPosition { kind, id, position }` values for
 the persisted focus's named dense project, root-work, and active run-execution

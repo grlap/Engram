@@ -260,7 +260,6 @@ impl SqliteStore {
         Self::require_task_local_cursor_schema(&connection)?;
         Self::preflight_host_path_policy(&connection, None)?;
         Self::preflight_control_policy_schema(&connection)?;
-        Self::require_current_contradiction_edges(&connection)?;
 
         let work_schema_version = work::schema_version(&connection)?;
         // Keep repair and exhaustive verification in one writer transaction.
@@ -741,33 +740,6 @@ impl SqliteStore {
                  active_count INTEGER NOT NULL CHECK(active_count >= 0),
                  change_position INTEGER NOT NULL CHECK(change_position >= 0)
              ) STRICT;
-             CREATE TABLE IF NOT EXISTS memory_contradictions (
-                 contradiction_id TEXT PRIMARY KEY REFERENCES objects(object_id),
-                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
-                 left_version_id TEXT NOT NULL REFERENCES objects(object_id),
-                 right_version_id TEXT NOT NULL REFERENCES objects(object_id),
-                 UNIQUE(left_version_id, right_version_id),
-                 CHECK(left_version_id < right_version_id)
-             ) STRICT;
-             CREATE INDEX IF NOT EXISTS memory_contradictions_versions
-                 ON memory_contradictions(left_version_id, right_version_id);
-             CREATE TABLE IF NOT EXISTS memory_contradiction_edges (
-                 contradiction_id TEXT PRIMARY KEY REFERENCES objects(object_id),
-                 project_id TEXT NOT NULL,
-                 task_id TEXT,
-                 work_root_id TEXT,
-                 left_version_id TEXT NOT NULL REFERENCES objects(object_id),
-                 right_version_id TEXT NOT NULL REFERENCES objects(object_id),
-                 UNIQUE(left_version_id, right_version_id),
-                 CHECK(left_version_id < right_version_id)
-             ) STRICT;
-             CREATE INDEX IF NOT EXISTS memory_contradiction_edges_context
-                 ON memory_contradiction_edges(project_id, task_id, work_root_id);
-             CREATE TABLE IF NOT EXISTS contradiction_intents (
-                 idempotency_key TEXT PRIMARY KEY,
-                 request_hash TEXT NOT NULL,
-                 receipt_json BLOB NOT NULL
-             ) STRICT;
              CREATE TABLE IF NOT EXISTS tasks (
                  task_id TEXT PRIMARY KEY,
                  project_id TEXT NOT NULL,
@@ -799,19 +771,6 @@ impl SqliteStore {
                   UNIQUE(task_id, task_cursor),
                   UNIQUE(task_id, object_id)
               ) STRICT;
-             CREATE TABLE IF NOT EXISTS control_observations (
-                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                 session_id TEXT NOT NULL,
-                 task_id TEXT,
-                 idempotency_key TEXT NOT NULL,
-                 intent_hash TEXT NOT NULL,
-                 input_json BLOB NOT NULL,
-                 decision_json BLOB NOT NULL,
-                 observed_at_ms INTEGER NOT NULL,
-                 UNIQUE(session_id, idempotency_key)
-             ) STRICT;
-             CREATE INDEX IF NOT EXISTS control_observations_session_sequence
-                 ON control_observations(session_id, sequence);
              CREATE TABLE IF NOT EXISTS control_policy_state (
                  singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                  schema_version INTEGER NOT NULL,
@@ -964,11 +923,7 @@ impl SqliteStore {
             connection.execute_batch(
                 "INSERT INTO project_context_revisions (project_id, revision)
                  SELECT project_id, COUNT(*)
-                 FROM (
-                     SELECT project_id FROM memory_heads WHERE scope_kind = 'project'
-                     UNION ALL
-                     SELECT project_id FROM memory_contradiction_edges
-                 )
+                 FROM memory_heads WHERE scope_kind = 'project'
                  GROUP BY project_id
                  ON CONFLICT(project_id) DO NOTHING;
                  INSERT INTO agent_context_revisions (project_id, agent_id, revision)
@@ -999,7 +954,6 @@ impl SqliteStore {
         }
         work::initialize_schema(&mut connection, allow_initialization)?;
         let work_schema_version = work::schema_version(&connection)?;
-        Self::require_current_contradiction_edges(&connection)?;
         Ok(Self {
             connection,
             work_schema_version,
@@ -1532,14 +1486,8 @@ impl SqliteStore {
                  ON memory_heads(project_id, task_id, work_id, agent_id, status);
              CREATE INDEX IF NOT EXISTS memory_heads_work_scope
                  ON memory_heads(project_id, work_id, agent_id, status);
-             CREATE INDEX IF NOT EXISTS memory_contradictions_versions
-                 ON memory_contradictions(left_version_id, right_version_id);
-             CREATE INDEX IF NOT EXISTS memory_contradiction_edges_context
-                 ON memory_contradiction_edges(project_id, task_id, work_root_id);
              CREATE UNIQUE INDEX IF NOT EXISTS task_changes_task_cursor
                  ON task_changes(task_id, task_cursor);
-             CREATE INDEX IF NOT EXISTS control_observations_session_sequence
-                 ON control_observations(session_id, sequence);
              CREATE INDEX IF NOT EXISTS control_sessions_work_run
                  ON control_sessions(project_id, run_id, session_id);
              CREATE INDEX IF NOT EXISTS control_work_leases_task_state
@@ -1651,17 +1599,12 @@ impl SqliteStore {
                                 stored.memory_id, assertion_id
                             ))
                         })?;
-                let status = Self::expected_memory_head_status_on(
-                    connection,
-                    &version_id,
-                    assertion.status,
-                )?;
                 let expected = Self::expected_memory_head_projection(
                     &version_id,
                     &assertion_id,
                     &version,
                     &assertion,
-                    status,
+                    assertion.status,
                 )?;
                 if stored != expected {
                     return Err(StoreError::InvalidMemoryProjection(format!(
@@ -1681,29 +1624,6 @@ impl SqliteStore {
             }
         }
         Ok(())
-    }
-
-    pub(super) fn expected_memory_head_status_on(
-        connection: &Connection,
-        version_id: &ObjectId,
-        asserted: MemoryStatus,
-    ) -> Result<MemoryStatus, StoreError> {
-        if !matches!(asserted, MemoryStatus::Active | MemoryStatus::Stale) {
-            return Ok(asserted);
-        }
-        let contradicted = connection.query_row(
-            "SELECT EXISTS(
-                 SELECT 1 FROM memory_contradiction_edges
-                 WHERE left_version_id = ?1 OR right_version_id = ?1
-             )",
-            [version_id.as_str()],
-            |row| row.get::<_, bool>(0),
-        )?;
-        Ok(if contradicted {
-            MemoryStatus::Contested
-        } else {
-            asserted
-        })
     }
 
     pub(super) fn expected_memory_head_projection(
@@ -1919,30 +1839,6 @@ impl SqliteStore {
                 |row| row.get::<_, bool>(0),
             )
             .map_err(StoreError::from)
-    }
-
-    fn require_current_contradiction_edges(connection: &Connection) -> Result<(), StoreError> {
-        let missing = connection.query_row(
-            "SELECT COUNT(*)
-             FROM memory_contradictions contradiction
-             JOIN tasks task ON task.task_id = contradiction.task_id
-             LEFT JOIN memory_contradiction_edges edge
-               ON edge.contradiction_id = contradiction.contradiction_id
-              AND edge.project_id = task.project_id
-              AND edge.task_id = contradiction.task_id
-              AND edge.work_root_id IS NULL
-              AND edge.left_version_id = contradiction.left_version_id
-              AND edge.right_version_id = contradiction.right_version_id
-             WHERE edge.contradiction_id IS NULL",
-            [],
-            |row| row.get::<_, i64>(0),
-        )?;
-        if missing != 0 {
-            return Err(StoreError::InvalidMemoryProjection(
-                "task contradiction projections do not match the current schema".into(),
-            ));
-        }
-        Ok(())
     }
 
     fn preflight_host_path_policy(

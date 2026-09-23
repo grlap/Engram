@@ -17,7 +17,7 @@ use super::{
     TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
     TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
     TurnEvaluationInput, TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason,
-    TurnIntent, TurnNextIntent, TurnObservationIntentFingerprint, Utc, VerificationEvidence,
+    TurnIntent, TurnIntentFingerprint, TurnNextIntent, Utc, VerificationEvidence,
     VerificationEvidenceInput, VerificationKind, VerificationResult,
     WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION, WorkLease, WorkLeaseAcquireFingerprint,
     WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseFingerprint, WorkLeaseReleaseReceipt,
@@ -37,6 +37,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when required binding data is empty or the
     /// atomic task/event write fails.
+    #[cfg(test)]
     pub fn start_task(
         &mut self,
         project_id: &crate::domain::ProjectId,
@@ -65,6 +66,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError::TaskReferenceNotFound`] when no matching task
     /// exists, or another storage error when joining cannot commit.
+    #[cfg(test)]
     pub fn join_task(
         &mut self,
         project_id: &crate::domain::ProjectId,
@@ -86,6 +88,7 @@ impl SqliteStore {
         )
     }
 
+    #[cfg(test)]
     fn bind_task(
         &mut self,
         project_id: &crate::domain::ProjectId,
@@ -255,6 +258,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when the bind is invalid, conflicts with an
     /// earlier request key, or cannot be persisted safely.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub fn bind_control_session(
         &mut self,
@@ -723,16 +727,15 @@ impl SqliteStore {
                 session.task_id,
                 session_id,
             )?
-            || !matches!(
-                Self::task_state_on(&transaction, project_id, session.task_id)?,
-                TaskState::Active
-            )
         {
             return Err(StoreError::InvalidControlSession(
                 "lease acquisition requires a synchronized ready participant on an active task"
                     .into(),
             ));
         }
+        // A bound task is always active; reading it still refuses a stored
+        // state this build does not know.
+        Self::task_state_on(&transaction, project_id, session.task_id)?;
 
         let rows = Self::project_work_lease_rows(&transaction, project_id)?;
         let decoded = rows
@@ -1176,7 +1179,7 @@ impl SqliteStore {
         let mut session = Self::load_control_session_on(&transaction, session_id)?
             .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
         Self::verify_control_session(&session, project_id, routing_token)?;
-        let intent_object = CanonicalObject::freeze(&TurnObservationIntentFingerprint {
+        let intent_object = CanonicalObject::freeze(&TurnIntentFingerprint {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             session_id,
             task_id: Some(session.task_id),
@@ -1260,9 +1263,6 @@ impl SqliteStore {
                 now,
             ) {
                 Ok(packet) => (PacketSafety::Safe, Some(packet)),
-                Err(StoreError::PinnedContradiction { .. }) => {
-                    (PacketSafety::PinnedContradiction, None)
-                }
                 Err(StoreError::PinnedBudgetExceeded { .. }) => {
                     (PacketSafety::PinnedBudgetExceeded, None)
                 }
@@ -1721,6 +1721,7 @@ impl SqliteStore {
         clippy::too_many_lines,
         reason = "checkpoint closes the grant and emits its canonical transition atomically"
     )]
+    #[cfg(test)]
     pub fn checkpoint_control_turn(
         &mut self,
         project_id: &crate::domain::ProjectId,
@@ -1759,6 +1760,7 @@ impl SqliteStore {
         clippy::too_many_lines,
         reason = "checkpoint closes the grant and emits its canonical transition atomically"
     )]
+    #[cfg(test)]
     pub fn checkpoint_control_turn_with_observations(
         &mut self,
         project_id: &crate::domain::ProjectId,

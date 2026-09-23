@@ -1,5 +1,5 @@
 //! Typed memory vocabulary: kinds, authority, delivery, scope, status,
-//! immutable versions, project-memory records, notes, and contradictions.
+//! immutable versions, project-memory records, and notes.
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
@@ -112,7 +112,6 @@ impl Scope {
 pub enum MemoryStatus {
     Proposed,
     Active,
-    Contested,
     Stale,
     Retracted,
     Expired,
@@ -324,37 +323,6 @@ pub struct NoteReceipt {
     pub work_positions: Vec<FeedPosition>,
     pub classification_reason: String,
     pub policy_reason: String,
-    pub duplicate: bool,
-}
-
-/// Immutable declaration that two memory versions cannot both guide action.
-/// Hash ordering is canonicalized before this object is frozen.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct MemoryContradictionEvent {
-    pub schema_version: u16,
-    pub project_id: ProjectId,
-    #[serde(default)]
-    pub task_id: Option<TaskId>,
-    #[serde(default)]
-    pub work_root_id: Option<WorkId>,
-    pub left_version: ObjectId,
-    pub right_version: ObjectId,
-    pub reason: String,
-    pub actor: ActorContext,
-    pub created_at: DateTime<Utc>,
-}
-
-/// Idempotent result of declaring an explicit contradiction.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct MemoryContradictionReceipt {
-    pub idempotency_key: String,
-    pub contradiction: ObjectId,
-    pub left_version: ObjectId,
-    pub right_version: ObjectId,
-    #[serde(default)]
-    pub cursor: Option<ChangeCursor>,
-    #[serde(default)]
-    pub work_positions: Vec<FeedPosition>,
     pub duplicate: bool,
 }
 

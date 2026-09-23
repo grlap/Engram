@@ -18,9 +18,12 @@ use crate::{
 fn with_retired_tables(path: &Path) {
     populated(path);
     let connection = Connection::open(path).expect("fixture");
+    // Retired rows are carried by export and never inserted by import, so
+    // their references are not what these fixtures exercise.
     connection
         .execute_batch(
-            "CREATE TABLE task_claims (
+            "PRAGMA foreign_keys = OFF;
+         CREATE TABLE task_claims (
             task_id TEXT PRIMARY KEY, lease_id TEXT NOT NULL UNIQUE,
             holder_session_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
             expires_at_ms INTEGER NOT NULL, revision INTEGER NOT NULL
@@ -35,11 +38,46 @@ fn with_retired_tables(path: &Path) {
             external_ref TEXT, state TEXT NOT NULL, last_error TEXT,
             attempt_count INTEGER NOT NULL DEFAULT 0, receipt_json TEXT
          ) STRICT;
+         CREATE TABLE control_observations (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL, task_id TEXT, idempotency_key TEXT NOT NULL,
+            intent_hash TEXT NOT NULL, input_json BLOB NOT NULL,
+            decision_json BLOB NOT NULL, observed_at_ms INTEGER NOT NULL,
+            UNIQUE(session_id, idempotency_key)
+         ) STRICT;
+         CREATE TABLE memory_contradictions (
+            contradiction_id TEXT PRIMARY KEY REFERENCES objects(object_id),
+            task_id TEXT NOT NULL REFERENCES tasks(task_id),
+            left_version_id TEXT NOT NULL REFERENCES objects(object_id),
+            right_version_id TEXT NOT NULL REFERENCES objects(object_id),
+            UNIQUE(left_version_id, right_version_id),
+            CHECK(left_version_id < right_version_id)
+         ) STRICT;
+         CREATE TABLE memory_contradiction_edges (
+            contradiction_id TEXT PRIMARY KEY REFERENCES objects(object_id),
+            project_id TEXT NOT NULL, task_id TEXT, work_root_id TEXT,
+            left_version_id TEXT NOT NULL REFERENCES objects(object_id),
+            right_version_id TEXT NOT NULL REFERENCES objects(object_id),
+            UNIQUE(left_version_id, right_version_id),
+            CHECK(left_version_id < right_version_id)
+         ) STRICT;
+         CREATE TABLE contradiction_intents (
+            idempotency_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL,
+            receipt_json BLOB NOT NULL
+         ) STRICT;
          INSERT INTO task_claims VALUES ('task', 'lease', 'old-session', 'claim', 1, 1);
          INSERT INTO task_claim_intents VALUES ('claim', 'task', 'old-session', X'7B7D');
          INSERT INTO publication_intents
             SELECT 'publication', object_id, 'external', 'pending', NULL, 0, NULL
-            FROM objects LIMIT 1;",
+            FROM objects LIMIT 1;
+         INSERT INTO control_observations (
+            session_id, task_id, idempotency_key, intent_hash,
+            input_json, decision_json, observed_at_ms
+         ) VALUES ('old-session', 'task', 'observe', 'intent', X'7B7D', X'7B7D', 1);
+         INSERT INTO memory_contradictions VALUES ('contradiction', 'task', 'left', 'right');
+         INSERT INTO memory_contradiction_edges
+            VALUES ('contradiction', 'project', 'task', NULL, 'left', 'right');
+         INSERT INTO contradiction_intents VALUES ('contradict', 'request', X'7B7D');",
         )
         .expect("retired fixture rows");
     // Historical canonical audit remains an opaque record with its original id.
@@ -65,7 +103,15 @@ fn retired_tables_export_losslessly_and_import_reports_only_explicit_omissions()
     let input = fs::read(&file).expect("export bytes");
     let imported = import_json(&file, &target).expect("fresh schema import");
     let after = rows(&target);
-    for name in ["task_claims", "task_claim_intents", "publication_intents"] {
+    for name in [
+        "task_claims",
+        "task_claim_intents",
+        "publication_intents",
+        "control_observations",
+        "memory_contradictions",
+        "memory_contradiction_edges",
+        "contradiction_intents",
+    ] {
         assert_eq!(
             exported
                 .tables
@@ -322,6 +368,61 @@ fn unknown_table_beside_retired_tables_still_refuses_by_name() {
     let error = import_json(&file, &target).unwrap_err().to_string();
     assert!(error.contains("table unknown_data has no place"), "{error}");
     assert!(!target.exists());
+}
+
+#[test]
+fn retired_tables_under_their_pre_rename_column_names_are_left_out() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("store.jsonl");
+    let target = directory.path().join("target.db");
+    populated(&source);
+    Connection::open(&source)
+        .unwrap()
+        .execute_batch(
+            "PRAGMA foreign_keys = OFF;
+             CREATE TABLE control_observations (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL, task_id TEXT, idempotency_key TEXT NOT NULL,
+                intent_hash TEXT NOT NULL, input_json BLOB NOT NULL,
+                decision_json BLOB NOT NULL, observed_at_ms INTEGER NOT NULL,
+                input_hash TEXT, decision_hash TEXT
+             ) STRICT;
+             CREATE TABLE memory_contradictions (
+                contradiction_hash TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+                left_version_hash TEXT NOT NULL, right_version_hash TEXT NOT NULL
+             ) STRICT;
+             CREATE TABLE memory_contradiction_edges (
+                contradiction_hash TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                task_id TEXT, work_root_id TEXT,
+                left_version_hash TEXT NOT NULL, right_version_hash TEXT NOT NULL
+             ) STRICT;
+             INSERT INTO control_observations (
+                session_id, task_id, idempotency_key, intent_hash, input_json,
+                decision_json, observed_at_ms, input_hash, decision_hash
+             ) VALUES ('old-session', 'task', 'observe', 'intent', X'7B7D', X'7B7D', 1,
+                'input', 'decision');
+             INSERT INTO memory_contradictions VALUES ('contradiction', 'task', 'left', 'right');
+             INSERT INTO memory_contradiction_edges
+                VALUES ('contradiction', 'project', 'task', NULL, 'left', 'right');",
+        )
+        .unwrap();
+    export_json(&source, &file).unwrap();
+    let imported = import_json(&file, &target).expect("pre-rename retired tables import");
+    let after = rows(&target);
+    for name in [
+        "control_observations",
+        "memory_contradictions",
+        "memory_contradiction_edges",
+    ] {
+        let omitted = imported
+            .left_out
+            .iter()
+            .find(|table| table.name == name)
+            .unwrap_or_else(|| panic!("{name} is reported as left out"));
+        assert_eq!(omitted.rows, 1, "{name}");
+        assert!(!after.contains_key(name), "new schema retained {name}");
+    }
 }
 
 fn actor(session: &str) -> ActorContext {
@@ -1082,7 +1183,7 @@ fn missing_required_import_columns_are_named_before_inserting_rows() {
 
 fn populated_control(path: &Path) {
     use crate::domain::*;
-    use crate::storage::test_support::{bind_control_for, complete_control_turn, turn_evaluation};
+    use crate::storage::test_support::{bind_control_for, complete_control_turn};
     populated(path);
     let mut store =
         SqliteStore::open_with_host_path_policy(path, crate::HostPathPolicy::host_default())
@@ -1151,9 +1252,6 @@ fn populated_control(path: &Path) {
             .unwrap();
         assert!(matches!(decision, ControlTurnDecision::Grant { .. }));
     }
-    store
-        .record_turn_observation(&turn_evaluation(binding.status.task_id))
-        .unwrap();
     store
         .set_required_control_assurance(
             ControlAssurance::TurnGated,

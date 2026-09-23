@@ -1,6 +1,5 @@
 use super::super::test_support::*;
 use super::super::*;
-use crate::domain::SCHEMA_VERSION;
 
 mod recovery;
 
@@ -796,242 +795,6 @@ fn focus_winning_before_delivery_stage_forces_reprojection() {
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "the regression proves contradiction capture, delivery acknowledgement, and restart integrity as one scenario"
-)]
-fn work_scoped_contradiction_drains_through_work_next_and_doctor() {
-    let directory = crate::test_support::temp_home().expect("temp directory");
-    let database = directory.path().join("engram.sqlite3");
-    let project = ProjectId("contradiction-delivery".into());
-    let session = SessionId("contradiction-session".into());
-    let service = LocalWorkService::new(
-        database.clone(),
-        project.clone(),
-        "agent".into(),
-        session.clone(),
-        Some("protocol-test".into()),
-    );
-    let root = match service
-        .work_propose(
-            root_input("Contradiction delivery", "contradiction-root"),
-            at(0),
-        )
-        .expect("root proposal")
-    {
-        WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
-    };
-    service
-        .work_update(
-            WorkUpdateInput::Claim {
-                ttl_seconds: None,
-                recovery_reason: None,
-                idempotency_key: "contradiction-claim".into(),
-            },
-            at(1),
-        )
-        .expect("claim contradiction work");
-    let mut store = SqliteStore::open(&database).expect("store");
-    let task = store
-        .start_task(
-            &project,
-            "dummy:MIXED-CONTRADICTION",
-            "Mixed contradiction applicability",
-            &session,
-            service.actor("task_start", "bind mixed contradiction task"),
-            at(1),
-        )
-        .expect("task binding")
-        .task;
-    let left = store
-        .capture_note(
-            &crate::NoteRequest {
-                project_id: project.clone(),
-                task_id: None,
-                work_id: Some(root.work_id),
-                prose: "Constraint: use the first mutually exclusive work rule".into(),
-                visibility: crate::NoteVisibility::Shared,
-                kind: None,
-                authority: None,
-                sensitivity: None,
-                title: None,
-                tags: Vec::new(),
-                evidence: Vec::new(),
-                refs: Vec::new(),
-                actor: service.actor("memory_note", "capture first work rule"),
-                idempotency_key: "contradiction-left".into(),
-                created_at: at(1),
-            },
-            &DevelopmentNoopRedactor,
-        )
-        .expect("left note");
-    let right = store
-        .capture_note(
-            &crate::NoteRequest {
-                project_id: project.clone(),
-                task_id: None,
-                work_id: Some(root.work_id),
-                prose: "Constraint: use the second mutually exclusive work rule".into(),
-                visibility: crate::NoteVisibility::Shared,
-                kind: None,
-                authority: None,
-                sensitivity: None,
-                title: None,
-                tags: Vec::new(),
-                evidence: Vec::new(),
-                refs: Vec::new(),
-                actor: service.actor("memory_note", "capture second work rule"),
-                idempotency_key: "contradiction-right".into(),
-                created_at: at(2),
-            },
-            &DevelopmentNoopRedactor,
-        )
-        .expect("right note");
-    let project_memory = store
-        .capture_note(
-            &crate::NoteRequest {
-                project_id: project.clone(),
-                task_id: None,
-                work_id: None,
-                prose: "Project-wide constraint for mixed contradiction".into(),
-                visibility: crate::NoteVisibility::Shared,
-                kind: None,
-                authority: None,
-                sensitivity: None,
-                title: None,
-                tags: Vec::new(),
-                evidence: Vec::new(),
-                refs: Vec::new(),
-                actor: service.actor("memory_note", "capture project constraint"),
-                idempotency_key: "contradiction-project".into(),
-                created_at: at(3),
-            },
-            &DevelopmentNoopRedactor,
-        )
-        .expect("project note");
-    let task_memory = store
-        .capture_note(
-            &crate::NoteRequest {
-                project_id: project.clone(),
-                task_id: Some(task.task_id),
-                work_id: None,
-                prose: "Task constraint for mixed contradiction".into(),
-                visibility: crate::NoteVisibility::Shared,
-                kind: None,
-                authority: None,
-                sensitivity: None,
-                title: None,
-                tags: Vec::new(),
-                evidence: Vec::new(),
-                refs: Vec::new(),
-                actor: service.actor("memory_note", "capture task constraint"),
-                idempotency_key: "contradiction-task".into(),
-                created_at: at(4),
-            },
-            &DevelopmentNoopRedactor,
-        )
-        .expect("task note");
-    let contradiction = store
-        .record_memory_contradiction(
-            &project,
-            None,
-            Some(root.work_id),
-            &session,
-            "agent",
-            &left.version,
-            &right.version,
-            "the two work rules cannot both guide execution",
-            "contradiction-edge",
-            service.actor("memory_contradict", "record explicit work contradiction"),
-            at(5),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("contradiction");
-    let project_contradiction = store
-        .record_memory_contradiction(
-            &project,
-            None,
-            Some(root.work_id),
-            &session,
-            "agent",
-            &left.version,
-            &project_memory.version,
-            "work and project guidance conflict",
-            "contradiction-work-project",
-            service.actor("memory_contradict", "record mixed project contradiction"),
-            at(6),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("work and project contradiction");
-    let task_contradiction = store
-        .record_memory_contradiction(
-            &project,
-            Some(task.task_id),
-            Some(root.work_id),
-            &session,
-            "agent",
-            &right.version,
-            &task_memory.version,
-            "work and task guidance conflict",
-            "contradiction-work-task",
-            service.actor("memory_contradict", "record mixed task contradiction"),
-            at(7),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("work and task contradiction");
-    assert!(!contradiction.work_positions.is_empty());
-    assert!(!project_contradiction.work_positions.is_empty());
-    assert!(!task_contradiction.work_positions.is_empty());
-    assert!(store.verify_all().expect("integrity report").is_healthy());
-    drop(store);
-
-    let mut page = service
-        .work_next(100, WorkNextQuery::default(), at(8))
-        .expect("deliver contradiction event");
-    let expected = [
-        contradiction.contradiction,
-        project_contradiction.contradiction,
-        task_contradiction.contradiction,
-    ];
-    let mut visible = std::collections::HashSet::new();
-    let mut confirmed = 0;
-    for offset in 0..8 {
-        for change in page.changes.as_deref().unwrap_or_default() {
-            if change.entry.object_kind == "memory_contradiction_event"
-                && matches!(change.delivery, WorkChangeProjection::Visible(_))
-            {
-                visible.insert(change.entry.object_id.clone());
-            }
-        }
-        let delivered = page.delivered_through.expect("delivered cursor");
-        let delivery_token = page.delivery_token.as_deref().expect("delivery token");
-        page = service
-            .work_next_with_delivery_token(
-                100,
-                Some(delivered),
-                Some(delivery_token),
-                WorkNextQuery::default(),
-                at(9 + offset),
-            )
-            .expect("acknowledge contradiction page");
-        confirmed = page.session.confirmed_project_cursor;
-        if expected.iter().all(|hash| visible.contains(hash)) {
-            break;
-        }
-    }
-    assert!(expected.iter().all(|hash| visible.contains(hash)));
-    assert!(confirmed > 0);
-    assert!(
-        SqliteStore::open(&database)
-            .expect("reopen store")
-            .verify_all()
-            .expect("integrity report after delivery")
-            .is_healthy()
-    );
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
     reason = "the confidentiality regression covers visible, restricted, and cross-root memory feed pairs"
 )]
 fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
@@ -1090,7 +853,7 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
     )
     .expect("claim peer root");
     let mut store = SqliteStore::open(&database).expect("store");
-    let (visible, restricted, outside, outside_second) = {
+    let (visible, restricted, outside, _outside_second) = {
         let mut capture = |work_id: WorkId,
                            prose: &str,
                            sensitivity: Sensitivity,
@@ -1154,50 +917,6 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
         );
         (visible, restricted, outside, outside_second)
     };
-    let peer_contradiction = store
-        .record_memory_contradiction(
-            &project,
-            None,
-            Some(peer_root.work_id),
-            &peer.session_id,
-            "agent",
-            &outside.version,
-            &outside_second.version,
-            "peer-root contradiction must remain outside focused delivery",
-            "peer-root-contradiction",
-            peer.actor("memory_contradict", "record peer-root contradiction"),
-            at(6),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("peer-root contradiction");
-    let restricted_contradiction = MemoryContradictionEvent {
-        schema_version: SCHEMA_VERSION,
-        project_id: project.clone(),
-        task_id: None,
-        work_root_id: Some(focused_root.root_id),
-        left_version: visible.version.clone(),
-        right_version: restricted.version.clone(),
-        reason: "restricted contradiction payload".into(),
-        actor: focused.actor("memory_contradict", "exercise restricted projection"),
-        created_at: at(7),
-    };
-    assert!(matches!(
-        agent_change_object(
-            &store,
-            &project,
-            Some(focused_root.root_id),
-            None,
-            "memory_contradiction_event",
-            serde_json::to_value(restricted_contradiction)
-                .expect("serialize restricted contradiction"),
-            None,
-        )
-        .expect("restricted contradiction projection"),
-        WorkChangeProjection::Omitted(WorkChangeOmission {
-            omission: WorkChangeOmissionReason::RestrictedSensitivity,
-            ..
-        })
-    ));
     drop(store);
 
     let mut page = focused
@@ -1209,7 +928,6 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
         &restricted.assertion,
         &outside.version,
         &outside.assertion,
-        &peer_contradiction.contradiction,
     ];
     let mut changes = Vec::new();
     let mut final_confirmed = 0;
@@ -1269,19 +987,11 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
             })
         ));
     }
-    assert!(matches!(
-        projection_for(&peer_contradiction.contradiction),
-        WorkChangeProjection::Omitted(WorkChangeOmission {
-            omission: WorkChangeOmissionReason::OutsideFocusedRoot,
-            ..
-        })
-    ));
     let serialized = serde_json::to_string(&changes).expect("serialize work_next changes");
     assert!(serialized.contains("visible focused-root memory"));
     assert!(!serialized.contains("restricted focused-root secret"));
     assert!(!serialized.contains("unrelated root memory"));
     assert!(!serialized.contains("second unrelated root memory"));
-    assert!(!serialized.contains("peer-root contradiction must remain outside focused delivery"));
     assert!(final_confirmed > 0);
     assert!(
         SqliteStore::open(&database)

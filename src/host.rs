@@ -576,10 +576,9 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkLeaseNotHeld { .. } => "work_lease_not_held",
         StoreError::WorkLeaseExpired { .. } => "work_lease_expired",
         StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
-        StoreError::DifferentBuildSchema
-        | StoreError::InvalidControlProjection(_)
-        | StoreError::InvalidControlObservation(_) => "control_projection_invalid",
-        StoreError::PinnedContradiction { .. } => "pinned_contradiction",
+        StoreError::DifferentBuildSchema | StoreError::InvalidControlProjection(_) => {
+            "control_projection_invalid"
+        }
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::ProjectMemoryExists(_) => "memory_exists",
@@ -603,9 +602,6 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }
         | StoreError::InvalidStoredKey(_)
-        | StoreError::ContradictionIdempotencyConflict(_)
-        | StoreError::InvalidContradiction(_)
-        | StoreError::ContradictionAlreadyRecorded(_)
         | StoreError::NoteIdempotencyConflict(_)
         | StoreError::EmptyNote
         | StoreError::RedactionRefused(_)
@@ -616,8 +612,6 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::NoActiveTask(_)
         | StoreError::MemoryNotFound(_)
         | StoreError::MemoryAccessDenied(_)
-        | StoreError::PacketAccessDenied(_)
-        | StoreError::TurnObservationIdempotencyConflict(_)
         | StoreError::ControlPolicyConflict { .. }
         | StoreError::WorkNotFound(_)
         | StoreError::InvalidWork(_)

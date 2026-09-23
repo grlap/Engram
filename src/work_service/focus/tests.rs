@@ -620,7 +620,6 @@ fn execution_observation_has_a_compact_agent_work_projection() {
         &store,
         &project,
         Some(work.root_id),
-        None,
         "execution_observation",
         serde_json::to_value(observation).expect("observation json"),
         None,

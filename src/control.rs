@@ -19,11 +19,10 @@ use crate::{
         LeaseBasis, LeaseKind, LeaseMode, OBLIGATION_RULE_SET_SCHEMA_VERSION,
         ObligationRuleDefinition, ObligationRuleSet, ObservedActionBeginDecision,
         ObservedTurnDecision, PacketSafety, ParticipantMembership, ProjectPolicyEpoch,
-        SessionPhase, TaskDelta, TaskState, TurnBeginDecision, TurnBeginSnapshot,
-        TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
-        TurnGrantBasis, TurnGrantState, TurnPurpose, VerificationEvidence,
-        VerificationEvidenceMismatch, VerificationRequirement, VerificationResult,
-        WorkEvidenceKind, WorkObligation, WorkObligationId,
+        SessionPhase, TaskDelta, TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision,
+        TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState,
+        TurnPurpose, VerificationEvidence, VerificationEvidenceMismatch, VerificationRequirement,
+        VerificationResult, WorkEvidenceKind, WorkObligation, WorkObligationId,
     },
     storage::StoreError,
 };
@@ -474,17 +473,7 @@ pub fn evaluate_turn_begin(
             code: ControlRefusalCode::TaskAccessDenied,
         };
     }
-    if !snapshot
-        .task_state
-        .is_some_and(|task_state| match grant.basis.purpose {
-            TurnPurpose::Ordinary => matches!(task_state, TaskState::Active),
-            TurnPurpose::Recovery => matches!(
-                task_state,
-                TaskState::Active | TaskState::Quiescing | TaskState::FinalizationPending
-            ),
-            TurnPurpose::Finalizer => matches!(task_state, TaskState::FinalizationPending),
-        })
-    {
+    if snapshot.task_state.is_none() || matches!(grant.basis.purpose, TurnPurpose::Finalizer) {
         return TurnBeginDecision::Refuse {
             code: ControlRefusalCode::LifecycleHold,
         };
@@ -721,7 +710,7 @@ fn action_freshness_refusal(
     if snapshot.acknowledged_blocking_watermark < grant.blocking_watermark {
         return Some(ControlRefusalCode::DeltaRequired);
     }
-    if !action_phase_matches(grant.turn_purpose, snapshot.phase, snapshot.task_state) {
+    if !action_phase_matches(grant.turn_purpose, snapshot.phase) {
         return Some(ControlRefusalCode::LifecycleHold);
     }
     if snapshot.capability_map_revision != grant.capability_map_revision
@@ -843,26 +832,12 @@ fn action_resolution_refusal(
     None
 }
 
-const fn action_phase_matches(
-    purpose: TurnPurpose,
-    phase: SessionPhase,
-    task_state: TaskState,
-) -> bool {
+/// A finalizer turn never matches: no task ever leaves the active state.
+const fn action_phase_matches(purpose: TurnPurpose, phase: SessionPhase) -> bool {
     match purpose {
-        TurnPurpose::Ordinary => {
-            matches!(phase, SessionPhase::TurnOpen) && matches!(task_state, TaskState::Active)
-        }
-        TurnPurpose::Recovery => {
-            matches!(phase, SessionPhase::RecoveryOpen)
-                && matches!(
-                    task_state,
-                    TaskState::Active | TaskState::Quiescing | TaskState::FinalizationPending
-                )
-        }
-        TurnPurpose::Finalizer => {
-            matches!(phase, SessionPhase::FinalizerOpen)
-                && matches!(task_state, TaskState::FinalizationPending)
-        }
+        TurnPurpose::Ordinary => matches!(phase, SessionPhase::TurnOpen),
+        TurnPurpose::Recovery => matches!(phase, SessionPhase::RecoveryOpen),
+        TurnPurpose::Finalizer => false,
     }
 }
 
@@ -936,16 +911,15 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
     let Some(task_id) = input.task_id else {
         return refusal(input, ControlRefusalCode::TaskUnbound);
     };
-    let Some(task_state) = input.task_state else {
+    if input.task_state.is_none() {
         return refusal(input, ControlRefusalCode::TaskUnbound);
-    };
+    }
     if !matches!(input.participant_membership, ParticipantMembership::Member) {
         return refusal(input, ControlRefusalCode::TaskAccessDenied);
     }
     if let Some(code) = phase_refusal(
         input.phase,
         input.intent.purpose,
-        task_state,
         input.pending_delivery.is_some(),
     ) {
         return refusal(input, code);
@@ -1163,7 +1137,6 @@ const fn health_refusal(health: ControlHealth) -> Option<ControlRefusalCode> {
 const fn packet_refusal(safety: PacketSafety) -> Option<ControlRefusalCode> {
     match safety {
         PacketSafety::Safe => None,
-        PacketSafety::PinnedContradiction => Some(ControlRefusalCode::PinnedContradiction),
         PacketSafety::PinnedBudgetExceeded => Some(ControlRefusalCode::PinnedBudgetExceeded),
         PacketSafety::DeliveryBudgetExceeded => Some(ControlRefusalCode::DeliveryInvalid),
     }
@@ -1209,7 +1182,6 @@ fn evaluate_delivery(
 const fn phase_refusal(
     phase: SessionPhase,
     purpose: TurnPurpose,
-    task_state: TaskState,
     has_inline_delivery: bool,
 ) -> Option<ControlRefusalCode> {
     match phase {
@@ -1230,42 +1202,27 @@ const fn phase_refusal(
     }
 
     match purpose {
-        TurnPurpose::Ordinary => {
-            if !matches!(task_state, TaskState::Active) {
-                return Some(ControlRefusalCode::LifecycleHold);
+        TurnPurpose::Ordinary => match phase {
+            SessionPhase::Ready => None,
+            SessionPhase::SyncRequired if has_inline_delivery => None,
+            SessionPhase::SyncRequired | SessionPhase::RecoveryOpen => {
+                Some(ControlRefusalCode::RecoveryRequired)
             }
-            match phase {
-                SessionPhase::Ready => None,
-                SessionPhase::SyncRequired if has_inline_delivery => None,
-                SessionPhase::SyncRequired | SessionPhase::RecoveryOpen => {
-                    Some(ControlRefusalCode::RecoveryRequired)
-                }
-                SessionPhase::FinalizerOpen => Some(ControlRefusalCode::LifecycleHold),
-                _ => Some(ControlRefusalCode::TurnPurposeMismatch),
-            }
-        }
+            SessionPhase::FinalizerOpen => Some(ControlRefusalCode::LifecycleHold),
+            _ => Some(ControlRefusalCode::TurnPurposeMismatch),
+        },
         TurnPurpose::Recovery => {
-            if (matches!(phase, SessionPhase::RecoveryOpen)
-                || (matches!(phase, SessionPhase::SyncRequired) && has_inline_delivery))
-                && matches!(
-                    task_state,
-                    TaskState::Active | TaskState::Quiescing | TaskState::FinalizationPending
-                )
+            if matches!(phase, SessionPhase::RecoveryOpen)
+                || (matches!(phase, SessionPhase::SyncRequired) && has_inline_delivery)
             {
                 None
             } else {
                 Some(ControlRefusalCode::TurnPurposeMismatch)
             }
         }
-        TurnPurpose::Finalizer => {
-            if matches!(phase, SessionPhase::FinalizerOpen)
-                && matches!(task_state, TaskState::FinalizationPending)
-            {
-                None
-            } else {
-                Some(ControlRefusalCode::TurnPurposeMismatch)
-            }
-        }
+        // No task ever leaves the active state, so a finalizer turn has no
+        // phase in which it can run.
+        TurnPurpose::Finalizer => Some(ControlRefusalCode::TurnPurposeMismatch),
     }
 }
 
@@ -1357,8 +1314,7 @@ fn directive_shape(
             DirectiveSatisfaction::HumanAuthority,
             vec![EffectClass::Observe],
         ),
-        ControlRefusalCode::PinnedContradiction
-        | ControlRefusalCode::PinnedBudgetExceeded
+        ControlRefusalCode::PinnedBudgetExceeded
         | ControlRefusalCode::RecoveryRequired
         | ControlRefusalCode::ActionOutcomeUnknown => (
             DirectiveTarget::Agent,
@@ -1408,7 +1364,8 @@ mod tests {
             ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, ActionGrantState,
             AuthorityState, ControlAssurance, ControlEpochs, DeliveryPage, ParentTurnState,
             ParticipantMembership, ProjectId, ProjectPolicyEpoch, ResolutionAssurance,
-            ResourceCoverage, ResourceSubject, SessionId, TaskAdmissionEpoch, TaskId, TurnIntent,
+            ResourceCoverage, ResourceSubject, SessionId, TaskAdmissionEpoch, TaskId, TaskState,
+            TurnIntent,
         },
     };
 
@@ -1530,7 +1487,6 @@ mod tests {
             session_id,
             task_id,
             phase: SessionPhase::TurnOpen,
-            task_state: TaskState::Active,
             turn_purpose: TurnPurpose::Ordinary,
             effect: EffectClass::MutateShared,
             resource_subjects: subjects,
@@ -1930,12 +1886,89 @@ mod tests {
     fn lifecycle_phase_precedes_packet_safety() {
         let mut input = input();
         input.phase = SessionPhase::CheckpointRequired;
-        input.packet_safety = PacketSafety::PinnedContradiction;
+        input.packet_safety = PacketSafety::PinnedBudgetExceeded;
 
         assert_eq!(
             refusal_code(&observe_turn(&input)),
             Some(ControlRefusalCode::CheckpointRequired)
         );
+    }
+
+    #[test]
+    fn finalizer_turns_are_refused_at_evaluation_begin_and_action() {
+        for phase in [SessionPhase::Ready, SessionPhase::FinalizerOpen] {
+            let mut finalizer = input();
+            finalizer.phase = phase;
+            finalizer.intent.purpose = TurnPurpose::Finalizer;
+            assert_eq!(
+                refusal_code(&observe_turn(&finalizer)),
+                Some(ControlRefusalCode::TurnPurposeMismatch),
+                "{phase:?}"
+            );
+        }
+
+        let TurnDecision::Grant { basis } = observe_turn(&input()).decision else {
+            panic!("an ordinary turn is granted");
+        };
+        let ordinary = IssuedTurnGrant {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            grant_id: "turn-grant-a".into(),
+            request_key: "turn-a".into(),
+            basis: (*basis).clone(),
+            delivery: None,
+            issued_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+        };
+        let snapshot = TurnBeginSnapshot {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id: basis.session_id.clone(),
+            task_id: basis.task_id,
+            work_binding: None,
+            work_binding_current: true,
+            phase: SessionPhase::TurnOpen,
+            participant_membership: ParticipantMembership::Member,
+            task_state: Some(TaskState::Active),
+            grant_state: TurnGrantState::Issued,
+            current_epochs: ControlEpochs {
+                project_policy: basis.project_policy_epoch,
+                task_admission: basis.task_admission_epoch,
+            },
+            current_head: basis.confirmed_cursor,
+            context_current: true,
+            capability_map_revision: basis.capability_map_revision,
+            delivery_tokens: Vec::new(),
+            leases: Vec::new(),
+            observed_at: Utc.timestamp_millis_opt(1_700_000_000_001).unwrap(),
+        };
+        let mut finalizer = ordinary.clone();
+        finalizer.basis.purpose = TurnPurpose::Finalizer;
+        assert_eq!(
+            evaluate_turn_begin(&finalizer, &snapshot),
+            TurnBeginDecision::Refuse {
+                code: ControlRefusalCode::LifecycleHold
+            }
+        );
+        assert_ne!(
+            evaluate_turn_begin(&ordinary, &snapshot),
+            TurnBeginDecision::Refuse {
+                code: ControlRefusalCode::LifecycleHold
+            }
+        );
+
+        // A finalizer-compatible effect, so only the unconditional finalizer
+        // refusal (not an effect or phase mismatch) can explain the hold.
+        let (mut grant, mut action_snapshot) = action();
+        grant.turn_purpose = TurnPurpose::Finalizer;
+        grant.effect = EffectClass::Observe;
+        action_snapshot.turn_purpose = TurnPurpose::Finalizer;
+        action_snapshot.effect = EffectClass::Observe;
+        for phase in [SessionPhase::TurnOpen, SessionPhase::FinalizerOpen] {
+            action_snapshot.phase = phase;
+            assert_eq!(
+                action_refusal_code(&grant, &action_snapshot),
+                Some(ControlRefusalCode::LifecycleHold),
+                "{phase:?}"
+            );
+        }
     }
 
     #[test]

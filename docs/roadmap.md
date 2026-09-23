@@ -50,7 +50,7 @@ on the V1 path below.
   leases, suspension-aware expiry, explicit handoff, root-shared memory,
   contribution/child-seal barrier, and a separate fenced report-assembly claim
 - Context packets: budgets, fail-closed pinned tier, omission manifest,
-  packet fingerprint + explain, typed source-feed vectors plus independent
+  packet fingerprint, typed source-feed vectors plus independent
   per-session delivery positions, peer deltas, and review counts —
   [context packets](features/context-packets.md)
 - `engram work note` / MCP `note`: one work finding feeds peer, handoff,

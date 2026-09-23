@@ -11,17 +11,12 @@ use super::{
     MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, ProjectId, SessionId, TaskId, WorkId,
 };
 
-/// Local task lifecycle. External trackers remain authoritative for the
-/// organizational work item referenced by `external_ref`.
+/// Local task lifecycle. A bound task is always active; no transition out of
+/// that state exists.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskState {
     Active,
-    Quiescing,
-    FinalizationPending,
-    ReportReady,
-    Publishing,
-    Published,
 }
 
 /// Header returned with a context packet. The hash reproduces content; the

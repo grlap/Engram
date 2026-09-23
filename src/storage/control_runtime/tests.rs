@@ -7,8 +7,8 @@ use crate::*;
 use crate::{
     DevelopmentNoopRedactor,
     domain::{
-        ControlAssurance, EffectClass, NoteVisibility, ProjectId, SessionPhase, TurnDecision,
-        TurnIntent, TurnPurpose,
+        ControlAssurance, EffectClass, NoteVisibility, ProjectId, SessionPhase, TurnIntent,
+        TurnPurpose,
     },
 };
 
@@ -277,123 +277,6 @@ fn fresh_evaluate_replaces_issued_grant_but_preserves_begun_checkpoint() {
         report
             .invalid_control_records
             .contains(&format!("control_turn_grant:{}", first.grant_id))
-    );
-}
-
-#[test]
-fn shadow_turn_observations_are_idempotent_across_restart() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let database = directory.path().join("engram.db");
-    let (first, input) = {
-        let mut store = SqliteStore::open(&database).unwrap();
-        let binding = store
-            .start_task(
-                &ProjectId("project-a".into()),
-                "dummy:CONTROL-1",
-                "Observe turn admission",
-                &SessionId("control-session".into()),
-                actor("control-session"),
-                Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
-            )
-            .unwrap();
-        let note_cursor = store
-            .capture_note(
-                &note_request(
-                    binding.task.task_id,
-                    "control-session",
-                    "Evidence: the durable task feed advanced after task start.",
-                    "control-note-a",
-                    NoteVisibility::Shared,
-                ),
-                &DevelopmentNoopRedactor,
-            )
-            .unwrap()
-            .cursor
-            .expect("shared note must advance the task feed");
-        assert!(note_cursor > binding.cursor);
-        let mut input = turn_evaluation(binding.task.task_id);
-        input.participant_membership = ParticipantMembership::NotMember;
-        input.task_state = Some(TaskState::Published);
-        input.confirmed_cursor = note_cursor;
-        input.head_cursor = ChangeCursor(999);
-        input.blocking_watermark = note_cursor;
-        input.acknowledged_blocking_watermark = note_cursor;
-        let first = store.record_turn_observation(&input).unwrap();
-        let mut hydrated = input.clone();
-        hydrated.participant_membership = ParticipantMembership::Member;
-        hydrated.task_state = Some(TaskState::Active);
-        hydrated.head_cursor = note_cursor;
-        assert_projection_bytes(
-            &store,
-            "SELECT input_json FROM control_observations WHERE idempotency_key = ?1",
-            [&input.intent.idempotency_key],
-            &hydrated,
-        );
-        assert_projection_bytes(
-            &store,
-            "SELECT decision_json FROM control_observations WHERE idempotency_key = ?1",
-            [&input.intent.idempotency_key],
-            &first,
-        );
-        (first, input)
-    };
-    assert!(matches!(first.decision, TurnDecision::Grant { .. }));
-
-    let mut replay_input = input.clone();
-    replay_input.evaluated_at += TimeDelta::minutes(5);
-    replay_input.phase = SessionPhase::CheckpointRequired;
-    let mut reopened = SqliteStore::open(&database).unwrap();
-    let replay = reopened.record_turn_observation(&replay_input).unwrap();
-    assert_eq!(first, replay);
-    let healthy = reopened.verify_all().unwrap();
-    assert!(healthy.is_healthy());
-    assert_eq!(healthy.checked_control_records, 3);
-
-    let mut unknown_schema = input.clone();
-    unknown_schema.control_schema_version = CONTROL_SCHEMA_VERSION + 1;
-    unknown_schema.intent.idempotency_key = "observe-turn-unknown-schema".into();
-    unknown_schema.intent.intent_fingerprint =
-        ObjectId::from_canonical_bytes(b"turn-unknown-schema");
-    let unknown_schema_observation = reopened.record_turn_observation(&unknown_schema).unwrap();
-    assert!(matches!(
-        unknown_schema_observation.decision,
-        TurnDecision::Refuse { ref directive }
-            if directive.code == crate::domain::ControlRefusalCode::UnknownControlSchema
-    ));
-    assert_eq!(
-        reopened.record_turn_observation(&unknown_schema).unwrap(),
-        unknown_schema_observation
-    );
-    let healthy_with_unknown_schema = reopened.verify_all().unwrap();
-    assert!(healthy_with_unknown_schema.is_healthy());
-    assert_eq!(healthy_with_unknown_schema.checked_control_records, 4);
-
-    let mut conflicting = input.clone();
-    conflicting
-        .intent
-        .requested_effects
-        .push(EffectClass::MutateShared);
-    assert!(matches!(
-        reopened.record_turn_observation(&conflicting),
-        Err(StoreError::TurnObservationIdempotencyConflict(_))
-    ));
-
-    reopened
-        .connection
-        .execute(
-            "UPDATE control_observations SET decision_json = ?1
-             WHERE idempotency_key = 'observe-turn-a'",
-            params![b"{}".as_slice()],
-        )
-        .unwrap();
-    assert!(matches!(
-        reopened.record_turn_observation(&replay_input),
-        Err(StoreError::Json(_))
-    ));
-    let corrupted = reopened.verify_all().unwrap();
-    assert_eq!(
-        corrupted.invalid_control_records,
-        vec!["control_observation:1"]
     );
 }
 

@@ -1,23 +1,43 @@
 use super::{
     CanonicalObject, ChangeCursor, Connection, DateTime, DeltaItem, DeserializeOwned, LocalTask,
     MAX_CONTROL_DELIVERY_EVENTS, MAX_CONTROL_DELIVERY_OBJECT_BYTES, MAX_TASK_CHANGE_OBJECT_BYTES,
-    MemoryAssertionEvent, MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow, ObjectId,
-    ObservedTurnDecision, OptionalExtension, ParticipantMembership, SCHEMA_VERSION, Scope,
-    Serialize, SessionId, SqliteStore, StoreError, StoredControlObservation, TaskChange, TaskDelta,
-    TaskId, TaskState, Transaction, TransactionBehavior, TurnEvaluationInput,
-    TurnObservationIntentFingerprint, lookup_project_memory_on, params, parse_enum,
+    MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow, ObjectId, OptionalExtension,
+    SCHEMA_VERSION, Scope, SessionId, SqliteStore, StoreError, TaskDelta, TaskId, TaskState,
+    Transaction, lookup_project_memory_on, params, parse_enum,
 };
+#[cfg(test)]
+use super::{MemoryAssertionEvent, Serialize, TaskChange, TransactionBehavior};
 
 #[cfg(test)]
 mod tests;
 
 impl SqliteStore {
+    /// Appends an immutable object under a newly minted id. Appending equal
+    /// content again stores a second record.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] on serialization or SQLite failure.
+    #[cfg(test)]
+    pub fn append<T: Serialize>(
+        &mut self,
+        object_kind: &str,
+        value: &T,
+    ) -> Result<CanonicalObject, StoreError> {
+        let object = CanonicalObject::mint(value)?;
+        let transaction = self.connection.transaction()?;
+        Self::insert_object(&transaction, object_kind, &object)?;
+        transaction.commit()?;
+        Ok(object)
+    }
+
     /// Returns the authorized ordered task feed after a cursor.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when task membership fails or a referenced
     /// canonical object is corrupt.
+    #[cfg(test)]
     pub fn task_delta(
         &self,
         project_id: &crate::domain::ProjectId,
@@ -74,162 +94,6 @@ impl SqliteStore {
         })
     }
 
-    /// Evaluates and durably records one shadow-only turn decision.
-    ///
-    /// An exact retry for the same session and intent returns the originally
-    /// observed bytes even after restart. Reusing the request key for a
-    /// different intent is rejected. This operation never creates a grant and
-    /// does not alter the advisory CLI/MCP path.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when canonicalization, persistence, or replay
-    /// validation fails.
-    pub fn record_turn_observation(
-        &mut self,
-        input: &TurnEvaluationInput,
-    ) -> Result<ObservedTurnDecision, StoreError> {
-        let intent = CanonicalObject::freeze(&TurnObservationIntentFingerprint {
-            control_schema_version: input.control_schema_version,
-            session_id: &input.session_id,
-            task_id: input.task_id,
-            intent: &input.intent,
-        })?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mut evaluated_input = input.clone();
-        Self::hydrate_durable_turn_state(&transaction, &mut evaluated_input)?;
-        let existing = transaction
-            .query_row(
-                "SELECT intent_hash, sequence, session_id, task_id, idempotency_key,
-                        observed_at_ms, input_json, decision_json
-                 FROM control_observations
-                 WHERE session_id = ?1 AND idempotency_key = ?2",
-                params![input.session_id.0, input.intent.idempotency_key],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        StoredControlObservation {
-                            sequence: row.get(1)?,
-                            session_id: row.get(2)?,
-                            task_id: row.get(3)?,
-                            idempotency_key: row.get(4)?,
-                            intent_hash: row.get(0)?,
-                            observed_at_ms: row.get(5)?,
-                            input_json: row.get(6)?,
-                            decision_json: row.get(7)?,
-                        },
-                    ))
-                },
-            )
-            .optional()?;
-
-        if let Some((stored_intent_hash, stored)) = existing {
-            if stored_intent_hash != intent.key().as_str() {
-                return Err(StoreError::TurnObservationIdempotencyConflict(
-                    input.intent.idempotency_key.clone(),
-                ));
-            }
-            let observation = Self::decode_control_observation(&stored)?;
-            transaction.commit()?;
-            return Ok(observation);
-        }
-
-        let input_json = crate::canonical::canonical_bytes(&evaluated_input)?;
-        let observation = crate::control::observe_turn(&evaluated_input);
-        let decision_json = crate::canonical::canonical_bytes(&observation)?;
-        transaction.execute(
-            "INSERT INTO control_observations (
-                 session_id, task_id, idempotency_key, intent_hash,
-                 input_json, decision_json, observed_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                evaluated_input.session_id.0,
-                evaluated_input.task_id.map(|task_id| task_id.0.to_string()),
-                evaluated_input.intent.idempotency_key,
-                intent.key().as_str(),
-                input_json,
-                decision_json,
-                evaluated_input.evaluated_at.timestamp_millis(),
-            ],
-        )?;
-        transaction.commit()?;
-        Ok(observation)
-    }
-
-    fn hydrate_durable_turn_state(
-        transaction: &Transaction<'_>,
-        input: &mut TurnEvaluationInput,
-    ) -> Result<(), StoreError> {
-        let Some(task_id) = input.task_id else {
-            input.task_state = None;
-            input.participant_membership = ParticipantMembership::NotMember;
-            input.head_cursor = ChangeCursor::default();
-            return Ok(());
-        };
-        let stored = transaction
-            .query_row(
-                "SELECT state,
-                        (
-                            SELECT COALESCE(MAX(task_cursor), 0) FROM task_changes
-                            WHERE task_id = ?1
-                        ),
-                        EXISTS(
-                            SELECT 1 FROM task_participants
-                            WHERE task_id = ?1 AND session_id = ?2
-                        ),
-                        EXISTS(
-                            SELECT 1 FROM session_bindings
-                            WHERE task_id = ?1 AND session_id = ?2
-                        )
-                 FROM tasks WHERE task_id = ?1",
-                params![task_id.0.to_string(), input.session_id.0],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                    ))
-                },
-            )
-            .optional()?;
-
-        if let Some((state, cursor, is_participant, is_bound)) = stored {
-            input.task_state = Some(parse_enum::<TaskState>(&state)?);
-            input.head_cursor = ChangeCursor(cursor);
-            input.participant_membership = if is_participant == 1 && is_bound == 1 {
-                ParticipantMembership::Member
-            } else {
-                ParticipantMembership::NotMember
-            };
-        } else {
-            input.task_state = None;
-            input.participant_membership = ParticipantMembership::NotMember;
-            input.head_cursor = ChangeCursor::default();
-        }
-        Ok(())
-    }
-
-    /// Appends an immutable object under a newly minted id. Appending equal
-    /// content again stores a second record.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] on serialization or SQLite failure.
-    pub fn append<T: Serialize>(
-        &mut self,
-        object_kind: &str,
-        value: &T,
-    ) -> Result<CanonicalObject, StoreError> {
-        let object = CanonicalObject::mint(value)?;
-        let transaction = self.connection.transaction()?;
-        Self::insert_object(&transaction, object_kind, &object)?;
-        transaction.commit()?;
-        Ok(object)
-    }
-
     /// Appends an immutable task object and records its ordered peer-visible
     /// change in the same transaction.
     ///
@@ -237,6 +101,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when canonicalization or the atomic SQLite write
     /// fails.
+    #[cfg(test)]
     pub fn append_task_object<T: Serialize>(
         &mut self,
         task_id: TaskId,
@@ -259,6 +124,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when SQLite cannot read the feed or a stored
     /// object id is invalid.
+    #[cfg(test)]
     pub fn task_changes_since(
         &self,
         task_id: TaskId,
@@ -449,6 +315,7 @@ impl SqliteStore {
             .transpose()
     }
 
+    #[cfg(test)]
     pub(super) fn get_typed_object<T: DeserializeOwned>(
         &self,
         hash: &ObjectId,

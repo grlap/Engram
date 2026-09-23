@@ -219,6 +219,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
+#[cfg(test)]
+use crate::domain::MemoryRecord;
 use crate::{
     CanonicalObject, ObjectId,
     control::{LeasePolicyInput, effective_mediated_effects, evaluate_lease_policy},
@@ -234,21 +236,19 @@ use crate::{
         ForgetProjectMemoryRequest, HostPathPolicy, IssuedTurnGrant, LocalTask,
         MAX_PROJECT_MEMORY_BODY_BYTES, MAX_PROJECT_MEMORY_KEY_BYTES,
         MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
-        MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryKind, MemoryRecord,
-        MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
-        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, ObservedTurnDecision,
-        OpenWorkObligation, PacketSafety, ParticipantMembership, ProjectId, ProjectMemoryFull,
-        ProjectMemoryList, ProjectMemoryListRow, ProjectMemoryMutationReceipt,
-        ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation,
-        RememberProjectMemoryRequest, SCHEMA_VERSION, Scope, Sensitivity, SessionId, SessionPhase,
-        TaskAdmissionEpoch, TaskBindReceipt, TaskDelta, TaskId, TaskJoinedEvent, TaskStartedEvent,
-        TaskState, TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
-        TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
-        TurnEvaluationInput, TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason,
-        TurnIntent, TurnNextIntent, VerificationEvidence, VerificationEvidenceInput,
-        VerificationKind, VerificationResult, WorkCompletionRecoveryCause, WorkLease,
-        WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
-        WorkReferenceCandidate,
+        MemoryId, MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest,
+        NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation,
+        PacketSafety, ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
+        ProjectMemoryListRow, ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision,
+        ProjectPolicyEpoch, ProjectPolicyOperation, RememberProjectMemoryRequest, SCHEMA_VERSION,
+        Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskBindReceipt,
+        TaskDelta, TaskId, TaskJoinedEvent, TaskStartedEvent, TaskState, TurnBeginDecision,
+        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
+        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
+        TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent,
+        TurnNextIntent, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
+        VerificationResult, WorkCompletionRecoveryCause, WorkLease, WorkLeaseDecision,
+        WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkReferenceCandidate,
     },
     memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
     schema::{
@@ -292,10 +292,7 @@ const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[(&str, &str)] = &[
     ("index", "memory_heads_work_scope"),
     ("table", "project_memory_state"),
     ("table", "project_memory_advertisements"),
-    ("index", "memory_contradictions_versions"),
-    ("index", "memory_contradiction_edges_context"),
     ("index", "task_changes_task_cursor"),
-    ("index", "control_observations_session_sequence"),
     ("index", "control_sessions_work_run"),
     ("index", "control_work_leases_task_state"),
 ];
@@ -596,19 +593,7 @@ pub(crate) struct BeginGateWorkProtocolAttempt<'a, B> {
 }
 
 #[derive(Serialize)]
-struct ContradictionIntentFingerprint<'a> {
-    project_id: &'a crate::domain::ProjectId,
-    task_id: Option<TaskId>,
-    work_id: Option<crate::domain::WorkId>,
-    work_root_id: Option<crate::domain::WorkId>,
-    left_version: &'a ObjectId,
-    right_version: &'a ObjectId,
-    reason: &'a str,
-    actor: &'a ActorContext,
-}
-
-#[derive(Serialize)]
-struct TurnObservationIntentFingerprint<'a> {
+struct TurnIntentFingerprint<'a> {
     control_schema_version: u16,
     session_id: &'a SessionId,
     task_id: Option<TaskId>,
@@ -738,20 +723,6 @@ pub enum StoreError {
     },
     #[error("stored record id or content fingerprint is invalid: {0}")]
     InvalidStoredKey(String),
-    #[error("contradiction idempotency key {0:?} was reused for different content")]
-    ContradictionIdempotencyConflict(String),
-    #[error("memory contradiction is invalid: {0}")]
-    InvalidContradiction(String),
-    #[error("these versions are already linked by contradiction object {0}")]
-    ContradictionAlreadyRecorded(ObjectId),
-    #[error(
-        "pinned context is unsafe: contradiction {contradiction} links applicable versions {left} and {right}"
-    )]
-    PinnedContradiction {
-        contradiction: ObjectId,
-        left: ObjectId,
-        right: ObjectId,
-    },
     #[error("note idempotency key {0:?} was reused for different content")]
     NoteIdempotencyConflict(String),
     #[error("note prose must not be empty")]
@@ -798,12 +769,6 @@ pub enum StoreError {
     ProjectMemoryBindingInvalid,
     #[error("project memory input is invalid: {0}")]
     InvalidProjectMemory(String),
-    #[error("caller is not authorized to explain context packet {0}")]
-    PacketAccessDenied(ObjectId),
-    #[error("turn observation idempotency key {0:?} was reused for a different intent")]
-    TurnObservationIdempotencyConflict(String),
-    #[error("control observation projection contains invalid data: {0}")]
-    InvalidControlObservation(String),
     #[error("control session input is invalid: {0}")]
     InvalidControlSession(String),
     #[error(
@@ -1108,7 +1073,8 @@ pub struct ObligationRuleSetUpdateReceipt {
     pub activated_at: DateTime<Utc>,
 }
 
-/// One ordered entry in a task's authoritative local change feed.
+/// One ordered entry in a task's local change feed, read back by tests.
+#[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TaskChange {
     pub cursor: ChangeCursor,
@@ -1247,17 +1213,6 @@ struct ContextAssembly {
     omission_summaries: Vec<ContextOmissionSummary>,
     proposed_count: u32,
     stale_count: u32,
-}
-
-struct StoredControlObservation {
-    sequence: i64,
-    session_id: String,
-    task_id: Option<String>,
-    idempotency_key: String,
-    intent_hash: String,
-    observed_at_ms: i64,
-    input_json: Vec<u8>,
-    decision_json: Vec<u8>,
 }
 
 struct StoredControlSession {
@@ -1414,27 +1369,6 @@ struct StoredWorkLeaseRow {
     lease_json: Vec<u8>,
     state: String,
     expires_at_ms: i64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ApplicableContradiction {
-    contradiction: ObjectId,
-    left: ObjectId,
-    right: ObjectId,
-}
-
-struct AuthorizedContradiction {
-    left: ObjectId,
-    right: ObjectId,
-    reason: String,
-    task_id: Option<TaskId>,
-    /// The caller's own work anchor, kept for the idempotency fingerprint so a
-    /// retry of an omitted-work request still replays.
-    work_id: Option<crate::domain::WorkId>,
-    /// The work whose feeds receive the event: the caller's anchor, or the
-    /// validated focus when the caller omitted it.
-    feed_work_id: Option<crate::domain::WorkId>,
-    work_root_id: Option<crate::domain::WorkId>,
 }
 
 impl IntegrityReport {

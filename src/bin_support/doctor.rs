@@ -705,13 +705,18 @@ mod tests {
     fn doctor_snapshot_disclosure_does_not_reread_after_verification() {
         let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("snapshot.db");
-        let mut store = SqliteStore::open(&database).unwrap();
+        let store = SqliteStore::open(&database).unwrap();
         let project = ProjectId("snapshot".into());
         let report = store.verify_all().unwrap();
-        store
-            .append(
-                "snapshot_test",
-                &serde_json::json!({"committed": "after verification"}),
+        let committed =
+            engram::CanonicalObject::mint(&serde_json::json!({"committed": "after verification"}))
+                .unwrap();
+        rusqlite::Connection::open(&database)
+            .unwrap()
+            .execute(
+                "INSERT INTO objects (object_id, object_kind, canonical_json)
+                 VALUES (?1, 'snapshot_test', ?2)",
+                rusqlite::params![committed.key().as_str(), committed.bytes()],
             )
             .unwrap();
         assert!(store.verify_all().unwrap().snapshot.object_count > report.snapshot.object_count);

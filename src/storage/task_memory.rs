@@ -1,15 +1,17 @@
 use super::{
-    ActorContext, ApplicableContradiction, AuthorizedContradiction, CanonicalObject, ChangeCursor,
-    Connection, ContextAssembly, ContextItem, ContextOmission, ContextOmissionSummary,
-    ContextPacket, ContextPacketHeader, ContextPacketPayload, ContradictionIntentFingerprint,
-    DateTime, Delivery, HashMap, INDEX_CONTEXT_BUDGET, MAX_EXACT_CONTEXT_OMISSIONS,
+    ActorContext, CanonicalObject, ChangeCursor, Connection, ContextAssembly, ContextItem,
+    ContextOmission, ContextOmissionSummary, ContextPacket, ContextPacketHeader,
+    ContextPacketPayload, DateTime, Delivery, INDEX_CONTEXT_BUDGET, MAX_EXACT_CONTEXT_OMISSIONS,
     MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
-    MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryProjectionMode,
-    MemoryRecord, MemoryStatus, MemorySummary, MemoryVersion, NoteIntentFingerprint, NoteIntentKey,
-    NoteReceipt, NoteRequest, NoteVisibility, ObjectId, OptionalExtension, PINNED_CONTEXT_BUDGET,
-    PreparedNote, Redactor, SCHEMA_VERSION, Scope, Sensitivity, SessionId, SqliteStore, StoreError,
-    TaskId, Transaction, TransactionBehavior, Utc, activation_policy, classify_note, params, work,
+    MemoryId, MemoryProjectionMode, MemoryStatus, MemorySummary, MemoryVersion,
+    NoteIntentFingerprint, NoteIntentKey, NoteReceipt, NoteRequest, NoteVisibility,
+    OptionalExtension, PINNED_CONTEXT_BUDGET, PreparedNote, Redactor, SCHEMA_VERSION, Scope,
+    Sensitivity, SessionId, SqliteStore, StoreError, TaskId, Transaction, TransactionBehavior, Utc,
+    activation_policy, classify_note, params, work,
 };
+
+#[cfg(test)]
+use super::{HashMap, MemoryRecord, ObjectId};
 
 #[cfg(test)]
 mod tests;
@@ -189,342 +191,6 @@ impl SqliteStore {
         Ok(())
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        clippy::too_many_lines,
-        reason = "authorization must bind the exact project, task, session, and actor view"
-    )]
-    fn authorize_contradiction_pair_on(
-        connection: &Connection,
-        project_id: &crate::domain::ProjectId,
-        task_id: Option<TaskId>,
-        work_id: Option<crate::domain::WorkId>,
-        session_id: &SessionId,
-        agent_id: &str,
-        first_version: &ObjectId,
-        second_version: &ObjectId,
-        reason: &str,
-    ) -> Result<AuthorizedContradiction, StoreError> {
-        if let Some(task_id) = task_id {
-            Self::ensure_active_task_on(connection, project_id, task_id, session_id)?;
-        }
-        let (focused_work_id, focused_root_id) =
-            Self::focused_work_for_session_on(connection, project_id, session_id)?;
-        if work_id.is_some() && work_id != focused_work_id {
-            return Err(StoreError::InvalidContradiction(
-                "work contradiction must match the session's persisted focus".into(),
-            ));
-        }
-        // A caller that omits the work anchor still contradicts from its
-        // validated focus: the anchor is the focused item, never a guess.
-        let caller_work_id = work_id;
-        let work_id = work_id.or(focused_work_id);
-        if first_version == second_version {
-            return Err(StoreError::InvalidContradiction(
-                "a version cannot contradict itself".into(),
-            ));
-        }
-        let reason = reason.trim();
-        if reason.is_empty() {
-            return Err(StoreError::InvalidContradiction(
-                "an attributed reason is required".into(),
-            ));
-        }
-        let first = Self::show_memory_on(
-            connection,
-            first_version,
-            project_id,
-            task_id,
-            work_id,
-            session_id,
-            agent_id,
-        )?;
-        let second = Self::show_memory_on(
-            connection,
-            second_version,
-            project_id,
-            task_id,
-            work_id,
-            session_id,
-            agent_id,
-        )?;
-        if matches!(first.version.scope, Scope::Agent { .. })
-            || matches!(second.version.scope, Scope::Agent { .. })
-        {
-            return Err(StoreError::InvalidContradiction(
-                "private memories cannot enter a shared contradiction edge".into(),
-            ));
-        }
-        if first.version.project_key.is_some() || second.version.project_key.is_some() {
-            return Err(StoreError::InvalidContradiction(
-                "keyed project memories use the remember/forget lifecycle and cannot be contradiction endpoints"
-                    .into(),
-            ));
-        }
-        let scoped_task = |scope: &Scope| match scope {
-            Scope::Task { task, .. } => Some(*task),
-            Scope::Project { .. } | Scope::Work { .. } | Scope::Agent { .. } => None,
-        };
-        let first_task = scoped_task(&first.version.scope);
-        let second_task = scoped_task(&second.version.scope);
-        if first_task.is_some() && second_task.is_some() && first_task != second_task {
-            return Err(StoreError::InvalidContradiction(
-                "contradiction endpoints belong to different tasks".into(),
-            ));
-        }
-        let task_anchor = first_task.or(second_task);
-
-        let scoped_work_root =
-            |scope: &Scope| -> Result<Option<crate::domain::WorkId>, StoreError> {
-                match scope {
-                    Scope::Work { work, .. } => {
-                        work::verified_work_identity(connection, *work).map(|(_, root)| Some(root))
-                    }
-                    Scope::Project { .. } | Scope::Task { .. } | Scope::Agent { .. } => Ok(None),
-                }
-            };
-        let first_root = scoped_work_root(&first.version.scope)?;
-        let second_root = scoped_work_root(&second.version.scope)?;
-        if first_root.is_some() && second_root.is_some() && first_root != second_root {
-            return Err(StoreError::InvalidContradiction(
-                "contradiction endpoints belong to different work roots".into(),
-            ));
-        }
-        let work_root_anchor = first_root.or(second_root);
-        let (task_anchor, work_root_anchor) = if task_anchor.is_none() && work_root_anchor.is_none()
-        {
-            if task_id.is_some() {
-                (task_id, None)
-            } else if focused_root_id.is_some() {
-                (None, focused_root_id)
-            } else {
-                return Err(StoreError::InvalidContradiction(
-                    "a contradiction requires an active task or work context".into(),
-                ));
-            }
-        } else {
-            (task_anchor, work_root_anchor)
-        };
-        if task_anchor.is_some() && task_anchor != task_id {
-            return Err(StoreError::InvalidContradiction(
-                "task-scoped contradiction does not match the active task".into(),
-            ));
-        }
-        if work_root_anchor.is_some() && work_root_anchor != focused_root_id {
-            return Err(StoreError::InvalidContradiction(
-                "work-scoped contradiction does not match the focused work root".into(),
-            ));
-        }
-        let (left, right) = if first_version < second_version {
-            (first_version.clone(), second_version.clone())
-        } else {
-            (second_version.clone(), first_version.clone())
-        };
-        Ok(AuthorizedContradiction {
-            left,
-            right,
-            reason: reason.into(),
-            task_id: task_anchor,
-            work_id: work_root_anchor.and(caller_work_id),
-            feed_work_id: work_root_anchor.and(work_id),
-            work_root_id: work_root_anchor,
-        })
-    }
-
-    /// Declares an explicit contradiction between two visible, non-private
-    /// memory versions. The immutable edge and both contested projections are
-    /// committed with the applicable task and/or work-root feed events.
-    ///
-    /// Engram deliberately does not guess semantic conflicts from prose. An
-    /// agent or human must name both versions and give an attributed reason.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when either memory is inaccessible, the pair is
-    /// invalid or already linked, an idempotency key changes meaning, or the
-    /// atomic write fails.
-    #[allow(
-        clippy::too_many_arguments,
-        clippy::too_many_lines,
-        reason = "the explicit authorization and idempotency inputs are part of the core boundary"
-    )]
-    pub fn record_memory_contradiction<R: Redactor>(
-        &mut self,
-        project_id: &crate::domain::ProjectId,
-        task_id: Option<TaskId>,
-        work_id: Option<crate::domain::WorkId>,
-        session_id: &SessionId,
-        agent_id: &str,
-        first_version: &ObjectId,
-        second_version: &ObjectId,
-        reason: &str,
-        idempotency_key: &str,
-        actor: ActorContext,
-        now: DateTime<Utc>,
-        redactor: &R,
-    ) -> Result<MemoryContradictionReceipt, StoreError> {
-        crate::storage::admit_session_id(session_id)?;
-        crate::storage::admit_live_actor_session(&actor)?;
-        inspect_generic_memory_actor_context(&actor, redactor)?;
-        redactor
-            .inspect(reason)
-            .map_err(StoreError::RedactionRefused)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let authorized = Self::authorize_contradiction_pair_on(
-            &transaction,
-            project_id,
-            task_id,
-            work_id,
-            session_id,
-            agent_id,
-            first_version,
-            second_version,
-            reason,
-        )?;
-        if authorized.feed_work_id.is_some() {
-            work::require_work_schema_version(&transaction, self.work_schema_version)?;
-        }
-        let request = CanonicalObject::freeze(&ContradictionIntentFingerprint {
-            project_id,
-            task_id: authorized.task_id,
-            work_id: authorized.work_id,
-            work_root_id: authorized.work_root_id,
-            left_version: &authorized.left,
-            right_version: &authorized.right,
-            reason: &authorized.reason,
-            actor: &actor,
-        })?;
-        if let Some((stored_request, receipt_json)) = transaction
-            .query_row(
-                "SELECT request_hash, receipt_json FROM contradiction_intents
-                 WHERE idempotency_key = ?1",
-                [idempotency_key],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
-            )
-            .optional()?
-        {
-            if stored_request != request.key().as_str() {
-                return Err(StoreError::ContradictionIdempotencyConflict(
-                    idempotency_key.to_owned(),
-                ));
-            }
-            let mut receipt: MemoryContradictionReceipt = serde_json::from_slice(&receipt_json)?;
-            receipt.duplicate = true;
-            return Ok(receipt);
-        }
-        let existing: Option<String> = transaction
-            .query_row(
-                "SELECT contradiction_id FROM memory_contradiction_edges
-                 WHERE left_version_id = ?1 AND right_version_id = ?2",
-                params![authorized.left.as_str(), authorized.right.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if let Some(existing) = existing {
-            let hash = ObjectId::from_stored(existing.clone())
-                .ok_or(StoreError::InvalidStoredKey(existing))?;
-            return Err(StoreError::ContradictionAlreadyRecorded(hash));
-        }
-
-        let event = MemoryContradictionEvent {
-            schema_version: SCHEMA_VERSION,
-            project_id: project_id.clone(),
-            task_id: authorized.task_id,
-            work_root_id: authorized.work_root_id,
-            left_version: authorized.left.clone(),
-            right_version: authorized.right.clone(),
-            reason: authorized.reason,
-            actor,
-            created_at: now,
-        };
-        let object = CanonicalObject::mint(&event)?;
-        Self::insert_object(&transaction, "memory_contradiction_event", &object)?;
-        transaction.execute(
-            "INSERT INTO memory_contradiction_edges (
-                 contradiction_id, project_id, task_id, work_root_id,
-                 left_version_id, right_version_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                object.key().as_str(),
-                project_id.0,
-                authorized.task_id.map(|task| task.0.to_string()),
-                authorized.work_root_id.map(|work| work.0.to_string()),
-                authorized.left.as_str(),
-                authorized.right.as_str(),
-            ],
-        )?;
-        if authorized.work_root_id.is_none()
-            && let Some(task_id) = authorized.task_id
-        {
-            transaction.execute(
-                "INSERT INTO memory_contradictions (
-                     contradiction_id, task_id, left_version_id, right_version_id
-                 ) VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    object.key().as_str(),
-                    task_id.0.to_string(),
-                    authorized.left.as_str(),
-                    authorized.right.as_str(),
-                ],
-            )?;
-        }
-        transaction.execute(
-            "UPDATE memory_heads SET status = 'contested'
-             WHERE version_id IN (?1, ?2) AND status IN ('active', 'stale')",
-            params![authorized.left.as_str(), authorized.right.as_str()],
-        )?;
-        // A contradiction can change the globally visible status of a
-        // project-scoped endpoint even when the edge itself is task/work
-        // anchored. Fence every project context without publishing either
-        // endpoint through an unrelated shared feed.
-        Self::bump_project_context_revision_on(&transaction, project_id)?;
-        let cursor = authorized
-            .task_id
-            .map(|task_id| {
-                Self::insert_task_change(
-                    &transaction,
-                    task_id,
-                    "memory_contradiction_event",
-                    &object,
-                )
-            })
-            .transpose()?;
-        let work_positions = authorized.feed_work_id.map_or_else(
-            || Ok(Vec::new()),
-            |work_id| {
-                work::append_context_object_to_work_feeds(
-                    &transaction,
-                    work_id,
-                    "memory_contradiction_event",
-                    &object,
-                )
-            },
-        )?;
-        let receipt = MemoryContradictionReceipt {
-            idempotency_key: idempotency_key.into(),
-            contradiction: object.key().clone(),
-            left_version: authorized.left,
-            right_version: authorized.right,
-            cursor,
-            work_positions,
-            duplicate: false,
-        };
-        transaction.execute(
-            "INSERT INTO contradiction_intents (
-                 idempotency_key, request_hash, receipt_json
-             ) VALUES (?1, ?2, ?3)",
-            params![
-                idempotency_key,
-                request.key().as_str(),
-                serde_json::to_vec(&receipt)?,
-            ],
-        )?;
-        transaction.commit()?;
-        Ok(receipt)
-    }
-
     /// Returns memories visible to an agent, optionally narrowed by full-text
     /// query. Explicit search includes proposed records so review pressure is
     /// inspectable; context assembly applies its stricter status filter.
@@ -533,6 +199,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when the derived index contains invalid data or
     /// SQLite cannot perform the query.
+    #[cfg(test)]
     #[allow(
         clippy::too_many_arguments,
         reason = "search authorization binds project, task, work focus, session, and actor"
@@ -611,11 +278,11 @@ impl SqliteStore {
         }
         let visibility = "h.project_id = ?1 AND h.work_id = ?2 AND
              h.sensitivity != 'restricted' AND
-             h.status IN ('active', 'proposed', 'contested', 'stale') AND
+             h.status IN ('active', 'proposed', 'stale') AND
              (h.scope_kind = 'agent' AND h.agent_id = ?3)";
         let root_visibility = "h.project_id = ?1 AND
              h.sensitivity != 'restricted' AND
-             h.status IN ('active', 'proposed', 'contested', 'stale') AND
+             h.status IN ('active', 'proposed', 'stale') AND
              h.scope_kind = 'work' AND h.work_id IN (
                  SELECT item.work_id FROM work_items item
                  WHERE item.project_id = ?1 AND item.root_id = ?4
@@ -694,7 +361,7 @@ impl SqliteStore {
         limit: Option<u32>,
     ) -> Result<Vec<MemorySummary>, StoreError> {
         let visibility = "h.project_id = ?1 AND h.sensitivity != 'restricted' AND
-             h.status IN ('active', 'proposed', 'contested', 'stale') AND
+             h.status IN ('active', 'proposed', 'stale') AND
              NOT (h.scope_kind = 'project' AND EXISTS (
                  SELECT 1 FROM objects AS keyed
                  WHERE keyed.object_id = h.version_id
@@ -784,25 +451,12 @@ impl SqliteStore {
             })?;
             mapped.collect::<Result<Vec<_>, _>>()?
         };
-        let contradictions = {
-            let mut statement = self.connection.prepare(
-                "SELECT object_id, canonical_json FROM objects
-                 WHERE object_kind = 'memory_contradiction_event'
-                 ORDER BY created_at, object_id",
-            )?;
-            let mapped = statement.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })?;
-            mapped.collect::<Result<Vec<_>, _>>()?
-        };
 
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         transaction.execute("DELETE FROM memory_heads", [])?;
         transaction.execute("DELETE FROM object_fts", [])?;
-        transaction.execute("DELETE FROM memory_contradictions", [])?;
-        transaction.execute("DELETE FROM memory_contradiction_edges", [])?;
         let mut activated = 0;
         // Canonical objects do not change during this rebuild transaction.
         // Validate each complete keyed chain once before selecting its head;
@@ -878,70 +532,9 @@ impl SqliteStore {
         }
         Self::rebuild_object_fts_from_heads_on(&transaction)?;
         Self::rebuild_project_memory_state_on(&transaction)?;
-        Self::rebuild_contradiction_projection(&transaction, contradictions)?;
         Self::bump_rebuilt_context_revisions_on(&transaction)?;
         transaction.commit()?;
         Ok(activated)
-    }
-
-    #[cfg(test)]
-    fn rebuild_contradiction_projection(
-        transaction: &Transaction<'_>,
-        contradictions: Vec<(String, Vec<u8>)>,
-    ) -> Result<(), StoreError> {
-        for (stored_hash, bytes) in contradictions {
-            let contradiction_id = ObjectId::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
-            let object = CanonicalObject::stored(&contradiction_id, bytes)?;
-            let value: serde_json::Value = serde_json::from_slice(object.bytes())?;
-            if value
-                .get("schema_version")
-                .and_then(serde_json::Value::as_u64)
-                != Some(u64::from(SCHEMA_VERSION))
-            {
-                continue;
-            }
-            let edge: MemoryContradictionEvent = object.decode()?;
-            transaction.execute(
-                "INSERT INTO memory_contradiction_edges (
-                     contradiction_id, project_id, task_id, work_root_id,
-                     left_version_id, right_version_id
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    contradiction_id.as_str(),
-                    edge.project_id.0,
-                    edge.task_id.map(|task| task.0.to_string()),
-                    edge.work_root_id.map(|work| work.0.to_string()),
-                    edge.left_version.as_str(),
-                    edge.right_version.as_str(),
-                ],
-            )?;
-            if edge.work_root_id.is_none()
-                && let Some(task_id) = edge.task_id
-            {
-                transaction.execute(
-                    "INSERT INTO memory_contradictions (
-                         contradiction_id, task_id,
-                         left_version_id, right_version_id
-                     ) VALUES (?1, ?2, ?3, ?4)",
-                    params![
-                        contradiction_id.as_str(),
-                        task_id.0.to_string(),
-                        edge.left_version.as_str(),
-                        edge.right_version.as_str(),
-                    ],
-                )?;
-            }
-        }
-        transaction.execute(
-            "UPDATE memory_heads SET status = 'contested'
-             WHERE status IN ('active', 'stale') AND version_id IN (
-                 SELECT left_version_id FROM memory_contradiction_edges
-                 UNION SELECT right_version_id FROM memory_contradiction_edges
-             )",
-            [],
-        )?;
-        Ok(())
     }
 
     pub(super) fn context_revisions_on(
@@ -1015,8 +608,7 @@ impl SqliteStore {
         let affected_projects = {
             let mut statement = connection.prepare(
                 "SELECT project_id FROM project_context_revisions
-                 UNION SELECT DISTINCT project_id FROM memory_heads
-                 UNION SELECT DISTINCT project_id FROM memory_contradiction_edges",
+                 UNION SELECT DISTINCT project_id FROM memory_heads",
             )?;
             let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
             rows.collect::<Result<Vec<_>, _>>()?
@@ -1055,6 +647,7 @@ impl SqliteStore {
     /// Returns [`StoreError`] when the session has not joined the requested
     /// task, pinned memory exceeds its fail-closed budget, or persistence
     /// fails.
+    #[cfg(test)]
     pub fn build_context(
         &mut self,
         project_id: &crate::domain::ProjectId,
@@ -1101,14 +694,7 @@ impl SqliteStore {
             None,
             None,
         )?;
-        let contradictions = Self::applicable_contradictions_on(
-            transaction,
-            project_id,
-            task_id,
-            work_root_id,
-            &memories,
-        )?;
-        let assembly = assemble_context(memories, &contradictions)?;
+        let assembly = assemble_context(memories)?;
 
         let event_cursor = task_id.map_or(Ok(ChangeCursor::default()), |task_id| {
             Self::latest_task_cursor(transaction, task_id)
@@ -1187,169 +773,6 @@ impl SqliteStore {
         Ok((Some(work_id), Some(root_id)))
     }
 
-    /// Explains a previously built packet only while its exact project, task,
-    /// and focused-work context remains active for the requesting session.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] for unknown packets, integrity failures, or a
-    /// current-context mismatch.
-    pub fn explain_context(
-        &self,
-        packet_hash: &ObjectId,
-        project_id: &crate::domain::ProjectId,
-        session_id: &SessionId,
-        agent_id: &str,
-    ) -> Result<ContextPacketPayload, StoreError> {
-        let transaction = self.connection.unchecked_transaction()?;
-        let payload: ContextPacketPayload =
-            Self::get_typed_object_on(&transaction, packet_hash, "context_packet")?
-                .ok_or_else(|| StoreError::PacketAccessDenied(packet_hash.clone()))?;
-        if payload.schema_version != SCHEMA_VERSION
-            || payload.project_id != *project_id
-            || payload.agent_id != agent_id
-        {
-            return Err(StoreError::PacketAccessDenied(packet_hash.clone()));
-        }
-
-        if let Some(task_id) = payload.task_id {
-            match Self::ensure_active_task_on(&transaction, project_id, task_id, session_id) {
-                Ok(()) => {}
-                Err(StoreError::TaskAccessDenied { .. }) => {
-                    return Err(StoreError::PacketAccessDenied(packet_hash.clone()));
-                }
-                Err(error) => return Err(error),
-            }
-        }
-
-        if let Some(work_id) = payload.work_id {
-            let (focused_work_id, _) =
-                Self::focused_work_for_session_on(&transaction, project_id, session_id)?;
-            if focused_work_id != Some(work_id) {
-                return Err(StoreError::PacketAccessDenied(packet_hash.clone()));
-            }
-        }
-        transaction.commit()?;
-        Ok(payload)
-    }
-
-    #[allow(
-        clippy::too_many_lines,
-        reason = "applicability verifies every projection anchor against the canonical edge"
-    )]
-    fn applicable_contradictions_on(
-        connection: &Connection,
-        project_id: &crate::domain::ProjectId,
-        task_id: Option<TaskId>,
-        work_root_id: Option<crate::domain::WorkId>,
-        memories: &[MemorySummary],
-    ) -> Result<Vec<ApplicableContradiction>, StoreError> {
-        let visible: std::collections::HashSet<_> =
-            memories.iter().map(|memory| &memory.version).collect();
-        let mut statement = connection.prepare(
-            "SELECT contradiction_id, task_id, work_root_id,
-                    left_version_id, right_version_id
-             FROM memory_contradiction_edges
-             WHERE project_id = ?1
-               AND (task_id IS NULL OR task_id = ?2)
-               AND (work_root_id IS NULL OR work_root_id = ?3)
-             ORDER BY contradiction_id",
-        )?;
-        let rows = statement.query_map(
-            params![
-                project_id.0,
-                task_id.map(|task| task.0.to_string()),
-                work_root_id.map(|work| work.0.to_string())
-            ],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                ))
-            },
-        )?;
-        rows.filter_map(|row| match row {
-            Ok((contradiction, stored_task, stored_root, left, right)) => {
-                let parsed = (|| {
-                    let contradiction = ObjectId::from_stored(contradiction.clone())
-                        .ok_or(StoreError::InvalidStoredKey(contradiction))?;
-                    let left = ObjectId::from_stored(left.clone())
-                        .ok_or(StoreError::InvalidStoredKey(left))?;
-                    let right = ObjectId::from_stored(right.clone())
-                        .ok_or(StoreError::InvalidStoredKey(right))?;
-                    let stored_task = stored_task
-                        .map(|task| {
-                            uuid::Uuid::parse_str(&task).map(TaskId).map_err(|_| {
-                                StoreError::InvalidMemoryProjection(format!(
-                                    "contradiction edge has invalid task id {task}"
-                                ))
-                            })
-                        })
-                        .transpose()?;
-                    let stored_root = stored_root
-                        .map(|root| {
-                            uuid::Uuid::parse_str(&root)
-                                .map(crate::domain::WorkId)
-                                .map_err(|_| {
-                                    StoreError::InvalidMemoryProjection(format!(
-                                        "contradiction edge has invalid work root id {root}"
-                                    ))
-                                })
-                        })
-                        .transpose()?;
-                    let object = Self::get_canonical_object_on(
-                        connection,
-                        &contradiction,
-                        "memory_contradiction_event",
-                    )?
-                    .ok_or_else(|| {
-                        StoreError::InvalidMemoryProjection(format!(
-                            "contradiction edge {contradiction} has no canonical object"
-                        ))
-                    })?;
-                    let value: serde_json::Value = serde_json::from_slice(object.bytes())?;
-                    if value
-                        .get("schema_version")
-                        .and_then(serde_json::Value::as_u64)
-                        != Some(u64::from(SCHEMA_VERSION))
-                    {
-                        return Err(StoreError::InvalidMemoryProjection(format!(
-                            "contradiction edge {contradiction} has an unsupported schema version"
-                        )));
-                    }
-                    let event: MemoryContradictionEvent = object.decode()?;
-                    if event.project_id != *project_id
-                        || event.task_id != stored_task
-                        || event.work_root_id != stored_root
-                        || event.left_version != left
-                        || event.right_version != right
-                    {
-                        return Err(StoreError::InvalidMemoryProjection(format!(
-                            "contradiction edge {contradiction} differs from its canonical object"
-                        )));
-                    }
-                    Ok(ApplicableContradiction {
-                        contradiction,
-                        left,
-                        right,
-                    })
-                })();
-                match parsed {
-                    Ok(edge) if visible.contains(&edge.left) && visible.contains(&edge.right) => {
-                        Some(Ok(edge))
-                    }
-                    Ok(_) => None,
-                    Err(error) => Some(Err(error)),
-                }
-            }
-            Err(error) => Some(Err(StoreError::Sqlite(error))),
-        })
-        .collect()
-    }
-
     /// Shows a complete memory record only after checking its project, task,
     /// participant, private owner, and sensitivity boundaries.
     ///
@@ -1357,6 +780,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError::MemoryAccessDenied`] rather than exposing content
     /// when a valid hash crosses a scope boundary.
+    #[cfg(test)]
     pub fn show_memory(
         &self,
         version_id: &ObjectId,
@@ -1380,6 +804,7 @@ impl SqliteStore {
         Ok(record)
     }
 
+    #[cfg(test)]
     #[allow(
         clippy::too_many_arguments,
         reason = "authorization binds the exact persisted task/work session context"
@@ -1607,11 +1032,7 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
     clippy::too_many_lines,
     reason = "context selection, omission accounting, and both byte budgets stay contiguous so the fail-closed packet contract is auditable"
 )]
-fn assemble_context(
-    mut memories: Vec<MemorySummary>,
-    contradictions: &[ApplicableContradiction],
-) -> Result<ContextAssembly, StoreError> {
-    ensure_pinned_consistency(&memories, contradictions)?;
+fn assemble_context(mut memories: Vec<MemorySummary>) -> Result<ContextAssembly, StoreError> {
     memories.sort_by(|left, right| {
         left.title
             .cmp(&right.title)
@@ -1640,10 +1061,7 @@ fn assemble_context(
     let mut pinned_bytes = 0;
     let mut index_bytes = 0;
     for memory in memories {
-        if !matches!(
-            memory.status,
-            MemoryStatus::Active | MemoryStatus::Contested | MemoryStatus::Stale
-        ) {
+        if !matches!(memory.status, MemoryStatus::Active | MemoryStatus::Stale) {
             continue;
         }
         if memory.sensitivity == Sensitivity::Restricted {
@@ -1657,10 +1075,7 @@ fn assemble_context(
             );
             continue;
         }
-        let mut reason = retrieval_reason(&memory.scope, memory.delivery);
-        if memory.status == MemoryStatus::Contested {
-            reason.push_str("; unresolved contradiction is visible");
-        }
+        let reason = retrieval_reason(&memory.scope, memory.delivery);
         match memory.delivery {
             Delivery::Pinned => {
                 pinned_bytes += memory.title.len() + memory.body.len() + 2;
@@ -1740,43 +1155,6 @@ fn record_context_omission(assembly: &mut ContextAssembly, omission: ContextOmis
             count: 1,
         });
     }
-}
-
-fn ensure_pinned_consistency(
-    memories: &[MemorySummary],
-    contradictions: &[ApplicableContradiction],
-) -> Result<(), StoreError> {
-    let by_version: HashMap<_, _> = memories
-        .iter()
-        .map(|memory| (&memory.version, memory))
-        .collect();
-    for edge in contradictions {
-        let Some(left) = by_version.get(&edge.left) else {
-            continue;
-        };
-        let Some(right) = by_version.get(&edge.right) else {
-            continue;
-        };
-        let unsafe_pinned = |memory: &MemorySummary| {
-            matches!(
-                memory.status,
-                MemoryStatus::Active | MemoryStatus::Contested | MemoryStatus::Stale
-            ) && memory.delivery == Delivery::Pinned
-                && matches!(
-                    memory.authority,
-                    crate::domain::Authority::Hard | crate::domain::Authority::Firm
-                )
-                && memory.sensitivity != Sensitivity::Restricted
-        };
-        if unsafe_pinned(left) && unsafe_pinned(right) {
-            return Err(StoreError::PinnedContradiction {
-                contradiction: edge.contradiction.clone(),
-                left: edge.left.clone(),
-                right: edge.right.clone(),
-            });
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn fts_query(query: &str) -> String {

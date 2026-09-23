@@ -54,8 +54,7 @@ representations. `control.rs` owns deterministic turn, turn-begin,
 turn-checkpoint, and action-begin decisions. `storage/` atomically derives
 work/run lifecycle, membership, context, and named feed heads; persists sessions and
 short-lived grants; consumes grants at begin; and emits canonical checkpoint
-events. `host.rs` is the thin JSON-lines host transport. The earlier shadow
-observation path remains available for replay evidence. Scoped leases, action
+events. `host.rs` is the thin JSON-lines host transport. Scoped leases, action
 grant persistence, and finalization projections remain later phases. Front
 ends translate requests; they do not decide eligibility.
 
@@ -70,9 +69,9 @@ fingerprint for comparing content. Readers accept the exact supported schema; po
 objects and never rewrite an existing object.
 
 A **memory** is a stable id plus an append-only chain of versions with parent
-links. Multiple unsuperseded heads mean *contested*. Status (`proposed`,
-`active`, `contested`, `stale`, `expired`, `retracted`, `tombstoned`) is
-derived from the object graph, never stored as a mutable field. See
+links. Status (`proposed`, `active`, `stale`, `expired`, `retracted`,
+`tombstoned`) is derived from the object graph, never stored as a mutable
+field. See
 [typed memory model](features/typed-memory-model.md).
 
 A **work item** is a stable local planning identity in a parent forest and

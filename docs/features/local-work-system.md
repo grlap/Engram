@@ -294,11 +294,7 @@ its read applicability is the verified root id. Private `Scope::Agent { work
 }` scratch remains exact-item and owner-only. This lets reopen preserve shared
 decisions and constraints while resetting execution state, lets sibling work
 consume common root guidance, and prevents private scratch from leaking
-across sibling focus. Explicit contradiction edges carry task and/or verified
-work-root anchors, so two applicable pinned work records fail packet
-construction just as pinned task records do. Work-anchored contradiction
-events enter the project/root/current-run feeds, are delivered as typed
-`work_next` changes, and remain part of feed-integrity verification.
+across sibling focus.
 
 ### Work source snapshot
 
@@ -870,14 +866,14 @@ the last item actually emitted.
 The `local-process-` prefix is reserved for generated process-default work
 sessions; a `local-process-v1-*` id may be reused for seven days, after which
 the caller must omit `--session-id` to receive a fresh process default. Live
-caller, planning-actor, handoff-recipient, and control start/join participant
-and actor session ids are at most 64 UTF-8 bytes; longer values refuse before
-store effects. The same live length-only admit applies to generic note capture,
-graph-snapshot save or load operator actors, contradiction request and actor
-sessions, control-policy administrator actor sessions, and project-memory
-remember, forget, full, or list callers. A caller-supplied catalog `held_by` filter is length-admitted
-the same way: that is live filter admission, not validation of a persisted
-claim holder. A persisted claim holder used only for comparison is not
+caller, planning-actor, handoff-recipient, and control session-bind
+participant and actor session ids are at most 64 UTF-8 bytes; longer values
+refuse before store effects. The same live length-only admit applies to
+generic note capture, graph-snapshot save or load operator actors,
+control-policy administrator actor sessions, and project-memory remember,
+forget, full, or list callers. A caller-supplied catalog `held_by` filter is
+length-admitted the same way: that is live filter admission, not validation
+of a persisted claim holder. A persisted claim holder used only for comparison is not
 length-admitted. Historical stored ids are not rewritten.
 The transaction that creates a new process-default session row pays for one
 index-bounded reclamation page of at most 64 older inactive rows and their

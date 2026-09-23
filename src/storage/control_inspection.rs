@@ -5,10 +5,9 @@ use super::{Connection, HostPathPolicy, SqliteStore, StoreError};
 /// Presence checks over one current-schema read snapshot. Any presence blocks
 /// absence-based host recovery, regardless of project, grant state or payload.
 /// This is not an inventory of all records for the id. Unchecked data includes
-/// connection tokens in `control_connections` and advisory decisions in
-/// `control_observations`. Reusing an id/key can replay an old observation or
-/// conflict; absence here never authorizes id recycling. The host must
-/// separately retain and recheck connection ownership.
+/// connection tokens in `control_connections`; absence here never authorizes
+/// id recycling. The host must separately retain and recheck connection
+/// ownership.
 #[derive(Debug)]
 pub struct ControlSessionInspection {
     pub stored_host_path_policy: HostPathPolicy,

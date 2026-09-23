@@ -567,7 +567,6 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         )
         .expect("create child focus");
     let child_work = &decomposition.children[0];
-    let sibling_work_id = decomposition.children[1].work_id;
     store
         .focus_work_session(&root.project_id, &peer_session, child_work.work_id, at(5))
         .expect("move peer focus to child work");
@@ -770,105 +769,5 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         ControlTurnBeginDecision::Refuse {
             code: ControlRefusalCode::DeltaRequired
         }
-    ));
-    let conflicting = store
-        .capture_note(
-            &NoteRequest {
-                project_id: root.project_id.clone(),
-                task_id: None,
-                work_id: Some(child_work.work_id),
-                prose: "Constraint: bypass the focused work safety contract".into(),
-                visibility: NoteVisibility::Shared,
-                kind: None,
-                authority: None,
-                sensitivity: Some(Sensitivity::Internal),
-                title: None,
-                tags: Vec::new(),
-                evidence: Vec::new(),
-                refs: Vec::new(),
-                actor: actor("peer"),
-                idempotency_key: "conflicting-work-memory".into(),
-                created_at: at(12),
-            },
-            &DevelopmentNoopRedactor,
-        )
-        .expect("capture conflicting root-shared memory from child focus");
-    let contradiction = store
-        .record_memory_contradiction(
-            &root.project_id,
-            None,
-            Some(child_work.work_id),
-            &peer_session,
-            "peer",
-            &shared.version,
-            &conflicting.version,
-            "the focused work safety rules cannot both guide execution",
-            "work-contradiction",
-            actor("peer"),
-            at(7),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("record pure-work contradiction");
-    assert!(contradiction.cursor.is_none());
-    assert!(!contradiction.work_positions.is_empty());
-    assert!(matches!(
-        store.build_context(&root.project_id, None, &peer_session, "peer", at(8)),
-        Err(StoreError::PinnedContradiction { .. })
-    ));
-    store
-        .focus_work_session(&root.project_id, &peer_session, sibling_work_id, at(9))
-        .expect("move peer focus to sibling in the same root");
-    assert!(matches!(
-        store.build_context(&root.project_id, None, &peer_session, "peer", at(10)),
-        Err(StoreError::PinnedContradiction { .. })
-    ));
-}
-
-#[test]
-fn context_explanation_requires_the_current_work_focus() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let first = store
-        .create_work(
-            &root_request("project-context-focus", "context-focus-first", 0),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("first root");
-    let second = store
-        .create_work(
-            &root_request("project-context-focus", "context-focus-second", 1),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("second root");
-    let session = SessionId("planner".into());
-    store
-        .focus_work_session(&first.project_id, &session, first.work_id, at(2))
-        .expect("focus first root");
-    let packet = store
-        .build_context(&first.project_id, None, &session, "planner", at(3))
-        .expect("focused context");
-    assert_eq!(
-        store
-            .explain_context(
-                &packet.header.packet_hash,
-                &first.project_id,
-                &session,
-                "planner",
-            )
-            .expect("current focus remains authorized")
-            .work_id,
-        Some(first.work_id)
-    );
-
-    store
-        .focus_work_session(&first.project_id, &session, second.work_id, at(4))
-        .expect("change focus");
-    assert!(matches!(
-        store.explain_context(
-            &packet.header.packet_hash,
-            &first.project_id,
-            &session,
-            "planner",
-        ),
-        Err(StoreError::PacketAccessDenied(_))
     ));
 }

@@ -4,13 +4,12 @@ use super::{
     ControlPolicyRecoveryReport, ControlPolicyUpdateReceipt, ControlTurnDecision, IntegrityReport,
     IssuedTurnGrant, MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES,
     MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES, MemoryAssertionEvent, MemoryProjectionMode,
-    MemoryVersion, ObjectId, ObligationRuleSetUpdateReceipt, ObservedTurnDecision,
-    OptionalExtension, SCHEMA_VERSION, Scope, SessionId, SqliteStore, StoreError,
-    StoredControlGrantRow, StoredControlObservation, StoredControlOperation,
+    MemoryVersion, ObjectId, ObligationRuleSetUpdateReceipt, OptionalExtension, SCHEMA_VERSION,
+    Scope, SessionId, SqliteStore, StoreError, StoredControlGrantRow, StoredControlOperation,
     StoredControlPolicyOperation, StoredControlTurnResult, StoredTurnGrantSupersession,
-    StoredWorkLeaseRow, Transaction, TurnDecision, TurnEvaluationInput, TurnGrantState,
-    TurnGrantSupersession, TurnGrantSupersessionReason, TurnObservationIntentFingerprint,
-    enum_name, params, parse_enum, validate_keyed_project_memory_shape,
+    StoredWorkLeaseRow, Transaction, TurnGrantState, TurnGrantSupersession,
+    TurnGrantSupersessionReason, enum_name, params, parse_enum,
+    validate_keyed_project_memory_shape,
 };
 
 #[cfg(test)]
@@ -82,33 +81,6 @@ impl SqliteStore {
         )?;
 
         Self::verify_control_policy_records_on(&self.connection, &mut report)?;
-
-        let mut control_statement = self.connection.prepare(
-            "SELECT sequence, session_id, task_id, idempotency_key, intent_hash,
-                    observed_at_ms, input_json, decision_json
-             FROM control_observations ORDER BY sequence",
-        )?;
-        let control_rows = control_statement.query_map([], |row| {
-            Ok(StoredControlObservation {
-                sequence: row.get(0)?,
-                session_id: row.get(1)?,
-                task_id: row.get(2)?,
-                idempotency_key: row.get(3)?,
-                intent_hash: row.get(4)?,
-                observed_at_ms: row.get(5)?,
-                input_json: row.get(6)?,
-                decision_json: row.get(7)?,
-            })
-        })?;
-        for row in control_rows {
-            let stored = row?;
-            report.checked_control_records += 1;
-            if Self::decode_control_observation(&stored).is_err() {
-                report
-                    .invalid_control_records
-                    .push(format!("control_observation:{}", stored.sequence));
-            }
-        }
 
         let mut session_statement = self
             .connection
@@ -591,65 +563,6 @@ impl SqliteStore {
         });
         report.invalid_control_records.dedup();
         Ok(report)
-    }
-
-    pub(super) fn decode_control_observation(
-        stored: &StoredControlObservation,
-    ) -> Result<ObservedTurnDecision, StoreError> {
-        let input: TurnEvaluationInput = CanonicalObject::decode_bytes(&stored.input_json)?;
-        let expected_intent = CanonicalObject::freeze(&TurnObservationIntentFingerprint {
-            control_schema_version: input.control_schema_version,
-            session_id: &input.session_id,
-            task_id: input.task_id,
-            intent: &input.intent,
-        })?;
-        let observation: ObservedTurnDecision =
-            CanonicalObject::decode_bytes(&stored.decision_json)?;
-
-        let input_task = input.task_id.map(|task_id| task_id.0.to_string());
-        let row_matches = expected_intent.key().as_str() == stored.intent_hash
-            && observation.control_schema_version == CONTROL_SCHEMA_VERSION
-            && input.session_id.0 == stored.session_id
-            && input_task == stored.task_id
-            && input.intent.idempotency_key == stored.idempotency_key
-            && input.evaluated_at.timestamp_millis() == stored.observed_at_ms
-            && observation.request_key == stored.idempotency_key
-            && observation.observed_at.timestamp_millis() == stored.observed_at_ms;
-        if !row_matches {
-            return Err(StoreError::InvalidControlObservation(format!(
-                "row {} does not match its input and decision",
-                stored.sequence
-            )));
-        }
-
-        let schema_matches = input.control_schema_version == CONTROL_SCHEMA_VERSION
-            || matches!(
-                &observation.decision,
-                TurnDecision::Refuse { directive }
-                    if directive.code == crate::domain::ControlRefusalCode::UnknownControlSchema
-            );
-        let decision_matches = schema_matches
-            && match &observation.decision {
-                TurnDecision::Grant { basis } => {
-                    Some(basis.task_id) == input.task_id
-                        && basis.session_id == input.session_id
-                        && basis.purpose == input.intent.purpose
-                        && basis.intent_fingerprint == input.intent.intent_fingerprint
-                }
-                TurnDecision::Refuse { directive } => {
-                    directive.directive_id
-                        == format!("{}:{}", stored.idempotency_key, directive.code.as_str())
-                }
-                TurnDecision::Defer { deferral } => !deferral.wake_condition.trim().is_empty(),
-            };
-        if !decision_matches {
-            return Err(StoreError::InvalidControlObservation(format!(
-                "decision {} is not bound to its input",
-                stored.sequence
-            )));
-        }
-
-        Ok(observation)
     }
 
     fn verify_control_turn_result(stored: &StoredControlTurnResult) -> Result<(), StoreError> {

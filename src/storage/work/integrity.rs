@@ -1012,14 +1012,6 @@ pub(super) fn verify_work_feed_integrity(
                 })
                 .transpose()?
                 .flatten(),
-            "memory_contradiction_event" => object
-                .decode::<crate::domain::MemoryContradictionEvent>()
-                .ok()
-                .map(|event| {
-                    expected_work_contradiction_feeds(connection, work_items, &stored_hash, &event)
-                })
-                .transpose()?
-                .flatten(),
             _ => None,
         };
         let Some(expected) = expected else {
@@ -1179,62 +1171,6 @@ fn expected_work_memory_feeds(
         format!("root_work:{}", root_id.0),
     ]);
     Ok(required.is_subset(&expected).then_some(expected))
-}
-
-fn expected_work_contradiction_feeds(
-    connection: &Connection,
-    work_items: &HashMap<String, serde_json::Value>,
-    object_id: &str,
-    event: &crate::domain::MemoryContradictionEvent,
-) -> Result<Option<HashSet<String>>, StoreError> {
-    let Some(root_id) = event.work_root_id else {
-        return Ok(None);
-    };
-    let project_id = &event.project_id;
-    let Some(root) = work_items.get(&root_id.0.to_string()) else {
-        return Ok(None);
-    };
-    let root_id_text = root_id.0.to_string();
-    if root.get("project_id").and_then(serde_json::Value::as_str) != Some(project_id.0.as_str())
-        || root.get("root_id").and_then(serde_json::Value::as_str) != Some(root_id_text.as_str())
-    {
-        return Ok(None);
-    }
-    let feeds = {
-        let mut statement = connection.prepare(
-            "SELECT feed_kind, feed_id FROM work_feed_entries
-             WHERE object_id = ?1 ORDER BY feed_kind, feed_id",
-        )?;
-        statement
-            .query_map([object_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    let mut expected = HashSet::new();
-    for (kind, id) in feeds {
-        let valid = match kind.as_str() {
-            "project" => id == project_id.0,
-            "root_work" => id == root_id_text,
-            "run_execution" => connection
-                .query_row(
-                    "SELECT item.root_id FROM work_runs run
-                     JOIN work_items item ON item.work_id = run.work_id
-                     WHERE run.run_id = ?1",
-                    [&id],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()?
-                .is_some_and(|run_root| run_root == root_id_text),
-            _ => false,
-        };
-        if !valid || !expected.insert(format!("{kind}:{id}")) {
-            return Ok(None);
-        }
-    }
-    Ok((expected.contains(&format!("project:{}", project_id.0))
-        && expected.contains(&format!("root_work:{}", root_id.0)))
-    .then_some(expected))
 }
 
 fn expected_work_feeds(

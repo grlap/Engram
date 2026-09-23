@@ -153,7 +153,6 @@ pub enum ControlHealth {
 #[serde(rename_all = "snake_case")]
 pub enum PacketSafety {
     Safe,
-    PinnedContradiction,
     PinnedBudgetExceeded,
     DeliveryBudgetExceeded,
 }
@@ -180,7 +179,6 @@ pub enum ControlRefusalCode {
     TaskAccessDenied,
     PolicyEpochChanged,
     TaskAdmissionEpochChanged,
-    PinnedContradiction,
     PinnedBudgetExceeded,
     LeaseRequired,
     ContextRequired,
@@ -217,7 +215,6 @@ impl ControlRefusalCode {
             Self::TaskAccessDenied => "task_access_denied",
             Self::PolicyEpochChanged => "policy_epoch_changed",
             Self::TaskAdmissionEpochChanged => "task_admission_epoch_changed",
-            Self::PinnedContradiction => "pinned_contradiction",
             Self::PinnedBudgetExceeded => "pinned_budget_exceeded",
             Self::LeaseRequired => "lease_required",
             Self::ContextRequired => "context_required",
@@ -1364,7 +1361,6 @@ pub struct ActionBeginSnapshot {
     pub session_id: SessionId,
     pub task_id: TaskId,
     pub phase: SessionPhase,
-    pub task_state: TaskState,
     pub turn_purpose: TurnPurpose,
     pub effect: EffectClass,
     pub resource_subjects: Vec<ResourceSubject>,

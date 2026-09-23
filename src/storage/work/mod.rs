@@ -371,9 +371,8 @@ pub(super) use completion::{
     append_control_verification_evidence_on,
 };
 pub(super) use feeds::{
-    append_context_object_to_work_feeds, append_memory_capture_to_work_feeds,
-    load_control_environment_evidence_on, load_control_execution_observation_on,
-    load_typed_work_object,
+    append_memory_capture_to_work_feeds, load_control_environment_evidence_on,
+    load_control_execution_observation_on, load_typed_work_object,
 };
 #[cfg(test)]
 use planning::persist_work_item;

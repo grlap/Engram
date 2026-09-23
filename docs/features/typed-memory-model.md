@@ -27,26 +27,19 @@ superseded and carries unusually important provenance.
 ## Versions, not edits
 
 Changing a memory asserts a new version naming its parent version(s). History
-is never mutated; a memory with multiple unsuperseded heads is **contested**
-and stays visibly so until an attributed resolution version cites all
-conflicting parents. Conflicts between different memories get explicit
-`contradicts` edges — never last-writer-wins.
+is never mutated, and no write silently wins over another.
 
-Engram represents that edge as a canonical contradiction event carrying two
-shared version ids plus an attributed reason. The current agent MCP surface
-does not expose general-purpose version, contradiction, merge, or resolution
-mutation. Its constrained `remember`/`forget` exception creates attributed
+The current agent MCP surface does not expose general-purpose version, merge,
+or resolution mutation. Its constrained `remember`/`forget` exception creates attributed
 project-scoped Episodes under permanent safe keys. `remember --revise` appends
 a linear attributed revision under the same key; optional expected revision
 checks refuse stale writes, and omitted checks explicitly report the replaced
 and new revisions. Earlier versions remain discoverable until terminal
 `forget`, which retires the key and all its reads without erasing local history.
 This constrained episode operation is not general-purpose merge or conflict
-resolution. Engram does not pretend keyword or model inference can
-safely discover every semantic conflict. The edge makes both records visibly
-contested, and an applicable firm/hard pinned pair stops packet construction.
-Explicit contradiction, merge, and resolution operations remain host/operator
-work outside the current agent surface.
+resolution. Engram does not pretend keyword or model inference can safely
+discover semantic conflicts, and it has no contradiction or conflict-marking
+operation.
 
 ## Metadata that used to live in prose
 
@@ -62,11 +55,11 @@ exactly why prose became a particular typed record.
 
 ## Derived status
 
-`proposed`, `active`, `contested`, `stale`, `expired`, `retracted`,
-`tombstoned` — all derived from the object graph (versions + events), never
-stored as a mutable column. See [spec §2.4](../spec.md#24-version-schema) for
-the full schema and status table. Generic search and context assembly expose
-only `proposed`, `active`, `contested`, and `stale` heads; `expired`,
+`proposed`, `active`, `stale`, `expired`, `retracted`, `tombstoned` — all
+derived from the object graph (versions + events), never stored as a mutable
+column. See [spec §2.4](../spec.md#24-version-schema) for the full target
+schema and status table. Generic search and context assembly expose only
+`proposed`, `active`, and `stale` heads; `expired`,
 `retracted`, and `tombstoned` facts remain canonical history but are not
 retrieval candidates.
 

@@ -791,29 +791,14 @@ fn verb(outcome: Result<Receipt, VerbError>, words: &AgentVerbs) -> CallToolResu
 )]
 pub fn store_error_value(error: &StoreError) -> Value {
     let details = match error {
-        StoreError::NoteIdempotencyConflict(key)
-        | StoreError::ContradictionIdempotencyConflict(key) => {
-            json!({ "idempotency_key": key })
-        }
-        StoreError::ContradictionAlreadyRecorded(hash) => {
-            json!({ "contradiction_hash": hash })
-        }
-        StoreError::PinnedContradiction {
-            contradiction,
-            left,
-            right,
-        } => json!({
-            "contradiction_hash": contradiction,
-            "left_version": left,
-            "right_version": right,
-        }),
+        StoreError::NoteIdempotencyConflict(key) => json!({ "idempotency_key": key }),
         StoreError::TaskAccessDenied { task, session } => json!({
             "task_id": task.0,
             "session_id": session,
         }),
-        StoreError::MemoryAccessDenied(hash)
-        | StoreError::MemoryNotFound(hash)
-        | StoreError::PacketAccessDenied(hash) => json!({ "object_hash": hash }),
+        StoreError::MemoryAccessDenied(hash) | StoreError::MemoryNotFound(hash) => {
+            json!({ "object_hash": hash })
+        }
         StoreError::ProjectMemoryExists(key) => json!({
             "key": key,
             "remedy": format!("read memories {key} --full; use remember with --key {key} --revise to retain history"),
@@ -1042,10 +1027,6 @@ fn error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::NoteIdempotencyConflict(_) => "note_idempotency_conflict",
-        StoreError::ContradictionIdempotencyConflict(_) => "contradiction_idempotency_conflict",
-        StoreError::ContradictionAlreadyRecorded(_) => "contradiction_already_recorded",
-        StoreError::InvalidContradiction(_) => "invalid_contradiction",
-        StoreError::PinnedContradiction { .. } => "pinned_contradiction",
         StoreError::NoActiveTask(_) => "no_active_task",
         StoreError::TaskReferenceNotFound(_) => "task_reference_not_found",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
@@ -1057,7 +1038,6 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::ProjectMemoryRetired(_) => "memory_retired",
         StoreError::ProjectMemoryBindingInvalid => "memory_binding_invalid",
         StoreError::InvalidProjectMemory(_) => "memory_invalid",
-        StoreError::PacketAccessDenied(_) => "packet_access_denied",
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::EmptyNote => "empty_note",
         StoreError::RedactionRefused(_) => "redaction_refused",
@@ -1098,8 +1078,6 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidMemoryProjection(_)
         | StoreError::InvalidTaskBinding
         | StoreError::InvalidTaskProjection(_)
-        | StoreError::TurnObservationIdempotencyConflict(_)
-        | StoreError::InvalidControlObservation(_)
         | StoreError::InvalidControlSession(_)
         | StoreError::HostPathIdentityUnresolved
         | StoreError::ControlSessionNotBound(_)

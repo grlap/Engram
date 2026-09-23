@@ -415,64 +415,6 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
 }
 
 #[test]
-fn keyed_project_memories_refuse_contradiction_lifecycle_transitions() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let project = ProjectId("project-memory-contradiction".into());
-    let session = SessionId("memory-contradiction-session".into());
-    for (key, body, at_ms) in [
-        ("first-key", "first retained statement", 1_700_000_000_000),
-        ("second-key", "second retained statement", 1_700_000_000_001),
-    ] {
-        store
-            .remember_project_memory(
-                &project_memory_request(&project.0, &session.0, Some(key), body, at_ms),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("remember contradiction fixture");
-    }
-    let first = lookup_project_memory_on(&store.connection, &project, "first-key")
-        .expect("lookup first")
-        .expect("first exists");
-    let second = lookup_project_memory_on(&store.connection, &project, "second-key")
-        .expect("lookup second")
-        .expect("second exists");
-    assert!(matches!(
-        store.record_memory_contradiction(
-            &project,
-            None,
-            None,
-            &session,
-            "project-memory-agent",
-            &first.version_id,
-            &second.version_id,
-            "these statements conflict",
-            "project-memory-contradiction",
-            actor(&session.0),
-            Utc.timestamp_millis_opt(1_700_000_000_002).unwrap(),
-            &DevelopmentNoopRedactor,
-        ),
-        Err(StoreError::InvalidContradiction(detail))
-            if detail.contains("cannot be contradiction endpoints")
-    ));
-    let listed = store
-        .project_memories(&project, &session, &actor(&session.0), None, None)
-        .expect("list after refused contradiction");
-    assert_eq!(listed.memories.len(), 2);
-    store
-        .forget_project_memory(
-            &ForgetProjectMemoryRequest {
-                project_id: project,
-                session_id: session.clone(),
-                key: "first-key".into(),
-                actor: actor(&session.0),
-                created_at: Utc.timestamp_millis_opt(1_700_000_000_003).unwrap(),
-            },
-            &DevelopmentNoopRedactor,
-        )
-        .expect("forget remains available");
-}
-
-#[test]
 fn project_memory_listing_continues_by_safe_key_and_search_is_bounded() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let project = ProjectId("project-memory-listing".into());

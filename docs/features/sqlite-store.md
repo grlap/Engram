@@ -29,7 +29,6 @@ engram.db
   work_session_state # mutable ambient focus + processed project-feed cursor; never authority
   task_changes # dense task-local feed positions plus an internal global row sequence
   context_deliveries # target dense per-session delivery + exact source ranges
-  control_observations # non-authoritative shadow decisions, replayed by idempotency intent
   control_sessions     # durable host routing, phase, cursors, epochs
   control_connections  # current host-process generation; fences predecessors
   control_turn_results # idempotent enforced decisions
@@ -90,16 +89,6 @@ call counts do not imply bounded hashing work.
 No old database bytes are rewritten or reclaimed by this format change.
 Existing different-build stores still refuse ordinary open; cutover and any
 live-store operation need a separate operator decision.
-
-`control_observations` is the first observe/replay implementation slice. It
-stores canonical input and decision bytes plus diagnostic fingerprints, binds an
-idempotency key to one session/turn intent, and returns the original decision
-after restart. The write transaction derives task state, task head, and
-session participation from durable tables; `doctor` decodes the input and
-decision, compares the recomputed intent fingerprint, and validates their
-redundant row bindings. That observation table
-neither enters the canonical object graph nor grants a turn; authority is
-issued only through the separate host-control projections below.
 
 The host-private alpha adds `control_sessions`, `control_turn_results`,
 `control_turn_grants`, `control_turn_grant_supersessions`,
@@ -315,15 +304,15 @@ history or memory bodies. The `local-process-` prefix is reserved for generated
 process-default work sessions; a `local-process-v1-*` id may be reused for
 seven days, after which the caller must omit `--session-id` to receive a fresh
 process default. Live caller, planning-actor, handoff-recipient, and control
-start/join participant and actor session ids are at most 64 UTF-8 bytes;
+session-bind participant and actor session ids are at most 64 UTF-8 bytes;
 longer values refuse before store effects. The same live length-only admit
 applies to generic note capture, graph-snapshot save or load operator actors,
-contradiction request and actor sessions, control-policy administrator actor
-sessions, and project-memory remember, forget, full, or list callers. A caller-supplied catalog
-`held_by` filter is length-admitted the same way: that is live filter
-admission, not validation of a persisted claim holder. Control `start_task` /
-`join_task` admit both live identities before the bind transaction. A
-persisted claim holder used only for comparison is not length-admitted.
+control-policy administrator actor sessions, and project-memory remember,
+forget, full, or list callers. A caller-supplied catalog `held_by` filter is
+length-admitted the same way: that is live filter admission, not validation
+of a persisted claim holder. Control session bind admits both live identities
+before its transaction. A persisted claim holder used only for comparison is
+not length-admitted.
 Historical stored ids are not rewritten. Creating a new process-default session atomically removes at
 most 64 index-selected inactive session rows and their attempt rows. The
 retention indexes are declared rebuildable projections repaired by

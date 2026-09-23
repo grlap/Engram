@@ -16,7 +16,7 @@ optional capabilities. Preserve that boundary in code, tests, docs, and commands
 
 - Start with `docs/architecture.md` for component and data-flow boundaries.
 - Read `docs/features/typed-memory-model.md` for kinds, authority, delivery,
-  visibility, versioning, and contradiction behavior.
+  visibility, and versioning.
 - Read `docs/features/local-tasks-and-reports.md` when changing tasks, report generation,
   publication, retry, receipts, or retention.
 - Read `docs/features/local-work-system.md` when changing work items,
@@ -41,8 +41,7 @@ contract and keep the change narrow.
 - Never pin a digest in source or tests. References are derived at runtime
   from the code that produces them; hashes remain only as computed content
   fingerprints.
-- Applicable hard/firm pinned contradictions and pinned-budget overflow fail
-  context assembly before an agent acts.
+- Pinned-budget overflow fails context assembly before an agent acts.
 - Local work needs no external reference. Explicit imports preserve immutable
   source snapshots and never silently mirror external state.
 - Local does not mean single-session: one stable project id resolves every
@@ -174,12 +173,11 @@ agent-response limits are unchanged. Multiple calls are not one transaction.
 Ask the host or coordinator for a real recipient session id before a handoff.
 `handoff --to SESSION` refuses generated peer display labels before any write;
 this prevents unusable offers, not identity spoofing. Live caller, planning-actor,
-handoff-recipient, and control start/join participant and actor session ids
+handoff-recipient, and control session-bind participant and actor session ids
 are at most 64 UTF-8 bytes and refuse before store effects; the same live
 length-only admit covers generic note capture, graph-snapshot save or load
-operator actors, contradiction request and actor sessions, control-policy
-administrator actor sessions, and project-memory remember, forget, full, or
-list callers; a caller-supplied
+operator actors, control-policy administrator actor sessions, and
+project-memory remember, forget, full, or list callers; a caller-supplied
 catalog `held_by` filter is length-admitted the same way (live filter
 admission, not persisted-holder validation); a persisted claim
 holder used only for comparison is not length-admitted. Do not hide metadata

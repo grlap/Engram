@@ -133,14 +133,16 @@ unchanged: an import never recomputes an id, never rewrites a link because a
 record changed shape, and never keeps a copy of the old format beside the new.
 A table or column the current format has no place for is refused by name, not
 dropped in silence. Import may omit only explicitly named retired data:
-the staged delivery page's fingerprint column (retired 2026-09-17), and the
+the staged delivery page's fingerprint column (retired 2026-09-17), the
 obsolete task_claims, task_claim_intents, and publication_intents tables
-(retired 2026-09-20 during Greg's requested cleanup). Import reports retired
-column value counts and retired table row counts; canonical objects and ids
-remain unchanged. Unknown columns in a retired table still refuse. These
-retirements also include the uncompared control checksums:
-`control_observations.input_hash` and `.decision_hash`,
-`control_turn_grants.grant_hash`, `control_work_leases.lease_hash`,
+(retired 2026-09-20 during Greg's requested cleanup), and the never-written
+control_observations, memory_contradictions, memory_contradiction_edges, and
+contradiction_intents tables (retired 2026-09-22 with the final conversion
+Greg approved). Import reports retired column value counts and retired table
+row counts; canonical objects and ids remain unchanged. Unknown columns in a
+retired table still refuse. These retirements also include the uncompared
+control checksums: `control_turn_grants.grant_hash`,
+`control_work_leases.lease_hash`,
 `control_turn_grant_supersessions.supersession_hash`, and `result_hash` in
 `control_operation_results` and `control_policy_operation_results`.
 Their non-null value counts are reported; payloads and compared replay

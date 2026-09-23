@@ -38,13 +38,12 @@ use crate::{
     domain::{
         ACTOR_CONTEXT_NORMALIZED_REFERENCE, ACTOR_CONTEXT_PROVENANCE_REFERENCE, AssuranceLevel,
         ForgetProjectMemoryRequest, MAX_ACTOR_CONTEXT_BYTES, MemoryAssertionEvent,
-        MemoryContradictionEvent, POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE,
-        POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE, ProjectMemoryFull, ProjectMemoryList,
-        ProjectMemoryMutationReceipt, ProvenanceLink, ProvenanceRelation,
-        RecordGateEvidenceRequest, RecordRestoredWorkEvidenceRequest, RecordWorkNoteRequest,
-        RememberProjectMemoryRequest, RestoredWorkEvidenceInput, SCHEMA_VERSION, Scope,
-        Sensitivity, WorkCompletionRecoveryCause, is_unsafe_rendered_text_char,
-        validate_gate_evidence_payload,
+        POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE, POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE,
+        ProjectMemoryFull, ProjectMemoryList, ProjectMemoryMutationReceipt, ProvenanceLink,
+        ProvenanceRelation, RecordGateEvidenceRequest, RecordRestoredWorkEvidenceRequest,
+        RecordWorkNoteRequest, RememberProjectMemoryRequest, RestoredWorkEvidenceInput,
+        SCHEMA_VERSION, Scope, Sensitivity, WorkCompletionRecoveryCause,
+        is_unsafe_rendered_text_char, validate_gate_evidence_payload,
     },
     storage::{
         BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, CompleteWorkStorageResult,
@@ -895,7 +894,6 @@ fn verified_bounded_work_changes(
     project_id: &ProjectId,
     session_id: &SessionId,
     focused_root_id: Option<WorkId>,
-    bound_task_id: Option<TaskId>,
     entries: Vec<WorkFeedEntry>,
     confirmed_through: i64,
     budget: usize,
@@ -928,7 +926,6 @@ fn verified_bounded_work_changes(
             store,
             project_id,
             focused_root_id,
-            bound_task_id,
             &entry.object_kind,
             object,
             Some(&entry.position),
@@ -1171,7 +1168,6 @@ fn agent_change_object(
     store: &SqliteStore,
     project_id: &ProjectId,
     focused_root_id: Option<WorkId>,
-    bound_task_id: Option<TaskId>,
     object_kind: &str,
     object: serde_json::Value,
     position: Option<&FeedPosition>,
@@ -1534,56 +1530,6 @@ fn agent_change_object(
                 },
             )
         }
-        "memory_contradiction_event" => {
-            let event = serde_json::from_value::<MemoryContradictionEvent>(object)?;
-            let left = load_contradiction_version(store, &event.left_version)?;
-            let right = load_contradiction_version(store, &event.right_version)?;
-            let left_omission = shared_memory_endpoint_omission(
-                store,
-                project_id,
-                focused_root_id,
-                bound_task_id,
-                &left,
-            )?;
-            let right_omission = shared_memory_endpoint_omission(
-                store,
-                project_id,
-                focused_root_id,
-                bound_task_id,
-                &right,
-            )?;
-            let omission = [left_omission, right_omission]
-                .into_iter()
-                .flatten()
-                .min_by_key(|reason| match reason {
-                    WorkChangeOmissionReason::RestrictedSensitivity => 0,
-                    WorkChangeOmissionReason::OutsideFocusedRoot => 1,
-                    WorkChangeOmissionReason::OutsideBoundTask => 2,
-                });
-            if event.project_id != *project_id || event.work_root_id != focused_root_id {
-                return Ok(omitted_work_change(
-                    object_kind,
-                    omission.unwrap_or(WorkChangeOmissionReason::OutsideFocusedRoot),
-                ));
-            }
-            omission.map_or_else(
-                || {
-                    Ok(WorkChangeProjection::Visible(WorkChangeSummary {
-                        schema_version: event.schema_version,
-                        object_kind: object_kind.into(),
-                        work_id: event.work_root_id,
-                        work_ref: None,
-                        revision: None,
-                        change_kind: "memory_contradiction".into(),
-                        summary: compact_text(&event.reason),
-                        actor_id: Some(compact_text(&event.actor.actor_id)),
-                        actor_context: projected_actor_context(&event.actor),
-                        created_at: event.created_at,
-                    }))
-                },
-                |reason| Ok(omitted_work_change(object_kind, reason)),
-            )
-        }
         other => Err(StoreError::InvalidWorkProjection(format!(
             "project work feed contains unsupported agent object kind {other:?}"
         ))),
@@ -1604,17 +1550,6 @@ fn obligation_resolution_change_summary(
             format!("{rule_id} waiver attributed to {}", compact_text(waived_by)),
         ),
     }
-}
-
-fn load_contradiction_version(
-    store: &SqliteStore,
-    version_id: &ObjectId,
-) -> Result<MemoryVersion, StoreError> {
-    store.get::<MemoryVersion>(version_id)?.ok_or_else(|| {
-        StoreError::InvalidWorkProjection(format!(
-            "memory contradiction references missing version {version_id}"
-        ))
-    })
 }
 
 fn memory_change_projection(
@@ -1667,47 +1602,6 @@ fn work_memory_change_omission(
     }
     Ok((focused_root_id != Some(item.root_id))
         .then_some(WorkChangeOmissionReason::OutsideFocusedRoot))
-}
-
-fn shared_memory_endpoint_omission(
-    store: &SqliteStore,
-    project_id: &ProjectId,
-    focused_root_id: Option<WorkId>,
-    bound_task_id: Option<TaskId>,
-    version: &MemoryVersion,
-) -> Result<Option<WorkChangeOmissionReason>, StoreError> {
-    let outside_context = match &version.scope {
-        Scope::Project { project } => {
-            if project != project_id {
-                return Err(StoreError::InvalidWorkProjection(format!(
-                    "project memory {} is bound outside project {:?}",
-                    version.memory_id.0, project_id.0
-                )));
-            }
-            None
-        }
-        Scope::Task { project, task } => {
-            if project != project_id {
-                return Err(StoreError::InvalidWorkProjection(format!(
-                    "task memory {} is bound outside project {:?}",
-                    version.memory_id.0, project_id.0
-                )));
-            }
-            (bound_task_id != Some(*task)).then_some(WorkChangeOmissionReason::OutsideBoundTask)
-        }
-        Scope::Work { .. } => {
-            work_memory_change_omission(store, project_id, focused_root_id, version)?
-        }
-        Scope::Agent { .. } => {
-            return Err(StoreError::InvalidWorkProjection(
-                "private memory cannot enter a shared work contradiction".into(),
-            ));
-        }
-    };
-    if version.sensitivity == Sensitivity::Restricted {
-        return Ok(Some(WorkChangeOmissionReason::RestrictedSensitivity));
-    }
-    Ok(outside_context)
 }
 
 fn omitted_work_change(

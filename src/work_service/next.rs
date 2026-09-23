@@ -187,7 +187,6 @@ impl LocalWorkService {
                     &self.project_id,
                     &self.session_id,
                     focused_root_id,
-                    bound_task_id,
                     entries,
                     delivery_session.project_cursor,
                     MAX_CHANGE_SECTION_BYTES,

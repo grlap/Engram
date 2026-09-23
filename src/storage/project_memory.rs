@@ -934,14 +934,12 @@ fn lookup_project_memory_history_on(
                 StoreError::InvalidMemoryProjection("project memory assertion is missing".into())
             })?;
     validate_keyed_project_memory_shape(&version, &assertion)?;
-    let expected_status =
-        SqliteStore::expected_memory_head_status_on(connection, &version_id, assertion.status)?;
     let expected = SqliteStore::expected_memory_head_projection(
         &version_id,
         &assertion_id,
         &version,
         &assertion,
-        expected_status,
+        assertion.status,
     )?;
     let shape_matches = stored == expected
         && version.project_key.as_deref() == Some(key)

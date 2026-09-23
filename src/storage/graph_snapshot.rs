@@ -1382,14 +1382,12 @@ fn memories_on(
                     )
                 })?;
         validate_keyed_project_memory_shape(&version, &assertion)?;
-        let projected_status =
-            SqliteStore::expected_memory_head_status_on(connection, &version_id, assertion.status)?;
         let expected = SqliteStore::expected_memory_head_projection_from_canonical(
             &version_id,
             &assertion_id,
             &version,
             &assertion,
-            projected_status,
+            assertion.status,
         )?;
         if projected != expected
             || version.project_key.as_deref() != Some(&key)
@@ -1410,7 +1408,7 @@ fn memories_on(
         }
         let mut history = Vec::new();
         let mut memory_redacted = false;
-        if projected_status == MemoryStatus::Active {
+        if assertion.status == MemoryStatus::Active {
             for (index, entry) in chain.iter().take(chain.len().saturating_sub(1)).enumerate() {
                 let (prior, hidden) = snapshot_active_memory(entry.version.clone(), widened);
                 memory_redacted |= hidden;
@@ -1431,7 +1429,7 @@ fn memories_on(
                 }
             }
         }
-        let state = match projected_status {
+        let state = match assertion.status {
             MemoryStatus::Active => {
                 active_count += 1;
                 let (state, was_redacted) = snapshot_active_memory(version, widened);

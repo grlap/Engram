@@ -100,8 +100,7 @@ for is never dropped in silence. Explicit retirement is limited to:
 - `work_session_state.tentative_delivery_payload_hash`: reported under
   `retired_fields` with its non-null value count; the rest of each row is
   imported.
-- Uncompared control checksums: `control_observations.input_hash` and
-  `.decision_hash`, `control_turn_grants.grant_hash`,
+- Uncompared control checksums: `control_turn_grants.grant_hash`,
   `control_work_leases.lease_hash`,
   `control_turn_grant_supersessions.supersession_hash`, and `result_hash` in
   `control_operation_results` and `control_policy_operation_results`.
@@ -113,6 +112,11 @@ for is never dropped in silence. Explicit retirement is limited to:
   whole-task advisory claims and unwired publication scaffolding. Import reports
   each table under `left_out` with its row count and retirement reason. It does
   not recreate those tables or turn their rows into live work claims.
+- `control_observations`, `memory_contradictions`,
+  `memory_contradiction_edges`, and `contradiction_intents`: shadow turn
+  observations and memory contradictions, which no production path ever
+  wrote. Import reports each under `left_out` with its row count and does not
+  recreate it.
 
 Export still carries all retired data unchanged. Import validates retired rows
 and their declared counts, and refuses any column outside the explicit retired

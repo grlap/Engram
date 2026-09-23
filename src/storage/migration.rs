@@ -38,36 +38,6 @@ const RENAMED_COLUMNS: &[(&str, &str, &str)] = &[
     ("objects", "object_hash", "object_id"),
     ("memory_heads", "version_hash", "version_id"),
     ("memory_heads", "assertion_hash", "assertion_id"),
-    (
-        "memory_contradictions",
-        "contradiction_hash",
-        "contradiction_id",
-    ),
-    (
-        "memory_contradictions",
-        "left_version_hash",
-        "left_version_id",
-    ),
-    (
-        "memory_contradictions",
-        "right_version_hash",
-        "right_version_id",
-    ),
-    (
-        "memory_contradiction_edges",
-        "contradiction_hash",
-        "contradiction_id",
-    ),
-    (
-        "memory_contradiction_edges",
-        "left_version_hash",
-        "left_version_id",
-    ),
-    (
-        "memory_contradiction_edges",
-        "right_version_hash",
-        "right_version_id",
-    ),
     ("task_changes", "object_hash", "object_id"),
     ("control_policy_state", "policy_hash", "policy_id"),
     ("control_policy_versions", "policy_hash", "policy_id"),
@@ -125,8 +95,6 @@ const RETIRED_COLUMNS: &[(&str, &str)] = &[
     // A fingerprint of the staged delivery page that nothing ever compared;
     // the page itself and its delivery token are what a session needs.
     ("work_session_state", "tentative_delivery_payload_hash"),
-    ("control_observations", "input_hash"),
-    ("control_observations", "decision_hash"),
     ("control_turn_grants", "grant_hash"),
     ("control_turn_grant_supersessions", "supersession_hash"),
     ("control_work_leases", "lease_hash"),
@@ -169,6 +137,43 @@ fn retired_table_columns(table: &str) -> Option<&'static [&'static str]> {
             "attempt_count",
             "receipt_json",
         ]),
+        // Never-used shadow observations and memory contradictions: no
+        // production writer existed and both current stores held no rows.
+        // Each list also names the spellings an export written before the
+        // record-link renames and checksum retirement still carries.
+        "control_observations" => Some(&[
+            "sequence",
+            "session_id",
+            "task_id",
+            "idempotency_key",
+            "intent_hash",
+            "input_json",
+            "decision_json",
+            "observed_at_ms",
+            "input_hash",
+            "decision_hash",
+        ]),
+        "memory_contradictions" => Some(&[
+            "contradiction_id",
+            "task_id",
+            "left_version_id",
+            "right_version_id",
+            "contradiction_hash",
+            "left_version_hash",
+            "right_version_hash",
+        ]),
+        "memory_contradiction_edges" => Some(&[
+            "contradiction_id",
+            "project_id",
+            "task_id",
+            "work_root_id",
+            "left_version_id",
+            "right_version_id",
+            "contradiction_hash",
+            "left_version_hash",
+            "right_version_hash",
+        ]),
+        "contradiction_intents" => Some(&["idempotency_key", "request_hash", "receipt_json"]),
         _ => None,
     }
 }

@@ -825,8 +825,8 @@ than implying durability or concurrency that is not present.
 A **context packet** is the unit of delivery: the block of memory an agent
 receives at session start or on request. Packet construction is a first-class
 core API used identically by every interface (§8), and every packet is
-reproducible: it has a content hash, and `engram context explain <packet>`
-shows exactly what was included, omitted, and why.
+reproducible: it is stored immutably with a content fingerprint, and it lists
+what was included, omitted, and why.
 
 Every packet also carries the observed positions of its named dense project,
 root-work, and run-execution feeds. The hash answers “what exact content did I
@@ -1047,7 +1047,6 @@ engram approve <id>         engram retract <id>        engram forget <id>
 # read path
 engram show <id>            engram history <id>        engram search <query>
 engram context build [--scope ... --budget ...]
-engram context explain <packet-id>
 engram context delta --task <id> --since <cursor>
 
 # curation & ops

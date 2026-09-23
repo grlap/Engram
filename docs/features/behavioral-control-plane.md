@@ -331,8 +331,7 @@ state through an earlier failure:
    asserted host control declaration;
 3. verify that session/run lifecycle states allow the requested activity and,
    for an ordinary turn, that this session holds the run's live work claim;
-4. construct applicable pinned context without overflow or unresolved policy
-   contradiction;
+4. construct applicable pinned context without overflow;
 5. attach the next required bounded context/delta delivery not already
    acknowledged, preserving dense task-local cursor ranges and an omission
    manifest; partial pages authorize only recovery turns, and the final page
@@ -962,7 +961,7 @@ stricter but cannot weaken non-overridable cells:
 | Decision service unreachable or deadline exceeded | Open | Closed | `degraded_open` only inside a cached envelope | Closed | Closed |
 | Store corruption or unknown safety schema | Diagnostic-only | Closed | Closed | Closed | Closed |
 | Portable writer epoch unknown/stale/expired | Open | Closed | Closed | Closed | Closed |
-| Unsafe pinned packet or policy contradiction | Recovery-only | Recovery capture only | Closed | Closed | Closed |
+| Unsafe pinned packet (budget overflow) | Recovery-only | Recovery capture only | Closed | Closed | Closed |
 | Lease conflict, expiry, or stale fence | Open | Capture allowed | Defer | Defer or deny | Closed |
 | Unknown prior action outcome | Open | Unrelated capture only | Unrelated work only | Closed when related | Closed when related |
 | User/host denial or missing authority | As host permits | Closed for denied capability | Closed for denied capability | Closed | Closed |
@@ -1160,7 +1159,7 @@ surface uses the stable spellings defined by `ControlRefusalCode`:
 `control_policy_missing`, `control_assurance_insufficient`,
 `capability_not_permitted`, `task_unbound`, `task_access_denied`,
 `policy_epoch_changed`, `task_admission_epoch_changed`,
-`pinned_contradiction`, `pinned_budget_exceeded`, `lease_required`,
+`pinned_budget_exceeded`, `lease_required`,
 `context_required`, `delta_required`, `delivery_invalid`,
 `checkpoint_required`, `recovery_required`, `turn_already_open`,
 `turn_purpose_mismatch`, `lifecycle_hold`, `participant_not_ready`,
@@ -1230,7 +1229,7 @@ per-host-tool mediation map is still outstanding.
 Broader enforcement must remain disabled until Phase 1 makes these invariants
 true in the core, not only in wrappers:
 
-- context contents, task/work-root contradictions, packet fingerprint, stamped task
+- context contents, packet fingerprint, stamped task
   head, persisted work focus, project/root/run work-feed heads, the
   project-visible context revision, and the owner-private context revision
   come from one consistent SQLite read transaction; begin rechecks that basis

@@ -332,7 +332,6 @@ pub struct WorkChangeOmission {
 pub enum WorkChangeOmissionReason {
     RestrictedSensitivity,
     OutsideFocusedRoot,
-    OutsideBoundTask,
 }
 
 /// A response section was deliberately bounded without consuming omitted

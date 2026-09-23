@@ -1,13 +1,12 @@
-use chrono::{TimeDelta, TimeZone};
+use chrono::TimeDelta;
 
 use super::*;
 
 use crate::{
     DevelopmentNoopRedactor,
     domain::{
-        AssuranceLevel, ControlAssurance, ControlEpochs, ControlHealth, EffectClass, NoteRequest,
-        NoteVisibility, PacketSafety, ProjectId, ProjectPolicyEpoch, SessionPhase,
-        TaskAdmissionEpoch, TurnEvaluationInput, TurnIntent, TurnPurpose,
+        AssuranceLevel, ControlAssurance, EffectClass, NoteRequest, NoteVisibility, ProjectId,
+        TurnIntent,
     },
 };
 
@@ -144,66 +143,6 @@ pub(super) fn install_memory_task(store: &SqliteStore, task_id: TaskId, sessions
                 params![session, task_id.0.to_string(), now],
             )
             .expect("install memory test binding");
-    }
-}
-
-pub(super) fn turn_evaluation(task_id: TaskId) -> TurnEvaluationInput {
-    TurnEvaluationInput {
-        control_schema_version: crate::domain::CONTROL_SCHEMA_VERSION,
-        session_id: SessionId("control-session".into()),
-        task_id: Some(task_id),
-        work_binding: None,
-        work_binding_current: true,
-        participant_membership: crate::domain::ParticipantMembership::Member,
-        task_state: Some(TaskState::Active),
-        phase: SessionPhase::Ready,
-        health: ControlHealth::Healthy,
-        active_policy_known: true,
-        host_assurance: ControlAssurance::Advisory,
-        required_assurance: ControlAssurance::Advisory,
-        policy_effects: vec![
-            EffectClass::Observe,
-            EffectClass::Communicate,
-            EffectClass::MutateLocal,
-            EffectClass::MutateShared,
-            EffectClass::ExternalSideEffect,
-            EffectClass::Lifecycle,
-        ],
-        mediated_effects: vec![
-            EffectClass::Observe,
-            EffectClass::Communicate,
-            EffectClass::MutateLocal,
-            EffectClass::MutateShared,
-            EffectClass::ExternalSideEffect,
-            EffectClass::Lifecycle,
-        ],
-        current_epochs: ControlEpochs {
-            project_policy: ProjectPolicyEpoch(1),
-            task_admission: TaskAdmissionEpoch(2),
-        },
-        session_epochs: ControlEpochs {
-            project_policy: ProjectPolicyEpoch(1),
-            task_admission: TaskAdmissionEpoch(2),
-        },
-        confirmed_cursor: ChangeCursor(3),
-        head_cursor: ChangeCursor(3),
-        pending_delivery: None,
-        packet_safety: PacketSafety::Safe,
-        blocking_watermark: ChangeCursor(3),
-        acknowledged_blocking_watermark: ChangeCursor(3),
-        has_unknown_action_outcome: false,
-        authority_satisfied: true,
-        capability_map_revision: 1,
-        leases: Vec::new(),
-        intent: TurnIntent {
-            idempotency_key: "observe-turn-a".into(),
-            intent_fingerprint: ObjectId::from_canonical_bytes(b"turn-a"),
-            purpose: TurnPurpose::Ordinary,
-            requested_effects: vec![EffectClass::Observe],
-            resource_intents: Vec::new(),
-        },
-        evaluated_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
-        grant_ttl_seconds: 30,
     }
 }
 

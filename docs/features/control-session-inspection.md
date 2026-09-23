@@ -40,10 +40,8 @@ one read snapshot, with schema, policy and path admission rechecked within
 that snapshot. Orphan grants, grants for another session and malformed grant
 payloads still count as present. This does not perform a full history audit.
 Unchecked data includes, but is not limited to, connection-token rows in
-`control_connections` and advisory decisions in `control_observations`; these
-may remain for this session even when all three booleans are false. Reusing
-the session id and an observation idempotency key can replay an old decision
-or cause an idempotency conflict. The receipt does not establish that every
+`control_connections`; these may remain for this session even when all three
+booleans are false. The receipt does not establish that every
 record for the id is absent, nor authorize recycling the id or overwriting
 a connection token.
 Ordinary schema/policy admission still has its normal cost; it is not a

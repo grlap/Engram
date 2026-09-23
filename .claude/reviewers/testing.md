@@ -20,7 +20,7 @@ cross-platform coverage.
   failure and block report freeze for an unaccounted participant.
 - Coordination tests cover two connections contending for one live lease,
   expiry/recovery, idempotent claim replay, and ordered deltas.
-- Context tests cover budget overflow and hard/firm contradictions fail-closed.
+- Context tests cover pinned-budget overflow failing closed.
 - Tests avoid timing, global-state, order, ambient network, and machine-specific
   assumptions.
 - Do not use arbitrary sleeps, retries, quarantine, or timeout inflation to

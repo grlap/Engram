@@ -251,24 +251,6 @@ pub(in crate::storage) fn append_memory_capture_to_work_feeds(
     Ok(positions)
 }
 
-pub(in crate::storage) fn append_context_object_to_work_feeds(
-    transaction: &Transaction<'_>,
-    work_id: WorkId,
-    object_kind: &str,
-    object: &CanonicalObject,
-) -> Result<Vec<FeedPosition>, StoreError> {
-    let item = load_work_item(transaction, work_id)?;
-    append_to_work_feeds(
-        transaction,
-        &item.project_id,
-        item.root_id,
-        item.active_run_id,
-        None,
-        object_kind,
-        object,
-    )
-}
-
 pub(in crate::storage) fn load_control_execution_observation_on(
     connection: &Connection,
     hash: &ObjectId,
@@ -330,7 +312,7 @@ pub(super) fn verify_anchored_memory_feeds(
     };
     let mut statement = connection.prepare(
         "SELECT object_id, object_kind, canonical_json FROM objects
-         WHERE object_kind IN ('memory_contradiction_event', 'memory_version')
+         WHERE object_kind = 'memory_version'
          ORDER BY object_id",
     )?;
     let rows = statement.query_map([], |row| {
@@ -364,16 +346,7 @@ pub(super) fn verify_anchored_memory_feeds(
         if !current_schema {
             continue;
         }
-        let anchor = if object_kind == "memory_contradiction_event" {
-            object
-                .decode::<crate::domain::MemoryContradictionEvent>()
-                .ok()
-                .and_then(|event| {
-                    event
-                        .work_root_id
-                        .map(|root_id| (event.project_id, root_id))
-                })
-        } else if let Ok(crate::domain::MemoryVersion {
+        let anchor = if let Ok(crate::domain::MemoryVersion {
             scope: crate::domain::Scope::Work { project, work },
             ..
         }) = object.decode::<crate::domain::MemoryVersion>()
