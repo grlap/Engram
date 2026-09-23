@@ -19,10 +19,13 @@ import { fileURLToPath } from "node:url";
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 
 function git(root, args, { allowFailure = false } = {}) {
+  // The test launcher's detached worker has no console. Without windowsHide,
+  // Windows opens a visible terminal window for every git call it makes.
   const result = spawnSync("git", args, {
     cwd: root,
     encoding: null,
     maxBuffer: 128 * 1024 * 1024,
+    windowsHide: true,
   });
   if (result.error) throw result.error;
   if (result.status !== 0 && !allowFailure) {
