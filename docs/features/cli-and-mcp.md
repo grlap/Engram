@@ -1538,7 +1538,7 @@ principal. The shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
-| `session_bind` | Start/join the compatibility task, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `sync_required` |
+| `session_bind` | Start/join the compatibility task, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `sync_required`; a re-bind to the task the session already has keeps its confirmed position and moves past the events that session wrote itself, so another writer's event is still delivered, while a first bind or a bind to another task delivers its feed from the start |
 | `session_status` | Read current phase, cursors, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and any safely redeliverable partial recovery grant |
 | `lease_acquire` | Atomically grant or defer a normalized resource lease and append its fenced task event |
 | `lease_release` | Release a lease held by this session and append its fenced task event |

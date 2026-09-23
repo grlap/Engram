@@ -455,6 +455,21 @@ impl SqliteStore {
         let previous_revision = existing.as_ref().map_or(0, |session| session.revision);
         let routing_token = uuid::Uuid::now_v7().to_string();
         let head = Self::latest_task_cursor(&transaction, task.task.task_id)?;
+        // A host re-binds a live session every few hours, and every turn adds
+        // one checkpoint to the task feed. Replaying the whole feed would
+        // outgrow one delivery page after enough turns and refuse every
+        // ordinary turn. A re-bind to the same task therefore keeps its
+        // confirmed position and moves past the events this session wrote
+        // itself; another writer's event is still delivered.
+        let confirmed_cursor = match &existing {
+            Some(session) if session.task_id == task.task.task_id => Self::own_task_events_end(
+                &transaction,
+                task.task.task_id,
+                session.confirmed_cursor,
+                session_id,
+            )?,
+            _ => ChangeCursor::default(),
+        };
         transaction.execute(
             "UPDATE control_turn_grants SET state = 'expired'
              WHERE session_id = ?1 AND state = 'issued'",
@@ -470,7 +485,7 @@ impl SqliteStore {
                  blocking_watermark, capability_map_revision, revision, updated_at_ms
              ) VALUES (
                  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                 ?14, 'sync_required', ?15, ?16, 0, NULL, ?17, ?18, ?19, ?20,
+                 ?14, 'sync_required', ?15, ?16, ?23, NULL, ?17, ?18, ?19, ?20,
                  ?21, ?22
              )
              ON CONFLICT(session_id) DO UPDATE SET
@@ -521,6 +536,7 @@ impl SqliteStore {
                 capability_map_revision,
                 previous_revision + 1,
                 now.timestamp_millis(),
+                confirmed_cursor.0,
             ],
         )?;
         let stored = Self::load_control_session_on(&transaction, session_id)?
@@ -535,6 +551,35 @@ impl SqliteStore {
         };
         transaction.commit()?;
         Ok(binding)
+    }
+
+    /// Returns the end of the unbroken run of task events after `after`
+    /// that `session_id` wrote itself, stopping before the first event
+    /// another writer appended.
+    fn own_task_events_end(
+        transaction: &Transaction<'_>,
+        task_id: TaskId,
+        after: ChangeCursor,
+        session_id: &SessionId,
+    ) -> Result<ChangeCursor, StoreError> {
+        let mut statement = transaction.prepare(
+            "SELECT change.task_cursor,
+                    json_extract(object.canonical_json, '$.actor.session_id')
+             FROM task_changes change
+             JOIN objects object ON object.object_id = change.object_id
+             WHERE change.task_id = ?1 AND change.task_cursor > ?2
+             ORDER BY change.task_cursor",
+        )?;
+        let mut rows = statement.query(params![task_id.0.to_string(), after.0])?;
+        let mut end = after;
+        while let Some(row) = rows.next()? {
+            let author: Option<String> = row.get(1)?;
+            if author.as_deref() != Some(session_id.0.as_str()) {
+                break;
+            }
+            end = ChangeCursor(row.get(0)?);
+        }
+        Ok(end)
     }
 
     /// Returns current host-control state after validating the routing token.

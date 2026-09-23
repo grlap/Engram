@@ -475,6 +475,149 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
     ));
 }
 
+// A host re-binds a live session every few hours, and every turn adds one
+// checkpoint to the task feed. Replaying the session's own history after
+// more turns than one delivery page carries would refuse every ordinary turn
+// with recovery_required; skipping another writer's event would hide it.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture keeps the own-history, peer-event and other-task re-binds in order"
+)]
+fn rebinding_skips_only_the_sessions_own_task_events() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let effects = [EffectClass::Observe, EffectClass::Communicate];
+    let first = bind_control(&mut store, now);
+    let turns = crate::storage::MAX_CONTROL_DELIVERY_EVENTS + 2;
+    for turn in 0..turns {
+        complete_control_turn(
+            &mut store,
+            &first,
+            &format!("history-{turn}"),
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(turn + 1),
+        );
+    }
+
+    // A session the old reset left at zero must not replay its own history.
+    store
+        .connection
+        .execute(
+            "UPDATE control_sessions SET confirmed_cursor = 0
+             WHERE session_id = 'control-session'",
+            [],
+        )
+        .expect("leave the session where the old reset put it");
+    let later = now + TimeDelta::seconds(turns + 10);
+    let rebound = bind_control_for(
+        &mut store,
+        "control-session",
+        "bind-control-b",
+        &effects,
+        later,
+    );
+    assert_eq!(rebound.status.task_id, first.status.task_id);
+    assert_eq!(rebound.status.phase, SessionPhase::SyncRequired);
+    assert_eq!(
+        rebound.status.confirmed_cursor,
+        rebound.status.blocking_watermark
+    );
+    let grant = complete_control_turn(
+        &mut store,
+        &rebound,
+        "after-rebind",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        later + TimeDelta::seconds(1),
+    );
+    let page = &grant.delivery.as_ref().expect("context delivery").page;
+    assert_eq!(page.from_cursor, page.head_cursor);
+    assert!(!page.has_more);
+
+    // Another writer's event appended before a re-bind is still delivered.
+    store
+        .join_task(
+            &ProjectId("project-a".into()),
+            "dummy:CONTROL-HOST-1",
+            &SessionId("peer-session".into()),
+            actor("peer-session"),
+            later + TimeDelta::seconds(2),
+        )
+        .expect("a peer joins the same task");
+    let before = store
+        .control_status(
+            &ProjectId("project-a".into()),
+            &rebound.status.session_id,
+            &rebound.connection_token,
+            &rebound.routing_token,
+            later + TimeDelta::seconds(2),
+        )
+        .expect("status before the re-bind")
+        .confirmed_cursor;
+    // The session's own event after the peer's must not carry the skip past it.
+    store
+        .capture_note(
+            &note_request(
+                rebound.status.task_id,
+                "control-session",
+                "Decision: an own event after a peer event is still delivered.",
+                "own-after-peer",
+                NoteVisibility::Shared,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("own note after the peer join");
+    let rebound = bind_control_for(
+        &mut store,
+        "control-session",
+        "bind-control-c",
+        &effects,
+        later + TimeDelta::seconds(3),
+    );
+    assert_eq!(rebound.status.confirmed_cursor, before);
+    let grant = complete_control_turn(
+        &mut store,
+        &rebound,
+        "after-peer",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        later + TimeDelta::seconds(4),
+    );
+    let delivery = grant.delivery.as_ref().expect("peer delivery");
+    assert_eq!(delivery.page.from_cursor, before);
+    let kinds = delivery
+        .delta
+        .changes
+        .iter()
+        .map(|change| change.object_kind.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(kinds, ["task_joined_event", "memory_assertion_event"]);
+
+    // A bind to another task still delivers that task's feed from the start.
+    let elsewhere = bind_control_for_task(
+        &mut store,
+        "control-session",
+        "bind-control-d",
+        "dummy:CONTROL-HOST-2",
+        &effects,
+        later + TimeDelta::seconds(10),
+    );
+    assert_ne!(elsewhere.status.task_id, first.status.task_id);
+    let grant = complete_control_turn(
+        &mut store,
+        &elsewhere,
+        "other-task",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        later + TimeDelta::seconds(11),
+    );
+    let page = &grant.delivery.as_ref().expect("feed delivery").page;
+    assert_eq!(page.from_cursor, ChangeCursor::default());
+    assert!(page.to_cursor > page.from_cursor);
+}
+
 #[test]
 #[allow(
     clippy::too_many_lines,

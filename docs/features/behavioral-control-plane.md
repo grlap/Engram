@@ -1213,7 +1213,12 @@ aliases. Host adapters remain responsible for resolving symlink/hard-link
 identity before constructing a resource subject. Engram also rejects a task
 rebind while old active leases remain. Every task event is treated as
 begin-blocking until the impact classifier ships, which is conservative but
-can over-deliver. `action_gated` declarations and shared/external/lifecycle
+can over-deliver. A re-bind to the task a session already has keeps its
+confirmed position and moves past the run of its own events that directly
+follows it, so it does not re-read the history of its own turns, which would
+outgrow one delivery page once the session has taken more turns than a page
+carries. The first event another writer appended stops that run, and it and
+everything after it are delivered. `action_gated` declarations and shared/external/lifecycle
 turn effects are rejected. The decision service becomes a real `turn_gated`
 deployment only when an embedding host makes it mandatory and injects the
 attached context before prompt dispatch; this repository does not yet ship
