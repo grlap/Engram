@@ -87,6 +87,15 @@ that warning threshold. Check process activity and possible lock contention
 when investigating a suspected hang. The root-delta checks assert byte and
 operation bounds; elapsed time is diagnostic only.
 
+The ordinary Rust suite includes `tests/source_file_size.rs`, which keeps each
+guarded source family at 2,499 physical lines or fewer: a module file and every
+`.rs` file under its child-module directory, so a module split out of a guarded
+file stays counted. Blank and comment lines count, and CRLF counts like LF. A
+missing module file, a missing child directory of a family marked as split, or
+any file or directory that cannot be read fails the check. When a file is
+brought under the limit, add its family to `FAMILIES` there rather than
+writing another checker.
+
 ### Test launcher
 
 One entrypoint handles full validation and authorized focused checks:
