@@ -74,6 +74,11 @@ const FAMILIES: &[Family] = &[
         children: None,
         split: true,
     },
+    Family {
+        module: "src/storage/graph_snapshot/tests",
+        children: None,
+        split: true,
+    },
 ];
 
 /// Physical lines: every line feed ends a line, and a nonempty final line
