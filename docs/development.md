@@ -90,7 +90,9 @@ operation bounds; elapsed time is diagnostic only.
 The ordinary Rust suite includes `tests/source_file_size.rs`, which keeps each
 guarded source family at 2,499 physical lines or fewer: a module file and every
 `.rs` file under its child-module directory, so a module split out of a guarded
-file stays counted. Blank and comment lines count, and CRLF counts like LF. A
+file stays counted. That directory is `MODULE/` unless the family names another
+one, as `src/main.rs` does with `src/bin_support`, where the binary's modules
+live. Blank and comment lines count, and CRLF counts like LF. A
 missing module file, a missing child directory of a family marked as split, or
 any file or directory that cannot be read fails the check. When a file is
 brought under the limit, add its family to `FAMILIES` there rather than

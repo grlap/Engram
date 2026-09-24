@@ -2,8 +2,11 @@
 //!
 //! A guarded family is a module file and the directory of child modules split
 //! out of it, so a module extracted from a guarded file is inventoried with it
-//! and cannot escape the limit by moving. Add a family here when a file is
-//! brought under the limit.
+//! and cannot escape the limit by moving. The children directory is
+//! conventionally `MODULE/`, but a family may name an explicit directory
+//! instead (for example the binary crate root `src/main`, whose children live
+//! under `src/bin_support`). Add a family here when a file is brought under
+//! the limit.
 
 #[path = "../src/test_support.rs"]
 mod test_support;
@@ -17,19 +20,46 @@ use std::{
 const LIMIT: usize = 2_499;
 
 /// One guarded family: the module file `MODULE.rs` and every `.rs` file under
-/// the directory `MODULE/`.
+/// its children directory, conventionally `MODULE/`.
 struct Family {
     /// Module path relative to the crate root, without the `.rs` extension.
     module: &'static str,
-    /// The file was split into child modules, so `MODULE/` must exist. A
-    /// family that was not split still has any child directory inventoried.
+    /// The children directory, relative to the crate root, when it is not
+    /// the conventional `MODULE/` directory. `None` means `MODULE/`.
+    children: Option<&'static str>,
+    /// The file was split into child modules, so its children directory must
+    /// exist. A family that was not split still has any child directory
+    /// inventoried.
     split: bool,
 }
 
-const FAMILIES: &[Family] = &[Family {
-    module: "src/storage/migration/tests",
-    split: true,
-}];
+const FAMILIES: &[Family] = &[
+    Family {
+        module: "src/storage/migration/tests",
+        children: None,
+        split: true,
+    },
+    Family {
+        module: "src/storage/work/completion",
+        children: None,
+        split: true,
+    },
+    Family {
+        module: "src/storage/work/acceptance_evaluation/tests",
+        children: None,
+        split: true,
+    },
+    Family {
+        module: "src/verbs/handlers",
+        children: None,
+        split: true,
+    },
+    Family {
+        module: "src/main",
+        children: Some("src/bin_support"),
+        split: true,
+    },
+];
 
 /// Physical lines: every line feed ends a line, and a nonempty final line
 /// without one still counts once. A CRLF ending counts as one line, the same
@@ -48,7 +78,7 @@ fn physical_lines(bytes: &[u8]) -> usize {
 fn inventory(root: &Path, family: &Family) -> Result<Vec<(String, usize)>, String> {
     let module_file = root.join(format!("{}.rs", family.module));
     let mut counted = vec![count(root, &module_file)?];
-    let children = root.join(family.module);
+    let children = root.join(family.children.unwrap_or(family.module));
     let present = children
         .try_exists()
         .map_err(|error| format!("cannot inspect {}: {error}", children.display()))?;
@@ -157,6 +187,7 @@ fn a_missing_module_file_or_split_directory_is_refused_and_children_are_inventor
     let root = directory.path();
     let split = |module| Family {
         module,
+        children: None,
         split: true,
     };
     let missing = inventory(root, &split("absent")).expect_err("a missing module file");
@@ -175,6 +206,7 @@ fn a_missing_module_file_or_split_directory_is_refused_and_children_are_inventor
     assert!(unsplit.contains("has no child directory"), "{unsplit}");
     let standalone = Family {
         module: "lonely",
+        children: None,
         split: false,
     };
     assert_eq!(
@@ -204,4 +236,42 @@ fn a_missing_module_file_or_split_directory_is_refused_and_children_are_inventor
             ("family/nested/deeper.rs".to_owned(), 2),
         ]
     );
+}
+
+#[test]
+fn an_explicit_children_directory_is_inventoried_and_a_missing_one_is_refused() {
+    let directory = test_support::temp_home().expect("directory");
+    let root = directory.path();
+
+    // An explicit children directory is consulted instead of the
+    // conventional MODULE/ directory, which is left uninventoried.
+    fs::write(root.join("app.rs"), "fn app() {}\n").expect("module file");
+    fs::create_dir_all(root.join("app")).expect("conventional directory");
+    fs::write(root.join("app/ignored.rs"), "a\nb\nc\nd\n").expect("uninventoried sibling");
+    fs::create_dir_all(root.join("support")).expect("explicit children directory");
+    fs::write(root.join("support/helper.rs"), "a\nb\n").expect("explicit child");
+    let explicit = Family {
+        module: "app",
+        children: Some("support"),
+        split: true,
+    };
+    assert_eq!(
+        inventory(root, &explicit).expect("an explicit children directory"),
+        [
+            ("app.rs".to_owned(), 1),
+            ("support/helper.rs".to_owned(), 2),
+        ]
+    );
+
+    // A split family naming a missing explicit children directory is
+    // refused, the same as a missing conventional one.
+    let missing_explicit = Family {
+        module: "app",
+        children: Some("absent-support"),
+        split: true,
+    };
+    let refused =
+        inventory(root, &missing_explicit).expect_err("a missing explicit children directory");
+    assert!(refused.contains("has no child directory"), "{refused}");
+    assert!(refused.contains("absent-support"), "{refused}");
 }
