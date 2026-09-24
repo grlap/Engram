@@ -1048,19 +1048,33 @@ fn host_inspect_reads_a_claim_binding_without_moving_focus_or_delivery() {
     let inspected = holder
         .work_inspect(&claimed_item.short_ref, at(5))
         .expect("host inspection of the held item");
-    assert_eq!(inspected.status.work.work_id, claimed_item.work_id);
-    assert_eq!(inspected.control_binding.as_ref(), Some(&binding));
-    assert_eq!(inspected.session.focused_work_id, Some(elsewhere.work_id));
-    assert!(inspected.memories.is_empty(), "no focus-bound memory index");
+    assert_eq!(inspected.view().status.work.work_id, claimed_item.work_id);
+    assert_eq!(inspected.control_binding(), Some(&binding));
+    assert_eq!(
+        inspected.view().session.focused_work_id,
+        Some(elsewhere.work_id)
+    );
+    assert!(
+        inspected.view().memories.is_empty(),
+        "no focus-bound memory index"
+    );
+    assert_eq!(
+        control_binding_json(&inspected),
+        serde_json::to_value(&binding).expect("binding JSON")
+    );
+    assert_inspect_reserves_its_binding(&inspected);
     assert_eq!(inspection_sensitive_state(&database), before);
 
-    // Another session sees the item and its holder, but no binding.
+    // Another session sees the item and its holder, and an explicit null
+    // binding rather than a missing key.
     let seen = other
         .work_inspect(&claimed_item.short_ref, at(5))
         .expect("peer inspection");
-    assert!(seen.control_binding.is_none());
+    assert!(seen.control_binding().is_none());
+    assert_eq!(control_binding_json(&seen), serde_json::Value::Null);
+    assert_inspect_reserves_its_binding(&seen);
     assert_eq!(
-        seen.claim.as_ref().expect("live claim").holder,
+        seen.view().claim.as_ref().expect("live claim").holder,
         SessionId("holder".into())
     );
     assert_eq!(inspection_sensitive_state(&database), before);
@@ -1089,6 +1103,50 @@ fn host_inspect_reads_a_claim_binding_without_moving_focus_or_delivery() {
         .work_focus(&claimed_item.short_ref, at(7))
         .expect("focus the held item");
     assert_eq!(focused.control_binding, Some(binding));
+}
+
+/// The serialized `control_binding` of an inspect answer, asserting the key
+/// is present exactly once whether it holds a binding or null.
+fn control_binding_json(inspected: &crate::WorkInspectView) -> serde_json::Value {
+    let text = serde_json::to_string(inspected).expect("inspect JSON");
+    assert_eq!(
+        text.matches("\"control_binding\":").count(),
+        1,
+        "control_binding appears exactly once: {text}"
+    );
+    let value: serde_json::Value = serde_json::from_str(&text).expect("inspect JSON value");
+    value
+        .as_object()
+        .expect("inspect JSON object")
+        .get("control_binding")
+        .cloned()
+        .expect("control_binding is always present")
+}
+
+/// The wrapped answer is exactly the flattened view plus the reserved
+/// binding bytes, so a view fitted within the budget minus that reserve fits
+/// once wrapped. Fitting honors a reserve by shedding with an omission.
+fn assert_inspect_reserves_its_binding(inspected: &crate::WorkInspectView) {
+    let wrapped = serde_json::to_vec(inspected).expect("wrapped JSON").len();
+    let inner = serde_json::to_vec(inspected.view())
+        .expect("inner JSON")
+        .len();
+    let reserved = inspected.binding_bytes().expect("reserved bytes");
+    assert_eq!(wrapped, inner + reserved);
+    assert!(wrapped <= MAX_AGENT_WORK_RESPONSE_BYTES);
+
+    // A budget one byte short of the wrapped answer: fitting the inspect
+    // answer must shed until the answer with its binding fits, and record
+    // the byte-budget omission.
+    let mut fitted = inspected.clone();
+    fitted
+        .fit_within(wrapped - 1)
+        .expect("fit within a tighter budget");
+    assert!(serde_json::to_vec(&fitted).expect("fitted JSON").len() < wrapped);
+    assert!(fitted.view().omissions.iter().any(|omission| {
+        omission.section == WorkNextSection::Focus
+            && omission.reason == WorkSectionOmissionReason::ByteBudget
+    }));
 }
 
 #[test]
@@ -1148,8 +1206,9 @@ fn host_inspect_never_creates_a_store_or_registers_a_session() {
     let view = reader
         .work_inspect(&item.short_ref, at(1))
         .expect("process-default inspection");
-    assert_eq!(view.status.work.work_id, item.work_id);
-    assert!(view.control_binding.is_none());
+    assert_eq!(view.view().status.work.work_id, item.work_id);
+    assert!(view.control_binding().is_none());
+    assert_eq!(control_binding_json(&view), serde_json::Value::Null);
     let registered: i64 = rusqlite::Connection::open(&database)
         .expect("state reader")
         .query_row(

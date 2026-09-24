@@ -92,8 +92,14 @@ fn core_inspect_returns_the_holders_binding_without_moving_focus() {
         elsewhere.as_str()
     );
 
-    // Another session reads the item but gets no binding.
+    // Another session reads the item and gets an explicit null binding, not
+    // a missing key.
     let peer = success(&core(home, "peer", &["inspect", &claimed]));
     assert_eq!(peer["status"]["work"]["short_ref"], claimed.as_str());
-    assert!(peer["control_binding"].is_null());
+    assert_eq!(
+        peer.as_object()
+            .expect("inspect JSON object")
+            .get("control_binding"),
+        Some(&Value::Null)
+    );
 }

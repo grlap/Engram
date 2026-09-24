@@ -1069,9 +1069,17 @@ pub(super) fn fit_work_next_response(response: &mut WorkNextView) -> Result<(), 
 }
 
 pub(super) fn fit_focus_response(response: &mut WorkFocusView) -> Result<(), StoreError> {
-    while serde_json::to_vec(response)?.len() > MAX_AGENT_WORK_RESPONSE_BYTES
-        && trim_focus_once(response)
-    {
+    fit_focus_response_reserving(response, 0)
+}
+
+/// Fits `response` so that it and `reserved` more bytes the caller writes
+/// beside it stay within the agent response budget.
+pub(super) fn fit_focus_response_reserving(
+    response: &mut WorkFocusView,
+    reserved: usize,
+) -> Result<(), StoreError> {
+    let limit = MAX_AGENT_WORK_RESPONSE_BYTES.saturating_sub(reserved);
+    while serde_json::to_vec(response)?.len() > limit && trim_focus_once(response) {
         if let Some(existing) = response.omissions.iter_mut().find(|entry| {
             entry.section == WorkNextSection::Focus
                 && entry.reason == WorkSectionOmissionReason::ByteBudget

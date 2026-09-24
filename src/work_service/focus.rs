@@ -142,14 +142,15 @@ impl LocalWorkService {
         self.focus_view(&store, work.work_id, false, true, now)
     }
 
-    /// The host's read of one item: the bounded `work_focus` view, including
-    /// the control binding when this session holds the item's live claim,
-    /// taken in one read snapshot. It opens the existing store read-only, so
-    /// it never creates or initializes a store, and it selects no focus,
-    /// stages or discards no delivery, appends nothing, and registers no
-    /// process-default session. A host can therefore read the binding it
-    /// passes to `session_bind` without moving the agent's focus. Unlike
-    /// [`Self::inspect_work`], nothing about the store changes.
+    /// The host's read of one item: the bounded `work_focus` view, with the
+    /// control binding always present, as this session's live claim binding
+    /// or an explicit null. It is taken in one read snapshot and opens the
+    /// existing store read-only, so it never creates or initializes a store,
+    /// and it selects no focus, stages or discards no delivery, appends
+    /// nothing, and registers no process-default session. A host can
+    /// therefore read the binding it passes to `session_bind` without moving
+    /// the agent's focus. Unlike [`Self::inspect_work`], nothing about the
+    /// store changes.
     ///
     /// # Errors
     ///
@@ -159,10 +160,10 @@ impl LocalWorkService {
         &self,
         work_ref: &str,
         now: DateTime<Utc>,
-    ) -> Result<WorkFocusView, StoreError> {
+    ) -> Result<super::WorkInspectView, StoreError> {
         self.validate_read_attribution(now)?;
         let store = SqliteStore::open_existing_read_only(&self.database)?;
-        let mut view = store.work_read_snapshot(|store| {
+        let view = store.work_read_snapshot(|store| {
             let item = store.resolve_work_ref(&self.project_id, work_ref)?;
             // The memory index follows the session's saved focus, which this
             // read leaves alone, so it carries none.
@@ -175,9 +176,11 @@ impl LocalWorkService {
                 now,
             )
         })?;
-        super::projection::fit_focus_response(&mut view)?;
-        super::projection::ensure_agent_response_budget(&view, "work_inspect")?;
-        Ok(view)
+        // The binding moves to the outer key, and fitting reserves its bytes.
+        let mut inspected = super::WorkInspectView::from_focus(view);
+        inspected.fit()?;
+        super::projection::ensure_agent_response_budget(&inspected, "work_inspect")?;
+        Ok(inspected)
     }
 
     /// Resolves one work reference without projecting or changing ambient

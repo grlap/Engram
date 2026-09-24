@@ -474,6 +474,62 @@ pub(crate) struct WorkParentSummary {
     pub lifecycle: WorkLifecycle,
 }
 
+/// The host's read of one item (`work core inspect`): the bounded
+/// `work_focus` view with `control_binding` always present, as the caller's
+/// live claim binding or an explicit null when the caller holds no live claim
+/// on the item. Null and an absent key never mean different things.
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkInspectView {
+    #[serde(flatten)]
+    view: WorkFocusView,
+    /// Moved out of `view`, whose own copy stays empty, so the key appears
+    /// once and is never omitted. Only [`Self::from_focus`] builds the view.
+    control_binding: Option<ControlWorkBinding>,
+}
+
+impl WorkInspectView {
+    /// Moves `view`'s binding to the outer key, so it appears exactly once.
+    pub(crate) fn from_focus(mut view: WorkFocusView) -> Self {
+        let control_binding = view.control_binding.take();
+        Self {
+            view,
+            control_binding,
+        }
+    }
+
+    /// The bounded focus view, without its binding.
+    #[must_use]
+    pub fn view(&self) -> &WorkFocusView {
+        &self.view
+    }
+
+    /// The caller's live claim binding, or `None` (serialized as null).
+    #[must_use]
+    pub fn control_binding(&self) -> Option<&ControlWorkBinding> {
+        self.control_binding.as_ref()
+    }
+
+    /// Bytes the outer key adds beside the flattened view: the separator,
+    /// the key, and the binding or null.
+    pub(crate) fn binding_bytes(&self) -> Result<usize, serde_json::Error> {
+        Ok(r#","control_binding":"#.len() + serde_json::to_vec(&self.control_binding)?.len())
+    }
+
+    /// Fits the focus view so the whole answer, binding included, stays
+    /// within the agent response budget.
+    pub(crate) fn fit(&mut self) -> Result<(), crate::StoreError> {
+        self.fit_within(super::MAX_AGENT_WORK_RESPONSE_BYTES)
+    }
+
+    /// Fits the focus view so the whole answer, binding included, stays
+    /// within `budget` bytes, no larger than the agent response budget.
+    pub(crate) fn fit_within(&mut self, budget: usize) -> Result<(), crate::StoreError> {
+        let reserved =
+            self.binding_bytes()? + super::MAX_AGENT_WORK_RESPONSE_BYTES.saturating_sub(budget);
+        super::projection::fit_focus_response_reserving(&mut self.view, reserved)
+    }
+}
+
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {

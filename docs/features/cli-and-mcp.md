@@ -1451,9 +1451,12 @@ one, selects no focus, stages or discards no delivery page, appends nothing,
 registers no session, and carries no focus-bound memory index. Selecting a
 different item with `work core focus` is not a side-effect-free read: it
 discards a staged delivery page and changes the item that bare agent words and
-the control context act on. `control_binding` is present only when the calling
-session holds the item's live claim, so the host must use the agent's own
-session id. It goes stale when the holder's planning update changes the item
+the control context act on. Inspect always carries `control_binding`: the
+binding when the calling session holds the item's live claim, and an explicit
+`null` otherwise, never a missing key. Because only the calling session's
+claim yields a binding, the host must use the agent's own session id.
+`work core focus` omits the key when there is no binding; both forms mean no
+binding. The binding goes stale when the holder's planning update changes the item
 revision or when a lapsed claim is retaken with a new fence; the host then reads
 it again and rebinds between turns.
 
