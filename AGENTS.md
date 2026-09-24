@@ -60,6 +60,22 @@ their presence in a file alone does not prove delivery.
   words; never place work refs in source comments, identifiers,
   documentation prose, or user-facing output.
 
+### Cross-project feedback
+
+- Report every TermAl problem you meet to the TermAl agents through the
+  TermAl mailbox as soon as it happens, even when a workaround got you
+  past it (Greg, 2026-09-24: feedback is critical). Give what you called,
+  the exact error or behavior, the ids and times, and the workaround;
+  do not wait to be asked. Report each distinct problem once, and add
+  later occurrences or new evidence to the same thread.
+- An agent without a mailbox route, such as a read-only reviewer, puts
+  the report in its result for its parent to forward. If the mailbox
+  itself fails, tell Greg.
+- When a TermAl agent reports an Engram problem, an agent that may write
+  to the tracker files it in Engram or notes it on the matching item,
+  and replies with the reference and a one-line summary of what it
+  recorded.
+
 ### Architecture Boundaries
 
 - `src/domain.rs` owns substrate-neutral memory, task, report, and actor types.
