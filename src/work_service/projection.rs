@@ -278,7 +278,34 @@ pub(super) fn work_run_summary(run: &WorkRun) -> WorkRunSummary {
     }
 }
 
-pub(super) fn owned_control_work_binding(
+/// The control binding session bind would accept for this session now, or
+/// `None`. The owned claim only proposes it; bind's own validation, run on
+/// the same connection, decides. Bind also refuses a closed ancestor, a run
+/// outside the active root execution, a pending handoff offer, and a binding
+/// no canonical event recorded. Showing only what bind accepts means a host
+/// never resends a binding bind refuses.
+///
+/// # Errors
+///
+/// Returns [`StoreError`] when the stored state cannot be read or is invalid.
+pub(super) fn bindable_control_work_binding(
+    store: &SqliteStore,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    work: &WorkItem,
+    run: &WorkRun,
+    claim: Option<&WorkClaim>,
+    now: DateTime<Utc>,
+) -> Result<Option<ControlWorkBinding>, StoreError> {
+    let Some(candidate) = owned_control_work_binding(work, run, claim, session_id, now) else {
+        return Ok(None);
+    };
+    Ok(store
+        .control_work_binding_bindable(project_id, session_id, &candidate, now)?
+        .then_some(candidate))
+}
+
+fn owned_control_work_binding(
     work: &WorkItem,
     run: &WorkRun,
     claim: Option<&WorkClaim>,

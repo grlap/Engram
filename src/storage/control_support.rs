@@ -729,6 +729,31 @@ impl SqliteStore {
         }
     }
 
+    /// Whether session bind would accept this work binding for the session
+    /// now. It runs the same validation bind runs, on this connection, so a
+    /// caller inside a read snapshot sees the answer bind would give at that
+    /// cut.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the stored state cannot be read or is
+    /// invalid. A binding bind would refuse is `Ok(false)`, not an error.
+    pub(crate) fn control_work_binding_bindable(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        binding: &ControlWorkBinding,
+        now: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        Self::control_work_binding_is_current(
+            &self.connection,
+            project_id,
+            session_id,
+            Some(binding),
+            now,
+        )
+    }
+
     pub(super) fn session_has_begun_turn(
         connection: &Connection,
         session_id: &SessionId,

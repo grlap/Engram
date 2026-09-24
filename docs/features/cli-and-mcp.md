@@ -1441,7 +1441,18 @@ claim_id, claim_fence }`, ready to pass unchanged to host-private
 `focus.run` also exposes `root_execution_id` and `work_id`, while
 `focus.claim` exposes the claim and fence components. `work_revision` is the
 focused work item's revision—the claim receipt's top-level `revision`—not the
-claim projection's own revision counter.
+claim projection's own revision counter. A binding appears only when
+`session_bind` would accept it. The calling session's live claim proposes the
+tuple, and the same validation bind runs decides. A claim with a pending
+handoff offer therefore shows no binding, though `focus.claim` still shows the
+claim; so would a claim under a closed ancestor or outside the active root
+execution. No binding while `focus.claim` shows the calling session's live
+claim means the session still holds the claim but bind would refuse it now;
+`session_bind` with an earlier binding for it is refused as stale until a later
+read shows the binding again. This holds when an answer is built: a claim
+retried with the same idempotency key returns the stored original receipt,
+binding included, so a host reads the current binding with `work core inspect`,
+not from a replayed receipt.
 
 A host that must read a claim's binding without moving the agent uses
 `work core inspect <ref>`. It returns the same bounded view as `work core
@@ -1452,13 +1463,20 @@ registers no session, and carries no focus-bound memory index. Selecting a
 different item with `work core focus` is not a side-effect-free read: it
 discards a staged delivery page and changes the item that bare agent words and
 the control context act on. Inspect always carries `control_binding`: the
-binding when the calling session holds the item's live claim, and an explicit
-`null` otherwise, never a missing key. Because only the calling session's
+binding when the calling session holds the item's live claim and
+`session_bind` would accept it, and an explicit `null` otherwise, never a
+missing key. Because only the calling session's
 claim yields a binding, the host must use the agent's own session id.
 `work core focus` omits the key when there is no binding; both forms mean no
 binding. The binding goes stale when the holder's planning update changes the item
 revision or when a lapsed claim is retaken with a new fence; the host then reads
-it again and rebinds between turns.
+it again and rebinds between turns. A pending handoff offer hides the binding.
+Cancelling the offer restores the same binding, and so does letting it expire
+while the claim is still live. An offer never outlives its claim, so the two
+can lapse together; then no binding returns, and retaking the claim gives a new
+fence and a new binding. Accepting the offer moves the claim to the recipient
+under a new fence, so the offering session gets no binding back and the
+recipient gets a new one.
 
 `work_complete` can consume evidence/checkpoint state created through explicit
 `work_update` calls, or accept `capture { summary, refs }` to record evidence,

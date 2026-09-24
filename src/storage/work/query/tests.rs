@@ -4,6 +4,85 @@ use super::super::*;
 use super::prerequisites::classify_prerequisite_state;
 use super::*;
 
+/// The claim-epoch lookup bind's history check uses reads the item's event
+/// index newest first without a sort or full scan, and stops at the newest
+/// event, so its steps and decodes stay the same as the claim's history
+/// grows.
+#[test]
+fn claim_epoch_lookup_stops_at_the_newest_event_as_history_grows() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let work = store
+        .create_work(
+            &root_request("epoch-project", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let held = claim(&mut store, &work, "holder", "claim", 1, 3_600);
+    let work = store.get_work_item(work.work_id).expect("claimed item");
+    let lookup = |store: &SqliteStore| {
+        reset_work_event_decode_count();
+        let found = any_canonical_claim_epoch_event(
+            &store.connection,
+            work.work_id,
+            held.accepted_work_revision,
+            held.claim_id,
+            held.fence,
+            |event| {
+                event
+                    .claim
+                    .as_ref()
+                    .is_some_and(|recorded| recorded.claim_id == held.claim_id)
+            },
+        )
+        .expect("claim-epoch lookup");
+        let decodes = work_event_decode_count();
+        let mut statement = store
+            .connection
+            .prepare(CLAIM_EPOCH_EVENTS_SQL)
+            .expect("prepare the lookup");
+        let mut rows = statement
+            .query(rusqlite::params![
+                work.work_id.0.to_string(),
+                held.accepted_work_revision,
+                held.claim_id.0.to_string(),
+                held.fence
+            ])
+            .expect("run the lookup");
+        rows.next()
+            .expect("step the lookup")
+            .expect("the newest event records the claim");
+        drop(rows);
+        let status = |kind| statement.get_status(kind);
+        (
+            found,
+            decodes,
+            status(rusqlite::StatementStatus::VmStep),
+            status(rusqlite::StatementStatus::Sort),
+            status(rusqlite::StatementStatus::FullscanStep),
+        )
+    };
+    let (found, decodes, steps, sorts, full_scan_steps) = lookup(&store);
+    assert!(found);
+    assert_eq!((decodes, sorts, full_scan_steps), (1, 0, 0));
+
+    for index in 0..64 {
+        evidence(
+            &mut store,
+            &work,
+            &held,
+            "holder",
+            &format!("evidence-{index}"),
+            2 + index,
+        );
+    }
+    let grown = lookup(&store);
+    assert_eq!(
+        grown,
+        (true, 1, steps, 0, 0),
+        "{grown:?} after {steps} steps"
+    );
+}
+
 #[test]
 fn resolver_sql_bounds_collisions_and_recovers_an_omitted_target_by_full_id() {
     let mut store = SqliteStore::open_in_memory().expect("collision fixture");

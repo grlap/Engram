@@ -1398,6 +1398,53 @@ pub(in crate::storage) fn canonical_work_events_for_item(
         .collect()
 }
 
+/// The item's canonical events that carry one claim epoch at one work
+/// revision, newest first. The item's event index yields them in that order
+/// without a sort, so a reader that stops at its first match reads no older
+/// rows.
+const CLAIM_EPOCH_EVENTS_SQL: &str = "SELECT object.object_id, object.canonical_json
+     FROM objects object
+     JOIN work_feed_entries entry ON entry.object_id = object.object_id
+     WHERE object.object_kind = 'work_event'
+       AND entry.feed_kind = 'project'
+       AND entry.object_kind = 'work_event'
+       AND entry.work_id = ?1
+       AND json_extract(object.canonical_json, '$.work.revision') = ?2
+       AND json_extract(object.canonical_json, '$.claim.claim_id') = ?3
+       AND json_extract(object.canonical_json, '$.claim.fence') = ?4
+     ORDER BY entry.position DESC";
+
+/// Whether any canonical event of `work_id` that carries claim `claim_id`
+/// at `claim_fence` and work revision `work_revision` satisfies `recorded`.
+/// Only such events can match. The read goes newest first and stops at the
+/// first match, which is normally the item's newest event while the claim is
+/// live, so the rows read and the events decoded do not grow with the item's
+/// history. When nothing matches, as for a binding bind refuses, it reads
+/// the item's whole event index but decodes only that epoch's events.
+pub(in crate::storage) fn any_canonical_claim_epoch_event(
+    connection: &Connection,
+    work_id: WorkId,
+    work_revision: i64,
+    claim_id: crate::domain::WorkClaimId,
+    claim_fence: i64,
+    mut recorded: impl FnMut(&WorkEvent) -> bool,
+) -> Result<bool, StoreError> {
+    let mut statement = connection.prepare(CLAIM_EPOCH_EVENTS_SQL)?;
+    let mut rows = statement.query(params![
+        work_id.0.to_string(),
+        work_revision,
+        claim_id.0.to_string(),
+        claim_fence
+    ])?;
+    while let Some(row) = rows.next()? {
+        let event = decode_canonical_work_event((row.get(0)?, row.get(1)?))?;
+        if recorded(&event) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn latest_canonical_work_event_on_feed(
     connection: &Connection,
     feed_kind: &str,

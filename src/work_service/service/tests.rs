@@ -1219,3 +1219,201 @@ fn host_inspect_never_creates_a_store_or_registers_a_session() {
         .expect("session rows");
     assert_eq!(registered, 0, "inspection must not register the session");
 }
+
+/// A binding is shown exactly when session bind would accept it. A pending
+/// handoff offer leaves the claim live and held by the same session at the
+/// same revision and fence, which the owned-claim predicate alone accepts,
+/// but bind refuses it. So focus and next leave the binding out and inspect
+/// prints null until the offer is cancelled.
+#[test]
+fn a_binding_is_shown_exactly_when_session_bind_would_accept_it() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("engram.sqlite3");
+    let project = ProjectId("binding-project".into());
+    let holder = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("holder".into()),
+        Some("binding-test".into()),
+    );
+    let item = propose_root_for_inspect(&holder, "bindable", at(0));
+    holder
+        .work_focus(&item.short_ref, at(1))
+        .expect("focus the item to claim");
+    let binding = holder
+        .work_update(
+            WorkUpdateInput::Claim {
+                ttl_seconds: Some(600),
+                recovery_reason: None,
+                idempotency_key: "claim".into(),
+            },
+            at(1),
+        )
+        .expect("claim")
+        .receipt
+        .control_binding
+        .expect("claim receipt binding");
+    let mut host = SqliteStore::open(&database).expect("host store");
+    let connection = host
+        .resume_control_connection(&SessionId("holder".into()), at(2))
+        .expect("host control connection");
+
+    // An ordinary live claim: every view shows the binding, and bind takes it.
+    assert_binding_views(&holder, &item, Some(&binding), at(2));
+    bind_holder(
+        &mut host,
+        &connection,
+        &project,
+        &binding,
+        "bind-live",
+        at(2),
+    )
+    .expect("bind accepts the shown binding");
+    // Only a canonical event that recorded the exact binding vouches for its
+    // root execution: one naming another agrees with the live claim in every
+    // other field and is still refused, as a claim mismatch because no event
+    // ever recorded it.
+    let unrecorded = ControlWorkBinding {
+        root_execution_id: crate::domain::RootExecutionId(uuid::Uuid::now_v7()),
+        ..binding.clone()
+    };
+    let refused = bind_holder(
+        &mut host,
+        &connection,
+        &project,
+        &unrecorded,
+        "bind-unrecorded",
+        at(2),
+    );
+    assert!(
+        matches!(refused, Err(StoreError::WorkClaimMismatch { work }) if work == item.work_id),
+        "{refused:?}"
+    );
+
+    // A pending offer keeps the claim live and held, but bind refuses it.
+    holder
+        .work_handoff(
+            WorkHandoffInput::Offer {
+                to: "recipient".into(),
+                ttl_seconds: Some(300),
+                checkpoint_summary: "offer the held item".into(),
+                idempotency_key: "offer".into(),
+            },
+            at(3),
+        )
+        .expect("offer");
+    let offered = holder
+        .work_inspect(&item.short_ref, at(4))
+        .expect("inspect the offered item");
+    assert_eq!(
+        offered
+            .view()
+            .claim
+            .as_ref()
+            .expect("the claim is live")
+            .holder,
+        SessionId("holder".into())
+    );
+    assert_eq!(offered.view().status.work.revision, binding.work_revision);
+    assert_binding_views(&holder, &item, None, at(4));
+    assert!(matches!(
+        bind_holder(&mut host, &connection, &project, &binding, "bind-offered", at(4)),
+        Err(StoreError::ControlWorkBindingStale { work }) if work == item.work_id
+    ));
+
+    // Cancelling the offer restores the same binding, and bind takes it.
+    holder
+        .work_handoff(
+            WorkHandoffInput::Cancel {
+                reason: "keep the held item".into(),
+                idempotency_key: "cancel-offer".into(),
+            },
+            at(5),
+        )
+        .expect("cancel the offer");
+    assert_binding_views(&holder, &item, Some(&binding), at(6));
+    bind_holder(
+        &mut host,
+        &connection,
+        &project,
+        &binding,
+        "bind-after-cancel",
+        at(6),
+    )
+    .expect("bind accepts the restored binding");
+}
+
+/// Focus, next and inspect all give `expected` as the holder's binding. When
+/// there is none, focus and next leave the key out and inspect prints null.
+fn assert_binding_views(
+    service: &LocalWorkService,
+    item: &WorkItemSummary,
+    expected: Option<&ControlWorkBinding>,
+    now: DateTime<Utc>,
+) {
+    let focus = service.work_focus(&item.short_ref, now).expect("focus");
+    assert_eq!(focus.control_binding.as_ref(), expected);
+    let focus_json = serde_json::to_value(&focus).expect("focus JSON");
+    assert_eq!(
+        focus_json.get("control_binding").is_some(),
+        expected.is_some()
+    );
+    let next = service
+        .work_next(20, WorkNextQuery::default(), now)
+        .expect("next");
+    let next_focus = next.focus.as_ref().expect("next carries the focus");
+    assert_eq!(next_focus.status.work.work_id, item.work_id);
+    assert_eq!(next_focus.control_binding.as_ref(), expected);
+    let next_json = serde_json::to_value(&next).expect("next JSON");
+    assert_eq!(
+        next_json["focus"].get("control_binding").is_some(),
+        expected.is_some()
+    );
+    let inspected = service.work_inspect(&item.short_ref, now).expect("inspect");
+    assert_eq!(inspected.control_binding(), expected);
+    assert_eq!(
+        control_binding_json(&inspected),
+        expected.map_or(serde_json::Value::Null, |binding| {
+            serde_json::to_value(binding).expect("binding JSON")
+        })
+    );
+}
+
+/// Binds the holder's control session to `binding`, as a host would.
+fn bind_holder(
+    host: &mut SqliteStore,
+    connection: &str,
+    project: &ProjectId,
+    binding: &ControlWorkBinding,
+    key: &str,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    let session = SessionId("holder".into());
+    let actor = ActorContext {
+        actor_id: "host".into(),
+        actor_kind: "host".into(),
+        assurance: AssuranceLevel::Asserted,
+        run_id: Some(binding.run_id.0.to_string()),
+        session_id: Some(session.clone()),
+        source_tool: Some("host-control:bind".into()),
+        source_skill: None,
+        provenance_chain: Vec::new(),
+        reason: "bind the held item".into(),
+    };
+    host.bind_control_session_with_work(
+        project,
+        "local-work:binding",
+        "Held item",
+        &session,
+        connection,
+        &actor,
+        Some(binding),
+        crate::ControlAssurance::TurnGated,
+        &[crate::EffectClass::Observe],
+        1,
+        key,
+        now,
+    )
+    .map(|_| ())
+}

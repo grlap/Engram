@@ -1071,16 +1071,19 @@ impl LocalWorkService {
                 .as_ref()
                 .map(|claim| store.get_work_run(claim.run_id))
                 .transpose()?
-                .as_ref()
-                .and_then(|run| {
-                    owned_control_work_binding(
-                        &guidance.status.work,
-                        run,
-                        guidance.claim.as_ref(),
+                .map(|run| {
+                    bindable_control_work_binding(
+                        store,
+                        &self.project_id,
                         &self.session_id,
+                        &guidance.status.work,
+                        &run,
+                        guidance.claim.as_ref(),
                         now,
                     )
                 })
+                .transpose()?
+                .flatten()
         } else {
             None
         };

@@ -143,9 +143,11 @@ impl LocalWorkService {
     }
 
     /// The host's read of one item: the bounded `work_focus` view, with the
-    /// control binding always present, as this session's live claim binding
-    /// or an explicit null. It is taken in one read snapshot and opens the
-    /// existing store read-only, so it never creates or initializes a store,
+    /// control binding always present, as the binding session bind would
+    /// accept for this session's live claim, or an explicit null when there
+    /// is none, as while a held claim has a pending handoff offer. It is
+    /// taken in one read snapshot and opens the existing store read-only, so
+    /// it never creates or initializes a store,
     /// and it selects no focus, stages or discards no delivery, appends
     /// nothing, and registers no process-default session. A host can
     /// therefore read the binding it passes to `session_bind` without moving

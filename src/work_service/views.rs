@@ -475,9 +475,12 @@ pub(crate) struct WorkParentSummary {
 }
 
 /// The host's read of one item (`work core inspect`): the bounded
-/// `work_focus` view with `control_binding` always present, as the caller's
-/// live claim binding or an explicit null when the caller holds no live claim
-/// on the item. Null and an absent key never mean different things.
+/// `work_focus` view with `control_binding` always present, as the binding
+/// session bind would accept for the caller's live claim, or an explicit null
+/// when there is none. Null does not mean the caller lost the claim: a claim
+/// with a pending handoff offer is still held and still shown in the view's
+/// claim, but has no binding. Null and an absent key never mean different
+/// things.
 #[derive(Clone, Debug, Serialize)]
 pub struct WorkInspectView {
     #[serde(flatten)]
@@ -503,7 +506,9 @@ impl WorkInspectView {
         &self.view
     }
 
-    /// The caller's live claim binding, or `None` (serialized as null).
+    /// The binding session bind would accept for the caller's live claim, or
+    /// `None` (serialized as null), including while the claim is held with a
+    /// pending handoff offer.
     #[must_use]
     pub fn control_binding(&self) -> Option<&ControlWorkBinding> {
         self.control_binding.as_ref()

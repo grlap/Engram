@@ -194,7 +194,12 @@ level, declared mediated capabilities, and an optional exact work binding:
 copies it into each grant. The six-operation work protocol supplies this tuple
 directly as `work_update:claim.receipt.control_binding` and
 `work_focus.control_binding`, and `work core inspect` returns it without
-selecting focus, as an explicit `null` when the caller holds no live claim; the
+selecting focus, or an explicit `null` when there is none, including while the
+caller still holds the claim but bind would refuse it. Each shows the tuple
+only when `session_bind` would accept it, because it runs the same
+validation, so a claim with a pending handoff offer shows none. That
+holds when the answer is built; a replayed claim receipt returns its stored
+original, so a host reads the current binding with `work core inspect`. The
 focus run section also names its root execution and work
 item. Here `work_revision` is the work item's revision
 returned at the top of the claim receipt, not the claim object's revision. A host

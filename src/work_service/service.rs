@@ -11,10 +11,10 @@ use super::{
     WorkGraphSnapshotExport, WorkGraphSnapshotLoadResult, WorkGuidance, WorkHistoryView, WorkId,
     WorkItem, WorkNextSection, WorkObligationState, WorkPlanningAuthority, WorkProtocolBasis,
     WorkProtocolIntent, WorkSectionOmission, WorkSectionOmissionReason, agent_work_session,
-    allowed_next, bounded_prerequisite_summaries, child_lifecycle_is_unfinished,
-    child_lifecycle_priority, compact_text, count_omission, disclosed_work_obligation_page,
-    ensure_agent_response_budget, fit_focus_response, normalize_actor_context,
-    owned_control_work_binding, prioritized_focus_evidence, project_work_event, ready_work_summary,
+    allowed_next, bindable_control_work_binding, bounded_prerequisite_summaries,
+    child_lifecycle_is_unfinished, child_lifecycle_priority, compact_text, count_omission,
+    disclosed_work_obligation_page, ensure_agent_response_budget, fit_focus_response,
+    normalize_actor_context, prioritized_focus_evidence, project_work_event, ready_work_summary,
     required_child_waiver_candidate, restored_work_evidence_summary,
     validate_process_default_work_session, work_evidence_kind_word, work_evidence_summary,
     work_handoff_summary, work_item_summary, work_lifecycle_word, work_memory_index,
@@ -753,9 +753,21 @@ impl LocalWorkService {
                 memories.len() - usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX),
             ));
         }
-        let control_binding = run.as_ref().and_then(|run| {
-            owned_control_work_binding(&status.work, run, claim.as_ref(), &self.session_id, now)
-        });
+        let control_binding = run
+            .as_ref()
+            .map(|run| {
+                bindable_control_work_binding(
+                    store,
+                    &self.project_id,
+                    &self.session_id,
+                    &status.work,
+                    run,
+                    claim.as_ref(),
+                    now,
+                )
+            })
+            .transpose()?
+            .flatten();
         let outcome = match text {
             FocusText::Summary => compact_text(&status.work.outcome),
             FocusText::Full => status.work.outcome.clone(),

@@ -20,7 +20,7 @@ use super::observation::append_initial_notes_on;
 #[cfg(test)]
 use super::query::latest_canonical_work_event_for_item;
 use super::query::{
-    active_root_execution, active_run_snapshot, canonical_work_events_for_item,
+    active_root_execution, active_run_snapshot, any_canonical_claim_epoch_event,
     load_active_blocker_projections, load_work_claim_optional, load_work_item, load_work_run,
 };
 use super::{
@@ -2018,9 +2018,15 @@ fn control_work_binding_was_valid_on(
     session_id: &SessionId,
     binding: &ControlWorkBinding,
 ) -> Result<bool, StoreError> {
-    Ok(canonical_work_events_for_item(connection, binding.work_id)?
-        .iter()
-        .any(|event| {
+    // Every event that can record this binding carries its claim, fence and
+    // work revision, so only those are read.
+    any_canonical_claim_epoch_event(
+        connection,
+        binding.work_id,
+        binding.work_revision,
+        binding.claim_id,
+        binding.claim_fence,
+        |event| {
             event.project_id == *project_id
                 && event.work_id == binding.work_id
                 && event.work.lifecycle == WorkLifecycle::Open
@@ -2042,7 +2048,8 @@ fn control_work_binding_was_valid_on(
                         && claim.state == WorkClaimState::Active
                         && claim.expires_at > event.created_at
                 })
-        }))
+        },
+    )
 }
 
 pub(super) fn unique_hashes(values: &[ObjectId]) -> Vec<ObjectId> {
