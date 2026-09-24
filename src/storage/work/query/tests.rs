@@ -1,6 +1,7 @@
 use super::super::feeds::reserve_feed_position;
 use super::super::test_support::*;
 use super::super::*;
+use super::prerequisites::classify_prerequisite_state;
 use super::*;
 
 #[test]
