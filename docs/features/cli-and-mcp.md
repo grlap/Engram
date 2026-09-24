@@ -1061,6 +1061,9 @@ engram work --actor-id codex --session-id session-unique-id \
 # Read the same view without selecting focus or touching delivery.
 engram work --actor-id codex --session-id session-unique-id \
   core inspect <short-ref>
+# List the claims this session holds, each with its binding or null.
+engram work --actor-id codex --session-id session-unique-id \
+  core held
 ```
 
 `graph save` and `graph load` are operator-only CLI surfaces; neither is an MCP
@@ -1477,6 +1480,24 @@ can lapse together; then no binding returns, and retaking the claim gives a new
 fence and a new binding. Accepting the offer moves the claim to the recipient
 under a new fence, so the offering session gets no binding back and the
 recipient gets a new one.
+
+A host that must choose which held claim to bind uses `work core held`. It
+lists every item in the project on which the calling session holds a live
+claim: `work_id`, `short_ref`, `claim_id`, `claim_fence`, `expires_at`,
+`claimed_at` (when this session acquired the claim, by claiming it or by
+accepting a handoff; renewals leave it unchanged), `focused` (whether the item
+is the session's focus), and `control_binding`, the binding `session_bind`
+would accept, computed as focus and inspect compute it, or an explicit `null`.
+A row with a null binding is still a held claim, for example one with a
+pending handoff offer. Only the holder may revise a claimed item, and its
+revision re-accepts the claim at the new revision, so the row shows a fresh
+binding and an earlier one is stale. Rows come newest claim
+first, then by work id, at most 16 of them; `total` counts every held claim,
+and `omitted` counts those left out. `focused_work_id` names the session's
+focus, or `null`, whether or not it is held. Like inspect, it reads one
+snapshot on a read-only connection: it refuses a missing or uninitialized store,
+selects no focus, touches no delivery page, appends nothing, and registers no
+session.
 
 `work_complete` can consume evidence/checkpoint state created through explicit
 `work_update` calls, or accept `capture { summary, refs }` to record evidence,

@@ -535,6 +535,41 @@ impl WorkInspectView {
     }
 }
 
+/// The host's read of every claim the calling session holds in the project
+/// (`work core held`): the newest claims first, then by work id, at most
+/// [`MAX_HELD_CLAIMS`](super::MAX_HELD_CLAIMS) of them, with the exact count
+/// left out. Every key is always present; null never stands for a missing
+/// key.
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkHeldView {
+    pub items: Vec<WorkHeldClaim>,
+    /// The session's focused item, or null. It need not be held.
+    pub focused_work_id: Option<WorkId>,
+    /// Every live claim the session holds in the project.
+    pub total: usize,
+    /// Claims beyond the bound, left out of `items`.
+    pub omitted: usize,
+}
+
+/// One claim in [`WorkHeldView`].
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkHeldClaim {
+    pub work_id: WorkId,
+    pub short_ref: String,
+    pub claim_id: crate::domain::WorkClaimId,
+    pub claim_fence: i64,
+    /// When this session acquired the claim, by claiming it or by accepting
+    /// a handoff. Renewals do not change it.
+    pub claimed_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    /// Whether this item is the session's focus.
+    pub focused: bool,
+    /// The binding session bind would accept for this claim, or null, as
+    /// while a handoff offer is pending. Null does not mean the claim is
+    /// gone: the row is the claim.
+    pub control_binding: Option<ControlWorkBinding>,
+}
+
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {

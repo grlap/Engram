@@ -105,6 +105,11 @@ pub const MAX_AGENT_WORK_RESPONSE_BYTES: usize = 12 * 1024;
 const MAX_PROJECT_MEMORY_FULL_BYTES: usize = 12 * 1024;
 const _: () = assert!(MAX_PROJECT_MEMORY_FULL_BYTES <= MAX_AGENT_WORK_RESPONSE_BYTES);
 
+/// Most claims one `work core held` answer lists; the rest are counted as
+/// omitted. Sixteen full rows, each with its binding, stay well within the
+/// agent response budget.
+pub const MAX_HELD_CLAIMS: usize = 16;
+
 const MAX_CHANGE_SECTION_BYTES: usize = 4 * 1024;
 const MAX_READY_SECTION_BYTES: usize = 2 * 1024;
 const MAX_CATALOG_SECTION_BYTES: usize = 3 * 1024;

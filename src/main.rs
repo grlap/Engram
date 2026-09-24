@@ -899,6 +899,10 @@ enum CoreWorkCommand {
         /// Short work ref or full UUID.
         work_ref: String,
     },
+    /// List every claim this session holds in the project, each with the
+    /// binding session bind would accept or null, without selecting focus or
+    /// touching delivery.
+    Held,
     /// Create a root, decompose ambient work, or admit a complete new plan.
     Propose {
         /// Parent to decompose; selects focus first. Omit for a new plan.
@@ -2002,6 +2006,9 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
             .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
         CoreWorkCommand::Inspect { work_ref } => service
             .work_inspect(&work_ref, now)
+            .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
+        CoreWorkCommand::Held => service
+            .work_held(now)
             .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
         CoreWorkCommand::Propose { work_ref, input } => {
             // Bound raw files (including whitespace) before decoding the kind.

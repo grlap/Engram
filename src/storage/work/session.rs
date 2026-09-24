@@ -26,8 +26,8 @@ use super::{
 use crate::{
     CanonicalObject, ObjectId,
     domain::{
-        FeedId, SessionId, TaskId, WorkClaim, WorkCompletionRecoveryCause, WorkId, WorkItem,
-        WorkLifecycle, WorkRun, WorkRunId, WorkSessionState,
+        FeedId, SessionId, TaskId, WorkClaim, WorkCompletionRecoveryCause, WorkEvent, WorkId,
+        WorkItem, WorkLifecycle, WorkRun, WorkRunId, WorkSessionState, WorkTransition,
     },
 };
 
@@ -1176,6 +1176,48 @@ impl SqliteStore {
         Ok(held)
     }
 
+    /// Every live claim this session holds on the project's work, each with
+    /// the time the session acquired it: the claim event, or the accepted
+    /// handoff that gave it the claim. A renewal keeps that time. Rows come in
+    /// work id order; callers choose their own.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when a stored claim or its events are invalid,
+    /// including a live claim with no event that gave it to this session.
+    pub fn work_claims_held_in_project(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        holder: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<(WorkClaim, DateTime<Utc>)>, StoreError> {
+        let run_ids = {
+            let mut statement = self.connection.prepare(
+                "SELECT claim.run_id FROM work_claims claim
+                 JOIN work_items item ON item.work_id = claim.work_id
+                 WHERE item.project_id = ?1 AND claim.holder_session_id = ?2
+                   AND claim.state = 'active' AND claim.expires_at_ms > ?3
+                 ORDER BY claim.work_id",
+            )?;
+            statement
+                .query_map(
+                    params![project_id.0, holder.0, now.timestamp_millis()],
+                    |row| row.get::<_, String>(0),
+                )?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut held = Vec::with_capacity(run_ids.len());
+        for run_id in run_ids {
+            let claim = load_work_claim_optional(&self.connection, parse_work_run_id(&run_id)?)?
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(format!("claim of run {run_id} vanished"))
+                })?;
+            let acquired_at = claim_acquired_at_on(&self.connection, &claim)?;
+            held.push((claim, acquired_at));
+        }
+        Ok(held)
+    }
+
     /// Lists every live project claim needed to render compact catalog rows.
     ///
     /// # Errors
@@ -1255,5 +1297,69 @@ impl SqliteStore {
                 && claim.holder != *claimant
                 && !root_participant_is_accounted(&execution, &claim.holder)
         }))
+    }
+}
+
+/// When `claim`'s holder acquired it: the newest claim or accepted-handoff
+/// event of the item that carries this claim at its current fence and gives
+/// it to that holder. Only such an event changes a live claim's id and fence,
+/// so it is the acquisition. Renewals and the holder's revisions keep the
+/// fence and are not acquisitions, so they never move the time.
+///
+/// The read goes newest first through the item's event index and stops at
+/// the acquisition, so it reads each event recorded since this holder
+/// acquired the claim, one canonical body at a time: the cost follows the
+/// claim's own life, not the item's history before it.
+fn claim_acquired_at_on(
+    connection: &Connection,
+    claim: &WorkClaim,
+) -> Result<DateTime<Utc>, StoreError> {
+    let stored: Option<String> = connection
+        .query_row(
+            "SELECT entry.object_id FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'project' AND entry.object_kind = 'work_event'
+               AND entry.work_id = ?1 AND object.object_kind = 'work_event'
+               AND json_extract(object.canonical_json, '$.claim.claim_id') = ?2
+               AND json_extract(object.canonical_json, '$.claim.fence') = ?3
+               AND json_extract(object.canonical_json, '$.transition.kind')
+                   IN ('claimed', 'handed_off')
+             ORDER BY entry.position DESC LIMIT 1",
+            params![
+                claim.work_id.0.to_string(),
+                claim.claim_id.0.to_string(),
+                claim.fence
+            ],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let missing = || {
+        StoreError::InvalidWorkProjection(format!(
+            "live claim {} has no event that gave it to its holder",
+            claim.claim_id.0
+        ))
+    };
+    let hash = stored.ok_or_else(missing)?;
+    let hash = ObjectId::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredKey(hash))?;
+    let event: WorkEvent = load_typed_work_object(connection, &hash, "work_event")?;
+    let acquired = event.work_id == claim.work_id
+        && match &event.transition {
+            WorkTransition::Claimed { claim: taken, .. } => {
+                taken.claim_id == claim.claim_id
+                    && taken.fence == claim.fence
+                    && taken.holder == claim.holder
+            }
+            WorkTransition::HandedOff {
+                claim_id,
+                to,
+                fence,
+                ..
+            } => *claim_id == claim.claim_id && *fence == claim.fence && *to == claim.holder,
+            _ => false,
+        };
+    if acquired {
+        Ok(event.created_at)
+    } else {
+        Err(missing())
     }
 }

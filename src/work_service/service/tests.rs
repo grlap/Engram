@@ -1,6 +1,8 @@
 use super::super::test_support::*;
 use super::super::*;
 
+mod held;
+
 #[test]
 fn process_default_work_session_reuse_expires_before_protocol_mutation() {
     let retained = process_default_session_at(10, at(0));

@@ -185,6 +185,76 @@ impl LocalWorkService {
         Ok(inspected)
     }
 
+    /// The host's read of every claim this session holds in the project, so
+    /// a host can choose the binding to pass to `session_bind` without moving
+    /// the agent's focus. Each row carries the claim, the time this session
+    /// acquired it, whether the item is the session's focus, and the binding
+    /// bind would accept, computed as focus and inspect compute it, or null.
+    /// The newest claims come first, then by work id, at most
+    /// [`super::MAX_HELD_CLAIMS`] of them, with the rest counted as omitted.
+    ///
+    /// Like [`Self::work_inspect`], it is one read snapshot on the existing
+    /// store opened read-only: it never creates or initializes a store,
+    /// selects no focus, stages or discards no delivery, appends nothing, and
+    /// registers no process-default session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the store is missing or not initialized, or
+    /// a stored claim, item, run or event is invalid.
+    pub fn work_held(&self, now: DateTime<Utc>) -> Result<super::WorkHeldView, StoreError> {
+        self.validate_read_attribution(now)?;
+        let store = SqliteStore::open_existing_read_only(&self.database)?;
+        let held = store.work_read_snapshot(|store| {
+            let focused_work_id = store
+                .work_session_state(&self.project_id, &self.session_id, now)?
+                .focused_work_id;
+            let mut held =
+                store.work_claims_held_in_project(&self.project_id, &self.session_id, now)?;
+            held.sort_by(|(left, left_at), (right, right_at)| {
+                right_at
+                    .cmp(left_at)
+                    .then(left.work_id.0.cmp(&right.work_id.0))
+            });
+            let total = held.len();
+            // Only the rows shown load their item and run and run bind's
+            // validation.
+            held.truncate(super::MAX_HELD_CLAIMS);
+            let mut items = Vec::with_capacity(held.len());
+            for (claim, claimed_at) in held {
+                let work = store.get_work_item(claim.work_id)?;
+                let run = store.get_work_run(claim.run_id)?;
+                let control_binding = super::projection::bindable_control_work_binding(
+                    store,
+                    &self.project_id,
+                    &self.session_id,
+                    &work,
+                    &run,
+                    Some(&claim),
+                    now,
+                )?;
+                items.push(super::WorkHeldClaim {
+                    work_id: work.work_id,
+                    short_ref: work.short_ref,
+                    claim_id: claim.claim_id,
+                    claim_fence: claim.fence,
+                    claimed_at,
+                    expires_at: claim.expires_at,
+                    focused: focused_work_id == Some(claim.work_id),
+                    control_binding,
+                });
+            }
+            Ok(super::WorkHeldView {
+                omitted: total - items.len(),
+                total,
+                focused_work_id,
+                items,
+            })
+        })?;
+        super::projection::ensure_agent_response_budget(&held, "work_held")?;
+        Ok(held)
+    }
+
     /// Resolves one work reference without projecting or changing ambient
     /// focus. Agent translations use this only to attribute core refusals.
     pub(crate) fn resolve_work_reference(

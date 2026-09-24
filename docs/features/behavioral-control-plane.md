@@ -199,7 +199,10 @@ caller still holds the claim but bind would refuse it. Each shows the tuple
 only when `session_bind` would accept it, because it runs the same
 validation, so a claim with a pending handoff offer shows none. That
 holds when the answer is built; a replayed claim receipt returns its stored
-original, so a host reads the current binding with `work core inspect`. The
+original, so a host reads the current binding with `work core inspect`.
+`work core held` lists the claims the session holds, newest first and at most
+16 with an exact omitted count, each with the same bindable tuple or `null`, so
+a host can choose which claim to bind without moving focus. The
 focus run section also names its root execution and work
 item. Here `work_revision` is the work item's revision
 returned at the top of the claim receipt, not the claim object's revision. A host
