@@ -151,6 +151,26 @@ fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), 
     Ok(())
 }
 
+/// Every guarded file across `families` with its count, in path order, so
+/// the report is the same on every run and platform. A file guarded by two
+/// families is refused rather than reported twice.
+fn guarded_inventory(root: &Path, families: &[Family]) -> Result<Vec<(String, usize)>, String> {
+    let mut counted = Vec::new();
+    for family in families {
+        counted.extend(inventory(root, family)?);
+    }
+    counted.sort();
+    if let Some(pair) = counted.windows(2).find(|pair| pair[0].0 == pair[1].0) {
+        return Err(format!("{} is guarded by more than one family", pair[0].0));
+    }
+    Ok(counted)
+}
+
+/// The report line for one guarded file: its path, count and the limit.
+fn report_line(path: &str, lines: usize) -> String {
+    format!("{path}: {lines} physical lines (limit {LIMIT})")
+}
+
 /// The files over the limit, named with their counts.
 fn over_limit(counted: &[(String, usize)]) -> Vec<String> {
     counted
@@ -164,14 +184,13 @@ fn over_limit(counted: &[(String, usize)]) -> Vec<String> {
 fn guarded_source_families_stay_within_the_limit() {
     assert!(!FAMILIES.is_empty(), "no guarded family is listed");
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut offenders = Vec::new();
-    for family in FAMILIES {
-        let counted = inventory(root, family).unwrap_or_else(|error| panic!("{error}"));
-        for (path, lines) in &counted {
-            println!("{path}: {lines} physical lines");
-        }
-        offenders.extend(over_limit(&counted));
+    let counted = guarded_inventory(root, FAMILIES).unwrap_or_else(|error| panic!("{error}"));
+    // One line per guarded file, shown by `--nocapture`, so a host-observed
+    // run carries every count the limit was checked against.
+    for (path, lines) in &counted {
+        println!("{}", report_line(path, *lines));
     }
+    let offenders = over_limit(&counted);
     assert!(
         offenders.is_empty(),
         "guarded files over the limit:\n{}",
@@ -188,6 +207,76 @@ fn the_limit_admits_2499_lines_and_refuses_2500() {
     assert_eq!(
         over_limit(&[("over.rs".into(), over)]),
         ["over.rs: 2500 lines (limit 2499)"]
+    );
+}
+
+#[test]
+fn the_inventory_spans_families_in_path_order_and_names_every_oversized_file() {
+    let directory = test_support::temp_home().expect("directory");
+    let root = directory.path();
+    fs::write(root.join("b.rs"), "fn b() {}\n").expect("small module");
+    fs::write(root.join("a.rs"), "line\n".repeat(2_500)).expect("oversized module");
+    fs::create_dir_all(root.join("a")).expect("children");
+    fs::write(root.join("a/child.rs"), "line\n".repeat(2_600)).expect("oversized child");
+    // Listed out of path order, and one unsplit: the report is still sorted.
+    let families = [
+        Family {
+            module: "b",
+            children: None,
+            split: false,
+        },
+        Family {
+            module: "a",
+            children: None,
+            split: true,
+        },
+    ];
+    let counted = guarded_inventory(root, &families).expect("inventory");
+    assert_eq!(
+        counted,
+        [
+            ("a.rs".to_owned(), 2_500),
+            ("a/child.rs".to_owned(), 2_600),
+            ("b.rs".to_owned(), 1),
+        ]
+    );
+    assert_eq!(
+        counted
+            .iter()
+            .map(|(path, lines)| report_line(path, *lines))
+            .collect::<Vec<_>>(),
+        [
+            "a.rs: 2500 physical lines (limit 2499)",
+            "a/child.rs: 2600 physical lines (limit 2499)",
+            "b.rs: 1 physical lines (limit 2499)",
+        ]
+    );
+    assert_eq!(
+        over_limit(&counted),
+        [
+            "a.rs: 2500 lines (limit 2499)",
+            "a/child.rs: 2600 lines (limit 2499)",
+        ]
+    );
+
+    // A child module listed as a family of its own overlaps its parent's
+    // family: the shared file is refused, not reported twice.
+    let overlapping = [
+        Family {
+            module: "a",
+            children: None,
+            split: true,
+        },
+        Family {
+            module: "a/child",
+            children: None,
+            split: false,
+        },
+    ];
+    let refused = guarded_inventory(root, &overlapping).expect_err("overlapping families");
+    assert!(
+        refused.contains("a/child.rs is guarded by more than one family"),
+        "{refused}"
     );
 }
 

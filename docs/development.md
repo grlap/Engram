@@ -98,6 +98,17 @@ any file or directory that cannot be read fails the check. When a file is
 brought under the limit, add its family to `FAMILIES` there rather than
 writing another checker.
 
+For per-file evidence, such as a host-observed check behind a file-size
+criterion, run:
+
+```bash
+cargo test --test source_file_size -- --nocapture
+```
+
+The passing test prints one line per guarded file, in path order across all
+families, as `PATH: N physical lines (limit 2499)`. When it fails, the panic
+message names every file over the limit.
+
 ### Test launcher
 
 One entrypoint handles full validation and authorized focused checks:
