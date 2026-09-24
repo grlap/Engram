@@ -12,13 +12,13 @@ use super::{
     WorkItem, WorkNextSection, WorkObligationState, WorkPlanningAuthority, WorkProtocolBasis,
     WorkProtocolIntent, WorkSectionOmission, WorkSectionOmissionReason, agent_work_session,
     allowed_next, bounded_prerequisite_summaries, child_lifecycle_is_unfinished,
-    child_lifecycle_priority, compact_text, count_omission, ensure_agent_response_budget,
-    fit_focus_response, normalize_actor_context, owned_control_work_binding,
-    prioritized_focus_evidence, project_work_event, ready_work_summary,
+    child_lifecycle_priority, compact_text, count_omission, disclosed_work_obligation_page,
+    ensure_agent_response_budget, fit_focus_response, normalize_actor_context,
+    owned_control_work_binding, prioritized_focus_evidence, project_work_event, ready_work_summary,
     required_child_waiver_candidate, restored_work_evidence_summary,
     validate_process_default_work_session, work_evidence_kind_word, work_evidence_summary,
     work_handoff_summary, work_item_summary, work_lifecycle_word, work_memory_index,
-    work_obligation_page_from_records, work_observation_summary, work_run_summary,
+    work_observation_summary, work_run_summary,
 };
 
 /// Only safe agent detail requests full contract text. Core/list projections
@@ -535,7 +535,7 @@ impl LocalWorkService {
             .map(|run| store.work_run_obligations(run.run_id))
             .transpose()?
             .unwrap_or_default();
-        let obligation_page = work_obligation_page_from_records(obligation_records)?;
+        let obligation_page = disclosed_work_obligation_page(store, obligation_records)?;
         let required_environments = obligation_page
             .items
             .iter()

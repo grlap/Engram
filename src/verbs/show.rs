@@ -578,6 +578,13 @@ pub(super) struct ShowReceiptValue {
     pub(super) acceptance_evidence_unavailable: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_evidence_error_class: Option<&'static str>,
+    /// Source changes no matching passing test followed, recorded instead of
+    /// verified.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) untested_changes: Vec<crate::UntestedSourceChange>,
+    /// Untested source changes the bounded page counts but does not name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) untested_changes_omitted: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) current_status: Option<crate::work_service::WorkCurrentStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -658,6 +665,49 @@ pub(super) fn show_relation(item: &WorkItemSummary) -> ShowRelation {
         child_requirement: optional_child_requirement(item.child_requirement),
         prerequisite_state: item.prerequisite_state,
     }
+}
+
+/// The source changes on `page` that no matching passing test followed.
+pub(super) fn untested_changes(
+    page: &crate::WorkObligationPage,
+) -> Vec<crate::UntestedSourceChange> {
+    page.items
+        .iter()
+        .filter_map(|item| item.untested_change.clone())
+        .collect()
+}
+
+/// How many untested source changes on the run `page` counts but does not
+/// name.
+pub(super) fn untested_changes_omitted(page: &crate::WorkObligationPage) -> usize {
+    page.untested_total
+        .saturating_sub(untested_changes(page).len())
+}
+
+/// One line per source change on `page` that no matching passing test
+/// followed, then the exact count of those the bounded page leaves out.
+pub(super) fn untested_change_lines(page: &crate::WorkObligationPage) -> Vec<String> {
+    let mut lines = untested_changes(page)
+        .iter()
+        .map(|change| {
+            let revision = change.source_revision.as_deref().map_or_else(
+                || "no recorded source revision".to_owned(),
+                |revision| format!("source revision {}", super::terminal_safe_line(revision)),
+            );
+            format!(
+                "untested source change: {} ({revision}); no matching passing test followed it",
+                super::terminal_safe_line(&change.observation_id)
+            )
+        })
+        .collect::<Vec<_>>();
+    let omitted = untested_changes_omitted(page);
+    if omitted > 0 {
+        lines.push(format!(
+            "untested source changes: {omitted} more not shown ({} in total)",
+            page.untested_total
+        ));
+    }
+    lines
 }
 
 fn acceptance_unavailable(view: &WorkFocusView) -> Option<&'static str> {
@@ -898,6 +948,7 @@ pub(super) fn show_lines(
             lines.push(format!("  diagnostic class: {class}"));
         }
     }
+    lines.extend(untested_change_lines(&view.obligation_page));
     if !view.blockers.is_empty() {
         lines.push("blockers:".into());
         for blocker in &view.blockers {
@@ -1122,6 +1173,9 @@ pub(super) fn show_receipt_value(
         acceptance_evidence_unavailable: acceptance_unavailable(view),
         acceptance_evidence_error_class: acceptance_unavailable(view)
             .and(view.acceptance_evidence_error_class),
+        untested_changes: untested_changes(&view.obligation_page),
+        untested_changes_omitted: Some(untested_changes_omitted(&view.obligation_page))
+            .filter(|omitted| *omitted > 0),
         current_status: work.current_status.clone(),
         status_observation: work.status_observation.clone(),
         external_ref: work.external_ref.clone(),

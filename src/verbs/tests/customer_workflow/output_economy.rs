@@ -250,7 +250,9 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
     let mut view = verbs.service.inspect_work(&work_ref, at(1)).unwrap();
     view.obligation_page =
         crate::verbs::tests::page(VerificationKind::Test, WorkObligationState::Open);
+    // Three more open obligations than the one shown.
     view.obligation_page.omitted_count = 3;
+    view.obligation_page.open_total = Some(4);
     view.omissions = vec![WorkSectionOmission {
         section: WorkNextSection::Focus,
         reason: WorkSectionOmissionReason::ByteBudget,

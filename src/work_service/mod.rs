@@ -1449,10 +1449,20 @@ fn agent_change_object(
                     "work obligation resolution is bound outside its project".into(),
                 ));
             }
-            let (change_kind, summary) = obligation_resolution_change_summary(
-                &record.obligation.rule.rule_id,
-                &event.resolution,
-            );
+            let (change_kind, summary) =
+                if let WorkObligationResolution::Waived { waived_by, .. } = &event.resolution
+                    && crate::control::is_stock_source_change_obligation(
+                        &record.obligation.rule,
+                        &record.obligation.requirement,
+                    )
+                {
+                    untested_change_summary(store, &record.obligation, waived_by)?
+                } else {
+                    obligation_resolution_change_summary(
+                        &record.obligation.rule.rule_id,
+                        &event.resolution,
+                    )
+                };
             Ok(WorkChangeProjection::Visible(WorkChangeSummary {
                 schema_version: event.schema_version,
                 object_kind: object_kind.into(),
@@ -1534,6 +1544,36 @@ fn agent_change_object(
             "project work feed contains unsupported agent object kind {other:?}"
         ))),
     }
+}
+
+/// A waived obligation of the stock source-change rule records a change no
+/// matching passing test followed; peers read it as that change, not as a
+/// human exception.
+fn untested_change_summary(
+    store: &SqliteStore,
+    obligation: &crate::WorkObligation,
+    waived_by: &str,
+) -> Result<(&'static str, String), StoreError> {
+    let change: ExecutionObservation =
+        store
+            .get(&obligation.triggering_observation)?
+            .ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "waived source-change obligation has no canonical change observation".into(),
+                )
+            })?;
+    let revision = change.source_basis.map_or_else(
+        || "no recorded source revision".to_owned(),
+        |basis| format!("source revision {}", basis.source_revision),
+    );
+    Ok((
+        "untested_source_change",
+        format!(
+            "{} ({revision}); waiver attributed to {}",
+            change.observation_id,
+            compact_text(waived_by)
+        ),
+    ))
 }
 
 fn obligation_resolution_change_summary(

@@ -111,9 +111,12 @@ fn page(kind: VerificationKind, state: WorkObligationState) -> WorkObligationPag
             resolution: None,
             evidence: None,
             waived_by: None,
+            untested_change: None,
             guidance: WorkObligationGuidance::RecordVerificationThenCheckpoint { requirement },
         }],
         omitted_count: 0,
+        untested_total: 0,
+        open_total: Some(usize::from(state == WorkObligationState::Open)),
     }
 }
 

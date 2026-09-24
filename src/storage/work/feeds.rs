@@ -101,6 +101,17 @@ pub(super) fn checkpoint_feed_end(position: i64) -> Result<i64, StoreError> {
         })
 }
 
+/// The run-feed position `checkpoint`'s own appends end at: the head
+/// completion requires when it begins, before completion appends anything.
+pub(crate) fn checkpoint_run_feed_end(
+    checkpoint: &crate::domain::WorkCheckpoint,
+) -> Result<FeedPosition, StoreError> {
+    Ok(FeedPosition {
+        feed: checkpoint.acknowledged_run_position.feed.clone(),
+        position: checkpoint_feed_end(checkpoint.acknowledged_run_position.position)?,
+    })
+}
+
 fn insert_reserved_feed_entry(
     transaction: &Transaction<'_>,
     position: &FeedPosition,

@@ -1192,8 +1192,12 @@ its separation is a local convention, not an authenticated boundary. The
 private JSON-lines request is the enforced alternative: it is bound to the
 session's exact run and records the server-fixed actor beside an asserted
 `waived_by` human and reason. Typed binding refusals are replayable while token
-and transport faults remain request errors. Completion evaluates the cut-aware
-set at the exact pre-seal run-feed position. Open definitions return a bounded
+and transport faults remain request errors. The stock
+`source_mutation_requires_test` rule records rather than blocks. Once the
+final checkpoint is confirmed to reach the run-feed head, completion resolves
+each of that rule's still-open definitions as a waiver in the completing
+actor's name, inside the sealed cut, and discloses the change as untested. Completion then evaluates the cut-aware set at the exact
+pre-seal run-feed position. Any other open definition returns a bounded
 `open_work_obligations` protocol result recomputed from one coherent current
 snapshot; it is guidance rather than a durable replay result. A new seal
 declares obligation schema V1 and binds every applicable definition to its

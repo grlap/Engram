@@ -1212,7 +1212,20 @@ asserted host context, not authenticated administration.
 the structured receipt (the existing shape plus `reminders` and `next`)
 instead of text. A successful mutation with a process-defaulted session also
 adds top-level `effective_session_id`. `done` exits with status 2 when the typed
-`open_work_obligations` refusal says something is still owed. The
+`open_work_obligations` refusal says something is still owed. The stock
+source-change rule never causes that refusal. A source change that no matching
+passing test followed is recorded at `done` as a waiver in the completing
+actor's name. The item still completes, and `done` and `show` each print
+`untested source change: ID (source revision REV); no matching passing test
+followed it`, then `untested source changes: N more not shown (T in total)`
+when the bounded obligation page names only some of them. With `--json`, the
+named changes are in `untested_changes` and the count left out is in
+`untested_changes_omitted`.
+Before completion, the receipt reminder says tests have not run since the last
+source change and that `done` records the change as untested without one. The
+remaining text is unchanged. Criteria bound with `--bind` still refuse, and
+so does every operator-selected rule except the exact stock definition (the
+stock id at version 1 with an unpinned test). The
 six-operation JSON protocol stays reachable for hosts and operators as
 `engram work core {next,focus,propose,update,complete,handoff}`, whose
 mutation payloads accept an inline JSON object or `@path`. The `@path` inputs
@@ -1269,7 +1282,7 @@ fourteen words plus `search`.
 | `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `reject`, `after`, `drop_after`, `waive`, `detach`, or `supersede` |
 | `gate` | Record one bounded pass/fail observation; completed work accepts it as a late finding without a claim or reopen |
 | `note` | Record evidence and checkpoint open work; completed work records only late evidence, both keyless |
-| `done` | Complete the held item; an open obligation returns the typed `open_work_obligations` result |
+| `done` | Complete the held item. A source change with no later matching passing test is recorded and disclosed as untested; any other open obligation returns the typed `open_work_obligations` result |
 | `search` | `ls` over every lifecycle |
 | `handoff` | `offer`, `accept`, or `cancel` the unique checkpoint-coupled handoff |
 | `remember` | Create or explicitly revise an attributed episode under one permanent key; retain history |
@@ -1652,11 +1665,19 @@ whether `source_basis` is present. A passed typed test satisfies open
 obligations only against the newest mutation source revision at the evaluated
 run-feed cut. Thus a newest basisless mutation makes the open set waiver-only
 until a later basis-bearing mutation plus passed test arrives; that later test
-may satisfy both the earlier and newer definitions. `work_focus` exposes the
+may satisfy both the earlier and newer definitions. For the stock rule that
+waiver comes at `done`: completion records each still-open stock obligation as
+an untested change instead of refusing. `work_focus` exposes the
 canonical bounded `obligation_page`, the same field appears inside
 `work_next.focus`, and `work_next` deltas use
-`obligation_opened`, `obligation_satisfied`, or `obligation_waived` without
-leaking host authority.
+`obligation_opened`, `obligation_satisfied`, `obligation_waived`, or, for a
+waived stock obligation, `untested_source_change` naming the change and its
+source revision, without leaking host authority. The page's `untested_total`
+counts every untested change on the run, and its items name those that fit.
+Its `open_total` counts every open obligation on the run before count and byte
+trimming. When it exceeds the open items shown, an open obligation was left
+out, and the agent reminder says more obligations are open than shown. A page
+stored before this count existed lacks it and keeps its original reminder.
 
 Every new completion seal declares obligation schema V1 and freezes the exact
 definition/resolution id pairs applicable at its dense pre-seal cut. The

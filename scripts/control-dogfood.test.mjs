@@ -2180,6 +2180,30 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ).length,
       2,
     );
+    // Tested changes disclose nothing as untested.
+    assert.equal(completed.obligation_page.untested_total, undefined);
+    assert.ok(
+      completed.obligation_page.items.every(
+        (item) => item.untested_change === undefined,
+      ),
+    );
+    const testedShow = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "work",
+        "--actor-id",
+        actor,
+        "--session-id",
+        actor,
+        "show",
+        proposed.work.short_ref,
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(testedShow.status, 0, testedShow.stderr);
+    assert.doesNotMatch(testedShow.stdout, /untested source change/u);
 
     const stockRuleSet = {
       schema_version: 1,
@@ -2490,6 +2514,176 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(
       waiverCompleted.obligation_page.items[0].waived_by,
       humanOperator,
+    );
+    assert.deepEqual(waiverCompleted.obligation_page.items[0].untested_change, {
+      observation_id: "host-waiver-source-mutation",
+      source_revision: "waiver-revision-1",
+      observed_at: "2026-08-28T20:03:00Z",
+    });
+
+    // The stock source-change rule records rather than blocks: `done` after
+    // an untested change completes, and the item discloses the change.
+    const untestedProposed = cliWork(engramHome, actor, "propose", {
+      kind: "root",
+      title: "Complete after an untested source change",
+      outcome: "Completion records the untested change instead of refusing",
+      acceptance: ["The untested change is disclosed after completion"],
+      work_kind: "chore",
+      idempotency_key: "untested-root",
+    });
+    const untestedClaimed = cliWork(engramHome, actor, "update", {
+      kind: "claim",
+      ttl_seconds: 300,
+      idempotency_key: "untested-claim",
+    });
+    const untestedBound = ok(
+      await client.request({
+        operation: "session_bind",
+        external_ref: "local-work:untested-change-dogfood",
+        title: "Untested source change",
+        assurance: "turn_gated",
+        mediated_effects: ["observe", "mutate_local"],
+        work_binding: untestedClaimed.receipt.control_binding,
+        capability_map_revision: 1,
+        idempotency_key: "bind-untested-run",
+      }),
+    );
+    const untestedTurn = async (key, effects, checkpoint) => {
+      const turn = ok(
+        await client.request({
+          operation: "turn_evaluate",
+          routing_token: untestedBound.routing_token,
+          idempotency_key: key,
+          intent_fingerprint: fingerprint(key),
+          purpose: "ordinary",
+          requested_effects: effects,
+          ...(effects.includes("mutate_local")
+            ? { resource_intents: [libraryFile] }
+            : {}),
+        }),
+      );
+      assert.equal(turn.decision, "grant", JSON.stringify(turn));
+      assert.equal(
+        ok(
+          await client.request({
+            operation: "turn_begin",
+            routing_token: untestedBound.routing_token,
+            grant_id: turn.grant.grant_id,
+            delivery_tokens: turn.grant.delivery
+              ? [turn.grant.delivery.page.delivery_token]
+              : [],
+            idempotency_key: `begin-${key}`,
+          }),
+        ).decision,
+        "begin",
+      );
+      assert.equal(
+        ok(
+          await client.request({
+            operation: "turn_checkpoint",
+            routing_token: untestedBound.routing_token,
+            grant_id: turn.grant.grant_id,
+            next_intent: "continue",
+            ...checkpoint,
+            idempotency_key: `checkpoint-${key}`,
+          }),
+        ).decision,
+        "checkpointed",
+      );
+    };
+    await untestedTurn("untested-sync", ["observe"], {});
+    await untestedTurn("untested-mutation", ["mutate_local"], {
+      observations: [
+        {
+          observation_id: "untested-source-mutation",
+          action_fingerprint: fingerprint("untested-source-mutation"),
+          effect: "mutate_local",
+          outcome: "succeeded",
+          source_changed: true,
+          source_basis: {
+            workspace_id: "control-dogfood-untested-workspace",
+            source_revision: "untested-revision-1",
+          },
+          observed_at: "2026-08-28T20:04:00Z",
+        },
+      ],
+    });
+    const untestedLine =
+      "untested source change: untested-source-mutation (source revision untested-revision-1); no matching passing test followed it";
+    const untestedDone = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "work",
+        "--actor-id",
+        actor,
+        "--session-id",
+        actor,
+        "done",
+        untestedProposed.work.short_ref,
+        "the untested change is recorded",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(untestedDone.status, 0, `${untestedDone.stdout}\n${untestedDone.stderr}`);
+    assert.match(untestedDone.stdout, /^done w-/u);
+    assert.ok(untestedDone.stdout.includes(untestedLine), untestedDone.stdout);
+    const untestedShow = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "work",
+        "--actor-id",
+        actor,
+        "--session-id",
+        actor,
+        "show",
+        untestedProposed.work.short_ref,
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(untestedShow.status, 0, untestedShow.stderr);
+    assert.ok(untestedShow.stdout.includes(untestedLine), untestedShow.stdout);
+    const untestedShowJson = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "work",
+        "--actor-id",
+        actor,
+        "--session-id",
+        actor,
+        "show",
+        untestedProposed.work.short_ref,
+        "--json",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(untestedShowJson.status, 0, untestedShowJson.stderr);
+    const untestedShown = JSON.parse(untestedShowJson.stdout);
+    assert.deepEqual(untestedShown.untested_changes, [
+      {
+        observation_id: "untested-source-mutation",
+        source_revision: "untested-revision-1",
+        observed_at: "2026-08-28T20:04:00Z",
+      },
+    ]);
+    assert.equal(untestedShown.untested_changes_omitted, undefined);
+    const untestedFocus = cliWorkFocus(
+      engramHome,
+      actor,
+      untestedProposed.work.short_ref,
+    );
+    assert.equal(untestedFocus.status.work.lifecycle, "completed");
+    assert.equal(untestedFocus.obligation_page.items.length, 1);
+    assert.equal(untestedFocus.obligation_page.items[0].state, "waived");
+    assert.equal(untestedFocus.obligation_page.items[0].waived_by, actor);
+    assert.equal(
+      untestedFocus.obligation_page.items[0].untested_change.observation_id,
+      "untested-source-mutation",
     );
 
     const freshSatisfied = cliWorkFocus(

@@ -1505,26 +1505,26 @@ impl AgentVerbs {
                         ),
                     );
                 }
-                (
-                    vec![
-                        format!("done {work_ref} \"{title}\""),
-                        format!(
-                            "asserted {} acceptance {} satisfied; completion changed no criterion",
-                            completed.acceptance_criteria_asserted,
-                            if completed.acceptance_criteria_asserted == 1 {
-                                "criterion"
-                            } else {
-                                "criteria"
-                            }
-                        ),
-                        super::show::acceptance_provenance_line(
-                            completed.acceptance_provenance.as_ref(),
-                            self.service.display_identity(),
-                        ),
-                    ],
-                    guidance,
-                    false,
-                )
+                let mut lines = vec![
+                    format!("done {work_ref} \"{title}\""),
+                    format!(
+                        "asserted {} acceptance {} satisfied; completion changed no criterion",
+                        completed.acceptance_criteria_asserted,
+                        if completed.acceptance_criteria_asserted == 1 {
+                            "criterion"
+                        } else {
+                            "criteria"
+                        }
+                    ),
+                    super::show::acceptance_provenance_line(
+                        completed.acceptance_provenance.as_ref(),
+                        self.service.display_identity(),
+                    ),
+                ];
+                lines.extend(super::show::untested_change_lines(
+                    &completed.obligation_page,
+                ));
+                (lines, guidance, false)
             }
             WorkCompleteResult::Refused(refusal) => {
                 let mut guidance = self.guidance(&after, "done", now);
@@ -1557,7 +1557,7 @@ impl AgentVerbs {
                 super::child_obligations::done_refusal_value(refusal, child_resolution)?
             }
             WorkCompleteResult::Completed(receipt) => {
-                json!({
+                let mut value = json!({
                     "seal": receipt.seal,
                     "completed_at": receipt.completed_at,
                     "acceptance_criteria_asserted": receipt.acceptance_criteria_asserted,
@@ -1566,7 +1566,16 @@ impl AgentVerbs {
                         receipt.acceptance_provenance.as_ref(),
                         self.service.display_identity(),
                     ),
-                })
+                });
+                let untested = super::show::untested_changes(&receipt.obligation_page);
+                if !untested.is_empty() {
+                    value["untested_changes"] = serde_json::to_value(untested)?;
+                }
+                let omitted = super::show::untested_changes_omitted(&receipt.obligation_page);
+                if omitted > 0 {
+                    value["untested_changes_omitted"] = json!(omitted);
+                }
+                value
             }
         };
         let receipt = self.finish_mutation(super::mutation::receipt(
@@ -2010,6 +2019,14 @@ pub(super) fn obligation_reminders(page: &WorkObligationPage) -> Vec<String> {
         .filter(|item| item.state == WorkObligationState::Open)
     {
         let words = match item.requirement.check_kind {
+            VerificationKind::Test
+                if crate::control::is_stock_source_change_obligation(
+                    &item.rule,
+                    &item.requirement,
+                ) =>
+            {
+                "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one"
+            }
             VerificationKind::Test => {
                 "tests have not run since your last source change — run them; the host records the result"
             }
@@ -2030,7 +2047,19 @@ pub(super) fn obligation_reminders(page: &WorkObligationPage) -> Vec<String> {
             out.push(words.into());
         }
     }
-    if page.omitted_count > 0 {
+    // Only an open obligation the page leaves out is still owed; a completed
+    // item's omitted obligations are all terminal. A page stored before the
+    // open count existed says nothing about what it left out, so any omission
+    // may hide an open one.
+    let open_shown = page
+        .items
+        .iter()
+        .filter(|item| item.state == WorkObligationState::Open)
+        .count();
+    let more_open = page
+        .open_total
+        .map_or(page.omitted_count > 0, |total| total > open_shown);
+    if more_open {
         out.push("more obligations are open than shown here".into());
     }
     out

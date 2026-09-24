@@ -110,10 +110,10 @@ pub use verbs::{
     parse_defer_date,
 };
 pub use work_service::{
-    LocalWorkService, ProjectMemorySignal, WorkAcceptanceInput, WorkActorDefaultSource,
-    WorkAttributionDefaults, WorkChange, WorkChangeOmission, WorkChangeOmissionReason,
-    WorkChangeProjection, WorkChildInput, WorkCompleteInput, WorkCompleteRefusal,
-    WorkCompleteResult, WorkCompletedReceipt, WorkCompletionCaptureInput,
+    LocalWorkService, ProjectMemorySignal, UntestedSourceChange, WorkAcceptanceInput,
+    WorkActorDefaultSource, WorkAttributionDefaults, WorkChange, WorkChangeOmission,
+    WorkChangeOmissionReason, WorkChangeProjection, WorkChildInput, WorkCompleteInput,
+    WorkCompleteRefusal, WorkCompleteResult, WorkCompletedReceipt, WorkCompletionCaptureInput,
     WorkCriterionVerdictInput, WorkEvaluateInput, WorkEvaluateResult, WorkEvidenceAttachInput,
     WorkEvidenceSummary, WorkFocusView, WorkHandoffInput, WorkHandoffResult, WorkNextQuery,
     WorkNextSection, WorkNextView, WorkObligationGuidance, WorkObligationPage,

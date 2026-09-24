@@ -811,6 +811,7 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
         resolution: record.resolution_id.clone(),
         evidence,
         waived_by,
+        untested_change: None,
         guidance,
     }
 }
@@ -822,7 +823,7 @@ pub(super) fn work_obligation_page(
     let Some(run) = store.latest_work_run(work_id)? else {
         return Ok(WorkObligationPage::default());
     };
-    work_obligation_page_from_records(store.work_run_obligations(run.run_id)?)
+    disclosed_work_obligation_page(store, store.work_run_obligations(run.run_id)?)
 }
 
 pub(super) fn work_completion_recovery_page(
@@ -876,13 +877,68 @@ pub(super) fn sealed_work_obligation_page(
             seal.run_id
         )));
     }
-    work_obligation_page_from_records(records)
+    disclosed_work_obligation_page(store, records)
 }
 
 pub(super) fn work_obligation_page_from_records(
     records: Vec<crate::storage::WorkObligationRecord>,
 ) -> Result<WorkObligationPage, StoreError> {
     let mut page = count_bounded_work_obligation_page(records);
+    while serde_json::to_vec(&page)?.len() > MAX_OBLIGATION_PAGE_BYTES
+        && trim_obligation_page_once(&mut page)
+    {}
+    Ok(page)
+}
+
+/// Whether an obligation stands for a source change no matching passing test
+/// followed: a waived obligation of the stock source-change rule.
+fn records_untested_change(
+    state: WorkObligationState,
+    rule: &crate::BuiltinObligationRuleRef,
+    requirement: &crate::VerificationRequirement,
+) -> bool {
+    state == WorkObligationState::Waived
+        && crate::control::is_stock_source_change_obligation(rule, requirement)
+}
+
+/// The bounded page of `records` that also names, on each waived obligation
+/// of the stock source-change rule, the change no matching passing test
+/// followed, and counts every such change on the run.
+pub(super) fn disclosed_work_obligation_page(
+    store: &SqliteStore,
+    records: Vec<crate::storage::WorkObligationRecord>,
+) -> Result<WorkObligationPage, StoreError> {
+    let untested_total = records
+        .iter()
+        .filter(|record| {
+            records_untested_change(
+                record.state,
+                &record.obligation.rule,
+                &record.obligation.requirement,
+            )
+        })
+        .count();
+    let mut page = count_bounded_work_obligation_page(records);
+    page.untested_total = untested_total;
+    for item in &mut page.items {
+        if !records_untested_change(item.state, &item.rule, &item.requirement) {
+            continue;
+        }
+        let change: crate::domain::ExecutionObservation =
+            store.get(&item.triggering_observation)?.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "waived source-change obligation {} has no canonical change observation",
+                    item.obligation_id.0
+                ))
+            })?;
+        item.untested_change = Some(super::UntestedSourceChange {
+            observation_id: compact_text(&change.observation_id),
+            source_revision: change
+                .source_basis
+                .map(|basis| compact_text(&basis.source_revision)),
+            observed_at: change.observed_at,
+        });
+    }
     while serde_json::to_vec(&page)?.len() > MAX_OBLIGATION_PAGE_BYTES
         && trim_obligation_page_once(&mut page)
     {}
@@ -930,6 +986,10 @@ pub(super) fn count_bounded_work_obligation_page(
                 }),
         }
     });
+    let open_total = records
+        .iter()
+        .filter(|record| record.state == WorkObligationState::Open)
+        .count();
     let omitted_count = records.len().saturating_sub(MAX_FOCUS_RELATIONS);
     if omitted_count > 0 {
         records.truncate(MAX_FOCUS_RELATIONS);
@@ -937,6 +997,8 @@ pub(super) fn count_bounded_work_obligation_page(
     WorkObligationPage {
         items: records.iter().map(work_obligation_summary).collect(),
         omitted_count,
+        untested_total: 0,
+        open_total: Some(open_total),
     }
 }
 

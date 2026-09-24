@@ -372,8 +372,13 @@ report work. Resource leases have been removed.
 
 Every new seal also declares completion-obligation schema V1 and records the
 exact `(definition, terminal resolution)` pairs applicable at its pre-seal
-dense run-feed cut. An open obligation refuses sealing before any terminal
-work mutation. A required child seal is decoded and checked recursively, and
+dense run-feed cut. First, each still-open obligation of the stock
+source-change rule is resolved as a waiver in the completing actor's name,
+inside that cut. That source change had no matching passing test after it, so
+completion records the change as untested instead of refusing
+([behavioral control plane](behavioral-control-plane.md#6-checkpoint-the-turn)).
+Any other open obligation refuses sealing before any terminal work mutation.
+A required child seal is decoded and checked recursively, and
 every accepted seal carries the current obligation-schema binding.
 
 Post-completion `note` and `gate` evidence is appended after that immutable
@@ -1157,7 +1162,9 @@ are direct dense feed objects; `work_run_obligations` is only their verified
 query projection. Satisfaction is evaluated against the latest mutation at an
 exact run-feed cut. A passed test for a later basis-bearing mutation may close
 earlier open definitions, but a basisless latest mutation makes the open set
-waiver-only until a newer basis-bearing mutation and passed test arrive.
+waiver-only until a newer basis-bearing mutation and passed test arrive. For
+the stock rule, `done` supplies that waiver: completion records each still-open
+stock definition as an untested change instead of refusing.
 
 The page exposes immutable obligation and definition identities, the required
 selected rule-set id, rule, requirement, trigger, state, terminal
@@ -1171,7 +1178,8 @@ open obligation through an audited work update. Canonical resolutions retain
 their recorded actors and asserted `waived_by` attribution; agent pages omit
 the reason. At the
 exact pre-seal cut, every applicable definition must
-have a satisfied or waived resolution at or before that cut. Otherwise
+have a satisfied or waived resolution at or before that cut; the stock rule's
+still-open definitions receive completion's own waivers first. Otherwise
 `work_complete` returns the typed `open_work_obligations` result with the
 shared page and remedy: record matching host verification, checkpoint it, then
 complete; or request a host/operator waiver. A successful seal stores only

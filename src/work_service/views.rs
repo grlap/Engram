@@ -664,7 +664,23 @@ pub struct WorkObligationSummary {
     /// reason remains host-private.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub waived_by: Option<String>,
+    /// The source change a waived obligation of the stock source-change rule
+    /// was opened for: no matching passing test followed it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub untested_change: Option<UntestedSourceChange>,
     pub guidance: WorkObligationGuidance,
+}
+
+/// A source change that no matching passing test followed, disclosed on the
+/// waived obligation the stock source-change rule opened for it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct UntestedSourceChange {
+    /// The host's id for the observed change.
+    pub observation_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<DateTime<Utc>>,
 }
 
 /// Count- and byte-bounded typed completion obligations. `omitted_count`
@@ -673,6 +689,17 @@ pub struct WorkObligationSummary {
 pub struct WorkObligationPage {
     pub items: Vec<WorkObligationSummary>,
     pub omitted_count: usize,
+    /// Every source change on the run that no matching passing test
+    /// followed, counted over all its obligations: the items above name
+    /// those that fit, and the rest are omitted from the page.
+    #[serde(default, skip_serializing_if = "discovery_count_is_zero")]
+    pub untested_total: usize,
+    /// Open obligations counted over all of them, so a reader can tell
+    /// whether any open one is among those the page leaves out. Absent on a
+    /// page a receipt stored before the count existed, which is read as
+    /// stored: any omission may then hide an open obligation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_total: Option<usize>,
 }
 
 /// Deterministic next action derived from immutable obligation state and its

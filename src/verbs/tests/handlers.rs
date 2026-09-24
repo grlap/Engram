@@ -694,15 +694,74 @@ fn catalog_claim_guidance_routes_through_exact_show() {
 }
 
 #[test]
+fn untested_changes_are_named_and_the_rest_counted() {
+    use crate::verbs::show::{untested_change_lines, untested_changes_omitted};
+    // A tested change discloses nothing.
+    assert!(
+        untested_change_lines(&page(
+            VerificationKind::Test,
+            WorkObligationState::Satisfied
+        ))
+        .is_empty()
+    );
+    let mut untested = page(VerificationKind::Test, WorkObligationState::Waived);
+    untested.items[0].untested_change = Some(crate::UntestedSourceChange {
+        observation_id: "write-lib".into(),
+        source_revision: Some("revision-7".into()),
+        observed_at: None,
+    });
+    untested.omitted_count = 2;
+    untested.untested_total = 3;
+    assert_eq!(untested_changes_omitted(&untested), 2);
+    // Every omitted obligation is terminal, so nothing more is open.
+    assert!(obligation_reminders(&untested).is_empty());
+    assert_eq!(
+        untested_change_lines(&untested),
+        vec![
+            "untested source change: write-lib (source revision revision-7); no matching passing test followed it"
+                .to_owned(),
+            "untested source changes: 2 more not shown (3 in total)".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn a_stored_page_without_an_open_count_keeps_its_omission_reminder() {
+    // A receipt stored before the open count existed is replayed as stored:
+    // its page has no open_total, so any omission may hide an open one.
+    let mut stored =
+        serde_json::to_value(page(VerificationKind::Test, WorkObligationState::Open)).unwrap();
+    stored["omitted_count"] = serde_json::json!(3);
+    stored.as_object_mut().unwrap().remove("open_total");
+    let replayed: WorkObligationPage = serde_json::from_value(stored).unwrap();
+    assert_eq!(replayed.open_total, None);
+    assert!(
+        obligation_reminders(&replayed)
+            .contains(&"more obligations are open than shown here".to_owned())
+    );
+}
+
+#[test]
 fn open_test_obligation_becomes_the_test_reminder() {
+    // The stock rule's change is recorded as untested at done; a project
+    // rule of the same kind still owes the test.
     let reminders = obligation_reminders(&page(VerificationKind::Test, WorkObligationState::Open));
     assert_eq!(
-            reminders,
-            vec![
-                "tests have not run since your last source change — run them; the host records the result"
-                    .to_owned()
-            ]
-        );
+        reminders,
+        vec![
+            "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one"
+                .to_owned()
+        ]
+    );
+    let mut pinned = page(VerificationKind::Test, WorkObligationState::Open);
+    pinned.items[0].rule.rule_id = "source_mutation_requires_pinned_test".into();
+    assert_eq!(
+        obligation_reminders(&pinned),
+        vec![
+            "tests have not run since your last source change — run them; the host records the result"
+                .to_owned()
+        ]
+    );
     assert!(
         obligation_reminders(&page(
             VerificationKind::Test,

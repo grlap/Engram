@@ -408,14 +408,11 @@ impl SqliteStore {
                 cause,
             });
         }
-        let completion_cut = FeedPosition {
-            feed: FeedId::RunExecution(run.run_id),
-            position: feed_head(&transaction, &FeedId::RunExecution(run.run_id))?,
-        };
+        let run_feed = FeedId::RunExecution(run.run_id);
         let checkpoint_cut =
             checkpoint_feed_end(checkpoint_value.acknowledged_run_position.position)?;
-        if checkpoint_value.acknowledged_run_position.feed != FeedId::RunExecution(run.run_id)
-            || checkpoint_cut != completion_cut.position
+        if checkpoint_value.acknowledged_run_position.feed != run_feed
+            || checkpoint_cut != feed_head(&transaction, &run_feed)?
         {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
@@ -423,6 +420,24 @@ impl SqliteStore {
                     .into(),
             });
         }
+        // The stock source-change rule records rather than blocks. Each of its
+        // obligations still open here is resolved as a waiver in the completing
+        // actor's name, after the checkpoint and inside the sealed cut, so the
+        // seal still binds only terminal obligations and the untested change
+        // stays on record. A refusal below rolls the waivers back with the rest,
+        // and a recovery answer is read from the state before them.
+        transaction.execute_batch(&format!("SAVEPOINT {UNTESTED_WAIVERS_SAVEPOINT}"))?;
+        waive_untested_source_changes_on(
+            &transaction,
+            &item,
+            run.run_id,
+            &request.actor,
+            request.completed_at,
+        )?;
+        let completion_cut = FeedPosition {
+            position: feed_head(&transaction, &run_feed)?,
+            feed: run_feed,
+        };
         let obligations = match completion_obligation_basis_on(
             &transaction,
             item.work_id,
@@ -441,9 +456,7 @@ impl SqliteStore {
                     definition: obligation.definition.clone(),
                     required_check: obligation.required_check,
                 };
-                let recovery =
-                    completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
-                return Ok(CompleteWorkStorageResult::Recovery(recovery));
+                return recovery_before_untested_waivers(&transaction, &item, run.run_id, cause);
             }
             Err(error) => return Err(error),
         };
@@ -494,9 +507,7 @@ impl SqliteStore {
                 participant: participant.clone(),
             };
             if return_recovery {
-                let recovery =
-                    completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
-                return Ok(CompleteWorkStorageResult::Recovery(recovery));
+                return recovery_before_untested_waivers(&transaction, &item, run.run_id, cause);
             }
             return Err(StoreError::WorkCompletionRecoveryRequired {
                 work: item.work_id,
@@ -1929,6 +1940,75 @@ pub(super) fn waive_unbound_obligations_on(
         )?);
     }
     Ok(resolutions)
+}
+
+/// Savepoint that brackets completion's untested-change waivers, so a
+/// recovery answer can read the state before them.
+const UNTESTED_WAIVERS_SAVEPOINT: &str = "completion_untested_waivers";
+
+/// The recovery answer for `cause`, read after rolling back to
+/// [`UNTESTED_WAIVERS_SAVEPOINT`]: the returned page shows what the store
+/// holds once the refused completion's transaction is dropped, never a waiver
+/// that rollback discards.
+fn recovery_before_untested_waivers(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    cause: WorkCompletionRecoveryCause,
+) -> Result<CompleteWorkStorageResult, StoreError> {
+    transaction.execute_batch(&format!("ROLLBACK TO {UNTESTED_WAIVERS_SAVEPOINT}"))?;
+    let recovery = completion_recovery_snapshot_on(transaction, item, run_id, cause)?;
+    Ok(CompleteWorkStorageResult::Recovery(recovery))
+}
+
+/// Resolves as waived, in the completing actor's name, every obligation the
+/// stock source-change rule opened on `run_id` that is still open: no
+/// matching passing test followed that change. The waiver reason names the
+/// change and its source revision for the host record.
+fn waive_untested_source_changes_on(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    actor: &crate::domain::ActorContext,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    for record in
+        load_work_obligation_records_on(transaction, run_id, Some(WorkObligationState::Open))?
+    {
+        if !crate::control::is_stock_source_change_obligation(
+            &record.obligation.rule,
+            &record.obligation.requirement,
+        ) {
+            continue;
+        }
+        let change = load_typed_work_object::<ExecutionObservation>(
+            transaction,
+            &record.obligation.triggering_observation,
+            "execution_observation",
+        )?;
+        let revision = change.source_basis.as_ref().map_or_else(
+            || "no recorded source revision".to_owned(),
+            |basis| format!("source revision {}", basis.source_revision),
+        );
+        let event = WorkObligationResolutionEvent {
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            obligation_id: record.obligation.obligation_id,
+            definition: record.definition_id.clone(),
+            run_id,
+            resolution: WorkObligationResolution::Waived {
+                waived_by: actor.actor_id.clone(),
+                reason: format!(
+                    "completed at revision {} with no matching passing test after source change {} ({revision})",
+                    item.revision, change.observation_id
+                ),
+            },
+            actor: actor.clone(),
+            created_at: now,
+        };
+        append_obligation_resolution_on(transaction, &record, &event)?;
+    }
+    Ok(())
 }
 
 fn satisfy_open_obligations_on(

@@ -155,22 +155,35 @@ impl LocalWorkService {
                     }
                     if !input.links.is_empty() {
                         // Mirror prepare_completion_evidence: capture keys its
-                        // pre-checkpoint cut; no capture keys the current head.
-                        let attempt_cut = if input.capture.is_some() {
-                            let checkpoint_hash = seal.checkpoint.as_ref().ok_or_else(|| {
-                                StoreError::InvalidWorkProjection(
+                        // pre-checkpoint cut; no capture keys the head it read,
+                        // which completion requires to be where the checkpoint
+                        // ends. The seal's cut can lie past it: completion
+                        // appends its untested-change waivers first.
+                        let checkpoint = seal
+                            .checkpoint
+                            .as_ref()
+                            .map(|hash| {
+                                store
+                                    .get::<crate::domain::WorkCheckpoint>(hash)?
+                                    .ok_or_else(|| {
+                                        StoreError::InvalidWorkProjection(
+                                            "completed pending run has no canonical checkpoint"
+                                                .into(),
+                                        )
+                                    })
+                            })
+                            .transpose()?;
+                        let attempt_cut = match (input.capture.is_some(), checkpoint) {
+                            (true, Some(checkpoint)) => checkpoint.acknowledged_run_position,
+                            (true, None) => {
+                                return Err(StoreError::InvalidWorkProjection(
                                     "captured completion has no checkpoint binding".into(),
-                                )
-                            })?;
-                            let checkpoint: crate::domain::WorkCheckpoint =
-                                store.get(checkpoint_hash)?.ok_or_else(|| {
-                                    StoreError::InvalidWorkProjection(
-                                        "completed pending run has no canonical checkpoint".into(),
-                                    )
-                                })?;
-                            checkpoint.acknowledged_run_position
-                        } else {
-                            seal.completion_cut.clone()
+                                ));
+                            }
+                            (false, Some(checkpoint)) => {
+                                crate::storage::checkpoint_run_feed_end(&checkpoint)?
+                            }
+                            (false, None) => seal.completion_cut.clone(),
                         };
                         let attempt_key = completion_attempt_key(&raw_key, &attempt_cut)?;
                         let core_key = self.core_operation_key(

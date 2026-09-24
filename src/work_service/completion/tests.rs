@@ -6,6 +6,7 @@ use chrono::Duration;
 
 mod identity;
 mod restored;
+mod untested;
 
 #[test]
 #[allow(

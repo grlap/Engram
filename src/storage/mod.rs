@@ -72,7 +72,7 @@ pub(crate) use work::{
 
 pub(crate) use work::{
     CompleteWorkStorageResult, CompletionRecoverySnapshot, StageWorkSessionDelivery,
-    WorkNoteCapture, normalize_completion_acceptance_shape,
+    WorkNoteCapture, checkpoint_run_feed_end, normalize_completion_acceptance_shape,
 };
 
 pub(crate) fn admit_session_id(session: &crate::SessionId) -> Result<(), StoreError> {

@@ -1,7 +1,244 @@
 use super::*;
 
 #[test]
-fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
+fn completion_records_an_untested_source_change_as_a_sealed_waiver() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = store
+        .create_work(
+            &root_request("project-untested-change", "create-untested-work", 1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create local work");
+    let claim = claim(&mut store, &work, "runner", "claim-untested-work", 2, 300);
+    let mutation = source_mutation(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "untested",
+        3,
+        Some("revision-untested"),
+    );
+    let opened = store
+        .work_run_obligations(claim.run_id)
+        .expect("open obligation");
+    assert_eq!(opened.len(), 1);
+    assert_eq!(opened[0].state, WorkObligationState::Open);
+    assert_eq!(opened[0].obligation.triggering_observation, mutation);
+    let generic = evidence(&mut store, &work, &claim, "runner", "untested-evidence", 4);
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "untested-checkpoint",
+        5,
+        std::slice::from_ref(&generic),
+    );
+    let checkpoint_end = feed_head(&store.connection, &FeedId::RunExecution(claim.run_id))
+        .expect("run head at the checkpoint");
+    let seal = complete(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        &generic,
+        "untested-completion",
+        6,
+    )
+    .expect("an untested source change does not refuse completion");
+
+    // Completion resolved the obligation as a waiver in the completing
+    // actor's name, naming the change and its source revision.
+    let terminal = store
+        .work_run_obligations(claim.run_id)
+        .expect("terminal obligation");
+    assert_eq!(terminal.len(), 1);
+    assert_eq!(terminal[0].state, WorkObligationState::Waived);
+    let Some(WorkObligationResolution::Waived { waived_by, reason }) = terminal[0]
+        .resolution
+        .as_ref()
+        .map(|event| &event.resolution)
+    else {
+        panic!("completion must waive the untested change: {terminal:?}");
+    };
+    assert_eq!(waived_by, "runner");
+    assert!(
+        reason.contains("write-untested")
+            && reason.contains("revision-untested")
+            && reason.contains("no matching passing test"),
+        "{reason}"
+    );
+    // The seal binds that waiver like any terminal obligation, and the waiver
+    // lies after the checkpoint and inside the sealed cut.
+    let resolution = terminal[0].resolution_id.clone().expect("waiver hash");
+    assert_eq!(
+        seal.obligations,
+        vec![CompletionObligationBinding {
+            obligation_id: terminal[0].obligation.obligation_id,
+            definition: terminal[0].definition_id.clone(),
+            resolution: resolution.clone(),
+        }]
+    );
+    let waiver_position =
+        run_feed_position_for_object_on(&store.connection, claim.run_id, &resolution)
+            .expect("waiver run-feed position");
+    assert!(waiver_position.position > checkpoint_end);
+    assert!(waiver_position.position <= seal.completion_cut.position);
+    validate_completion_seal_obligation_basis_on(&store.connection, &seal)
+        .expect("reconstruct the sealed waiver basis");
+    let report = store.verify_all().expect("integrity report");
+    assert!(report.is_healthy(), "{report:?}");
+}
+
+#[test]
+fn a_recovery_answer_never_names_the_untested_waivers_it_rolls_back() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = store
+        .create_work(
+            &root_request("project-untested-recovery", "create-untested-recovery", 1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create local work");
+    let claim = claim(
+        &mut store,
+        &work,
+        "runner",
+        "claim-untested-recovery",
+        2,
+        300,
+    );
+    source_mutation(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "untested-recovery",
+        3,
+        Some("revision-recovery"),
+    );
+    store
+        .add_expected_root_contributor_fixture(
+            work.work_id,
+            &SessionId("absent-contributor".into()),
+            at(4),
+        )
+        .expect("seed an unaccounted expected contributor");
+    let generic = evidence(&mut store, &work, &claim, "runner", "recovery-evidence", 5);
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "recovery-checkpoint",
+        6,
+        std::slice::from_ref(&generic),
+    );
+    let run_feed = FeedId::RunExecution(claim.run_id);
+    let head = feed_head(&store.connection, &run_feed).expect("run head before completion");
+    let answer = store
+        .complete_work_for_protocol(
+            &completion_request(&work, &claim, "runner", &generic, "recovery-completion", 7),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("a missing contributor is a typed recovery");
+    let CompleteWorkStorageResult::Recovery(snapshot) = answer else {
+        panic!("an unaccounted contributor must return a recovery answer");
+    };
+    assert!(matches!(
+        snapshot.recovery.cause,
+        WorkCompletionRecoveryCause::MissingContribution { .. }
+    ));
+    // The answer reports what the store holds once the refused completion is
+    // dropped: the stock obligation still open, with no waiver.
+    let durable = store
+        .work_run_obligations(claim.run_id)
+        .expect("durable obligations");
+    assert_eq!(durable.len(), 1);
+    assert_eq!(durable[0].state, WorkObligationState::Open);
+    assert_eq!(snapshot.obligations.len(), 1);
+    assert_eq!(
+        snapshot.obligations[0].obligation.obligation_id,
+        durable[0].obligation.obligation_id
+    );
+    assert_eq!(snapshot.obligations[0].state, WorkObligationState::Open);
+    assert!(snapshot.obligations[0].resolution_id.is_none());
+    assert_eq!(
+        feed_head(&store.connection, &run_feed).expect("run head after refusal"),
+        head
+    );
+}
+
+#[test]
+fn every_untested_change_is_counted_when_the_page_names_only_some() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let database = directory.path().join("engram.sqlite3");
+    let mut store = SqliteStore::open(&database).expect("store");
+    let work = store
+        .create_work(
+            &root_request("project-many-untested", "create-many-untested", 1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create local work");
+    let claim = claim(&mut store, &work, "runner", "claim-many-untested", 2, 300);
+    let changes = 10;
+    for index in 0..changes {
+        source_mutation(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            &format!("many-{index}"),
+            3,
+            Some(&format!("revision-{index}")),
+        );
+    }
+    let generic = evidence(&mut store, &work, &claim, "runner", "many-evidence", 4);
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "many-checkpoint",
+        5,
+        std::slice::from_ref(&generic),
+    );
+    let seal = complete(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        &generic,
+        "many-completion",
+        6,
+    )
+    .expect("untested changes do not refuse completion");
+    assert_eq!(seal.obligations.len(), changes);
+    drop(store);
+    let view = LocalWorkService::new(
+        database,
+        work.project_id.clone(),
+        "runner".into(),
+        SessionId("runner".into()),
+        None,
+    )
+    .inspect_work(&work.short_ref, at(7))
+    .expect("completed focus view");
+    let page = &view.obligation_page;
+    let named = page
+        .items
+        .iter()
+        .filter(|item| item.untested_change.is_some())
+        .count();
+    assert_eq!(page.untested_total, changes);
+    assert!(named > 0 && named < changes, "{named} named");
+    assert_eq!(named + page.omitted_count, changes);
+}
+
+#[test]
+fn completion_seals_a_tested_source_change_as_the_exact_terminal_basis() {
     let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let mut store = SqliteStore::open(&database).expect("store");
@@ -78,41 +315,6 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         "completion-generic-evidence",
         4,
     );
-    checkpoint(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "completion-before-verification",
-        5,
-        std::slice::from_ref(&generic_evidence),
-    );
-    let refused = complete(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        &generic_evidence,
-        "completion-open-obligation",
-        6,
-    );
-    let Err(StoreError::OpenWorkObligations {
-        work: refused_work,
-        obligations,
-        omitted_count,
-    }) = refused
-    else {
-        panic!("completion must return the typed open-obligation refusal");
-    };
-    assert_eq!(refused_work, work.work_id);
-    assert_eq!(omitted_count, 0);
-    assert_eq!(obligations.len(), 1);
-    assert_eq!(
-        obligations[0].obligation_id,
-        opened[0].obligation.obligation_id
-    );
-    assert_eq!(obligations[0].definition, opened[0].definition_id);
-    assert_eq!(obligations[0].required_check, VerificationKind::Test);
 
     let verification_observation = ExecutionObservation {
         schema_version: SCHEMA_VERSION,
@@ -264,6 +466,24 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
     );
     validate_completion_seal_obligation_basis_on(&store.connection, &seal)
         .expect("reconstruct exact completion basis");
+    // A tested change discloses nothing as untested.
+    let tested = LocalWorkService::new(
+        database.clone(),
+        work.project_id.clone(),
+        "runner".into(),
+        SessionId("runner".into()),
+        None,
+    )
+    .inspect_work(&work.short_ref, at(10))
+    .expect("completed focus view");
+    assert_eq!(tested.obligation_page.untested_total, 0);
+    assert!(
+        tested
+            .obligation_page
+            .items
+            .iter()
+            .all(|item| item.untested_change.is_none())
+    );
     let report = store.verify_all().expect("integrity report");
     assert!(report.is_healthy(), "{report:?}");
     let seal_id = store.stored_seal_id(&seal);
@@ -520,11 +740,19 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
     let session = SessionId("runner".into());
     let (work, expected_obligation, binding, run_actor, source_basis) = {
         let mut store = SqliteStore::open(&database).expect("store");
+        // A criterion bound to a host test owes it; the stock source-change
+        // rule alone would record the change as untested and complete.
+        let mut request = root_request(&project.0, "create-protocol-obligation-work", 1);
+        request.acceptance_bindings = vec![crate::domain::AcceptanceBinding {
+            criterion: 1,
+            requirement: crate::domain::VerificationRequirement {
+                check_kind: VerificationKind::Test,
+                check_fingerprint: None,
+                required_environment: None,
+            },
+        }];
         let work = store
-            .create_work(
-                &root_request(&project.0, "create-protocol-obligation-work", 1),
-                &DevelopmentNoopRedactor,
-            )
+            .create_work(&request, &DevelopmentNoopRedactor)
             .expect("create local work");
         store
             .focus_work_session(&project, &session, work.work_id, at(2))
@@ -578,11 +806,16 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
         )
         .expect("append protocol mutation obligation");
         transaction.commit().expect("commit protocol obligation");
-        let obligation = store
+        let obligations = store
             .work_run_obligations(run.run_id)
-            .expect("protocol obligation")
-            .pop()
-            .expect("one protocol obligation");
+            .expect("protocol obligations");
+        assert_eq!(obligations.len(), 2);
+        let obligation = obligations
+            .into_iter()
+            .find(|record| {
+                crate::control::acceptance_binding_criterion(&record.obligation.rule) == Some(1)
+            })
+            .expect("the bound criterion's obligation");
         evidence(
             &mut store,
             &work,
@@ -626,7 +859,21 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
     };
     assert_eq!(refusal.code, "open_work_obligations");
     assert_eq!(refusal.work_id, work.work_id);
-    assert_eq!(refusal.obligation_page.items.len(), 1);
+    // The page is read from the state before completion's waivers: the bound
+    // criterion's obligation that refused, then the stock obligation the
+    // dropped completion leaves open.
+    assert_eq!(refusal.obligation_page.items.len(), 2);
+    assert!(
+        refusal
+            .obligation_page
+            .items
+            .iter()
+            .all(|item| item.state == WorkObligationState::Open && item.untested_change.is_none())
+    );
+    assert!(crate::control::is_stock_source_change_obligation(
+        &refusal.obligation_page.items[1].rule,
+        &refusal.obligation_page.items[1].requirement,
+    ));
     assert_eq!(
         refusal.obligation_page.items[0].obligation_id,
         expected_obligation.obligation.obligation_id
@@ -660,6 +907,16 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
     assert_eq!(
         refusal.remedy,
         "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
+    );
+    // The refusal rolled back the stock rule's waiver with the rest of the
+    // completion, so both obligations are still open.
+    assert!(
+        SqliteStore::open(&database)
+            .expect("store after refusal")
+            .work_run_obligations(binding.run_id)
+            .expect("obligations after refusal")
+            .iter()
+            .all(|record| record.state == WorkObligationState::Open)
     );
     let run_id = binding.run_id;
     let head_before_replay = SqliteStore::open(&database)

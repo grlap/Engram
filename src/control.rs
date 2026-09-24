@@ -141,6 +141,32 @@ pub fn match_verification_evidence(
     Ok(())
 }
 
+/// Rule id of the stock rule that asks for a passing test after each source
+/// change. It records rather than blocks: completion resolves an obligation
+/// it opened that no matching passing test followed as an attributed waiver,
+/// and the item discloses that change as untested.
+pub const SOURCE_CHANGE_RULE_ID: &str = "source_mutation_requires_test";
+
+/// Whether an obligation opened for `rule` with `requirement` is the stock
+/// source-change rule's, whose open obligations completion records as
+/// untested instead of refusing. It matches the stock definition exactly, so
+/// an operator-selected rule that reuses the id with another version or a
+/// pinned check or environment still blocks.
+#[must_use]
+pub fn is_stock_source_change_obligation(
+    rule: &BuiltinObligationRuleRef,
+    requirement: &VerificationRequirement,
+) -> bool {
+    builtin_obligation_rule_set()
+        .rules
+        .iter()
+        .any(|definition| {
+            definition.trigger == BuiltinObligationTrigger::SourceChanged
+                && definition.rule == *rule
+                && definition.requirement == *requirement
+        })
+}
+
 /// Stock immutable V1 rule table installed by project-policy bootstrap.
 #[must_use]
 pub fn builtin_obligation_rule_set() -> ObligationRuleSet {
@@ -148,7 +174,7 @@ pub fn builtin_obligation_rule_set() -> ObligationRuleSet {
         schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
         rules: vec![ObligationRuleDefinition {
             rule: BuiltinObligationRuleRef {
-                rule_id: "source_mutation_requires_test".into(),
+                rule_id: SOURCE_CHANGE_RULE_ID.into(),
                 rule_version: 1,
             },
             trigger: BuiltinObligationTrigger::SourceChanged,

@@ -43,9 +43,12 @@ verification | attributed audited waiver → CompletionSeal`. The observation an
 definition freeze that selection, so activating another validated set affects
 only future observations. Definitions and resolutions are immutable feed
 objects. The seal records the exact definition/resolution pairs applicable at
-its dense run-feed cut, and `work_complete` returns a bounded
-`open_work_obligations` result until that set is terminal. A general rule
-language remains planned.
+its dense run-feed cut. The stock test obligation records rather than blocks.
+If no matching passing test followed a change, completion resolves that
+obligation as an attributed waiver inside the cut and discloses the change as
+untested. Any other open obligation makes `work_complete` return a bounded
+`open_work_obligations` result until it is terminal. A general rule language
+remains planned.
 
 The upstream layers — intake/enrichment, planning, capability and context
 assignment — belong to an external, separately named intake system that is
@@ -261,7 +264,9 @@ capability requirements and packet assignment do not.
    `advisory` for a shadow host and later advance to `turn_gated` without
    rewriting prior policy history; an `advisory` run of the same sequence is
    the integration test, not the acceptance test.
-3. Record a source mutation under the stock policy-selected rule set, observe
+3. Record a source mutation under a policy-selected rule that requires the
+   test. The stock rule records an untested change instead of refusing, so
+   use a criterion bound with `--bind` or an operator-selected rule. Observe
    `work_complete` refuse the open test obligation, record matching host
    verification linked to canonical
    environment evidence, checkpoint that typed evidence, and freeze the exact

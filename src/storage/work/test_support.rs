@@ -420,6 +420,36 @@ pub(super) fn check_fingerprint(key: &str) -> ObjectId {
     ObjectId::from_canonical_bytes(format!("check {key}").as_bytes())
 }
 
+impl SqliteStore {
+    /// Appends, for tests outside this module, a host-observed source change
+    /// on `work_id`'s claimed run that leaves the source at
+    /// `source_revision`, as a control turn checkpoint records one.
+    pub(crate) fn append_source_change_fixture(
+        &mut self,
+        work_id: WorkId,
+        key: &str,
+        observed_at: DateTime<Utc>,
+        source_revision: &str,
+    ) -> ObjectId {
+        let second = (observed_at - at(0)).num_seconds();
+        let work = super::query::load_work_item(&self.connection, work_id).expect("fixture work");
+        let run_id = work.active_run_id.expect("fixture work has an active run");
+        let claim = super::query::load_work_claim_optional(&self.connection, run_id)
+            .expect("fixture claim read")
+            .expect("fixture run is claimed");
+        let holder = claim.holder.0.clone();
+        source_mutation(
+            self,
+            &work,
+            &claim,
+            &holder,
+            key,
+            second,
+            Some(source_revision),
+        )
+    }
+}
+
 /// Appends a host-observed source mutation on the claimed run that leaves
 /// the source at `source_revision`; a verification of that revision recorded
 /// afterwards answers it. `None` records the change the way a host that

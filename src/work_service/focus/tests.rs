@@ -270,6 +270,7 @@ fn obligation_page_keeps_open_items_first_under_count_trimming() {
     let page = work_obligation_page_from_records(records).expect("bounded obligation page");
     assert!(page.items.len() <= MAX_FOCUS_RELATIONS);
     assert_eq!(page.omitted_count, 12 - page.items.len());
+    assert_eq!(page.open_total, Some(5));
     assert!(
         page.items[..5]
             .iter()
@@ -323,6 +324,7 @@ fn obligation_page_keeps_every_open_item_that_fits_under_byte_trimming() {
     assert!(serde_json::to_vec(&expected).unwrap().len() <= MAX_OBLIGATION_PAGE_BYTES);
     assert!(expected.omitted_count > 0);
     assert_eq!(expected.omitted_count, 8 - expected.items.len());
+    assert_eq!(expected.open_total, Some(4));
     assert!(
         expected.items[..4]
             .iter()
@@ -427,6 +429,8 @@ fn focus_evidence_prioritizes_environments_from_the_visible_obligation_page() {
     let mut count_page = count_bounded_work_obligation_page(count_records);
     assert_eq!(count_page.items.len(), MAX_FOCUS_RELATIONS);
     assert_eq!(count_page.omitted_count, 2);
+    // Counted before truncation: two open obligations are left out.
+    assert_eq!(count_page.open_total, Some(10));
     for item in &mut count_page.items {
         item.requirement.required_environment = Some(environment_hash(
             i64::try_from(item.obligation_id.0.as_u128()).expect("small fixture identity"),
@@ -445,6 +449,8 @@ fn focus_evidence_prioritizes_environments_from_the_visible_obligation_page() {
     let byte_page = work_obligation_page_from_records(byte_records).expect("byte-bounded page");
     assert!(byte_page.items.len() < MAX_FOCUS_RELATIONS);
     assert_eq!(byte_page.omitted_count, 10 - byte_page.items.len());
+    // Byte trimming drops items but keeps the count of every open one.
+    assert_eq!(byte_page.open_total, Some(10));
 
     let candidates = (1..=10_i64)
         .rev()

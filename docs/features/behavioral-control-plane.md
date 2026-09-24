@@ -632,6 +632,30 @@ newest one. If the newest mutation has no source basis, no verification can
 match it: all open obligations remain waiver-only until a later basis-bearing
 mutation and passed test establish a newer verifiable state.
 
+The stock rule records rather than blocks. The final checkpoint may leave a
+`source_mutation_requires_test` obligation open because no matching passing
+test followed a change. Completion then resolves that obligation as a waiver
+attributed to the completing actor. The waiver's host-private reason names the
+change and its source revision. The waiver is appended after that checkpoint
+and inside the sealed cut, so the seal still binds only terminal obligations.
+A completion refused for another reason rolls the waiver back with the rest.
+Its recovery page is read from the state before the waivers, so it never names
+a waiver that rollback discards.
+On that waived obligation, the `obligation_page` entry carries
+`untested_change`: the host's observation id, source revision, and observation
+time. An operator waiver of the same rule carries it too. The page's
+`untested_total` counts every such change on the run, including those the
+bounded page leaves out. Agent `done` and `show` print one
+`untested source change:` line per named change, then the exact count of any
+not shown, so the changes stay visible after completion. Peers receive each
+change in `next` as an `untested_source_change` delta. Only the exact stock
+definition behaves this way: the stock id at version 1, triggered by a source
+change, requiring an unpinned test. Obligations from an acceptance binding
+(`--bind`) keep blocking completion, and so do obligations from any other
+operator-selected rule, including one that reuses the stock id with another
+version or a pinned check or environment. Each needs a matching verification
+or an operator waiver.
+
 Definitions and resolutions are canonical feed objects; the mutable obligation
 row is only a verified projection. `work_focus`, nested `work_next.focus`,
 `work_update`, and both completion outcomes use one count- and byte-bounded
@@ -646,8 +670,9 @@ host-private operation, MCP or a direct `work_update` waiver variant.
 The shell request carries an attributed reason but no work grant; its actor
 and `waived_by` human are asserted, not authenticated. Revising or dropping an
 acceptance binding still resolves its open obligation with retained history.
-Agent-facing pages omit the reason. Completion evaluates the
-cut-aware open set at the exact pre-seal run-feed cut. Terminal definitions are
+Agent-facing pages omit the reason. Completion first records the stock rule's
+open obligations as waivers, as above, then evaluates the cut-aware open set at
+the exact pre-seal run-feed cut; any obligation still open refuses. Terminal definitions are
 frozen into the seal as exact definition/resolution id pairs under obligation
 schema V1, and completion success reconstructs its page from that sealed basis.
 New seals separately declare environment schema V1 and bind the sorted,
