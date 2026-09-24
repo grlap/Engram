@@ -1058,6 +1058,9 @@ engram mcp --actor-id codex --session-id session-unique-id
 # Host/operator escape hatch: the six-operation JSON protocol from the shell.
 engram work --actor-id codex --session-id session-unique-id \
   core focus <short-ref>
+# Read the same view without selecting focus or touching delivery.
+engram work --actor-id codex --session-id session-unique-id \
+  core inspect <short-ref>
 ```
 
 `graph save` and `graph load` are operator-only CLI surfaces; neither is an MCP
@@ -1426,6 +1429,20 @@ claim_id, claim_fence }`, ready to pass unchanged to host-private
 `focus.claim` exposes the claim and fence components. `work_revision` is the
 focused work item's revision—the claim receipt's top-level `revision`—not the
 claim projection's own revision counter.
+
+A host that must read a claim's binding without moving the agent uses
+`work core inspect <ref>`. It returns the same bounded view as `work core
+focus`, `control_binding` included, read in one snapshot on a read-only
+connection: it refuses a missing or uninitialized store rather than creating
+one, selects no focus, stages or discards no delivery page, appends nothing,
+registers no session, and carries no focus-bound memory index. Selecting a
+different item with `work core focus` is not a side-effect-free read: it
+discards a staged delivery page and changes the item that bare agent words and
+the control context act on. `control_binding` is present only when the calling
+session holds the item's live claim, so the host must use the agent's own
+session id. It goes stale when the holder's planning update changes the item
+revision or when a lapsed claim is retaken with a new fence; the host then reads
+it again and rebinds between turns.
 
 `work_complete` can consume evidence/checkpoint state created through explicit
 `work_update` calls, or accept `capture { summary, refs }` to record evidence,

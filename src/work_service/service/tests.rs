@@ -935,3 +935,228 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
             .any(|item| item.work.work_id == root.work_id)
     );
 }
+
+fn propose_root_for_inspect(
+    service: &LocalWorkService,
+    key: &str,
+    now: DateTime<Utc>,
+) -> WorkItemSummary {
+    match service
+        .work_propose(
+            WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
+                evaluation_mode: None,
+                external_ref: None,
+                notes: Vec::new(),
+                title: format!("Inspect target {key}"),
+                outcome: format!("Outcome {key}"),
+                acceptance: vec![format!("criterion {key}")],
+                work_kind: None,
+                priority: None,
+                labels: Vec::new(),
+                assigned_to: None,
+                deferred_until: None,
+                idempotency_key: key.into(),
+            },
+            now,
+        )
+        .expect("root proposal")
+    {
+        WorkProposeResult::Root { work, .. } => work,
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
+    }
+}
+
+/// Everything an inspection must leave alone: the holder's session row (its
+/// focus, cursor and staged delivery page), every feed head and entry, and
+/// the object log.
+fn inspection_sensitive_state(database: &std::path::Path) -> (String, i64, i64, i64) {
+    let connection = rusqlite::Connection::open(database).expect("state reader");
+    let session = connection
+        .query_row(
+            "SELECT json_array(focused_work_id, project_cursor, tentative_project_cursor,
+                    tentative_delivery_token, hex(tentative_delivery_payload), updated_at_ms)
+               FROM work_session_state WHERE session_id = 'holder'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("holder session row");
+    let count = |sql: &str| {
+        connection
+            .query_row(sql, [], |row| row.get::<_, i64>(0))
+            .expect("state count")
+    };
+    (
+        session,
+        count("SELECT COALESCE(SUM(position), 0) FROM work_feed_heads"),
+        count("SELECT COUNT(*) FROM work_feed_entries"),
+        count("SELECT COUNT(*) FROM objects"),
+    )
+}
+
+#[test]
+fn host_inspect_reads_a_claim_binding_without_moving_focus_or_delivery() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("engram.sqlite3");
+    let project = ProjectId("inspect-project".into());
+    let holder = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("holder".into()),
+        Some("inspect-test".into()),
+    );
+    let other = LocalWorkService::new(
+        database.clone(),
+        project,
+        "agent".into(),
+        SessionId("other".into()),
+        Some("inspect-test".into()),
+    );
+    let claimed_item = propose_root_for_inspect(&holder, "claimed", at(0));
+    let elsewhere = propose_root_for_inspect(&holder, "elsewhere", at(1));
+    holder
+        .work_focus(&claimed_item.short_ref, at(2))
+        .expect("focus the item to claim");
+    let claimed = holder
+        .work_update(
+            WorkUpdateInput::Claim {
+                ttl_seconds: Some(300),
+                recovery_reason: None,
+                idempotency_key: "claim".into(),
+            },
+            at(2),
+        )
+        .expect("claim");
+    let binding = claimed
+        .receipt
+        .control_binding
+        .clone()
+        .expect("claim receipt binding");
+
+    // The agent now works with focus elsewhere and a staged, unacknowledged
+    // delivery page: exactly the state a host must not disturb.
+    holder
+        .work_focus(&elsewhere.short_ref, at(3))
+        .expect("focus moves elsewhere");
+    let staged = holder
+        .work_next(20, WorkNextQuery::default(), at(4))
+        .expect("stage a delivery page");
+    assert!(staged.session.pending_delivery);
+    let before = inspection_sensitive_state(&database);
+
+    let inspected = holder
+        .work_inspect(&claimed_item.short_ref, at(5))
+        .expect("host inspection of the held item");
+    assert_eq!(inspected.status.work.work_id, claimed_item.work_id);
+    assert_eq!(inspected.control_binding.as_ref(), Some(&binding));
+    assert_eq!(inspected.session.focused_work_id, Some(elsewhere.work_id));
+    assert!(inspected.memories.is_empty(), "no focus-bound memory index");
+    assert_eq!(inspection_sensitive_state(&database), before);
+
+    // Another session sees the item and its holder, but no binding.
+    let seen = other
+        .work_inspect(&claimed_item.short_ref, at(5))
+        .expect("peer inspection");
+    assert!(seen.control_binding.is_none());
+    assert_eq!(
+        seen.claim.as_ref().expect("live claim").holder,
+        SessionId("holder".into())
+    );
+    assert_eq!(inspection_sensitive_state(&database), before);
+
+    // The staged page survived and can still be acknowledged.
+    let acknowledged = holder
+        .work_next_with_delivery_token(
+            20,
+            staged.delivered_through,
+            staged.delivery_token.as_deref(),
+            WorkNextQuery::default(),
+            at(6),
+        )
+        .expect("the staged page was not discarded");
+    assert_eq!(
+        Some(acknowledged.session.confirmed_project_cursor),
+        staged.delivered_through
+    );
+    assert_eq!(
+        acknowledged.session.focused_work_id,
+        Some(elsewhere.work_id)
+    );
+
+    // The binding is the one focus would give the holder.
+    let focused = holder
+        .work_focus(&claimed_item.short_ref, at(7))
+        .expect("focus the held item");
+    assert_eq!(focused.control_binding, Some(binding));
+}
+
+#[test]
+fn host_inspect_never_creates_a_store_or_registers_a_session() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let project = ProjectId("inspect-project".into());
+    let reader_on = |database: &std::path::Path| {
+        LocalWorkService::new(
+            database.to_path_buf(),
+            project.clone(),
+            "agent".into(),
+            SessionId("reader".into()),
+            Some("inspect-test".into()),
+        )
+    };
+
+    // A missing store is refused, not created.
+    let missing = directory.path().join("missing.sqlite3");
+    assert!(matches!(
+        reader_on(&missing).work_inspect("w-000000000000", at(0)),
+        Err(StoreError::StoreNotInitialized)
+    ));
+    assert!(!missing.exists(), "inspection must not create a store");
+
+    // An empty file is refused and stays empty: nothing is initialized.
+    let empty = directory.path().join("empty.sqlite3");
+    std::fs::write(&empty, b"").expect("empty file");
+    assert!(matches!(
+        reader_on(&empty).work_inspect("w-000000000000", at(0)),
+        Err(StoreError::StoreNotInitialized)
+    ));
+    assert_eq!(std::fs::metadata(&empty).expect("empty file").len(), 0);
+
+    // A process-default session reads without being registered.
+    let database = directory.path().join("engram.sqlite3");
+    let holder = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("holder".into()),
+        Some("inspect-test".into()),
+    );
+    let item = propose_root_for_inspect(&holder, "item", at(0));
+    let fresh = process_default_session_at(20, at(1));
+    let reader = LocalWorkService::new_with_attribution(
+        database.clone(),
+        project,
+        "agent".into(),
+        fresh.clone(),
+        None,
+        None,
+        WorkAttributionDefaults {
+            actor: None,
+            session: true,
+        },
+    );
+    let view = reader
+        .work_inspect(&item.short_ref, at(1))
+        .expect("process-default inspection");
+    assert_eq!(view.status.work.work_id, item.work_id);
+    assert!(view.control_binding.is_none());
+    let registered: i64 = rusqlite::Connection::open(&database)
+        .expect("state reader")
+        .query_row(
+            "SELECT COUNT(*) FROM work_session_state WHERE session_id = ?1",
+            [&fresh.0],
+            |row| row.get(0),
+        )
+        .expect("session rows");
+    assert_eq!(registered, 0, "inspection must not register the session");
+}

@@ -193,8 +193,9 @@ level, declared mediated capabilities, and an optional exact work binding:
 `claim_fence`. Storage verifies that tuple against the session's live claim and
 copies it into each grant. The six-operation work protocol supplies this tuple
 directly as `work_update:claim.receipt.control_binding` and
-`work_focus.control_binding`; the focus run section also names its root
-execution and work item. Here `work_revision` is the work item's revision
+`work_focus.control_binding`, and `work core inspect` returns it without
+selecting focus; the focus run section also names its root execution and work
+item. Here `work_revision` is the work item's revision
 returned at the top of the claim receipt, not the claim object's revision. A host
 may first seed a local root from a user request or an optional external
 snapshot. Local work never requires an external reference. V1 has one ordinary

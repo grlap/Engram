@@ -125,7 +125,9 @@ impl LocalWorkService {
     }
 
     /// Inspects work by reference without changing ambient focus or staging
-    /// any delivery.
+    /// any delivery. It uses the service's writable connection and may
+    /// register a process-default session; a host read that must write
+    /// nothing uses [`Self::work_inspect`].
     ///
     /// # Errors
     ///
@@ -138,6 +140,44 @@ impl LocalWorkService {
         let store = self.store_at(now)?;
         let work = store.resolve_work_ref(&self.project_id, work_ref)?;
         self.focus_view(&store, work.work_id, false, true, now)
+    }
+
+    /// The host's read of one item: the bounded `work_focus` view, including
+    /// the control binding when this session holds the item's live claim,
+    /// taken in one read snapshot. It opens the existing store read-only, so
+    /// it never creates or initializes a store, and it selects no focus,
+    /// stages or discards no delivery, appends nothing, and registers no
+    /// process-default session. A host can therefore read the binding it
+    /// passes to `session_bind` without moving the agent's focus. Unlike
+    /// [`Self::inspect_work`], nothing about the store changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the store is missing or not initialized,
+    /// the reference is absent, or projections are invalid.
+    pub fn work_inspect(
+        &self,
+        work_ref: &str,
+        now: DateTime<Utc>,
+    ) -> Result<WorkFocusView, StoreError> {
+        self.validate_read_attribution(now)?;
+        let store = SqliteStore::open_existing_read_only(&self.database)?;
+        let mut view = store.work_read_snapshot(|store| {
+            let item = store.resolve_work_ref(&self.project_id, work_ref)?;
+            // The memory index follows the session's saved focus, which this
+            // read leaves alone, so it carries none.
+            self.focus_view_for_projection(
+                store,
+                item.work_id,
+                false,
+                true,
+                super::service::FocusText::Summary,
+                now,
+            )
+        })?;
+        super::projection::fit_focus_response(&mut view)?;
+        super::projection::ensure_agent_response_budget(&view, "work_inspect")?;
+        Ok(view)
     }
 
     /// Resolves one work reference without projecting or changing ambient

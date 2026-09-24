@@ -893,6 +893,12 @@ enum CoreWorkCommand {
         /// Short work ref or full UUID.
         work_ref: String,
     },
+    /// Read one item's focus view, including this session's control binding,
+    /// without selecting focus or touching delivery.
+    Inspect {
+        /// Short work ref or full UUID.
+        work_ref: String,
+    },
     /// Create a root, decompose ambient work, or admit a complete new plan.
     Propose {
         /// Parent to decompose; selects focus first. Omit for a new plan.
@@ -1993,6 +1999,9 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
             .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
         CoreWorkCommand::Focus { work_ref } => service
             .work_focus(&work_ref, now)
+            .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
+        CoreWorkCommand::Inspect { work_ref } => service
+            .work_inspect(&work_ref, now)
             .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
         CoreWorkCommand::Propose { work_ref, input } => {
             // Bound raw files (including whitespace) before decoding the kind.
