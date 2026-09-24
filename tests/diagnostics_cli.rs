@@ -44,9 +44,9 @@ fn doctor_reports_the_acceptance_evaluation_policy_in_json_and_text() {
     let directory = crate::test_support::temp_home().unwrap();
     let home = directory.path();
     success(home, &["init"]);
-    let legacy = diagnosis(home);
+    let self_asserted = diagnosis(home);
     assert_eq!(
-        legacy["control"]["acceptance_evaluation"]["allowed_modes"],
+        self_asserted["control"]["acceptance_evaluation"]["allowed_modes"],
         json!([])
     );
     let text = String::from_utf8(success(home, &["doctor"]).stdout).unwrap();
