@@ -59,6 +59,11 @@ const FAMILIES: &[Family] = &[
         children: Some("src/bin_support"),
         split: true,
     },
+    Family {
+        module: "src/storage/work/planning",
+        children: None,
+        split: true,
+    },
 ];
 
 /// Physical lines: every line feed ends a line, and a nonempty final line
