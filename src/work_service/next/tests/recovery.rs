@@ -1,4 +1,5 @@
 use super::*;
+use crate::storage::concurrent_commit::act_across_a_concurrent_commit;
 
 struct RecoveryFixture {
     reader: LocalWorkService,
@@ -208,60 +209,52 @@ fn host_ack_recovery_stale_confirmed_cursor_refuses_after_another_advance() {
     assert_eq!(current.token, following.delivery_token);
 }
 
+/// A focus change discards the pending page. When it lands between the
+/// implicit confirmation's read of that page and its write, nothing is left
+/// to confirm: the confirmation succeeds without moving the cursor, and the
+/// next call stages the same interval under the new focus.
 #[test]
-fn agent_ack_recovery_after_focus_discard_has_plain_retry_guidance() {
+fn a_focus_change_before_the_implicit_confirmation_leaves_nothing_to_confirm() {
     let fixture = RecoveryFixture::new();
     fixture.next(None, None).expect("stage original page");
-    let mut store =
-        SqliteStore::open(fixture.directory.path().join("engram.sqlite3")).expect("store");
-    // Reproduce the storage-call interleaving in implicit ACK deterministically:
-    // read previous, change focus, then acknowledge the previously read pair.
-    let previous = store
-        .work_session_state(
-            &fixture.reader.project_id,
-            &fixture.reader.session_id,
-            at(3),
-        )
-        .expect("read previous pending page");
+    let staged = fixture.state();
+    assert!(staged.through.is_some(), "a page is pending");
     let target = proposed_root(
         fixture
             .writer
             .work_propose(root_input("New focus", "new-focus"), at(3))
             .expect("new focus target"),
     );
-    fixture
-        .reader
-        .work_focus(&target.short_ref, at(4))
-        .expect("concurrent focus discards pending page");
+    let database = fixture.directory.path().join("engram.sqlite3");
+    let focuser = LocalWorkService::new(
+        database.clone(),
+        fixture.reader.project_id.clone(),
+        "reader".into(),
+        fixture.reader.session_id.clone(),
+        None,
+    );
+    let mut store = SqliteStore::open(&database).expect("store");
+    act_across_a_concurrent_commit(
+        &mut store,
+        |store| fixture.reader.confirm_previous_page(store, at(5)),
+        &["BEGIN IMMEDIATE"],
+        move || {
+            focuser
+                .work_focus(&target.short_ref, at(4))
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        },
+    )
+    .expect("a discarded page leaves nothing to confirm, not a mismatch");
+    drop(store);
     let discarded = fixture.state();
-    assert_eq!(discarded.confirmed, previous.project_cursor);
+    assert_eq!(
+        discarded.confirmed, staged.confirmed,
+        "nothing was confirmed"
+    );
     assert_eq!(discarded.through, None);
     assert_eq!(discarded.token, None);
     assert_eq!(discarded.payload, None);
-    let error = store
-        .acknowledge_work_session_delivery(
-            &fixture.reader.project_id,
-            &fixture.reader.session_id,
-            previous.tentative_project_cursor.expect("previous through"),
-            previous.tentative_delivery_token.as_deref(),
-            at(5),
-        )
-        .expect_err("previous page no longer exists");
-    assert!(matches!(&error, StoreError::InvalidWork(_)));
-    assert_eq!(fixture.state(), discarded, "refusal does not acknowledge");
-    let message = error.to_string();
-    assert!(
-        message.starts_with(
-            "local work input is invalid: work delivery acknowledgement does not match the pending page; for ordinary agent next, retry the next tool or engram work next; explicit-ACK hosts:"
-        ),
-        "the shared refusal must distinguish the agent retry before host-only commands: {message}"
-    );
-    let guidance = crate::verbs::VerbError::from(error).guidance();
-    assert_eq!(guidance.reminders, vec![message]);
-    assert!(
-        guidance.next.is_empty(),
-        "no host-only next command for the agent"
-    );
 
     let retry = fixture
         .reader

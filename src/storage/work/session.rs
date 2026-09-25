@@ -1045,11 +1045,43 @@ impl SqliteStore {
                 return Ok(state);
             }
             return Err(StoreError::InvalidWork(
-                "work delivery acknowledgement does not match the pending page; for ordinary agent next, retry the next tool or engram work next; explicit-ACK hosts: serialize this session's recovery against other advancing calls and focus changes: run engram work core next --sections focus without acknowledgement, read session.confirmed_project_cursor, then run engram work core next --sections changes --acknowledge-through <confirmed_project_cursor> without a token (a no-op ACK of the confirmed cursor) to replay pending changes; acknowledge the returned delivered_through and delivery_token after delivering that page. Warning: changes without acknowledge_through implicitly acknowledge the pending page"
+                "work delivery acknowledgement does not match the pending page; explicit-ACK hosts: serialize this session's recovery against other advancing calls and focus changes: run engram work core next --sections focus without acknowledgement, read session.confirmed_project_cursor, then run engram work core next --sections changes --acknowledge-through <confirmed_project_cursor> without a token (a no-op ACK of the confirmed cursor) to replay pending changes; acknowledge the returned delivered_through and delivery_token after delivering that page. Warning: changes without acknowledge_through implicitly acknowledge the pending page"
                     .into(),
             ));
         }
         Ok(state)
+    }
+
+    /// Confirms the page staged for this session, if one is still pending,
+    /// in one statement. `next` without an explicit acknowledgement counts
+    /// the page its session's previous call returned as delivered. Another
+    /// process using the same session may confirm that page, and pages after
+    /// it, at any moment. Confirming whatever is pending in one statement
+    /// leaves no gap in which a page read as pending is confirmed past.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the session row cannot be updated.
+    pub(crate) fn confirm_pending_work_session_delivery(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        let transaction = self.begin_work_mutation()?;
+        transaction.execute(
+            "UPDATE work_session_state SET
+                 project_cursor = tentative_project_cursor,
+                 tentative_project_cursor = NULL,
+                 tentative_delivery_token = NULL,
+                 tentative_delivery_payload = NULL,
+                 updated_at_ms = ?3
+             WHERE project_id = ?1 AND session_id = ?2
+               AND tentative_project_cursor IS NOT NULL",
+            params![project_id.0, session_id.0, now.timestamp_millis()],
+        )?;
+        transaction.commit()?;
+        Ok(())
     }
 
     /// Lists direct children in stable creation order.

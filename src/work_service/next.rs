@@ -33,8 +33,11 @@ impl LocalWorkService {
         self.work_next_with_delivery_token(limit, None, None, query, now)
     }
 
-    /// Executes `work_next` with the opaque capability returned by a prior
-    /// staged page. Callers cannot advance a pending cursor without it.
+    /// Executes `work_next` with an explicit acknowledgement: `acknowledge_through`
+    /// with the opaque token returned by a prior staged page confirms exactly
+    /// that page, and nothing else can be acknowledged explicitly. Without
+    /// `acknowledge_through`, a call that selects changes instead confirms
+    /// whatever page is pending, as [`Self::work_next`] does.
     ///
     /// # Errors
     ///
@@ -127,43 +130,16 @@ impl LocalWorkService {
         };
         let project_feed = FeedId::Project(self.project_id.clone());
         if acknowledge_through.is_none() && wants_changes {
-            // The page returned by the previous call counts as delivered once
-            // this session asks for the next one; an agent never acknowledges.
-            let previous = store.work_session_state(&self.project_id, &self.session_id, now)?;
-            if let Some(through) = previous.tentative_project_cursor {
-                store.acknowledge_work_session_delivery(
-                    &self.project_id,
-                    &self.session_id,
-                    through,
-                    previous.tentative_delivery_token.as_deref(),
-                    now,
-                )?;
-            }
+            self.confirm_previous_page(&mut store, now)?;
         }
-        let initial_session = store.work_session_state(&self.project_id, &self.session_id, now)?;
         let mut omissions = Vec::new();
         let (session, changes, delivered_through) = if wants_changes {
-            let mut delivery_session = initial_session;
             let mut stage_retries = 0;
             #[cfg(test)]
             let mut stage_hook_used = false;
             loop {
-                if let Some(through) = delivery_session.tentative_project_cursor {
-                    let payload = store
-                        .staged_work_session_delivery_payload(&self.project_id, &self.session_id)?
-                        .ok_or_else(|| {
-                            StoreError::InvalidWorkProjection(
-                                "pending work delivery has no exact staged payload".into(),
-                            )
-                        })?;
-                    let page = decode_staged_work_change_page(
-                        &store,
-                        &self.session_id,
-                        &self.project_id,
-                        delivery_session.project_cursor,
-                        through,
-                        &payload,
-                    )?;
+                let (delivery_session, staged_page) = self.delivery_state(&store, now)?;
+                if let Some((through, page)) = staged_page {
                     if page.omitted_count > 0 {
                         omissions.push(WorkSectionOmission {
                             section: WorkNextSection::Changes,
@@ -241,12 +217,11 @@ impl LocalWorkService {
                         "work delivery basis changed repeatedly; retry work_next".into(),
                     ));
                 }
-                delivery_session =
-                    store.work_session_state(&self.project_id, &self.session_id, now)?;
             }
         } else {
-            let confirmed = initial_session.project_cursor;
-            (initial_session, None, confirmed)
+            let session = store.work_session_state(&self.project_id, &self.session_id, now)?;
+            let confirmed = session.project_cursor;
+            (session, None, confirmed)
         };
         #[cfg(test)]
         if let Some(hook) = &self.advisory_read_hook {
@@ -309,6 +284,57 @@ impl LocalWorkService {
             }
         }
         Ok(response)
+    }
+
+    /// Counts the page returned by this session's previous call as delivered,
+    /// now that the session asks for the next one; an agent never
+    /// acknowledges. The read only skips the write when nothing is pending.
+    /// The confirmation itself does not depend on what the read saw, so
+    /// another process advancing this session in between cannot make it fail.
+    fn confirm_previous_page(
+        &self,
+        store: &mut SqliteStore,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        let previous = store.work_session_state(&self.project_id, &self.session_id, now)?;
+        if previous.tentative_project_cursor.is_some() {
+            store.confirm_pending_work_session_delivery(&self.project_id, &self.session_id, now)?;
+        }
+        Ok(())
+    }
+
+    /// This session's delivery state and, when a page is staged, that page
+    /// with its last position, read from one commit. Another process using
+    /// the same session may confirm or re-stage the page at any moment. Read
+    /// apart, the row could name a page whose payload is already gone or has
+    /// been replaced, and that would be reported as a broken projection.
+    fn delivery_state(
+        &self,
+        store: &SqliteStore,
+        now: DateTime<Utc>,
+    ) -> Result<(WorkSessionState, Option<(i64, StagedWorkChangePage)>), StoreError> {
+        store.work_read_snapshot(|store| {
+            let session = store.work_session_state(&self.project_id, &self.session_id, now)?;
+            let Some(through) = session.tentative_project_cursor else {
+                return Ok((session, None));
+            };
+            let payload = store
+                .staged_work_session_delivery_payload(&self.project_id, &self.session_id)?
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "pending work delivery has no exact staged payload".into(),
+                    )
+                })?;
+            let page = decode_staged_work_change_page(
+                store,
+                &self.session_id,
+                &self.project_id,
+                session.project_cursor,
+                through,
+                &payload,
+            )?;
+            Ok((session, Some((through, page))))
+        })
     }
 
     /// Reads projections only; the caller owns the advisory snapshot.

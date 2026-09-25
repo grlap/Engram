@@ -48,7 +48,34 @@ pub(crate) fn read_across_a_concurrent_commit<T>(
     before: &'static [&'static str],
     write: impl FnOnce() -> Result<(), String> + 'static,
 ) -> T {
-    assert!(reader.connection.is_autocommit());
+    arm(reader, before, write);
+    let read = read(reader);
+    disarm(reader, before);
+    read
+}
+
+/// Like [`read_across_a_concurrent_commit`], for a step that also writes.
+/// `before` must name a statement that runs before the step takes the write
+/// lock, such as its `BEGIN IMMEDIATE`: the concurrent write commits on the
+/// same thread and would otherwise wait for a lock the step holds.
+pub(crate) fn act_across_a_concurrent_commit<T>(
+    store: &mut SqliteStore,
+    act: impl FnOnce(&mut SqliteStore) -> T,
+    before: &'static [&'static str],
+    write: impl FnOnce() -> Result<(), String> + 'static,
+) -> T {
+    arm(store, before, write);
+    let result = act(store);
+    disarm(store, before);
+    result
+}
+
+fn arm(
+    store: &SqliteStore,
+    before: &'static [&'static str],
+    write: impl FnOnce() -> Result<(), String> + 'static,
+) {
+    assert!(store.connection.is_autocommit());
     CONCURRENT_WRITE.with(|slot| {
         *slot.borrow_mut() = Some(ConcurrentWrite {
             before,
@@ -56,12 +83,14 @@ pub(crate) fn read_across_a_concurrent_commit<T>(
         });
     });
     CONCURRENT_WRITE_OUTCOME.with(|slot| *slot.borrow_mut() = None);
-    reader.connection.trace_v2(
+    store.connection.trace_v2(
         rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
         Some(|event| commit_before_the_statement(&event)),
     );
-    let read = read(reader);
-    reader
+}
+
+fn disarm(store: &SqliteStore, before: &'static [&'static str]) {
+    store
         .connection
         .trace_v2(rusqlite::trace::TraceEventCodes::empty(), None);
     CONCURRENT_WRITE.with(|slot| slot.borrow_mut().take());
@@ -70,7 +99,6 @@ pub(crate) fn read_across_a_concurrent_commit<T>(
         Some(Err(error)) => panic!("the concurrent write failed: {error}"),
         None => panic!("the reader never started {before:?}, so nothing committed mid-read"),
     }
-    read
 }
 
 /// The statement every canonical feed-head lookup runs: the latest event on

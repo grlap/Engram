@@ -827,8 +827,13 @@ never acknowledges anything, and that is a deliberate trade: the change section
 is advisory, canonical state is always readable through focus and catalog
 views, and a response lost between Engram and the agent is not redelivered.
 Concurrent calls from one session return the same staged page rather than
-skipping one. A host that needs exact delivery acknowledges explicitly by
-returning the `delivered_through` value with the opaque `delivery_token`.
+skipping one. A call reads the pending page with its session row, and checks it
+against the feed, from one snapshot. Its implicit confirmation of the previous
+page confirms whatever page is pending in one statement. So another process
+that confirms, re-stages or advances the same session meanwhile cannot make
+either step report a false error. A host that needs exact delivery
+acknowledges explicitly by returning the `delivered_through` value with the
+opaque `delivery_token`.
 An ACK that matches neither the pending page and token nor the already
 confirmed cursor is refused. An ACK of the confirmed cursor is idempotent;
 without a token it leaves the pending page untouched and returns it when

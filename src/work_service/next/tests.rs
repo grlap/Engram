@@ -1,6 +1,7 @@
 use super::super::test_support::*;
 use super::super::*;
 
+mod delivery_snapshot;
 mod recovery;
 
 #[test]
