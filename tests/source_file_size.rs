@@ -33,53 +33,79 @@ struct Family {
     split: bool,
 }
 
-const FAMILIES: &[Family] = &[
-    Family {
+/// Declares every guarded family once: the `FAMILIES` list the whole-tree
+/// check uses, and one test per family, `family::NAME`, that checks and
+/// prints only that family. A host that needs one family's evidence runs
+/// that test alone with `--exact`, so its report stays small.
+macro_rules! guarded_families {
+    ($($name:ident => $family:expr;)+) => {
+        const FAMILIES: &[Family] = &[$($family),+];
+
+        mod family {
+            use super::*;
+
+            $(
+                #[test]
+                fn $name() {
+                    check_family(&$family);
+                }
+            )+
+        }
+    };
+}
+
+guarded_families! {
+    storage_migration_tests => Family {
         module: "src/storage/migration/tests",
         children: None,
         split: true,
-    },
-    Family {
+    };
+    storage_work_completion => Family {
         module: "src/storage/work/completion",
         children: None,
         split: true,
-    },
-    Family {
+    };
+    storage_work_acceptance_evaluation_tests => Family {
         module: "src/storage/work/acceptance_evaluation/tests",
         children: None,
         split: true,
-    },
-    Family {
+    };
+    verbs_handlers => Family {
         module: "src/verbs/handlers",
         children: None,
         split: true,
-    },
-    Family {
+    };
+    main => Family {
         module: "src/main",
         children: Some("src/bin_support"),
         split: true,
-    },
-    Family {
+    };
+    storage_work_planning => Family {
         module: "src/storage/work/planning",
         children: None,
         split: true,
-    },
-    Family {
+    };
+    storage_work_execution => Family {
         module: "src/storage/work/execution",
         children: None,
         split: true,
-    },
-    Family {
+    };
+    storage_work_query => Family {
         module: "src/storage/work/query",
         children: None,
         split: true,
-    },
-    Family {
+    };
+    storage_graph_snapshot_tests => Family {
         module: "src/storage/graph_snapshot/tests",
         children: None,
         split: true,
-    },
-];
+    };
+}
+
+/// Most bytes one family's report may take, so a host-observed run of that
+/// family's test fits a 4096-byte verification summary together with the
+/// command, its exit status and the harness's result line.
+const FAMILY_REPORT_BUDGET: usize = 3_072;
 
 /// Physical lines: every line feed ends a line, and a nonempty final line
 /// without one still counts once. A CRLF ending counts as one line, the same
@@ -169,6 +195,54 @@ fn guarded_inventory(root: &Path, families: &[Family]) -> Result<Vec<(String, us
 /// The report line for one guarded file: its path, count and the limit.
 fn report_line(path: &str, lines: usize) -> String {
     format!("{path}: {lines} physical lines (limit {LIMIT})")
+}
+
+/// One family's report lines, one per file in path order, or the files of
+/// that family over the limit.
+fn family_report(root: &Path, family: &Family) -> Result<Vec<String>, String> {
+    let counted = inventory(root, family)?;
+    let offenders = over_limit(&counted);
+    if !offenders.is_empty() {
+        return Err(format!(
+            "guarded files over the limit:\n{}",
+            offenders.join("\n")
+        ));
+    }
+    Ok(counted
+        .iter()
+        .map(|(path, lines)| report_line(path, *lines))
+        .collect())
+}
+
+/// Bytes a report takes as printed lines.
+fn report_bytes(report: &[String]) -> usize {
+    report.iter().map(|line| line.len() + 1).sum()
+}
+
+/// Refuses a family report larger than `budget` bytes as printed: one
+/// host-observed run of that family would no longer fit a verification
+/// summary.
+fn within_report_budget(module: &str, report: &[String], budget: usize) -> Result<(), String> {
+    let bytes = report_bytes(report);
+    if bytes > budget {
+        return Err(format!(
+            "{module} reports {bytes} bytes, over the {budget}-byte family report budget, \
+             so one host-observed run of it no longer fits a verification summary"
+        ));
+    }
+    Ok(())
+}
+
+/// Checks one family of this crate and prints its report, which must fit
+/// the family report budget.
+fn check_family(family: &Family) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let report = family_report(root, family).unwrap_or_else(|error| panic!("{error}"));
+    for line in &report {
+        println!("{line}");
+    }
+    within_report_budget(family.module, &report, FAMILY_REPORT_BUDGET)
+        .unwrap_or_else(|error| panic!("{error}"));
 }
 
 /// The files over the limit, named with their counts.
@@ -276,6 +350,46 @@ fn the_inventory_spans_families_in_path_order_and_names_every_oversized_file() {
     let refused = guarded_inventory(root, &overlapping).expect_err("overlapping families");
     assert!(
         refused.contains("a/child.rs is guarded by more than one family"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn one_family_is_checked_and_reported_alone() {
+    let directory = test_support::temp_home().expect("directory");
+    let root = directory.path();
+    fs::write(root.join("a.rs"), "mod child;\n").expect("module");
+    fs::create_dir_all(root.join("a")).expect("children");
+    fs::write(root.join("a/child.rs"), "a\nb\n").expect("child");
+    fs::write(root.join("b.rs"), "line\n".repeat(2_500)).expect("oversized module");
+    let family = |module| Family {
+        module,
+        children: None,
+        split: false,
+    };
+
+    // A family's report names only its own files, and an oversized file
+    // elsewhere does not fail it.
+    let report = family_report(root, &family("a")).expect("family a");
+    assert_eq!(
+        report,
+        [
+            "a.rs: 1 physical lines (limit 2499)",
+            "a/child.rs: 2 physical lines (limit 2499)",
+        ]
+    );
+    // Printed, the two lines take 35 and 41 bytes plus a line feed each. The
+    // budget admits a report of exactly its size and refuses one byte less.
+    assert_eq!(report_bytes(&report), 78);
+    within_report_budget("a", &report, 78).expect("a report at the budget fits");
+    let over = within_report_budget("a", &report, 77).expect_err("one byte over the budget");
+    assert!(
+        over.contains("a reports 78 bytes, over the 77-byte family report budget"),
+        "{over}"
+    );
+    let refused = family_report(root, &family("b")).expect_err("family b is over the limit");
+    assert!(
+        refused.contains("b.rs: 2500 lines (limit 2499)"),
         "{refused}"
     );
 }

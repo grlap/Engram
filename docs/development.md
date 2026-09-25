@@ -95,19 +95,35 @@ one, as `src/main.rs` does with `src/bin_support`, where the binary's modules
 live. Blank and comment lines count, and CRLF counts like LF. A
 missing module file, a missing child directory of a family marked as split, or
 any file or directory that cannot be read fails the check. When a file is
-brought under the limit, add its family to `FAMILIES` there rather than
-writing another checker.
+brought under the limit, add its family to the `guarded_families!` list there
+rather than writing another checker. The list also generates one test per
+family, `family::NAME`.
 
 For per-file evidence, such as a host-observed check behind a file-size
-criterion, run:
+criterion, run the one family the criterion covers, for example:
 
 ```bash
-cargo test --test source_file_size -- --nocapture
+cargo test --test source_file_size -- --exact family::storage_work_query --nocapture
 ```
 
-The passing test prints one line per guarded file, in path order across all
-families, as `PATH: N physical lines (limit 2499)`. When it fails, the panic
-message names every file over the limit.
+It prints one line per file of that family, in path order, as
+`PATH: N physical lines (limit 2499)`, and fails naming every file of the
+family over the limit. A family's report must stay within 3 KiB, so a
+host-observed run of it fits the 4096-byte verification summary with the
+command and result lines. A family that outgrows that budget fails its test,
+naming its printed size. Its children cannot simply be listed as families of
+their own, because the inventory refuses a file guarded by two families; that
+failure means the family description must first learn to divide one module's
+files. For the whole inventory, sorted by path across all families, run the
+whole-tree test alone:
+
+```bash
+cargo test --test source_file_size -- --exact guarded_source_families_stay_within_the_limit --nocapture
+```
+
+Running the file without `--exact` runs every test, so each family's lines
+print again from its own test, and parallel test threads interleave those
+lines; add `--test-threads=1` when reading that combined output.
 
 ### Test launcher
 
