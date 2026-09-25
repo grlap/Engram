@@ -73,10 +73,12 @@ impl McpServer {
             self.actor_id.clone(),
             self.session_id.clone(),
         )
+        .with_mcp_argument_names()
     }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct NextArgs {
     /// Read-only orientation: no staging, acknowledgement, focus or cursor changes.
     /// Repeated peeks repeat unacknowledged signals; use memories to read the notes.
@@ -92,6 +94,7 @@ struct NextArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct LsArgs {
     /// Case-insensitive text over refs, titles, outcomes, and labels.
     search: Option<String>,
@@ -121,6 +124,7 @@ struct LsArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct ShowArgs {
     /// Short work ref or full UUID; reading changes neither focus nor claims.
     work_ref: String,
@@ -139,6 +143,7 @@ struct ShowArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct AddArgs {
     /// Opaque external planning linkage, not an imported snapshot.
     external: Option<String>,
@@ -172,6 +177,7 @@ struct AddArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct WorkClaimArgs {
     /// Short work ref or full UUID; omit it with `under`.
     work_ref: Option<String>,
@@ -201,6 +207,7 @@ enum UpdateActionArg {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct UpdateArgs {
     /// Replace external planning linkage; requires action revise.
     external: Option<String>,
@@ -251,6 +258,7 @@ struct UpdateArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct GateArgs {
     /// Item to record the gate on; defaults to the focus.
     work_ref: Option<String>,
@@ -263,6 +271,7 @@ struct GateArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct EvaluateArgs {
     /// Item to evaluate; defaults to the focus.
     work_ref: Option<String>,
@@ -287,6 +296,7 @@ struct EvaluateArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct RememberArgs {
     /// Project note or observation. Never include credentials or secrets.
     #[schemars(length(max = 8192))]
@@ -301,6 +311,7 @@ struct RememberArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct MemoriesArgs {
     /// Search text, or the exact key when full is true.
     #[schemars(length(max = 256))]
@@ -315,6 +326,7 @@ struct MemoriesArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct ForgetArgs {
     /// Permanently reserved project-memory key to tombstone.
     #[schemars(length(max = 64))]
@@ -322,6 +334,7 @@ struct ForgetArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct NoteArgs {
     /// Record current coordination status; storage determines owner/peer qualification.
     status: Option<bool>,
@@ -334,6 +347,7 @@ struct NoteArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct DoneArgs {
     /// At most 64 explicit author links, not verification: criterion position and an existing note/gate locator.
     links: Option<Vec<crate::work_service::WorkCriterionLinkInput>>,
@@ -350,6 +364,7 @@ struct DoneArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct WorkSearchArgs {
     /// Case-insensitive text over refs, titles, outcomes, and labels.
     query: String,
@@ -366,6 +381,7 @@ enum HandoffActionArg {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct HandoffArgs {
     /// Item to hand off; defaults to the focus.
     work_ref: Option<String>,
@@ -1256,6 +1272,55 @@ mod tests {
             &server.work_service,
             &cloned_handler.work_service
         ));
+    }
+
+    #[test]
+    fn mcp_add_refuses_an_unknown_argument_and_names_its_acceptance_field() {
+        let refused = serde_json::from_value::<AddArgs>(json!({
+            "title": "Misspelled criteria",
+            "accept": ["Criterion"],
+        }))
+        .expect_err("an argument add does not list is refused");
+        let message = refused.to_string();
+        assert!(
+            message.contains("unknown field `accept`, expected one of"),
+            "{message}"
+        );
+        assert!(message.contains("`acceptance`"), "{message}");
+
+        let directory = crate::test_support::temp_home().expect("temporary MCP home");
+        let server = McpServer::new_with_actor_context(
+            directory.path().join("engram.sqlite3"),
+            ProjectId("mcp-acceptance-field".into()),
+            "agent".into(),
+            SessionId("mcp-acceptance-session".into()),
+            Some("mcp-test".into()),
+            None,
+        );
+        let added = server
+            .verbs()
+            .add(
+                AddInput {
+                    title: "Defaulted criteria".into(),
+                    ..AddInput::default()
+                },
+                Utc::now(),
+            )
+            .expect("add with defaulted acceptance");
+        let reminders = added.value["reminders"]
+            .as_array()
+            .expect("reminders")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+        assert!(
+            reminders.contains(&"acceptance defaulted to the title being done; set acceptance"),
+            "{reminders:?}"
+        );
+        assert!(
+            reminders.iter().all(|line| !line.contains("--accept")),
+            "{reminders:?}"
+        );
     }
 
     #[test]

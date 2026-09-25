@@ -2427,7 +2427,9 @@ test("Phoenix full notes, defaulted acceptance and terminal-parent remedy throug
     const showTool = (await client.tools()).find(({ name }) => name === "show");
     assert.ok(showTool.inputSchema.properties.notes);
     const added = receipt(await client.call("add", { title: "Full MCP notes" }));
-    assert.ok(added.reminders.includes("acceptance defaulted to the title being done; set --accept"));
+    // MCP names the field the caller passes, not the CLI flag.
+    assert.ok(added.reminders.includes("acceptance defaulted to the title being done; set acceptance"));
+    assert.ok(added.reminders.every((line) => !line.includes("--accept")));
     const explicit = receipt(await client.call("add", { title: "Explicit MCP", acceptance: ["Criterion"] }));
     assert.ok(explicit.reminders.every((line) => !line.includes("acceptance defaulted")));
     const reminderParent = receipt(await client.call("add", { title: "Reminder parent" })).work.short_ref;
@@ -2463,6 +2465,43 @@ test("Phoenix full notes, defaulted acceptance and terminal-parent remedy throug
     receipt(await client.call("done", { work_ref, summary: "Verified delivery" }));
     const error = structuredError(await client.call("add", { title: "Late child", under: work_ref }), "work_parent_not_open");
     assert.equal(error.details.remedy, "file an independent root follow-up or add under an open ancestor");
+  } finally {
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
+  }
+});
+
+test("every MCP word refuses an unknown argument by name and lists the accepted ones", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-unknown-argument-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "unknown-argument");
+    await client.initialize();
+    const argumentText = (result) => {
+      assert.equal(result.isError, true, JSON.stringify(result));
+      return result.content.filter(({ type }) => type === "text").map(({ text }) => text).join("\n");
+    };
+    const tools = await client.tools();
+    assert.equal(tools.length, 15);
+    for (const tool of tools) {
+      assert.equal(tool.inputSchema.additionalProperties, false, tool.name);
+      const text = argumentText(await client.call(tool.name, { unknown_argument: true }));
+      assert.match(text, /unknown field `unknown_argument`, expected /u, `${tool.name}: ${text}`);
+      for (const field of Object.keys(tool.inputSchema.properties)) {
+        assert.ok(text.includes(`\`${field}\``), `${tool.name} names ${field}: ${text}`);
+      }
+    }
+    // A misspelled criterion field is refused whole, not dropped in favor
+    // of a defaulted criterion.
+    const before = receipt(await client.call("ls", { all: true })).total;
+    const text = argumentText(await client.call("add", { title: "Misspelled criteria", accept: ["Criterion"] }));
+    assert.match(text, /unknown field `accept`, expected one of /u, text);
+    assert.ok(text.includes("`acceptance`"), text);
+    assert.equal(receipt(await client.call("ls", { all: true })).total, before);
   } finally {
     try {
       if (client) await client.close();

@@ -1103,8 +1103,9 @@ including an exhausted page, so navigation always offers the explicit item read.
 The existing ceiling, cursor admission and canonical detail rules still apply.
 
 The `add` receipt names defaulted acceptance in both text and JSON reminders:
-`acceptance defaulted to the title being done; set --accept`. Explicit
-acceptance produces no such reminder; blank criteria are refused. The reminder
+`acceptance defaulted to the title being done; set --accept`, or on MCP,
+which names its field, `set acceptance`. Explicit acceptance produces no such
+reminder; blank criteria are refused. The reminder
 does not duplicate the item title and is included in the final receipt budget.
 `work_update` and `work_handoff` never rebuild this history: their success
 envelopes contain only the operation, compact receipt, one bounded

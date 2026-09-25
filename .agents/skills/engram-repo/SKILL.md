@@ -367,7 +367,9 @@ Rules that matter:
   are what `done` is checked against. `--under REF` creates a required child;
   add `--optional` when that child must not gate its parent's completion.
   Omitted acceptance produces the reminder `acceptance defaulted to the title
-  being done; set --accept`; explicit criteria do not. Blank criteria are refused.
+  being done; set --accept` (MCP names its field: `set acceptance`); explicit
+  criteria do not. Blank criteria are refused. An MCP argument the word does
+  not list, such as `accept`, is refused by name, never ignored.
   The reminder keeps the signal without repeating the title and fits the receipt.
   Completed, cancelled, and superseded parents refuse new children: file an
   independent root follow-up or add under an open ancestor. A proposed parent

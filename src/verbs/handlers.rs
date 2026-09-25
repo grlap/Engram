@@ -28,6 +28,26 @@ pub struct AgentVerbs {
     pub(super) actor_id: String,
     session_id: SessionId,
     fit_effective_session: Option<SessionId>,
+    argument_names: ArgumentNames,
+}
+
+/// How a word's guidance names one of its arguments: as the CLI flag, or as
+/// the MCP field the caller actually passes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum ArgumentNames {
+    #[default]
+    Cli,
+    Mcp,
+}
+
+impl ArgumentNames {
+    /// The reminder `add` gives when the caller supplied no criterion.
+    fn defaulted_acceptance_reminder(self) -> &'static str {
+        match self {
+            Self::Cli => "acceptance defaulted to the title being done; set --accept",
+            Self::Mcp => "acceptance defaulted to the title being done; set acceptance",
+        }
+    }
 }
 
 /// `next`: what is ready, what this session holds, and what changed.
@@ -413,7 +433,16 @@ impl AgentVerbs {
             actor_id,
             session_id,
             fit_effective_session: None,
+            argument_names: ArgumentNames::Cli,
         }
+    }
+
+    /// The MCP server's words name their arguments by MCP field in guidance,
+    /// such as `acceptance` where the CLI says `--accept`.
+    #[must_use]
+    pub(crate) fn with_mcp_argument_names(mut self) -> Self {
+        self.argument_names = ArgumentNames::Mcp;
+        self
     }
 
     /// Process-default CLI `--json` mutations attach this session handle
@@ -938,10 +967,11 @@ impl AgentVerbs {
                 StoreError::InvalidWork("acceptance criteria must not be blank".into()).into(),
             );
         }
-        let reminder = input
-            .acceptance
-            .is_empty()
-            .then(|| "acceptance defaulted to the title being done; set --accept".to_owned());
+        let reminder = input.acceptance.is_empty().then(|| {
+            self.argument_names
+                .defaulted_acceptance_reminder()
+                .to_owned()
+        });
         let has_initial_notes = !input.notes.is_empty();
         let mut receipt = self.finish_mutation(self.add_inner(input, now)?);
         if has_initial_notes {

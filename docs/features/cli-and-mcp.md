@@ -596,9 +596,16 @@ Rules that matter:
 - Shell notes take the target positionally: `engram work note REF "text"`.
   MCP uses `note { work_ref: REF, text: TEXT }`; the shell has no `note
   --work-ref` flag (that flag belongs to `gate`).
+- An MCP word refuses an argument its input schema does not list, before it
+  reads or changes anything, and the refusal names that argument and every
+  accepted one: `accept` on `add` is refused and points to `acceptance`,
+  rather than being ignored while a defaulted criterion is recorded. Each
+  word's input schema says so with `additionalProperties: false`.
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against. When acceptance is omitted, text and JSON
-  reminders say `acceptance defaulted to the title being done; set --accept`.
+  reminders say `acceptance defaulted to the title being done; set --accept`,
+  and MCP names its own field instead: `acceptance defaulted to the title
+  being done; set acceptance`.
   This keeps the signal without repeating the item title; the final receipt
   includes the reminder in its response budget.
   Explicit acceptance suppresses that reminder; blank criteria are refused.
