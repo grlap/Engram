@@ -86,9 +86,15 @@ claim. Register it."
 - **Yes:** a grant, valid for 30 seconds, naming the allowed effects and the
   claim it is bound to. It also carries a page of work changes for the agent
   (see [context delivery](#context-delivery-inside-the-grant)).
-- **No:** a refusal code. TermAl rebinds and retries once for `stale_fence`.
-  Any other refusal drops the prompt with "Engram did not authorize this turn
-  for runtime delivery".
+- **No:** a refusal code, which TermAl's control card shows after "Reason:".
+  TermAl rebinds and asks once more for `stale_fence`, and for
+  `control_assurance_insufficient` when the session was bound before it
+  declared the effect it now requests. Any other refusal, or a second
+  refusal after that rebind, drops the prompt with "Engram did not authorize
+  this turn for runtime delivery". After `turn_already_open` TermAl also
+  rebinds the session before its next prompt. The
+  [refusal table](#refusals-a-user-can-see-in-termal) lists every code a user
+  can meet.
 - **Use:** 1,142 decisions in the Engram store, 1,113 of them grants and 29
   refusals. PhoenixCodeNav had 201, all granted. The check takes 6 to 8 ms.
 - **Example:** on 2026-09-25 at 15:33:03 UTC session-7284 was granted a turn
@@ -107,7 +113,7 @@ gave me."
   - it has not expired, and its session phase and task are unchanged;
   - the session is still a participant on the task, and the task's control
     anchor still exists;
-  - the policy epoch, the work's admission epoch, the capability map, the work
+  - the policy epoch, the task's admission epoch, the capability map, the work
     revision and the claim fence are unchanged;
   - the delivery tokens match the page, and the task feed and context have not
     moved on since the page was built.
@@ -116,8 +122,12 @@ gave me."
   tentatively; the turn report confirms it. TermAl hands the prompt to the
   model.
 - **No:** one of those checks failed. A feed or context that moved on answers
-  `delta_required` and returns the session to catching up. TermAl asks for
-  permission again, once.
+  `delta_required` and returns the session to catching up. For an expired
+  grant, a changed epoch, `delta_required` or `stale_fence` (after a rebind),
+  and for `grant_scope_mismatch` when a session status shows Engram already
+  retired the grant (no open grant, phase `sync_required`), TermAl asks for
+  permission again, once. Any other refusal drops the prompt, as a refused
+  permission does.
 - **Use:** 1,112 starts in the Engram store, 201 in PhoenixCodeNav. The start
   is what separates "allowed" from "ran", and the counts show both gaps: 1,113
   turns were granted and 1,112 started, because one grant expired without
@@ -253,7 +263,7 @@ is already handled by the status check and a report after the restart.
   `recovery_open`, `handoff_pending`, `contribution_required` and
   `participant_ready`. Storage writes only `sync_required`, `ready`,
   `turn_open` and `exited`.
-- Refusal codes the stored permission check never produces:
+- Refusal codes the stored checks never produce:
   - `control_unavailable`, `store_corrupt`, `unknown_control_schema`,
     `control_policy_missing`, `action_outcome_unknown` and `missing_authority`.
     The stored input fixes the schema, health, policy, action outcome and
@@ -262,17 +272,63 @@ is already handled by the status check and a report after the restart.
   - `resource_remapped`, which belongs to action checks.
   - `checkpoint_required` and `participant_not_ready`, whose phases are never
     written.
-- Turns with purpose "recovery". Engram supports them; no host sends one.
+  - `task_admission_epoch_changed`. Nothing ever raises a task's admission
+    epoch.
+  - `task_unbound`, `task_access_denied` and `lifecycle_hold`. They check that
+    the task's control anchor and the session's own row exist, which storage
+    never deletes, or come from phases storage never writes.
+  - `context_required`. Every state that would reach it is refused earlier
+    for the page's budget.
+- Turns with purpose "recovery". Engram supports them; no host sends one, so
+  `turn_purpose_mismatch`, which answers only a recovery turn in the wrong
+  phase, never occurs either.
 
 [Spec §2.7](../spec.md#27-execution-control) still describes action grants, the
 "defer" answer and recovery turns. No host runs any of them.
 
 ## Refusals a user can see in TermAl
 
+A refused turn shows "Engram did not authorize this turn for runtime delivery",
+drops the prompt and puts the session in Error. Its control card names the
+code after "Reason:". The first table lists every code TermAl can meet from
+the turn permission or turn start, and what gets the session out. The store
+so far holds only `recovery_required` (22) and `stale_fence` (7).
+
+| Reason on the card | Why | How the session gets out |
+| --- | --- | --- |
+| `stale_fence` | The claim or work the session is bound to changed: the claim lapsed, was released or taken over, or the work was revised. | TermAl rebinds to the current claim and asks once more, so the user rarely sees this. If the second answer is also a refusal, send the prompt again. |
+| `control_assurance_insufficient` | Either the session was bound before it declared an effect it now requests, for example across a TermAl upgrade, or the project policy requires `action_gated`, more than TermAl's `turn_gated`. | The first case cures itself: TermAl rebinds, declaring its current effects, and asks once more. The second needs a settings change: lower the requirement to `turn_gated` with `engram control-policy set-required-assurance`. Until then every prompt gets the same answer. The change starts a new policy epoch, so the first prompt after it is refused once with `policy_epoch_changed` and the next gets through. |
+| `turn_already_open` | A turn that already started on this session has not reported yet. | It clears when that turn's report lands. TermAl also rebinds before the next prompt, which Engram accepts only after that report. |
+| `policy_epoch_changed` | The control policy changed after the session bound. | Send the prompt again: Engram records the new policy with this refusal, so the next ask gets through. At turn start TermAl asks again by itself. |
+| `grant_expired`, `delta_required` | At turn start only: the grant outlived its 30 seconds, or the task feed or context moved on after the grant was issued. | TermAl asks for permission again once by itself. If that is refused too, send the prompt again. |
+| `pinned_budget_exceeded` | The context Engram builds for the grant is over its pinned budget. This shows only while the session is `ready`. While it is `sync_required` (listed below the table) the same problem shows as `recovery_required`. | Sending again gets the same answer until the context shrinks under the budget. |
+| `delivery_invalid` | When asking: the grant's page is over its size limit. Like `pinned_budget_exceeded`, this shows only while the session is `ready`; while it is `sync_required` it shows as `recovery_required`. At turn start: the delivery tokens TermAl sent do not match the grant, a host bug. | When asking, it clears only when the context shrinks enough for the page to fit. At turn start, send the prompt again, and report a repeat to the TermAl agents. |
+| `grant_scope_mismatch` | A request Engram cannot accept as shaped, or at turn start a grant that is no longer open or no longer matches the session's capability map. A grant Engram already retired (by a rebind, a restart or its expiry) is expected; otherwise both point to a host bug. | TermAl asks again once when a session status shows no open grant and phase `sync_required`. A grant a fresh ask superseded can leave the session `ready`, and then it is not asked again. Otherwise send the prompt again, and report a repeat to the TermAl agents. |
+| `session_exited` | TermAl reported that the session exited, and it then asked for another turn under the same binding. Not seen so far. | Only a fresh bind admits the session again. |
+| `recovery_required` | The session fell behind its task feed (after a rebind, for example), and either the backlog is longer than one page or Engram could build no page within its budgets. | Engram expects a recovery turn, which TermAl cannot send. A backlog longer than one page never clears this way. The budget case clears only when the context shrinks enough for a page to fit. |
+
+For the `pinned_budget_exceeded` and `delivery_invalid` rows, a session is
+`sync_required` after any of these:
+
+- a bind;
+- a restart or expiry that retired an unused grant;
+- a fresh ask that replaced an unused grant while the session was behind its
+  task feed;
+- a report that found other sessions' events;
+- most refused turn starts.
+
+`capability_not_permitted` answers an effect outside Engram's fixed set:
+observe, communicate, coordinate and mutate_local. No setting widens that set.
+TermAl requests only observe, communicate and mutate_local, so it never meets
+this code.
+
+A refused turn report does not stop a prompt, because the turn has already
+run. What it blocks is described under the [turn report](#after-every-turn).
+
+TermAl also holds prompts without a refusal:
+
 | What the user sees | Why | How the session gets out |
 | --- | --- | --- |
-| Engram did not authorize this turn for runtime delivery | Engram refused the turn with a code TermAl cannot cure by one rebind. `recovery_required` is the only one seen so far. | The prompt is dropped and the session shows Error. Send the prompt again. For `recovery_required`, sending again gets the same answer until Engram can build a single page that fits. |
-| `recovery_required`, the code behind the message above | The session fell behind its task feed (after a rebind, for example), and either the backlog is longer than one page or Engram could build no page within its budgets. | Engram expects a recovery turn, which TermAl cannot send. A backlog longer than one page never clears this way. The budget case clears only when the context shrinks enough for a page to fit. |
 | Engram: Waiting/Unknown. Original prompt retained; resume to retry or cancel. | Engram was slow or unreachable, TermAl stopped trying after repeated failures, or Engram deferred. | Press Resume to try again, or cancel the prompt. |
 | Engram: Waiting/Unknown after interrupted authorization. Prompt retained; cancel or reconcile before continuing. | A protocol or storage fault while asking. | Cancel the prompt. |
 | Engram: interrupted/unknown delivery. Prompt retained; cancel or reconcile before continuing. | After a restart, TermAl found a turn that had started but never reported. | TermAl closes it with a report and never resends the prompt. Cancel it, and send it again if needed. |
@@ -319,7 +375,9 @@ chance to stop one.
   back to the agent's own gate claims. A criterion bound to host verification
   would have no new way to be satisfied, so completion would stay refused
   unless host evidence recorded earlier already covers it
-  (`acceptance_evaluation.rs` 889–901 and 979–986, `completion.rs` 797–804). A
+  (`acceptance_evaluation.rs` 889–901 and 979–986, `completion.rs` 797–804),
+  or the criterion is revised so it no longer needs host verification, which
+  waives its open obligation (`completion.rs` 1890–1939). A
   policy that requires observed evidence rejects asserted mechanical passes,
   but a judgment verdict can still satisfy an unbound criterion, so
   judgment-only work still completes. Only the stock source-change obligation
@@ -329,7 +387,7 @@ chance to stop one.
 
 **Not lost:** the work context agents see, the MCP tools, claims, notes and
 gates. They keep working without the gate. `done` keeps working too, except for
-criteria bound to host verification that no earlier host evidence covers.
+criteria still bound to host verification that no earlier host evidence covers.
 
 **What it costs today:**
 
