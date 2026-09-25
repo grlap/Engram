@@ -27,8 +27,28 @@ git diff --cached --name-only
 git ls-files --others --exclude-standard
 ```
 
+Run each of these as its own standalone Bash call from the working directory,
+one command per call. A read-only reviewer delegated by TermAl runs under a
+read-only command policy:
+
+- Do not use the PowerShell tool; the policy refuses it for read-only Claude
+  reviewers.
+- Do not add helpers the policy does not list, such as `cmp`, to a command or
+  chain; read files with the Read, Grep and Glob tools instead.
+- Do not retarget Git with `git -C`, `--git-dir`, `--work-tree` or
+  `--namespace`. These are refused by design, because a repository chosen
+  that way can carry configuration that runs programs.
+- Do not use `git hash-object`; it can run configured clean filters. Compare
+  two files with `git diff --no-index FILE_A FILE_B`.
+
 Untracked files do not appear in `git diff`; inspect their contents directly
 when relevant. If nothing changed, report that and stop.
+
+If Git inspection is still refused and you cannot see some or all of the diff,
+say so under Coverage in the result. Name what you could not see and how you
+reviewed it instead, for example by reading the changed files. A passing
+freeze check shows only that the input did not change after it was frozen; it
+does not show you what changed, so it never replaces reading the diff.
 
 ## 2. Load reviewer lenses
 
@@ -73,6 +93,10 @@ Return one consolidated review:
 
 ## Changes Reviewed
 - ...
+
+## Coverage
+- How the diff was seen (the Git commands that ran), or which changes could
+  not be seen and how they were reviewed instead.
 
 ## Actionable
 ### Critical / High
