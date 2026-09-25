@@ -152,3 +152,41 @@ fn live_control_policy_load_is_bounded_independently_of_history_depth() {
     ));
     assert_eq!(control_policy_version_load_count(), 1);
 }
+
+/// The control policy head reads the state row, the version it selects and
+/// whether a later version exists. A policy change committed between those
+/// reads must not make the head look stale: the read stays on the policy it
+/// began with.
+#[test]
+fn the_control_policy_head_reads_its_state_and_history_from_one_commit() {
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
+    let database = directory.path().join("policy-race.db");
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut writer =
+        open_with_assurance(&database, ControlAssurance::Advisory).expect("advisory store");
+    let reader = SqliteStore::open(&database).expect("reader store");
+    let (before, _, _) = SqliteStore::load_control_policy_head(&reader.connection).expect("before");
+    let read = crate::storage::concurrent_commit::read_across_a_concurrent_commit(
+        &reader,
+        |reader| SqliteStore::load_control_policy_head(&reader.connection),
+        &["FROM control_policy_versions WHERE policy_epoch > ?1"],
+        move || {
+            writer
+                .set_required_control_assurance(
+                    ControlAssurance::TurnGated,
+                    &actor("policy-race-admin"),
+                    "policy-race",
+                    None,
+                    now,
+                    &DevelopmentNoopRedactor,
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        },
+    );
+    let (read, _, _) = read.expect("one commit state, no false inconsistency");
+    assert_eq!(read.epoch, before.epoch);
+    assert_eq!(read.policy_id, before.policy_id);
+    let (after, _, _) = SqliteStore::load_control_policy_head(&reader.connection).expect("after");
+    assert_eq!(after.epoch, ProjectPolicyEpoch(before.epoch.0 + 1));
+}

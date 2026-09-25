@@ -198,7 +198,18 @@ pub(in crate::storage::work) fn work_relation_fingerprint(
     Ok(CanonicalObject::freeze(basis)?.key().clone())
 }
 
+/// The projected relations and the latest event's relation fingerprint are
+/// compared, so outside a transaction they are read from one commit.
 pub(in crate::storage::work) fn validated_current_work_relation_basis(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<WorkRelationBasis, StoreError> {
+    super::super::query::on_one_snapshot(connection, |connection| {
+        validated_relation_basis_on_snapshot(connection, work_id)
+    })
+}
+
+fn validated_relation_basis_on_snapshot(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<WorkRelationBasis, StoreError> {

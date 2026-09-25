@@ -339,32 +339,36 @@ impl LocalWorkService {
         capture: &WorkNoteCapture,
         now: DateTime<Utc>,
     ) -> Result<WorkNoteResult, StoreError> {
-        let guidance = self.work_guidance(store, work_id, now)?;
-        let evidence = compact_mutation_receipt(
-            &guidance.status.work,
-            None,
-            serde_json::to_value(&capture.evidence)?,
-        );
-        let primary = capture
-            .checkpoint
-            .as_ref()
-            .unwrap_or(&capture.evidence)
-            .clone();
-        let result = WorkNoteResult {
-            non_holder: capture.non_holder,
-            operation: "note".into(),
-            receipt: compact_mutation_receipt(
+        // Built after the note committed: one read commit, so a concurrent
+        // write cannot make a committed note report a false inconsistency.
+        store.work_read_snapshot(|store| {
+            let guidance = self.work_guidance(store, work_id, now)?;
+            let evidence = compact_mutation_receipt(
                 &guidance.status.work,
                 None,
-                serde_json::to_value(primary)?,
-            ),
-            obligations: compact_obligations(&guidance.status),
-            obligation_page: work_obligation_page(store, work_id)?,
-            allowed_next: guidance.allowed_next,
-            evidence,
-        };
-        ensure_agent_response_budget(&result, "work_update")?;
-        Ok(result)
+                serde_json::to_value(&capture.evidence)?,
+            );
+            let primary = capture
+                .checkpoint
+                .as_ref()
+                .unwrap_or(&capture.evidence)
+                .clone();
+            let result = WorkNoteResult {
+                non_holder: capture.non_holder,
+                operation: "note".into(),
+                receipt: compact_mutation_receipt(
+                    &guidance.status.work,
+                    None,
+                    serde_json::to_value(primary)?,
+                ),
+                obligations: compact_obligations(&guidance.status),
+                obligation_page: work_obligation_page(store, work_id)?,
+                allowed_next: guidance.allowed_next,
+                evidence,
+            };
+            ensure_agent_response_budget(&result, "work_update")?;
+            Ok(result)
+        })
     }
 
     fn work_note_evidence_basis(
@@ -1064,38 +1068,42 @@ impl LocalWorkService {
         } else {
             work_id
         };
-        let guidance = self.work_guidance(store, work_id, now)?;
-        let control_binding = if operation == "claim" || operation == "claim_next_ready" {
-            guidance
-                .claim
-                .as_ref()
-                .map(|claim| store.get_work_run(claim.run_id))
-                .transpose()?
-                .map(|run| {
-                    bindable_control_work_binding(
-                        store,
-                        &self.project_id,
-                        &self.session_id,
-                        &guidance.status.work,
-                        &run,
-                        guidance.claim.as_ref(),
-                        now,
-                    )
-                })
-                .transpose()?
-                .flatten()
-        } else {
-            None
-        };
-        let result = WorkUpdateResult {
-            operation: operation.to_owned(),
-            receipt: compact_mutation_receipt(&guidance.status.work, control_binding, receipt),
-            obligations: compact_obligations(&guidance.status),
-            obligation_page: work_obligation_page(store, work_id)?,
-            allowed_next: guidance.allowed_next,
-        };
-        ensure_agent_response_budget(&result, "work_update")?;
-        Ok(result)
+        // Built after the update committed: one read commit, so a concurrent
+        // write cannot make a committed update report a false inconsistency.
+        store.work_read_snapshot(|store| {
+            let guidance = self.work_guidance(store, work_id, now)?;
+            let control_binding = if operation == "claim" || operation == "claim_next_ready" {
+                guidance
+                    .claim
+                    .as_ref()
+                    .map(|claim| store.get_work_run(claim.run_id))
+                    .transpose()?
+                    .map(|run| {
+                        bindable_control_work_binding(
+                            store,
+                            &self.project_id,
+                            &self.session_id,
+                            &guidance.status.work,
+                            &run,
+                            guidance.claim.as_ref(),
+                            now,
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+            } else {
+                None
+            };
+            let result = WorkUpdateResult {
+                operation: operation.to_owned(),
+                receipt: compact_mutation_receipt(&guidance.status.work, control_binding, receipt),
+                obligations: compact_obligations(&guidance.status),
+                obligation_page: work_obligation_page(store, work_id)?,
+                allowed_next: guidance.allowed_next,
+            };
+            ensure_agent_response_budget(&result, "work_update")?;
+            Ok(result)
+        })
     }
 }
 

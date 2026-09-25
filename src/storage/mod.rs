@@ -51,6 +51,9 @@ pub(crate) fn parent_not_open_remedy(lifecycle: crate::domain::WorkLifecycle) ->
 mod test_support;
 
 #[cfg(test)]
+pub(crate) mod concurrent_commit;
+
+#[cfg(test)]
 use control_runtime::resolve_verification_environment_on;
 use control_support::{normalize_control_policy_actor, normalize_control_policy_idempotency_key};
 use project_memory::{

@@ -229,15 +229,19 @@ impl LocalWorkService {
                 handoffs: Vec::new(),
             });
         }
-        let work = self.focused_item(store, target, now)?;
-        Ok(WorkProtocolBasis {
-            claim: store.current_work_claim(work.work_id)?,
-            handoffs: if include_handoffs {
-                store.work_handoff_offers(work.work_id)?
-            } else {
-                Vec::new()
-            },
-            focused_work: Some(work),
+        // The item, its claim and its handoff offers are compared as one
+        // basis, so they come from one commit even before a write opens.
+        store.work_read_snapshot(|store| {
+            let work = self.focused_item(store, target, now)?;
+            Ok(WorkProtocolBasis {
+                claim: store.current_work_claim(work.work_id)?,
+                handoffs: if include_handoffs {
+                    store.work_handoff_offers(work.work_id)?
+                } else {
+                    Vec::new()
+                },
+                focused_work: Some(work),
+            })
         })
     }
 
@@ -476,14 +480,17 @@ impl LocalWorkService {
         with_latest_evidence: bool,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
-        let mut view = self.focus_view_for_projection(
-            store,
-            work_id,
-            with_memories,
-            with_latest_evidence,
-            FocusText::Summary,
-            now,
-        )?;
+        // One view, one commit: its rows are cross-checked against each other.
+        let mut view = store.work_read_snapshot(|store| {
+            self.focus_view_for_projection(
+                store,
+                work_id,
+                with_memories,
+                with_latest_evidence,
+                FocusText::Summary,
+                now,
+            )
+        })?;
         fit_focus_response(&mut view)?;
         ensure_agent_response_budget(&view, "work_focus")?;
         Ok(view)
@@ -970,7 +977,19 @@ impl LocalWorkService {
         Ok(view)
     }
 
+    /// The item's status, claim, handoff offers and next moves, read from one
+    /// commit so the rows compared among them cannot straddle another
+    /// connection's write.
     pub(super) fn work_guidance(
+        &self,
+        store: &SqliteStore,
+        work_id: WorkId,
+        now: DateTime<Utc>,
+    ) -> Result<WorkGuidance, StoreError> {
+        store.work_read_snapshot(|store| self.work_guidance_on_snapshot(store, work_id, now))
+    }
+
+    fn work_guidance_on_snapshot(
         &self,
         store: &SqliteStore,
         work_id: WorkId,

@@ -14,7 +14,7 @@ use super::feeds::{
     request_object,
 };
 use super::planning::{normalize_note_text, persist_operation_result};
-use super::query::{load_work_claim_optional, load_work_item, load_work_run};
+use super::query::{load_work_claim_optional, load_work_item, load_work_run, on_one_snapshot};
 use super::{
     CanonicalObject, FeedPosition, ObjectId, SCHEMA_VERSION, SessionId,
     WorkCompletionRecoveryCause, WorkId, WorkItem, WorkRunId,
@@ -326,30 +326,35 @@ impl SqliteStore {
         work_id: WorkId,
         source_fingerprint: Option<&str>,
     ) -> Result<Option<AcceptanceEvaluationStatus>, StoreError> {
-        let item = load_work_item(&self.connection, work_id)?;
-        let run_id = match item.active_run_id {
-            Some(run_id) => run_id,
-            None => match self.latest_work_run(work_id)? {
-                Some(run) => run.run_id,
-                None => return Ok(None),
-            },
-        };
-        let policy = SqliteStore::load_acceptance_evaluation_policy_on(&self.connection)?;
-        let Some((hash, record)) = latest_on(&self.connection, run_id)? else {
-            return Ok(None);
-        };
-        let source = source_fingerprint.map_or(SourceCheck::Unmeasured, |fingerprint| {
-            SourceCheck::AtCompletion(Some(fingerprint))
-        });
-        let stale = staleness(&self.connection, &item, run_id, &policy, &record, source)?;
-        Ok(Some(AcceptanceEvaluationStatus {
-            evaluation: hash,
-            source_checked_at_done: policy.require_source_freshness
-                && record.source_basis.is_some()
-                && matches!(source, SourceCheck::Unmeasured),
-            record,
-            stale,
-        }))
+        // The item, the policy and the newest record are compared, so they
+        // come from one commit.
+        on_one_snapshot(&self.connection, |connection| {
+            let item = load_work_item(connection, work_id)?;
+            let run_id = match item.active_run_id {
+                Some(run_id) => run_id,
+                // Same connection, so the same open snapshot.
+                None => match self.latest_work_run(work_id)? {
+                    Some(run) => run.run_id,
+                    None => return Ok(None),
+                },
+            };
+            let policy = SqliteStore::load_acceptance_evaluation_policy_on(connection)?;
+            let Some((hash, record)) = latest_on(connection, run_id)? else {
+                return Ok(None);
+            };
+            let source = source_fingerprint.map_or(SourceCheck::Unmeasured, |fingerprint| {
+                SourceCheck::AtCompletion(Some(fingerprint))
+            });
+            let stale = staleness(connection, &item, run_id, &policy, &record, source)?;
+            Ok(Some(AcceptanceEvaluationStatus {
+                evaluation: hash,
+                source_checked_at_done: policy.require_source_freshness
+                    && record.source_basis.is_some()
+                    && matches!(source, SourceCheck::Unmeasured),
+                record,
+                stale,
+            }))
+        })
     }
 
     /// What a completion would do with the newest evaluation right now, read
@@ -367,13 +372,32 @@ impl SqliteStore {
         run_id: WorkRunId,
         source_fingerprint: Option<&str>,
     ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
-        let policy = SqliteStore::load_acceptance_evaluation_policy_on(&self.connection)?;
+        // The policy, the item and the newest record are compared, so they
+        // come from one commit; a concurrent revision and re-evaluation must
+        // not make the pre-check refuse a store that was consistent.
+        on_one_snapshot(&self.connection, |connection| {
+            Self::acceptance_evaluation_readiness_on(
+                connection,
+                work_id,
+                run_id,
+                source_fingerprint,
+            )
+        })
+    }
+
+    fn acceptance_evaluation_readiness_on(
+        connection: &Connection,
+        work_id: WorkId,
+        run_id: WorkRunId,
+        source_fingerprint: Option<&str>,
+    ) -> Result<AcceptanceEvaluationReadiness, StoreError> {
+        let policy = SqliteStore::load_acceptance_evaluation_policy_on(connection)?;
         if policy.is_self_asserted() {
             return Ok(AcceptanceEvaluationReadiness::SelfAsserted);
         }
-        let item = load_work_item(&self.connection, work_id)?;
+        let item = load_work_item(connection, work_id)?;
         Ok(
-            match assess_on(&self.connection, &item, run_id, &policy, source_fingerprint)? {
+            match assess_on(connection, &item, run_id, &policy, source_fingerprint)? {
                 AcceptanceEvaluationAssessment::Absent => AcceptanceEvaluationReadiness::Blocked(
                     WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
                         criterion: item.acceptance.first().cloned().unwrap_or_default(),

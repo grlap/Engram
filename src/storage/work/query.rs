@@ -96,18 +96,22 @@ impl SqliteStore {
         &self,
         work_id: WorkId,
     ) -> Result<Vec<WorkHandoffOffer>, StoreError> {
-        let mut statement = self.connection.prepare(
-            "SELECT offer_object_id, offer_json FROM work_handoff_offers
-             WHERE work_id = ?1 ORDER BY offer_id",
-        )?;
-        let rows = statement
-            .query_map([work_id.0.to_string()], |row| {
-                Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        rows.into_iter()
-            .map(|row| load_handoff_offer_projection(&self.connection, row))
-            .collect()
+        // Each offer row is checked against its latest offer event, so the
+        // rows and the events come from one commit.
+        on_one_snapshot(&self.connection, |connection| {
+            let mut statement = connection.prepare(
+                "SELECT offer_object_id, offer_json FROM work_handoff_offers
+                 WHERE work_id = ?1 ORDER BY offer_id",
+            )?;
+            let rows = statement
+                .query_map([work_id.0.to_string()], |row| {
+                    Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Vec<u8>>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows.into_iter()
+                .map(|row| load_handoff_offer_projection(connection, row))
+                .collect()
+        })
     }
 
     #[cfg(test)]
@@ -217,7 +221,11 @@ impl SqliteStore {
         &self,
         run_id: WorkRunId,
     ) -> Result<Vec<WorkObligationRecord>, StoreError> {
-        load_work_obligation_records_on(&self.connection, run_id, None)
+        // The records are checked against the run feed's observations, so
+        // both come from one commit.
+        on_one_snapshot(&self.connection, |connection| {
+            load_work_obligation_records_on(connection, run_id, None)
+        })
     }
 
     /// Derives the obligations that were still open at one exact immutable
@@ -237,20 +245,24 @@ impl SqliteStore {
         run_id: WorkRunId,
         cut: &FeedPosition,
     ) -> Result<Vec<WorkObligationId>, StoreError> {
-        let records = applicable_work_obligations_at_cut_on(&self.connection, run_id, cut)?;
-        let mut open = Vec::new();
-        for record in records {
-            let terminal_at_cut = record
-                .resolution_id
-                .as_ref()
-                .map(|hash| run_feed_position_for_object_on(&self.connection, run_id, hash))
-                .transpose()?
-                .is_some_and(|position| position.position <= cut.position);
-            if !terminal_at_cut {
-                open.push(record.obligation.obligation_id);
+        // The records are checked against the run's current observations, so
+        // they come from one commit.
+        on_one_snapshot(&self.connection, |connection| {
+            let records = applicable_work_obligations_at_cut_on(connection, run_id, cut)?;
+            let mut open = Vec::new();
+            for record in records {
+                let terminal_at_cut = record
+                    .resolution_id
+                    .as_ref()
+                    .map(|hash| run_feed_position_for_object_on(connection, run_id, hash))
+                    .transpose()?
+                    .is_some_and(|position| position.position <= cut.position);
+                if !terminal_at_cut {
+                    open.push(record.obligation.obligation_id);
+                }
             }
-        }
-        Ok(open)
+            Ok(open)
+        })
     }
 
     /// Resolves and validates the typed category of one run evidence object.
@@ -302,7 +314,11 @@ impl SqliteStore {
         work_id: WorkId,
         now: DateTime<Utc>,
     ) -> Result<ReadyWork, StoreError> {
-        inspect_work_on(&self.connection, work_id, now)
+        // The item, its relations and their event basis are compared, so they
+        // come from one commit.
+        on_one_snapshot(&self.connection, |connection| {
+            inspect_work_on(connection, work_id, now)
+        })
     }
 
     /// Advisory completion readiness from current local bindings for this
@@ -320,9 +336,13 @@ impl SqliteStore {
         session_id: &SessionId,
         now: DateTime<Utc>,
     ) -> Result<(bool, bool), StoreError> {
-        let item = load_work_item(&self.connection, work_id)?;
-        let claim = self.current_work_claim_for_item(&item)?;
-        self.work_completion_readiness_for_item(&item, claim.as_ref(), session_id, now)
+        // The item, claim, run, checkpoint and feed head are compared, so
+        // they come from one commit.
+        on_one_snapshot(&self.connection, |_| {
+            let item = load_work_item(&self.connection, work_id)?;
+            let claim = self.current_work_claim_for_item(&item)?;
+            self.work_completion_readiness_for_item(&item, claim.as_ref(), session_id, now)
+        })
     }
 
     pub(crate) fn work_completion_readiness_for_item(
@@ -1333,7 +1353,7 @@ pub(super) fn latest_canonical_work_event_for_item(
 /// transaction. In autocommit each statement sees the newest commit, so a
 /// check that compares several statements could otherwise compare two
 /// moments and report another connection's commit as corruption.
-pub(super) fn on_one_snapshot<T>(
+pub(in crate::storage) fn on_one_snapshot<T>(
     connection: &Connection,
     read: impl FnOnce(&Connection) -> Result<T, StoreError>,
 ) -> Result<T, StoreError> {
@@ -1928,7 +1948,18 @@ pub(super) fn load_work_items_query(
         .collect()
 }
 
+/// The run row and its latest run-feed event are compared, so they are read
+/// from one commit.
 pub(super) fn load_work_run(
+    connection: &Connection,
+    run_id: WorkRunId,
+) -> Result<WorkRun, StoreError> {
+    on_one_snapshot(connection, |connection| {
+        load_work_run_on_snapshot(connection, run_id)
+    })
+}
+
+fn load_work_run_on_snapshot(
     connection: &Connection,
     run_id: WorkRunId,
 ) -> Result<WorkRun, StoreError> {
@@ -1982,13 +2013,17 @@ pub(super) fn load_root_execution(
     load_root_execution_with_ref(connection, root_execution_id).map(|(execution, _)| execution)
 }
 
+/// The root state and its latest root-feed event are compared, so they are
+/// read from one commit.
 pub(super) fn load_root_execution_with_ref(
     connection: &Connection,
     root_execution_id: RootExecutionId,
 ) -> Result<(RootExecution, crate::domain::RootExecutionRef), StoreError> {
-    let (execution, address) = super::root_state::projected(connection, root_execution_id)?;
-    verify_root_execution_reference_on(connection, &address)?;
-    Ok((execution, address))
+    on_one_snapshot(connection, |connection| {
+        let (execution, address) = super::root_state::projected(connection, root_execution_id)?;
+        verify_root_execution_reference_on(connection, &address)?;
+        Ok((execution, address))
+    })
 }
 
 pub(super) fn verify_root_execution_reference_on(
@@ -2013,6 +2048,15 @@ pub(super) fn verify_root_execution_reference_on(
 /// Its latest snapshot must bind the exact execution id and generation; a newer
 /// root generation must neither replace its waivers nor invalidate its history.
 pub(super) fn load_retained_root_execution(
+    connection: &Connection,
+    root_execution_id: RootExecutionId,
+) -> Result<RootExecution, StoreError> {
+    on_one_snapshot(connection, |connection| {
+        load_retained_root_execution_on_snapshot(connection, root_execution_id)
+    })
+}
+
+fn load_retained_root_execution_on_snapshot(
     connection: &Connection,
     root_execution_id: RootExecutionId,
 ) -> Result<RootExecution, StoreError> {
@@ -2067,7 +2111,18 @@ pub(super) fn active_root_execution(
     })
 }
 
+/// The active-execution row, the root state and the latest root-feed event
+/// are compared, so they are read from one commit.
 pub(super) fn active_root_execution_optional(
+    connection: &Connection,
+    root_id: WorkId,
+) -> Result<Option<RootExecution>, StoreError> {
+    on_one_snapshot(connection, |connection| {
+        active_root_execution_on_snapshot(connection, root_id)
+    })
+}
+
+fn active_root_execution_on_snapshot(
     connection: &Connection,
     root_id: WorkId,
 ) -> Result<Option<RootExecution>, StoreError> {
@@ -2101,7 +2156,18 @@ pub(super) fn active_root_execution_optional(
     )?))
 }
 
+/// The claim row and its latest run-feed event are compared, so they are
+/// read from one commit.
 pub(super) fn load_work_claim_optional(
+    connection: &Connection,
+    run_id: WorkRunId,
+) -> Result<Option<WorkClaim>, StoreError> {
+    on_one_snapshot(connection, |connection| {
+        load_work_claim_on_snapshot(connection, run_id)
+    })
+}
+
+fn load_work_claim_on_snapshot(
     connection: &Connection,
     run_id: WorkRunId,
 ) -> Result<Option<WorkClaim>, StoreError> {

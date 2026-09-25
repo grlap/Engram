@@ -4,6 +4,7 @@
 mod bound_criteria;
 mod corrections;
 mod review;
+mod snapshots;
 
 use super::super::test_support::*;
 use super::*;

@@ -76,24 +76,37 @@ impl SqliteStore {
     pub(super) fn verify_control_policy_history(
         connection: &Connection,
     ) -> Result<ControlPolicyProjection, StoreError> {
-        if connection.is_autocommit() {
-            let snapshot = connection.unchecked_transaction()?;
-            let projection = Self::verify_control_policy_history(&snapshot)?;
-            snapshot.commit()?;
-            return Ok(projection);
-        }
-        let (projection, active_policy, active_authority) =
-            Self::load_control_policy_head(connection)?;
-        Self::verify_control_policy_chain(
-            connection,
-            &projection.policy_id,
-            &active_policy,
-            active_authority,
-        )?;
-        Ok(projection)
+        work::on_one_snapshot(connection, |connection| {
+            let (projection, active_policy, active_authority) =
+                Self::load_control_policy_head(connection)?;
+            Self::verify_control_policy_chain(
+                connection,
+                &projection.policy_id,
+                &active_policy,
+                active_authority,
+            )?;
+            Ok(projection)
+        })
     }
 
+    /// The state row, the version row and the successor check are compared,
+    /// so outside a transaction they are read from one commit.
     pub(super) fn load_control_policy_head(
+        connection: &Connection,
+    ) -> Result<
+        (
+            ControlPolicyProjection,
+            ControlPolicy,
+            ProjectPolicyAuthorityDecision,
+        ),
+        StoreError,
+    > {
+        work::on_one_snapshot(connection, |connection| {
+            Self::load_control_policy_head_on_snapshot(connection)
+        })
+    }
+
+    fn load_control_policy_head_on_snapshot(
         connection: &Connection,
     ) -> Result<
         (

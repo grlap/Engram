@@ -17,7 +17,8 @@ use super::query::{
     active_root_execution, active_root_execution_optional, bounded_prerequisite_projection_rows,
     completion_recovery_snapshot_on, current_required_child_waivers, feed_parts,
     load_retained_root_execution, load_root_execution, load_work_claim_optional, load_work_item,
-    load_work_items_query, load_work_run, parse_work_id, parse_work_run_id, resolve_work_ref_on,
+    load_work_items_query, load_work_run, on_one_snapshot, parse_work_id, parse_work_run_id,
+    resolve_work_ref_on,
 };
 use super::schema::require_work_schema_version;
 use super::{
@@ -1191,31 +1192,35 @@ impl SqliteStore {
         holder: &SessionId,
         now: DateTime<Utc>,
     ) -> Result<Vec<(WorkClaim, DateTime<Utc>)>, StoreError> {
-        let run_ids = {
-            let mut statement = self.connection.prepare(
-                "SELECT claim.run_id FROM work_claims claim
-                 JOIN work_items item ON item.work_id = claim.work_id
-                 WHERE item.project_id = ?1 AND claim.holder_session_id = ?2
-                   AND claim.state = 'active' AND claim.expires_at_ms > ?3
-                 ORDER BY claim.work_id",
-            )?;
-            statement
-                .query_map(
-                    params![project_id.0, holder.0, now.timestamp_millis()],
-                    |row| row.get::<_, String>(0),
-                )?
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        let mut held = Vec::with_capacity(run_ids.len());
-        for run_id in run_ids {
-            let claim = load_work_claim_optional(&self.connection, parse_work_run_id(&run_id)?)?
-                .ok_or_else(|| {
-                    StoreError::InvalidWorkProjection(format!("claim of run {run_id} vanished"))
-                })?;
-            let acquired_at = claim_acquired_at_on(&self.connection, &claim)?;
-            held.push((claim, acquired_at));
-        }
-        Ok(held)
+        // The claims are selected by holder, then reloaded: one commit, so a
+        // handoff accepted in between cannot list the recipient's claim.
+        on_one_snapshot(&self.connection, |connection| {
+            let run_ids = {
+                let mut statement = connection.prepare(
+                    "SELECT claim.run_id FROM work_claims claim
+                     JOIN work_items item ON item.work_id = claim.work_id
+                     WHERE item.project_id = ?1 AND claim.holder_session_id = ?2
+                       AND claim.state = 'active' AND claim.expires_at_ms > ?3
+                     ORDER BY claim.work_id",
+                )?;
+                statement
+                    .query_map(
+                        params![project_id.0, holder.0, now.timestamp_millis()],
+                        |row| row.get::<_, String>(0),
+                    )?
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            let mut held = Vec::with_capacity(run_ids.len());
+            for run_id in run_ids {
+                let claim = load_work_claim_optional(connection, parse_work_run_id(&run_id)?)?
+                    .ok_or_else(|| {
+                        StoreError::InvalidWorkProjection(format!("claim of run {run_id} vanished"))
+                    })?;
+                let acquired_at = claim_acquired_at_on(connection, &claim)?;
+                held.push((claim, acquired_at));
+            }
+            Ok(held)
+        })
     }
 
     /// Lists every live project claim needed to render compact catalog rows.
@@ -1273,9 +1278,11 @@ impl SqliteStore {
         work_id: WorkId,
         claimant: &SessionId,
     ) -> Result<bool, StoreError> {
-        let item = load_work_item(&self.connection, work_id)?;
-        let claim = self.current_work_claim_for_item(&item)?;
-        self.work_claim_recovery_required_for_item(&item, claim.as_ref(), claimant)
+        on_one_snapshot(&self.connection, |_| {
+            let item = load_work_item(&self.connection, work_id)?;
+            let claim = self.current_work_claim_for_item(&item)?;
+            self.work_claim_recovery_required_for_item(&item, claim.as_ref(), claimant)
+        })
     }
 
     pub(crate) fn work_claim_recovery_required_for_item(

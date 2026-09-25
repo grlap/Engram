@@ -369,7 +369,7 @@ pub(super) use planning::validate_control_work_binding_on;
 use query::feed_parts;
 pub(super) use query::{
     canonical_work_events_for_item, context_work_feed_heads, load_active_blocker_projections,
-    load_prerequisite_projection_ids, load_work_item, verified_work_identity,
+    load_prerequisite_projection_ids, load_work_item, on_one_snapshot, verified_work_identity,
 };
 pub(super) use schema::{
     initialize_schema, is_rebuildable_schema_object, is_rebuilt_projection_table,
