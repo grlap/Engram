@@ -1726,7 +1726,8 @@ waived stock obligation, `untested_source_change` naming the change and its
 source revision, without leaking host authority. The page's `untested_total`
 counts every untested change on the run, and its items name those that fit.
 Its `open_total` counts every open obligation on the run before count and byte
-trimming, and is 0 for an item that has no run yet. When it exceeds the open
+trimming, and is 0 for an item that has no run yet, such as one restored from
+a work-graph snapshot and not yet claimed. When it exceeds the open
 items shown, an open obligation was left out, and the agent reminder says more
 obligations are open than shown. Only a page stored before this count existed
 lacks it, and that page keeps its original reminder.

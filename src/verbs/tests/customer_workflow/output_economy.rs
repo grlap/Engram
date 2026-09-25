@@ -351,14 +351,15 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
     );
 }
 
+/// A new item's focus page, before any obligation opens, counts zero open
+/// ones on the wire and gives no obligation reminder. An item with no run at
+/// all is covered by the update and note results in the work service tests.
 #[test]
-fn an_item_without_a_run_counts_zero_open_obligations() {
+fn a_new_item_focus_page_counts_zero_open_obligations() {
     let (_directory, verbs, _, _) = fixture();
-    let work_ref = add(&verbs, "No run yet", None, false, 0);
+    let work_ref = add(&verbs, "Nothing owed yet", None, false, 0);
     let view = verbs.service.inspect_work(&work_ref, at(1)).unwrap();
     assert!(view.obligation_page.items.is_empty());
-    // Known to be zero, so an absent count keeps meaning only a page stored
-    // before the count existed.
     assert_eq!(view.obligation_page.open_total, Some(0));
     assert_eq!(
         serde_json::to_value(&view.obligation_page).unwrap()["open_total"],

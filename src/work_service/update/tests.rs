@@ -18,6 +18,85 @@ fn work_update_does_not_admit_obligation_waivers() {
     assert!(serde_json::from_value::<WorkUpdateInput>(attempted).is_err());
 }
 
+/// An update or note result carries the item's obligation page. An item
+/// restored from a graph snapshot has no run until it is claimed, and its
+/// open count is known to be zero, so the page says 0; only a page stored
+/// before the count existed leaves it out.
+#[test]
+fn an_update_and_a_note_on_an_item_without_a_run_count_zero_open_obligations() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let source = LocalWorkService::new(
+        directory.path().join("source.sqlite3"),
+        ProjectId("no-run-obligation-count".into()),
+        "agent".into(),
+        SessionId("source-session".into()),
+        Some("protocol-test".into()),
+    );
+    let work = match source
+        .work_propose(root_input("Not started", "no-run-root"), at(0))
+        .expect("root")
+    {
+        WorkProposeResult::Root { work, .. } => work,
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
+    };
+    let saved = source
+        .save_work_graph_snapshot(None, WorkGraphSnapshotDestinationKind::Stdout, at(1))
+        .expect("save snapshot");
+    let database = directory.path().join("restored.sqlite3");
+    let service = LocalWorkService::new(
+        database.clone(),
+        source.project_id.clone(),
+        "agent".into(),
+        SessionId("restored-session".into()),
+        Some("protocol-test".into()),
+    );
+    service
+        .load_work_graph_snapshot(
+            &serde_json::to_vec(&saved.document).expect("snapshot bytes"),
+            false,
+            at(2),
+        )
+        .expect("load snapshot");
+    let revised = service
+        .work_update_on(
+            Some(&work.short_ref),
+            WorkUpdateInput::Revise {
+                patch: WorkRevisionPatch {
+                    title: Some("Still not started".into()),
+                    ..WorkRevisionPatch::default()
+                },
+                idempotency_key: "no-run-revise".into(),
+            },
+            at(3),
+        )
+        .expect("planning update without a run");
+    assert_eq!(revised.receipt.work_id, work.work_id);
+    let noted = service
+        .work_note_on(
+            Some(&work.short_ref),
+            "an observation before anyone claims it",
+            &[],
+            at(4),
+        )
+        .expect("note without a run");
+    assert!(
+        SqliteStore::open(&database)
+            .expect("store")
+            .latest_work_run(work.work_id)
+            .expect("run lookup")
+            .is_none(),
+        "the restored item has no run yet"
+    );
+    for page in [&revised.obligation_page, &noted.obligation_page] {
+        assert!(page.items.is_empty());
+        assert_eq!(page.open_total, Some(0));
+        assert_eq!(
+            serde_json::to_value(page).expect("page")["open_total"],
+            serde_json::json!(0)
+        );
+    }
+}
+
 #[test]
 fn core_committed_update_recovery_uses_the_durable_focus_basis() {
     let directory = crate::test_support::temp_home().expect("temp directory");
