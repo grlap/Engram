@@ -212,7 +212,7 @@ fn host_ack_recovery_stale_confirmed_cursor_refuses_after_another_advance() {
 /// A focus change discards the pending page. When it lands between the
 /// implicit confirmation's read of that page and its write, nothing is left
 /// to confirm: the confirmation succeeds without moving the cursor, and the
-/// next call stages the same interval under the new focus.
+/// next call restages from that unchanged cursor under the new focus.
 #[test]
 fn a_focus_change_before_the_implicit_confirmation_leaves_nothing_to_confirm() {
     let fixture = RecoveryFixture::new();
