@@ -216,3 +216,83 @@ fn a_note_receipt_reads_its_guidance_and_obligations_from_one_commit() {
         "the source change committed after the read began"
     );
 }
+
+/// The root this service's session claimed, completed by `done`.
+fn completed_root(project: &str) -> (TempHome, LocalWorkService, std::path::PathBuf, WorkItem) {
+    let (directory, service, database, claimed) = claimed_root(project);
+    service
+        .work_complete(completion_input("delivered", "done"), at(2))
+        .expect("complete the root");
+    let work = SqliteStore::open(&database)
+        .expect("store")
+        .get_work_item(claimed.work_id)
+        .expect("completed root");
+    assert_eq!(work.lifecycle, WorkLifecycle::Completed);
+    (directory, service, database, work)
+}
+
+/// Another connection reopens the completed item, which adds a fresh,
+/// unsealed run.
+fn reopen_by_another_connection(
+    database: &std::path::Path,
+    work: &WorkItem,
+) -> impl FnOnce() -> Result<(), String> + use<> {
+    let mut writer = SqliteStore::open(database).expect("writer store");
+    let work = work.clone();
+    move || {
+        writer
+            .reopen_work(
+                &crate::ReopenWorkRequest {
+                    work_id: work.work_id,
+                    expected_work_revision: work.revision,
+                    reason: "reopened partway through the read".into(),
+                    actor: crate::ActorContext {
+                        actor_id: "agent".into(),
+                        actor_kind: "test_agent".into(),
+                        assurance: crate::domain::AssuranceLevel::Asserted,
+                        run_id: None,
+                        session_id: Some(SessionId("holder".into())),
+                        source_tool: Some("work_test".into()),
+                        source_skill: None,
+                        provenance_chain: Vec::new(),
+                        reason: "reopen partway through a read".into(),
+                    },
+                    idempotency_key: "snapshot-reopen".into(),
+                    reopened_at: at(50),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+}
+
+// A late note or gate on completed work reads the item, then its newest run
+// and that run's seal. A reopen committed between those reads adds a fresh,
+// unsealed run; read separately, the run would look like completed work
+// without a seal, a broken store. On one snapshot the reads agree, and a
+// reopen that landed before them is a revision conflict.
+#[test]
+fn late_evidence_reads_the_item_its_run_and_seal_from_one_commit() {
+    let (_directory, _service, database, work) = completed_root("snapshot-late-evidence");
+    let reader = SqliteStore::open(&database).expect("reader store");
+    let (run, seal) = read_across_a_concurrent_commit(
+        &reader,
+        |reader| LocalWorkService::completed_evidence_basis(reader, &work),
+        &[
+            "FROM work_runs WHERE work_id",
+            "ORDER BY generation DESC LIMIT 1",
+        ],
+        reopen_by_another_connection(&database, &work),
+    )
+    .expect("the completed basis as of one commit");
+    assert_eq!(run.state, WorkRunState::Completed);
+    assert_eq!(seal.run_id, run.run_id);
+    assert_eq!(seal.work_id, work.work_id);
+
+    assert!(matches!(
+        LocalWorkService::completed_evidence_basis(&reader, &work),
+        Err(StoreError::WorkRevisionConflict { work: conflicted, expected, .. })
+            if conflicted == work.work_id && expected == work.revision
+    ));
+}

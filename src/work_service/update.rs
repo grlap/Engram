@@ -419,33 +419,55 @@ impl LocalWorkService {
         }
     }
 
+    /// The completed run and seal that post-completion evidence attaches to.
+    /// The item, its newest run and the seal are read on one snapshot, and the
+    /// item must still be the completed revision the caller read. A reopen
+    /// committed after the caller's read adds a fresh, unsealed run; that is a
+    /// revision conflict, not a broken store.
     fn completed_evidence_basis(
         store: &SqliteStore,
         work: &WorkItem,
     ) -> Result<(WorkRun, CompletionSeal), StoreError> {
-        let run = store.latest_work_run(work.work_id)?.ok_or_else(|| {
-            StoreError::InvalidWorkProjection(
-                "completed work has no historical execution run".into(),
-            )
-        })?;
-        let seal_id = run.completion_seal.as_ref().ok_or_else(|| {
-            StoreError::InvalidWorkProjection("completed work has no completion seal".into())
-        })?;
-        let seal: CompletionSeal = store.get(seal_id)?.ok_or_else(|| {
-            StoreError::InvalidWorkProjection(
-                "completed work has no canonical completion seal".into(),
-            )
-        })?;
-        if run.work_id != work.work_id
-            || run.state != WorkRunState::Completed
-            || seal.work_id != work.work_id
-            || seal.run_id != run.run_id
-        {
-            return Err(StoreError::InvalidWorkProjection(
-                "completed evidence basis crosses its work or run binding".into(),
-            ));
-        }
-        Ok((run, seal))
+        store.work_read_snapshot(|store| {
+            let current = store.get_work_item(work.work_id)?;
+            if current.revision != work.revision {
+                return Err(StoreError::WorkRevisionConflict {
+                    work: work.work_id,
+                    expected: work.revision,
+                    current: current.revision,
+                });
+            }
+            // Every lifecycle change bumps the revision, so the same revision
+            // with another lifecycle is a broken projection, not a race.
+            if current.lifecycle != WorkLifecycle::Completed {
+                return Err(StoreError::InvalidWorkProjection(
+                    "completed work changed lifecycle without a new revision".into(),
+                ));
+            }
+            let run = store.latest_work_run(work.work_id)?.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "completed work has no historical execution run".into(),
+                )
+            })?;
+            let seal_id = run.completion_seal.as_ref().ok_or_else(|| {
+                StoreError::InvalidWorkProjection("completed work has no completion seal".into())
+            })?;
+            let seal: CompletionSeal = store.get(seal_id)?.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "completed work has no canonical completion seal".into(),
+                )
+            })?;
+            if run.work_id != work.work_id
+                || run.state != WorkRunState::Completed
+                || seal.work_id != work.work_id
+                || seal.run_id != run.run_id
+            {
+                return Err(StoreError::InvalidWorkProjection(
+                    "completed evidence basis crosses its work or run binding".into(),
+                ));
+            }
+            Ok((run, seal))
+        })
     }
 
     /// Like [`Self::work_update`], but first binds `work_ref` as the ambient
