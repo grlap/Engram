@@ -2,7 +2,8 @@
 
 > Normative reference: [spec §8](../spec.md#8-interfaces).
 > Related: [CLI and MCP](cli-and-mcp.md), [host checklist](../host-checklist.md),
-> [SQLite admission](sqlite-store.md), [security and trust](security-and-trust.md).
+> [SQLite admission](sqlite-store.md), [security and trust](security-and-trust.md),
+> [turn gate assessment](turn-gate-assessment.md).
 
 Host Verify/Save can call:
 

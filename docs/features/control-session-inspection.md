@@ -2,7 +2,8 @@
 
 > Normative reference: [spec §8](../spec.md#8-interfaces).
 > Related: [host readiness](host-readiness.md), [host checklist](../host-checklist.md),
-> [behavioral control](behavioral-control-plane.md), [CLI](cli-and-mcp.md).
+> [behavioral control](behavioral-control-plane.md), [CLI](cli-and-mcp.md),
+> [turn gate assessment](turn-gate-assessment.md).
 
 An operator or host may inspect stale local checkpoint handles with:
 

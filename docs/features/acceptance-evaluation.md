@@ -4,7 +4,9 @@
 > [Local work system](local-work-system.md) (completion seals, obligations),
 > [Execution pipeline](execution-pipeline.md) (typed evidence),
 > [Behavioral control plane](behavioral-control-plane.md) (host channel),
-> [CLI & MCP](cli-and-mcp.md) (agent words).
+> [CLI & MCP](cli-and-mcp.md) (agent words),
+> [Turn gate assessment](turn-gate-assessment.md) (why the evaluation request
+> stays out of the turn gate).
 
 This brief is the contract for evidence-based acceptance evaluation before
 completion. It describes the agreed design, not a claim that every row is
