@@ -24,7 +24,7 @@ fn integrity_scanner_covers_enforced_control_records() {
             &TurnIntent {
                 idempotency_key: "integrity-turn-a".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"integrity-turn-a"),
-                purpose: crate::domain::TurnPurpose::Ordinary,
+                purpose: Some(crate::domain::TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
             },

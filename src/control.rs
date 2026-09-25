@@ -13,14 +13,14 @@ use crate::{
     CanonicalObject, ObjectId,
     domain::{
         ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, BuiltinObligationRuleRef,
-        BuiltinObligationTrigger, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextPacket,
-        ControlAssurance, ControlDirective, ControlHealth, ControlRefusalCode,
-        DirectiveSatisfaction, DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
+        BuiltinObligationTrigger, CONTROL_SCHEMA_VERSION, ContextPacket, ControlAssurance,
+        ControlDirective, ControlHealth, ControlRefusalCode, DirectiveSatisfaction,
+        DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
         OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition, ObligationRuleSet,
-        ObservedActionBeginDecision, ObservedTurnDecision, PacketSafety, ParticipantMembership,
-        SessionPhase, TaskDelta, TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision,
+        ObservedActionBeginDecision, ObservedTurnDecision, ParticipantMembership, SessionPhase,
+        TaskDelta, TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision,
         TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState,
-        TurnPurpose, VerificationEvidence, VerificationEvidenceMismatch, VerificationRequirement,
+        VerificationEvidence, VerificationEvidenceMismatch, VerificationRequirement,
         VerificationResult, WorkEvidenceKind, WorkObligation, WorkObligationId,
     },
     storage::StoreError,
@@ -374,13 +374,9 @@ pub fn observe_action_begin(
 /// Rechecks a persisted turn grant immediately before prompt dispatch.
 ///
 /// This function performs no I/O. The storage layer must evaluate it and
-/// consume an issued grant in the same transaction as the tentative delivery
-/// and session revision update.
+/// consume an issued grant in the same transaction as the session revision
+/// update.
 #[must_use]
-#[allow(
-    clippy::too_many_lines,
-    reason = "begin-time validation keeps the complete fail-closed decision order visible"
-)]
 pub fn evaluate_turn_begin(
     grant: &IssuedTurnGrant,
     snapshot: &TurnBeginSnapshot,
@@ -437,40 +433,11 @@ pub fn evaluate_turn_begin(
             code: ControlRefusalCode::TaskAdmissionEpochChanged,
         };
     }
-    if !snapshot.context_current {
-        return TurnBeginDecision::Refuse {
-            code: ControlRefusalCode::DeltaRequired,
-        };
-    }
-    let expected_head = basis
-        .inline_delivery
-        .as_ref()
-        .map_or(basis.delivery_cursor, |page| page.head_cursor);
-    if snapshot.current_head != expected_head {
-        return TurnBeginDecision::Refuse {
-            code: ControlRefusalCode::DeltaRequired,
-        };
-    }
-    if snapshot.capability_map_revision != basis.capability_map_revision {
-        return TurnBeginDecision::Refuse {
-            code: ControlRefusalCode::GrantScopeMismatch,
-        };
-    }
-    let expected_tokens: Vec<_> = basis
-        .inline_delivery
-        .iter()
-        .map(|delivery| delivery.delivery_token.as_str())
-        .collect();
-    if expected_tokens
-        != snapshot
-            .delivery_tokens
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-        || !delivery_matches_grant(grant)
+    if snapshot.capability_map_revision != basis.capability_map_revision
+        || !snapshot.delivery_tokens.is_empty()
     {
         return TurnBeginDecision::Refuse {
-            code: ControlRefusalCode::DeliveryInvalid,
+            code: ControlRefusalCode::GrantScopeMismatch,
         };
     }
 
@@ -598,8 +565,6 @@ fn action_identity_refusal(
         || grant.epochs.task_admission.0 < 0
         || snapshot.current_epochs.project_policy.0 < 0
         || snapshot.current_epochs.task_admission.0 < 0
-        || grant.blocking_watermark.0 < 0
-        || snapshot.acknowledged_blocking_watermark.0 < 0
     {
         return Some(ControlRefusalCode::GrantScopeMismatch);
     }
@@ -629,15 +594,12 @@ fn action_freshness_refusal(
     if snapshot.current_epochs.task_admission != grant.epochs.task_admission {
         return Some(ControlRefusalCode::TaskAdmissionEpochChanged);
     }
-    if snapshot.acknowledged_blocking_watermark < grant.blocking_watermark {
-        return Some(ControlRefusalCode::DeltaRequired);
-    }
-    if !action_phase_matches(grant.turn_purpose, snapshot.phase) {
+    if !matches!(snapshot.phase, SessionPhase::TurnOpen) {
         return Some(ControlRefusalCode::LifecycleHold);
     }
     if snapshot.capability_map_revision != grant.capability_map_revision
         || grant.capability_map_revision < 0
-        || !effect_fits_purpose(grant.turn_purpose, grant.effect)
+        || !effect_fits_ordinary_turn(grant.effect)
         || grant.resource_subjects.is_empty()
         || !grant
             .resource_subjects
@@ -697,14 +659,6 @@ fn action_resolution_refusal(
     }
 
     None
-}
-
-/// A begun action must stay in the phase of the turn that admitted it.
-const fn action_phase_matches(purpose: TurnPurpose, phase: SessionPhase) -> bool {
-    match purpose {
-        TurnPurpose::Ordinary => matches!(phase, SessionPhase::TurnOpen),
-        TurnPurpose::Recovery => matches!(phase, SessionPhase::RecoveryOpen),
-    }
 }
 
 fn same_unique_strings(left: &[String], right: &[String]) -> bool {
@@ -773,11 +727,7 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
     if !matches!(input.participant_membership, ParticipantMembership::Member) {
         return refusal(input, ControlRefusalCode::TaskAccessDenied);
     }
-    if let Some(code) = phase_refusal(
-        input.phase,
-        input.intent.purpose,
-        input.pending_delivery.is_some(),
-    ) {
+    if let Some(code) = phase_refusal(input.phase) {
         return refusal(input, code);
     }
     if input.current_epochs.project_policy != input.session_epochs.project_policy {
@@ -785,9 +735,6 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
     }
     if input.current_epochs.task_admission != input.session_epochs.task_admission {
         return refusal(input, ControlRefusalCode::TaskAdmissionEpochChanged);
-    }
-    if let Some(code) = packet_refusal(input.packet_safety) {
-        return refusal(input, code);
     }
     if input.has_unknown_action_outcome {
         return refusal(input, ControlRefusalCode::ActionOutcomeUnknown);
@@ -803,7 +750,7 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
         .requested_effects
         .iter()
         .copied()
-        .find(|effect| !effect_fits_purpose(input.intent.purpose, *effect))
+        .find(|effect| !effect_fits_ordinary_turn(*effect))
     {
         return detailed_refusal(
             input,
@@ -813,36 +760,6 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
             Some(&input.mediated_effects),
             Some(&effective_mediation),
         );
-    }
-    let (delivery_cursor, inline_delivery) = match evaluate_delivery(input) {
-        Ok(delivery) => delivery,
-        Err(code) => return refusal(input, code),
-    };
-    if inline_delivery.as_ref().is_some_and(|page| page.has_more)
-        && !matches!(input.intent.purpose, TurnPurpose::Recovery)
-    {
-        return refusal(input, ControlRefusalCode::RecoveryRequired);
-    }
-    let delivered_watermark = input.acknowledged_blocking_watermark.max(delivery_cursor);
-    let partial_recovery = inline_delivery.as_ref().is_some_and(|page| page.has_more)
-        && matches!(input.intent.purpose, TurnPurpose::Recovery);
-    if partial_recovery
-        && input
-            .intent
-            .requested_effects
-            .iter()
-            .any(|effect| !matches!(effect, EffectClass::Observe))
-    {
-        return refusal(input, ControlRefusalCode::GrantScopeMismatch);
-    }
-    if delivered_watermark < input.blocking_watermark && !partial_recovery {
-        return refusal(input, ControlRefusalCode::DeltaRequired);
-    }
-    if matches!(input.phase, SessionPhase::SyncRequired)
-        && matches!(input.intent.purpose, TurnPurpose::Ordinary)
-        && inline_delivery.is_none()
-    {
-        return refusal(input, ControlRefusalCode::RecoveryRequired);
     }
 
     let Some(expires_at) = input
@@ -857,14 +774,14 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
             session_id: input.session_id.clone(),
             task_id,
             work_binding: input.work_binding.clone(),
-            purpose: input.intent.purpose,
+            purpose: None,
             intent_fingerprint: input.intent.intent_fingerprint.clone(),
             project_policy_epoch: input.current_epochs.project_policy,
             task_admission_epoch: input.current_epochs.task_admission,
-            confirmed_cursor: input.confirmed_cursor,
-            delivery_cursor,
-            blocking_watermark: input.blocking_watermark,
-            inline_delivery,
+            confirmed_cursor: None,
+            delivery_cursor: None,
+            blocking_watermark: None,
+            inline_delivery: None,
             capability_map_revision: input.capability_map_revision,
             requested_effects: input.intent.requested_effects.clone(),
             resource_intents: input.intent.resource_intents.clone(),
@@ -881,10 +798,6 @@ fn turn_input_has_invalid_shape(input: &TurnEvaluationInput) -> bool {
         || input.current_epochs.task_admission.0 < 0
         || input.session_epochs.project_policy.0 < 0
         || input.session_epochs.task_admission.0 < 0
-        || input.confirmed_cursor.0 < 0
-        || input.head_cursor.0 < 0
-        || input.blocking_watermark.0 < 0
-        || input.acknowledged_blocking_watermark.0 < 0
         || input.session_id.0.trim().is_empty()
         || input.intent.idempotency_key.trim().is_empty()
         || input.intent.requested_effects.is_empty()
@@ -946,98 +859,27 @@ const fn health_refusal(health: ControlHealth) -> Option<ControlRefusalCode> {
     }
 }
 
-const fn packet_refusal(safety: PacketSafety) -> Option<ControlRefusalCode> {
-    match safety {
-        PacketSafety::Safe => None,
-        PacketSafety::PinnedBudgetExceeded => Some(ControlRefusalCode::PinnedBudgetExceeded),
-        PacketSafety::DeliveryBudgetExceeded => Some(ControlRefusalCode::DeliveryInvalid),
-    }
-}
-
-fn evaluate_delivery(
-    input: &TurnEvaluationInput,
-) -> Result<(ChangeCursor, Option<crate::domain::DeliveryPage>), ControlRefusalCode> {
-    if input.confirmed_cursor > input.head_cursor {
-        return Err(ControlRefusalCode::DeliveryInvalid);
-    }
-
-    let Some(page) = &input.pending_delivery else {
-        if input.confirmed_cursor < input.head_cursor {
-            return Err(if input.confirmed_cursor == ChangeCursor::default() {
-                ControlRefusalCode::ContextRequired
-            } else {
-                ControlRefusalCode::DeltaRequired
-            });
-        }
-        return Ok((input.confirmed_cursor, None));
-    };
-
-    let advances_task_feed =
-        page.to_cursor > page.from_cursor && input.confirmed_cursor < input.head_cursor;
-    let context_only = page.to_cursor == page.from_cursor
-        && page.to_cursor == page.head_cursor
-        && input.confirmed_cursor == input.head_cursor
-        && !page.has_more;
-    let valid = page.from_cursor == input.confirmed_cursor
-        && page.head_cursor == input.head_cursor
-        && page.to_cursor <= page.head_cursor
-        && page.has_more == (page.to_cursor < page.head_cursor)
-        && (advances_task_feed || context_only)
-        && !page.delivery_token.trim().is_empty();
-    if !valid {
-        return Err(ControlRefusalCode::DeliveryInvalid);
-    }
-
-    Ok((page.to_cursor, Some(page.clone())))
-}
-
-const fn phase_refusal(
-    phase: SessionPhase,
-    purpose: TurnPurpose,
-    has_inline_delivery: bool,
-) -> Option<ControlRefusalCode> {
+/// A `sync_required` row written before grants stopped carrying a delivery
+/// page admits a turn as `ready` does: there is nothing left to catch up on.
+const fn phase_refusal(phase: SessionPhase) -> Option<ControlRefusalCode> {
     match phase {
-        SessionPhase::Unbound => return Some(ControlRefusalCode::TaskUnbound),
-        SessionPhase::Exited => return Some(ControlRefusalCode::SessionExited),
-        SessionPhase::TurnOpen => return Some(ControlRefusalCode::TurnAlreadyOpen),
-        SessionPhase::CheckpointRequired => {
-            return Some(ControlRefusalCode::CheckpointRequired);
+        SessionPhase::Ready | SessionPhase::SyncRequired => None,
+        SessionPhase::Unbound => Some(ControlRefusalCode::TaskUnbound),
+        SessionPhase::Exited => Some(ControlRefusalCode::SessionExited),
+        SessionPhase::TurnOpen => Some(ControlRefusalCode::TurnAlreadyOpen),
+        SessionPhase::CheckpointRequired => Some(ControlRefusalCode::CheckpointRequired),
+        SessionPhase::HandoffPending | SessionPhase::RecoveryOpen => {
+            Some(ControlRefusalCode::LifecycleHold)
         }
-        SessionPhase::HandoffPending => return Some(ControlRefusalCode::LifecycleHold),
         SessionPhase::ContributionRequired | SessionPhase::ParticipantReady => {
-            return Some(ControlRefusalCode::ParticipantNotReady);
-        }
-        SessionPhase::Ready | SessionPhase::SyncRequired | SessionPhase::RecoveryOpen => {}
-    }
-
-    match purpose {
-        TurnPurpose::Ordinary => match phase {
-            SessionPhase::Ready => None,
-            SessionPhase::SyncRequired if has_inline_delivery => None,
-            SessionPhase::SyncRequired | SessionPhase::RecoveryOpen => {
-                Some(ControlRefusalCode::RecoveryRequired)
-            }
-            _ => Some(ControlRefusalCode::TurnPurposeMismatch),
-        },
-        TurnPurpose::Recovery => {
-            if matches!(phase, SessionPhase::RecoveryOpen)
-                || (matches!(phase, SessionPhase::SyncRequired) && has_inline_delivery)
-            {
-                None
-            } else {
-                Some(ControlRefusalCode::TurnPurposeMismatch)
-            }
+            Some(ControlRefusalCode::ParticipantNotReady)
         }
     }
 }
 
-const fn effect_fits_purpose(purpose: TurnPurpose, effect: EffectClass) -> bool {
-    match purpose {
-        TurnPurpose::Ordinary => !matches!(effect, EffectClass::Coordinate),
-        TurnPurpose::Recovery => {
-            matches!(effect, EffectClass::Observe | EffectClass::Communicate)
-        }
-    }
+/// Engram-internal coordination is never a turn's own effect.
+const fn effect_fits_ordinary_turn(effect: EffectClass) -> bool {
+    !matches!(effect, EffectClass::Coordinate)
 }
 
 fn refusal(input: &TurnEvaluationInput, code: ControlRefusalCode) -> TurnDecision {
@@ -1163,9 +1005,10 @@ mod tests {
         ObjectId,
         domain::{
             ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, ActionGrantState,
-            AuthorityState, ControlAssurance, ControlEpochs, DeliveryPage, ParentTurnState,
-            ParticipantMembership, ProjectId, ProjectPolicyEpoch, ResolutionAssurance,
-            ResourceCoverage, ResourceSubject, SessionId, TaskAdmissionEpoch, TaskId, TurnIntent,
+            AuthorityState, ChangeCursor, ControlAssurance, ControlEpochs, DeliveryPage,
+            ParentTurnState, ParticipantMembership, ProjectId, ProjectPolicyEpoch,
+            ResolutionAssurance, ResourceCoverage, ResourceSubject, SessionId, TaskAdmissionEpoch,
+            TaskId, TurnIntent, TurnPurpose,
         },
     };
 
@@ -1197,19 +1040,13 @@ mod tests {
                 project_policy: ProjectPolicyEpoch(4),
                 task_admission: TaskAdmissionEpoch(9),
             },
-            confirmed_cursor: ChangeCursor(12),
-            head_cursor: ChangeCursor(12),
-            pending_delivery: None,
-            packet_safety: PacketSafety::Safe,
-            blocking_watermark: ChangeCursor(12),
-            acknowledged_blocking_watermark: ChangeCursor(12),
             has_unknown_action_outcome: false,
             authority_satisfied: true,
             capability_map_revision: 3,
             intent: TurnIntent {
                 idempotency_key: "turn-a".into(),
                 intent_fingerprint: hash("turn intent"),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
             },
@@ -1263,7 +1100,6 @@ mod tests {
             request_fingerprint: hash("write request"),
             authority_references: vec!["host-policy:workspace-write".into()],
             epochs,
-            blocking_watermark: ChangeCursor(12),
             capability_map_revision: 3,
             resolution_binding_digest: binding.clone(),
             expires_at: now + TimeDelta::seconds(30),
@@ -1283,7 +1119,6 @@ mod tests {
             authority_references: vec!["host-policy:workspace-write".into()],
             authority_state: AuthorityState::Valid,
             current_epochs: epochs,
-            acknowledged_blocking_watermark: ChangeCursor(12),
             capability_map_revision: 3,
             resolution_binding_digest: binding,
             resolution_assurance: ResolutionAssurance::PinnedThroughInvocation,
@@ -1484,95 +1319,53 @@ mod tests {
     }
 
     #[test]
-    fn fresh_delivery_is_inlined_instead_of_refused() {
-        let mut input = input();
-        input.phase = SessionPhase::SyncRequired;
-        input.head_cursor = ChangeCursor(15);
-        input.blocking_watermark = ChangeCursor(14);
-        input.pending_delivery = Some(DeliveryPage {
-            from_cursor: ChangeCursor(12),
-            to_cursor: ChangeCursor(15),
-            head_cursor: ChangeCursor(15),
-            has_more: false,
-            content_digest: hash("delta page"),
-            delivery_token: "delivery-a".into(),
-        });
-
-        let observation = observe_turn(&input);
-        match observation.decision {
-            TurnDecision::Grant { basis } => {
-                assert_eq!(basis.confirmed_cursor, ChangeCursor(12));
-                assert_eq!(basis.delivery_cursor, ChangeCursor(15));
-                assert!(basis.inline_delivery.is_some());
-            }
-            TurnDecision::Refuse { directive } => {
-                panic!("expected inline grant, got {:?}", directive.code);
-            }
-            TurnDecision::Defer { deferral } => {
-                panic!("expected inline grant, got defer {:?}", deferral.code);
-            }
+    fn a_grant_carries_no_delivery_page_or_cursors() {
+        let TurnDecision::Grant { basis } = observe_turn(&input()).decision else {
+            panic!("a ready session's ordinary turn must be granted");
+        };
+        assert_eq!(basis.purpose, None);
+        assert_eq!(basis.confirmed_cursor, None);
+        assert_eq!(basis.delivery_cursor, None);
+        assert_eq!(basis.blocking_watermark, None);
+        assert_eq!(basis.inline_delivery, None);
+        let encoded = serde_json::to_value(&basis).expect("encode the basis");
+        for retired in [
+            "purpose",
+            "confirmed_cursor",
+            "delivery_cursor",
+            "blocking_watermark",
+            "inline_delivery",
+        ] {
+            assert!(
+                encoded.get(retired).is_none(),
+                "a new grant omits {retired}"
+            );
         }
     }
 
     #[test]
-    fn malformed_delivery_page_refuses() {
+    fn a_turn_needs_no_purpose_and_a_sync_required_row_admits_it() {
         let mut input = input();
-        input.phase = SessionPhase::SyncRequired;
-        input.head_cursor = ChangeCursor(15);
-        input.pending_delivery = Some(DeliveryPage {
-            from_cursor: ChangeCursor(11),
-            to_cursor: ChangeCursor(15),
-            head_cursor: ChangeCursor(15),
-            has_more: false,
-            content_digest: hash("bad page"),
-            delivery_token: "delivery-a".into(),
-        });
-
-        assert_eq!(
-            refusal_code(&observe_turn(&input)),
-            Some(ControlRefusalCode::DeliveryInvalid)
-        );
-    }
-
-    #[test]
-    fn oversized_delivery_refuses_with_a_typed_delivery_error() {
-        let mut input = input();
-        input.packet_safety = PacketSafety::DeliveryBudgetExceeded;
-
-        assert_eq!(
-            refusal_code(&observe_turn(&input)),
-            Some(ControlRefusalCode::DeliveryInvalid)
-        );
-    }
-
-    #[test]
-    fn partial_delivery_page_requires_a_recovery_turn() {
-        let mut input = input();
-        input.phase = SessionPhase::SyncRequired;
-        input.head_cursor = ChangeCursor(15);
-        input.blocking_watermark = ChangeCursor(14);
-        input.pending_delivery = Some(DeliveryPage {
-            from_cursor: ChangeCursor(12),
-            to_cursor: ChangeCursor(14),
-            head_cursor: ChangeCursor(15),
-            has_more: true,
-            content_digest: hash("partial page"),
-            delivery_token: "delivery-partial".into(),
-        });
-
-        assert_eq!(
-            refusal_code(&observe_turn(&input)),
-            Some(ControlRefusalCode::RecoveryRequired)
-        );
-        input.intent.purpose = TurnPurpose::Recovery;
+        input.intent.purpose = None;
         assert!(matches!(
             observe_turn(&input).decision,
             TurnDecision::Grant { .. }
         ));
-        input.intent.requested_effects = vec![EffectClass::Observe, EffectClass::Communicate];
+
+        input.phase = SessionPhase::SyncRequired;
+        assert!(matches!(
+            observe_turn(&input).decision,
+            TurnDecision::Grant { .. }
+        ));
+    }
+
+    #[test]
+    fn a_never_written_recovery_phase_holds_the_turn() {
+        let mut input = input();
+        input.phase = SessionPhase::RecoveryOpen;
         assert_eq!(
             refusal_code(&observe_turn(&input)),
-            Some(ControlRefusalCode::GrantScopeMismatch)
+            Some(ControlRefusalCode::LifecycleHold)
         );
     }
 
@@ -1605,38 +1398,107 @@ mod tests {
     }
 
     #[test]
-    fn recovery_turn_cannot_request_mutation() {
-        let mut input = input();
-        input.host_assurance = ControlAssurance::TurnGated;
-        input.phase = SessionPhase::RecoveryOpen;
-        input.intent.purpose = TurnPurpose::Recovery;
-        input.intent.requested_effects = vec![EffectClass::MutateShared];
-
-        assert_eq!(
-            refusal_code(&observe_turn(&input)),
-            Some(ControlRefusalCode::GrantScopeMismatch)
-        );
-    }
-
-    #[test]
-    fn lifecycle_phase_precedes_packet_safety() {
-        let mut input = input();
-        input.phase = SessionPhase::CheckpointRequired;
-        input.packet_safety = PacketSafety::PinnedBudgetExceeded;
-
-        assert_eq!(
-            refusal_code(&observe_turn(&input)),
-            Some(ControlRefusalCode::CheckpointRequired)
-        );
-    }
-
-    #[test]
-    fn removed_finalizer_vocabulary_is_not_admitted() {
+    fn removed_turn_purposes_are_not_admitted() {
         assert!(serde_json::from_str::<TurnPurpose>("\"finalizer\"").is_err());
+        assert!(serde_json::from_str::<TurnPurpose>("\"recovery\"").is_err());
         assert!(serde_json::from_str::<SessionPhase>("\"finalizer_open\"").is_err());
         assert_eq!(
             serde_json::from_str::<TurnPurpose>("\"ordinary\"").unwrap(),
             TurnPurpose::Ordinary
+        );
+    }
+
+    fn begin() -> (IssuedTurnGrant, TurnBeginSnapshot) {
+        let input = input();
+        let TurnDecision::Grant { basis } = observe_turn(&input).decision else {
+            panic!("the fixture turn must be granted");
+        };
+        let grant = IssuedTurnGrant {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            grant_id: "grant-a".into(),
+            request_key: input.intent.idempotency_key.clone(),
+            basis: *basis,
+            delivery: None,
+            issued_at: input.evaluated_at,
+        };
+        let snapshot = TurnBeginSnapshot {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id: input.session_id.clone(),
+            task_id: grant.basis.task_id,
+            work_binding: None,
+            work_binding_current: true,
+            phase: SessionPhase::TurnOpen,
+            participant_membership: ParticipantMembership::Member,
+            anchor_exists: true,
+            grant_state: TurnGrantState::Issued,
+            current_epochs: input.current_epochs,
+            capability_map_revision: input.capability_map_revision,
+            delivery_tokens: Vec::new(),
+            observed_at: input.evaluated_at,
+        };
+        (grant, snapshot)
+    }
+
+    #[test]
+    fn turn_begin_takes_no_delivery_tokens() {
+        let (grant, snapshot) = begin();
+        assert_eq!(
+            evaluate_turn_begin(&grant, &snapshot),
+            TurnBeginDecision::Begin
+        );
+
+        let mut echoed = snapshot;
+        echoed.delivery_tokens = vec!["token-from-an-old-page".into()];
+        assert_eq!(
+            evaluate_turn_begin(&grant, &echoed),
+            TurnBeginDecision::Refuse {
+                code: ControlRefusalCode::GrantScopeMismatch
+            }
+        );
+    }
+
+    #[test]
+    fn turn_begin_rechecks_expiry_epochs_capability_map_and_claim() {
+        let (grant, snapshot) = begin();
+        let refused = |snapshot: &TurnBeginSnapshot| match evaluate_turn_begin(&grant, snapshot) {
+            TurnBeginDecision::Refuse { code } => Some(code),
+            TurnBeginDecision::Begin => None,
+        };
+
+        let mut expired = snapshot.clone();
+        expired.observed_at = grant.basis.expires_at;
+        assert_eq!(refused(&expired), Some(ControlRefusalCode::GrantExpired));
+
+        let mut policy = snapshot.clone();
+        policy.current_epochs.project_policy = ProjectPolicyEpoch(5);
+        assert_eq!(
+            refused(&policy),
+            Some(ControlRefusalCode::PolicyEpochChanged)
+        );
+
+        let mut admission = snapshot.clone();
+        admission.current_epochs.task_admission = TaskAdmissionEpoch(10);
+        assert_eq!(
+            refused(&admission),
+            Some(ControlRefusalCode::TaskAdmissionEpochChanged)
+        );
+
+        let mut capability = snapshot.clone();
+        capability.capability_map_revision = 4;
+        assert_eq!(
+            refused(&capability),
+            Some(ControlRefusalCode::GrantScopeMismatch)
+        );
+
+        let mut stale = snapshot.clone();
+        stale.work_binding_current = false;
+        assert_eq!(refused(&stale), Some(ControlRefusalCode::StaleFence));
+
+        let mut begun = snapshot;
+        begun.grant_state = TurnGrantState::Begun;
+        assert_eq!(
+            refused(&begun),
+            Some(ControlRefusalCode::GrantScopeMismatch)
         );
     }
 
@@ -1654,7 +1516,7 @@ mod tests {
     }
 
     #[test]
-    fn action_begin_rechecks_epochs_and_watermark() {
+    fn action_begin_rechecks_epochs() {
         let (grant, snapshot) = action();
 
         let mut stale_epoch = snapshot.clone();
@@ -1664,11 +1526,11 @@ mod tests {
             Some(ControlRefusalCode::TaskAdmissionEpochChanged)
         );
 
-        let mut stale_delivery = snapshot.clone();
-        stale_delivery.acknowledged_blocking_watermark = ChangeCursor(11);
+        let mut stale_policy = snapshot;
+        stale_policy.current_epochs.project_policy = ProjectPolicyEpoch(5);
         assert_eq!(
-            action_refusal_code(&grant, &stale_delivery),
-            Some(ControlRefusalCode::DeltaRequired)
+            action_refusal_code(&grant, &stale_policy),
+            Some(ControlRefusalCode::PolicyEpochChanged)
         );
     }
 

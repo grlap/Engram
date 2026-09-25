@@ -1,100 +1,13 @@
-use chrono::{TimeDelta, TimeZone};
+use chrono::{TimeDelta, TimeZone, Utc};
 
 use super::*;
-use crate::storage::{
-    MAX_EXACT_CONTEXT_OMISSIONS, enum_name, test_database_shape_snapshot, test_support::*,
-};
+use crate::storage::{enum_name, test_database_shape_snapshot, test_support::*};
 use crate::*;
 
 use crate::{
     DevelopmentNoopRedactor,
     domain::{MemoryStatus, NoteVisibility, ProjectId, ProvenanceLink, ProvenanceRelation},
 };
-
-#[test]
-fn context_omissions_are_exact_then_losslessly_aggregated() {
-    let memories = (0..200)
-        .map(|index| MemorySummary {
-            memory_id: MemoryId::new(),
-            version: ObjectId::from_canonical_bytes(format!("memory-{index}").as_bytes()),
-            status: MemoryStatus::Active,
-            kind: crate::domain::MemoryKind::Fact,
-            authority: crate::domain::Authority::Soft,
-            delivery: Delivery::OnDemand,
-            scope: Scope::Project {
-                project: ProjectId("project-a".into()),
-            },
-            title: format!("Memory {index}"),
-            body: "Available through search".into(),
-            sensitivity: Sensitivity::Internal,
-            created_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
-        })
-        .collect();
-    let assembly = assemble_context(memories).expect("bounded context assembly");
-    assert_eq!(assembly.omissions.len(), MAX_EXACT_CONTEXT_OMISSIONS);
-    assert_eq!(
-        assembly.omission_summaries,
-        vec![ContextOmissionSummary {
-            reason: "on-demand memory is available through search".into(),
-            count: 72,
-        }]
-    );
-    assert_eq!(
-        assembly.omissions.len()
-            + assembly
-                .omission_summaries
-                .iter()
-                .map(|summary| usize::try_from(summary.count).unwrap())
-                .sum::<usize>(),
-        200
-    );
-}
-
-#[test]
-fn context_assembly_never_hides_old_pinned_memory_behind_search_limits() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let task_id = TaskId::new();
-    install_memory_task(&mut store, task_id, &["agent-a"]);
-    let mut pinned_request = note_request(
-        task_id,
-        "agent-a",
-        "Constraint: preserve the oldest pinned rule",
-        "oldest-pinned",
-        NoteVisibility::Shared,
-    );
-    pinned_request.created_at = Utc::now() - TimeDelta::days(1);
-    let pinned = store
-        .capture_note(&pinned_request, &DevelopmentNoopRedactor)
-        .expect("capture oldest pinned record");
-    for index in 0..1_000 {
-        let mut request = note_request(
-            task_id,
-            "agent-a",
-            &format!("Observation: bounded filler record {index}"),
-            &format!("filler-{index}"),
-            NoteVisibility::Shared,
-        );
-        request.created_at = Utc::now() + TimeDelta::milliseconds(i64::from(index));
-        store
-            .capture_note(&request, &DevelopmentNoopRedactor)
-            .expect("capture filler memory");
-    }
-    let packet = store
-        .build_context(
-            &ProjectId("project-a".into()),
-            Some(task_id),
-            &SessionId("agent-a".into()),
-            "agent-a",
-            Utc::now(),
-        )
-        .expect("context includes all pinned candidates before budgeting");
-    assert!(
-        packet
-            .pinned
-            .iter()
-            .any(|item| item.version == pinned.version)
-    );
-}
 
 #[test]
 fn sessions_rendezvous_using_only_the_external_reference() {
@@ -134,7 +47,6 @@ fn sessions_rendezvous_using_only_the_external_reference() {
 
     assert_eq!(first.status.task_id, peer.status.task_id);
     assert_eq!(peer.status.task_id, replay.status.task_id);
-    assert_eq!(peer.status.confirmed_cursor, replay.status.confirmed_cursor);
     assert_eq!(
         store
             .connection
@@ -414,14 +326,14 @@ fn private_task_scratch_never_enters_the_peer_feed() {
     clippy::too_many_lines,
     reason = "one scenario must preserve the exact pre/post-restart cursor and hashes"
 )]
-fn context_delta_show_and_private_scope_survive_restart() {
+fn task_delta_show_and_private_scope_survive_restart() {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("engram.db");
     let project = ProjectId("project-a".into());
     let session_a = SessionId("eval-a".into());
     let session_b = SessionId("eval-b".into());
     let now = Utc::now();
-    let (task_id, first_receipt, packet, expected_delta, private_hash) = {
+    let (task_id, first_receipt, first_cursor, expected_delta, private_hash) = {
         let mut store = SqliteStore::open(&database).unwrap();
         let task = store
             .bind_test_control_scope(
@@ -454,17 +366,9 @@ fn context_delta_show_and_private_scope_survive_restart() {
         let first_receipt = store
             .capture_note(&first_request, &DevelopmentNoopRedactor)
             .unwrap();
-        let packet = store
-            .build_context(
-                &project,
-                Some(task_id),
-                &session_b,
-                "eval-b",
-                now + TimeDelta::milliseconds(2),
-            )
-            .unwrap();
-        assert_eq!(packet.index.len(), 1);
-        assert_eq!(packet.index[0].version, first_receipt.version);
+        let first_cursor = first_receipt
+            .cursor
+            .expect("a shared note has a task cursor");
 
         let second_request = note_request(
             task_id,
@@ -477,14 +381,7 @@ fn context_delta_show_and_private_scope_survive_restart() {
             .capture_note(&second_request, &DevelopmentNoopRedactor)
             .unwrap();
         let expected_delta = store
-            .task_delta(
-                &project,
-                task_id,
-                &session_b,
-                "eval-b",
-                packet.header.event_cursor,
-                20,
-            )
+            .task_delta(&project, task_id, &session_b, "eval-b", first_cursor, 20)
             .unwrap();
         assert_eq!(expected_delta.changes.len(), 1);
 
@@ -526,7 +423,7 @@ fn context_delta_show_and_private_scope_survive_restart() {
         (
             task_id,
             first_receipt,
-            packet,
+            first_cursor,
             expected_delta,
             private_receipt.version,
         )
@@ -534,14 +431,7 @@ fn context_delta_show_and_private_scope_survive_restart() {
 
     let reopened = SqliteStore::open(&database).unwrap();
     let after_restart = reopened
-        .task_delta(
-            &project,
-            task_id,
-            &session_b,
-            "eval-b",
-            packet.header.event_cursor,
-            20,
-        )
+        .task_delta(&project, task_id, &session_b, "eval-b", first_cursor, 20)
         .unwrap();
     assert_eq!(
         serde_json::to_vec(&after_restart).unwrap(),
@@ -681,45 +571,6 @@ fn generic_memory_search_excludes_terminal_head_statuses() {
                 .is_empty()
         );
     }
-}
-
-#[test]
-fn rebuild_advances_context_revisions_even_when_a_scope_has_no_surviving_projection() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    store
-        .connection
-        .execute(
-            "INSERT INTO project_context_revisions (project_id, revision)
-             VALUES ('removed-project-scope', 7)",
-            [],
-        )
-        .expect("install prior project revision");
-    store
-        .connection
-        .execute(
-            "INSERT INTO agent_context_revisions (project_id, agent_id, revision)
-             VALUES ('removed-agent-scope', 'agent-a', 11)",
-            [],
-        )
-        .expect("install prior private revision");
-
-    assert_eq!(
-        store.rebuild_memory_index().expect("rebuild empty index"),
-        0
-    );
-    let revisions = store
-        .connection
-        .query_row(
-            "SELECT
-                 (SELECT revision FROM project_context_revisions
-                  WHERE project_id = 'removed-project-scope'),
-                 (SELECT revision FROM agent_context_revisions
-                  WHERE project_id = 'removed-agent-scope' AND agent_id = 'agent-a')",
-            [],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-        )
-        .expect("read rebuilt revision fences");
-    assert_eq!(revisions, (8, 12));
 }
 
 fn standalone_note(session: &str, key: &str) -> NoteRequest {

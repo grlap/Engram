@@ -872,7 +872,7 @@ fn unresolved_opener_cannot_begin_a_path_bearing_grant() {
             &TurnIntent {
                 idempotency_key: "ub-turn".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"ub-turn"),
-                purpose: crate::domain::TurnPurpose::Ordinary,
+                purpose: Some(crate::domain::TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![crate::domain::ResourceSubject::Path {
                     project_id: ProjectId("project-a".into()),

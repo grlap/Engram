@@ -28,9 +28,8 @@ engram.db
   work_operation_results # local-work idempotency receipts
   work_session_state # mutable ambient focus + processed project-feed cursor; never authority
   control_anchors # shared project + external-reference rendezvous, not work items
-  control_changes # dense scope-local feed positions plus an internal global row sequence
-  context_deliveries # target dense per-session delivery + exact source ranges
-  control_sessions     # durable host routing, phase, cursors, epochs
+  control_changes # write-only audit index of turn reports, dense per control scope
+  control_sessions     # durable host routing, phase, epochs; retained cursor columns unused
   control_connections  # current host-process generation; fences predecessors
   control_turn_results # idempotent enforced decisions
   control_turn_grants  # short-lived issued/begun/completed authority
@@ -118,17 +117,15 @@ record id from bytes and treats no checksum as a corruption check. The
 fingerprints it does recompute and compare are of content: a stored control
 observation's intent is re-fingerprinted from its input and must match the
 intent fingerprint the row carries, which is the same comparison a retried
-operation makes before it replays the stored receipt. Context contents,
-pinned-safety evaluation, packet fingerprint, and the
-stamped task head are read in one immediate transaction before a grant is
-persisted.
-
-Host delivery reconstructs canonical task objects for an exact dense
-`(confirmed_cursor, page_cursor]` range. Pages are capped by event and byte
-budgets; partial pages carry deltas only and advance through recovery
-turn begin/checkpoint, while the final page also binds the context packet.
-Task events larger than the single-object delivery limit are rejected before
-they enter the task feed.
+operation makes before it replays the stored receipt. A grant carries no
+delivery page: the task's change index that turn reports append to is a
+write-only audit trail, which no grant delivers and no decision reads. Task
+events larger than the single-object limit are rejected before they enter it.
+The `control_sessions` columns `confirmed_cursor`, `tentative_cursor` and
+`blocking_watermark` are unused: only a bind writes them, as zero or null, so a
+row written earlier keeps its last values until it is rebound. They are
+retained only so the schema stays unchanged until the next planned migration
+drops them.
 
 `control_changes.task_cursor` is dense and local to one control anchor; an internal
 `sequence` is only a SQLite row identity. Ordinary open refuses different-build
@@ -143,12 +140,10 @@ import carry these ids and the ordered feed unchanged.
 First-class work uses `work_feed_heads` and `work_feed_entries` to allocate a
 typed dense `feed_kind + feed_id + position` for project, root-work, and
 run-execution feeds in the same transaction as each
-object/event. Context delivery still needs its separate dense
-task cursor; its packet additionally stamps the focused project/root/run feed
-heads plus monotonic project-visible and owner-private context revisions. Turn
-begin rechecks that basis and rejects intervening work, project-memory, or
-same-agent private-memory changes. Private revisions are keyed by project and
-agent and never publish private object identities to shared feeds.
+object/event. The `project_context_revisions` and
+`agent_context_revisions` tables once fenced the grant's context packet.
+Nothing reads or updates them now; they are retained, with any rows a store
+already holds, until the next planned migration drops them.
 Exact work deltas and their staged/confirmed project cursor remain on the
 six-operation work protocol. A global row id is internal and never becomes a
 work safety cursor.

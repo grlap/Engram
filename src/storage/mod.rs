@@ -223,33 +223,31 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 #[cfg(test)]
-use crate::domain::MemoryRecord;
+use crate::domain::{DeltaItem, MemoryRecord, TaskDelta};
 use crate::{
     CanonicalObject, ObjectId,
     control::effective_mediated_effects,
     domain::{
-        ActorContext, AssuranceLevel, Authority, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextItem,
-        ContextOmission, ContextOmissionSummary, ContextPacket, ContextPacketHeader,
-        ContextPacketPayload, ControlAssurance, ControlDelivery, ControlEpochs, ControlHealth,
-        ControlPolicy, ControlSessionBinding, ControlSessionStatus, ControlTurnBeginDecision,
-        ControlTurnCheckpointDecision, ControlTurnDecision, ControlWorkBinding, Delivery,
-        DeliveryPage, DeltaItem, EffectClass, EnvironmentComponents, EnvironmentEvidence,
-        EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservation,
-        ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome,
-        ForgetProjectMemoryRequest, HostPathPolicy, IssuedTurnGrant, MAX_PROJECT_MEMORY_BODY_BYTES,
-        MAX_PROJECT_MEMORY_KEY_BYTES, MAX_PROJECT_MEMORY_QUERY_BYTES,
-        MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent, MemoryId, MemoryKind, MemoryStatus,
-        MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
-        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation, PacketSafety,
+        ActorContext, AssuranceLevel, Authority, CONTROL_SCHEMA_VERSION, ChangeCursor,
+        ControlAssurance, ControlEpochs, ControlHealth, ControlPolicy, ControlSessionBinding,
+        ControlSessionStatus, ControlTurnBeginDecision, ControlTurnCheckpointDecision,
+        ControlTurnDecision, ControlWorkBinding, Delivery, EffectClass, EnvironmentComponents,
+        EnvironmentEvidence, EnvironmentEvidenceInput, EnvironmentEvidenceReference,
+        ExecutionObservation, ExecutionObservationInput, ExecutionObservationReference,
+        ExecutionOutcome, ForgetProjectMemoryRequest, HostPathPolicy, IssuedTurnGrant,
+        MAX_PROJECT_MEMORY_BODY_BYTES, MAX_PROJECT_MEMORY_KEY_BYTES,
+        MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
+        MemoryId, MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest,
+        NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation,
         ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
         ProjectMemoryListRow, ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision,
         ProjectPolicyEpoch, ProjectPolicyOperation, RememberProjectMemoryRequest, SCHEMA_VERSION,
-        Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskDelta, TaskId,
-        TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
-        TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
-        TurnEvaluationInput, TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason,
-        TurnIntent, TurnNextIntent, VerificationEvidence, VerificationEvidenceInput,
-        VerificationKind, VerificationResult, WorkCompletionRecoveryCause, WorkReferenceCandidate,
+        Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskId, TurnBeginDecision,
+        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
+        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
+        TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent,
+        TurnNextIntent, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
+        VerificationResult, WorkCompletionRecoveryCause, WorkReferenceCandidate,
     },
     memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
     schema::{
@@ -791,8 +789,6 @@ pub enum StoreError {
         work: crate::domain::WorkId,
         reason: String,
     },
-    #[error("pinned context requires {required} bytes, exceeding the {budget}-byte budget")]
-    PinnedBudgetExceeded { required: usize, budget: usize },
     #[error("local work item {0:?} does not exist")]
     WorkNotFound(crate::domain::WorkId),
     #[error("local work input is invalid: {0}")]
@@ -1131,11 +1127,6 @@ const MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES: usize = 4_096;
 const MAX_PROJECT_MEMORY_PROVENANCE_LINKS: usize = 32;
 const MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES: usize = 64 * 1_024;
 
-const PINNED_CONTEXT_BUDGET: usize = 4 * 1_024;
-const INDEX_CONTEXT_BUDGET: usize = 8 * 1_024;
-const MAX_CONTROL_DELIVERY_EVENTS: i64 = 128;
-const MAX_CONTROL_DELIVERY_OBJECT_BYTES: i64 = 128 * 1_024;
-const MAX_CONTROL_DELIVERY_BYTES: usize = 256 * 1_024;
 const MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT: usize = 64;
 const MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT: usize = 16;
 const MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT: usize = 4;
@@ -1143,7 +1134,6 @@ const MAX_TYPED_EVIDENCE_SUMMARY_BYTES: usize = 4 * 1_024;
 const MAX_TYPED_EVIDENCE_REFS: usize = 64;
 const MAX_TYPED_EVIDENCE_REF_BYTES: usize = 1_024;
 const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
-const MAX_EXACT_CONTEXT_OMISSIONS: usize = 128;
 const BUILTIN_CONTROL_GRANT_TTL_SECONDS: i64 = 30;
 const MAX_CONTROL_POLICY_PROVENANCE_LINKS: usize = 32;
 const MAX_CONTROL_POLICY_ATTRIBUTION_BYTES: usize = 64 * 1_024;
@@ -1173,15 +1163,6 @@ fn fail_cold_schema_after_ddl() -> bool {
     FAIL_COLD_SCHEMA_AFTER_DDL.replace(false)
 }
 
-struct ContextAssembly {
-    pinned: Vec<ContextItem>,
-    index: Vec<ContextItem>,
-    omissions: Vec<ContextOmission>,
-    omission_summaries: Vec<ContextOmissionSummary>,
-    proposed_count: u32,
-    stale_count: u32,
-}
-
 struct StoredControlSession {
     project_id: crate::domain::ProjectId,
     task_id: TaskId,
@@ -1194,15 +1175,15 @@ struct StoredControlSession {
     phase: SessionPhase,
     assurance: ControlAssurance,
     mediated_effects: Vec<EffectClass>,
-    confirmed_cursor: ChangeCursor,
-    tentative_cursor: Option<ChangeCursor>,
     epochs: ControlEpochs,
-    blocking_watermark: ChangeCursor,
     capability_map_revision: i64,
     revision: i64,
     open_grant_id: Option<String>,
 }
 
+/// One `control_sessions` row as stored. `confirmed_cursor`,
+/// `tentative_cursor` and `blocking_watermark` are retained columns that no
+/// decision reads; the loader still checks their bounds.
 struct RawControlSession {
     project_id: String,
     task_id: String,
@@ -1256,21 +1237,6 @@ enum OpenWriteNeed {
 struct StoredTurnGrant {
     grant: IssuedTurnGrant,
     state: TurnGrantState,
-}
-
-fn safely_redeliverable_partial_recovery(grant: &IssuedTurnGrant) -> bool {
-    matches!(grant.basis.purpose, crate::domain::TurnPurpose::Recovery)
-        && !grant.basis.requested_effects.is_empty()
-        && grant
-            .basis
-            .requested_effects
-            .iter()
-            .all(|effect| matches!(effect, EffectClass::Observe))
-        && grant
-            .delivery
-            .as_ref()
-            .is_some_and(|delivery| delivery.page.has_more)
-        && crate::control::delivery_matches_grant(grant)
 }
 
 struct StoredControlTurnResult {

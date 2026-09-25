@@ -1913,29 +1913,6 @@ pub(in crate::storage) fn verified_work_identity(
     Ok((item.project_id, item.root_id))
 }
 
-pub(in crate::storage) fn context_work_feed_heads(
-    connection: &Connection,
-    work_id: WorkId,
-) -> Result<Vec<FeedPosition>, StoreError> {
-    let item = load_work_item(connection, work_id)?;
-    let mut feeds = vec![
-        FeedId::Project(item.project_id),
-        FeedId::RootWork(item.root_id),
-    ];
-    if let Some(run_id) = item.active_run_id {
-        feeds.push(FeedId::RunExecution(run_id));
-    }
-    feeds
-        .into_iter()
-        .map(|feed| {
-            Ok(FeedPosition {
-                position: feed_head(connection, &feed)?,
-                feed,
-            })
-        })
-        .collect()
-}
-
 pub(super) fn load_work_items_query(
     connection: &Connection,
     query: &str,

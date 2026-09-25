@@ -1053,7 +1053,6 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::ProjectMemoryRetired(_) => "memory_retired",
         StoreError::ProjectMemoryBindingInvalid => "memory_binding_invalid",
         StoreError::InvalidProjectMemory(_) => "memory_invalid",
-        StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::EmptyNote => "empty_note",
         StoreError::RedactionRefused(_) => "redaction_refused",
         StoreError::WorkNotFound(_) => "work_not_found",

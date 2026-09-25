@@ -65,4 +65,7 @@ control sessions bind directly to shared anchors by project and external
 reference; the compatibility-task lifecycle and tables are removed. Fenced
 local-work claims remain. Resource leases, host obligation waiver, and the
 finalizer turn purpose/phase are removed. The operator waiver command remains;
-acceptance-binding revision still resolves obsolete bound obligations.
+acceptance-binding revision still resolves obsolete bound obligations. Turn
+grants no longer carry a delivery page, recovery turns are removed, and the
+context-packet assembly that only the grant's page used is removed with it.
+Stored grants that carried a page still decode and audit clean.

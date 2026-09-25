@@ -123,52 +123,27 @@ to authorize itself.
 ## Session protocol
 
 A root-execution member has a durable session phase in addition to the focused
-run's completion state and the optional report state:
+run's completion state and the optional report state. Storage writes three:
 
 ```text
-unbound → sync_required → ready → turn_open → checkpoint_required → ready
-              ↑            │             │              │
-              │            ├── wait ─────┘              ├── handoff_pending
-              │            └── policy change ───────────┘
-              └──── restart / expired grant / stale epoch
-
-sync_required → recovery_open → checkpoint_required → sync_required
-                                                        └─ reevaluate → ready
-
-handoff_pending ── accepted/released ──→ exited
-        └───────── canceled/expired ───→ sync_required
-
-ready → completion_required → participant_ready → exited
+bind → ready → turn_open → ready
+         ↑         │
+         │         └── report with next intent exit → exited
+         └── grant expired or superseded, refused start, restart before start
 ```
 
-- `unbound`: the session has no active task reference. Only binding and
-  diagnostic operations are available.
-- `sync_required`: required context has not been host-acknowledged, peer
-  deltas are outstanding, a project-policy or work-admission epoch changed, or
-  the host
-  restarted. Only recovery capabilities are available.
-- `ready`: all blocking directives are acknowledged and the requested turn
-  remains subject to the current capability and work-claim checks.
-- `turn_open`: one unexpired turn grant exists. Replaying the same turn intent
+- `ready`: the session may ask for a turn, subject to the current capability
+  and work-claim checks. A `sync_required` row written before grants stopped
+  carrying a delivery page admits a turn the same way.
+- `turn_open`: one grant is issued or begun. Replaying the same turn intent
   returns the same grant; a different intent under the same idempotency key is
-  a conflict.
-- `checkpoint_required`: the model turn ended. Material action outcomes and a
-  structured turn checkpoint must be reconciled before another ordinary turn.
-- `recovery_open`: one `purpose: recovery` grant permits only the exact
-  directive ids and capabilities named by the refusal. Its checkpoint returns
-  to `sync_required`; Engram reevaluates durable state before `ready`.
-- `handoff_pending`: the session has declared the work transferable but the
-  work-claim transition and handoff checkpoint have not both completed.
-- `completion_required`: local completion requires the session to checkpoint,
-  satisfy evidence obligations and
-  contribute.
-- `participant_ready`: the contribution is frozen and the participant is no
-  longer permitted to perform ordinary execution mutations. The designated
-  report assembler may later acquire a separate `ReportAssemblyClaim`;
-  an attributed completion abort before the seal sends participants back to
-  `sync_required`, while a later report-assembly abort does not reopen work.
-- `exited`: no active grant remains. Rejoining begins at
-  `sync_required`.
+  a conflict. A begun turn stays open until the host reports it.
+- `exited`: the host reported the session's exit. Only a fresh bind admits it
+  again.
+
+The other phases are design only, and storage never writes them: `unbound`,
+`checkpoint_required`, `recovery_open`, `handoff_pending`,
+`contribution_required` and `participant_ready`. There are no recovery turns.
 
 `blocked` is not a catch-all session phase. A refusal names the precise
 blocking condition and the operations that remain safe. This avoids states
@@ -185,8 +160,9 @@ The shipped host `session_bind(external_ref, title)` resolves a shared control
 anchor by project and external reference. `control_sessions` holds the binding;
 there is no separate compatibility-task lifecycle, participant roster or join
 event. The retained wire field `task_id` identifies this scope, and
-`control_changes` preserves its ordered shared history. Binding itself emits no
-history event. Exact local-work claims remain a separate authority boundary.
+`control_changes` is its write-only audit index: each turn report appends one
+event, which no grant delivers and no decision reads. Binding itself emits no
+event. Exact local-work claims remain a separate authority boundary.
 
 `session_bind` records the asserted actor, host session, control-assurance
 level, declared mediated capabilities, and an optional exact work binding:
@@ -239,37 +215,14 @@ The expected revision is only an optimistic-concurrency guard. Context,
 cursor, policy, membership, and claim facts come from Engram's durable state;
 caller fields are never accepted as proof that a precondition is true.
 
-Feed and delivery positions have different identities:
-
-```text
-FeedPosition {
-  kind: project | root_work | run_execution
-  id, position
-}
-
-DeliveryPosition { session_id, position }
-
-FeedRange {
-  kind: project | root_work | run_execution
-  id, from_position, to_position, observed_head_position
-}
-```
-
 The decision is a grant, defer, or refusal:
 
 ```text
 TurnGrant {
   grant_id, intent_hash, work_id, work_revision, run_id, session_id, turn_id
-  purpose: ordinary | recovery
-  authority_basis:
-    ordinary { work_claim_id, work_claim_fence }
-    recovery { directive_ids[], authority_refs[] }
-  basis_feed_positions[]        # FeedPosition
-  basis_delivery_position       # DeliveryPosition
+  work_claim_id, work_claim_fence
   basis_project_policy_epoch, basis_work_admission_epoch
   basis_portable_writer_epoch?, portable_writer_valid_until?
-  packet_hash
-  required_injections[]          # exact delivery token + bounded payload
   capability_envelope[]
   expires_at
   directives[]
@@ -277,12 +230,8 @@ TurnGrant {
 
 TurnRefusal {
   intent_hash, code, message
-  current_feed_positions[]      # FeedPosition
-  current_delivery_position     # DeliveryPosition
   current_project_policy_epoch, current_work_admission_epoch
   blocking_directives[]
-  recovery_capabilities[]
-  recovery_turn_grant?          # a TurnGrant with purpose: recovery
 }
 
 TurnDefer {
@@ -292,29 +241,18 @@ TurnDefer {
 }
 ```
 
-The normal pre-turn result is a grant **with the required context and peer
-delta already attached**, not a refusal telling the agent to call another
-tool. Immediately before dispatching the prompt, the host calls
-`turn_begin(grant_id, delivery_tokens[])`. In one transaction Engram rechecks
-grant expiry, project-policy epoch, work-admission epoch, work revision, the
-purpose-specific authority basis, optional portable
-writer epoch/validation deadline, the session blocking watermark, and each
-exact token, then records a **tentative** delivery position
-and source-feed progress vector and activates the grant. Without that transition the host must
-not deliver the prompt.
-Standalone delivery calls remain available for preloading and recovery, but
-freshness is not delegated back to voluntary MCP.
+A grant carries no context or peer delta. The work context an agent sees
+comes from the `next` word, which keeps its own staged delivery and does not
+depend on the gate. Immediately before dispatching the prompt, the host calls
+`turn_begin(grant_id)`. In one transaction Engram rechecks the grant's state and
+expiry, the session's phase and membership, the project-policy and
+work-admission epochs, the capability map, the work revision and the claim
+fence, then activates the grant. Without that transition the host must not
+deliver the prompt.
 
-Tentative delivery is not proof that prompt dispatch succeeded. The last
-checkpointed delivery position and source-feed progress vector remain
-separate. A successful turn checkpoint promotes both atomically. Restart
-invalidates an unbegun grant and returns it to `sync_required`; an uncertain
-begun grant remains `turn_open` and checkpoint-required. The one safely
-replayable case is a begun observe-only partial recovery page:
-`session_status.recoverable_grant` returns its exact frozen delta so the new
-host can redeliver it before checkpointing, while the confirmed cursor remains
-unchanged. Other begun turns expose only their id because replaying a prompt
-with possible effects would be unsafe.
+Restart invalidates an unbegun grant and returns the session to `ready`; an
+uncertain begun grant remains `turn_open` until the host reports it. Nothing is
+redelivered, because replaying a prompt with possible effects would be unsafe.
 A fresh evaluation key likewise atomically supersedes an issued-but-unbegun
 grant. The same transaction records an immutable supersession transition that
 binds the old grant and request key to the replacement request and decision,
@@ -326,9 +264,8 @@ A grant is an immutable, fingerprinted operational record while live. It is
 bound to one task, session, turn intent, both control epochs, capability
 envelope, and work-claim fence; it is not a bearer token transferable to another
 session. Restart invalidates issued-but-unbegun authority. A begun grant stays
-durable only until checkpoint/reconciliation, including the narrowly
-redeliverable recovery case above, so completed, expired, and superseded grants
-still need not become permanent canonical memory. State-changing grant
+durable only until checkpoint/reconciliation, so completed, expired, and
+superseded grants still need not become permanent canonical memory. State-changing grant
 supersession, delivery, checkpoint, action, handoff, and finalization
 transitions emit immutable canonical events.
 
@@ -339,24 +276,18 @@ state through an earlier failure:
    schemas;
 2. verify durable root-execution membership, focused work/run binding, and
    asserted host control declaration;
-3. verify that session/run lifecycle states allow the requested activity and,
-   for an ordinary turn, that this session holds the run's live work claim;
-4. construct applicable pinned context without overflow;
-5. attach the next required bounded context/delta delivery not already
-   acknowledged, preserving dense task-local cursor ranges and an omission
-   manifest; partial pages authorize only recovery turns, and the final page
-   attaches the context snapshot at the delivered head;
-6. verify the requested capability envelope and normalize supplied resource
+3. verify that session/run lifecycle states allow the requested activity and
+   that this session holds the run's live work claim;
+4. verify the requested capability envelope and normalize supplied resource
    intents (which confer no exclusive ownership); and
-7. verify no checkpoint, unknown action, handoff, contribution, or
+5. verify no checkpoint, unknown action, handoff, contribution, or
    finalization obligation is outstanding.
 
-Only then can a turn grant be minted. Missing deliverable context normally
-creates `required_injections`, not denial. A refusal or defer is reserved for
-an unsafe packet, unreconciled recovery, lifecycle hold, unknown prior action,
-unavailable required authority, or a condition that cannot fit safely in the
-bounded delivery. Time is an explicit evaluator input, not a hidden wall-clock
-read, so replay and boundary tests are deterministic.
+Only then can a turn grant be minted. A refusal or defer is reserved for a
+lifecycle hold, an unknown prior action, unavailable required authority, or
+another condition that makes the turn unsafe. Time is an explicit evaluator
+input, not a hidden wall-clock read, so replay and boundary tests are
+deterministic.
 
 Refusal does not mean the host must deadlock or bypass the gate. Directives are
 classified by executor:
@@ -364,37 +295,16 @@ classified by executor:
 - **host-automatic** — deliver context, apply a delta page, wait, report an
   already-known action outcome;
 - **human-only** — supply missing authority, choose a policy exception,
-  reconcile an ambiguous non-idempotent side effect;
-- **agent recovery turn** — reason about a pinned conflict, choose a resource
-  scope, prepare a handoff, or produce a contribution.
+  reconcile an ambiguous non-idempotent side effect.
 
-For the last class, the reevaluation may produce a short-lived `TurnGrant` with
-`purpose: recovery`, bound to exact directive ids and only the read/capture or
-coordination capabilities needed to resolve them. It cannot authorize
-ordinary workspace mutation, a new external effect, or unrelated reasoning.
-Its result must be checkpointed before admission is reevaluated.
+Repair that needs model reasoning happens in an ordinary turn. There are no
+recovery turns.
 
-### 3. Acknowledge deliveries
+### 3. Deliveries
 
-The shipped turn channel stages the supplied packet/delta at `turn_begin`, and
-checkpoint makes it durable. A future standalone `delivery_ack` may perform
-the same transition without a model turn. Neither operation claims that the
-model understood the content. Each
-delivery has an independent per-session sequence and exact source ranges:
-
-```text
-ContextDelivery {
-  token
-  delivery_position             # DeliveryPosition
-  source_ranges[]               # FeedRange
-  has_more_by_feed[]
-  content_digest, packet_hash?
-  basis_project_policy_epoch, basis_work_admission_epoch
-}
-```
-
-The acknowledgement cites that token, host session, expected prior delivery
-position, and idempotency key.
+Grants carry no delivery, so `turn_begin` stages nothing and `turn_checkpoint`
+promotes nothing. A begin that names a delivery token is refused with
+`grant_scope_mismatch`. The planned standalone `delivery_ack` is not built.
 
 Blocking directives are typed, addressed, and carry a satisfaction mode:
 
@@ -418,15 +328,6 @@ Kinds include:
 - `wait`
 - `contribute`
 - `finalize`
-
-Initial context uses the same delivery protocol as deltas. The shipped
-`turn_begin` stages only the exact page frozen into its grant;
-`turn_checkpoint` promotes the contiguous session cursor in one transaction.
-For bounded backlogs, `has_more` pages carry deltas only and grant observe-only
-recovery turns; the final page carries the context packet. Every step uses the persisted
-grant and expected state. A caller cannot jump beyond the task head, skip or
-reorder pages, or use a partial page for an ordinary turn. A future standalone
-`delivery_ack` will reuse these semantics.
 
 Other directives are satisfied only by their dedicated atomic operations—for
 example, claim, resolve, handoff, checkpoint, contribute, or finalize.
@@ -453,8 +354,7 @@ An `ActionGrant` is single-use and bound to the request fingerprint. The
 authorization transaction rechecks work revision/run state, grant expiry, project-policy
 epoch, work-admission epoch, optional portable writer epoch/validation
 deadline, the purpose-specific authority basis,
-session/run status, the
-session-specific blocking watermark, and outstanding checkpoint obligations.
+session/run status, and outstanding checkpoint obligations.
 It denies an action when relevant state changed after the turn began.
 
 Effect classes are deliberately small and host-neutral:
@@ -541,7 +441,7 @@ Where prevention is impossible, the assurance claim is detection, not control.
 creates an `in_flight` record immediately before the host invokes the
 capability. In that same transaction it rechecks the complete authorization
 basis: parent turn and grant state/expiry, project-policy and work-admission
-epochs, session blocking watermark, work/run/participant phase, mediated
+epochs, work/run/participant phase, mediated
 capability-map revision, request fingerprint, and every authority reference.
 For filesystem effects it also compares the execution-bound
 `ResolutionBinding` digest and requires the host
@@ -745,8 +645,7 @@ epochs invalidate grants without conflating scope:
   retracted, or contested; participant access changing; or work/run/report state
   changing.
 
-Every turn grant records `basis_feed_positions[]`, the independent
-`basis_delivery_position`, and both epochs.
+Every turn grant records both epochs.
 Ordinary peer notes advance the root-work feed but do not revoke an
 already-running local action. A
 project-policy or work-admission epoch change invalidates affected grants
@@ -754,35 +653,15 @@ immediately. `action_authorize` always rechecks both, so a newly arrived hard
 constraint cannot be bypassed by a long-lived turn grant. Work-claim
 ownership changes are fenced independently.
 
-The packet fingerprint reproduces delivered content, dense named feed positions order
-changes, the project-policy epoch invalidates global rules, the work-admission
-epoch invalidates work/run rules and lifecycle, the claim fence invalidates
-stale responsibility. None substitutes for another.
+Dense named feed positions order changes, the project-policy epoch invalidates
+global rules, the work-admission epoch invalidates work/run rules and
+lifecycle, the claim fence invalidates stale responsibility. None substitutes
+for another.
 
-Every work/run event stores intrinsic type plus optional audience and normalized
-resource selectors. A named, versioned built-in classifier derives effective
-admission impact separately for each session and records a monotonic
-session-specific `blocking_watermark`:
-
-| Impact | Examples | Effect |
-| --- | --- | --- |
-| `blocking` | Applicable pinned change/contradiction, claim recovery, completion pending, addressed handoff | Must be injected or reconciled before the affected ordinary turn/action |
-| `advisory` | Peer decision or finding relevant to the session's resource intent | Bundled into the next turn when budget permits; omission is visible and may cross a configured threshold |
-| `informational` | Unrelated progress and routine lifecycle facts | Delivered opportunistically; never blocks by count alone |
-
-Staleness is based on behavioral relevance, not arithmetic cursor lag. Engram
-guarantees only host-asserted delivery. A host-reported context compaction
-invalidates packet delivery state and requires the pinned tier to be injected
-again, even when the event cursor did not change.
-
-`turn_begin` and `action_authorize` both re-evaluate the classifier and refuse
-when the session's blocking watermark is newer than the grant basis and not
-satisfied by the begun delivery. Thus a mid-turn addressed handoff or resource
-recovery can stop a later action without globally revoking unrelated sessions.
-Advisory omissions accumulate bounded count/age/bytes. Crossing the configured
-threshold creates a `delta_backlog` obligation that blocks the **next**
-ordinary turn until delivery; it does not revoke an in-flight action unless a
-matching resource event is independently classified blocking.
+Turn grants deliver no peer changes, so no per-session blocking watermark
+holds a turn. Agents read peer changes through `next`. The planned impact
+classifier (`blocking`, `advisory`, `informational`) and its `delta_backlog`
+obligation are not built.
 
 ## Durable control records
 
@@ -804,12 +683,12 @@ The minimum records are:
   degraded-envelope rules and portable writer-validation maximum age. Machine
   policy is never inferred from documentation prose.
 - `ParticipantRecord` and `SessionProgress`: asserted actor and role, expected
-  contribution, join/leave state, durable phase, staged/tentative/checkpointed
-  delivery positions, checkpointed source-feed progress vector, blocking
-  watermark, outstanding delivery, current claims, and last checkpoint.
-- `ContextDelivery` and `DeliveryAcknowledgement`: the exact page bounds,
-  named source ranges, per-session delivery position, `has_more`, digest,
-  token, and CAS advancement described above.
+  contribution, join/leave state, durable phase, current claims, and last
+  checkpoint. The shipped `control_sessions` table still has
+  `confirmed_cursor`, `tentative_cursor` and `blocking_watermark` columns. They
+  are unused: only a bind writes them, as zero or null, so a row written
+  earlier keeps its last values until it is rebound. They are retained only so the schema stays unchanged
+  until the next planned migration drops them; no decision reads them.
 - `WorkClaim`: work/run holder, assignment reference, expiry, revision,
   monotonic claim fence, and transfer/recovery lifecycle.
 - `HandoffOffer`: exact work-claim handoff, recipient, expiry, and transfer lifecycle.
@@ -948,7 +827,6 @@ stricter but cannot weaken non-overridable cells:
 | Decision service unreachable or deadline exceeded | Open | Closed | `degraded_open` only inside a cached envelope | Closed | Closed |
 | Store corruption or unknown safety schema | Diagnostic-only | Closed | Closed | Closed | Closed |
 | Portable writer epoch unknown/stale/expired | Open | Closed | Closed | Closed | Closed |
-| Unsafe pinned packet (budget overflow) | Recovery-only | Recovery capture only | Closed | Closed | Closed |
 | Stale work-claim fence | Open | As the work contract permits | Refuse the bound turn | Refuse | Closed |
 | Unknown prior action outcome | Open | Unrelated capture only | Unrelated work only | Closed when related | Closed when related |
 | User/host denial or missing authority | As host permits | Closed for denied capability | Closed for denied capability | Closed | Closed |
@@ -980,18 +858,18 @@ append-only, crash-durable, owner-restricted where the OS supports it, and
 protected to the same declared level as other host control state; if those
 conditions cannot be met, degradation is unavailable. Communication remains
 closed rather than inventing a second offline message ledger; after recovery,
-a scoped recovery turn may capture any durable semantic finding through the
+an ordinary turn may capture any durable semantic finding through the
 ordinary typed-memory path.
 
-On recovery the session returns to `sync_required`, uploads debt idempotently,
-replays deltas, verifies current policy and claims, fingerprints touched
+On recovery the session returns to `ready`, uploads debt idempotently,
+verifies current policy and claims, fingerprints touched
 resources, and records `accepted | conflict | operator_required` reconciliation
 for each entry. Shared/external/lifecycle actions remain unavailable until all
 debt is terminal.
 
 Recovery capabilities remain available where disclosure permits: inspect the
-refusal, load context, read deltas, acknowledge delivery, resolve a
-contradiction, reconcile an unknown action, wait,
+refusal, read work changes through `next`, resolve a contradiction, reconcile
+an unknown action, wait,
 contribute, and request an attributed human exception. A refusal distinguishes
 `defer` (contention with retry/wake conditions) from `deny` (authority or
 safety prohibition), so the host does not turn normal contention into an
@@ -1007,8 +885,8 @@ pass.
 
 ## Crash, restart, and replay
 
-- Host or Engram restart invalidates unexpired in-memory delivery assumptions;
-  the durable session resumes at `sync_required`.
+- Host or Engram restart invalidates unbegun grants; the durable session
+  resumes at `ready`, and a begun turn stays open until the host reports it.
 - Turn, delivery, action, and checkpoint requests use independent
   idempotency keys bound to canonical intent fingerprints and, for begin and
   checkpoint, the exact grant id.
@@ -1089,9 +967,8 @@ A conforming host adapter must:
 1. declare its mediated capability set and control assurance honestly;
 2. bind a unique durable host session and selected local work run before
    delivering task prompts;
-3. call `turn_evaluate` and inject all blocking directives before each turn;
-4. prevent ordinary prompts while the session is not `ready`, while allowing
-   only a matching recovery prompt under its scoped grant;
+3. call `turn_evaluate` and surface any blocking directive before each turn;
+4. prevent prompts while the session is not `ready`;
 5. in action-gated mode, intercept every declared material capability and
    require and begin a matching single-use action grant;
 6. report action outcomes even when the model turn later fails;
@@ -1099,7 +976,7 @@ A conforming host adapter must:
 8. checkpoint before context compaction and reconcile or exit before ending a
    session;
 9. treat Engram notifications only as doorbells and fetch state by cursor;
-10. resume after restart through `sync_required`, never from cached permission;
+10. resume after restart through a fresh bind, never from cached permission;
 11. surface refusal codes and recovery actions to the human and agent.
 
 Hooks are sufficient for `turn_gated` control. `action_gated` control requires
@@ -1145,9 +1022,11 @@ surface uses the stable spellings defined by `ControlRefusalCode`:
 `turn_purpose_mismatch`, `lifecycle_hold`, `participant_not_ready`,
 `action_outcome_unknown`, `missing_authority`, `grant_expired`,
 `grant_not_begun`, `grant_scope_mismatch`, `stale_fence`, `resource_remapped`,
-`session_exited`, and `lease_required`. The `lease_required` code is retained
-only for replay of historical saved refusals; current evaluation never produces
-it. The current persisted alpha cannot yet emit
+`session_exited`, and `lease_required`. The `lease_required`,
+`recovery_required`, `delta_required`, `turn_purpose_mismatch`,
+`context_required`, `delivery_invalid` and `pinned_budget_exceeded` codes are
+retained only for replay of historical saved refusals; current evaluation never
+produces them. The current persisted alpha cannot yet emit
 `action_outcome_unknown` or `missing_authority`: action-outcome tracking and
 organizational authority mediation are not wired, and effects requiring them
 remain outside the supported policy envelope.
@@ -1157,18 +1036,17 @@ remain outside the supported policy envelope.
 The pure evaluator remains; the obsolete persisted shadow-observation log is removed.
 The current host-control alpha additionally ships a built-in safe policy,
 durable control sessions, optional exact `WorkRun` claim bindings,
-transactional context snapshots, persisted turn decisions and short-lived
-grants, begin-time freshness/delivery rechecks, canonical execution
-observations, and canonical checkpoint events. A separate `engram control` JSON-lines process
+persisted turn decisions and short-lived grants that carry no delivery page,
+begin-time rechecks, canonical execution observations, and canonical checkpoint
+events. A separate `engram control` JSON-lines process
 implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`, and
 `turn_checkpoint`; none is
 exposed through agent-facing MCP. Exact retry
 evidence survives process restart, while unbegun authority is invalidated and
-the session returns to `sync_required`. Each open rotates an internal
+the session returns to `ready`. Each open rotates an internal
 connection generation so a still-running predecessor is fenced. Begun grants
-remain checkpoint-required and are discoverable through session status;
-observe-only partial recovery grants include their exact safely redeliverable
-payload.
+stay open until reported and are discoverable through session status; no
+payload is redelivered.
 `doctor` verifies canonical intent/result bytes plus their redundant row
 bindings.
 
@@ -1179,18 +1057,11 @@ are project-bound and normalized; an empty list is valid and no list reserves
 exclusive ownership. The persisted host path policy refuses unresolved or
 inconsistent filesystem identity rather than guessing path semantics.
 The host remains responsible for path resolution and actual mutation authority.
-Every task event is treated as
-begin-blocking until the impact classifier ships, which is conservative but
-can over-deliver. A re-bind to the task a session already has keeps its
-confirmed position and moves past the run of its own events that directly
-follows it, so it does not re-read the history of its own turns, which would
-outgrow one delivery page once the session has taken more turns than a page
-carries. The first event another writer appended stops that run, and it and
-everything after it are delivered. `action_gated` declarations and shared/external/lifecycle
-turn effects are rejected. The decision service becomes a real `turn_gated`
-deployment only when an embedding host makes it mandatory and injects the
-attached context before prompt dispatch; this repository does not yet ship
-that runtime hook.
+Each turn report appends one event to the bound task's change index, a
+write-only audit trail that no grant delivers and no decision reads.
+`action_gated` declarations and shared/external/lifecycle turn effects are
+rejected. The decision service becomes a real `turn_gated` deployment only when
+an embedding host makes it mandatory, as TermAl does.
 `engram doctor` verifies the immutable active-policy chain and reports its
 hash, epoch, required assurance, built-in effect envelope, live turn counts,
 and explicitly discloses that action gating, organizational authority
@@ -1202,12 +1073,6 @@ per-host-tool mediation map is still outstanding.
 Broader enforcement must remain disabled until Phase 1 makes these invariants
 true in the core, not only in wrappers:
 
-- context contents, packet fingerprint, stamped task
-  head, persisted work focus, project/root/run work-feed heads, the
-  project-visible context revision, and the owner-private context revision
-  come from one consistent SQLite read transaction; begin rechecks that basis
-  and rejects drift before execution without putting private object identities
-  on a shared feed;
 - every behaviorally relevant task/memory/lifecycle transition advances
   the authoritative feed and its head projection, and delta requests cannot
   jump or acknowledge undelivered ranges;
@@ -1235,6 +1100,11 @@ transitions, or finalization.
 | 3 — scoped coordination | Fenced work claims, handoff/recovery, and explicit source ownership | Work scheduling, not resource locking |
 | 4 — widen refusal and action gate | Enable the broader replay-proven closed turn-refusal set, degraded-envelope matrix, and action authorization/begin/outcome mediator | `action_gated` for the declared capability set |
 | 5 — controlled completion/finalization | Stable completion cut, recovery grants, contribution barrier; any future optional report freeze and receipted publication must be proved end to end | End-to-end controlled local loop |
+
+Phase 2's pre-turn packet/delta delivery, compaction re-delivery and recovery
+grants, and phase 5's recovery grants, are dropped: turn grants carry no
+delivery page, and there are no recovery turns (see the
+[turn gate assessment](turn-gate-assessment.md)).
 
 The current implementation deliberately process-tests a narrow
 `observe`/`communicate` lifecycle plus turn-gated local-mutation turns while

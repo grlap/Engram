@@ -32,19 +32,6 @@ fn actor(session: &str) -> ActorContext {
     }
 }
 
-fn project_context_revision(store: &SqliteStore, project: &ProjectId) -> i64 {
-    store
-        .connection
-        .query_row(
-            "SELECT COALESCE((
-                 SELECT revision FROM project_context_revisions WHERE project_id = ?1
-             ), 0)",
-            [project.0.as_str()],
-            |row| row.get(0),
-        )
-        .expect("project context revision")
-}
-
 fn project_memory_request(
     project: &str,
     session: &str,
@@ -113,14 +100,6 @@ fn assert_project_memory_advertisement_contract(
         store.connection.total_changes(),
         changes_before_stable_signal,
         "an unchanged signal must not acquire the SQLite write lock"
-    );
-    SqliteStore::bump_project_context_revision_on(&store.connection, project)
-        .expect("unrelated project-context change");
-    assert!(
-        !store
-            .project_memory_advertisement(project, session, None)
-            .expect("project-memory signal ignores unrelated context changes")
-            .1
     );
     let omitted = store
         .project_memory_advertisement_candidate(project, session, Some("fresh-context"))
@@ -241,17 +220,11 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
         "Alpha beta\nfull project observation",
         1_700_000_000_000,
     );
-    let context_revision_before_remember = project_context_revision(&store, &project);
     let created = store
         .remember_project_memory(&request, &DevelopmentNoopRedactor)
         .expect("remember");
     assert_eq!(created.key, "alpha-beta-full-project-observation");
     assert!(!created.duplicate);
-    assert_eq!(
-        project_context_revision(&store, &project),
-        context_revision_before_remember,
-        "dedicated project memories do not invalidate generic context packets"
-    );
     assert!(
         store
             .remember_project_memory(&request, &DevelopmentNoopRedactor)
@@ -305,22 +278,7 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
             .expect("generic search excludes dedicated project memories")
             .is_empty()
     );
-    let context = store
-        .build_context(
-            &project,
-            None,
-            &session,
-            "project-memory-agent",
-            Utc.timestamp_millis_opt(1_700_000_001_500).unwrap(),
-        )
-        .expect("project memories stay out of generic context packets");
-    assert!(context.pinned.is_empty());
-    assert!(context.index.is_empty());
-    assert!(context.omissions.is_empty());
-    assert!(context.omission_summaries.is_empty());
-
     assert_project_memory_advertisement_contract(&mut store, &project, &session);
-    let context_revision_before_forget = project_context_revision(&store, &project);
 
     assert!(matches!(
         store.forget_project_memory(
@@ -400,11 +358,6 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
             .expect("forgotten project memory is excluded from dedicated listing")
             .memories
             .is_empty()
-    );
-    assert_eq!(
-        project_context_revision(&store, &project),
-        context_revision_before_forget,
-        "forget does not invalidate generic context packets"
     );
     assert_eq!(
         store

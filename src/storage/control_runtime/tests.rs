@@ -54,7 +54,7 @@ fn unresolved_path_identity_refuses_evaluation_without_writes_but_admits_logical
     let intent = TurnIntent {
         idempotency_key: "unresolved-path-evaluate".into(),
         intent_fingerprint: ObjectId::from_canonical_bytes(b"unresolved-path-evaluate"),
-        purpose: TurnPurpose::Ordinary,
+        purpose: Some(TurnPurpose::Ordinary),
         requested_effects: vec![EffectClass::MutateLocal],
         resource_intents: vec![ResourceSubject::Path {
             project_id: ProjectId("project-a".into()),
@@ -154,7 +154,7 @@ fn fresh_evaluate_replaces_issued_grant_but_preserves_begun_checkpoint() {
                 &TurnIntent {
                     idempotency_key: key.into(),
                     intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
-                    purpose: TurnPurpose::Ordinary,
+                    purpose: Some(TurnPurpose::Ordinary),
                     requested_effects: vec![EffectClass::Observe],
                     resource_intents: Vec::new(),
                 },
@@ -377,7 +377,7 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open(&database).unwrap();
     let binding = bind_control(&mut store, now);
-    assert_eq!(binding.status.phase, SessionPhase::SyncRequired);
+    assert_eq!(binding.status.phase, SessionPhase::Ready);
     assert_eq!(
         store
             .bind_control_session(
@@ -421,7 +421,7 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
     let first_intent = TurnIntent {
         idempotency_key: "host-turn-a".into(),
         intent_fingerprint: ObjectId::from_canonical_bytes(b"host-turn-a"),
-        purpose: crate::domain::TurnPurpose::Ordinary,
+        purpose: Some(crate::domain::TurnPurpose::Ordinary),
         requested_effects: vec![EffectClass::Observe],
         resource_intents: Vec::new(),
     };
@@ -436,43 +436,27 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
         )
         .unwrap();
     let crate::domain::ControlTurnDecision::Grant { grant: first_grant } = first else {
-        panic!("initial synchronized turn must grant");
+        panic!("the first turn after bind must grant");
     };
-    assert!(first_grant.delivery.is_some());
-    let mut private_request = note_request(
-        binding.status.task_id,
-        "private-writer",
-        "Constraint: a new owner-private rule invalidates an unbegun turn.",
-        "host-private-drift-a",
-        NoteVisibility::Private,
-    );
-    private_request.actor.actor_id = "control-session".into();
-    let private_receipt = store
-        .capture_note(&private_request, &DevelopmentNoopRedactor)
-        .unwrap();
-    assert_eq!(private_receipt.cursor, None);
-    let stale_begin = store
+    assert!(first_grant.delivery.is_none());
+    // A host that still echoes a token from a delivery page is refused; the
+    // grant stays issued until a fresh evaluation or connection retires it.
+    let echoed_begin = store
         .begin_control_turn(
             &ProjectId("project-a".into()),
             &SessionId("control-session".into()),
             &binding.connection_token,
             &binding.routing_token,
             &first_grant.grant_id,
-            &[first_grant
-                .delivery
-                .as_ref()
-                .unwrap()
-                .page
-                .delivery_token
-                .clone()],
-            "begin-stale-a",
+            &["token-from-an-old-page".into()],
+            "begin-echoed-a",
             now + TimeDelta::seconds(2),
         )
         .unwrap();
     assert!(matches!(
-        stale_begin,
+        echoed_begin,
         ControlTurnBeginDecision::Refuse {
-            code: crate::domain::ControlRefusalCode::DeltaRequired
+            code: crate::domain::ControlRefusalCode::GrantScopeMismatch
         }
     ));
     drop(store);
@@ -487,7 +471,7 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
     let second_intent = TurnIntent {
         idempotency_key: "host-turn-b".into(),
         intent_fingerprint: ObjectId::from_canonical_bytes(b"host-turn-b"),
-        purpose: crate::domain::TurnPurpose::Ordinary,
+        purpose: Some(crate::domain::TurnPurpose::Ordinary),
         requested_effects: vec![EffectClass::Observe, EffectClass::Communicate],
         resource_intents: Vec::new(),
     };
@@ -502,9 +486,9 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
         )
         .unwrap();
     let crate::domain::ControlTurnDecision::Grant { grant } = second else {
-        panic!("fresh synchronized turn must grant");
+        panic!("the first turn after a restart must grant");
     };
-    let delivery_token = grant.delivery.as_ref().unwrap().page.delivery_token.clone();
+    assert!(grant.delivery.is_none());
     let begun = reopened
         .begin_control_turn(
             &ProjectId("project-a".into()),
@@ -512,7 +496,7 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
             &reopened_connection,
             &binding.routing_token,
             &grant.grant_id,
-            &[delivery_token],
+            &[],
             "begin-host-b",
             now + TimeDelta::seconds(4),
         )
@@ -538,7 +522,7 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
     let denied_intent = TurnIntent {
         idempotency_key: "host-turn-mutation".into(),
         intent_fingerprint: ObjectId::from_canonical_bytes(b"host-turn-mutation"),
-        purpose: crate::domain::TurnPurpose::Ordinary,
+        purpose: Some(crate::domain::TurnPurpose::Ordinary),
         requested_effects: vec![EffectClass::MutateLocal],
         resource_intents: Vec::new(),
     };
@@ -562,68 +546,26 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
     ));
 }
 
-// A host re-binds a live session every few hours, and every turn adds one
-// checkpoint to the task feed. Replaying the session's own history after
-// more turns than one delivery page carries would refuse every ordinary turn
-// with recovery_required; skipping another writer's event would hide it.
+// Grants carry no delivery page, so neither a first bind, a re-bind over a
+// new connection after a restart, nor task events written in between stand
+// between a session and its first ordinary turn.
 #[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "one fixture keeps the own-history, peer-event and other-task re-binds in order"
-)]
-fn rebinding_skips_only_the_sessions_own_task_events() {
+fn bind_and_a_rebind_after_restart_are_ready_for_an_ordinary_turn_at_once() {
+    let directory = crate::test_support::temp_home().expect("tempdir");
+    let database = directory.path().join("engram.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let mut store = SqliteStore::open_in_memory().expect("store");
     let effects = [EffectClass::Observe, EffectClass::Communicate];
+    let mut store = SqliteStore::open(&database).expect("store");
     let first = bind_control(&mut store, now);
-    let turns = crate::storage::MAX_CONTROL_DELIVERY_EVENTS + 2;
-    for turn in 0..turns {
-        complete_control_turn(
-            &mut store,
-            &first,
-            &format!("history-{turn}"),
-            vec![EffectClass::Observe],
-            Vec::new(),
-            now + TimeDelta::seconds(turn + 1),
-        );
-    }
-
-    // A session the old reset left at zero must not replay its own history.
-    store
-        .connection
-        .execute(
-            "UPDATE control_sessions SET confirmed_cursor = 0
-             WHERE session_id = 'control-session'",
-            [],
-        )
-        .expect("leave the session where the old reset put it");
-    let later = now + TimeDelta::seconds(turns + 10);
-    let rebound = bind_control_for(
+    assert_eq!(first.status.phase, SessionPhase::Ready);
+    complete_control_turn(
         &mut store,
-        "control-session",
-        "bind-control-b",
-        &effects,
-        later,
-    );
-    assert_eq!(rebound.status.task_id, first.status.task_id);
-    assert_eq!(rebound.status.phase, SessionPhase::SyncRequired);
-    assert_eq!(
-        rebound.status.confirmed_cursor,
-        rebound.status.blocking_watermark
-    );
-    let grant = complete_control_turn(
-        &mut store,
-        &rebound,
-        "after-rebind",
+        &first,
+        "after-bind",
         vec![EffectClass::Observe],
         Vec::new(),
-        later + TimeDelta::seconds(1),
+        now + TimeDelta::seconds(1),
     );
-    let page = &grant.delivery.as_ref().expect("context delivery").page;
-    assert_eq!(page.from_cursor, page.head_cursor);
-    assert!(!page.has_more);
-
-    // Another writer's event appended before a re-bind is still delivered.
     store
         .bind_test_control_scope(
             &ProjectId("project-a".into()),
@@ -631,120 +573,102 @@ fn rebinding_skips_only_the_sessions_own_task_events() {
             "Peer control scope",
             &SessionId("peer-session".into()),
             &actor("peer-session"),
-            later + TimeDelta::seconds(2),
+            now + TimeDelta::seconds(2),
         )
         .expect("a peer joins the same task");
     store
         .capture_note(
             &note_request(
-                rebound.status.task_id,
+                first.status.task_id,
                 "peer-session",
-                "Decision: peer update before rebind.",
-                "peer-before-rebind",
+                "Decision: a peer writes before the restart.",
+                "peer-before-restart",
                 NoteVisibility::Shared,
             ),
             &DevelopmentNoopRedactor,
         )
-        .expect("peer change remains undelivered");
-    let before = store
+        .expect("peer task event");
+    drop(store);
+
+    let mut reopened = SqliteStore::open(&database).expect("reopen store");
+    let rebound = bind_control_for(
+        &mut reopened,
+        "control-session",
+        "bind-control-after-restart",
+        &effects,
+        now + TimeDelta::seconds(3),
+    );
+    assert_eq!(rebound.status.task_id, first.status.task_id);
+    assert_eq!(rebound.status.phase, SessionPhase::Ready);
+    let grant = complete_control_turn(
+        &mut reopened,
+        &rebound,
+        "after-restart",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        now + TimeDelta::seconds(4),
+    );
+    assert!(grant.basis.delivery_cursor.is_none());
+    let report = reopened.verify_all().expect("verify after rebind");
+    assert!(report.is_healthy(), "{report:?}");
+}
+
+// Expiry of an issued grant returns the session to ready: there is no
+// delivery to catch up on before the next turn.
+#[test]
+fn an_issued_grant_that_expires_while_turn_open_resets_the_session_to_ready() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let binding = bind_control(&mut store, now);
+    let decision = store
+        .evaluate_control_turn(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            &TurnIntent {
+                idempotency_key: "expires-unbegun".into(),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"expires-unbegun"),
+                purpose: None,
+                requested_effects: vec![EffectClass::Observe],
+                resource_intents: Vec::new(),
+            },
+            now + TimeDelta::seconds(1),
+        )
+        .expect("evaluate");
+    let ControlTurnDecision::Grant { grant } = decision else {
+        panic!("the turn must grant");
+    };
+    let open = store
         .control_status(
             &ProjectId("project-a".into()),
-            &rebound.status.session_id,
-            &rebound.connection_token,
-            &rebound.routing_token,
-            later + TimeDelta::seconds(2),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            now + TimeDelta::seconds(2),
         )
-        .expect("status before the re-bind")
-        .confirmed_cursor;
-    // The session's own event after the peer's must not carry the skip past it.
-    store
-        .capture_note(
-            &note_request(
-                rebound.status.task_id,
-                "control-session",
-                "Decision: an own event after a peer event is still delivered.",
-                "own-after-peer",
-                NoteVisibility::Shared,
-            ),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("own note after the peer join");
-    let rebound = bind_control_for(
-        &mut store,
-        "control-session",
-        "bind-control-c",
-        &effects,
-        later + TimeDelta::seconds(3),
-    );
-    assert_eq!(rebound.status.confirmed_cursor, before);
-    let grant = complete_control_turn(
-        &mut store,
-        &rebound,
-        "after-peer",
-        vec![EffectClass::Observe],
-        Vec::new(),
-        later + TimeDelta::seconds(4),
-    );
-    let delivery = grant.delivery.as_ref().expect("peer delivery");
-    assert_eq!(delivery.page.from_cursor, before);
-    let kinds = delivery
-        .delta
-        .changes
-        .iter()
-        .map(|change| change.object_kind.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(kinds, ["memory_assertion_event", "memory_assertion_event"]);
+        .expect("status while issued");
+    assert_eq!(open.phase, SessionPhase::TurnOpen);
+    assert_eq!(open.open_grant_state, Some(TurnGrantState::Issued));
 
-    // A bind to another task still delivers that task's feed from the start.
-    let other_scope_peer = bind_control_for_task(
-        &mut store,
-        "other-scope-peer",
-        "bind-other-scope-peer",
-        "dummy:CONTROL-HOST-2",
-        &effects,
-        later + TimeDelta::seconds(8),
-    );
-    let peer_note = store
-        .capture_note(
-            &note_request(
-                other_scope_peer.status.task_id,
-                "other-scope-peer",
-                "Decision: peer note in the other scope before binding.",
-                "other-scope-note",
-                NoteVisibility::Shared,
-            ),
-            &DevelopmentNoopRedactor,
+    let expired = store
+        .control_status(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            grant.basis.expires_at + TimeDelta::seconds(1),
         )
-        .expect("seed the new scope's feed");
-    assert!(peer_note.cursor.expect("shared note cursor") > ChangeCursor::default());
-    let elsewhere = bind_control_for_task(
+        .expect("status after expiry");
+    assert_eq!(expired.phase, SessionPhase::Ready);
+    assert_eq!(expired.open_grant_id, None);
+    complete_control_turn(
         &mut store,
-        "control-session",
-        "bind-control-d",
-        "dummy:CONTROL-HOST-2",
-        &effects,
-        later + TimeDelta::seconds(10),
-    );
-    assert_ne!(elsewhere.status.task_id, first.status.task_id);
-    assert_eq!(elsewhere.status.task_id, other_scope_peer.status.task_id);
-    let grant = complete_control_turn(
-        &mut store,
-        &elsewhere,
-        "other-task",
+        &binding,
+        "after-expiry",
         vec![EffectClass::Observe],
         Vec::new(),
-        later + TimeDelta::seconds(11),
-    );
-    let delivery = grant.delivery.as_ref().expect("feed delivery");
-    let page = &delivery.page;
-    assert_eq!(page.from_cursor, ChangeCursor::default());
-    assert!(page.to_cursor > page.from_cursor);
-    assert!(
-        delivery
-            .delta
-            .changes
-            .iter()
-            .any(|change| change.object_id == peer_note.assertion)
+        grant.basis.expires_at + TimeDelta::seconds(2),
     );
 }
 
@@ -770,7 +694,7 @@ fn task_only_control_checkpoint_cannot_append_execution_observations() {
             &TurnIntent {
                 idempotency_key: "task-only-observation-turn".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"task-only observation turn"),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
             },
@@ -946,7 +870,7 @@ fn mutation_resource_intents_are_normalized_and_cross_project_intents_have_no_ef
             &TurnIntent {
                 idempotency_key: "cross-project-mutation".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"cross-project-mutation"),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![subject("project-b", "src", "main.rs")],
             },
@@ -995,7 +919,7 @@ fn turn_gated_observe_only_session_refuses_undeclared_mutation() {
             &TurnIntent {
                 idempotency_key: "observe-only-mutation-turn".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"observe-only-mutation-turn"),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![subject],
             },
@@ -1123,4 +1047,213 @@ fn direct_binding_admits_session_byte_boundary_and_refuses_oversized_actor() {
             before
         );
     }
+}
+
+// Records written while grants carried a delivery page keep that shape: a
+// grant basis with its purpose, cursors, watermark and inline page, the grant's
+// delivery, the begin receipt's tentative cursor and the checkpoint event's
+// delivered cursor. The fixture turns freshly stored records into that shape,
+// field by field, and requires that they still decode and audit clean.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture reshapes every stored control record the page used to touch"
+)]
+fn records_stored_while_grants_carried_a_page_still_decode_and_audit_clean() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let binding = bind_control(&mut store, now);
+    let grant = complete_control_turn(
+        &mut store,
+        &binding,
+        "pre-change-shape",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        now + TimeDelta::seconds(1),
+    );
+    let task_id = grant.basis.task_id;
+
+    // A context-only page issued at an empty task feed, built as the earlier
+    // build built it, with its content digest derived by the same code.
+    let context = ContextPacket {
+        header: ContextPacketHeader {
+            project_id: ProjectId("project-a".into()),
+            task_id: Some(task_id),
+            work_id: None,
+            work_feed_heads: Vec::new(),
+            project_context_revision: 1,
+            private_context_revision: 1,
+            packet_hash: ObjectId::mint(),
+            event_cursor: ChangeCursor(0),
+            proposed_count: 0,
+            stale_count: 0,
+        },
+        pinned: Vec::new(),
+        index: Vec::new(),
+        omissions: Vec::new(),
+        omission_summaries: Vec::new(),
+    };
+    let delta = TaskDelta {
+        task_id,
+        after: ChangeCursor(0),
+        cursor: ChangeCursor(0),
+        changes: Vec::new(),
+    };
+    let page = DeliveryPage {
+        from_cursor: ChangeCursor(0),
+        to_cursor: ChangeCursor(0),
+        head_cursor: ChangeCursor(0),
+        has_more: false,
+        content_digest: crate::control::delivery_content_digest(Some(&context), &delta)
+            .expect("content digest"),
+        delivery_token: "pre-change-delivery-token".into(),
+    };
+    let delivery = ControlDelivery {
+        page: page.clone(),
+        context: Some(context),
+        delta,
+    };
+    let with_page = |mut grant: serde_json::Value| {
+        let basis = grant["basis"].as_object_mut().expect("grant basis");
+        basis.insert("purpose".into(), serde_json::json!("ordinary"));
+        basis.insert("confirmed_cursor".into(), serde_json::json!(0));
+        basis.insert("delivery_cursor".into(), serde_json::json!(0));
+        basis.insert("blocking_watermark".into(), serde_json::json!(0));
+        basis.insert(
+            "inline_delivery".into(),
+            serde_json::to_value(&page).expect("page"),
+        );
+        grant.as_object_mut().expect("grant").insert(
+            "delivery".into(),
+            serde_json::to_value(&delivery).expect("delivery"),
+        );
+        grant
+    };
+    let rewrite = |store: &SqliteStore, sql: &str, bytes: Vec<u8>, key: &str| {
+        assert_eq!(
+            store
+                .connection
+                .execute(sql, params![bytes, key])
+                .expect("reshape a stored record"),
+            1
+        );
+    };
+    let canonical = |value: &serde_json::Value| {
+        crate::canonical::canonical_bytes(value).expect("canonical bytes")
+    };
+
+    let stored_grant: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT grant_json FROM control_turn_grants WHERE grant_id = ?1",
+            [&grant.grant_id],
+            |row| row.get(0),
+        )
+        .expect("stored grant");
+    let old_grant = with_page(serde_json::from_slice(&stored_grant).expect("grant JSON"));
+    rewrite(
+        &store,
+        "UPDATE control_turn_grants SET grant_json = ?1 WHERE grant_id = ?2",
+        canonical(&old_grant),
+        &grant.grant_id,
+    );
+
+    let stored_decision: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT decision_json FROM control_turn_results WHERE idempotency_key = ?1",
+            [&grant.request_key],
+            |row| row.get(0),
+        )
+        .expect("stored decision");
+    let mut old_decision: serde_json::Value =
+        serde_json::from_slice(&stored_decision).expect("decision JSON");
+    old_decision["grant"] = with_page(old_decision["grant"].take());
+    rewrite(
+        &store,
+        "UPDATE control_turn_results SET decision_json = ?1 WHERE idempotency_key = ?2",
+        canonical(&old_decision),
+        &grant.request_key,
+    );
+
+    let stored_begin: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT result_json FROM control_operation_results
+             WHERE operation = 'turn_begin' AND idempotency_key = 'begin-pre-change-shape'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("stored begin receipt");
+    let mut old_begin: serde_json::Value =
+        serde_json::from_slice(&stored_begin).expect("begin JSON");
+    old_begin["receipt"]
+        .as_object_mut()
+        .expect("begin receipt")
+        .insert("tentative_cursor".into(), serde_json::json!(0));
+    rewrite(
+        &store,
+        "UPDATE control_operation_results SET result_json = ?1
+         WHERE operation = 'turn_begin' AND idempotency_key = ?2",
+        canonical(&old_begin),
+        "begin-pre-change-shape",
+    );
+
+    let (event_id, stored_event): (String, Vec<u8>) = store
+        .connection
+        .query_row(
+            "SELECT object_id, canonical_json FROM objects
+             WHERE object_kind = 'turn_checkpoint_event'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("stored checkpoint event");
+    let mut old_event: serde_json::Value =
+        serde_json::from_slice(&stored_event).expect("event JSON");
+    assert!(old_event.get("delivered_cursor").is_none());
+    old_event
+        .as_object_mut()
+        .expect("checkpoint event")
+        .insert("delivered_cursor".into(), serde_json::json!(0));
+    rewrite(
+        &store,
+        "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+        canonical(&old_event),
+        &event_id,
+    );
+
+    let decoded: IssuedTurnGrant =
+        SqliteStore::decode_json_projection(&canonical(&old_grant)).expect("old grant decodes");
+    assert_eq!(decoded.basis.purpose, Some(TurnPurpose::Ordinary));
+    assert_eq!(decoded.basis.delivery_cursor, Some(ChangeCursor(0)));
+    assert_eq!(decoded.basis.blocking_watermark, Some(ChangeCursor(0)));
+    assert_eq!(decoded.basis.inline_delivery, Some(page));
+    assert!(decoded.delivery.is_some());
+    assert!(crate::control::delivery_matches_grant(&decoded));
+    let decision: ControlTurnDecision =
+        SqliteStore::decode_json_projection(&canonical(&old_decision))
+            .expect("old decision decodes");
+    assert!(matches!(decision, ControlTurnDecision::Grant { .. }));
+    let begin: ControlTurnBeginDecision =
+        SqliteStore::decode_json_projection(&canonical(&old_begin)).expect("old begin decodes");
+    assert!(matches!(
+        begin,
+        ControlTurnBeginDecision::Begin { receipt }
+            if receipt.tentative_cursor == Some(ChangeCursor(0))
+    ));
+    let event: TurnCheckpointEvent =
+        SqliteStore::decode_json_projection(&canonical(&old_event)).expect("old event decodes");
+    assert_eq!(event.delivered_cursor, Some(ChangeCursor(0)));
+
+    let report = store.verify_all().expect("audit the reshaped store");
+    assert!(report.is_healthy(), "{report:?}");
+    // The session keeps working on top of the earlier records.
+    complete_control_turn(
+        &mut store,
+        &binding,
+        "after-pre-change-shape",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        now + TimeDelta::seconds(2),
+    );
 }

@@ -1065,7 +1065,7 @@ fn control_diagnostics_counts_issued_grants_at_the_injected_instant() {
             &TurnIntent {
                 idempotency_key: "diagnostic-issued".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"diagnostic-issued"),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
             },
@@ -1372,7 +1372,7 @@ fn policy_epoch_change_expires_issued_grants_but_not_begun_checkpoints() {
                     &TurnIntent {
                         idempotency_key: key.into(),
                         intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
-                        purpose: TurnPurpose::Ordinary,
+                        purpose: Some(TurnPurpose::Ordinary),
                         requested_effects: vec![EffectClass::Observe],
                         resource_intents: Vec::new(),
                     },
@@ -1557,7 +1557,7 @@ fn action_gated_requirement_refuses_every_v1_host_fail_closed() {
                     intent_fingerprint: ObjectId::from_canonical_bytes(
                         b"turn-under-action-policy",
                     ),
-                    purpose: TurnPurpose::Ordinary,
+                    purpose: Some(TurnPurpose::Ordinary),
                     requested_effects: vec![EffectClass::Observe],
                     resource_intents: Vec::new(),
                 },
@@ -1667,7 +1667,7 @@ fn advisory_effect_floor_refuses_mutation() {
                 intent_fingerprint: ObjectId::from_canonical_bytes(
                     b"mutate-under-advisory-assurance",
                 ),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![subject.clone()],
             },
@@ -1715,7 +1715,7 @@ fn advisory_effect_floor_refuses_mutation() {
                     intent_fingerprint: ObjectId::from_canonical_bytes(
                         b"mutate-under-turn-gated-assurance",
                     ),
-                    purpose: TurnPurpose::Ordinary,
+                    purpose: Some(TurnPurpose::Ordinary),
                     requested_effects: vec![EffectClass::MutateLocal],
                     resource_intents: vec![subject],
                 },

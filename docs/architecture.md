@@ -110,21 +110,20 @@ checkout path. A tracked `.engram-project` file is resolved below
 transactions, and atomic compare-and-swap operations support multiple
 processes. Project, root-work, and run-execution feeds each allocate a dense
 typed `FeedPosition` with their event transaction. The work protocol stages
-and acknowledges an exact dense project-feed cursor. Host-control delivery
-uses the control-scope-local cursor and stamps focused project/root/run heads into the
-context packet; begin rejects a changed focus or head vector. A separate
-dense `DeliveryPosition` with exact multi-feed source ranges remains the
-broader target. Global SQLite row ids are not cursors.
+and acknowledges an exact dense project-feed cursor; that is the only context
+delivery. Host-control grants carry no delivery page, and the control scope's
+change index is a write-only audit trail. Global SQLite row ids are not
+cursors.
 The shipped host-control alpha adds mutable session and turn-grant projections
-plus canonical checkpoint events. The target extends these with delivery,
-action and report-barrier projections. Live grants and
-high-volume decisions use bounded noncanonical operational storage; only
-behaviorally relevant transitions enter the peer delta feed.
+plus canonical checkpoint events. The target extends these with action and
+report-barrier projections. Live grants and high-volume decisions use bounded
+noncanonical operational storage.
 
 Host session binding resolves one shared control anchor by project and external
 reference, without creating a compatibility task. `control_sessions` owns the
-binding and optional exact work-claim basis; `control_changes` owns ordered
-peer events. Existing `task_id` fields retain their scope identity for stored
+binding and optional exact work-claim basis; `control_changes` is the scope's
+write-only audit index of turn reports, which no grant delivers and no
+decision reads. Existing `task_id` fields retain their scope identity for stored
 history and memory applicability, not a second task lifecycle.
 
 ### Portable and synchronized backends
@@ -155,13 +154,12 @@ values never enter any shared history—vault references only.
 1. **Open and select work**: a user/model creates local work or explicitly
    imports a source snapshot. Engram derives a bounded ready view; the model
    or host focuses one item without requiring an external reference.
-2. **Bind and synchronize**: the host binds a durable session to the work run, receives an
-   exact context delivery, acknowledges contiguous packet/delta pages, and
-   reaches the relevant root/run feed heads under the current control policy.
+2. **Bind**: the host binds a durable session to the work run under the
+   current control policy. The agent reads its work context and peer changes
+   through `next`.
 3. **Admit**: before each prompt, the host asks the deterministic evaluator
-   for a short-lived turn grant that normally inlines required context and
-   peer deltas. A defer carries retry/wake conditions; a refusal carries typed
-   recovery directives.
+   for a short-lived turn grant, which carries no context. A refusal carries a
+   typed directive.
    Before a declared material capability, an action-gated host obtains and
    begins a single-use action grant, then records the outcome. See
    [behavioral control plane](features/behavioral-control-plane.md).
@@ -169,11 +167,10 @@ values never enter any shared history—vault references only.
    (asserted runtime context + assurance level), and either activates or
    lands as `proposed` per the write-policy matrix. See
    [write policy & review](features/write-policy-and-review.md).
-5. **Read**: session start (or explicit request) builds a **context packet**
-   — pinned constraints (complete or fail-closed), a titles-only index, an
-   omission manifest, a packet fingerprint for reproducibility, and named dense feed
-   positions. Later turns request only peer deltas after those positions. See
-   [context packets](features/context-packets.md).
+5. **Read**: `next --peek` gives the agent its work context, and `next`
+   stages and confirms peer changes. The designed **context packet** — pinned
+   constraints (complete or fail-closed), a titles-only index and an omission
+   manifest — is not built; see [context packets](features/context-packets.md).
 6. **Coordinate and complete**: each session claims its own child `WorkRun`,
    appends decisions/evidence
    to root-shared memory, checkpoints, and explicitly hands off. A

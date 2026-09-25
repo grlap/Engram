@@ -1,12 +1,14 @@
 use super::{
-    CanonicalObject, ChangeCursor, Connection, DateTime, DeltaItem, DeserializeOwned,
-    MAX_CONTROL_DELIVERY_EVENTS, MAX_CONTROL_DELIVERY_OBJECT_BYTES, MAX_TASK_CHANGE_OBJECT_BYTES,
-    MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow, ObjectId, OptionalExtension, Scope,
-    SqliteStore, StoreError, TaskDelta, TaskId, Transaction, lookup_project_memory_on, params,
-    parse_enum,
+    CanonicalObject, ChangeCursor, Connection, DateTime, DeserializeOwned,
+    MAX_TASK_CHANGE_OBJECT_BYTES, MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow,
+    ObjectId, OptionalExtension, Scope, SqliteStore, StoreError, TaskId, Transaction,
+    lookup_project_memory_on, params, parse_enum,
 };
 #[cfg(test)]
-use super::{MemoryAssertionEvent, Serialize, SessionId, TaskChange, TransactionBehavior};
+use super::{
+    DeltaItem, MemoryAssertionEvent, Serialize, SessionId, TaskChange, TaskDelta,
+    TransactionBehavior,
+};
 
 #[cfg(test)]
 mod tests;
@@ -165,133 +167,6 @@ impl SqliteStore {
             })
         })
         .collect()
-    }
-
-    pub(super) fn task_delta_range_on(
-        transaction: &Transaction<'_>,
-        task_id: TaskId,
-        after: ChangeCursor,
-        through: ChangeCursor,
-    ) -> Result<TaskDelta, StoreError> {
-        if through < after {
-            return Err(StoreError::InvalidTaskProjection(
-                "task delivery range ends before its confirmed cursor".into(),
-            ));
-        }
-        let raw = {
-            let mut statement = transaction.prepare(
-                "SELECT task_cursor, object_kind, object_id
-                 FROM control_changes
-                 WHERE task_id = ?1 AND task_cursor > ?2 AND task_cursor <= ?3
-                 ORDER BY task_cursor",
-            )?;
-            statement
-                .query_map(params![task_id.0.to_string(), after.0, through.0], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                    ))
-                })?
-                .collect::<Result<Vec<_>, _>>()?
-        };
-        let mut changes = Vec::with_capacity(raw.len());
-        for (cursor, object_kind, stored_hash) in raw {
-            let object_id = ObjectId::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
-            let stored: Option<(String, Vec<u8>)> = transaction
-                .query_row(
-                    "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
-                    [object_id.as_str()],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?;
-            let Some((stored_kind, bytes)) = stored else {
-                return Err(StoreError::InvalidTaskProjection(format!(
-                    "task change {cursor} references a missing object"
-                )));
-            };
-            if stored_kind != object_kind {
-                return Err(StoreError::ObjectKindMismatch {
-                    hash: object_id,
-                    stored: stored_kind,
-                    requested: object_kind,
-                });
-            }
-            let object = CanonicalObject::stored(&object_id, bytes)?.decode()?;
-            changes.push(DeltaItem {
-                cursor: ChangeCursor(cursor),
-                object_kind: stored_kind,
-                object_id,
-                memory: None,
-                object,
-            });
-        }
-        let distance = through.0.checked_sub(after.0).ok_or_else(|| {
-            StoreError::InvalidTaskProjection("task delivery range overflowed".into())
-        })?;
-        let expected = usize::try_from(distance).map_err(|_| {
-            StoreError::InvalidTaskProjection("task delivery range overflowed".into())
-        })?;
-        let dense = changes.iter().enumerate().all(|(offset, change)| {
-            i64::try_from(offset).is_ok_and(|offset| {
-                after
-                    .0
-                    .checked_add(offset)
-                    .and_then(|cursor| cursor.checked_add(1))
-                    .is_some_and(|cursor| change.cursor.0 == cursor)
-            })
-        });
-        if changes.len() != expected || !dense {
-            return Err(StoreError::InvalidTaskProjection(format!(
-                "task delivery interval ({}, {}] is not dense",
-                after.0, through.0
-            )));
-        }
-        Ok(TaskDelta {
-            task_id,
-            after,
-            cursor: through,
-            changes,
-        })
-    }
-
-    pub(super) fn task_delivery_page_end(
-        transaction: &Transaction<'_>,
-        task_id: TaskId,
-        after: ChangeCursor,
-    ) -> Result<ChangeCursor, StoreError> {
-        let mut statement = transaction.prepare(
-            "SELECT change.task_cursor, LENGTH(object.canonical_json)
-             FROM control_changes change
-             JOIN objects object ON object.object_id = change.object_id
-             WHERE change.task_id = ?1 AND change.task_cursor > ?2
-             ORDER BY change.task_cursor
-             LIMIT ?3",
-        )?;
-        let rows = statement
-            .query_map(
-                params![task_id.0.to_string(), after.0, MAX_CONTROL_DELIVERY_EVENTS],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-            )?
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut total_bytes = 0_i64;
-        let mut through = None;
-        for (cursor, bytes) in rows {
-            let Some(next_total) = total_bytes.checked_add(bytes) else {
-                break;
-            };
-            if next_total > MAX_CONTROL_DELIVERY_OBJECT_BYTES {
-                break;
-            }
-            total_bytes = next_total;
-            through = Some(ChangeCursor(cursor));
-        }
-        through.ok_or_else(|| {
-            StoreError::InvalidTaskProjection(
-                "one task event exceeds the bounded host-delivery object budget".into(),
-            )
-        })
     }
 
     /// Loads and verifies an object before deserializing it.

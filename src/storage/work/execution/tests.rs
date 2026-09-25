@@ -96,7 +96,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             &TurnIntent {
                 idempotency_key: "synchronize-control-work".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"sync bound work"),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
             },
@@ -157,7 +157,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             &TurnIntent {
                 idempotency_key: "evaluate-control-work".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"mutate bound work"),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![subject],
             },
@@ -878,7 +878,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             &TurnIntent {
                 idempotency_key: "evaluate-expired-control-work".into(),
                 intent_fingerprint: ObjectId::from_canonical_bytes(b"expired bound work"),
-                purpose: TurnPurpose::Ordinary,
+                purpose: Some(TurnPurpose::Ordinary),
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
             },

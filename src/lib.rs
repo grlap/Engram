@@ -51,7 +51,7 @@ pub use domain::{
     MAX_SESSION_ID_BYTES, MemoryId, MemoryKind, MemoryRecord, MemoryStatus, MemorySummary,
     MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION,
     ObligationRuleDefinition, ObligationRuleSet, ObservedActionBeginDecision, ObservedTurnDecision,
-    OfferWorkHandoffRequest, OpenWorkObligation, PLAIN_READY_REASON, PacketSafety, ParentTurnState,
+    OfferWorkHandoffRequest, OpenWorkObligation, PLAIN_READY_REASON, ParentTurnState,
     ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList, ProjectMemoryListRow,
     ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch,
     ProjectPolicyOperation, ReadyWork, RecordWorkEvidenceRequest, RejectRequiredChildReceipt,

@@ -1,17 +1,14 @@
 use super::{
-    ActorContext, CanonicalObject, ChangeCursor, Connection, ContextAssembly, ContextItem,
-    ContextOmission, ContextOmissionSummary, ContextPacket, ContextPacketHeader,
-    ContextPacketPayload, DateTime, Delivery, INDEX_CONTEXT_BUDGET, MAX_EXACT_CONTEXT_OMISSIONS,
-    MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
-    MemoryId, MemoryProjectionMode, MemoryStatus, MemorySummary, MemoryVersion,
-    NoteIntentFingerprint, NoteIntentKey, NoteReceipt, NoteRequest, NoteVisibility,
-    OptionalExtension, PINNED_CONTEXT_BUDGET, PreparedNote, Redactor, SCHEMA_VERSION, Scope,
-    Sensitivity, SessionId, SqliteStore, StoreError, TaskId, Transaction, TransactionBehavior, Utc,
-    activation_policy, classify_note, params, work,
+    ActorContext, CanonicalObject, Connection, MAX_PROJECT_MEMORY_QUERY_BYTES,
+    MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent, MemoryId, MemoryProjectionMode,
+    MemorySummary, MemoryVersion, NoteIntentFingerprint, NoteIntentKey, NoteReceipt, NoteRequest,
+    NoteVisibility, OptionalExtension, PreparedNote, Redactor, SCHEMA_VERSION, Scope, Sensitivity,
+    SessionId, SqliteStore, StoreError, TransactionBehavior, activation_policy, classify_note,
+    params, work,
 };
 
 #[cfg(test)]
-use super::{HashMap, MemoryRecord, ObjectId};
+use super::{HashMap, MemoryRecord, ObjectId, TaskId};
 
 #[cfg(test)]
 mod tests;
@@ -94,7 +91,6 @@ impl SqliteStore {
             &prepared.assertion,
             MemoryProjectionMode::Live,
         )?;
-        Self::bump_memory_context_revision_on(&transaction, &prepared.version.scope)?;
         let work_positions = if prepared.version.scope.is_work_shared() {
             let work_id = prepared.version.scope.work_id().ok_or_else(|| {
                 StoreError::InvalidMemoryProjection("shared work scope has no work id".into())
@@ -346,9 +342,10 @@ impl SqliteStore {
         Ok(memories)
     }
 
+    #[cfg(test)]
     #[allow(
         clippy::too_many_arguments,
-        reason = "context assembly supplies independently verified task and work-root anchors"
+        reason = "task-memory search binds project, task, work focus, work root and actor"
     )]
     fn search_memories_on(
         connection: &Connection,
@@ -532,212 +529,8 @@ impl SqliteStore {
         }
         Self::rebuild_object_fts_from_heads_on(&transaction)?;
         Self::rebuild_project_memory_state_on(&transaction)?;
-        Self::bump_rebuilt_context_revisions_on(&transaction)?;
         transaction.commit()?;
         Ok(activated)
-    }
-
-    pub(super) fn context_revisions_on(
-        connection: &Connection,
-        project_id: &crate::domain::ProjectId,
-        agent_id: &str,
-    ) -> Result<(i64, i64), StoreError> {
-        connection
-            .query_row(
-                "SELECT
-                     COALESCE((
-                         SELECT revision FROM project_context_revisions
-                         WHERE project_id = ?1
-                     ), 0),
-                     COALESCE((
-                         SELECT revision FROM agent_context_revisions
-                         WHERE project_id = ?1 AND agent_id = ?2
-                     ), 0)",
-                params![project_id.0, agent_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .map_err(StoreError::from)
-    }
-
-    pub(super) fn bump_project_context_revision_on(
-        connection: &Connection,
-        project_id: &crate::domain::ProjectId,
-    ) -> Result<(), StoreError> {
-        connection.execute(
-            "INSERT INTO project_context_revisions (project_id, revision)
-             VALUES (?1, 1)
-             ON CONFLICT(project_id) DO UPDATE
-             SET revision = revision + 1",
-            [project_id.0.as_str()],
-        )?;
-        Ok(())
-    }
-
-    fn bump_agent_context_revision_on(
-        connection: &Connection,
-        project_id: &crate::domain::ProjectId,
-        agent_id: &str,
-    ) -> Result<(), StoreError> {
-        connection.execute(
-            "INSERT INTO agent_context_revisions (project_id, agent_id, revision)
-             VALUES (?1, ?2, 1)
-             ON CONFLICT(project_id, agent_id) DO UPDATE
-             SET revision = revision + 1",
-            params![project_id.0, agent_id],
-        )?;
-        Ok(())
-    }
-
-    fn bump_memory_context_revision_on(
-        connection: &Connection,
-        scope: &Scope,
-    ) -> Result<(), StoreError> {
-        match scope {
-            Scope::Project { project } => {
-                Self::bump_project_context_revision_on(connection, project)
-            }
-            Scope::Agent { project, agent, .. } => {
-                Self::bump_agent_context_revision_on(connection, project, agent)
-            }
-            Scope::Task { .. } | Scope::Work { .. } => Ok(()),
-        }
-    }
-
-    #[cfg(test)]
-    fn bump_rebuilt_context_revisions_on(connection: &Connection) -> Result<(), StoreError> {
-        let affected_projects = {
-            let mut statement = connection.prepare(
-                "SELECT project_id FROM project_context_revisions
-                 UNION SELECT DISTINCT project_id FROM memory_heads",
-            )?;
-            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
-            rows.collect::<Result<Vec<_>, _>>()?
-        };
-        for project_id in affected_projects {
-            Self::bump_project_context_revision_on(
-                connection,
-                &crate::domain::ProjectId(project_id),
-            )?;
-        }
-        let affected_agents = {
-            let mut statement = connection.prepare(
-                "SELECT project_id, agent_id FROM agent_context_revisions
-                 UNION SELECT DISTINCT project_id, agent_id FROM memory_heads
-                 WHERE scope_kind = 'agent' AND agent_id IS NOT NULL",
-            )?;
-            let rows = statement.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?;
-            rows.collect::<Result<Vec<_>, _>>()?
-        };
-        for (project_id, agent_id) in affected_agents {
-            Self::bump_agent_context_revision_on(
-                connection,
-                &crate::domain::ProjectId(project_id),
-                &agent_id,
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Builds and stores one budgeted, explainable context packet.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when the session has not joined the requested
-    /// task, pinned memory exceeds its fail-closed budget, or persistence
-    /// fails.
-    #[cfg(test)]
-    pub fn build_context(
-        &mut self,
-        project_id: &crate::domain::ProjectId,
-        task_id: Option<TaskId>,
-        session_id: &SessionId,
-        agent_id: &str,
-        now: DateTime<Utc>,
-    ) -> Result<ContextPacket, StoreError> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let packet =
-            Self::build_context_on(&transaction, project_id, task_id, session_id, agent_id, now)?;
-        transaction.commit()?;
-        Ok(packet)
-    }
-
-    pub(super) fn build_context_on(
-        transaction: &Transaction<'_>,
-        project_id: &crate::domain::ProjectId,
-        task_id: Option<TaskId>,
-        session_id: &SessionId,
-        agent_id: &str,
-        now: DateTime<Utc>,
-    ) -> Result<ContextPacket, StoreError> {
-        if let Some(task_id) = task_id {
-            Self::ensure_active_task_on(transaction, project_id, task_id, session_id)?;
-        }
-        let (work_id, work_root_id) =
-            Self::focused_work_for_session_on(transaction, project_id, session_id)?;
-        let work_feed_heads = work_id.map_or_else(
-            || Ok(Vec::new()),
-            |work_id| work::context_work_feed_heads(transaction, work_id),
-        )?;
-        let (project_context_revision, private_context_revision) =
-            Self::context_revisions_on(transaction, project_id, agent_id)?;
-        let memories = Self::search_memories_on(
-            transaction,
-            project_id,
-            task_id,
-            work_id,
-            work_root_id,
-            agent_id,
-            None,
-            None,
-        )?;
-        let assembly = assemble_context(memories)?;
-
-        let event_cursor = task_id.map_or(Ok(ChangeCursor::default()), |task_id| {
-            Self::latest_task_cursor(transaction, task_id)
-        })?;
-        let payload = ContextPacketPayload {
-            schema_version: SCHEMA_VERSION,
-            project_id: project_id.clone(),
-            task_id,
-            work_id,
-            work_feed_heads: work_feed_heads.clone(),
-            project_context_revision,
-            private_context_revision,
-            agent_id: agent_id.into(),
-            event_cursor,
-            pinned: assembly.pinned.clone(),
-            index: assembly.index.clone(),
-            omissions: assembly.omissions.clone(),
-            omission_summaries: assembly.omission_summaries.clone(),
-            proposed_count: assembly.proposed_count,
-            stale_count: assembly.stale_count,
-            created_at: now,
-        };
-        let object = CanonicalObject::mint(&payload)?;
-        Self::insert_object(transaction, "context_packet", &object)?;
-        let packet = ContextPacket {
-            header: ContextPacketHeader {
-                project_id: project_id.clone(),
-                task_id,
-                work_id,
-                work_feed_heads,
-                project_context_revision,
-                private_context_revision,
-                packet_hash: object.key().clone(),
-                event_cursor,
-                proposed_count: assembly.proposed_count,
-                stale_count: assembly.stale_count,
-            },
-            pinned: assembly.pinned,
-            index: assembly.index,
-            omissions: assembly.omissions,
-            omission_summaries: assembly.omission_summaries,
-        };
-        Ok(packet)
     }
 
     pub(super) fn focused_work_for_session_on(
@@ -1028,135 +821,6 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
     })
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "context selection, omission accounting, and both byte budgets stay contiguous so the fail-closed packet contract is auditable"
-)]
-fn assemble_context(mut memories: Vec<MemorySummary>) -> Result<ContextAssembly, StoreError> {
-    memories.sort_by(|left, right| {
-        left.title
-            .cmp(&right.title)
-            .then_with(|| left.version.cmp(&right.version))
-    });
-    let proposed_count = usize_to_u32(
-        memories
-            .iter()
-            .filter(|memory| memory.status == MemoryStatus::Proposed)
-            .count(),
-    );
-    let stale_count = usize_to_u32(
-        memories
-            .iter()
-            .filter(|memory| memory.status == MemoryStatus::Stale)
-            .count(),
-    );
-    let mut assembly = ContextAssembly {
-        pinned: Vec::new(),
-        index: Vec::new(),
-        omissions: Vec::new(),
-        omission_summaries: Vec::new(),
-        proposed_count,
-        stale_count,
-    };
-    let mut pinned_bytes = 0;
-    let mut index_bytes = 0;
-    for memory in memories {
-        if !matches!(memory.status, MemoryStatus::Active | MemoryStatus::Stale) {
-            continue;
-        }
-        if memory.sensitivity == Sensitivity::Restricted {
-            record_context_omission(
-                &mut assembly,
-                ContextOmission {
-                    memory_id: memory.memory_id,
-                    version: memory.version,
-                    reason: "restricted sensitivity requires an unavailable authorization".into(),
-                },
-            );
-            continue;
-        }
-        let reason = retrieval_reason(&memory.scope, memory.delivery);
-        match memory.delivery {
-            Delivery::Pinned => {
-                pinned_bytes += memory.title.len() + memory.body.len() + 2;
-                assembly.pinned.push(ContextItem {
-                    memory_id: memory.memory_id,
-                    version: memory.version,
-                    kind: memory.kind,
-                    authority: memory.authority,
-                    status: memory.status,
-                    title: memory.title,
-                    body: Some(memory.body),
-                    retrieval_reason: reason,
-                });
-            }
-            Delivery::Index if index_bytes + memory.title.len() + 96 <= INDEX_CONTEXT_BUDGET => {
-                index_bytes += memory.title.len() + 96;
-                assembly.index.push(ContextItem {
-                    memory_id: memory.memory_id,
-                    version: memory.version,
-                    kind: memory.kind,
-                    authority: memory.authority,
-                    status: memory.status,
-                    title: memory.title,
-                    body: None,
-                    retrieval_reason: reason,
-                });
-            }
-            Delivery::Index => record_context_omission(
-                &mut assembly,
-                ContextOmission {
-                    memory_id: memory.memory_id,
-                    version: memory.version,
-                    reason: "index byte budget exhausted".into(),
-                },
-            ),
-            Delivery::OnDemand => record_context_omission(
-                &mut assembly,
-                ContextOmission {
-                    memory_id: memory.memory_id,
-                    version: memory.version,
-                    reason: "on-demand memory is available through search".into(),
-                },
-            ),
-            Delivery::Suppressed => record_context_omission(
-                &mut assembly,
-                ContextOmission {
-                    memory_id: memory.memory_id,
-                    version: memory.version,
-                    reason: "delivery is suppressed by attributed policy".into(),
-                },
-            ),
-        }
-    }
-    if pinned_bytes > PINNED_CONTEXT_BUDGET {
-        return Err(StoreError::PinnedBudgetExceeded {
-            required: pinned_bytes,
-            budget: PINNED_CONTEXT_BUDGET,
-        });
-    }
-    Ok(assembly)
-}
-
-fn record_context_omission(assembly: &mut ContextAssembly, omission: ContextOmission) {
-    if assembly.omissions.len() < MAX_EXACT_CONTEXT_OMISSIONS {
-        assembly.omissions.push(omission);
-        return;
-    }
-    if let Some(summary) = assembly
-        .omission_summaries
-        .iter_mut()
-        .find(|summary| summary.reason == omission.reason)
-    {
-        summary.count = summary.count.saturating_add(1);
-    } else {
-        assembly.omission_summaries.push(ContextOmissionSummary {
-            reason: omission.reason,
-            count: 1,
-        });
-    }
-}
-
 pub(super) fn fts_query(query: &str) -> String {
     let tokens: Vec<_> = fts_tokens(query)
         .map(|token| format!("\"{token}\"*"))
@@ -1199,24 +863,4 @@ pub(super) fn normalize_project_memory_query(
         )));
     }
     Ok(Some(query))
-}
-
-fn usize_to_u32(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
-}
-
-fn retrieval_reason(scope: &Scope, delivery: Delivery) -> String {
-    let scope_reason = match scope {
-        Scope::Project { .. } => "applicable project memory",
-        Scope::Task { .. } => "shared memory for the active task",
-        Scope::Work { .. } => "shared memory for focused local work",
-        Scope::Agent { .. } => "private memory owned by this agent",
-    };
-    let delivery_reason = match delivery {
-        Delivery::Pinned => "pinned by classification policy",
-        Delivery::Index => "selected for the bounded title index",
-        Delivery::OnDemand => "available on demand",
-        Delivery::Suppressed => "suppressed",
-    };
-    format!("{scope_reason}; {delivery_reason}")
 }

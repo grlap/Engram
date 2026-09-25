@@ -1,23 +1,22 @@
 use super::{
-    ActorContext, CONTROL_SCHEMA_VERSION, CanonicalObject, ChangeCursor, Connection,
-    ControlAssurance, ControlDelivery, ControlEpochs, ControlHealth, ControlSessionBindFingerprint,
-    ControlSessionBinding, ControlSessionStatus, ControlTurnBeginDecision,
-    ControlTurnBeginFingerprint, ControlTurnCheckpointDecision, ControlTurnCheckpointFingerprint,
-    ControlTurnDecision, ControlWorkBinding, DateTime, DeliveryPage, DevelopmentNoopRedactor,
-    EffectClass, EnvironmentComponents, EnvironmentEvidence, EnvironmentEvidenceInput,
-    EnvironmentEvidenceReference, ExecutionObservation, ExecutionObservationInput,
-    ExecutionObservationReference, ExecutionOutcome, HashMap, HashSet, IssuedTurnGrant,
-    MAX_CONTROL_DELIVERY_BYTES, MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT,
+    ActorContext, CONTROL_SCHEMA_VERSION, CanonicalObject, Connection, ControlAssurance,
+    ControlEpochs, ControlHealth, ControlSessionBindFingerprint, ControlSessionBinding,
+    ControlSessionStatus, ControlTurnBeginDecision, ControlTurnBeginFingerprint,
+    ControlTurnCheckpointDecision, ControlTurnCheckpointFingerprint, ControlTurnDecision,
+    ControlWorkBinding, DateTime, DevelopmentNoopRedactor, EffectClass, EnvironmentComponents,
+    EnvironmentEvidence, EnvironmentEvidenceInput, EnvironmentEvidenceReference,
+    ExecutionObservation, ExecutionObservationInput, ExecutionObservationReference,
+    ExecutionOutcome, HashMap, HashSet, IssuedTurnGrant, MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT,
     MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT, MAX_TYPED_EVIDENCE_REF_BYTES,
     MAX_TYPED_EVIDENCE_REFS, MAX_TYPED_EVIDENCE_SUMMARY_BYTES,
-    MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT, ObjectId, OptionalExtension, PacketSafety,
-    ParticipantMembership, Redactor, SCHEMA_VERSION, SessionId, SessionPhase, SqliteStore,
-    StoreError, TaskAdmissionEpoch, TaskId, Transaction, TransactionBehavior, TurnBeginDecision,
-    TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
-    TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
-    TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent,
-    TurnIntentFingerprint, TurnNextIntent, Utc, VerificationEvidence, VerificationEvidenceInput,
-    VerificationKind, VerificationResult, effective_mediated_effects, enum_name, params, work,
+    MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT, ObjectId, OptionalExtension, ParticipantMembership,
+    Redactor, SCHEMA_VERSION, SessionId, SessionPhase, SqliteStore, StoreError, TaskAdmissionEpoch,
+    TaskId, Transaction, TransactionBehavior, TurnBeginDecision, TurnBeginReceipt,
+    TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent, TurnCheckpointReceipt,
+    TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantState,
+    TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent, TurnIntentFingerprint,
+    TurnNextIntent, Utc, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
+    VerificationResult, effective_mediated_effects, enum_name, params, work,
 };
 
 #[cfg(test)]
@@ -246,27 +245,17 @@ impl SqliteStore {
         )?;
         let previous_revision = existing.as_ref().map_or(0, |session| session.revision);
         let routing_token = uuid::Uuid::now_v7().to_string();
-        let head = Self::latest_task_cursor(&transaction, task_id)?;
-        // A host re-binds a live session every few hours, and every turn adds
-        // one checkpoint to the task feed. Replaying the whole feed would
-        // outgrow one delivery page after enough turns and refuse every
-        // ordinary turn. A re-bind to the same task therefore keeps its
-        // confirmed position and skips only contiguous events this session
-        // wrote itself, stopping before the first peer event for delivery.
-        let confirmed_cursor = match &existing {
-            Some(session) if session.task_id == task_id => Self::own_task_events_end(
-                &transaction,
-                task_id,
-                session.confirmed_cursor,
-                session_id,
-            )?,
-            _ => ChangeCursor::default(),
-        };
         transaction.execute(
             "UPDATE control_turn_grants SET state = 'expired'
              WHERE session_id = ?1 AND state = 'issued'",
             [session_id.0.as_str()],
         )?;
+        // `confirmed_cursor`, `tentative_cursor` and `blocking_watermark` are
+        // retained columns: grants no longer carry a delivery page, so no
+        // decision reads them. Only this bind writes them, as zero or null, so
+        // a row written earlier keeps its last values until it is rebound.
+        // They stay only so the schema is unchanged until the next planned
+        // migration drops them.
         transaction.execute(
             "INSERT INTO control_sessions (
                  session_id, project_id, task_id, root_execution_id, work_id,
@@ -277,8 +266,8 @@ impl SqliteStore {
                  blocking_watermark, capability_map_revision, revision, updated_at_ms
              ) VALUES (
                  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                 ?14, 'sync_required', ?15, ?16, ?23, NULL, ?17, ?18, ?19, ?20,
-                 ?21, ?22
+                 ?14, 'ready', ?15, ?16, 0, NULL, ?17, ?18, 0, ?19,
+                 ?20, ?21
              )
              ON CONFLICT(session_id) DO UPDATE SET
                  project_id = excluded.project_id,
@@ -324,11 +313,9 @@ impl SqliteStore {
                 serde_json::to_string(mediated_effects)?,
                 policy.epoch.0,
                 admission_epoch,
-                head.0,
                 capability_map_revision,
                 previous_revision + 1,
                 now.timestamp_millis(),
-                confirmed_cursor.0,
             ],
         )?;
         let stored = Self::load_control_session_on(&transaction, session_id)?
@@ -343,35 +330,6 @@ impl SqliteStore {
         };
         transaction.commit()?;
         Ok(binding)
-    }
-
-    /// Returns the end of the unbroken run of task events after `after`
-    /// that `session_id` wrote itself, stopping before the first event
-    /// another writer appended.
-    fn own_task_events_end(
-        transaction: &Transaction<'_>,
-        task_id: TaskId,
-        after: ChangeCursor,
-        session_id: &SessionId,
-    ) -> Result<ChangeCursor, StoreError> {
-        let mut statement = transaction.prepare(
-            "SELECT change.task_cursor,
-                    json_extract(object.canonical_json, '$.actor.session_id')
-             FROM control_changes change
-             JOIN objects object ON object.object_id = change.object_id
-             WHERE change.task_id = ?1 AND change.task_cursor > ?2
-             ORDER BY change.task_cursor",
-        )?;
-        let mut rows = statement.query(params![task_id.0.to_string(), after.0])?;
-        let mut end = after;
-        while let Some(row) = rows.next()? {
-            let author: Option<String> = row.get(1)?;
-            if author.as_deref() != Some(session_id.0.as_str()) {
-                break;
-            }
-            end = ChangeCursor(row.get(0)?);
-        }
-        Ok(end)
     }
 
     /// Returns current host-control state after validating the routing token.
@@ -445,7 +403,7 @@ impl SqliteStore {
         {
             transaction.execute(
                 "UPDATE control_sessions SET
-                     phase = 'sync_required', tentative_cursor = NULL,
+                     phase = 'ready',
                      revision = revision + 1, updated_at_ms = ?2
                  WHERE session_id = ?1",
                 params![session_id.0, now.timestamp_millis()],
@@ -456,7 +414,8 @@ impl SqliteStore {
     }
 
     /// Evaluates and persists one host-enforced turn request from durable
-    /// policy, membership, lifecycle, and context state.
+    /// policy, membership, lifecycle, and work-binding state. The grant
+    /// carries no delivery page.
     ///
     /// The built-in alpha policy grants `observe`, `communicate`, and
     /// turn-gated `mutate_local`. Local mutation requires policy permission
@@ -550,71 +509,6 @@ impl SqliteStore {
             [session.task_id.0.to_string()],
             |row| row.get::<_, i64>(0),
         )?;
-        let head = Self::latest_task_cursor(&transaction, session.task_id)?;
-        let page_to = if membership && session.confirmed_cursor < head {
-            Some(Self::task_delivery_page_end(
-                &transaction,
-                session.task_id,
-                session.confirmed_cursor,
-            )?)
-        } else {
-            None
-        };
-        let has_more = page_to.is_some_and(|page_to| page_to < head);
-        let (mut packet_safety, context) = if membership && !has_more {
-            match Self::build_context_on(
-                &transaction,
-                project_id,
-                Some(session.task_id),
-                session_id,
-                &session.actor.actor_id,
-                now,
-            ) {
-                Ok(packet) => (PacketSafety::Safe, Some(packet)),
-                Err(StoreError::PinnedBudgetExceeded { .. }) => {
-                    (PacketSafety::PinnedBudgetExceeded, None)
-                }
-                Err(error) => return Err(error),
-            }
-        } else {
-            (PacketSafety::Safe, None)
-        };
-        let delivery_to = page_to.or_else(|| context.as_ref().map(|_| head));
-        let mut delivery = if let Some(page_to) = delivery_to
-            && (has_more || context.is_some())
-        {
-            let delta = Self::task_delta_range_on(
-                &transaction,
-                session.task_id,
-                session.confirmed_cursor,
-                page_to,
-            )?;
-            let content_digest = crate::control::delivery_content_digest(context.as_ref(), &delta)?;
-            let page = DeliveryPage {
-                from_cursor: session.confirmed_cursor,
-                to_cursor: page_to,
-                head_cursor: head,
-                has_more,
-                content_digest,
-                delivery_token: uuid::Uuid::now_v7().to_string(),
-            };
-            Some(ControlDelivery {
-                page,
-                context,
-                delta,
-            })
-        } else {
-            None
-        };
-        let delivery_too_large = delivery
-            .as_ref()
-            .map(crate::canonical::canonical_bytes)
-            .transpose()?
-            .is_some_and(|bytes| bytes.len() > MAX_CONTROL_DELIVERY_BYTES);
-        if delivery_too_large {
-            packet_safety = PacketSafety::DeliveryBudgetExceeded;
-            delivery = None;
-        }
         let work_binding_current = Self::control_work_binding_is_current(
             &transaction,
             project_id,
@@ -646,12 +540,6 @@ impl SqliteStore {
                 task_admission: TaskAdmissionEpoch(task_admission_epoch),
             },
             session_epochs: session.epochs,
-            confirmed_cursor: session.confirmed_cursor,
-            head_cursor: head,
-            pending_delivery: delivery.as_ref().map(|delivery| delivery.page.clone()),
-            packet_safety,
-            blocking_watermark: head,
-            acknowledged_blocking_watermark: session.confirmed_cursor,
             has_unknown_action_outcome: false,
             authority_satisfied: true,
             capability_map_revision: session.capability_map_revision,
@@ -667,7 +555,7 @@ impl SqliteStore {
                     grant_id: uuid::Uuid::now_v7().to_string(),
                     request_key: intent.idempotency_key.clone(),
                     basis: *basis,
-                    delivery,
+                    delivery: None,
                     issued_at: now,
                 };
                 let grant_json = crate::canonical::canonical_bytes(&grant)?;
@@ -688,10 +576,10 @@ impl SqliteStore {
                 )?;
                 transaction.execute(
                     "UPDATE control_sessions SET
-                         phase = 'turn_open', blocking_watermark = ?2,
-                         revision = revision + 1, updated_at_ms = ?3
+                         phase = 'turn_open',
+                         revision = revision + 1, updated_at_ms = ?2
                      WHERE session_id = ?1",
-                    params![session_id.0, head.0, now.timestamp_millis()],
+                    params![session_id.0, now.timestamp_millis()],
                 )?;
                 ControlTurnDecision::Grant {
                     grant: Box::new(grant),
@@ -831,7 +719,6 @@ impl SqliteStore {
             [session.task_id.0.to_string()],
             |row| row.get::<_, i64>(0),
         )?;
-        let head = Self::latest_task_cursor(&transaction, session.task_id)?;
         let anchor_exists = Self::control_anchor_exists(&transaction, project_id, session.task_id)?;
         let membership = Self::session_is_current_participant(
             &transaction,
@@ -839,30 +726,6 @@ impl SqliteStore {
             session.task_id,
             session_id,
         )?;
-        let context_current = if let Some(context) = grant
-            .grant
-            .delivery
-            .as_ref()
-            .and_then(|delivery| delivery.context.as_ref())
-        {
-            let (focused_work, _) =
-                Self::focused_work_for_session_on(&transaction, project_id, session_id)?;
-            let (project_context_revision, private_context_revision) =
-                Self::context_revisions_on(&transaction, project_id, &session.actor.actor_id)?;
-            if context.header.project_context_revision != project_context_revision
-                || context.header.private_context_revision != private_context_revision
-                || context.header.work_id != focused_work
-            {
-                false
-            } else if let Some(work_id) = focused_work {
-                work::context_work_feed_heads(&transaction, work_id)?
-                    == context.header.work_feed_heads
-            } else {
-                context.header.work_feed_heads.is_empty()
-            }
-        } else {
-            true
-        };
         let work_binding_current = Self::control_work_binding_is_current(
             &transaction,
             project_id,
@@ -888,8 +751,6 @@ impl SqliteStore {
                 project_policy: policy.epoch,
                 task_admission: TaskAdmissionEpoch(task_admission_epoch),
             },
-            current_head: head,
-            context_current,
             capability_map_revision: session.capability_map_revision,
             delivery_tokens: delivery_tokens.to_vec(),
             observed_at: now,
@@ -908,15 +769,10 @@ impl SqliteStore {
                 }
                 let revision = transaction.query_row(
                     "UPDATE control_sessions SET
-                         tentative_cursor = ?2, revision = revision + 1,
-                         updated_at_ms = ?3
+                         revision = revision + 1, updated_at_ms = ?2
                      WHERE session_id = ?1
                      RETURNING revision",
-                    params![
-                        session_id.0,
-                        grant.grant.basis.delivery_cursor.0,
-                        now.timestamp_millis(),
-                    ],
+                    params![session_id.0, now.timestamp_millis()],
                     |row| row.get::<_, i64>(0),
                 )?;
                 ControlTurnBeginDecision::Begin {
@@ -925,7 +781,7 @@ impl SqliteStore {
                         session_id: session_id.clone(),
                         task_id: session.task_id,
                         phase: SessionPhase::TurnOpen,
-                        tentative_cursor: grant.grant.basis.delivery_cursor,
+                        tentative_cursor: None,
                         session_revision: revision,
                         begun_at: now,
                     },
@@ -937,7 +793,6 @@ impl SqliteStore {
                     crate::domain::ControlRefusalCode::GrantExpired
                         | crate::domain::ControlRefusalCode::PolicyEpochChanged
                         | crate::domain::ControlRefusalCode::TaskAdmissionEpochChanged
-                        | crate::domain::ControlRefusalCode::DeltaRequired
                         | crate::domain::ControlRefusalCode::StaleFence
                 ) && matches!(grant.state, TurnGrantState::Issued)
                 {
@@ -946,22 +801,12 @@ impl SqliteStore {
                          WHERE grant_id = ?1 AND state = 'issued'",
                         [grant_id],
                     )?;
-                    let next_phase = if matches!(
-                        code,
-                        crate::domain::ControlRefusalCode::StaleFence
-                            | crate::domain::ControlRefusalCode::PolicyEpochChanged
-                    ) && session.confirmed_cursor == head
-                    {
-                        "ready"
-                    } else {
-                        "sync_required"
-                    };
                     transaction.execute(
                         "UPDATE control_sessions SET
-                             phase = ?2, tentative_cursor = NULL,
-                             revision = revision + 1, updated_at_ms = ?3
+                             phase = 'ready',
+                             revision = revision + 1, updated_at_ms = ?2
                          WHERE session_id = ?1",
-                        params![session_id.0, next_phase, now.timestamp_millis()],
+                        params![session_id.0, now.timestamp_millis()],
                     )?;
                     if matches!(code, crate::domain::ControlRefusalCode::PolicyEpochChanged) {
                         transaction.execute(
@@ -987,8 +832,8 @@ impl SqliteStore {
         Ok(decision)
     }
 
-    /// Checkpoints a begun turn, promotes its tentative delivery cursor, and
-    /// emits one immutable task event.
+    /// Checkpoints a begun turn, returns the session to `ready` (or `exited`),
+    /// and appends one immutable event to the task's audit index.
     ///
     /// # Errors
     ///
@@ -1324,24 +1169,16 @@ impl SqliteStore {
                 };
                 let event_object = CanonicalObject::mint(&event)?;
                 Self::insert_object(&transaction, "turn_checkpoint_event", &event_object)?;
-                let head_before_checkpoint =
-                    Self::latest_task_cursor(&transaction, session.task_id)?;
+                // The task's change index is a write-only audit trail: no
+                // grant delivers it any more, and no decision reads it.
                 let cursor = Self::insert_task_change(
                     &transaction,
                     session.task_id,
                     "turn_checkpoint_event",
                     &event_object,
                 )?;
-                let confirmed_cursor =
-                    if head_before_checkpoint == grant.grant.basis.delivery_cursor {
-                        cursor
-                    } else {
-                        grant.grant.basis.delivery_cursor
-                    };
                 let phase = if matches!(next_intent, TurnNextIntent::Exit) {
                     SessionPhase::Exited
-                } else if confirmed_cursor < cursor {
-                    SessionPhase::SyncRequired
                 } else {
                     SessionPhase::Ready
                 };
@@ -1358,18 +1195,11 @@ impl SqliteStore {
                 }
                 let revision = transaction.query_row(
                     "UPDATE control_sessions SET
-                         phase = ?2, confirmed_cursor = ?3,
-                         tentative_cursor = NULL, blocking_watermark = ?4,
-                         revision = revision + 1, updated_at_ms = ?5
+                         phase = ?2,
+                         revision = revision + 1, updated_at_ms = ?3
                      WHERE session_id = ?1
                      RETURNING revision",
-                    params![
-                        session_id.0,
-                        enum_name(phase)?,
-                        confirmed_cursor.0,
-                        cursor.0,
-                        now.timestamp_millis(),
-                    ],
+                    params![session_id.0, enum_name(phase)?, now.timestamp_millis()],
                     |row| row.get::<_, i64>(0),
                 )?;
                 ControlTurnCheckpointDecision::Checkpointed {
@@ -1380,7 +1210,7 @@ impl SqliteStore {
                         verification_evidence: verification_hashes,
                         environment_evidence: environment_hashes,
                         cursor,
-                        confirmed_cursor,
+                        confirmed_cursor: cursor,
                         phase,
                         session_revision: revision,
                         checkpointed_at: now,

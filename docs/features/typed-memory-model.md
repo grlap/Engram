@@ -48,7 +48,8 @@ users to hand-encode in text: provenance chain (asserted-by / relayed-by /
 derived-from), actor and assurance, confidence, sensitivity, validity window
 (`valid_from`/`valid_until`), review deadline (`review_by`), evidence refs,
 external refs, and tags. The `title` is separate from the `body` — one line
-that powers the cheap index tier in [context packets](context-packets.md).
+that powers the cheap index tier in [context packets](context-packets.md),
+a design that is not built: no interface delivers a context packet today.
 Low-friction capture also retains its classification basis and any delivery
 override reason, so a receipt or authorized storage inspection can explain
 exactly why prose became a particular typed record.

@@ -49,7 +49,9 @@ pub enum HostControlRequest {
         routing_token: String,
         idempotency_key: String,
         intent_fingerprint: String,
-        purpose: TurnPurpose,
+        /// Optional while hosts still send it; only `ordinary` parses.
+        #[serde(default)]
+        purpose: Option<TurnPurpose>,
         requested_effects: Vec<EffectClass>,
         #[serde(default)]
         resource_intents: Vec<crate::ResourceSubject>,
@@ -57,6 +59,9 @@ pub enum HostControlRequest {
     TurnBegin {
         routing_token: String,
         grant_id: String,
+        /// Optional while hosts still send it; grants carry no delivery
+        /// page, so any token refuses the begin.
+        #[serde(default)]
         delivery_tokens: Vec<String>,
         idempotency_key: String,
     },
@@ -480,7 +485,6 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::DifferentBuildSchema | StoreError::InvalidControlProjection(_) => {
             "control_projection_invalid"
         }
-        StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::ProjectMemoryExists(_) => "memory_exists",
         StoreError::ProjectMemoryRevisionConflict { .. } => "memory_revision_conflict",
@@ -692,6 +696,124 @@ mod tests {
         .expect_err("unknown resource-subject field must fail closed");
         assert!(error.contains("turn_evaluate"));
         assert!(error.contains("unexpected"));
+    }
+
+    fn turn_evaluate_frame(purpose: Option<&str>, key: &str) -> Value {
+        let mut frame = serde_json::json!({
+            "operation": "turn_evaluate",
+            "routing_token": "routing-token",
+            "idempotency_key": key,
+            "intent_fingerprint": ObjectId::from_canonical_bytes(key.as_bytes()).as_str(),
+            "requested_effects": ["observe"],
+        });
+        if let Some(purpose) = purpose {
+            frame["purpose"] = purpose.into();
+        }
+        frame
+    }
+
+    // While hosts move off the removed fields, a turn request may still name
+    // the only purpose; a recovery turn no longer parses.
+    #[test]
+    fn turn_evaluate_takes_an_ordinary_or_absent_purpose_and_refuses_recovery() {
+        for purpose in [None, Some("ordinary")] {
+            let frame = turn_evaluate_frame(purpose, "turn-once");
+            assert!(
+                matches!(
+                    parse_host_control_request(&serde_json::to_vec(&frame).expect("encode")),
+                    Ok(HostControlRequest::TurnEvaluate { .. })
+                ),
+                "purpose {purpose:?} must parse"
+            );
+        }
+        let frame = turn_evaluate_frame(Some("recovery"), "turn-once");
+        let error = parse_host_control_request(&serde_json::to_vec(&frame).expect("encode"))
+            .expect_err("a recovery turn must be refused");
+        assert!(error.contains("turn_evaluate"));
+        assert!(error.contains("recovery"));
+    }
+
+    // Grants carry no delivery page. A begin may omit the tokens or send
+    // none; a begin naming a token is refused as outside the grant.
+    #[test]
+    fn turn_begin_takes_no_delivery_tokens_and_refuses_any() {
+        let directory = crate::test_support::temp_home().expect("temp");
+        let mut server = HostControlServer::open_with_host_path_identity(
+            directory.path().join("control.sqlite3"),
+            None,
+            ProjectId("wire-transition".into()),
+            "agent".into(),
+            SessionId("wire-session".into()),
+            None,
+        )
+        .expect("open the control connection");
+        let mut call = |frame: Value| {
+            let request = parse_host_control_request(&serde_json::to_vec(&frame).expect("encode"))
+                .expect("a valid frame");
+            server.handle(request).expect("handled")
+        };
+        let bound = call(serde_json::json!({
+            "operation": "session_bind",
+            "external_ref": "dummy:WIRE",
+            "title": "Wire transition",
+            "assurance": "turn_gated",
+            "mediated_effects": ["observe", "communicate"],
+            "capability_map_revision": 1,
+            "idempotency_key": "bind-wire",
+        }));
+        assert_eq!(bound["status"]["phase"], "ready");
+        assert!(bound["status"].get("confirmed_cursor").is_none());
+        let routing_token = bound["routing_token"].as_str().expect("token").to_owned();
+        let grant_for = |key: &str, call: &mut dyn FnMut(Value) -> Value| {
+            let mut frame = turn_evaluate_frame(None, key);
+            frame["routing_token"] = routing_token.clone().into();
+            let decision = call(frame);
+            assert_eq!(decision["decision"], "grant", "{decision}");
+            assert!(decision["grant"].get("delivery").is_none());
+            decision["grant"]["grant_id"]
+                .as_str()
+                .expect("grant id")
+                .to_owned()
+        };
+        let begin = |grant_id: &str, tokens: Option<Value>, key: &str| {
+            let mut frame = serde_json::json!({
+                "operation": "turn_begin",
+                "routing_token": routing_token.clone(),
+                "grant_id": grant_id,
+                "idempotency_key": key,
+            });
+            if let Some(tokens) = tokens {
+                frame["delivery_tokens"] = tokens;
+            }
+            frame
+        };
+
+        let first = grant_for("turn-echoes-a-token", &mut call);
+        let refused = call(begin(
+            &first,
+            Some(serde_json::json!(["token-from-an-old-page"])),
+            "begin-with-a-token",
+        ));
+        assert_eq!(refused["decision"], "refuse");
+        assert_eq!(refused["code"], "grant_scope_mismatch");
+
+        for (key, tokens) in [("absent", None), ("empty", Some(serde_json::json!([])))] {
+            let grant = grant_for(&format!("turn-{key}-tokens"), &mut call);
+            let started = call(begin(&grant, tokens, &format!("begin-{key}-tokens")));
+            assert_eq!(started["decision"], "begin", "{started}");
+            let reported = call(serde_json::json!({
+                "operation": "turn_checkpoint",
+                "routing_token": routing_token.clone(),
+                "grant_id": grant,
+                "next_intent": "continue",
+                "idempotency_key": format!("checkpoint-{key}-tokens"),
+            }));
+            assert_eq!(reported["decision"], "checkpointed", "{reported}");
+            assert_eq!(
+                reported["receipt"]["confirmed_cursor"],
+                reported["receipt"]["cursor"]
+            );
+        }
     }
 
     #[test]

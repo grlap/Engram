@@ -511,9 +511,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
       }),
     );
     assert.equal(advisorySync.decision, "grant");
-    const advisorySyncTokens = advisorySync.grant.delivery
-      ? [advisorySync.grant.delivery.page.delivery_token]
-      : [];
+    const advisorySyncTokens = [];
     assert.equal(
       ok(
         await advisory.request({
@@ -693,9 +691,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     );
     assert.ok(configuredPolicyLine, configuredDoctor.stdout);
     assert.equal(configuredPolicyLine[1], initialPolicy[2]);
-    const advisoryTokens = advisoryIssued.grant.delivery
-      ? [advisoryIssued.grant.delivery.page.delivery_token]
-      : [];
+    const advisoryTokens = [];
     const advisoryBeginAfterPolicyChange = ok(
       await advisory.request({
         operation: "turn_begin",
@@ -744,7 +740,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         idempotency_key: "bind-host-a",
       }),
     );
-    assert.equal(binding.status.phase, "sync_required");
+    assert.equal(binding.status.phase, "ready");
     assert.ok(binding.routing_token);
 
     successor = new ControlClient(engramHome, "host-a");
@@ -754,7 +750,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         routing_token: binding.routing_token,
       }),
     );
-    assert.equal(successorStatus.phase, "sync_required");
+    assert.equal(successorStatus.phase, "ready");
     const superseded = await client.request({
       operation: "session_status",
       routing_token: binding.routing_token,
@@ -776,14 +772,17 @@ test("host control survives restart and gates turn dispatch", async (t) => {
       }),
     );
     assert.equal(firstDecision.decision, "grant");
-    assert.ok(firstDecision.grant.delivery.context.header.packet_hash);
-    assert.equal(firstDecision.grant.delivery.delta.after, 0);
-    assert.equal(
-      firstDecision.grant.delivery.delta.cursor,
-      firstDecision.grant.delivery.page.to_cursor,
-    );
-    // Binding a control scope creates no compatibility task or join events.
-    assert.deepEqual(firstDecision.grant.delivery.delta.changes, []);
+    // A grant carries no delivery page and none of the basis fields it used.
+    assert.equal(Object.hasOwn(firstDecision.grant, "delivery"), false);
+    for (const retired of [
+      "purpose",
+      "confirmed_cursor",
+      "delivery_cursor",
+      "blocking_watermark",
+      "inline_delivery",
+    ]) {
+      assert.equal(Object.hasOwn(firstDecision.grant.basis, retired), false, retired);
+    }
     const grant = firstDecision.grant;
     const issuedStatus = ok(
       await client.request({
@@ -814,7 +813,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         operation: "turn_begin",
         routing_token: binding.routing_token,
         grant_id: grant.grant_id,
-        delivery_tokens: [grant.delivery.page.delivery_token],
+        delivery_tokens: [],
         idempotency_key: "begin-host-a",
       }),
     );
@@ -853,7 +852,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         operation: "turn_begin",
         routing_token: binding.routing_token,
         grant_id: resumedGrant.grant_id,
-        delivery_tokens: [resumedGrant.delivery.page.delivery_token],
         idempotency_key: "begin-host-after-restart",
       }),
     );
@@ -869,7 +867,8 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     assert.equal(begunRestartStatus.phase, "turn_open");
     assert.equal(begunRestartStatus.open_grant_id, resumedGrant.grant_id);
     assert.equal(begunRestartStatus.open_grant_state, "begun");
-    assert.equal(begunRestartStatus.recoverable_grant, null);
+    assert.equal(Object.hasOwn(begunRestartStatus, "recoverable_grant"), false);
+    assert.equal(Object.hasOwn(begunRestartStatus, "confirmed_cursor"), false);
     const checkpointed = ok(
       await client.request({
         operation: "turn_checkpoint",
@@ -918,7 +917,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
           operation: "turn_begin",
           routing_token: peerBinding.routing_token,
           grant_id: peerGrant.grant_id,
-          delivery_tokens: [peerGrant.delivery.page.delivery_token],
+          delivery_tokens: [],
           idempotency_key: "begin-host-b",
         }),
       ).decision,
@@ -949,15 +948,14 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     );
     assert.equal(mutationTurn.decision, "grant");
     assert.equal(Object.hasOwn(mutationTurn.grant.basis, "leases"), false);
-    assert.ok(mutationTurn.grant.delivery, "peer checkpoint requires a delivery page");
-    assert.equal(typeof mutationTurn.grant.delivery.page.delivery_token, "string");
-    assert.notEqual(mutationTurn.grant.delivery.page.delivery_token, "");
+    // A peer's checkpoint no longer holds the session behind a page.
+    assert.equal(Object.hasOwn(mutationTurn.grant, "delivery"), false);
     const mutationBegun = ok(
       await client.request({
         operation: "turn_begin",
         routing_token: binding.routing_token,
         grant_id: mutationTurn.grant.grant_id,
-        delivery_tokens: [mutationTurn.grant.delivery.page.delivery_token],
+        delivery_tokens: [],
         idempotency_key: "begin-host-mutation-resource",
       }),
     );
@@ -1322,9 +1320,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     assert.equal(sync.decision, "grant");
     assert.deepEqual(sync.grant.basis.work_binding, originalBinding);
-    const syncTokens = sync.grant.delivery
-      ? [sync.grant.delivery.page.delivery_token]
-      : [];
+    const syncTokens = [];
     assert.equal(
       ok(
         await client.request({
@@ -1362,9 +1358,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       }),
     );
     assert.equal(observedTurn.decision, "grant");
-    const observedTokens = observedTurn.grant.delivery
-      ? [observedTurn.grant.delivery.page.delivery_token]
-      : [];
+    const observedTokens = [];
     assert.equal(
       ok(
         await client.request({
@@ -1598,9 +1592,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       }),
     );
     assert.equal(reboundTurn.decision, "grant");
-    const reboundTokens = reboundTurn.grant.delivery
-      ? [reboundTurn.grant.delivery.page.delivery_token]
-      : [];
+    const reboundTokens = [];
     assert.equal(
       ok(
         await client.request({
@@ -1744,9 +1736,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
           operation: "turn_begin",
           routing_token: rebound.routing_token,
           grant_id: finalMutationTurn.grant.grant_id,
-          delivery_tokens: finalMutationTurn.grant.delivery
-            ? [finalMutationTurn.grant.delivery.page.delivery_token]
-            : [],
+          delivery_tokens: [],
           idempotency_key: "begin-bound-final-mutation-turn",
         }),
       ).decision,
@@ -1924,9 +1914,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
           operation: "turn_begin",
           routing_token: rebound.routing_token,
           grant_id: staleVerificationTurn.grant.grant_id,
-          delivery_tokens: staleVerificationTurn.grant.delivery
-            ? [staleVerificationTurn.grant.delivery.page.delivery_token]
-            : [],
+          delivery_tokens: [],
           idempotency_key: "begin-bound-stale-verification-turn",
         }),
       ).decision,
@@ -2007,9 +1995,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
           operation: "turn_begin",
           routing_token: rebound.routing_token,
           grant_id: mismatchedPinnedTurn.grant.grant_id,
-          delivery_tokens: mismatchedPinnedTurn.grant.delivery
-            ? [mismatchedPinnedTurn.grant.delivery.page.delivery_token]
-            : [],
+          delivery_tokens: [],
           idempotency_key: "begin-bound-mismatched-pinned-verification-turn",
         }),
       ).decision,
@@ -2106,9 +2092,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
           operation: "turn_begin",
           routing_token: rebound.routing_token,
           grant_id: verificationTurn.grant.grant_id,
-          delivery_tokens: verificationTurn.grant.delivery
-            ? [verificationTurn.grant.delivery.page.delivery_token]
-            : [],
+          delivery_tokens: [],
           idempotency_key: "begin-bound-final-verification-turn",
         }),
       ).decision,
@@ -2327,9 +2311,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
           operation: "turn_begin",
           routing_token: waiverBound.routing_token,
           grant_id: waiverSync.grant.grant_id,
-          delivery_tokens: waiverSync.grant.delivery
-            ? [waiverSync.grant.delivery.page.delivery_token]
-            : [],
+          delivery_tokens: [],
           idempotency_key: "begin-host-waiver-sync",
         }),
       ).decision,
@@ -2365,9 +2347,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
           operation: "turn_begin",
           routing_token: waiverBound.routing_token,
           grant_id: waiverMutationTurn.grant.grant_id,
-          delivery_tokens: waiverMutationTurn.grant.delivery
-            ? [waiverMutationTurn.grant.delivery.page.delivery_token]
-            : [],
+          delivery_tokens: [],
           idempotency_key: "begin-host-waiver-mutation-turn",
         }),
       ).decision,
@@ -2569,9 +2549,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
             operation: "turn_begin",
             routing_token: untestedBound.routing_token,
             grant_id: turn.grant.grant_id,
-            delivery_tokens: turn.grant.delivery
-              ? [turn.grant.delivery.page.delivery_token]
-              : [],
+            delivery_tokens: [],
             idempotency_key: `begin-${key}`,
           }),
         ).decision,

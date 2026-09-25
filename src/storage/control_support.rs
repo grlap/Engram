@@ -1,17 +1,16 @@
 use super::{
     ActorContext, AssuranceLevel, BUILTIN_CONTROL_GRANT_TTL_SECONDS,
     CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION, CONTROL_POLICY_SCHEMA_VERSION,
-    CONTROL_POLICY_STATE_SCHEMA_VERSION, CONTROL_SCHEMA_VERSION, CanonicalObject, ChangeCursor,
-    Connection, ControlAssurance, ControlEpochs, ControlPolicy, ControlPolicyProjection,
-    ControlSessionStatus, ControlWorkBinding, DateTime, DeserializeOwned, EffectClass, HashSet,
+    CONTROL_POLICY_STATE_SCHEMA_VERSION, CONTROL_SCHEMA_VERSION, CanonicalObject, Connection,
+    ControlAssurance, ControlEpochs, ControlPolicy, ControlPolicyProjection, ControlSessionStatus,
+    ControlWorkBinding, DateTime, DeserializeOwned, EffectClass, HashSet,
     MAX_CONTROL_POLICY_ATTRIBUTION_BYTES, MAX_CONTROL_POLICY_AUTHORITY_BYTES,
     MAX_CONTROL_POLICY_IDEMPOTENCY_KEY_BYTES, MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES,
     MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES, MAX_CONTROL_POLICY_PROVENANCE_LINKS, ObjectId,
     OptionalExtension, PendingTurnGrantSupersession, ProjectPolicyAuthorityDecision,
     ProjectPolicyEpoch, ProjectPolicyOperation, RawControlSession, Redactor, Serialize, SessionId,
     SessionPhase, SqliteStore, StoreError, StoredControlSession, StoredTurnGrant,
-    TaskAdmissionEpoch, TaskId, Transaction, TurnGrantState, Utc, enum_name, params, parse_enum,
-    safely_redeliverable_partial_recovery, work,
+    TaskAdmissionEpoch, TaskId, Transaction, Utc, params, parse_enum, work,
 };
 
 #[cfg(test)]
@@ -21,18 +20,6 @@ use super::CONTROL_POLICY_VERSION_LOAD_COUNT;
 mod tests;
 
 impl SqliteStore {
-    pub(super) fn latest_task_cursor(
-        transaction: &Transaction<'_>,
-        task_id: TaskId,
-    ) -> Result<ChangeCursor, StoreError> {
-        let cursor = transaction.query_row(
-            "SELECT COALESCE(MAX(task_cursor), 0) FROM control_changes WHERE task_id = ?1",
-            [task_id.0.to_string()],
-            |row| row.get(0),
-        )?;
-        Ok(ChangeCursor(cursor))
-    }
-
     /// Loads the active policy used by one control decision without walking
     /// predecessor objects. The selected version is hash- and byte-verified,
     /// its scalar projection must match, and one aggregate must prove that it
@@ -625,13 +612,10 @@ impl SqliteStore {
                 phase: parse_enum(&raw.phase)?,
                 assurance: parse_enum(&raw.assurance)?,
                 mediated_effects,
-                confirmed_cursor: ChangeCursor(raw.confirmed_cursor),
-                tentative_cursor: raw.tentative_cursor.map(ChangeCursor),
                 epochs: ControlEpochs {
                     project_policy: ProjectPolicyEpoch(raw.project_policy_epoch),
                     task_admission: TaskAdmissionEpoch(raw.task_admission_epoch),
                 },
-                blocking_watermark: ChangeCursor(raw.blocking_watermark),
                 capability_map_revision: raw.capability_map_revision,
                 revision: raw.revision,
                 open_grant_id: raw.open_grant_id,
@@ -651,12 +635,6 @@ impl SqliteStore {
             .transpose()?
             .flatten();
         let open_grant_state = open_grant.as_ref().map(|stored| stored.state);
-        let recoverable_grant = open_grant
-            .filter(|stored| {
-                matches!(stored.state, TurnGrantState::Begun)
-                    && safely_redeliverable_partial_recovery(&stored.grant)
-            })
-            .map(|stored| Box::new(stored.grant));
         Ok(ControlSessionStatus {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             project_id: session.project_id.clone(),
@@ -666,15 +644,11 @@ impl SqliteStore {
             phase: session.phase,
             assurance: session.assurance,
             mediated_effects: session.mediated_effects.clone(),
-            confirmed_cursor: session.confirmed_cursor,
-            tentative_cursor: session.tentative_cursor,
             epochs: session.epochs,
-            blocking_watermark: session.blocking_watermark,
             capability_map_revision: session.capability_map_revision,
             revision: session.revision,
             open_grant_id: session.open_grant_id.clone(),
             open_grant_state,
-            recoverable_grant,
         })
     }
 
@@ -830,7 +804,7 @@ impl SqliteStore {
         if expired > 0 && matches!(session.phase, SessionPhase::TurnOpen) {
             transaction.execute(
                 "UPDATE control_sessions SET
-                     phase = 'sync_required', tentative_cursor = NULL,
+                     phase = 'ready',
                      revision = revision + 1, updated_at_ms = ?2
                  WHERE session_id = ?1",
                 params![session.session_id.0, now.timestamp_millis()],
@@ -890,22 +864,12 @@ impl SqliteStore {
                 superseded.grant_id
             )));
         }
-        let head = Self::latest_task_cursor(transaction, session.task_id)?;
-        let phase = if session.confirmed_cursor < head {
-            SessionPhase::SyncRequired
-        } else {
-            SessionPhase::Ready
-        };
         transaction.execute(
             "UPDATE control_sessions SET
-                 phase = ?2, tentative_cursor = NULL,
-                 revision = revision + 1, updated_at_ms = ?3
+                 phase = 'ready',
+                 revision = revision + 1, updated_at_ms = ?2
              WHERE session_id = ?1",
-            params![
-                session.session_id.0,
-                enum_name(phase)?,
-                now.timestamp_millis()
-            ],
+            params![session.session_id.0, now.timestamp_millis()],
         )?;
         Ok(Some(superseded))
     }

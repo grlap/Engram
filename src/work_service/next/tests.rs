@@ -1,6 +1,7 @@
 use super::super::test_support::*;
 use super::super::*;
 
+mod control_turns;
 mod delivery_snapshot;
 mod recovery;
 

@@ -19,11 +19,12 @@ optional agent tool is control.
 
 For each session, the target architecture determines whether required context
 and peer deltas were host-confirmed as delivered, ownership is current,
-previous effects are reconciled, and lifecycle barriers are satisfied. The
-normal pre-turn result is a bounded grant with required delivery inlined; a
-typed recovery directive handles the unsafe tail. At the strongest integration
-level, the host also requests a single-use grant immediately before every
-declared material action and records its outcome before the next turn.
+previous effects are reconciled, and lifecycle barriers are satisfied. Today a
+grant carries no context: agents read work context and peer changes through
+`next`, and a typed refusal directive handles the unsafe tail. At the
+strongest integration level, the host also requests a single-use grant
+immediately before every declared material action and records its outcome
+before the next turn.
 
 Engram derives a bounded, deterministic ready-work view, but it does not
 supervise processes. The host or model selects among allowed candidates; the
@@ -73,7 +74,8 @@ cross-host team sync remains later (see
   is derived. Nothing is edited in place, so history and audit come for free.
 - **Budgeted delivery.** Injection operates under hard byte budgets with
   visible omission; the constraint tier fails closed rather than truncating
-  silently. See [context packets](features/context-packets.md).
+  silently. See [context packets](features/context-packets.md), a design
+  that is not built.
 - **Trust follows origin and authority.** Who asserted something, and how
   binding it claims to be, determine whether it activates immediately or
   awaits approval. See [write policy](features/write-policy-and-review.md).

@@ -375,7 +375,7 @@ impl HostSession {
                     intent_fingerprint: ObjectId::from_canonical_bytes(
                         self.key("intent").as_bytes(),
                     ),
-                    purpose: TurnPurpose::Ordinary,
+                    purpose: Some(TurnPurpose::Ordinary),
                     requested_effects: effects.to_vec(),
                     resource_intents: if with_subject {
                         vec![self.subject.clone()]

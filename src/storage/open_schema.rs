@@ -646,6 +646,11 @@ impl SqliteStore {
         }
         if !read_only && !core_schema_complete {
             connection.execute_batch("BEGIN IMMEDIATE;")?;
+            // `project_context_revisions` and `agent_context_revisions` once
+            // fenced the turn grant's context packet. Nothing reads or updates
+            // them now. They stay, with any rows a store already holds, only
+            // so the schema is unchanged until the next planned migration
+            // drops them.
             connection.execute_batch(
                 "CREATE TABLE IF NOT EXISTS objects (
                  object_id TEXT PRIMARY KEY,
@@ -890,19 +895,6 @@ impl SqliteStore {
                 "CREATE INDEX IF NOT EXISTS memory_heads_work_scope
                  ON memory_heads(project_id, work_id, agent_id, status)",
                 [],
-            )?;
-            connection.execute_batch(
-                "INSERT INTO project_context_revisions (project_id, revision)
-                 SELECT project_id, COUNT(*)
-                 FROM memory_heads WHERE scope_kind = 'project'
-                 GROUP BY project_id
-                 ON CONFLICT(project_id) DO NOTHING;
-                 INSERT INTO agent_context_revisions (project_id, agent_id, revision)
-                 SELECT project_id, agent_id, COUNT(*)
-                 FROM memory_heads
-                 WHERE scope_kind = 'agent' AND agent_id IS NOT NULL
-                 GROUP BY project_id, agent_id
-                 ON CONFLICT(project_id, agent_id) DO NOTHING;",
             )?;
         }
         Self::require_task_local_cursor_schema(&connection)?;

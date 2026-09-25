@@ -368,7 +368,7 @@ pub(super) use planning::validate_control_work_binding_on;
 #[cfg(test)]
 use query::feed_parts;
 pub(super) use query::{
-    canonical_work_events_for_item, context_work_feed_heads, load_active_blocker_projections,
+    canonical_work_events_for_item, load_active_blocker_projections,
     load_prerequisite_projection_ids, load_work_item, on_one_snapshot, verified_work_identity,
 };
 pub(super) use schema::{

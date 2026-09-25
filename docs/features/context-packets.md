@@ -6,6 +6,11 @@
 > [behavioral control plane](behavioral-control-plane.md), and
 > [execution pipeline](execution-pipeline.md).
 
+> **Not built.** No interface builds or delivers a context packet. Turn grants carried one
+> until grants stopped carrying a delivery page, and no host showed it to an
+> agent. The `next` word's work context is the only delivery today.
+> This brief records the design.
+
 A context packet is the unit of memory delivery: the block an agent receives
 at session start or on request. Packet construction is a first-class core API
 used identically by the CLI and the MCP server, so delivery semantics cannot
@@ -58,8 +63,9 @@ reproduces content; feed positions order later peer changes. `engram context del
 <position>` returns shared changes without rebuilding the packet. A runtime
 notification can act as a doorbell, but Engram's named feeds are authoritative.
 
-Under behavioral control, packet and delta delivery are durable protocol
-records rather than caller convention. Each `ContextDelivery` has its own
+The rest of this section is the design as it stood while turn grants carried
+the packet. Under behavioral control, packet and delta delivery were to be
+durable protocol records rather than caller convention. Each `ContextDelivery` has its own
 dense per-session `DeliveryPosition { session_id, position }` and binds one or
 more exact `FeedRange { kind, id, from_position, to_position,
 observed_head_position }` sources, `has_more` state, a content digest, and a

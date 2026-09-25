@@ -337,6 +337,12 @@ turn_checkpoint`) and withholds the prompt until Engram grants and begins the
 turn. Every frame is strict: exactly the current field set, no additive or
 legacy fields. Resource-lease acquisition/release, host obligation waiver,
 and the finalizer purpose/phase are removed; hosts must not send those frames.
+A grant carries no delivery page and there are no recovery turns: the work
+context an agent sees comes from `next`. While hosts move off the old fields,
+`turn_evaluate.purpose` may be `ordinary` or absent, and
+`turn_begin.delivery_tokens` may be `[]` or absent; a non-empty token list is
+refused with `grant_scope_mismatch`. A freshly bound session is `ready`, and
+its first turn is granted at once.
 An empty resource_intents list remains valid. Control sessions bind directly
 by project and external reference, without starting a compatibility task.
 Action gating, organizational-authority mediation, and

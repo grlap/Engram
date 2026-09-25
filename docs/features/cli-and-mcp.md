@@ -1613,37 +1613,33 @@ principal. The shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
-| `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `sync_required`; a re-bind to the same anchor keeps its confirmed position and moves past only contiguous events that session wrote itself, stopping before a peer event; a first bind or a bind to another anchor delivers its feed from the start. Binding creates no task or join event. |
-| `session_status` | Read current phase, cursors, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and any safely redeliverable partial recovery grant |
-| `turn_evaluate` | Derive membership/context/head/policy from SQLite and persist a decision plus optional grant |
-| `turn_begin` | Recheck freshness and exact delivery token, then consume the issued grant |
-| `turn_checkpoint` | Promote tentative delivery, atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
+| `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `ready`. Binding creates no task or join event. |
+| `session_status` | Read current phase, epochs, mediation declaration, optional work binding, revision, and `open_grant_id` plus `open_grant_state` |
+| `turn_evaluate` | Derive membership, phase, policy and work binding from SQLite and persist a decision plus optional grant |
+| `turn_begin` | Recheck the grant's basis, then consume the issued grant |
+| `turn_checkpoint` | Atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
 
-The bind response supplies the `routing_token` used on later calls. A granted
-turn carries an exact dense task delta under `grant.delivery.delta`. The final
-page also carries the bounded context packet under `grant.delivery.context`;
-earlier bounded pages set `context` to `null`, `has_more` to `true`, and grant
-only an observe-only `recovery` turn. The host must inject the supplied payload
-and cite `grant.delivery.page.delivery_token` in `turn_begin` before
-dispatching the prompt. Checkpointing a partial page leaves the session
-`sync_required`; finite recovery pages drain the backlog before an ordinary
-turn can grant. A single canonical task event is size-limited at capture, so a
-page always makes progress. Exact retry evidence remains canonical across
-process restart, but a newly opened control connection invalidates unbegun
-grants and returns the session to `sync_required`; old results never resurrect
-authority. The new connection also fences a still-live predecessor, whose next
+The bind response supplies the `routing_token` used on later calls. A grant
+carries no delivery page, and there are no recovery turns: the work context an
+agent sees comes from `next`, which keeps its own staged delivery. A freshly
+bound session is `ready`, and its first turn is granted at once. While hosts
+move off the old fields, `turn_evaluate.purpose` may be `ordinary` or absent
+(any other value is an `invalid_request`), and `turn_begin.delivery_tokens` may
+be `[]` or absent; a non-empty list is refused with `grant_scope_mismatch`.
+The checkpoint receipt's `confirmed_cursor` repeats its `cursor`, the position
+of the checkpoint event in the task's write-only audit index. Exact retry
+evidence remains canonical across process restart, but a newly opened control
+connection invalidates unbegun grants and returns the session to `ready`; old
+results never resurrect authority. The new connection also fences a still-live predecessor, whose next
 operation fails with `control_connection_superseded`. A begun grant is not
 silently replayed or discarded: `session_status.open_grant_id` identifies the
 required checkpoint and `open_grant_state` distinguishes `issued` from
 `begun`. A fresh `turn_evaluate` key atomically supersedes an
 issued-but-unbegun grant and records an immutable transition bound to the
 replacement decision; an already-begun grant instead refuses with
-`turn_already_open`. When the begun grant contains an observe-only partial
-recovery page, `session_status.recoverable_grant` returns the exact canonical
-grant and delivery bytes; the replacement host redelivers that payload and
-then checkpoints the already-begun grant. The confirmed cursor does not move
-until that checkpoint. Other begun turns expose no replayable prompt because
-their outcome may be uncertain. Reusing a key for a different intent fails.
+`turn_already_open`. A begun turn exposes no replayable prompt because its
+outcome may be uncertain; the host closes it with a report. Reusing a key for a
+different intent fails.
 
 A native local-work bind supplies `work_binding` with
 `root_execution_id`, `work_id`, `run_id`, `work_revision`, `claim_id`, and

@@ -39,9 +39,9 @@ assembly remain deferred.
   claims, acceptance evidence, human decisions, and the six-operation ambient
   model protocol —
   [local work system](features/local-work-system.md)
-- Behavioral control: deterministic turn decisions, typed recovery
-  directives, inline packet/delta delivery, recovery grants,
-  checkpoints, effect-specific degraded debt, mediation coverage reporting,
+- Behavioral control: deterministic turn decisions, typed refusal
+  directives, checkpoints (inline packet/delta delivery and recovery grants
+  are dropped: turn grants carry no delivery page), effect-specific degraded debt, mediation coverage reporting,
   and honest advisory/turn-gated/action-gated assurance —
   [behavioral control plane](features/behavioral-control-plane.md)
 - Same-host multi-session roots: one executor/claim per child `WorkRun` under a
@@ -50,7 +50,8 @@ assembly remain deferred.
 - Context packets: budgets, fail-closed pinned tier, omission manifest,
   packet fingerprint, typed source-feed vectors plus independent
   per-session delivery positions, peer deltas, and review counts —
-  [context packets](features/context-packets.md)
+  [context packets](features/context-packets.md) (not built; the `next`
+  word's work context is the only delivery today)
 - `engram work note` / MCP `note`: one work finding feeds peer, handoff,
   evidence, and report views
 - Agent-surface Cuts A and B: gate results are auditable evidence,

@@ -105,6 +105,10 @@ pub struct ControlPolicy {
 }
 
 /// Durable execution phase for a task-bound host session.
+///
+/// Storage writes only `ready`, `turn_open` and `exited`. `sync_required`
+/// is still read from rows written before turn grants stopped carrying a
+/// delivery page, and admits a turn as `ready` does.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionPhase {
@@ -120,12 +124,18 @@ pub enum SessionPhase {
     Exited,
 }
 
-/// Scope of a model turn admitted by the control plane.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// Scope of a model turn admitted by the control plane. Every turn is
+/// ordinary; a request naming any other purpose is refused as malformed.
+///
+/// The former `recovery` purpose has no decode-only variant because no store
+/// holds one: no host ever sent a recovery turn, and every stored intent,
+/// grant and decision names `ordinary`. A stored record naming `recovery`
+/// would therefore fail to decode rather than be read as something else.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnPurpose {
+    #[default]
     Ordinary,
-    Recovery,
 }
 
 /// Material effect classes used by host capability mediation.
@@ -152,15 +162,6 @@ pub enum ControlHealth {
     UnknownSchema,
 }
 
-/// Safety result from transactional context assembly.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PacketSafety {
-    Safe,
-    PinnedBudgetExceeded,
-    DeliveryBudgetExceeded,
-}
-
 /// Durable membership result for the bound session and task.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -183,13 +184,23 @@ pub enum ControlRefusalCode {
     TaskAccessDenied,
     PolicyEpochChanged,
     TaskAdmissionEpochChanged,
+    /// Historical saved refusals only; turn grants no longer build a context
+    /// packet.
     PinnedBudgetExceeded,
+    /// Historical saved refusals only; turn grants no longer carry a
+    /// delivery page.
     ContextRequired,
+    /// Historical saved refusals only; turn grants no longer carry a
+    /// delivery page.
     DeltaRequired,
+    /// Historical saved refusals only; turn grants no longer carry a
+    /// delivery page.
     DeliveryInvalid,
     CheckpointRequired,
+    /// Historical saved refusals only; recovery turns no longer exist.
     RecoveryRequired,
     TurnAlreadyOpen,
+    /// Historical saved refusals only; every turn is ordinary.
     TurnPurposeMismatch,
     LifecycleHold,
     ParticipantNotReady,
@@ -261,7 +272,9 @@ pub enum DirectiveSatisfaction {
     HumanAuthority,
 }
 
-/// Exact bounded packet or delta page proposed for prompt injection.
+/// Exact bounded packet or delta page that a turn grant issued before grants
+/// stopped carrying a delivery page proposed for prompt injection. It is read
+/// from those stored grants only.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeliveryPage {
     pub from_cursor: ChangeCursor,
@@ -277,7 +290,11 @@ pub struct DeliveryPage {
 pub struct TurnIntent {
     pub idempotency_key: String,
     pub intent_fingerprint: ObjectId,
-    pub purpose: TurnPurpose,
+    /// The host may still name the only purpose, `ordinary`; an absent
+    /// purpose means the same turn. It stays in the intent fingerprint as
+    /// sent, so a retried request keeps its idempotency match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<TurnPurpose>,
     pub requested_effects: Vec<EffectClass>,
     #[serde(default)]
     pub resource_intents: Vec<ResourceSubject>,
@@ -610,12 +627,6 @@ pub struct TurnEvaluationInput {
     pub mediated_effects: Vec<EffectClass>,
     pub current_epochs: ControlEpochs,
     pub session_epochs: ControlEpochs,
-    pub confirmed_cursor: ChangeCursor,
-    pub head_cursor: ChangeCursor,
-    pub pending_delivery: Option<DeliveryPage>,
-    pub packet_safety: PacketSafety,
-    pub blocking_watermark: ChangeCursor,
-    pub acknowledged_blocking_watermark: ChangeCursor,
     pub has_unknown_action_outcome: bool,
     pub authority_satisfied: bool,
     pub capability_map_revision: i64,
@@ -649,19 +660,28 @@ pub struct ControlDirective {
 }
 
 /// Exact basis a storage layer would bind into a short-lived turn grant.
+///
+/// `purpose`, `confirmed_cursor`, `delivery_cursor`, `blocking_watermark`
+/// and `inline_delivery` are read from grants issued while grants carried a
+/// delivery page. New grants omit them.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TurnGrantBasis {
     pub session_id: SessionId,
     pub task_id: TaskId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_binding: Option<ControlWorkBinding>,
-    pub purpose: TurnPurpose,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<TurnPurpose>,
     pub intent_fingerprint: ObjectId,
     pub project_policy_epoch: ProjectPolicyEpoch,
     pub task_admission_epoch: TaskAdmissionEpoch,
-    pub confirmed_cursor: ChangeCursor,
-    pub delivery_cursor: ChangeCursor,
-    pub blocking_watermark: ChangeCursor,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmed_cursor: Option<ChangeCursor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_cursor: Option<ChangeCursor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocking_watermark: Option<ChangeCursor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_delivery: Option<DeliveryPage>,
     pub capability_map_revision: i64,
     pub requested_effects: Vec<EffectClass>,
@@ -715,23 +735,15 @@ pub struct ControlSessionStatus {
     pub phase: SessionPhase,
     pub assurance: ControlAssurance,
     pub mediated_effects: Vec<EffectClass>,
-    pub confirmed_cursor: ChangeCursor,
-    pub tentative_cursor: Option<ChangeCursor>,
     pub epochs: ControlEpochs,
-    pub blocking_watermark: ChangeCursor,
     pub capability_map_revision: i64,
     pub revision: i64,
+    /// A grant still issued or begun. A begun turn stays open until the
+    /// host reports it; the host never redelivers its prompt.
     pub open_grant_id: Option<String>,
     /// Durable state of `open_grant_id`, when one is present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open_grant_state: Option<TurnGrantState>,
-    /// Exact frozen grant that a replacement host may safely redeliver.
-    ///
-    /// This is present only for an already-begun, partial recovery page whose
-    /// effects are observe-only. Other uncertain begun turns expose only
-    /// `open_grant_id` and remain checkpoint/reconciliation required.
-    #[serde(default)]
-    pub recoverable_grant: Option<Box<IssuedTurnGrant>>,
 }
 
 /// Result of binding or safely rebinding a host-private control session.
@@ -743,7 +755,9 @@ pub struct ControlSessionBinding {
     pub status: ControlSessionStatus,
 }
 
-/// Exact prompt payload attached to a turn grant that advances synchronization.
+/// Exact prompt payload that a turn grant issued before grants stopped
+/// carrying a delivery page attached. It is read from those stored grants
+/// only.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ControlDelivery {
     pub page: DeliveryPage,
@@ -761,6 +775,8 @@ pub struct IssuedTurnGrant {
     pub grant_id: String,
     pub request_key: String,
     pub basis: TurnGrantBasis,
+    /// Present only on grants issued while grants carried a delivery page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delivery: Option<ControlDelivery>,
     pub issued_at: DateTime<Utc>,
 }
@@ -828,9 +844,9 @@ pub struct TurnBeginSnapshot {
     pub anchor_exists: bool,
     pub grant_state: TurnGrantState,
     pub current_epochs: ControlEpochs,
-    pub current_head: ChangeCursor,
-    pub context_current: bool,
     pub capability_map_revision: i64,
+    /// Tokens the host echoed from a delivery page. Grants carry no page,
+    /// so a begin that names any token is refused.
     pub delivery_tokens: Vec<String>,
     pub observed_at: DateTime<Utc>,
 }
@@ -850,7 +866,9 @@ pub struct TurnBeginReceipt {
     pub session_id: SessionId,
     pub task_id: TaskId,
     pub phase: SessionPhase,
-    pub tentative_cursor: ChangeCursor,
+    /// Present on receipts recorded while grants carried a delivery page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tentative_cursor: Option<ChangeCursor>,
     pub session_revision: i64,
     pub begun_at: DateTime<Utc>,
 }
@@ -899,7 +917,10 @@ pub struct TurnCheckpointEvent {
     pub task_id: TaskId,
     pub session_id: SessionId,
     pub grant_id: String,
-    pub delivered_cursor: ChangeCursor,
+    /// The grant's delivery position, present only when the grant was
+    /// issued while grants carried a delivery page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_cursor: Option<ChangeCursor>,
     pub next_intent: TurnNextIntent,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub execution_observations: Vec<ObjectId>,
@@ -916,7 +937,10 @@ pub struct TurnCheckpointEvent {
 pub struct TurnCheckpointReceipt {
     pub grant_id: String,
     pub checkpoint: ObjectId,
+    /// Position of the checkpoint event in the task's audit index.
     pub cursor: ChangeCursor,
+    /// New receipts repeat `cursor` here. The field stays because the host
+    /// still requires it.
     pub confirmed_cursor: ChangeCursor,
     pub phase: SessionPhase,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1134,7 +1158,6 @@ pub struct ActionGrantBasis {
     pub request_fingerprint: ObjectId,
     pub authority_references: Vec<String>,
     pub epochs: ControlEpochs,
-    pub blocking_watermark: ChangeCursor,
     pub capability_map_revision: i64,
     pub resolution_binding_digest: Option<ObjectId>,
     pub expires_at: DateTime<Utc>,
@@ -1189,7 +1212,6 @@ pub struct ActionBeginSnapshot {
     pub authority_references: Vec<String>,
     pub authority_state: AuthorityState,
     pub current_epochs: ControlEpochs,
-    pub acknowledged_blocking_watermark: ChangeCursor,
     pub capability_map_revision: i64,
     pub resolution_binding_digest: Option<ObjectId>,
     pub resolution_assurance: ResolutionAssurance,

@@ -41,7 +41,6 @@ contract and keep the change narrow.
 - Never pin a digest in source or tests. References are derived at runtime
   from the code that produces them; hashes remain only as computed content
   fingerprints.
-- Pinned-budget overflow fails context assembly before an agent acts.
 - Local work needs no external reference. Explicit imports preserve immutable
   source snapshots and never silently mirror external state.
 - Local does not mean single-session: one stable project id resolves every

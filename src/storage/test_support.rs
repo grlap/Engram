@@ -249,7 +249,7 @@ pub(super) fn complete_control_turn(
             &TurnIntent {
                 idempotency_key: format!("turn-{key}"),
                 intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
-                purpose: crate::domain::TurnPurpose::Ordinary,
+                purpose: Some(crate::domain::TurnPurpose::Ordinary),
                 requested_effects,
                 resource_intents,
             },
@@ -259,11 +259,7 @@ pub(super) fn complete_control_turn(
     let ControlTurnDecision::Grant { grant } = decision else {
         panic!("control turn {key} must grant");
     };
-    let delivery_tokens = grant
-        .delivery
-        .iter()
-        .map(|delivery| delivery.page.delivery_token.clone())
-        .collect::<Vec<_>>();
+    assert!(grant.delivery.is_none(), "a grant carries no delivery page");
     assert!(matches!(
         store
             .begin_control_turn(
@@ -272,7 +268,7 @@ pub(super) fn complete_control_turn(
                 &binding.connection_token,
                 &binding.routing_token,
                 &grant.grant_id,
-                &delivery_tokens,
+                &[],
                 &format!("begin-{key}"),
                 now + TimeDelta::milliseconds(1),
             )

@@ -14,11 +14,17 @@ what switching the gate off would lose. The
 [behavioral control plane](behavioral-control-plane.md) brief remains the design;
 this page records how much of it is used.
 
+The same day, the grant's context page and recovery turns were removed, as
+[decided](#decisions) below. The questions and refusals below describe the
+gate after that change. The figures, examples and call sites are from the
+snapshot.
+
 Figures come from the two live stores, opened read-only on 25 September 2026
 around 15:30 UTC: the Engram store (records from 2 September) and the
-PhoenixCodeNav store (records from 23 September). Engram code references are
-at commit 7c1ba5d. TermAl references are to its working tree on the same day
-and will drift.
+PhoenixCodeNav store (records from 23 September). Engram code references with
+line numbers are at commit 7c1ba5d, before the change; the rest name a
+function. TermAl references are to its working tree on the same day and will
+drift.
 
 ## Summary
 
@@ -55,8 +61,9 @@ nothing, because there is no check on individual tool calls.
 **Session binding (`session_bind`).** "This is session X, working on this
 claim. Register it."
 
-- **Answer:** a routing token and the effects Engram will mediate. Without it,
-  no turn can be requested.
+- **Answer:** a routing token and the effects Engram will mediate. The session
+  is `ready` at once, so its first turn can be granted straight away. Without
+  a binding, no turn can be requested.
 - **Blocks:** nothing by itself. If the claim moved on, Engram answers
   `stale_fence`, and TermAl reads the claim again and rebinds once.
 - **Use:** 913 sessions bound in the Engram store, 150 in PhoenixCodeNav. Only
@@ -70,12 +77,13 @@ claim. Register it."
 
 **Status check (`session_status`).** "Is anything left open from before?"
 
-- **Answer:** the session's phase, cursors and any grant still open. TermAl
-  uses it before rebinding and after a restart, to close a turn that was cut off.
+- **Answer:** the session's phase, its policy epoch and any grant still open.
+  TermAl uses it before rebinding and after a restart, to close a turn that was
+  cut off.
 - **Blocks:** nothing. It only reads, though it expires a grant that has timed
   out.
-- **Use:** not stored, so there is no count. What it returns for session-7284
-  is phase `ready`, confirmed cursor 353, policy epoch 2 and no open grant.
+- **Use:** not stored, so there is no count. What it returned for
+  session-7284 was phase `ready`, policy epoch 2 and no open grant.
 - **TermAl call sites:** `engram_host_adapter.rs` 5523–5580 and
   `engram_queued_admission.rs` 711–720.
 
@@ -84,8 +92,8 @@ claim. Register it."
 **Turn permission (`turn_evaluate`).** "May this prompt go to the model?"
 
 - **Yes:** a grant, valid for 30 seconds, naming the allowed effects and the
-  claim it is bound to. It also carries a page of work changes for the agent
-  (see [context delivery](#context-delivery-inside-the-grant)).
+  claim it is bound to. It carries no context: agents get their work context
+  from `next` (see [context delivery](#context-delivery-inside-the-grant)).
 - **No:** a refusal code, which TermAl's control card shows after "Reason:".
   TermAl rebinds and asks once more for `stale_fence`, and for
   `control_assurance_insufficient` when the session was bound before it
@@ -98,44 +106,38 @@ claim. Register it."
 - **Use:** 1,142 decisions in the Engram store, 1,113 of them grants and 29
   refusals. PhoenixCodeNav had 201, all granted. The check takes 6 to 8 ms.
 - **Example:** on 2026-09-25 at 15:33:03 UTC session-7284 was granted a turn
-  requesting observe, communicate and mutate_local, bound to its claim,
-  expiring 30 seconds later, with nothing new to deliver (cursor 353). On
-  2026-09-23 at 00:57:55 UTC session-5132 was refused with
-  `recovery_required`.
+  requesting observe, communicate and mutate_local, bound to its claim and
+  expiring 30 seconds later. On 2026-09-23 at 00:57:55 UTC session-5132 was
+  refused with `recovery_required`, a refusal that no longer occurs.
 - **TermAl call sites:** `turn_dispatch.rs` 220 and 1456, which call
   `engram_host_adapter.rs` 6235–6251. The purpose is always "ordinary".
 
-**Turn start (`turn_begin`).** "The prompt is leaving now, with the context you
-gave me."
+**Turn start (`turn_begin`).** "The prompt is leaving now."
 
-- **Yes:** right before the prompt goes, Engram checks the grant again (`control.rs`
-  396–475, `control_runtime.rs` 842–865):
-  - it has not expired, and its session phase and task are unchanged;
+- **Yes:** right before the prompt goes, Engram checks the grant again
+  (`evaluate_turn_begin` in `control.rs`):
+  - it is still issued and has not expired, and its session phase and task are
+    unchanged;
   - the session is still a participant on the task, and the task's control
     anchor still exists;
   - the policy epoch, the task's admission epoch, the capability map, the work
     revision and the claim fence are unchanged;
-  - the delivery tokens match the page, and the task feed and context have not
-    moved on since the page was built.
+  - the request names no delivery token, since no grant carries one.
 
-  It then marks the grant begun and records the page as delivered, but only
-  tentatively; the turn report confirms it. TermAl hands the prompt to the
-  model.
-- **No:** one of those checks failed. A feed or context that moved on answers
-  `delta_required` and returns the session to catching up. For an expired
-  grant, a changed epoch, `delta_required` or `stale_fence` (after a rebind),
-  and for `grant_scope_mismatch` when a session status shows Engram already
-  retired the grant (no open grant, phase `sync_required`), TermAl asks for
-  permission again, once. Any other refusal drops the prompt, as a refused
-  permission does.
+  It then marks the grant begun, and TermAl hands the prompt to the model.
+- **No:** one of those checks failed. For an expired grant, a changed epoch or
+  `stale_fence` (after a rebind), and for `grant_scope_mismatch` when a
+  session status shows Engram already retired the grant (no open grant, phase
+  `ready`), TermAl asks for permission again, once. Any other refusal drops
+  the prompt, as a refused permission does.
 - **Use:** 1,112 starts in the Engram store, 201 in PhoenixCodeNav. The start
   is what separates "allowed" from "ran", and the counts show both gaps: 1,113
   turns were granted and 1,112 started, because one grant expired without
   starting. And 1,112 started but 1,111 reported, because one turn started and
   never reported. That second case is what the restart path exists for.
 - **Example:** on 2026-09-25 at 15:33:03 UTC session-7284 began its turn. The
-  grant became begun, with tentative cursor 353. The session was already in
-  phase `turn_open`, which the permission sets when it issues the grant.
+  grant became begun. The session was already in phase `turn_open`, which the
+  permission sets when it issues the grant.
 - **TermAl call sites:** `api.rs` 236–240, which calls
   `engram_host_adapter.rs` 3998–4115.
 
@@ -148,11 +150,10 @@ saw."
   test run the host watched pass. A source change opens a "tests have not run"
   obligation on the claimed work. `done` then marks the change untested unless
   the host saw a passing run.
-- **Blocks:** it confirms the page that turn start recorded. A refused report
-  for a turn that never started leaves an issued grant, which the next rebind
-  expires. A refused report for a turn that did start holds the session:
-  Engram will not rebind it until a report succeeds (`control_runtime.rs`
-  231–237).
+- **Blocks:** a refused report for a turn that never started leaves an issued
+  grant, which the next rebind expires. A refused report for a turn that did
+  start holds the session: Engram will not rebind it until a report succeeds
+  (`control_runtime.rs` 231–237).
 - **Use:** 1,111 reports in the Engram store, 201 in PhoenixCodeNav. Since
   24 September they recorded 37 observations, 17 of them with changed source.
   Those opened 27 test obligations, 12 now resolved, and recorded 10 test runs
@@ -179,23 +180,26 @@ gating:
 
 ### Context delivery inside the grant
 
-Engram builds a page of work changes and context for every grant it can
-(`control_runtime.rs` 553–617); the host cannot supply one. Turn start records
-the page as delivered tentatively, and the turn report confirms it. TermAl
-reads only the page's position and token
-(`engram_host_adapter.rs` 680–697) and never shows the content to the agent.
-The `<engram-work-context>` block agents see comes from a separate
-`engram work next --peek` call (`engram_mcp_config.rs` 429–459,
-`turn_dispatch.rs` 67–71), which does not depend on the gate.
+Removed. A grant carries no context, and neither turn start nor the turn
+report delivers anything. The `<engram-work-context>` block agents see comes
+from a separate `engram work next --peek` call (`engram_mcp_config.rs`
+429–459, `turn_dispatch.rs` 67–71), which never depended on the gate. `next`
+keeps the work session's own position, through its own stage-then-confirm
+cycle, and no gate call moves it. Each turn report still adds one event to the
+task's change index, which is now only an audit trail: nothing delivers it
+and no decision reads it.
 
-The two deliveries keep separate positions. The grant's page advances the
-control session's cursors. `next` advances the work session's project cursor,
-through its own stage-then-confirm cycle. So removing the grant's page cannot
-change what agents see. It is still a change to the design, not just dead code
-removal. [Spec §2.7](../spec.md#27-execution-control) binds a grant to a context
-packet and to exact, host-confirmed delivery positions. After the change,
-`next` would be the only delivery, and §2.7 would stop describing the grant as
-one.
+Before the change, Engram built a page of work changes and context for every
+grant it could (`control_runtime.rs` 553–617); the host could not supply one.
+Turn start recorded the page as delivered tentatively, and the turn report
+confirmed it. TermAl read only the page's position and token
+(`engram_host_adapter.rs` 680–697) and never showed the content to the agent.
+The page advanced the control session's own cursors, separate from `next`'s.
+So removing it changed nothing agents see. It did change the design:
+[spec §2.7](../spec.md#27-execution-control) bound a grant to a context packet
+and to exact, host-confirmed delivery positions, and it now names `next` as
+the only delivery. The control session's cursor columns stay in the store,
+unused, until the next planned migration drops them.
 
 ### Holding prompts when Engram does not answer
 
@@ -214,30 +218,28 @@ should still go straight to the user.
 
 ### Recovery turns
 
-A session that falls behind its task feed must catch up before an ordinary
-turn. It can fall behind in several ways:
+Removed, with the page they existed for. A session is `ready` after a bind or
+a rebind, after an issued grant expires, and after a refused turn start. A
+turn begun before a restart stays open until the host reports it. No turn is
+refused for falling behind its task feed; agents catch up through `next`.
 
-- a rebind or restart;
-- a turn report that trailed other sessions' events;
-- an issued grant that expired or was replaced;
-- a refused turn start.
+Before the change, a session that fell behind its task feed had to catch up
+before an ordinary turn. It fell behind after a rebind or restart, a turn
+report that trailed other sessions' events, an issued grant that expired or
+was replaced, or a refused turn start. Engram then answered
+`recovery_required` to an ordinary turn in two cases (`control.rs` 821–846 and
+1013–1021, `control_runtime.rs` 553–617):
 
-Engram answers `recovery_required` to an ordinary turn in two cases
-(`control.rs` 821–846 and 1013–1021, `control_runtime.rs` 553–617):
+- **The backlog was longer than one page.** Engram built a partial page, and
+  only a recovery turn could consume it, one page at a time.
+- **Engram built no page at all while catching up.** That happened when the
+  context packet was over its pinned budget or the page was over the size
+  limit.
 
-- **The backlog is longer than one page.** Engram builds a partial page, and
-  only a recovery turn may consume it, one page at a time.
-- **Engram built no page at all while catching up.** That happens when the
-  context packet is over its pinned budget or the page is over the size limit.
-
-A third cause, the phase `recovery_open`, cannot happen, because storage never
-writes that phase.
-
-TermAl never sends a recovery turn. It always asks for an ordinary turn and has
-no code for this refusal. So the prompt is dropped, the session goes to Error,
-and every retry gets the same answer. Retries get through only when the state
-changes so that Engram can build a single page that fits, for example when the
-context packet shrinks under its budget. A partial backlog never clears
+TermAl never sent a recovery turn. It always asked for an ordinary turn and
+had no code for this refusal. So the prompt was dropped, the session went to
+Error, and every retry got the same answer until the state changed so that
+Engram could build a single page that fit. A partial backlog never cleared
 without a recovery turn.
 
 22 of the 29 refusals were this. All came from one session on 23 September,
@@ -245,10 +247,8 @@ between 00:57 and 01:29 UTC, right after a stale-claim rebind. Its next turn
 was granted at 02:20, with a page attached. The store does not show which
 cause applied or what changed in between.
 
-Recovery turns exist only because of the grant's page: every cause above is
-about building or consuming it. Without the page there is nothing to catch up
-on. The one real recovery case left, a turn that started and never reported,
-is already handled by the status check and a report after the restart.
+The one real recovery case, a turn that started and never reported, is still
+handled by the status check and a report after the restart.
 
 ### Designed but never used
 
@@ -261,8 +261,9 @@ is already handled by the status check and a report after the restart.
 - The "defer" answer. TermAl can read it; Engram never gives it.
 - Session phases storage never writes: `unbound`, `checkpoint_required`,
   `recovery_open`, `handoff_pending`, `contribution_required` and
-  `participant_ready`. Storage writes only `sync_required`, `ready`,
-  `turn_open` and `exited`.
+  `participant_ready`. Storage writes only `ready`, `turn_open` and `exited`.
+  A session last written as `sync_required`, before the change, is treated as
+  `ready`.
 - Refusal codes the stored checks never produce:
   - `control_unavailable`, `store_corrupt`, `unknown_control_schema`,
     `control_policy_missing`, `action_outcome_unknown` and `missing_authority`.
@@ -277,14 +278,13 @@ is already handled by the status check and a report after the restart.
   - `task_unbound`, `task_access_denied` and `lifecycle_hold`. They check that
     the task's control anchor and the session's own row exist, which storage
     never deletes, or come from phases storage never writes.
-  - `context_required`. Every state that would reach it is refused earlier
-    for the page's budget.
-- Turns with purpose "recovery". Engram supports them; no host sends one, so
-  `turn_purpose_mismatch`, which answers only a recovery turn in the wrong
-  phase, never occurs either.
+  - `recovery_required`, `delta_required`, `pinned_budget_exceeded`,
+    `delivery_invalid`, `context_required` and `turn_purpose_mismatch`. They
+    came from the page and recovery turns, and Engram keeps them only to read
+    refusals stored before the change.
 
-[Spec §2.7](../spec.md#27-execution-control) still describes action grants, the
-"defer" answer and recovery turns. No host runs any of them.
+[Spec §2.7](../spec.md#27-execution-control) still describes action grants and
+the "defer" answer. No host runs either.
 
 ## Refusals a user can see in TermAl
 
@@ -292,7 +292,8 @@ A refused turn shows "Engram did not authorize this turn for runtime delivery",
 drops the prompt and puts the session in Error. Its control card names the
 code after "Reason:". The first table lists every code TermAl can meet from
 the turn permission or turn start, and what gets the session out. The store
-so far holds only `recovery_required` (22) and `stale_fence` (7).
+so far holds only `recovery_required` (22), which no longer occurs, and
+`stale_fence` (7).
 
 | Reason on the card | Why | How the session gets out |
 | --- | --- | --- |
@@ -300,22 +301,9 @@ so far holds only `recovery_required` (22) and `stale_fence` (7).
 | `control_assurance_insufficient` | Either the session was bound before it declared an effect it now requests, for example across a TermAl upgrade, or the project policy requires `action_gated`, more than TermAl's `turn_gated`. | The first case cures itself: TermAl rebinds, declaring its current effects, and asks once more. The second needs a settings change: lower the requirement to `turn_gated` with `engram control-policy set-required-assurance`. Until then every prompt gets the same answer. The change starts a new policy epoch, so the first prompt after it is refused once with `policy_epoch_changed` and the next gets through. |
 | `turn_already_open` | A turn that already started on this session has not reported yet. | It clears when that turn's report lands. TermAl also rebinds before the next prompt, which Engram accepts only after that report. |
 | `policy_epoch_changed` | The control policy changed after the session bound. | Send the prompt again: Engram records the new policy with this refusal, so the next ask gets through. At turn start TermAl asks again by itself. |
-| `grant_expired`, `delta_required` | At turn start only: the grant outlived its 30 seconds, or the task feed or context moved on after the grant was issued. | TermAl asks for permission again once by itself. If that is refused too, send the prompt again. |
-| `pinned_budget_exceeded` | The context Engram builds for the grant is over its pinned budget. This shows only while the session is `ready`. While it is `sync_required` (listed below the table) the same problem shows as `recovery_required`. | Sending again gets the same answer until the context shrinks under the budget. |
-| `delivery_invalid` | When asking: the grant's page is over its size limit. Like `pinned_budget_exceeded`, this shows only while the session is `ready`; while it is `sync_required` it shows as `recovery_required`. At turn start: the delivery tokens TermAl sent do not match the grant, a host bug. | When asking, it clears only when the context shrinks enough for the page to fit. At turn start, send the prompt again, and report a repeat to the TermAl agents. |
-| `grant_scope_mismatch` | A request Engram cannot accept as shaped, or at turn start a grant that is no longer open or no longer matches the session's capability map. A grant Engram already retired (by a rebind, a restart or its expiry) is expected; otherwise both point to a host bug. | TermAl asks again once when a session status shows no open grant and phase `sync_required`. A grant a fresh ask superseded can leave the session `ready`, and then it is not asked again. Otherwise send the prompt again, and report a repeat to the TermAl agents. |
+| `grant_expired` | At turn start only: the grant outlived its 30 seconds. | TermAl asks for permission again once by itself. If that is refused too, send the prompt again. |
+| `grant_scope_mismatch` | A request Engram cannot accept as shaped, or at turn start a grant that is no longer open, a changed capability map, or a delivery token, which no grant carries. A grant Engram already retired (by a rebind, a restart or its expiry) is expected; otherwise these point to a host bug. | TermAl asks again once when a session status shows no open grant and phase `ready`, which is how a retired grant leaves the session. When a fresh ask already replaced the grant with a new one, the status shows that grant open, and TermAl does not ask again. Otherwise send the prompt again, and report a repeat to the TermAl agents. |
 | `session_exited` | TermAl reported that the session exited, and it then asked for another turn under the same binding. Not seen so far. | Only a fresh bind admits the session again. |
-| `recovery_required` | The session fell behind its task feed (after a rebind, for example), and either the backlog is longer than one page or Engram could build no page within its budgets. | Engram expects a recovery turn, which TermAl cannot send. A backlog longer than one page never clears this way. The budget case clears only when the context shrinks enough for a page to fit. |
-
-For the `pinned_budget_exceeded` and `delivery_invalid` rows, a session is
-`sync_required` after any of these:
-
-- a bind;
-- a restart or expiry that retired an unused grant;
-- a fresh ask that replaced an unused grant while the session was behind its
-  task feed;
-- a report that found other sessions' events;
-- most refused turn starts.
 
 `capability_not_permitted` answers an effect outside Engram's fixed set:
 observe, communicate, coordinate and mutate_local. No setting widens that set.
@@ -364,9 +352,9 @@ No. Keep the request out of the gate.
   runs.
 
 **Prevented so far:** nothing risky. The 29 refusals were 22 recovery demands
-TermAl could not meet and 7 stale claim bindings that TermAl healed by
-rebinding. The gate has no check on individual actions, so it has never had a
-chance to stop one.
+TermAl could not meet, which no longer occur, and 7 stale claim bindings that
+TermAl healed by rebinding. The gate has no check on individual actions, so it
+has never had a chance to stop one.
 
 **Lost if switched off:**
 
@@ -389,12 +377,12 @@ chance to stop one.
 gates. They keep working without the gate. `done` keeps working too, except for
 criteria still bound to host verification that no earlier host evidence covers.
 
-**What it costs today:**
+**What it cost at the snapshot:**
 
 - 14,062 lines in TermAl's 14 `engram_*.rs` source files, not counting tests.
   All but about 1,000 serve the gate or its turn report; the rest are the MCP
   setup (623) and the readiness checks (395). The host adapter alone is 6,778;
-- restart handling, and sessions dropped by refusals TermAl cannot answer;
+- restart handling, and sessions dropped by refusals TermAl could not answer;
 - about 10 to 20 ms per turn, which is negligible.
 
 ## Decisions
@@ -415,3 +403,9 @@ part that only adds friction goes.
 | Holding prompts when Engram does not answer | Keep | Without it the record has gaps. Add one automatic resend of an unanswered request before asking for Resume. | Keep |
 | Recovery turns | Remove | They exist only for the grant's page; remove them with it. Status and report already cover a turn cut off by a restart. | Remove |
 | Designed but never used | Remove | Unreached code and plans make the gate look bigger than it is. Remove them from spec §2.7 too, or mark them not wired. | Remove |
+
+The decisions on context delivery and recovery turns are carried out, together
+with the parts of turn permission and turn start that went with the page:
+grants carry no page, turn start keeps its other checks, and there are no
+recovery turns. Cutting the refusal codes down to those the stored path can
+produce, and removing what was designed but never used, are still to do.

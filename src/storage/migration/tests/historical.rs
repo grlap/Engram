@@ -164,7 +164,7 @@ fn historical_lease_refusal_imports_and_replays_without_lease_authority() {
     let intent = TurnIntent {
         idempotency_key: "unleased-mutation".into(),
         intent_fingerprint: crate::ObjectId::mint(),
-        purpose: TurnPurpose::Ordinary,
+        purpose: Some(TurnPurpose::Ordinary),
         requested_effects: vec![EffectClass::MutateLocal],
         resource_intents: vec![],
     };
