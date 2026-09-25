@@ -309,9 +309,10 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
         compact.value["recovery"]["item"],
         json!({"ref": work_ref, "state": "open"})
     );
+    // The receipt counts every open obligation, not only the one shown.
     assert_eq!(
         compact.value["obligations"],
-        json!({"open": 1, "omitted": 3})
+        json!({"open": 4, "omitted": 3})
     );
     assert_eq!(compact.value["omissions"], json!(view.omissions));
     assert_eq!(compact.value["reminders"], json!(reminders));
@@ -320,7 +321,7 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
             .text()
             .contains("more obligations are open than shown here")
     );
-    assert_eq!(compact.next, vec![refusal.recovery.command]);
+    assert_eq!(compact.next, vec![refusal.recovery.command.clone()]);
     assert!(
         compact
             .with_effective_session_id(&SessionId("local-process-v1-fixture".into()))
@@ -328,6 +329,42 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
             .get("effective_session_id")
             .is_none()
     );
+
+    // A page stored before the count existed can only count what it shows.
+    view.obligation_page.open_total = None;
+    let stored = crate::verbs::mutation::receipt(
+        &view,
+        "done",
+        crate::verbs::child_obligations::done_refusal_value(&refusal, None).unwrap(),
+        vec![format!("not done {work_ref} \"{title}\"")],
+        Guidance {
+            reminders,
+            next: vec![refusal.recovery.command.clone()],
+        },
+        Holder::You(at(7200)),
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        stored.value["obligations"],
+        json!({"open": 1, "omitted": 3})
+    );
+}
+
+#[test]
+fn an_item_without_a_run_counts_zero_open_obligations() {
+    let (_directory, verbs, _, _) = fixture();
+    let work_ref = add(&verbs, "No run yet", None, false, 0);
+    let view = verbs.service.inspect_work(&work_ref, at(1)).unwrap();
+    assert!(view.obligation_page.items.is_empty());
+    // Known to be zero, so an absent count keeps meaning only a page stored
+    // before the count existed.
+    assert_eq!(view.obligation_page.open_total, Some(0));
+    assert_eq!(
+        serde_json::to_value(&view.obligation_page).unwrap()["open_total"],
+        json!(0)
+    );
+    assert!(crate::verbs::handlers::obligation_reminders(&view.obligation_page).is_empty());
 }
 
 #[test]

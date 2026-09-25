@@ -848,7 +848,12 @@ pub(super) fn work_obligation_page(
     work_id: WorkId,
 ) -> Result<WorkObligationPage, StoreError> {
     let Some(run) = store.latest_work_run(work_id)? else {
-        return Ok(WorkObligationPage::default());
+        // No run, no obligation: the count is known to be zero, so an absent
+        // count only ever marks a page stored before the count existed.
+        return Ok(WorkObligationPage {
+            open_total: Some(0),
+            ..WorkObligationPage::default()
+        });
     };
     disclosed_work_obligation_page(store, store.work_run_obligations(run.run_id)?)
 }

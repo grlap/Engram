@@ -4,7 +4,8 @@
 
 use super::{
     DateTime, Guidance, Holder, Receipt, Serialize, Utc, Value, VerbError, WorkFocusView,
-    WorkItemSummary, WorkLifecycle, WorkObligationState, WorkSectionOmission, lifecycle_word,
+    WorkItemSummary, WorkLifecycle, WorkObligationPage, WorkObligationState, WorkSectionOmission,
+    lifecycle_word,
 };
 
 #[derive(Serialize)]
@@ -36,6 +37,17 @@ struct ClaimAuthority {
 struct ObligationCounts {
     open: usize,
     omitted: usize,
+}
+
+/// Every open obligation on the run, including any the page leaves out. A
+/// page stored before the count existed can only count the ones it shows.
+fn open_obligations(page: &WorkObligationPage) -> usize {
+    page.open_total.unwrap_or_else(|| {
+        page.items
+            .iter()
+            .filter(|item| item.state == WorkObligationState::Open)
+            .count()
+    })
 }
 
 #[derive(Serialize)]
@@ -126,12 +138,7 @@ pub(super) fn receipt(
         claim,
         result,
         obligations: ObligationCounts {
-            open: view
-                .obligation_page
-                .items
-                .iter()
-                .filter(|item| item.state == WorkObligationState::Open)
-                .count(),
+            open: open_obligations(&view.obligation_page),
             omitted: view.obligation_page.omitted_count,
         },
         omissions: &view.omissions,

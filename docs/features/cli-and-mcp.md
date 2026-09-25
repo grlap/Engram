@@ -306,7 +306,9 @@ a session, stage or acknowledge delivery, or mutate the work item.
 `operation` and its result facts accompany exactly one `work` summary
 (`short_ref`, title, lifecycle, revision). Live `claim` context contains only
 relative `holder` and `held_until`, never a fence or control binding.
-`obligations.open` counts open entries on the source obligation page;
+`obligations.open` counts every open obligation on the run, including any the
+source obligation page leaves out (its `open_total`); only a page stored before
+that count existed falls back to the open entries it shows.
 `obligations.omitted` retains its exact undisplayed count, not an assertion
 that omitted entries are resolved. Actionable reminders, source omissions,
 refusal `code`/`remedy`/`recovery`, and done's child-follow-up groups remain.
@@ -1724,9 +1726,10 @@ waived stock obligation, `untested_source_change` naming the change and its
 source revision, without leaking host authority. The page's `untested_total`
 counts every untested change on the run, and its items name those that fit.
 Its `open_total` counts every open obligation on the run before count and byte
-trimming. When it exceeds the open items shown, an open obligation was left
-out, and the agent reminder says more obligations are open than shown. A page
-stored before this count existed lacks it and keeps its original reminder.
+trimming, and is 0 for an item that has no run yet. When it exceeds the open
+items shown, an open obligation was left out, and the agent reminder says more
+obligations are open than shown. Only a page stored before this count existed
+lacks it, and that page keeps its original reminder.
 
 Every new completion seal declares obligation schema V1 and freezes the exact
 definition/resolution id pairs applicable at its dense pre-seal cut. The
