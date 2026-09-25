@@ -38,6 +38,16 @@ impl SqliteStore {
         let Some(parent) = child.parent_id else {
             return Ok(None);
         };
+        // The child, its successor, the parent and the parent's run are
+        // compared, so they come from one commit.
+        self.work_read_snapshot(|store| store.required_child_successor_in(child, parent))
+    }
+
+    fn required_child_successor_in(
+        &self,
+        child: &WorkItem,
+        parent: WorkId,
+    ) -> Result<Option<RequiredChildSuccessor>, StoreError> {
         let run = self.latest_work_run(parent)?;
         // Retained parents stay bound to their own generation after root reopen.
         // A restored parent can have no run while its children already execute.

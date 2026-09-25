@@ -64,8 +64,11 @@ impl SqliteStore {
         &self,
         work_id: WorkId,
     ) -> Result<bool, StoreError> {
-        let item = load_work_item(&self.connection, work_id)?;
-        work_completed_by_restored_record_on(&self.connection, &item)
+        // The item and the event it is checked against come from one commit.
+        self.work_read_snapshot(|store| {
+            let item = load_work_item(&store.connection, work_id)?;
+            work_completed_by_restored_record_on(&store.connection, &item)
+        })
     }
 
     /// Returns inert restored history generations in their dense order.
@@ -1325,7 +1328,34 @@ pub(super) fn latest_canonical_work_event_for_item(
     })
 }
 
+/// Runs `read` on one commit state of `connection`: inside the caller's
+/// transaction when there is one, otherwise in a short deferred read
+/// transaction. In autocommit each statement sees the newest commit, so a
+/// check that compares several statements could otherwise compare two
+/// moments and report another connection's commit as corruption.
+pub(super) fn on_one_snapshot<T>(
+    connection: &Connection,
+    read: impl FnOnce(&Connection) -> Result<T, StoreError>,
+) -> Result<T, StoreError> {
+    if !connection.is_autocommit() {
+        return read(connection);
+    }
+    let transaction = connection.unchecked_transaction()?;
+    let value = read(&transaction)?;
+    transaction.commit()?;
+    Ok(value)
+}
+
 pub(super) fn latest_canonical_work_event_for_item_optional(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Option<WorkEvent>, StoreError> {
+    on_one_snapshot(connection, |connection| {
+        latest_canonical_work_event_on_snapshot(connection, work_id)
+    })
+}
+
+fn latest_canonical_work_event_on_snapshot(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Option<WorkEvent>, StoreError> {
@@ -1557,7 +1587,18 @@ pub(super) fn load_work_item_projection(
     Ok(item)
 }
 
+/// The work item, checked against its latest canonical event or, for a
+/// restored item, its restored record. Every read is on one commit state.
 pub(in crate::storage) fn load_work_item(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<WorkItem, StoreError> {
+    on_one_snapshot(connection, |connection| {
+        load_work_item_on_snapshot(connection, work_id)
+    })
+}
+
+fn load_work_item_on_snapshot(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<WorkItem, StoreError> {

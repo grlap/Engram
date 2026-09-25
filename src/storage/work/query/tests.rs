@@ -4,6 +4,212 @@ use super::super::*;
 use super::prerequisites::classify_prerequisite_state;
 use super::*;
 
+/// A second connection's write, committed from inside the reading
+/// connection's trace hook just as the reader starts the first statement
+/// whose SQL contains every fragment of `before`.
+struct ConcurrentWrite {
+    before: &'static [&'static str],
+    write: Box<dyn FnOnce() -> Result<(), String>>,
+}
+
+thread_local! {
+    static CONCURRENT_WRITE: std::cell::RefCell<Option<ConcurrentWrite>> =
+        const { std::cell::RefCell::new(None) };
+    /// What the hook's write returned, with its error; none until it fires.
+    static CONCURRENT_WRITE_OUTCOME: std::cell::RefCell<Option<Result<(), String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs the waiting write, once, when the reader starts its statement.
+fn commit_before_the_statement(event: &rusqlite::trace::TraceEvent<'_>) {
+    let rusqlite::trace::TraceEvent::Stmt(_, sql) = event else {
+        return;
+    };
+    let Some(write) = CONCURRENT_WRITE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let starts = slot
+            .as_ref()
+            .is_some_and(|write| write.before.iter().all(|fragment| sql.contains(fragment)));
+        if starts { slot.take() } else { None }
+    }) else {
+        return;
+    };
+    let outcome = (write.write)();
+    CONCURRENT_WRITE_OUTCOME.with(|slot| *slot.borrow_mut() = Some(outcome));
+}
+
+/// Runs `read` on `reader`, in autocommit, while `write` commits from
+/// another connection just before the reader starts the statement `before`
+/// names. Panics with its cause when the write fails or never runs.
+fn read_across_a_concurrent_commit<T>(
+    reader: &SqliteStore,
+    read: impl FnOnce(&SqliteStore) -> T,
+    before: &'static [&'static str],
+    write: impl FnOnce() -> Result<(), String> + 'static,
+) -> T {
+    assert!(reader.connection.is_autocommit());
+    CONCURRENT_WRITE.with(|slot| {
+        *slot.borrow_mut() = Some(ConcurrentWrite {
+            before,
+            write: Box::new(write),
+        });
+    });
+    CONCURRENT_WRITE_OUTCOME.with(|slot| *slot.borrow_mut() = None);
+    reader.connection.trace_v2(
+        rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
+        Some(|event| commit_before_the_statement(&event)),
+    );
+    let read = read(reader);
+    reader
+        .connection
+        .trace_v2(rusqlite::trace::TraceEventCodes::empty(), None);
+    CONCURRENT_WRITE.with(|slot| slot.borrow_mut().take());
+    match CONCURRENT_WRITE_OUTCOME.with(|slot| slot.borrow_mut().take()) {
+        Some(Ok(())) => {}
+        Some(Err(error)) => panic!("the concurrent write failed: {error}"),
+        None => panic!("the reader never started {before:?}, so nothing committed mid-read"),
+    }
+    read
+}
+
+fn latest_event_id(store: &SqliteStore, work_id: WorkId) -> String {
+    store
+        .connection
+        .query_row(
+            "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
+            [work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .expect("the item's latest event")
+}
+
+/// A read in autocommit makes several statements. Another connection's
+/// commit landing between them must not look like corruption: the read sees
+/// one commit state. Here a new event for the item commits just before the
+/// reader reads the item's feed head, so the item's stored latest event and
+/// the feed head would otherwise be read across that commit. The event is
+/// read directly, as completion and child resolution read it, not through
+/// the item read that already holds one snapshot around it.
+#[test]
+fn a_latest_event_read_in_autocommit_sees_one_commit_state_across_a_concurrent_commit() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let path = directory.path().join("engram.sqlite3");
+    let mut writer = SqliteStore::open(&path).expect("writer store");
+    let work = writer
+        .create_work(
+            &root_request("race-project", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let held = claim(&mut writer, &work, "holder", "claim", 1, 3_600);
+    let work = writer.get_work_item(work.work_id).expect("claimed item");
+    let event_before = latest_event_id(&writer, work.work_id);
+    let reader = SqliteStore::open(&path).expect("reader store");
+
+    let evidence_for = work.clone();
+    let read = read_across_a_concurrent_commit(
+        &reader,
+        |reader| latest_canonical_work_event_for_item_optional(&reader.connection, work.work_id),
+        &[
+            "entry.feed_kind = 'project'",
+            "ORDER BY entry.position DESC LIMIT 1",
+        ],
+        move || {
+            writer
+                .record_work_evidence(
+                    &RecordWorkEvidenceRequest {
+                        work_id: evidence_for.work_id,
+                        run_id: held.run_id,
+                        expected_work_revision: evidence_for.revision,
+                        holder: held.holder.clone(),
+                        claim_id: held.claim_id,
+                        claim_fence: held.fence,
+                        summary: "committed between the reader's statements".into(),
+                        refs: vec!["test:race".into()],
+                        actor: actor("holder"),
+                        idempotency_key: "concurrent-evidence".into(),
+                        recorded_at: at(50),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        },
+    );
+    let event = read
+        .expect("one commit state, no false corruption")
+        .expect("the item has an event");
+    assert_eq!(
+        event.work, work,
+        "the read returns the event that was latest when it started"
+    );
+    // A fresh read sees the concurrent event, and reads it consistently.
+    assert_ne!(latest_event_id(&reader, work.work_id), event_before);
+    latest_canonical_work_event_for_item_optional(&reader.connection, work.work_id)
+        .expect("read after the commit")
+        .expect("the item has an event");
+    let after = reader
+        .get_work_item(work.work_id)
+        .expect("read after the commit");
+    assert_eq!(after.work_id, work.work_id);
+}
+
+/// The same read across a commit that revises the item itself, landing
+/// after the reader has read the item's row but before it reads the item's
+/// latest event. The row and the event must still come from one commit, or
+/// the old row would be compared with the new revision's event.
+#[test]
+fn a_work_item_read_in_autocommit_compares_its_row_and_event_from_one_commit() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let path = directory.path().join("engram.sqlite3");
+    let mut writer = SqliteStore::open(&path).expect("writer store");
+    let work = writer
+        .create_work(
+            &root_request("race-revision-project", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let reader = SqliteStore::open(&path).expect("reader store");
+
+    let revised_from = work.clone();
+    let read = read_across_a_concurrent_commit(
+        &reader,
+        |reader| reader.get_work_item(work.work_id),
+        &["SELECT latest_event_id FROM work_items WHERE work_id = ?1"],
+        move || {
+            writer
+                .revise_work(
+                    &ReviseWorkRequest {
+                        work_id: revised_from.work_id,
+                        expected_revision: revised_from.revision,
+                        patch: WorkRevisionPatch {
+                            title: Some("revised between the reader's statements".into()),
+                            ..WorkRevisionPatch::default()
+                        },
+                        authority: delegated(&revised_from.project_id.0, "planner"),
+                        actor: actor("planner"),
+                        idempotency_key: "concurrent-revision".into(),
+                        updated_at: at(2),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        },
+    );
+    assert_eq!(
+        read.expect("one commit state, no false corruption"),
+        work,
+        "the read reports the item as it was when it started"
+    );
+    // A fresh read sees the revision.
+    let after = reader
+        .get_work_item(work.work_id)
+        .expect("read after the commit");
+    assert_eq!(after.revision, work.revision + 1);
+    assert_eq!(after.title, "revised between the reader's statements");
+}
+
 /// The claim-epoch lookup bind's history check uses reads the item's event
 /// index newest first without a sort or full scan, and stops at the newest
 /// event, so its steps and decodes stay the same as the claim's history

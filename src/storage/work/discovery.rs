@@ -5,7 +5,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::feeds::load_typed_work_object;
 use super::notes::load_note;
-use super::query::{load_work_claim_optional, load_work_item, parse_work_id};
+use super::query::{load_work_claim_optional, load_work_item, on_one_snapshot, parse_work_id};
 use crate::ObjectId;
 use crate::domain::{ProjectId, SessionId, WorkClaim, WorkEvent, WorkId, WorkItem, WorkTransition};
 use crate::storage::{SqliteStore, StoreError};
@@ -131,13 +131,9 @@ impl SqliteStore {
         &self,
         read: impl FnOnce(&Self) -> Result<T, StoreError>,
     ) -> Result<T, StoreError> {
-        if !self.connection.is_autocommit() {
-            return read(self);
-        }
-        let transaction = self.connection.unchecked_transaction()?;
-        let result = read(self)?;
-        transaction.commit()?;
-        Ok(result)
+        // The snapshot is taken on this store's own connection, so `read`
+        // keeps using the store rather than the connection handed back.
+        on_one_snapshot(&self.connection, |_| read(self))
     }
 
     pub(crate) fn work_discovery(
