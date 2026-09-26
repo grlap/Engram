@@ -1118,8 +1118,15 @@ Every checkpoint resolves the obligation rule set selected by the begun
 grant's frozen project-policy epoch and records its id on the canonical
 `ExecutionObservation`. The built-in set maps every observation with
 `source_changed=true` to one immutable test obligation regardless of outcome
-or source-basis presence. Each definition binds the same rule-set id, rule
-identity/version, trigger, and requirement. A later policy activation applies
+or source-basis presence. The recorded `source_changed` is the core's reading
+of the host's report. It is false whenever the host reported no change. When
+the host reported one, it is true unless the reported `source_revision`
+equals the revision of the run's newest recorded source change and no host
+record on the run since that change (observation or environment
+evidence) carried another revision; with no revision on the
+report or on that change, or no recorded change yet, it is true. Each
+definition binds the same rule-set id, rule identity/version, trigger, and
+requirement. A later policy activation applies
 only to later observations and cannot reinterpret existing history. Every
 observation and obligation definition carries its exact rule-set id.
 Obligation definitions

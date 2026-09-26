@@ -355,7 +355,7 @@ pub(crate) fn work_item_projection_decode_count() -> usize {
 pub(crate) use completion::normalize_completion_acceptance_shape;
 pub(super) use completion::{
     append_control_environment_evidence_on, append_control_execution_observation_on,
-    append_control_verification_evidence_on,
+    append_control_verification_evidence_on, source_revision_repeats_on,
 };
 pub(crate) use feeds::checkpoint_run_feed_end;
 pub(super) use feeds::{

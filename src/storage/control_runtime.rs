@@ -1018,21 +1018,32 @@ impl SqliteStore {
                             observation_id: input.observation_id.clone(),
                         });
                     }
+                    let observation_binding = binding.clone().ok_or_else(|| {
+                        StoreError::InvalidControlSession(
+                            "execution observation lost its work binding".into(),
+                        )
+                    })?;
+                    // The revision decides a source change: a reported change
+                    // that leaves the revision where this run last saw it is
+                    // not one, so it neither opens a tests obligation nor
+                    // moves an evaluation's basis.
+                    let source_changed = input.source_changed
+                        && !work::source_revision_repeats_on(
+                            &transaction,
+                            observation_binding.run_id,
+                            input.source_basis.as_ref(),
+                        )?;
                     let observation = ExecutionObservation {
                         schema_version: SCHEMA_VERSION,
                         project_id: project_id.clone(),
-                        binding: binding.clone().ok_or_else(|| {
-                            StoreError::InvalidControlSession(
-                                "execution observation lost its work binding".into(),
-                            )
-                        })?,
+                        binding: observation_binding,
                         session_id: session_id.clone(),
                         grant_id: grant_id.into(),
                         observation_id: input.observation_id.trim().into(),
                         action_fingerprint: input.action_fingerprint.clone(),
                         effect: input.effect,
                         outcome: input.outcome,
-                        source_changed: input.source_changed,
+                        source_changed,
                         obligation_rule_set: obligation_rule_set.clone(),
                         source_basis: input.source_basis.clone(),
                         observed_at: input.observed_at,

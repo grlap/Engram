@@ -503,6 +503,141 @@ impl HostSession {
         };
         receipt.verification_evidence.clone()
     }
+
+    /// One mutation turn reporting exactly `reports`, in order: whether the
+    /// host claims a source change, and the revision it reports, if any.
+    fn report(&mut self, store: &mut SqliteStore, reports: &[(bool, Option<&str>)], second: i64) {
+        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
+        self.begin(store, &grant, second + 1);
+        let observations: Vec<ExecutionObservationInput> = reports
+            .iter()
+            .enumerate()
+            .map(
+                |(index, (source_changed, revision))| ExecutionObservationInput {
+                    observation_id: self.key(&format!("report-{index}")),
+                    action_fingerprint: ObjectId::from_canonical_bytes(
+                        self.key(&format!("report action {index}")).as_bytes(),
+                    ),
+                    effect: EffectClass::MutateLocal,
+                    outcome: ExecutionOutcome::Succeeded,
+                    source_changed: *source_changed,
+                    source_basis: revision.map(|revision| ExecutionSourceBasis {
+                        workspace_id: self.basis.workspace_id.clone(),
+                        source_revision: revision.into(),
+                    }),
+                    observed_at: revision.map(|_| at(second + 1)),
+                },
+            )
+            .collect();
+        let checkpointed = store
+            .checkpoint_control_turn_with_evidence(
+                &self.project_id,
+                &self.session_id,
+                &self.connection_token,
+                &self.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &observations,
+                &[],
+                &[],
+                &self.key("checkpoint"),
+                at(second + 2),
+            )
+            .expect("checkpoint reported observations");
+        assert!(
+            matches!(
+                checkpointed,
+                ControlTurnCheckpointDecision::Checkpointed { .. }
+            ),
+            "host turn must checkpoint: {checkpointed:?}"
+        );
+    }
+
+    /// One turn that records only verification evidence, citing a producer
+    /// observation recorded in an earlier turn, which carries that
+    /// producer's older revision at a new feed position.
+    fn cite_earlier_producer(&mut self, store: &mut SqliteStore, producer: &ObjectId, second: i64) {
+        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
+        self.begin(store, &grant, second + 1);
+        let verification = VerificationEvidenceInput {
+            producer_observation: ExecutionObservationReference::ObjectId {
+                object_id: producer.clone(),
+            },
+            check_kind: VerificationKind::Build,
+            environment: None,
+            summary: Some("host observed an earlier build".into()),
+            refs: vec!["command:build".into()],
+        };
+        let checkpointed = store
+            .checkpoint_control_turn_with_evidence(
+                &self.project_id,
+                &self.session_id,
+                &self.connection_token,
+                &self.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &[],
+                std::slice::from_ref(&verification),
+                &[],
+                &self.key("checkpoint"),
+                at(second + 2),
+            )
+            .expect("checkpoint late verification");
+        assert!(
+            matches!(
+                checkpointed,
+                ControlTurnCheckpointDecision::Checkpointed { .. }
+            ),
+            "host turn must checkpoint: {checkpointed:?}"
+        );
+    }
+
+    /// One turn that records only environment evidence, captured at
+    /// `revision`: no execution observation, no check.
+    fn capture_environment(&mut self, store: &mut SqliteStore, revision: &str, second: i64) {
+        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
+        self.begin(store, &grant, second + 1);
+        let components = EnvironmentComponents {
+            toolchain: "rustc-test".into(),
+            sandbox: Some("test-host-sandbox".into()),
+            workspace_id: self.basis.workspace_id.clone(),
+            capability_map_revision: 1,
+        };
+        let environment = EnvironmentEvidenceInput {
+            source_basis: ExecutionSourceBasis {
+                workspace_id: self.basis.workspace_id.clone(),
+                source_revision: revision.into(),
+            },
+            environment_fingerprint: CanonicalObject::freeze(&components)
+                .expect("freeze environment components")
+                .key()
+                .clone(),
+            components: Some(components),
+            observed_at: at(second + 1),
+        };
+        let checkpointed = store
+            .checkpoint_control_turn_with_evidence(
+                &self.project_id,
+                &self.session_id,
+                &self.connection_token,
+                &self.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &[],
+                &[],
+                std::slice::from_ref(&environment),
+                &self.key("checkpoint"),
+                at(second + 2),
+            )
+            .expect("checkpoint environment evidence");
+        assert!(
+            matches!(
+                checkpointed,
+                ControlTurnCheckpointDecision::Checkpointed { .. }
+            ),
+            "host turn must checkpoint: {checkpointed:?}"
+        );
+    }
 }
 
 // Field order matters: the store closes before its temporary home is removed.
@@ -1586,6 +1721,9 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
         Some(None)
     );
 
+    // A real source change moves the revision; one that leaves it where the
+    // run last saw it is not a change.
+    host.basis.source_revision = "content-revision-2".into();
     let none = host.checkpoint(store, true, None, 30);
     assert!(none.is_empty());
     assert!(matches!(

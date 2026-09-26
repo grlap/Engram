@@ -344,6 +344,16 @@ pub struct ExecutionObservation {
     pub action_fingerprint: ObjectId,
     pub effect: EffectClass,
     pub outcome: ExecutionOutcome,
+    /// Whether the source changed: the core's reading of the host's report.
+    /// It is true when the host reported a change, unless the reported
+    /// revision equals the revision of the run's newest recorded source
+    /// change and no host record on the run since that change (observation or
+    /// environment evidence) carried another revision; such
+    /// a report (as a host may send for writes under git-ignored paths) is
+    /// recorded as no change. When the report or that newest change carries
+    /// no revision, or the run has recorded no change, the host's report
+    /// stands. Observations recorded before this rule keep the host's literal
+    /// flag and are read as stored.
     pub source_changed: bool,
     /// Exact immutable rule set selected by the frozen turn-policy basis.
     pub obligation_rule_set: ObjectId,

@@ -1712,7 +1712,20 @@ verification requirement.
 
 Every work-bound observation with `source_changed: true` atomically opens one
 built-in test obligation, irrespective of `outcome` and irrespective of
-whether `source_basis` is present. A passed typed test satisfies open
+whether `source_basis` is present. The recorded `source_changed` is the
+core's reading of the host's report, not the host's literal flag;
+observations stored before this rule keep the host's flag and are read as
+stored. It is true when the host reported a change, unless the reported
+`source_revision` equals the revision of the run's newest recorded source
+change and no host record on the run since that change (observation or
+environment evidence) carried another revision, in any
+workspace. Such a repeat is recorded as `source_changed: false` and opens
+nothing, so writes under git-ignored paths that leave the content unchanged
+do not count, while a move seen only by a check or an environment capture,
+even one that later came back, still counts at the next change. When the
+report or that newest change carries no revision, the host's report stands, so a
+later change with a revision still re-anchors obligations that a
+revision-less change left waiver-only. A passed typed test satisfies open
 obligations only against the newest mutation source revision at the evaluated
 run-feed cut. Thus a newest basisless mutation makes the open set waiver-only
 until a later basis-bearing mutation plus passed test arrives; that later test

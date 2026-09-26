@@ -238,7 +238,12 @@ stale reason named.
 - **F3 host-observed mutation.** No execution observation with
   `source_changed`, no verification or environment evidence, and no obligation
   definition or resolution was appended to the run feed after `evaluated_cut`.
-  These are host-minted facts about the workspace and its checks. The only
+  These are host-minted facts about the workspace and its checks, with
+  `source_changed` recorded as the core's reading of the host's report: a
+  reported change that leaves the source at the revision of the run's newest
+  recorded source change, with no other revision seen since (in an
+  observation or environment evidence), is recorded as no change, so it never
+  moves the basis. The only
   exception is a source change that left the source at the revision the
   evaluation declared it judged (its `source_basis`), with the obligation that
   change opened: the evaluator saw that state, so the host's late report of it

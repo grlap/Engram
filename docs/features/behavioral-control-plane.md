@@ -441,8 +441,15 @@ The active immutable `ControlPolicy` selects a canonical
 `ObligationRuleSet` by hash. The built-in set contains the typed
 `source_mutation_requires_test` rule, which evaluates every work-bound
 observation with `source_changed=true`, regardless of outcome or whether a
-source basis is present. The checkpoint resolves the rule set from the begun
-grant's frozen project-policy epoch and records its id on the
+source basis is present. The recorded `source_changed` is the core's reading
+of the host's report: it is true when the host reported a change, unless the
+reported `source_revision` equals the revision of the run's newest recorded
+source change and no host record on the run since that change (observation or
+environment evidence) carried another revision. Such a
+repeat is recorded as no change and opens no obligation. When the report or
+that newest change carries no revision, or the run has recorded no change,
+the host's report stands. The checkpoint resolves the rule set from the
+begun grant's frozen project-policy epoch and records its id on the
 `ExecutionObservation`; every resulting `WorkObligation` repeats that exact
 selection. Activating another set affects only observations from later policy
 epochs and cannot reinterpret a prior trigger, definition, or completion cut.

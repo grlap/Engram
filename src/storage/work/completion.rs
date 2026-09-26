@@ -46,15 +46,15 @@ use crate::{
         AcceptanceResult, COMPLETION_ENVIRONMENT_SCHEMA_VERSION,
         COMPLETION_OBLIGATION_SCHEMA_VERSION, ChildRequirement, CompleteWorkRequest,
         CompletionObligationBinding, CompletionSeal, ControlWorkBinding, DisposeWorkRequest,
-        EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition, MemoryAssertionEvent,
-        MemoryVersion, OpenWorkObligation, ReopenWorkRequest, RequiredChildWaiver, RootExecution,
-        RootExecutionId, RootExecutionState, SCHEMA_VERSION, SessionId, VerificationEvidence,
-        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkBlocker, WorkCheckpoint,
-        WorkClaim, WorkClaimState, WorkCompletionRecoveryCause, WorkDisposition, WorkEvent,
-        WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem,
-        WorkLifecycle, WorkObligation, WorkObligationId, WorkObligationResolution,
-        WorkObligationResolutionEvent, WorkObligationState, WorkRun, WorkRunId, WorkRunState,
-        WorkTransition,
+        EnvironmentEvidence, ExecutionObservation, ExecutionSourceBasis, FeedId, FeedPosition,
+        MemoryAssertionEvent, MemoryVersion, OpenWorkObligation, ReopenWorkRequest,
+        RequiredChildWaiver, RootExecution, RootExecutionId, RootExecutionState, SCHEMA_VERSION,
+        SessionId, VerificationEvidence, WaiveRequiredChildRequest, WaiveWorkObligationRequest,
+        WorkBlocker, WorkCheckpoint, WorkClaim, WorkClaimState, WorkCompletionRecoveryCause,
+        WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer,
+        WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation, WorkObligationId,
+        WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkRun,
+        WorkRunId, WorkRunState, WorkTransition,
     },
     memory::Redactor,
 };
@@ -1493,6 +1493,66 @@ fn append_control_typed_evidence_on(
     };
     append_work_event(transaction, &event)?;
     Ok(object.key().clone())
+}
+
+/// Whether a reported source change leaves the source where the run already
+/// saw it. Such a report changed nothing: the revision, not the host's flag,
+/// decides a source change.
+///
+/// The report repeats only when its revision equals the revision of the
+/// newest recorded source change, the row test-obligation satisfaction and
+/// evaluation freshness key on, and no host record on the run since that
+/// change saw any other revision: no execution observation, and no
+/// environment evidence, which reports its own source basis. Verification
+/// evidence is left out: it copies its producer observation's basis, which the
+/// run already holds at the producer's own position, and a late verification
+/// of an earlier producer would carry a revision seen before the change. The
+/// first condition keeps a repeat from re-anchoring obligations. The second
+/// keeps a move that only records claiming no change carried (a check run
+/// after someone else's edit, an environment capture) from hiding the next
+/// change, whether it moves on, reverts, or goes away and comes back: the
+/// content in between is content an evaluation may have judged. When the
+/// newest recorded change carries no revision, or the run has none, or the
+/// report carries no revision, this answers `false` and the host's flag
+/// stands, so a later change with a revision can re-anchor obligations that a
+/// revision-less change left waiver-only. The revision fingerprints the full
+/// content, so it compares across workspaces, which are kept for audit only,
+/// as in test-obligation freshness.
+pub(in crate::storage) fn source_revision_repeats_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    basis: Option<&ExecutionSourceBasis>,
+) -> Result<bool, StoreError> {
+    let Some(basis) = basis else {
+        return Ok(false);
+    };
+    let Some((change_position, newest_change)) =
+        latest_source_mutation_on(connection, run_id, i64::MAX)?
+    else {
+        return Ok(false);
+    };
+    if newest_change
+        .source_basis
+        .is_none_or(|recorded| recorded.source_revision != basis.source_revision)
+    {
+        return Ok(false);
+    }
+    let moved_since: bool = connection.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.position > ?2
+               AND entry.object_kind IN ('execution_observation', 'environment_evidence')
+               AND json_extract(object.canonical_json, '$.source_basis.source_revision')
+                   IS NOT NULL
+               AND json_extract(object.canonical_json, '$.source_basis.source_revision')
+                   != ?3
+         )",
+        params![run_id.0.to_string(), change_position, basis.source_revision],
+        |row| row.get(0),
+    )?;
+    Ok(!moved_since)
 }
 
 pub(in crate::storage) fn append_control_execution_observation_on(

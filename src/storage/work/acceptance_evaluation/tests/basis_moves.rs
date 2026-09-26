@@ -271,6 +271,404 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
 }
 
 #[test]
+fn a_reported_change_that_leaves_the_revision_unchanged_is_not_a_source_change() {
+    let mut fixture = fixture("project-basis-same-revision");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    // Obligation rules stay on: a real change opens a "tests have not run"
+    // obligation, and a repeated revision must not.
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let before = cut(store, &work);
+    host.checkpoint(store, true, None, 20);
+    assert_eq!(
+        entries_after(store, &work, before, "work_obligation").len(),
+        1,
+        "the first change to a revision opens the obligation"
+    );
+    let read = cut(store, &work);
+
+    // The host reports a change again, but at the revision the run already
+    // recorded, as it does for writes under git-ignored paths.
+    host.checkpoint(store, true, None, 30);
+    let repeated = entries_after(store, &work, read, "execution_observation");
+    assert_eq!(repeated.len(), 1);
+    let observation: ExecutionObservation =
+        load_typed_work_object(&store.connection, &repeated[0], "execution_observation")
+            .expect("repeated observation");
+    assert!(
+        !observation.source_changed,
+        "an unchanged revision is not a source change"
+    );
+    assert!(
+        entries_after(store, &work, read, "work_obligation").is_empty(),
+        "an unchanged revision opens no obligation"
+    );
+    let recorded = record(store, &judged(&work, &note, read, None, 35))
+        .expect("an unchanged revision neither voids nor asks for a resubmission");
+    // An evaluation recorded before such a report stays fresh at completion.
+    host.checkpoint(store, true, None, 36);
+    assert_eq!(
+        store
+            .acceptance_evaluation_status(work.work_id, None)
+            .expect("status read")
+            .map(|status| (status.evaluation, status.stale)),
+        Some((recorded.evaluation, None))
+    );
+
+    // The revision fingerprints the full content, so the same revision
+    // reported from another workspace is still no change; the workspace is
+    // kept for audit only. A new revision is a change.
+    for (workspace, revision, changes, second) in [
+        ("another-workspace", "content-revision-1", false, 40),
+        ("workspace-evaluated", "content-revision-2", true, 50),
+    ] {
+        host.basis.workspace_id = workspace.into();
+        host.basis.source_revision = revision.into();
+        let position = cut(store, &work);
+        host.checkpoint(store, true, None, second);
+        let reported = entries_after(store, &work, position, "execution_observation");
+        let observation: ExecutionObservation =
+            load_typed_work_object(&store.connection, &reported[0], "execution_observation")
+                .expect("reported observation");
+        assert_eq!(
+            observation.source_changed, changes,
+            "{workspace} {revision}"
+        );
+        assert_eq!(
+            entries_after(store, &work, position, "work_obligation").len(),
+            usize::from(changes),
+            "{workspace} {revision}"
+        );
+    }
+    // Its own attempt key: the identical content would replay the committed
+    // record instead of submitting anew.
+    let mut unseen = judged(&work, &note, read, None, 55);
+    unseen.attempt_key = Some("after-the-change".into());
+    assert_eq!(
+        moved(record(store, &unseen)),
+        (
+            EvaluationBasisMove::SourceChanged,
+            "acceptance_evaluation_void".into()
+        )
+    );
+}
+
+/// Whether each execution observation recorded after `position` counts as a
+/// source change, in feed order.
+fn recorded_changes(store: &SqliteStore, work: &WorkItem, position: i64) -> Vec<bool> {
+    entries_after(store, work, position, "execution_observation")
+        .iter()
+        .map(|id| {
+            load_typed_work_object::<ExecutionObservation>(
+                &store.connection,
+                id,
+                "execution_observation",
+            )
+            .expect("recorded observation")
+            .source_changed
+        })
+        .collect()
+}
+
+/// Asserts the run has `count` obligations and a passing test left none open.
+fn all_obligations_satisfied(store: &SqliteStore, run: crate::domain::WorkRunId, count: usize) {
+    let obligations = store.work_run_obligations(run).expect("run obligations");
+    assert_eq!(obligations.len(), count, "{obligations:?}");
+    assert!(
+        obligations
+            .iter()
+            .all(|record| record.state != crate::domain::WorkObligationState::Open),
+        "{obligations:?}"
+    );
+}
+
+#[test]
+fn a_later_observation_in_the_same_checkpoint_sees_the_earlier_change() {
+    let mut fixture = fixture("project-basis-one-checkpoint");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let work = fixture.work.clone();
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let start = cut(store, &work);
+    host.report(
+        store,
+        &[
+            (true, Some("content-revision-1")),
+            (true, Some("content-revision-1")),
+        ],
+        20,
+    );
+    assert_eq!(recorded_changes(store, &work, start), [true, false]);
+    assert_eq!(
+        entries_after(store, &work, start, "work_obligation").len(),
+        1
+    );
+}
+
+#[test]
+fn after_a_revision_less_change_the_host_flag_stands_and_a_revision_re_anchors_tests() {
+    let mut fixture = fixture("project-basis-revision-less");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let work = fixture.work.clone();
+    let run = work.active_run_id.expect("active run");
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let start = cut(store, &work);
+    // A change at a known revision, one the host reported without a
+    // revision, then one back at the known revision. The newest recorded
+    // change carries no revision, so the last report is not compared away:
+    // it stays a change and re-anchors the obligations at its revision.
+    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    host.report(store, &[(true, None)], 30);
+    host.report(store, &[(true, Some("content-revision-1"))], 40);
+    assert_eq!(recorded_changes(store, &work, start), [true, true, true]);
+    host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        50,
+    );
+    all_obligations_satisfied(store, run, 3);
+}
+
+#[test]
+fn a_revision_move_seen_only_on_an_observation_claiming_no_change_still_counts() {
+    let mut fixture = fixture("project-basis-quiet-move");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let run = work.active_run_id.expect("active run");
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let start = cut(store, &work);
+    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    let read = cut(store, &work);
+    // The content moves to another revision on an observation that claims
+    // no change, such as a check run after someone else's edit. The next
+    // reported change at that revision is compared with the newest recorded
+    // change, not with that observation, so it counts.
+    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    host.report(store, &[(true, Some("content-revision-2"))], 40);
+    assert_eq!(recorded_changes(store, &work, start), [true, false, true]);
+    assert_eq!(
+        moved(record(store, &judged(&work, &note, read, None, 45))),
+        (
+            EvaluationBasisMove::SourceChanged,
+            "acceptance_evaluation_void".into()
+        )
+    );
+    host.basis.source_revision = "content-revision-2".into();
+    host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        50,
+    );
+    all_obligations_satisfied(store, run, 2);
+}
+
+#[test]
+fn a_revert_after_a_move_seen_only_on_an_observation_claiming_no_change_still_counts() {
+    let mut fixture = fixture("project-basis-quiet-revert");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let start = cut(store, &work);
+    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    // The content moves to another revision on an observation that claims
+    // no change, and the evaluator judges that revision.
+    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    let read = cut(store, &work);
+    // A change back to the newest recorded change's revision is still a move
+    // away from what the run last saw, so it counts.
+    host.report(store, &[(true, Some("content-revision-1"))], 40);
+    assert_eq!(recorded_changes(store, &work, start), [true, false, true]);
+    assert_eq!(
+        moved(record(
+            store,
+            &judged(
+                &work,
+                &note,
+                read,
+                Some(revision("content-revision-2", None)),
+                45
+            )
+        )),
+        (
+            EvaluationBasisMove::SourceChanged,
+            "acceptance_evaluation_void".into()
+        )
+    );
+}
+
+#[test]
+fn a_change_after_the_content_went_away_and_came_back_still_counts() {
+    let mut fixture = fixture("project-basis-away-and-back");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let start = cut(store, &work);
+    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    // Two observations that claim no change see the content move away and
+    // back; the evaluator judges the revision in between.
+    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    let read = cut(store, &work);
+    host.report(store, &[(false, Some("content-revision-1"))], 40);
+    let before_last = cut(store, &work);
+    host.report(store, &[(true, Some("content-revision-1"))], 50);
+    assert_eq!(
+        recorded_changes(store, &work, start),
+        [true, false, false, true]
+    );
+    assert_eq!(
+        entries_after(store, &work, before_last, "work_obligation").len(),
+        1,
+        "the change after the content came back opens an obligation"
+    );
+    assert_eq!(
+        moved(record(
+            store,
+            &judged(
+                &work,
+                &note,
+                read,
+                Some(revision("content-revision-2", None)),
+                55
+            )
+        )),
+        (
+            EvaluationBasisMove::SourceChanged,
+            "acceptance_evaluation_void".into()
+        )
+    );
+}
+
+#[test]
+fn a_move_seen_only_in_environment_evidence_still_counts_at_the_next_change() {
+    let mut fixture = fixture("project-basis-environment-move");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let start = cut(store, &work);
+    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    // Only environment evidence, which carries its own source basis, sees the
+    // content at another revision; the evaluator judges that revision.
+    host.capture_environment(store, "content-revision-2", 30);
+    assert_eq!(
+        entries_after(store, &work, start, "environment_evidence").len(),
+        1
+    );
+    let read = cut(store, &work);
+    host.report(store, &[(true, Some("content-revision-1"))], 40);
+    assert_eq!(recorded_changes(store, &work, start), [true, true]);
+    assert_eq!(
+        entries_after(store, &work, read, "work_obligation").len(),
+        1,
+        "the change back opens an obligation"
+    );
+    assert_eq!(
+        moved(record(
+            store,
+            &judged(
+                &work,
+                &note,
+                read,
+                Some(revision("content-revision-2", None)),
+                45
+            )
+        )),
+        (
+            EvaluationBasisMove::SourceChanged,
+            "acceptance_evaluation_void".into()
+        )
+    );
+}
+
+#[test]
+fn a_late_verification_of_an_older_producer_is_not_a_move() {
+    let mut fixture = fixture("project-basis-late-verification");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let work = fixture.work.clone();
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let start = cut(store, &work);
+    // A build observed at R0, then a change to R1.
+    host.report(store, &[(false, Some("content-revision-0"))], 20);
+    let producer = entries_after(store, &work, start, "execution_observation")[0].clone();
+    host.report(store, &[(true, Some("content-revision-1"))], 30);
+    // A later turn records verification evidence for that earlier build: it
+    // copies the producer's R0 at a feed position after the change, but the
+    // producer itself is where that revision was seen.
+    host.cite_earlier_producer(store, &producer, 40);
+    let read = cut(store, &work);
+    host.report(store, &[(true, Some("content-revision-1"))], 50);
+    assert_eq!(recorded_changes(store, &work, start), [false, true, false]);
+    assert!(
+        entries_after(store, &work, read, "work_obligation").is_empty(),
+        "a repeat after a late verification opens no obligation"
+    );
+}
+
+#[test]
 fn a_declared_workspace_must_match_the_reported_one() {
     let mut fixture = fixture("project-basis-workspace");
     let store = &mut fixture.store;
