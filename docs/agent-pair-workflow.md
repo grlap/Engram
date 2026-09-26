@@ -189,13 +189,15 @@ The writable review parent runs the required project gates and records each
 executed result once. Every failure receives a cause and an action under the
 project's gate policy. A rerun follows an identified fix or changed condition.
 
-The parent then freezes the review input using the project's existing tooling.
-The packet identifies:
+The parent freezes the review input using the project's existing tooling. In
+Engram the gates run in parallel with the review on that same input, so their
+results are attached when they complete. The packet identifies:
 
 - The intended behavior and acceptance criteria.
 - The exact source basis and included change set, including relevant staged,
   unstaged, untracked, and deleted content.
-- Gate commands, results, evidence locations, and the source state they tested.
+- Gate commands and the source state they test; results and evidence
+  locations are attached when the gates complete.
 - Known limitations and the questions requiring reviewer attention.
 
 Fingerprints are computed from the actual input by tooling. Agents refer to the
@@ -208,9 +210,11 @@ actually defines and verifies that boundary.
 
 ### 5. Obtain independent review
 
-For Engram, the parent follows the existing `/review-changes` contract: gates,
-freeze, exactly one Codex and one Claude `/review-code` child through TermAl with
-`writePolicy: readOnly`, then freeze verification and consolidated results.
+For Engram, the parent follows the existing `/review-changes` contract: the
+gates and exactly one Codex and one Claude `/review-code` child through TermAl
+with `writePolicy: readOnly` run in parallel on one frozen input (Greg,
+2026-09-26), then freeze verification and consolidated results once the gate
+has passed.
 Only `/review-code` is delegated as review. The parent owns `/review-changes`;
 a separate bounded execution worker may run its logged gate batch once without
 becoming a reviewer or validation owner. Follow the command's completion-driven

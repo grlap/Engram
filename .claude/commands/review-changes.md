@@ -57,6 +57,41 @@ On Windows, run `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
 `scripts/test-rust.sh`; it runs the same ordinary and scale-test
 phases without the Unix-only file-descriptor-limit adjustment.
 
+### Documentation-only changesets
+
+A changeset whose every changed path is a `.md` file (docs, AGENTS.md,
+CLAUDE.md, skills, commands) runs the link check and a byte comparison of
+AGENTS.md and CLAUDE.md instead of the full batch (Greg, 2026-09-26): no
+build step or test reads Markdown except the link checker. Run each through
+the launcher, so that its input fingerprint is checked at completion as for
+the full gate and can be compared with the saved review freeze:
+
+```bash
+node scripts/test-launcher.mjs focused -- node scripts/check-doc-links.mjs
+node scripts/test-launcher.mjs focused -- git diff --no-index --exit-code AGENTS.md CLAUDE.md
+```
+
+Both reviewers still review it. A changeset with any other path runs the
+full gate.
+
+### Gate and review in parallel
+
+Run the foreground launcher under the host's background execution (for example
+a background shell task that reports when it exits), then freeze the review
+input (section 3) and spawn both reviewers (section 4) on the same input while
+the gate runs (Greg, 2026-09-26). The launcher refuses `--detach` without a
+different session to notify, so `--detach --notify PARENT_SESSION` is only for
+a bounded worker that delivers completion to the parent. The yield or blocking
+wait described below comes under section 5, only after the reviewers are
+spawned. A host without background execution cannot overlap them: it runs the
+gate first, then sections 3 and 4. For the same tree, the gate's
+`expectedFingerprint` and the review freeze print the same value. A failed
+gate discards the reviews of that input. When a review finding will change the
+input while the gate still runs, the gate's result can no longer be used: the
+parent stops or discards it and starts the next round on the corrected input.
+It notes which stages finished and on which fingerprint, and does not record
+them as gate passes for the corrected input.
+
 ### Completion-driven execution: do not babysit tests
 
 Use the maintained `scripts/test-launcher.mjs` entrypoint, including its Windows
@@ -89,7 +124,8 @@ exit zero with stdout exactly the parent-held literal plus LF. A mismatch or
 missing independently retained identity is an evidence gap, not a current pass.
 These boundary checks do not prove the absence of transient
 edits; a known intervening edit invalidates the run. This gate-input snapshot
-is separate from the post-gate review freeze in section 3.
+is separate from the review freeze in section 3, although both cover the same
+tree.
 Tracked content follows Git's clean/eol normalization, so changes erased by
 that conversion (including line-ending-only edits) are not detected by the
 fingerprint on any platform. Do not claim raw-byte coverage for tracked files.
@@ -121,8 +157,9 @@ it a pass. Rerun for a concrete correction, changed input, or stated diagnostic
 question, never merely to chase green. These execution rules do not remove any
 required gate or weaken assertions and failure investigation below.
 
-On any failure, do not spawn reviewers. A failed gate is an investigation,
-never a stop: classify every failing test or check in this same turn.
+On any failure, the reviews of that input no longer count. A failed gate is
+an investigation, never a stop: classify every failing test or check in this
+same turn.
 Record every executed gate on the focused open item you hold: `engram work
 gate NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
 opaque-reference` for bounded failure evidence. For a late gate on completed
@@ -132,8 +169,9 @@ always means pass; when a failed check has no test id, use the check command or
 check name as its `--failed` label.
 
 - Test or environment defect (wrong assertion, stale fixture, host
-  contention, missing prerequisite): fix it in the current changeset, rerun
-  the gates, and continue the review.
+  contention, missing prerequisite): fix it in the current changeset and
+  start a new round on the corrected input: gate, freeze and both reviewers
+  in parallel.
 - Product defect: for open work, file one Engram child per defect with the
   failing test as its acceptance criterion (`engram work add "…" --accept
   "<test> passes" --kind bug --label gate --under <current item>`), mark the
@@ -188,12 +226,23 @@ working directory still selects which worktree is checked.
 
 ## 4. Spawn exactly two reviewers
 
-Use `termal_spawn_session` twice from the current parent:
+Use `termal_spawn_session` twice from the current parent, both with mode
+`reviewer` and `writePolicy: readOnly`:
 
-1. Codex: prompt `/review-code`, mode `reviewer`, `writePolicy: readOnly`, title
-   `Codex /review-code`.
-2. Claude: prompt `/review-code`, mode `reviewer`, `writePolicy: readOnly`, title
-   `Claude /review-code`.
+1. Codex, title `Codex /review-code`.
+2. Claude, title `Claude /review-code`.
+
+Give each a multi-line prompt. Its first line tells the reviewer to read
+`.claude/commands/review-code.md` in the worktree and follow it. The rest
+gives the review context: the item, the input (files and HEAD), the
+manifest's absolute path and the saved fingerprint, and what changed since the
+previous round. Do not put that context after `/review-code` on one line:
+TermAl expands a one-line slash command from the command file, which has no
+arguments slot, so everything after the command is dropped.
+
+Fix rounds keep both reviewers (Greg, 2026-09-26: a fix for a Low can turn
+into a High). The brief may point at the change since the previous freeze,
+but both reviewers review the whole input.
 
 If one spawn fails after the other succeeds, continue waiting for the created
 reviewer and report the missing one as unavailable.
@@ -202,9 +251,20 @@ reviewer and report the missing one as unavailable.
 
 Call `termal_resume_after_delegations` with the created delegation ids and
 `mode: "all"`. Report the wait id and child session ids, then end the turn.
-Do not continue until TermAl resumes the parent with the fan-in prompt.
+The gate's completion may resume the parent first; handle it under section
+2. On a gate failure the reviews of that input no longer count: cancel the
+running reviewers or discard their results. Do not continue to section 6
+until TermAl resumes the parent with the fan-in prompt.
 
 ## 6. Verify the freeze and collect results
+
+Accept reviewer output only once the gate has finished and passed, and its
+input fingerprint at completion equals the saved review-freeze fingerprint.
+For a changeset touching only `.md` files, that means once the link and
+identity checks passed on that tree. When the reviews arrive first, verify
+the freeze as below. They may be read, and a justified finding may start the
+next round at once, but a clean review counts only once the gate has passed
+on the same fingerprint.
 
 Before accepting reviewer output, run:
 
@@ -304,8 +364,9 @@ tracker mutation.
 Consolidation itself records evidence, not source changes or implementation
 completion. In pair work, when this writable parent is also the implementer,
 continue directly into the next authorized implementation iteration without
-waiting for another prompt: fix in-scope actionable findings, rerun the required
-gates, freeze the corrected input, and obtain review of that input. Keep the
+waiting for another prompt: fix in-scope actionable findings and start a new
+round on the corrected input, with gate, freeze and both reviewers in
+parallel. Keep the
 coordinator informed of material changes; pause for a real blocker, disputed
 acceptance, or a decision outside the agreed scope or authority. A review-only
 parent hands the findings to the implementer instead of assuming write authority.

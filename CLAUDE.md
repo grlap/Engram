@@ -63,7 +63,10 @@ user profile:
   the changeset without asking, push and install it as described below,
   and report the landed commit to Greg afterwards:
   - the full gate passes on the exact tree being committed, its input
-    fingerprint checks at completion, and nothing was edited since;
+    fingerprint checks at completion, and nothing was edited since; a
+    changeset touching only `.md` files instead passes the link check and
+    the AGENTS/CLAUDE identity check on that tree, each with its input
+    fingerprint checked at completion;
   - the latest review round from both Codex and Claude, read-only on a
     verified freeze of that same tree, is clean, and every finding from
     earlier rounds, Low and Note included, was fixed and reviewed again;
@@ -262,6 +265,14 @@ On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
 `scripts/test-rust.sh`; it preserves the same ordinary and scale-test
 phases without the Unix-only file-descriptor-limit adjustment.
 
+A changeset touching only `.md` files (docs, AGENTS.md, CLAUDE.md, skills,
+commands) runs the link check and a byte comparison of AGENTS.md and
+CLAUDE.md instead of this sequence (Greg, 2026-09-26): no build step or test
+reads Markdown except the link checker. Run each through
+`node scripts/test-launcher.mjs focused -- …`, so that its input fingerprint
+is checked at completion; `/review-changes` gives the commands. Both
+reviewers still review it.
+
 After any gate failure, investigate the failing path and classify/fix or track
 the actual defect. Do not normalize retries or call an intermittent failure an
 acceptable flaky test. Intermittence is a symptom to diagnose, not a reason to
@@ -356,6 +367,25 @@ waiting to integrate its documentation does not postpone it.
   See `/review-changes` for artifact locations and the execution contract.
 - `/review-code` is a read-only, non-nesting leaf. It does not edit files, run
   quality gates, or mutate the tracker.
+
+Review speed (Greg, 2026-09-26):
+
+- Run the full gate and both reviews in parallel on the same frozen input. A
+  failed gate discards those reviews.
+- A changeset touching only `.md` files skips the full gate, as Required
+  Quality Gates describes; both reviewers still review it.
+- Before coding an item, run a design review with Engram::Fable and a
+  read-only Codex explorer, covering edge cases and real host (TermAl)
+  behavior. Run it during the previous item's gate or review.
+- During an item's gate or review, do only non-mutating work on the next
+  one: no worktree or index edits, and no claim or other change of this
+  session's focus. Reading, planning and a read-only design review stay
+  allowed. When two or more code items are ready, a TermAl worker session
+  with its own claim and worktree implements the second, because one session
+  has one focus.
+- Fix rounds keep both reviewers: a fix for a Low can turn into a High. Their
+  brief may point at the change since the previous freeze, but both review the
+  whole input.
 
 This repository tracks its work in Engram (see Work Tracking below).
 

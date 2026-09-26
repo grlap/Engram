@@ -509,7 +509,9 @@ node scripts/check-doc-links.mjs
 On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
 `scripts/test-rust.sh`.
 
-Use `/review-changes` for the two-agent read-only review after the gates pass.
+Use `/review-changes`, which runs the gates and the two-agent read-only review
+in parallel on one frozen input; a changeset touching only `.md` files runs
+the link and identity checks instead of the gates.
 After consolidating review findings, deduplicate them in Engram. This is the
 standing rule for review findings: every justified finding about the scope a
 change modifies, Low included, is fixed before that change closes; it is not
@@ -531,8 +533,9 @@ existing follow-ups instead of duplicating them; a match records provenance
 only, and an in-scope finding is still fixed before the change closes.
 Informational observations need no work item.
 In pair work, the implementer continues after review consolidation without
-waiting for another prompt: fix in-scope actionable findings, rerun the gates,
-and freeze the corrected input for review. After clean acceptance, record the
+waiting for another prompt: fix in-scope actionable findings and start a new
+round on the corrected input (gate, freeze and both reviewers in parallel).
+After clean acceptance, record the
 delivered outcome and complete owned implementation items when their obligations
 are satisfied. Pause only for a real blocker, disputed acceptance, or a decision
 outside the agreed scope or authority; reviewer leaves remain read-only.
