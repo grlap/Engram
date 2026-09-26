@@ -11,12 +11,43 @@ import { captureFingerprint, fingerprintLimitations } from "./review-freeze-fing
 const script = fileURLToPath(import.meta.url);
 const repository = resolve(dirname(script), "..");
 const diagnosticLimit = 2400;
+// A run without terminal results is alive while its heartbeat is fresh: the
+// launcher refreshes `heartbeat.at` every `heartbeat.everyMs`, and a heartbeat
+// older than this many intervals means the launcher has most likely stopped,
+// whatever process now holds its pid. The one-second floor normally keeps that
+// window wider than the launcher's own synchronous steps; an unusually slow
+// input capture can briefly read as interrupted until the next beat.
+export const HEARTBEAT_STALE_INTERVALS = 3;
+const validHeartbeatEveryMs = (value) => Number.isInteger(value) && value >= 1_000 && value <= 600_000;
+function heartbeatEveryMs(env) {
+  const raw = env.ENGRAM_LAUNCHER_HEARTBEAT_MS;
+  if (raw === undefined || raw === "") return 10_000;
+  const value = Number(raw);
+  if (!validHeartbeatEveryMs(value)) {
+    throw new Error("ENGRAM_LAUNCHER_HEARTBEAT_MS must be an integer from 1000 to 600000");
+  }
+  return value;
+}
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+const transientRenameCodes = new Set(["EPERM", "EACCES", "EBUSY"]);
+// Windows can refuse a rename for a moment while another process, such as an
+// indexer or antivirus scanner, holds the target open. Retry that I/O briefly
+// so a transient refusal cannot cost a run its terminal result; this never
+// reruns a test.
+export function renameWithRetry(from, to, { rename = renameSync, attempts = 20, delayMs = 25 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try { rename(from, to); return; }
+    catch (error) {
+      if (!transientRenameCodes.has(error.code) || attempt >= attempts) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+    }
+  }
+}
 function save(path, value) {
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-    renameSync(temporary, path);
+    renameWithRetry(temporary, path);
   } finally { rmSync(temporary, { force: true }); }
 }
 
@@ -60,6 +91,7 @@ function executable(command, cwd, env) {
 }
 
 export function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false }, env = process.env) {
+  const everyMs = heartbeatEveryMs(env);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
     { cwd: root, encoding: "utf8", windowsHide: true });
   if (git.error || git.status !== 0) throw new Error(`cannot locate Git run directory: ${git.error?.message ?? git.stderr}`);
@@ -69,14 +101,19 @@ export function createRun({ root = repository, stages, notifyTo, requiredBinaryE
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full,
     owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString() };
   save(join(runDir, "request.json"), request);
+  // A worker that never starts leaves this first heartbeat to go stale.
   save(join(runDir, "results.json"), { runId, state: "running", started: request.started,
-    limitations: fingerprintLimitations(),
+    heartbeat: { at: request.started, everyMs }, limitations: fingerprintLimitations(),
     stages: (stages ?? []).map(({ name }) => ({ name, state: "unrun" })) });
   try {
     const input = captureFingerprint(root);
     save(join(runDir, "input.json"), input);
     request.expectedFingerprint = input.fingerprint;
     save(join(runDir, "request.json"), request);
+    // The capture blocks the event loop; beat once it returns.
+    const created = readJson(join(runDir, "results.json"));
+    created.heartbeat.at = new Date().toISOString();
+    save(join(runDir, "results.json"), created);
   } catch (error) {
     const result = readJson(join(runDir, "results.json"));
     Object.assign(result, { state: "failed", exitCode: 1, ended: new Date().toISOString(), error: error.message });
@@ -171,7 +208,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   // Exclusive admission: an interrupted run is not a retryable test command.
   // A losing invocation must not overwrite the admitted owner's results.
   closeSync(openSync(join(runDir, "execution.lock"), "wx", 0o600));
-  let request;
+  let request, heartbeat;
   let result = { runId: basename(runDir), started: null, stages: [], limitations: fingerprintLimitations() };
   const resultPath = join(runDir, "results.json");
   // Let Rustup read the repository's toolchain file, not an inherited override.
@@ -197,8 +234,21 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     if (!saved || !Array.isArray(saved.stages)) throw new Error("invalid initial results: stages missing");
     result = saved;
     if (result.state === "failed") return result;
-    Object.assign(result, { pid: process.pid, owner: request.owner, preflight: [], clearedToolchainOverrides });
+    // The cadence createRun recorded, held to the same bounds as the setting;
+    // anything else falls back to this worker's own setting.
+    const recorded = result.heartbeat?.everyMs;
+    const everyMs = validHeartbeatEveryMs(recorded) ? recorded : heartbeatEveryMs(env);
+    Object.assign(result, { pid: process.pid, owner: request.owner, preflight: [], clearedToolchainOverrides,
+      heartbeat: { at: new Date().toISOString(), everyMs } });
     save(resultPath, result);
+    // Beat on a timer, not only at stage boundaries, so a long stage stays
+    // visibly alive. A reader holding results.json open can make one save fail
+    // on Windows; the next beat retries, and a missed beat never fails the run.
+    heartbeat = setInterval(() => {
+      result.heartbeat.at = new Date().toISOString();
+      try { save(resultPath, result); } catch { /* retried on the next beat */ }
+    }, everyMs);
+    heartbeat.unref();
     await ready();
     if (!Array.isArray(request.stages) || request.stages.length === 0) throw new Error("at least one stage is required");
     const names = new Set();
@@ -227,6 +277,8 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     if (before.fingerprint !== request.expectedFingerprint) throw inputDrift("input drift before execution; no stages run", request.root);
     result.expectedFingerprint = request.expectedFingerprint;
     result.before = before.fingerprint;
+    // The capture blocked the timer; beat with this save.
+    result.heartbeat.at = new Date().toISOString();
     save(resultPath, result);
     for (let index = 0; index < request.stages.length; index += 1) {
       const stage = request.stages[index];
@@ -247,15 +299,36 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     result.state = "failed"; result.exitCode = 1; result.error = error.message;
     for (const stage of result.stages) if (stage.state === "running") { stage.state = "failed"; stage.error = error.message; }
   }
+  clearInterval(heartbeat);
   result.ended = new Date().toISOString();
   save(resultPath, result);
   return result;
 }
 
-export async function summarize(runDir) {
+// How a reader tells a run's state from results.json alone. The pid is never
+// consulted: after a kill it may already belong to an unrelated process.
+export function runLiveness(result, now = Date.now()) {
+  if (["passed", "failed"].includes(result.state) && result.ended && Number.isInteger(result.exitCode)) {
+    return result.state;
+  }
+  const at = Date.parse(result.heartbeat?.at ?? "");
+  const everyMs = result.heartbeat?.everyMs;
+  if (!Number.isFinite(at) || !Number.isInteger(everyMs) || everyMs <= 0) return "unknown";
+  return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
+}
+
+export async function summarize(runDir, { now = Date.now() } = {}) {
   const result = readJson(join(runDir, "results.json"));
-  const terminal = ["passed", "failed"].includes(result.state) && result.ended && Number.isInteger(result.exitCode);
-  const lines = [`${terminal ? result.state === "passed" ? "PASS" : "FAIL" : "UNKNOWN (no terminal result; running or interrupted)"} ${result.runId} exit=${terminal ? result.exitCode : "unknown"}`,
+  const liveness = runLiveness(result, now);
+  const terminal = liveness === "passed" || liveness === "failed";
+  const status = {
+    passed: "PASS",
+    failed: "FAIL",
+    running: `RUNNING (no terminal result yet; heartbeat ${result.heartbeat?.at})`,
+    interrupted: `INTERRUPTED (no terminal result and no heartbeat since ${result.heartbeat?.at}, more than ${HEARTBEAT_STALE_INTERVALS} × ${result.heartbeat?.everyMs} ms ago; the launcher has most likely stopped)`,
+    unknown: "UNKNOWN (no terminal result and no heartbeat; running or interrupted)",
+  }[liveness];
+  const lines = [`${status} ${result.runId} exit=${terminal ? result.exitCode : "unknown"}`,
     `results: ${join(runDir, "results.json")}`];
   if (result.error) lines.push(`runner: ${result.error.slice(0, diagnosticLimit)}`);
   if (result.clearedToolchainOverrides?.length) lines.push("toolchain: inherited Rustup override cleared for repository selection; original value in results.json");
@@ -363,7 +436,8 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
     });
     child.unref();
     write(startupReceipt(runDir, child.pid, `mailbox:${request.notifyTo}`)
-      + "End your turn; do not poll. Missing terminal results mean running/interrupted, not PASS.\n");
+      + "End your turn; do not poll. Missing terminal results mean running/interrupted, not PASS; "
+      + `\`node scripts/test-launcher.mjs summary "${runDir}"\` tells which from the heartbeat.\n`);
     return { child, completion };
   } finally { closeSync(fd); }
 }

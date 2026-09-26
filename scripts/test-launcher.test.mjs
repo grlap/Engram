@@ -9,7 +9,7 @@ import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import {
-  createRun, diagnostics, executeRun, notifyRun, requiredStages, startDetached, summarize,
+  createRun, diagnostics, executeRun, notifyRun, renameWithRetry, requiredStages, startDetached, summarize,
 } from "./test-launcher.mjs";
 import { fixtureHome, removeFixtureHomes, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 
@@ -196,6 +196,9 @@ test("detached parent emits exact recovery receipt and child completes once", as
     assert.ok(receipt.startsWith(`STARTED ${runDir}\n`));
     assert.ok(receipt.includes(`pid=${child.pid} completion=mailbox:fixture-parent\n`));
     assert.ok(receipt.includes(`manifest=${join(runDir, "input.json")}\n`));
+    // The liveness hint quotes the run directory, so a path with spaces
+    // stays one argument when the command is copied.
+    assert.ok(receipt.includes(`node scripts/test-launcher.mjs summary "${runDir}"`), receipt);
     const printed = /^expectedFingerprint=(.+)$/mu.exec(receipt)?.[1];
     assert.equal(printed, json(join(runDir, "input.json")).fingerprint);
     assert.equal(printed, json(join(runDir, "results.json")).before);
@@ -803,13 +806,163 @@ test("source drift during execution cannot be reported as a passing run", async 
   });
 });
 
-test("an incomplete run reports UNKNOWN and cannot notify a successful completion", async () => {
+test("an incomplete run is never a pass and cannot notify a successful completion", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("not-started")], notifyTo: "fixture-parent" }, env);
-    assert.match(await summarize(runDir), /UNKNOWN/u);
+    const created = Date.parse(json(join(runDir, "results.json")).heartbeat.at);
+    assert.match(await summarize(runDir, { now: created }), /^RUNNING .* exit=unknown$/mu);
+    assert.match(await summarize(runDir, { now: created + 3_600_000 }), /^INTERRUPTED .* exit=unknown$/mu);
     let sent = false;
     await assert.rejects(notifyRun(runDir, env, async () => { sent = true; return { code: 0 }; }), /terminal|running|incomplete/iu);
     assert.equal(sent, false);
+  });
+});
+
+test("liveness comes from the heartbeat, never from a process at the recorded pid", async () => {
+  await repository(async (root) => {
+    assert.throws(() => createRun({ root, stages: [stage("refused")] },
+      { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "5" }), /ENGRAM_LAUNCHER_HEARTBEAT_MS/u);
+    assert.equal(existsSync(join(root, ".git", "review-runs")), false, "an invalid cadence refuses before creating a run");
+    const runDir = createRun({ root, stages: [stage("never-started")] },
+      { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "1000" });
+    const path = join(runDir, "results.json");
+    const created = json(path);
+    assert.equal(created.heartbeat.everyMs, 1000);
+    const at = Date.parse(created.heartbeat.at);
+    assert.match(await summarize(runDir, { now: at + 3000 }), /^RUNNING /u);
+    assert.match(await summarize(runDir, { now: at + 3001 }), /^INTERRUPTED /u);
+    // A live process now holding the recorded pid does not revive the run.
+    writeFileSync(path, JSON.stringify({ ...created, pid: process.pid }));
+    assert.match(await summarize(runDir, { now: at + 3001 }), /^INTERRUPTED /u);
+    const { heartbeat: _, ...older } = created;
+    writeFileSync(path, JSON.stringify(older));
+    assert.match(await summarize(runDir, { now: at + 3001 }), /^UNKNOWN /u);
+  });
+});
+
+test("a recorded cadence outside the setting's bounds falls back to the worker's own", async () => {
+  await repository(async (root) => {
+    for (const recorded of [5, 10 ** 12]) {
+      const runDir = createRun({ root, stages: [stage("clean")] }, env);
+      const path = join(runDir, "results.json");
+      writeFileSync(path, JSON.stringify({ ...json(path), heartbeat: { at: new Date().toISOString(), everyMs: recorded } }));
+      const result = await executeRun(runDir, { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "2000" });
+      assert.equal(result.state, "passed");
+      assert.equal(json(path).heartbeat.everyMs, 2000, `recorded ${recorded}`);
+    }
+  });
+});
+
+test("a transient rename refusal is retried as I/O, and a persistent or other one still fails", () => {
+  const refusing = (code, successAt = Infinity) => {
+    let calls = 0;
+    const rename = () => {
+      calls += 1;
+      if (calls < successAt) throw Object.assign(new Error(`${code} on attempt ${calls}`), { code });
+    };
+    return { rename, calls: () => calls };
+  };
+  const transient = refusing("EPERM", 3);
+  renameWithRetry("from", "to", { rename: transient.rename, delayMs: 1 });
+  assert.equal(transient.calls(), 3);
+  const persistent = refusing("EBUSY");
+  assert.throws(() => renameWithRetry("from", "to", { rename: persistent.rename, attempts: 4, delayMs: 1 }), /EBUSY on attempt 4/u);
+  assert.equal(persistent.calls(), 4);
+  const missing = refusing("ENOENT");
+  assert.throws(() => renameWithRetry("from", "to", { rename: missing.rename, delayMs: 1 }), /ENOENT on attempt 1/u);
+  assert.equal(missing.calls(), 1);
+});
+
+test("a killed launcher's run reads as interrupted once its heartbeat stops", { timeout: 60_000 }, async (t) => {
+  await repository(async (root) => {
+    mkdirSync(join(root, "scripts"));
+    for (const name of ["test-launcher.mjs", "review-freeze-fingerprint.mjs"]) {
+      copyFileSync(fileURLToPath(new URL(name, import.meta.url)), join(root, "scripts", name));
+    }
+    const everyMs = 1000;
+    const address = process.platform === "win32" ? `\\\\.\\pipe\\engram-${randomUUID()}` : ".git/stage.sock";
+    // The broker tells this test when the stage is parked, releases it on
+    // request, and reports when the stage process has gone.
+    const broker = spawn(process.execPath, ["-e", `
+      const sockets = new Set();
+      const server = require('node:net').createServer(socket => {
+        sockets.add(socket);
+        socket.on('close', () => { sockets.delete(socket); process.send('closed'); });
+        socket.on('error', () => socket.destroy());
+        process.send('connected');
+      });
+      process.on('message', message => { if (message === 'release') for (const socket of sockets) socket.write('x'); });
+      process.on('disconnect', () => { for (const socket of sockets) socket.destroy(); server.close(); });
+      server.listen(${JSON.stringify(address)}, () => process.send('listening'));
+    `], { cwd: root, env, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
+    const brokerCompletion = once(broker, "exit");
+    // Every wait on the broker also ends if the broker itself dies.
+    const brokerGone = brokerCompletion.then(([code]) => [`broker exited (${code})`]);
+    const fromBroker = () => Promise.race([once(broker, "message", { signal: t.signal }), brokerGone]);
+    // The stage parks only after the heartbeat has advanced during the stage,
+    // so the launcher is killed mid-stage with its timer demonstrably beating.
+    const source = `
+      const fs = require('node:fs'), path = require('node:path');
+      const runs = path.join('.git', 'review-runs');
+      const file = path.join(runs, fs.readdirSync(runs)[0], 'results.json');
+      const beat = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')).heartbeat.at; } catch { return undefined; } };
+      const deadline = Date.now() + 20000;
+      let first;
+      const wait = () => {
+        const now = beat();
+        first ??= now;
+        if (first && now && now !== first) {
+          const socket = require('node:net').connect(${JSON.stringify(address)});
+          socket.on('data', () => process.exit(0));
+          socket.on('close', () => process.exit(0));
+          socket.on('error', () => process.exit(1));
+        } else if (Date.now() > deadline) process.exit(3);
+        else setTimeout(wait, 10);
+      };
+      wait();`;
+    let child, completion, gone;
+    try {
+      assert.equal((await fromBroker())[0], "listening");
+      child = spawn(process.execPath, [join(root, "scripts", "test-launcher.mjs"), "focused", "--", process.execPath, "-e", source],
+        { cwd: root, env: { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: String(everyMs) }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      completion = once(child, "close");
+      let output = "";
+      child.stdout.on("data", (chunk) => { output += chunk; });
+      child.stderr.resume();
+      const parked = await Promise.race([fromBroker(),
+        completion.then(([code]) => [`launcher ended before the stage parked (${code})`])]);
+      assert.equal(parked[0], "connected");
+      // The only later broker message is the stage's exit; listen before
+      // anything can trigger it.
+      gone = fromBroker();
+      child.kill("SIGKILL");
+      await completion;
+      const runDir = /^STARTED (.+)$/mu.exec(output)?.[1];
+      assert.ok(runDir, output);
+      const killed = json(join(runDir, "results.json"));
+      assert.equal(killed.state, "running", "a killed launcher writes no terminal result");
+      assert.equal(killed.stages[0].state, "running");
+      assert.equal(killed.heartbeat.everyMs, everyMs);
+      const at = Date.parse(killed.heartbeat.at);
+      assert.match(await summarize(runDir, { now: at + 3 * everyMs }), /^RUNNING /u);
+      assert.match(await summarize(runDir, { now: at + 3 * everyMs + 1 }), /^INTERRUPTED .* exit=unknown$/mu);
+      // With the default clock, once the heartbeat has had time to go stale.
+      await new Promise((done) => { setTimeout(done, 4 * everyMs); });
+      assert.match(await summarize(runDir), /^INTERRUPTED /u);
+      assert.equal(json(join(runDir, "results.json")).heartbeat.at, killed.heartbeat.at, "nothing beats after the kill");
+      // The recorded pid now naming a live, unrelated process changes nothing.
+      writeFileSync(join(runDir, "results.json"), JSON.stringify({ ...killed, pid: process.pid }));
+      assert.match(await summarize(runDir), /^INTERRUPTED /u);
+    } finally {
+      if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      if (completion) await completion;
+      // Release the parked stage and wait for it to go, without letting a
+      // cleanup failure replace the test's own error.
+      if (gone && broker.connected) broker.send("release");
+      if (gone) await gone.catch(() => {});
+      if (broker.connected) broker.disconnect();
+      await brokerCompletion;
+    }
   });
 });
 

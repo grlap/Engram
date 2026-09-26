@@ -163,7 +163,22 @@ go directly to logs, never through a terminal stream. Only the final summary,
 warnings and bounded failures reach context; truncation points to the full log.
 Filtering does not decide success: actual process exits do. A failed command
 stops subsequent stages, which stay explicitly unrun. Exceptions fail the run;
-a killed process without terminal results remains unknown, never a pass.
+a killed process writes no terminal result, and its run is never a pass.
+
+`results.json` also carries `heartbeat: { at, everyMs }`. The launcher writes
+it when it creates the run and again when the run is admitted, then refreshes
+`at` every `everyMs` milliseconds, during a long stage too. The default is
+10 000; `ENGRAM_LAUNCHER_HEARTBEAT_MS` sets another cadence from 1 000 to
+600 000. A reader tells running from interrupted without trusting the recorded
+`pid`, which a killed launcher leaves behind and the system may give to another
+process. A run with no terminal result is running while `heartbeat.at` is at
+most three intervals old. Once it is older the run is interrupted: the launcher
+has most likely stopped. A system sleep or clock change can also age a
+heartbeat, and a later beat then shows the run running again. `summary`
+reports such a run as `RUNNING` or `INTERRUPTED`, and one without a heartbeat
+as `UNKNOWN`. Saves of `results.json` retry a briefly refused rename, as
+Windows can refuse one while another process holds the file open; that retry is
+file I/O and never reruns a test.
 The snapshot checks are boundary checks, not proof against transient edits.
 Normalization limits are emitted in freeze CLI stderr and every run's
 results/summary; fingerprint stdout remains unchanged.
@@ -227,7 +242,8 @@ write leaves a temporary artifact rather than a partial retry body. This does
 not add a power-loss durability guarantee.
 An unreadable request cannot supply a notification target, so it fails startup
 without a `STARTED` receipt. A killed process or unwritable results directory
-cannot guarantee completion delivery; missing terminal results remain unknown.
+cannot guarantee completion delivery; a run without terminal results reads as
+interrupted once its heartbeat is stale, never as a pass.
 `execution.lock` prevents a second execution of the same run directory, not
 separate launches; the caller owns repository-level serialization. After a
 crash, recover its artifacts and classify
