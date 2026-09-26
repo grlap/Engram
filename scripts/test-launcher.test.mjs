@@ -1,25 +1,27 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { devNull } from "node:os";
 import { once } from "node:events";
-import { basename, delimiter, isAbsolute, join, relative } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, relative } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import {
   createRun, diagnostics, executeRun, notifyRun, renameWithRetry, requiredStages, startDetached, summarize,
 } from "./test-launcher.mjs";
-import { fixtureHome, removeFixtureHomes, tempSnapshot, assertTempClean } from "./test-temp.mjs";
+import { fixtureHome, fixtureRoot, removeFixtureHomes, removeFixturePath, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
 // This test file runs in its own Node test process. Isolate both explicit Git
 // children and in-process fingerprint calls from developer configuration.
 for (const key of Object.keys(process.env)) if (key.toUpperCase().startsWith("GIT_")) delete process.env[key];
+// Restore the fixture ceiling the scrub removed: Git in a fixture never climbs
+// out into this checkout.
 Object.assign(process.env, { GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : devNull,
-  GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" });
+  GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0", GIT_CEILING_DIRECTORIES: fixtureRoot });
 const env = { ...process.env, TERMAL_SESSION_ID: "fixture-owner", TERMAL_CLI: process.execPath };
 const launcher = fileURLToPath(new URL("./test-launcher.mjs", import.meta.url));
 const stage = (name, source = "") => ({ name, command: process.execPath, args: ["-e", source] });
@@ -1045,4 +1047,196 @@ test("self-send and changed notification sender are rejected before invoking tra
     await assert.rejects(notifyRun(runDir, { ...env, TERMAL_SESSION_ID: "different-owner" }, send), /session|sender|owner/iu);
     assert.equal(sent, false);
   });
+});
+
+test("fixture removal refuses paths outside its root and deletes inside it", (t) => {
+  const home = fixtureHome("engram-guard-", t);
+  const target = join(fileURLToPath(new URL("..", import.meta.url)), "target");
+  assert.ok(realpathSync.native(home).startsWith(realpathSync.native(target)),
+    `fixtures must lie in this repository's target/: ${home}`);
+  const root = join(home, "root");
+  const inside = join(root, "inside");
+  mkdirSync(join(inside, "nested"), { recursive: true });
+  const sibling = join(home, "sibling");
+  mkdirSync(sibling);
+  // Shares the root's name as a string prefix but is not below it.
+  const collision = join(home, "root-evil");
+  mkdirSync(collision);
+  for (const refused of [sibling, join(root, "..", "sibling"), collision, root, dirname(fixtureRoot)]) {
+    assert.throws(() => removeFixturePath(refused, root), /Refusing to delete/u, refused);
+  }
+  assert.throws(() => removeFixturePath(dirname(fixtureRoot)), /Refusing to delete/u);
+  assert.ok(existsSync(sibling) && existsSync(collision) && existsSync(inside));
+
+  // A link inside the root that leads outside it is refused, and so is
+  // anything reached through it.
+  writeFileSync(join(sibling, "kept.txt"), "outside the root");
+  const link = join(root, "link");
+  symlinkSync(sibling, link, process.platform === "win32" ? "junction" : "dir");
+  for (const refused of [link, join(link, "kept.txt")]) {
+    assert.throws(() => removeFixturePath(refused, root), /must not be a link/u, refused);
+  }
+  assert.ok(existsSync(join(sibling, "kept.txt")));
+
+  removeFixturePath(inside, root);
+  assert.equal(existsSync(inside), false);
+  assert.ok(existsSync(root));
+  // A path that is already gone is not an error.
+  removeFixturePath(inside, root);
+});
+
+test("fixture removal is anchored to this repository's target/tmp/engram", (t) => {
+  // Set up the fixture first: it re-checks target/ for links, so the probe
+  // below is never written through one.
+  const home = fixtureHome("engram-anchor-", t);
+  // A victim inside this repository but outside target/tmp/engram. A caller
+  // that passes the path's own parent as its root must still be refused.
+  const target = join(fileURLToPath(new URL("..", import.meta.url)), "target");
+  const probe = join(target, `guard-probe-${randomUUID().slice(0, 8)}`);
+  const victim = join(probe, "victim");
+  const inner = join(victim, "inner");
+  mkdirSync(inner, { recursive: true });
+  writeFileSync(join(victim, "kept.txt"), "outside the anchor");
+  try {
+    for (const [root, refused] of [[probe, victim], [victim, inner]]) {
+      assert.throws(() => removeFixturePath(refused, root), /Refusing to delete/u, refused);
+    }
+    assert.ok(existsSync(join(victim, "kept.txt")) && existsSync(inner));
+
+    // A junction above the given root: root and path read as below the
+    // anchor but really lie outside it.
+    const linked = join(home, "linked");
+    symlinkSync(probe, linked, process.platform === "win32" ? "junction" : "dir");
+    assert.throws(() => removeFixturePath(join(linked, "victim", "inner"), join(linked, "victim")), /must not be a link/u);
+    assert.ok(existsSync(inner));
+    (process.platform === "win32" ? rmdirSync : unlinkSync)(linked);
+
+    // The anchor itself is not a fixture root.
+    assert.throws(() => removeFixturePath(home, dirname(fixtureRoot)), /Refusing to delete with a fixture root outside/u);
+    assert.ok(existsSync(home));
+  } finally {
+    // One entry at a time: no recursive delete outside the guard.
+    unlinkSync(join(victim, "kept.txt"));
+    rmdirSync(inner);
+    rmdirSync(victim);
+    rmdirSync(probe);
+  }
+});
+
+test("a linked target/ is refused before anything is created at its destination", async () => {
+  await repository(async (root) => {
+    const scripts = join(root, "scripts");
+    mkdirSync(scripts);
+    copyFileSync(fileURLToPath(new URL("test-temp.mjs", import.meta.url)), join(scripts, "test-temp.mjs"));
+    const elsewhere = join(root, "elsewhere");
+    mkdirSync(elsewhere);
+    const linkedTarget = join(root, "target");
+    symlinkSync(elsewhere, linkedTarget, process.platform === "win32" ? "junction" : "dir");
+    try {
+      const auditEnv = { ...env };
+      delete auditEnv.ENGRAM_TEST_RUN_ROOT;
+      const result = spawnSync(process.execPath, [join(scripts, "test-temp.mjs"), "--", process.execPath, "-e", ""],
+        { cwd: root, env: auditEnv, encoding: "utf8", windowsHide: true });
+      assert.notEqual(result.status, 0, "a linked target/ must be refused");
+      assert.match(result.stderr, /must not be a link/u);
+      assert.deepEqual(readdirSync(elsewhere), [], "nothing may be created at the link's destination");
+    } finally {
+      (process.platform === "win32" ? rmdirSync : unlinkSync)(linkedTarget);
+    }
+  });
+});
+
+test("fixture creation re-checks the product chain for links on every call", async () => {
+  await repository(async (root) => {
+    const scripts = join(root, "scripts");
+    mkdirSync(scripts);
+    copyFileSync(fileURLToPath(new URL("test-temp.mjs", import.meta.url)), join(scripts, "test-temp.mjs"));
+    const victim = join(root, "victim");
+    mkdirSync(victim);
+    // Import first, then swap target/tmp for a link, then ask for a fixture.
+    const driver = join(scripts, "driver.mjs");
+    writeFileSync(driver, [
+      'import { renameSync, symlinkSync } from "node:fs";',
+      'import { join } from "node:path";',
+      'import { fixtureHome } from "./test-temp.mjs";',
+      `const root = ${JSON.stringify(root)};`,
+      'renameSync(join(root, "target", "tmp"), join(root, "target", "tmp-real"));',
+      `symlinkSync(${JSON.stringify(victim)}, join(root, "target", "tmp"), process.platform === "win32" ? "junction" : "dir");`,
+      'fixtureHome("engram-swap-");',
+    ].join("\n"));
+    const link = join(root, "target", "tmp");
+    try {
+      const auditEnv = { ...env };
+      delete auditEnv.ENGRAM_TEST_RUN_ROOT;
+      const result = spawnSync(process.execPath, [driver], { cwd: root, env: auditEnv, encoding: "utf8", windowsHide: true });
+      assert.notEqual(result.status, 0, "fixtureHome must refuse a product chain that became a link");
+      assert.match(result.stderr, /must not be a link/u);
+      assert.deepEqual(readdirSync(victim), [], "nothing may be created through the link");
+    } finally {
+      // Remove only the link itself; the fixture cleanup refuses any link.
+      try { (process.platform === "win32" ? rmdirSync : unlinkSync)(link); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+  });
+});
+
+test("the run audit removes its empty run root only while no link leads to it", async () => {
+  // Each case swaps one step for a link to an empty run directory outside
+  // the copied helper's target/tmp/engram, then runs the end-of-run audit.
+  for (const [swap, message] of [["tmp", /Test fixture product root must not be a link/u], ["run", /Test fixture root must not be a link/u]]) {
+    await repository(async (root) => {
+      const scripts = join(root, "scripts");
+      mkdirSync(scripts);
+      copyFileSync(fileURLToPath(new URL("test-temp.mjs", import.meta.url)), join(scripts, "test-temp.mjs"));
+      const victim = join(root, "victim");
+      const driver = join(scripts, "driver.mjs");
+      writeFileSync(driver, [
+        'import { mkdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";',
+        'import { basename, join } from "node:path";',
+        'import { assertTempClean, fixtureRoot } from "./test-temp.mjs";',
+        `const root = ${JSON.stringify(root)};`,
+        `const victim = ${JSON.stringify(victim)};`,
+        'const victimRun = join(victim, "engram", basename(fixtureRoot));',
+        "mkdirSync(victimRun, { recursive: true });",
+        'writeFileSync(join(root, "victim-run.txt"), victimRun);',
+        'const kind = process.platform === "win32" ? "junction" : "dir";',
+        `if (${JSON.stringify(swap)} === "tmp") {`,
+        '  renameSync(join(root, "target", "tmp"), join(root, "target", "tmp-real"));',
+        '  symlinkSync(victim, join(root, "target", "tmp"), kind);',
+        "} else {",
+        '  renameSync(fixtureRoot, `${fixtureRoot}-real`);',
+        "  symlinkSync(victimRun, fixtureRoot, kind);",
+        "}",
+        "assertTempClean([]);",
+      ].join("\n"));
+      const tmp = join(root, "target", "tmp");
+      try {
+        const auditEnv = { ...env };
+        delete auditEnv.ENGRAM_TEST_RUN_ROOT;
+        const result = spawnSync(process.execPath, [driver], { cwd: root, env: auditEnv, encoding: "utf8", windowsHide: true });
+        assert.notEqual(result.status, 0, `the audit must refuse a linked ${swap} step`);
+        assert.match(result.stderr, message);
+        const victimRun = readFileSync(join(root, "victim-run.txt"), "utf8");
+        assert.ok(existsSync(victimRun), `the empty run directory behind the link must survive: ${victimRun}`);
+      } finally {
+        // Remove only the links themselves; the fixture cleanup refuses any link.
+        const isLink = (path) => { try { return lstatSync(path).isSymbolicLink(); } catch { return false; } };
+        const candidates = isLink(tmp) ? [tmp] : readdirSync(join(tmp, "engram")).map((name) => join(tmp, "engram", name));
+        for (const path of candidates.filter(isLink)) (process.platform === "win32" ? rmdirSync : unlinkSync)(path);
+      }
+    });
+  }
+});
+
+test("the Node fixture run root leaves Windows path headroom", { skip: process.platform !== "win32" }, () => {
+  // Engram stores in Node fixtures put SQLite files about 106 characters below
+  // the run root; keep that under the 260-character path limit.
+  assert.ok(fixtureRoot.length <= 130, `fixture run root is too long (${fixtureRoot.length}): ${fixtureRoot}`);
+});
+
+test("git in a fixture without its own repository cannot climb into this checkout", (t) => {
+  const home = fixtureHome("engram-ceiling-", t);
+  const result = spawnSync("git", ["rev-parse", "--show-toplevel"],
+    { cwd: home, env: process.env, encoding: "utf8", windowsHide: true });
+  assert.notEqual(result.status, 0, `git found a repository above the fixture: ${result.stdout}`);
+  assert.match(result.stderr, /not a git repository/u);
 });

@@ -6,11 +6,11 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
-  rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { fixtureHome, removeFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
+import { fixtureHome, removeFixtureHomes, removeFixturePath, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { basename, dirname, join } from "node:path";
 import test, { after } from "node:test";
 
@@ -64,10 +64,10 @@ test("fixture ownership cleans failures and Temp audit detects replacement and l
     const prior = join(root, ".tmp-prior");
     mkdirSync(prior);
     const before = tempSnapshot(root);
-    rmSync(prior, { recursive: true });
+    removeFixturePath(prior);
     mkdirSync(join(root, ".tmp-new"));
     assert.throws(() => assertTempClean(before, root), /new entries=.*tmp-new/u);
-    rmSync(join(root, ".tmp-new"), { recursive: true });
+    removeFixturePath(join(root, ".tmp-new"));
     mkdirSync(join(root, "leftover"));
     assert.throws(() => assertTempClean(before, root), /remaining=.*leftover/u);
   } finally {
@@ -166,7 +166,7 @@ test(
     withRepository((root) => {
       symlinkSync("tracked.txt", join(root, "link"));
       const first = captureFingerprint(root);
-      rmSync(join(root, "link"));
+      unlinkSync(join(root, "link"));
       symlinkSync("missing.txt", join(root, "link"));
       const second = captureFingerprint(root);
 

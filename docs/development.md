@@ -261,20 +261,45 @@ a run also removes its notification-retry data. Do not remove the whole
 
 ### Test temporary files
 
-Rust and Node fixtures use the operating system's Temp directory with an
-`engram` child. A launcher chooses the run root once; Rust accepts that
-validated root without independently resolving Temp again (the runtimes can
-use different environment-variable precedence or platform fallbacks).
-Every run owns a unique `run-<pid>-<random>` subtree beneath it. Rust
-tests use the shared `test_support::temp_home` guard; Node gates use
-`scripts/test-temp.mjs`. Each owns and removes only the unique fixture it
-created. Rust launchers pass their owned `ENGRAM_TEST_RUN_ROOT` to child test
-processes; direct Cargo tests choose a process-unique run root and remove it
-when the last fixture closes. Close database handles and child processes
-first. Struct fields drop
-in declaration order, so a fixture directory must follow its store fields.
-The guard retries transient removal failures for a bounded 185 ms backoff
-budget and reports the path and OS error if cleanup still fails. This does
+Rust and Node fixtures live in this repository's own `target/tmp/engram`,
+never in the operating system's Temp folder: test homes stay inside the
+repository. Node derives the repository from the location of
+`scripts/test-temp.mjs` and Rust from `CARGO_MANIFEST_DIR`, so each checkout or
+worktree keeps its own fixtures, whatever `CARGO_TARGET_DIR` says. A launcher
+chooses the run root once; Rust accepts that root only when it is this
+repository's own `target/tmp/engram` child. Every run owns a unique
+`run-<pid>-<random>` subtree beneath it. Rust tests use the shared
+`test_support::temp_home` guard; Node gates use `scripts/test-temp.mjs`. Each
+owns and removes only the unique fixture it created. Rust launchers pass their
+owned `ENGRAM_TEST_RUN_ROOT` to child test processes; direct Cargo tests choose
+a process-unique run root and remove it when the last fixture closes. Close
+database handles and child processes first. Struct fields drop in declaration
+order, so a fixture directory must follow its store fields.
+
+Every recursive delete in test support goes through one guard per runtime,
+`test_support::remove_fixture_dir` and `removeFixturePath`. The guard is
+anchored to this repository's `target/tmp/engram`, whatever root its caller
+passes. Before deleting anything it refuses a root that does not resolve below
+that anchor, a path that is not strictly below its root (compared by path
+component, so `root-evil` is not below `root`), and any symlink or junction on
+the way from `target/` down to the path, including one above the root. It
+checks again before every attempt; what remains is the moment between the last
+check and the delete itself. Neither guard creates anything before checking
+that `target/` and `target/tmp` are not links. The final removal of an empty
+run directory is not recursive and is checked the same way: the run directory
+must be a direct child of the anchor, and neither it nor any step from
+`target/` down may be a link. After a refused fixture removal, Rust leaves the
+run directory alone. On Windows a test keeps each
+runtime's run root short enough that the deepest SQLite files stay under the
+260-character path limit. Git run by Node tests, or by a run launched through
+`scripts/test-temp.mjs`, stops at the run root (`GIT_CEILING_DIRECTORIES`), so
+a fixture without its own repository never resolves to this checkout; a direct
+`cargo test` sets no ceiling, and no Rust test runs Git.
+Each guard retries transient removal failures within a bounded budget: Rust
+waits 10, 25, 50 and 100 ms (185 ms), and Node retries `EBUSY`, `EMFILE`,
+`ENFILE`, `ENOTEMPTY` and `EPERM` up to five times, waiting 25 to 125 ms
+(375 ms). A refusal is not retried. Each reports the path and OS error if
+cleanup still fails. This does
 not close another owner's SQLite handle or excuse a broken lifetime.
 The open-handle and field-order regressions prove the sharing-violation cause
 on Windows only; POSIX permits removal while a SQLite handle is still open.
@@ -283,8 +308,9 @@ Both Rust launchers audit their owned run subtree before and after each test
 phase, including failed commands. Each Node fixture gate performs the same
 audit. It prints counts and requires that run's subtree to be empty, then
 removes the empty run directory. A failure lists exact remaining names but
-does not sweep them. Sibling runs and unrelated user Temp entries are never
-counted or removed: concurrent creation/deletion cannot mask this run's
+does not sweep them. Sibling runs and any other entries under
+`target/tmp/engram` are never counted or removed: concurrent
+creation/deletion cannot mask this run's
 residue or fail another run's audit. There is no age-based sweep. Fingerprint
 test repositories use this same fixture ownership, including cleanup when
 repository initialization fails.
@@ -294,14 +320,14 @@ worktree's `target`, or select another non-Temp build directory. Never put a
 dogfood build target under user Temp. Use the repository's stable toolchain;
 an inherited `RUSTUP_TOOLCHAIN` can override `rust-toolchain.toml`.
 
-Existing legacy Temp leftovers are not cleaned by any gate. After stopping
-tests and inspecting a specific old fixture directory, a user may remove
-that exact directory with the following one-line PowerShell command (replace
-the placeholder with the inspected basename; do not target Temp itself):
-
-```powershell
-Remove-Item -LiteralPath "$env:TEMP\<inspected-fixture-directory>" -Recurse -Force
-```
+Fixtures from builds before this layout may remain under the system Temp
+folder's `engram` directory, and a checkout still on such a build keeps adding
+them. No gate cleans them, and agents never delete outside the repository. A
+person may delete an old `run-*` directory there by hand once no test run uses
+it. This guide deliberately gives no command for that: a pasted directory name
+is parsed as code, and path checks can be led out of the folder. Builds from
+before that `engram` directory left unnamed `.tmp*` folders directly in Temp;
+they cannot be told apart safely from other programs' folders, so leave them.
 
 After updating to a build that adds a rebuildable projection, an existing
 development store can refuse until `engram doctor --repair-projections` is run

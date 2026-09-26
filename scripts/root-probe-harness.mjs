@@ -478,6 +478,16 @@ async function assertNoProbe(journal, home, projectFile, args, label) {
   return output;
 }
 
+// Set-Acl marks every DACL it writes as auto-inherited (the SDDL "AI" control
+// flag). A directory whose parents lack that flag, as under this checkout's
+// target/, reads back with it after a restore. The flag records how
+// inheritance propagates, not who has access, so a restore is compared on
+// everything else: every ACE and the other control flags.
+export function daclWithoutAutoInherited(sddl) {
+  return sddl.replace(/^D:((?:P|AR|AI)*)/u, (_, flags) =>
+    `D:${(flags.match(/P|AR|AI/gu) ?? []).filter((flag) => flag !== "AI").join("")}`);
+}
+
 export class DeniedCreate {
   constructor(directory, options = {}) {
     this.directory = directory;
@@ -562,8 +572,8 @@ export class DeniedCreate {
       assert.ok(this.originalDacl, "original DACL was not captured");
       this.setDacl(this.directory, this.originalDacl);
       assert.equal(
-        this.getDacl(this.directory),
-        this.originalDacl,
+        daclWithoutAutoInherited(this.getDacl(this.directory)),
+        daclWithoutAutoInherited(this.originalDacl),
         "restored DACL does not equal the captured DACL",
       );
       return;
@@ -890,6 +900,51 @@ export function registerRootProbeTests(test) {
       assert.match(error.errors[1].message, /restore exploded/u);
       return true;
     });
+  });
+
+  test("a restored DACL may gain only the auto-inherited flag", (t) => {
+    const dir = fixtureHome("rpj-dacl-", t);
+    writeProject(dir, "dacl-project");
+    const aces = "(A;ID;FA;;;BA)(A;OICIIOID;GA;;;BA)";
+    // Windows ACL calls are faked, so this runs on every platform.
+    const denial = (restoredAs) => {
+      let current = `D:${aces}`;
+      const denied = new DeniedCreate(dir, {
+        projectId: "dacl-project",
+        getDacl: () => current,
+        setDacl: (_, dacl) => {
+          current = restoredAs(dacl);
+        },
+        addDeny: () => {
+          current = `D:(D;;0x6;;;WD)${aces}`;
+        },
+        writeFileSync: (path) => {
+          if (path.endsWith("canary-denied-create")) {
+            throw Object.assign(new Error("denied"), { code: "EACCES" });
+          }
+        },
+        readFileSync: () => "dacl-project",
+      });
+      denied.windows = true;
+      denied.apply();
+      return denied;
+    };
+    // Set-Acl adds AI to a DACL captured without it: the restore holds.
+    denial((dacl) => dacl.replace(/^D:/u, "D:AI")).restore();
+    denial((dacl) => dacl).restore();
+    // Anything else that differs is still refused: a changed ACE, a lost ACE,
+    // or a protected flag the capture did not have.
+    for (const restoredAs of [
+      (dacl) => dacl.replace("GA;;;BA", "GR;;;BA"),
+      (dacl) => dacl.replace("(A;ID;FA;;;BA)", ""),
+      (dacl) => dacl.replace(/^D:/u, "D:PAI"),
+    ]) {
+      const denied = denial(restoredAs);
+      assert.throws(() => denied.restore(), /restored DACL does not equal the captured DACL/u);
+    }
+    assert.equal(daclWithoutAutoInherited("D:PAI(A;;FA;;;BA)"), "D:P(A;;FA;;;BA)");
+    assert.equal(daclWithoutAutoInherited("D:ARAI(A;;FA;;;BA)"), "D:AR(A;;FA;;;BA)");
+    assert.equal(daclWithoutAutoInherited("D:(A;;FA;;;AI)"), "D:(A;;FA;;;AI)");
   });
 
   test("denied setup failure owns temps from the first create", () => {

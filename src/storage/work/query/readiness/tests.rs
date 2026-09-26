@@ -27,7 +27,9 @@ fn readiness_fixture_closes_store_before_removing_directory() {
     let leaked = path.exists();
     // A failing negative-control run must not leave its newly owned fixture.
     if leaked {
-        std::fs::remove_dir_all(&path).expect("remove this test's closed fixture");
+        let run_root = path.parent().expect("fixture home lies in its run root");
+        crate::test_support::remove_fixture_dir(run_root, &path)
+            .expect("remove this test's closed fixture");
     }
     assert!(!leaked, "fixture directory must outlive its SQLite store");
 }
