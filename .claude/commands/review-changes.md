@@ -24,6 +24,18 @@ This workflow requires TermAl MCP delegation tools. Attempt exactly two review
 child spawns: one Codex and one Claude. Do not substitute platform subagents,
 shell processes, raw HTTP, or nested TermAl review sessions for those reviewers.
 
+Greg's 2026-09-26 decisions also cover the work around each review:
+
+- Before coding an item, run a design review with Engram::Fable and a
+  read-only Codex explorer, covering edge cases and real host (TermAl)
+  behavior. Run it during the previous item's gate or review.
+- During an item's gate or review, do only non-mutating work on the next
+  one: no worktree or index edits, and no claim or other change of this
+  session's focus. Reading, planning and a read-only design review stay
+  allowed. When two or more code items are ready, a TermAl worker session
+  with its own claim and worktree implements the second, because one session
+  has one focus.
+
 ## 1. Confirm the target
 
 Run:
