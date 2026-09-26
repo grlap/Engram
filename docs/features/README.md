@@ -25,7 +25,8 @@ references another.
 | [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing local-work tools and host-private turn channel over one core; material action mediation remains planned |
 | [Host readiness](host-readiness.md) | Scoped read-only enablement checks, separate from the explicit full-store doctor audit |
 | [Control session inspection](control-session-inspection.md) | Scoped read-only session/grant presence evidence for host-fenced reconciliation, not clearance to reset state |
-| [Turn gate assessment](turn-gate-assessment.md) | Snapshot of what the turn gate does with TermAl today: the questions asked, live-store counts, visible refusals, and the keep/simplify/remove decision for each part |
+| [Turn gate assessment](turn-gate-assessment.md) | One-page summary of what the turn gate does with TermAl: the questions asked, live-store counts, visible refusals, and the keep/simplify/remove decision for each part |
+| [Turn gate evidence](turn-gate-evidence.md) | The evidence behind that summary: TermAl call sites, code references, examples, the removed page and recovery turns, and the full refusal explanations |
 
 ## Conventions
 
