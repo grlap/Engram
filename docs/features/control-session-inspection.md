@@ -51,8 +51,9 @@ hosts must also impose their own end-to-end process deadline.
 
 The command requires both a stored and resolved matching host-path policy.
 It never binds a missing one. Without the global `--host-path-policy` override,
-the ordinary project-root temporary-file probe resolves identity. That probe
-and SQLite shared-memory coordination are not database/WAL content mutations.
+the ordinary project-root probe resolves identity; it looks the project file up
+under the opposite case and writes nothing. That probe and SQLite
+shared-memory coordination are not database/WAL content mutations.
 A read-only SQLite open may create an empty WAL and its shared-memory sidecar;
 the absence of those files is not promised.
 

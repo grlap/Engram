@@ -164,8 +164,8 @@ mod tests {
 
     #[test]
     fn host_path_warning_frames_a_display_embedded_root() {
-        let root = std::path::PathBuf::from(format!("root{HOSTILE}"));
-        let line = host_path_probe_warning_line(&HostPathProbeError::NotADirectory(root));
+        let project_file = std::path::PathBuf::from(format!("root{HOSTILE}"));
+        let line = host_path_probe_warning_line(&HostPathProbeError::Unsettled(project_file));
         assert!(line.starts_with("WARNING: "));
         assert_independent_line_safety(&[line]);
     }

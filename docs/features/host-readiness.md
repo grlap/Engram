@@ -18,9 +18,17 @@ policy. It never initializes, repairs, persists a path binding, changes policy,
 creates a session or authorizes a turn. SQLite may create its read-coordination
 sidecar, but the command does not write database or WAL bytes.
 Without `--host-path-policy` or `ENGRAM_HOST_PATH_POLICY`, the CLI probes the
-project root by creating, reading and removing a uniquely named temporary file.
-That probe can be visible to file watchers and can fail on a read-only checkout;
-the store read-only guarantee does not mean zero project-root file I/O.
+project root by looking the project file up again under its name with every
+ASCII letter's case inverted. Nothing found there means the root tells the
+spellings apart; when something is found, the root's listing says whether it
+is the same entry. That probe only reads, so file watchers see no change and
+a read-only checkout resolves too. The identity stays unresolved, and the
+host then supplies it, when the project file name has no ASCII letter (or is
+not Unicode text), when the name reaches the file through a wider alias than
+ASCII case (such as a non-ASCII case variant, a short 8.3 name, a trailing
+dot or space, or another Unicode normalization, none of which the listing
+matches), when the file changes during the probe, or when a lookup or
+the listing fails.
 
 It does not run the work-history audit, reconstruct roots or enumerate historical
 sessions/grants. Policy-chain admission remains required, so this is not a

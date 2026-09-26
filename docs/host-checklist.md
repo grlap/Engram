@@ -24,9 +24,13 @@ Verify/Save checks on an existing store. Keep `doctor --json` behind a separate
 Full Audit action, with its own result. A readiness pass neither certifies the
 work history nor replaces the host's identity, assurance and configuration-race
 checks. Older binaries without readiness must report unsupported, not fall back.
-Without an override, readiness probes the project root with a temporary file;
-when the host already knows its filesystem identity, supply `--host-path-policy`
-or `ENGRAM_HOST_PATH_POLICY` to avoid that probe on each Verify/Save.
+Without an override, readiness probes the project root by looking the project
+file up under the opposite case, which writes nothing; when the host already
+knows its filesystem identity, supply `--host-path-policy` or
+`ENGRAM_HOST_PATH_POLICY` to skip that probe on each Verify/Save. Supply it
+too when the probe cannot test the project file: its name has no ASCII
+letter, or it is named by an alias wider than ASCII case, such as a short 8.3
+name.
 Readiness does not emit Full Audit's development no-op-redactor warning or
 control-limitation warnings (including unsupported action gating). Those remain
 in `doctor --json`; their absence from readiness is not a protection or

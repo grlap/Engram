@@ -1,14 +1,28 @@
-// Process and unit discriminators for unused project-root identity probes.
-// Watcher journals marker create/remove by event index; leftover read_dir is
-// not the proof. Denied-create uses a real ACL/permission canary plus host
-// WARNING control. Call registerRootProbeTests(test) from an existing Node
-// gate so the required nine stay nine.
+// Process and unit discriminators for project-root identity probes: the host
+// probe looks the project file up under the opposite case and writes no
+// marker, and agent paths do not probe at all. Watcher journals marker
+// create/remove by event index; leftover read_dir is not the proof, and the
+// harness calibrates the journal with a marker of its own. Denied-create uses
+// a real ACL/permission canary, and the host probe still resolves there
+// because it only reads. A project file whose name has no ASCII letter makes
+// the host probe fail with its WARNING, which is the control proving that
+// agent paths, silent there, do not probe. Call registerRootProbeTests(test)
+// from an existing Node gate so the required nine stay nine.
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { watch } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import win32 from "node:path/win32";
 import { EventEmitter } from "node:events";
 
@@ -22,6 +36,10 @@ const binary = join(
   process.platform === "win32" ? "engram.exe" : "engram",
 );
 const PROBE_MARK = "engram-path-probe";
+const BARRIER_PREFIX = ".watch-barrier-";
+// A host control process with closed stdin: it starts, resolves identity and
+// exits at end of input.
+const CONTROL_ARGS = ["control", "--actor-id", "probe", "--session-id", "probe-control"];
 const WARNING = "could not probe the filesystem identity";
 const ACL_TIMEOUT_MS = 15000;
 const RESOLVED_POLICY = /^(case_fold|case_sensitive), windows alias rules (on|off)$/u;
@@ -118,6 +136,20 @@ export class RootJournal extends EventEmitter {
     );
   }
 
+  // Any root event in the window other than the journal's own barriers and
+  // the project file, which every command reads (a read can raise an
+  // access-time event): a write the commands made in the root, whatever its
+  // name.
+  foreignEvents(fromIndex, untilIndex, projectFileName) {
+    return this.events.filter(
+      (event) =>
+        event.index >= fromIndex &&
+        event.index < untilIndex &&
+        !event.filename.startsWith(BARRIER_PREFIX) &&
+        event.filename !== projectFileName,
+    );
+  }
+
   assertHealthy(label) {
     if (this.errors.length) {
       throw new Error(`${label}: watcher inconclusive: ${this.errors[0]}`);
@@ -158,7 +190,7 @@ export class RootJournal extends EventEmitter {
 
   async barrier(label) {
     const from = this.nextIndex;
-    const filename = `.watch-barrier-${label}`;
+    const filename = `${BARRIER_PREFIX}${label}`;
     writeFileSync(join(this.directory, filename), label);
     await this.waitFor(
       () =>
@@ -205,9 +237,9 @@ export async function waitForChildClose(
   return second;
 }
 
-function writeProject(projectDir, id) {
+function writeProject(projectDir, id, name = ".engram-project") {
   mkdirSync(projectDir, { recursive: true });
-  writeFileSync(join(projectDir, ".engram-project"), id);
+  writeFileSync(join(projectDir, name), id);
 }
 
 export function throwWithCleanup(primary, cleanupErrors) {
@@ -337,6 +369,7 @@ export function setupOwnedStore(prefix, deps = {}) {
   const write = deps.writeProject ?? writeProject;
   const init = deps.init ?? ((home, projectFile) => run(home, projectFile, ["init"]));
   const remove = deps.remove ?? removeOwned;
+  const projectFileName = deps.projectFileName ?? ".engram-project";
   const created = [];
   try {
     const home = create(`${prefix}home-`);
@@ -344,8 +377,8 @@ export function setupOwnedStore(prefix, deps = {}) {
     const projectDir = create(`${prefix}root-`);
     created.push(projectDir);
     const projectId = `${prefix}project`;
-    write(projectDir, projectId);
-    const projectFile = join(projectDir, ".engram-project");
+    write(projectDir, projectId, projectFileName);
+    const projectFile = join(projectDir, projectFileName);
     const initialized = init(home, projectFile);
     assert.equal(initialized.status, 0, initialized.stderr);
     return { home, projectDir, projectFile, projectId, created };
@@ -411,17 +444,19 @@ async function withJournal(projectDir, body) {
   }
 }
 
-async function calibratedWindow(journal, home, projectFile, hostArgs, label) {
-  journal.assertHealthy(`before ${label}`);
+// Proves the journal sees a marker-named create and remove in this root, so a
+// later window with no probe events is evidence rather than a deaf watcher.
+async function calibrateJournal(journal, projectDir) {
+  journal.assertHealthy("before calibration");
   const started = journal.cursor();
-  const host = run(home, projectFile, hostArgs);
-  const until = await journal.barrier(`${label}-after-host`);
-  const probes = journal.probeEvents(started, until);
+  const marker = join(projectDir, `.${PROBE_MARK}-calibration.Probe`);
+  writeFileSync(marker, "calibration");
+  rmSync(marker);
+  const until = await journal.barrier("calibration");
   assert.ok(
-    probes.length > 0,
-    `${label} calibration produced no probe-marker events; journal=${JSON.stringify(journal.events)} stderr=${host.stderr}`,
+    journal.probeEvents(started, until).length > 0,
+    `calibration produced no probe-marker events; journal=${JSON.stringify(journal.events)}`,
   );
-  return host;
 }
 
 async function assertNoProbe(journal, home, projectFile, args, label) {
@@ -434,6 +469,11 @@ async function assertNoProbe(journal, home, projectFile, args, label) {
     journal.probeEvents(started, until).length,
     0,
     `probe events during ${args.join(" ")}: ${JSON.stringify(journal.events)}`,
+  );
+  assert.deepEqual(
+    journal.foreignEvents(started, until, basename(projectFile)),
+    [],
+    `root writes during ${args.join(" ")}: ${JSON.stringify(journal.events)}`,
   );
   return output;
 }
@@ -1079,10 +1119,11 @@ export function registerRootProbeTests(test) {
     assert.equal(killed, 0);
   });
 
-  test("writable host probe events calibrate the journal; agent and MCP emit none", async (t) => {
+  test("host commands resolve identity without a probe marker; agent and MCP emit none", async (t) => {
     await withWritableRoot(t, "rpw-", async ({ home, projectDir, projectFile, session: mcpSession }) => {
     await withJournal(projectDir, async (journal) => {
-      const doctor = await calibratedWindow(
+      await calibrateJournal(journal, projectDir);
+      const doctor = await assertNoProbe(
         journal,
         home,
         projectFile,
@@ -1090,6 +1131,27 @@ export function registerRootProbeTests(test) {
         "doctor",
       );
       assertResolvedDoctorPolicy(doctor);
+      assert.doesNotMatch(doctor.stderr, new RegExp(WARNING), doctor.stderr);
+      const readiness = await assertNoProbe(
+        journal,
+        home,
+        projectFile,
+        ["readiness", "--json"],
+        "readiness",
+      );
+      const ready = JSON.parse(readiness.stdout);
+      assert.equal(ready.host_path_policy.status, "matched", readiness.stdout);
+      assert.match(ready.host_path_policy.resolved, RESOLVED_POLICY, readiness.stdout);
+      // The host control process a TermAl session starts: it resolves the
+      // root identity at startup, then serves until its stdin closes.
+      const control = await assertNoProbe(
+        journal,
+        home,
+        projectFile,
+        CONTROL_ARGS,
+        "control",
+      );
+      assert.doesNotMatch(control.stderr, new RegExp(WARNING), control.stderr);
 
       const session = "probe-session";
       for (const [label, args] of [
@@ -1151,20 +1213,28 @@ export function registerRootProbeTests(test) {
         0,
         `probe events during MCP: ${JSON.stringify(journal.events)}`,
       );
+      assert.deepEqual(
+        journal.foreignEvents(mcpStarted, mcpUntil, basename(projectFile)),
+        [],
+        `root writes during MCP: ${JSON.stringify(journal.events)}`,
+      );
+      // Apart from the journal's own barriers, the root holds only what it
+      // started with.
+      assert.deepEqual(
+        readdirSync(projectDir).filter((name) => !name.startsWith(BARRIER_PREFIX)),
+        [basename(projectFile)],
+      );
     });
     });
   });
 
-  test("denied-create root keeps host WARNING and agent/MCP succeed without it", async (t) => {
+  test("a create-denied root still resolves host identity, and agent/MCP succeed, without a WARNING", async (t) => {
     await withDeniedRoot(t, "rpd-", async ({ home, projectFile, session }) => {
+      // The host probe only reads an existing root entry, so a root that
+      // refuses new files, like a read-only checkout, still resolves.
       const doctor = run(home, projectFile, ["doctor", "--json"]);
-      assert.match(
-        doctor.stderr,
-        new RegExp(WARNING),
-        `host doctor must demonstrate resolver warning: ${doctor.stderr}`,
-      );
-
-      assert.equal(doctor.status, 0, doctor.stderr);
+      assert.doesNotMatch(doctor.stderr, new RegExp(WARNING), doctor.stderr);
+      assertResolvedDoctorPolicy(doctor);
       const audited = JSON.parse(doctor.stdout);
       const before = readFileSync(audited.database);
       const walPath = `${audited.database}-wal`;
@@ -1173,14 +1243,14 @@ export function registerRootProbeTests(test) {
       const walBefore = existsSync(walPath) ? readFileSync(walPath) : Buffer.alloc(0);
       const readiness = run(home, projectFile, ["readiness", "--json"]);
       assert.equal(readiness.status, 0, readiness.stderr);
-      assert.match(readiness.stderr, new RegExp(WARNING), readiness.stderr);
+      assert.doesNotMatch(readiness.stderr, new RegExp(WARNING), readiness.stderr);
       const ready = JSON.parse(readiness.stdout);
       assert.equal(ready.ready, true);
       assert.equal(ready.scope, "readiness");
       assert.equal(ready.full_audit, "not_run");
       assert.equal(ready.mutation_enabled, false);
-      assert.equal(ready.host_path_policy.status, "unresolved");
-      assert.equal(ready.host_path_policy.resolved, null);
+      assert.equal(ready.host_path_policy.status, "matched");
+      assert.equal(ready.host_path_policy.resolved, audited.host_path_policy);
       assert.equal(ready.host_path_policy.stored, audited.host_path_policy);
       assert.deepEqual(readFileSync(audited.database), before);
       assert.deepEqual(existsSync(walPath) ? readFileSync(walPath) : Buffer.alloc(0), walBefore);
@@ -1215,5 +1285,74 @@ export function registerRootProbeTests(test) {
         assert.doesNotMatch(mcp.stderr, new RegExp(WARNING), mcp.stderr);
       });
     });
+  });
+
+  test("a project file name with no ASCII letter leaves host identity unresolved with a WARNING; agent paths stay silent", async (t) => {
+    const platformPolicy =
+      process.platform === "win32" || process.platform === "darwin" ? "case_fold" : "case_sensitive";
+    await withOwnedStore(
+      t,
+      "rpu-",
+      async ({ home, projectDir, projectFile, session }) => {
+        const doctor = run(home, projectFile, ["doctor", "--json"]);
+        assert.match(doctor.stderr, new RegExp(WARNING), `host doctor must warn: ${doctor.stderr}`);
+        assertResolvedDoctorPolicy(doctor);
+        const readiness = run(home, projectFile, ["readiness", "--json"]);
+        assert.equal(readiness.status, 0, readiness.stderr);
+        assert.match(readiness.stderr, new RegExp(WARNING), readiness.stderr);
+        const ready = JSON.parse(readiness.stdout);
+        assert.equal(ready.host_path_policy.status, "unresolved", readiness.stdout);
+        assert.equal(ready.host_path_policy.resolved, null, readiness.stdout);
+        assert.match(ready.host_path_policy.stored, RESOLVED_POLICY, readiness.stdout);
+        // The host control process runs the same probe at startup.
+        const control = run(home, projectFile, CONTROL_ARGS);
+        assert.match(control.stderr, new RegExp(WARNING), `host control must warn: ${control.stderr}`);
+
+        // The host probe fails here, so any agent path that ran it would warn.
+        const actor = "probe-unresolved";
+        const silent = (output, label) => {
+          assert.equal(output.status, 0, `${label}\n${output.stderr}`);
+          assert.doesNotMatch(output.stderr, new RegExp(WARNING), `${label}: ${output.stderr}`);
+        };
+        for (const args of [
+          workArgs(actor, "next"),
+          workArgs(actor, "next", "--peek"),
+          workArgs(actor, "ls"),
+          workArgs(actor, "memories"),
+          workArgs(actor, "core", "next", "--sections", "focus"),
+        ]) {
+          silent(run(home, projectFile, args), args.join(" "));
+        }
+        const added = run(home, projectFile, workArgs(actor, "add", "Unresolved mutation", "--json"));
+        silent(added, "add");
+        const ref = addedRef(added);
+        silent(run(home, projectFile, workArgs(actor, "show", ref)), "show");
+        silent(run(home, projectFile, workArgs(actor, "core", "focus", ref)), "core focus");
+        silent(
+          run(home, projectFile, ["graph", "--actor-id", "probe", "--session-id", actor, "save", "--stdout"]),
+          "graph",
+        );
+        silent(
+          run(home, projectFile, ["backup", "--out", join(home, "probe-backup.db")]),
+          "backup",
+        );
+        await withMcp(session, home, projectFile, async (mcp) => {
+          await mcp.handshakeAndPeek();
+          assert.doesNotMatch(mcp.stderr, new RegExp(WARNING), mcp.stderr);
+        });
+        // Nothing the probe or the agent paths did left a file in the root.
+        assert.deepEqual(readdirSync(projectDir).sort(), ["2026"]);
+      },
+      {
+        setupOwnedStore: (prefix) =>
+          setupOwnedStore(prefix, {
+            projectFileName: "2026",
+            // The probe cannot resolve this root, so the host supplies the
+            // policy once, as it would in production, to bind the store.
+            init: (home, projectFile) =>
+              run(home, projectFile, ["--host-path-policy", platformPolicy, "init"]),
+          }),
+      },
+    );
   });
 }

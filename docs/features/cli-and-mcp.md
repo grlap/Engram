@@ -1777,14 +1777,21 @@ NFC-normalizes every segment. Path-bearing host commands (`init`, `doctor`, `con
 `control-policy`, `readiness`, `control-session-inspect`) resolve the project root's filesystem identity before
 opening the store: `--host-path-policy case_fold|case_sensitive`
 (or `ENGRAM_HOST_PATH_POLICY`) when the host knows it, otherwise a probe that
-writes one uniquely named file into the project root and looks it up under
-the opposite case. Agent work words, MCP startup, graph, backup, restore and
-import do not run that probe; they still perform their ordinary store and
-file I/O. The first resolved writable opener persists that policy;
-read-only [readiness](host-readiness.md) never binds it and explicitly reports
-an unbound or unresolved identity. Later
-resolved openers must present the same one, and a mismatch names both. An
-opener that could not resolve the identity (unwritable or missing root) still
+looks the project file up under the opposite ASCII case: nothing there means
+the root tells the spellings apart, and when something is there the root's
+listing says whether it is the same entry. The probe only reads. A project
+file name with no ASCII letter (or not Unicode text), a name that reaches the
+file through a wider alias than ASCII case (such as a non-ASCII case variant,
+a short 8.3 name, a trailing dot or space, or another Unicode normalization),
+a project file that changes while it is probed, or a failed
+lookup or listing leaves the identity unresolved. Agent work words, MCP
+startup, graph, backup, restore and import do not run that probe; they still
+perform their ordinary store and file I/O. The first resolved writable opener
+persists that policy; read-only [readiness](host-readiness.md) never binds it
+and explicitly reports an unbound or unresolved identity. Later resolved
+openers must present the same one, and a mismatch names both. An opener that
+could not resolve the identity (a project file the probe cannot test, or a
+lookup that fails) still
 reads and tracks work, but path-bearing control requests are refused with
 `host_path_identity_unresolved` instead of guessing. Windows alias rules
 (reserved names, alternate data stream syntax, trailing-dot/space aliases,

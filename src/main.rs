@@ -69,10 +69,11 @@ enum HostPathPolicyArg {
     CaseSensitive,
 }
 
-/// Resolved project-root filesystem identity: host-supplied, probed, or
-/// unresolved (with the reason already printed to stderr).
+/// Resolved project-root filesystem identity: host-supplied, probed through
+/// the project file, or unresolved (with the reason already printed to
+/// stderr).
 fn resolve_host_path_identity(
-    root: &Path,
+    project_file: &Path,
     supplied: Option<HostPathPolicyArg>,
 ) -> Option<HostPathPolicy> {
     if let Some(supplied) = supplied {
@@ -81,7 +82,7 @@ fn resolve_host_path_identity(
             HostPathPolicyArg::CaseSensitive => "case_sensitive",
         });
     }
-    match probe_host_path_policy(root) {
+    match probe_host_path_policy(project_file) {
         Ok(policy) => Some(policy),
         Err(error) => {
             emit_host_path_probe_warning(&error);
@@ -1030,7 +1031,7 @@ async fn run_cli() -> Result<ExitCode> {
     if let Command::Migration { operation } = &cli.command {
         return bin_support::migration::run(operation);
     }
-    let (project_id, database, root) = match resolve_project(&cli.project_file, cli.home) {
+    let (project_id, database) = match resolve_project(&cli.project_file, cli.home) {
         Ok(project) => project,
         Err(error) => {
             if let Command::Readiness { json } = &cli.command {
@@ -1057,7 +1058,7 @@ async fn run_cli() -> Result<ExitCode> {
     // Only commands that open with host-path identity may probe the project
     // root. Agent work, MCP, graph, backup, restore and import discard it.
     let identity = if command_resolves_host_path_identity(&cli.command) {
-        resolve_host_path_identity(&root, cli.host_path_policy)
+        resolve_host_path_identity(&cli.project_file, cli.host_path_policy)
     } else {
         None
     };
@@ -2178,22 +2179,16 @@ fn serve_control(
         .context("Engram host-control stdio service stopped with an error")
 }
 
-/// Resolves the stable project id, its host-local database, and the project
-/// root (the directory holding the project file).
-fn resolve_project(
-    project_file: &Path,
-    home: Option<PathBuf>,
-) -> Result<(ProjectId, PathBuf, PathBuf)> {
+/// Resolves the stable project id and its host-local database. The project
+/// root is the directory holding the project file; its filesystem identity is
+/// probed through that file.
+fn resolve_project(project_file: &Path, home: Option<PathBuf>) -> Result<(ProjectId, PathBuf)> {
     let project_id = bin_support::project::read_project_id(project_file)?;
     let home = home.or_else(|| env::var_os("ENGRAM_HOME").map(PathBuf::from));
     let home = home.context("pass --home or set ENGRAM_HOME")?;
     let project_id = ProjectId(project_id);
     let database = project_database_path(&home, &project_id);
-    let root = project_file
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    Ok((project_id, database, root))
+    Ok((project_id, database))
 }
 
 async fn serve_mcp(server: McpServer) -> Result<()> {
