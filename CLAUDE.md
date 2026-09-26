@@ -29,6 +29,30 @@ Report failed reads as a recovery gap, not as an empty result. A host that
 cannot deliver these instructions after compaction must disclose that gap;
 their presence in a file alone does not prove delivery.
 
+### Work only in the repository folder
+
+Greg's rule (2026-09-26), after an agent's cleanup script deleted most of his
+user profile:
+
+- Create, change, move and delete files only inside this repository's folder
+  and its worktrees. This covers every shell command and script an agent
+  writes. Scratch files, throwaway stores, test homes and logs go under
+  `target/` (ignored by Git), never in the system temp folder, `C:\tmp`, the
+  user profile or another project, even when a harness names a scratchpad
+  there.
+- Outside the repository only tools write, as part of their own work: Engram
+  to its store home, TermAl through its tools, Cargo to its caches. Installing
+  a build as Authority and Git describes is the one write an agent makes
+  outside the repository itself. Anything else there, such as installing,
+  repairing or updating software or toolchains, or changing user or global
+  configuration, needs Greg's explicit word first.
+- Reading outside the repository is allowed.
+- Before a recursive delete, resolve the target to an absolute path and check
+  that it lies inside the repository. Never delete through a variable whose
+  value you have not checked. In PowerShell never assign `$home` or any other
+  automatic variable: variable names ignore case, `$HOME` is read-only, and a
+  failed assignment keeps the old value while the script runs on.
+
 ### Authority and Git
 
 - Never commit, push, rebase, or force-push without explicit user
