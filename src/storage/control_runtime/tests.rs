@@ -672,6 +672,77 @@ fn an_issued_grant_that_expires_while_turn_open_resets_the_session_to_ready() {
     );
 }
 
+// An issued grant whose task anchor or membership is gone can never begin,
+// so the refused start retires it at once instead of leaving it issued
+// until its lifetime runs out. Storage never deletes an anchor or a
+// membership; moving the anchor to another project stands in for both.
+#[test]
+fn a_turn_start_refused_for_a_lost_anchor_retires_the_grant() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let binding = bind_control(&mut store, now);
+    let decision = store
+        .evaluate_control_turn(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            &TurnIntent {
+                idempotency_key: "lost-anchor".into(),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"lost-anchor"),
+                purpose: None,
+                requested_effects: vec![EffectClass::Observe],
+                resource_intents: Vec::new(),
+            },
+            now + TimeDelta::seconds(1),
+        )
+        .expect("evaluate");
+    let ControlTurnDecision::Grant { grant } = decision else {
+        panic!("the turn must grant");
+    };
+    store
+        .connection
+        .execute(
+            "UPDATE control_anchors SET project_id = 'project-elsewhere' WHERE task_id = ?1",
+            [binding.status.task_id.0.to_string()],
+        )
+        .expect("move the anchor away");
+
+    let refused = store
+        .begin_control_turn(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            &grant.grant_id,
+            &[],
+            "begin-lost-anchor",
+            now + TimeDelta::seconds(2),
+        )
+        .expect("begin");
+    assert!(
+        matches!(
+            refused,
+            ControlTurnBeginDecision::Refuse {
+                code: crate::domain::ControlRefusalCode::TaskUnbound
+            }
+        ),
+        "{refused:?}"
+    );
+    let (grant_state, phase): (String, String) = store
+        .connection
+        .query_row(
+            "SELECT g.state, s.phase FROM control_turn_grants g
+             JOIN control_sessions s ON s.session_id = g.session_id
+             WHERE g.grant_id = ?1",
+            [grant.grant_id.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("grant and session rows");
+    assert_eq!(grant_state, "expired");
+    assert_eq!(phase, "ready");
+}
+
 #[test]
 fn task_only_control_checkpoint_cannot_append_execution_observations() {
     let mut store = SqliteStore::open_in_memory().expect("store");

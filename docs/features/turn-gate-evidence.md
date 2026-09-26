@@ -17,9 +17,9 @@ stores recorded, and what switching the gate off would lose. The
 [behavioral control plane](behavioral-control-plane.md) brief remains the design;
 this page records how much of it is used.
 
-The same day, the grant's context page and recovery turns were removed, as
-[decided](#decisions) below. The questions and refusals below describe the
-gate after that change. The figures, examples and call sites are from the
+The same day, the grant's context page, the recovery turns and the parts
+nothing used were removed, as [decided](#decisions) below. The questions and
+refusals below describe the gate after those changes. The figures, examples and call sites are from the
 snapshot.
 
 Figures come from the two live stores, opened read-only on 25 September 2026
@@ -135,7 +135,12 @@ claim. Register it."
   `stale_fence` (after a rebind), and for `grant_scope_mismatch` when a
   session status shows Engram already retired the grant (no open grant, phase
   `ready`), TermAl asks for permission again, once. Any other refusal drops
-  the prompt, as a refused permission does.
+  the prompt, as a refused permission does. Engram retires the issued grant
+  and returns the session to `ready` when the start is refused for an
+  expired grant, a changed epoch, a stale fence, or a lost anchor or
+  membership (`task_unbound`, `task_access_denied`); before 25 September a
+  refusal for the anchor or membership left the grant issued until it
+  expired.
 - **Use:** 1,112 starts in the Engram store, 201 in PhoenixCodeNav. The start
   is what separates "allowed" from "ran", and the counts show both gaps: 1,113
   turns were granted and 1,112 started, because one grant expired without
@@ -153,9 +158,9 @@ claim. Register it."
 saw."
 
 - **Answer:** Engram records the outcome, whether the source changed, and any
-  test run the host watched pass. A source change opens a "tests have not run"
-  obligation on the claimed work. `done` then marks the change untested unless
-  the host saw a passing run.
+  test run the host watched, with its result. A source change opens a "tests
+  have not run" obligation on the claimed work. `done` then marks the change
+  untested unless the host saw a passing run.
 - **Blocks:** a refused report for a turn that never started leaves an issued
   grant, which the next rebind expires. A refused report for a turn that did
   start holds the session: Engram will not rebind it until a report succeeds
@@ -163,8 +168,8 @@ saw."
 - **Use:** 1,111 reports in the Engram store, 201 in PhoenixCodeNav. Since
   24 September they recorded 37 observations, 17 of them with changed source.
   Those opened 27 test obligations, 12 now resolved, and recorded 10 test runs
-  the host saw. This is the only evidence in Engram that an agent cannot write
-  for itself.
+  the host saw: 1 passed and 9 were indeterminate. This is the only evidence in
+  Engram that an agent cannot write for itself.
 - **Example:** on 2026-09-25 at 15:32:05 UTC session-7284 reported a turn
   that succeeded without changing the source, at source revision
   `48b897c9…`, with next intent `wait`.
@@ -279,40 +284,41 @@ handled by the status check and a report after the restart.
 
 ### Designed but never used
 
+At the snapshot these parts existed but nothing used them. They were removed
+the same day, following the [decision](#decisions) below:
+
 - Checks around individual actions: `action_authorize`, `action_begin` and
   `action_complete`. Also `control_bootstrap`, `delivery_ack`,
-  `session_heartbeat` and `session_exit`. These are listed as
-  [planned interfaces](behavioral-control-plane.md#planned-interfaces) and were
-  never wired to the host channel. A pure action-start check exists in
-  `control.rs` but nothing calls it. Neither store has a table for action
-  grants, heartbeats or delivery acknowledgements.
-- The "defer" answer. TermAl can read it; Engram never gives it.
-- Session phases storage never writes: `unbound`, `checkpoint_required`,
+  `session_heartbeat` and `session_exit`. None was ever wired to the host
+  channel, and neither store has a table for action grants, heartbeats or
+  delivery acknowledgements. The unused action-start check in `control.rs` is
+  gone. They stay listed as not built under
+  [planned interfaces](behavioral-control-plane.md#planned-interfaces).
+- The "defer" answer, which Engram never gave. Turn decisions are grant or
+  refuse.
+- Session phases storage never wrote: `unbound`, `checkpoint_required`,
   `recovery_open`, `handoff_pending`, `contribution_required` and
-  `participant_ready`. Storage writes only `ready`, `turn_open` and `exited`.
-  A session last written as `sync_required`, before the change, is treated as
-  `ready`.
-- Refusal codes the stored checks never produce:
-  - `control_unavailable`, `store_corrupt`, `unknown_control_schema`,
-    `control_policy_missing`, `action_outcome_unknown` and `missing_authority`.
-    The stored input fixes the schema, health, policy, action outcome and
-    authority.
-  - `lease_required`, which is historical.
-  - `resource_remapped`, which belongs to action checks.
-  - `checkpoint_required` and `participant_not_ready`, whose phases are never
-    written.
-  - `task_admission_epoch_changed`. Nothing ever raises a task's admission
-    epoch.
-  - `task_unbound`, `task_access_denied` and `lifecycle_hold`. They check that
-    the task's control anchor and the session's own row exist, which storage
-    never deletes, or come from phases storage never writes.
-  - `recovery_required`, `delta_required`, `pinned_budget_exceeded`,
-    `delivery_invalid`, `context_required` and `turn_purpose_mismatch`. They
-    came from the page and recovery turns, and Engram keeps them only to read
-    refusals stored before the change.
+  `participant_ready`. The live phases are `ready`, `turn_open` and `exited`.
+  A session last written as `sync_required`, before the grant's page was
+  removed, is treated as `ready`.
+- Refusal codes no path produced: `control_unavailable`, `store_corrupt`,
+  `control_policy_missing`, `action_outcome_unknown`, `missing_authority`,
+  `resource_remapped`, `checkpoint_required`, `lifecycle_hold` and
+  `participant_not_ready`. A turn start whose task
+  anchor has gone now answers `task_unbound`, as permission does. It used to
+  answer `lifecycle_hold`, or `task_access_denied` when the anchor had moved
+  to another project, because it checked membership first.
 
-[Spec §2.7](../spec.md#27-execution-control) still describes action grants and
-the "defer" answer. No host runs either.
+Some codes stay although nothing has produced them so far:
+`unknown_control_schema`, for a stored grant whose control schema this build
+does not know; `task_admission_epoch_changed`, though nothing raises a task's
+admission epoch yet; and the defensive `task_unbound` and `task_access_denied`,
+for an anchor or membership that storage never deletes. The codes from the page
+and recovery turns (`recovery_required`, `delta_required`,
+`pinned_budget_exceeded`, `delivery_invalid`, `context_required` and
+`turn_purpose_mismatch`) stay only so that refusals stored before those were
+removed can still be read. So does `lease_required`, for refusals stored while
+resource leases existed; see [full store migration](full-store-migration.md).
 
 ## Refusals a user can see in TermAl
 
@@ -345,7 +351,7 @@ TermAl also holds prompts without a refusal:
 
 | What the user sees | Why | How the session gets out |
 | --- | --- | --- |
-| Engram: Waiting/Unknown. Original prompt retained; resume to retry or cancel. | Engram was slow or unreachable, TermAl stopped trying after repeated failures, or Engram deferred. | Press Resume to try again, or cancel the prompt. |
+| Engram: Waiting/Unknown. Original prompt retained; resume to retry or cancel. | Engram was slow or unreachable, or TermAl stopped trying after repeated failures. | Press Resume to try again, or cancel the prompt. |
 | Engram: Waiting/Unknown after interrupted authorization. Prompt retained; cancel or reconcile before continuing. | A protocol or storage fault while asking. | Cancel the prompt. |
 | Engram: interrupted/unknown delivery. Prompt retained; cancel or reconcile before continuing. | After a restart, TermAl found a turn that had started but never reported. | TermAl closes it with a report and never resends the prompt. Cancel it, and send it again if needed. |
 | Restoring Engram, or "session is restoring its Engram authority after restart" | TermAl is rebinding its sessions after a restart. | Wait; it clears by itself. |
@@ -376,8 +382,8 @@ No. Keep the request out of the gate.
 - every turn since 2 September in the Engram store (1,142 decisions and 1,111
   reports), and since 23 September in PhoenixCodeNav (201 of each);
 - since 24 September, whether each turn changed the source and which test runs
-  the host saw pass. That so far produced 27 test obligations and 10 recorded
-  runs.
+  the host saw, with their result. That so far produced 27 test obligations and
+  10 recorded runs, 1 passed and 9 indeterminate.
 
 **Prevented so far:** nothing risky. The 29 refusals were 22 recovery demands
 TermAl could not meet, which no longer occur, and 7 stale claim bindings that
@@ -435,5 +441,6 @@ part that only adds friction goes.
 The decisions on context delivery and recovery turns are carried out, together
 with the parts of turn permission and turn start that went with the page:
 grants carry no page, turn start keeps its other checks, and there are no
-recovery turns. Cutting the refusal codes down to those the stored path can
-produce, and removing what was designed but never used, are still to do.
+recovery turns. What was designed but never used is removed too, with the
+refusal codes no path produced; see
+[designed but never used](#designed-but-never-used).

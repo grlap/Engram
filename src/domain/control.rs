@@ -108,19 +108,14 @@ pub struct ControlPolicy {
 ///
 /// Storage writes only `ready`, `turn_open` and `exited`. `sync_required`
 /// is still read from rows written before turn grants stopped carrying a
-/// delivery page, and admits a turn as `ready` does.
+/// delivery page, and admits a turn as `ready` does. No store holds any other
+/// phase.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionPhase {
-    Unbound,
     SyncRequired,
     Ready,
     TurnOpen,
-    CheckpointRequired,
-    RecoveryOpen,
-    HandoffPending,
-    ContributionRequired,
-    ParticipantReady,
     Exited,
 }
 
@@ -152,16 +147,6 @@ pub enum EffectClass {
     Lifecycle,
 }
 
-/// Health state supplied to the deterministic control evaluator.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlHealth {
-    Healthy,
-    Unavailable,
-    Corrupt,
-    UnknownSchema,
-}
-
 /// Durable membership result for the bound session and task.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -174,13 +159,16 @@ pub enum ParticipantMembership {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlRefusalCode {
-    ControlUnavailable,
-    StoreCorrupt,
+    /// A stored grant or snapshot names a control schema this build does not
+    /// know.
     UnknownControlSchema,
-    ControlPolicyMissing,
     ControlAssuranceInsufficient,
     CapabilityNotPermitted,
+    /// Defensive: the session names no task, or the task's control anchor is
+    /// gone. Storage never deletes an anchor.
     TaskUnbound,
+    /// Defensive: the session is not a member of its task. Storage never
+    /// removes a membership.
     TaskAccessDenied,
     PolicyEpochChanged,
     TaskAdmissionEpochChanged,
@@ -196,22 +184,17 @@ pub enum ControlRefusalCode {
     /// Historical saved refusals only; turn grants no longer carry a
     /// delivery page.
     DeliveryInvalid,
-    CheckpointRequired,
     /// Historical saved refusals only; recovery turns no longer exist.
     RecoveryRequired,
     TurnAlreadyOpen,
     /// Historical saved refusals only; every turn is ordinary.
     TurnPurposeMismatch,
-    LifecycleHold,
-    ParticipantNotReady,
-    ActionOutcomeUnknown,
-    MissingAuthority,
     GrantExpired,
     GrantNotBegun,
     GrantScopeMismatch,
     StaleFence,
-    ResourceRemapped,
-    /// Historical saved refusals only; current evaluation has no lease requirement.
+    /// Historical saved refusals only; current evaluation has no lease
+    /// requirement.
     LeaseRequired,
     SessionExited,
 }
@@ -221,10 +204,7 @@ impl ControlRefusalCode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::ControlUnavailable => "control_unavailable",
-            Self::StoreCorrupt => "store_corrupt",
             Self::UnknownControlSchema => "unknown_control_schema",
-            Self::ControlPolicyMissing => "control_policy_missing",
             Self::ControlAssuranceInsufficient => "control_assurance_insufficient",
             Self::CapabilityNotPermitted => "capability_not_permitted",
             Self::TaskUnbound => "task_unbound",
@@ -235,19 +215,13 @@ impl ControlRefusalCode {
             Self::ContextRequired => "context_required",
             Self::DeltaRequired => "delta_required",
             Self::DeliveryInvalid => "delivery_invalid",
-            Self::CheckpointRequired => "checkpoint_required",
             Self::RecoveryRequired => "recovery_required",
             Self::TurnAlreadyOpen => "turn_already_open",
             Self::TurnPurposeMismatch => "turn_purpose_mismatch",
-            Self::LifecycleHold => "lifecycle_hold",
-            Self::ParticipantNotReady => "participant_not_ready",
-            Self::ActionOutcomeUnknown => "action_outcome_unknown",
-            Self::MissingAuthority => "missing_authority",
             Self::GrantExpired => "grant_expired",
             Self::GrantNotBegun => "grant_not_begun",
             Self::GrantScopeMismatch => "grant_scope_mismatch",
             Self::StaleFence => "stale_fence",
-            Self::ResourceRemapped => "resource_remapped",
             Self::LeaseRequired => "lease_required",
             Self::SessionExited => "session_exited",
         }
@@ -260,7 +234,6 @@ impl ControlRefusalCode {
 pub enum DirectiveTarget {
     Host,
     Agent,
-    Human,
 }
 
 /// Evidence required before the evaluator may clear a directive.
@@ -269,7 +242,6 @@ pub enum DirectiveTarget {
 pub enum DirectiveSatisfaction {
     HostTransition,
     RecoveryCheckpoint,
-    HumanAuthority,
 }
 
 /// Exact bounded packet or delta page that a turn grant issued before grants
@@ -597,10 +569,6 @@ const fn work_binding_is_current(value: &bool) -> bool {
 
 /// Complete explicitly supplied state used to evaluate one turn.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "the evaluator input records independent fail-closed facts rather than interchangeable flags"
-)]
 pub struct TurnEvaluationInput {
     pub control_schema_version: u16,
     pub session_id: SessionId,
@@ -617,8 +585,6 @@ pub struct TurnEvaluationInput {
     )]
     pub work_binding_current: bool,
     pub phase: SessionPhase,
-    pub health: ControlHealth,
-    pub active_policy_known: bool,
     pub host_assurance: ControlAssurance,
     pub required_assurance: ControlAssurance,
     #[serde(default)]
@@ -627,8 +593,6 @@ pub struct TurnEvaluationInput {
     pub mediated_effects: Vec<EffectClass>,
     pub current_epochs: ControlEpochs,
     pub session_epochs: ControlEpochs,
-    pub has_unknown_action_outcome: bool,
-    pub authority_satisfied: bool,
     pub capability_map_revision: i64,
     pub intent: TurnIntent,
     pub evaluated_at: DateTime<Utc>,
@@ -696,22 +660,6 @@ pub struct TurnGrantBasis {
 pub enum TurnDecision {
     Grant { basis: Box<TurnGrantBasis> },
     Refuse { directive: ControlDirective },
-    Defer { deferral: ControlDeferral },
-}
-
-/// Stable reason why admission should be retried rather than repaired.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlDeferCode {
-    DecisionBusy,
-}
-
-/// Bounded retry/wake guidance for ordinary contention.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ControlDeferral {
-    pub code: ControlDeferCode,
-    pub retry_after_ms: Option<u64>,
-    pub wake_condition: String,
 }
 
 /// Persistable shadow result. It is evidence, never execution authority.
@@ -788,7 +736,6 @@ pub struct IssuedTurnGrant {
 pub enum ControlTurnDecision {
     Grant { grant: Box<IssuedTurnGrant> },
     Refuse { directive: ControlDirective },
-    Defer { deferral: ControlDeferral },
 }
 
 /// Operational state of a persisted turn grant.
@@ -1142,97 +1089,6 @@ fn windows_path_segment_is_unambiguous(segment: &str) -> bool {
         !suffix.is_empty() && suffix.len() <= 6 && suffix.bytes().all(|byte| byte.is_ascii_digit())
     });
     !reserved && !short_alias
-}
-
-/// Complete basis captured when an action grant is authorized.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ActionGrantBasis {
-    pub control_schema_version: u16,
-    pub grant_id: String,
-    pub parent_turn_id: String,
-    pub session_id: SessionId,
-    pub task_id: TaskId,
-    pub turn_purpose: TurnPurpose,
-    pub effect: EffectClass,
-    pub resource_subjects: Vec<ResourceSubject>,
-    pub request_fingerprint: ObjectId,
-    pub authority_references: Vec<String>,
-    pub epochs: ControlEpochs,
-    pub capability_map_revision: i64,
-    pub resolution_binding_digest: Option<ObjectId>,
-    pub expires_at: DateTime<Utc>,
-}
-
-/// Begin-time state of the parent turn.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParentTurnState {
-    Open,
-    Closed,
-}
-
-/// Whether the single-use action grant is still available.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ActionGrantState {
-    Available,
-    Consumed,
-}
-
-/// Verification result for the durable authority references.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AuthorityState {
-    Valid,
-    Invalid,
-}
-
-/// Filesystem mapping assurance supplied by the host mediator.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ResolutionAssurance {
-    PinnedThroughInvocation,
-    DetectionOnly,
-}
-
-/// Current state atomically compared with an action grant at begin time.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ActionBeginSnapshot {
-    pub control_schema_version: u16,
-    pub parent_turn_id: String,
-    pub parent_turn_state: ParentTurnState,
-    pub grant_state: ActionGrantState,
-    pub session_id: SessionId,
-    pub task_id: TaskId,
-    pub phase: SessionPhase,
-    pub turn_purpose: TurnPurpose,
-    pub effect: EffectClass,
-    pub resource_subjects: Vec<ResourceSubject>,
-    pub request_fingerprint: ObjectId,
-    pub authority_references: Vec<String>,
-    pub authority_state: AuthorityState,
-    pub current_epochs: ControlEpochs,
-    pub capability_map_revision: i64,
-    pub resolution_binding_digest: Option<ObjectId>,
-    pub resolution_assurance: ResolutionAssurance,
-    pub observed_at: DateTime<Utc>,
-}
-
-/// Shadow result of the complete begin-time authorization recheck.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "decision", rename_all = "snake_case")]
-pub enum ActionBeginDecision {
-    Begin { grant_id: String },
-    Refuse { code: ControlRefusalCode },
-}
-
-/// Persistable action-begin observation. It never consumes a real grant.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ObservedActionBeginDecision {
-    pub control_schema_version: u16,
-    pub grant_id: String,
-    pub observed_at: DateTime<Utc>,
-    pub decision: ActionBeginDecision,
 }
 
 #[cfg(test)]

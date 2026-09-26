@@ -229,7 +229,7 @@ use crate::{
     control::effective_mediated_effects,
     domain::{
         ActorContext, AssuranceLevel, Authority, CONTROL_SCHEMA_VERSION, ChangeCursor,
-        ControlAssurance, ControlEpochs, ControlHealth, ControlPolicy, ControlSessionBinding,
+        ControlAssurance, ControlEpochs, ControlPolicy, ControlSessionBinding,
         ControlSessionStatus, ControlTurnBeginDecision, ControlTurnCheckpointDecision,
         ControlTurnDecision, ControlWorkBinding, Delivery, EffectClass, EnvironmentComponents,
         EnvironmentEvidence, EnvironmentEvidenceInput, EnvironmentEvidenceReference,

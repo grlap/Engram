@@ -563,7 +563,6 @@ impl SqliteStore {
             ControlTurnDecision::Refuse { directive } => directive
                 .directive_id
                 .starts_with(&format!("{}:", stored.idempotency_key)),
-            ControlTurnDecision::Defer { deferral } => !deferral.wake_condition.trim().is_empty(),
         };
         if !row_matches || !decision_matches {
             return Err(StoreError::InvalidControlProjection(format!(

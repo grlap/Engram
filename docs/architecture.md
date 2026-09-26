@@ -50,12 +50,14 @@ capabilities.
 | `Signer` | optional cryptographic attestation | not shipped in V1 |
 
 `domain.rs` owns substrate-neutral control records and valid state
-representations. `control.rs` owns deterministic turn, turn-begin,
-turn-checkpoint, and action-begin decisions. `storage/` atomically derives
+representations. `control.rs` owns deterministic turn, turn-begin and
+turn-checkpoint decisions. `storage/` atomically derives
 work/run lifecycle, membership, context, and named feed heads; persists sessions and
 short-lived grants; consumes grants at begin; and emits canonical checkpoint
-events. `host.rs` is the thin JSON-lines host transport. Action
-grant persistence and report-assembly projections remain later phases. Front
+events. `host.rs` is the thin JSON-lines host transport. Checks on individual
+actions are not built (see
+[planned interfaces](features/behavioral-control-plane.md#planned-interfaces)),
+and report-assembly projections remain a later phase. Front
 ends translate requests; they do not decide eligibility.
 
 ## Object model
@@ -159,10 +161,9 @@ values never enter any shared history—vault references only.
    through `next`.
 3. **Admit**: before each prompt, the host asks the deterministic evaluator
    for a short-lived turn grant, which carries no context. A refusal carries a
-   typed directive.
-   Before a declared material capability, an action-gated host obtains and
-   begins a single-use action grant, then records the outcome. See
-   [behavioral control plane](features/behavioral-control-plane.md).
+   typed directive. There is no per-action check: action grants are not built
+   (see
+   [planned interfaces](features/behavioral-control-plane.md#planned-interfaces)).
 4. **Write**: an assertion passes the `Redactor` port, gets attributed
    (asserted runtime context + assurance level), and either activates or
    lands as `proposed` per the write-policy matrix. See
@@ -190,17 +191,18 @@ values never enter any shared history—vault references only.
 
 The CLI (`engram …`) and agent-facing MCP expose the six-operation ambient
 work protocol, memory, diagnostics, and coordination requests. A separate
-host-private API handles binding, turn
-evaluation/begin, delivery acknowledgement, action
-authorization/begin/completion, checkpoint, heartbeat, and exit. The host owns
-prompt/tool mediation and notifications; Engram owns durable protocol state
-and decisions. See
+host-private API handles five operations: `session_bind`, `session_status`,
+`turn_evaluate`, `turn_begin` and `turn_checkpoint`. Delivery
+acknowledgement, action checks, heartbeat and exit are not built (see
+[planned interfaces](features/behavioral-control-plane.md#planned-interfaces)).
+The host owns prompt/tool mediation and notifications; Engram owns durable
+protocol state and decisions. See
 [CLI & MCP](features/cli-and-mcp.md).
 
-The reusable Host Enforcement SDK implements that private lifecycle once and
-is embedded by the TermAl adapter, generic CLI wrapper, native runtime
-adapters, and custom-agent library. Adapters declare only the prompt/tool
-coverage they actually mediate.
+A reusable Host Enforcement SDK that implements that private lifecycle once,
+for the TermAl adapter, a generic CLI wrapper, native runtime adapters and a
+custom-agent library, is planned; today TermAl implements it directly.
+Adapters declare only the prompt/tool coverage they actually mediate.
 
 The hot control path targets one long-lived host-local `engram serve` process
 per project store with thin hook clients and short-lived cached grants. This

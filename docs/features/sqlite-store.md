@@ -29,7 +29,7 @@ engram.db
   work_session_state # mutable ambient focus + processed project-feed cursor; never authority
   control_anchors # shared project + external-reference rendezvous, not work items
   control_changes # write-only audit index of turn reports, dense per control scope
-  control_sessions     # durable host routing, phase, epochs; retained cursor columns unused
+  control_sessions     # durable host routing, phase, epochs; retained cursor columns feed no decision
   control_connections  # current host-process generation; fences predecessors
   control_turn_results # idempotent enforced decisions
   control_turn_grants  # short-lived issued/begun/completed authority
@@ -122,10 +122,10 @@ delivery page: the task's change index that turn reports append to is a
 write-only audit trail, which no grant delivers and no decision reads. Task
 events larger than the single-object limit are rejected before they enter it.
 The `control_sessions` columns `confirmed_cursor`, `tentative_cursor` and
-`blocking_watermark` are unused: only a bind writes them, as zero or null, so a
-row written earlier keeps its last values until it is rebound. They are
-retained only so the schema stays unchanged until the next planned migration
-drops them.
+`blocking_watermark` feed no decision; the loader only checks they are
+non-negative. Only a bind writes them, as zero or null, so a row written
+earlier keeps its last values until it is rebound. They are retained only so
+the schema stays unchanged until the next planned migration drops them.
 
 `control_changes.task_cursor` is dense and local to one control anchor; an internal
 `sequence` is only a SQLite row identity. Ordinary open refuses different-build

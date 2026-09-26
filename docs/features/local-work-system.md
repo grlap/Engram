@@ -376,7 +376,7 @@ dense run-feed cut. First, each still-open obligation of the stock
 source-change rule is resolved as a waiver in the completing actor's name,
 inside that cut. That source change had no matching passing test after it, so
 completion records the change as untested instead of refusing
-([behavioral control plane](behavioral-control-plane.md#6-checkpoint-the-turn)).
+([behavioral control plane](behavioral-control-plane.md#5-checkpoint-the-turn)).
 Any other open obligation refuses sealing before any terminal work mutation.
 A required child seal is decoded and checked recursively, and
 every accepted seal carries the current obligation-schema binding.
@@ -1213,7 +1213,7 @@ work rather than relying on a no-op claim by the current holder.
 Agent-facing MCP and shell work use only the stable project plus non-empty
 asserted actor/session binding. There is no work grant file, hash, environment
 variable, flag, validity window, or revocation operation. The host-private
-behavioral-control channel may still use its separate turn/action grants; those
+behavioral-control channel may still use its separate turn grants; those
 tokens never authorize or appear in the local-work word surface.
 
 `work_propose` is the low-ceremony decomposition path: an agent can submit a
@@ -1742,31 +1742,31 @@ Later host enforcement may bind exact reconciled action outcomes.
 ## Behavioral-control integration
 
 Work calls describe intent. Separately, the host-private behavioral-control
-channel may mediate a model turn or material external action with its own
-short-lived grant. That control-plane grant binds:
+channel may mediate a model turn with its own short-lived grant. That
+control-plane grant binds:
 
 ```text
 work_id + work_revision + run_id
 claim_id + claim_fence
 project policy epoch + work admission epoch
-basis feed positions[] + session delivery position
 capability envelope + expiry
 ```
 
-`turn_begin` rechecks that basis immediately before prompt dispatch.
-`action_authorize` rechecks it again for a material capability. A model-facing
-MCP call can propose, query, checkpoint, or request a transition; it cannot
-mint or consume the host's grant.
+`turn_begin` rechecks that basis immediately before prompt dispatch. There is
+no per-action check; it is not built. A model-facing MCP call can propose,
+query, checkpoint, or request a transition; it cannot mint or consume the
+host's grant.
 
-The SDK removes ceremony from the model loop:
+A planned SDK would take the ceremony out of the model loop; TermAl performs
+the built steps directly today:
 
 1. `before_turn` revalidates the optional portable writer epoch when due,
-   chooses or validates the bound work, synchronizes changed context,
-   obtains/begins a grant, and injects one bounded `WorkEnvelope`.
-2. `before_action` maps a host tool call to effects/resources and obtains a
-   single-use action grant when required.
-3. `after_action` records the minimal outcome receipt even if the model turn
-   later fails.
+   chooses or validates the bound work, and obtains and begins a grant. The
+   grant carries no context: the agent reads its work context through `next`.
+2. (not built) `before_action` maps a host tool call to effects/resources and
+   obtains a single-use action grant when required.
+3. (not built) `after_action` records the minimal outcome receipt even if the
+   model turn later fails.
 4. `after_turn` persists the model's structured checkpoint and reconciles
    work-claim state before another turn.
 

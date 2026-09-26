@@ -10,7 +10,8 @@
 What the turn gate does with TermAl as its host, and what it is worth, on 25
 September 2026, from the Engram store (since 2 September) and the
 PhoenixCodeNav store (since 23 September). On 25 September the grant's context
-page and recovery turns were removed; this page describes the gate after that.
+page, the recovery turns and the parts nothing used were removed; this page
+describes the gate after that.
 
 ## The questions TermAl asks
 
@@ -62,8 +63,9 @@ No host calls the action checks (`action_authorize`, `action_begin`,
 or `session_exit`, and Engram never answers "defer". Engram's host channel
 (`src/host.rs`) accepts none of these operations, and TermAl's request type
 (`EngramControlRequest`) has only the five above. Neither store has a table
-for action grants, heartbeats or delivery acknowledgements. Spec §2.7 still
-describes them.
+for action grants, heartbeats or delivery acknowledgements. They are listed as
+not built under
+[planned interfaces](behavioral-control-plane.md#planned-interfaces).
 
 ## Refusals a user sees
 
@@ -106,8 +108,9 @@ records a verdict with `evaluate`, and `done` refuses until one exists.
 ## What it has done, and what switching it off would lose
 
 - **Recorded:** every turn, and since 24 September whether each turn changed
-  the source and which test runs the host saw pass: 27 test obligations and
-  10 host-seen runs. This is the only evidence an agent cannot write itself.
+  the source and which test runs the host saw, with their result: 27 test
+  obligations and 10 host-seen runs, of which 1 passed and 9 were
+  indeterminate. This is the only evidence an agent cannot write itself.
 - **Prevented:** nothing risky. The 29 refusals were bookkeeping: 22 recovery
   demands TermAl could not meet and 7 stale claim bindings it healed.
 - **Lost if switched off:** the host-seen evidence, the per-turn record, and
@@ -129,10 +132,10 @@ agents, so any part that only adds friction goes.
 | --- | --- | --- |
 | Session binding | Keep | Kept |
 | Status check | Keep | Kept |
-| Turn permission | Simplify: no context page, only the refusals it can produce | Page removed; refusal codes still to cut |
+| Turn permission | Simplify: no context page, only the refusals it can produce | Done |
 | Turn start | Keep, simplified | Done |
 | Turn report | Keep | Kept |
 | Context delivery inside the grant | Remove | Done |
 | Holding prompts when Engram does not answer | Keep, adding one automatic resend | The resend is TermAl's to add |
 | Recovery turns | Remove | Done |
-| Designed but never used | Remove | Still to do |
+| Designed but never used | Remove | Done |

@@ -94,9 +94,10 @@ cross-host team sync remains later (see
 - **One core, many faces.** CLI, MCP server, and any future service front the
   same core — including packet construction — so delivery semantics cannot
   drift.
-- **Control requires mediation.** Engram decides; the host enforces. Turn and
-  action grants are bounded, checkpointed, and invalidated by relevant policy
-  or ownership changes. An agent never self-authorizes through MCP. See the
+- **Control requires mediation.** Engram decides; the host enforces. Turn
+  grants are bounded, checkpointed, and invalidated by relevant policy or
+  ownership changes; action grants are planned. An agent never
+  self-authorizes through MCP. See the
   [behavioral control plane](features/behavioral-control-plane.md).
 
 ## What Engram is not

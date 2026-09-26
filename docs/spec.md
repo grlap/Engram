@@ -383,14 +383,13 @@ bind -> ready -> turn_open -> ready
 
 Storage writes only `ready`, `turn_open` and `exited`. A `sync_required` row
 written before grants stopped carrying a delivery page admits a turn as `ready`
-does. The other phases (`unbound`, `checkpoint_required`, `recovery_open`,
-`handoff_pending`, `contribution_required` and `participant_ready`) are
-design only; storage never writes them.
+does.
 
-Before a turn, the core deterministically evaluates store and schema health,
-the declared control policy, the host's assurance and mediated effects, the
-session's work binding (work revision, claim fence and run state), its phase,
-and the project-policy and work-admission epochs. It returns one of:
+Before a turn, the core deterministically evaluates the control schema, the
+host's assurance and mediated effects against the declared control policy, the
+session's work binding (work revision, claim fence and run state), its task
+anchor, membership and phase, and the project-policy and work-admission
+epochs. It returns one of:
 
 - a short-lived `TurnGrant` bound to one canonical turn intent, session,
   work item/revision, run generation, claim fence, project-policy and
@@ -399,63 +398,43 @@ and the project-policy and work-admission epochs. It returns one of:
   word, which keeps its own staged delivery (see
   [the local work system](features/local-work-system.md)); or
 - a typed refusal with stable code and the directive that repairs it. Every
-  turn is ordinary; there are no recovery turns; or
-- a typed `defer` for ordinary contention, with retry/wake conditions distinct
-  from an authority or safety refusal. Engram does not produce it today.
+  turn is ordinary; there are no recovery turns.
 
 Immediately before prompt dispatch, `turn_begin` atomically rechecks the
-grant's state and expiry, the session's phase and membership, the
-project-policy and work-admission epochs, the capability map, the work
-revision and the claim fence, then activates the grant. A begin that names a
+grant's state and expiry, the session's phase, the task's control anchor and
+the session's membership, the project-policy and work-admission epochs, the
+capability map, the work revision and the claim fence, then activates the
+grant. A begin that names a
 delivery token is refused, because no grant carries one. A begun prompt whose
 outcome is uncertain after a restart stays open until the host reports it; it
 is never replayed.
 
-An action-gated host obtains a single-use `ActionGrant` immediately before a
-material capability call. It is bound to the parent turn, effect class,
-canonical structured resource subjects, authority references, and request
-fingerprint. Authorization rechecks policy and work-claim fences. A
-transactional `action_begin` fences replay and atomically rechecks the
-complete grant basis: parent/grant state and expiry, project-policy and
-work-admission epochs, optional portable writer epoch/validation deadline,
-session/run phase, work revision and claim fence, capability-map revision,
-request fingerprint, and authority references. A stale basis refuses without
-consuming the grant. `action_complete` stores a minimal redacted
-receipt. A crash after begin but before a terminal receipt produces
-`outcome_unknown`, never an assumed failure or blind retry. Read-only
-diagnostics and precisely scoped recovery operations remain available when a
-write or external effect fails closed.
-
-Filesystem action gating also requires symlink-safe, execution-bound
-resolution. A conforming host traverses from a registered project-root handle,
-retains the resolved or nearest-ancestor handles through invocation, binds
-their identities and any unresolved tail into the grant, and creates or
-renames relative to those handles. `action_begin` rejects a changed binding as
-`resource_remapped`. A host that can only re-resolve and compare immediately
-before invocation still has a final check/use race and must report filesystem
-coverage as detection-only rather than `action_gated`.
+There is no check on individual actions. Checks around each material action,
+and the other interfaces no host calls, are described as not built in the
+[behavioral control plane](features/behavioral-control-plane.md#planned-interfaces).
 
 Turn completion is one structured checkpoint, not a second status dialogue.
-The host supplies recorded action receipts; the agent adds durable findings,
-typed blocker references and a bounded next-intent value
-beside its ordinary response. Meaningful progress prose is captured once as
-typed memory and cited by hash. The checkpoint drives deltas, handoff
-material, and report input without storing raw reasoning traces or creating
-another work ledger.
+The host supplies its execution observations, any test or build evidence
+it saw (per-action receipts are not built) and a bounded next intent:
+`continue`, `wait` or `exit`. The agent records durable findings and typed
+blockers with `note` and `update` beside its ordinary response, not in the
+checkpoint, so meaningful progress prose is captured once as typed memory. The
+checkpoint drives deltas, handoff material, and report input without storing
+raw reasoning traces or creating another work ledger.
 
-An ordinary mutation is never gated on creating a memory, and checkpoint
-capture hashes may be empty. Semantic capture is prompted at meaningful
-boundaries and required only for the participant contribution; structural
-action metadata is captured automatically. This prevents a capture quota from
-being satisfied with low-value prose.
+An ordinary mutation is never gated on creating a memory. Semantic capture is
+prompted at meaningful boundaries and required only for the participant
+contribution; structural action metadata is captured automatically. This
+prevents a capture quota from being satisfied with low-value prose.
 
 Turn grants deliver no context. Each turn report appends one event to the
 bound task's change index, which is a write-only audit trail: no grant
 delivers it and no decision reads it. The control session's
-`confirmed_cursor`, `tentative_cursor` and `blocking_watermark` columns are
-unused: only a bind writes them, as zero or null, so a row written earlier
-keeps its last values until it is rebound. They are retained only so the
-schema stays unchanged until the next planned migration drops them.
+`confirmed_cursor`, `tentative_cursor` and `blocking_watermark` columns feed
+no decision; the loader only checks they are non-negative. Only a bind writes
+them, as zero or null, so a row written earlier keeps its last values until it
+is rebound. They are retained only so the schema stays unchanged until the
+next planned migration drops them.
 
 A project policy epoch invalidates grants after global
 control/mediation changes; a work admission epoch invalidates grants after
@@ -465,8 +444,8 @@ interchangeable. Unknown safety-relevant schema or policy versions block
 admission rather than being ignored.
 
 State-changing control transitions are idempotent and emit immutable canonical
-events; current session, delivery, and action records are durable
-operational projections. Live grants and high-volume allow/refusal diagnostics are
+events; current session and grant records are durable operational
+projections. Live grants and high-volume allow/refusal diagnostics are
 immutable operational records with bounded retention, not canonical memory;
 restart discards their authority. Compact durable request-key tombstones bind
 kind/key/intent/terminal state through work retention so pruning or expiry can
@@ -657,7 +636,7 @@ must be empty or already at the exact expected manifest with no unpushed local
 tail. Otherwise Engram preserves the destination as a recovery bundle and
 refuses `portable_local_diverged`. On every process/session start or crash
 resume in portable mode, the host performs a bounded remote head/epoch check
-before issuing any mutation-capable turn or action grant. Remote mismatch
+before issuing any mutation-capable turn grant. Remote mismatch
 makes the local store mutation-read-only and routes to reconcile; remote
 unavailability fails portable authority acquisition closed while leaving
 permitted reads/diagnostics available. This head check is authority
@@ -1086,26 +1065,26 @@ them.
 A separate host-private transport exposes the §2.7 protocol:
 
 ```text
-control_bootstrap   session_bind        turn_evaluate       turn_begin
-delivery_ack        action_authorize    action_begin        action_complete
-turn_checkpoint     session_heartbeat   session_exit
+session_bind   session_status   turn_evaluate   turn_begin   turn_checkpoint
 ```
 
-Current implementation status: `engram control` ships the JSON-lines subset
-`session_bind`, `session_status`, `turn_evaluate`, `turn_begin`, and
-`turn_checkpoint`, for the built-in `observe`/`communicate`/`mutate_local`
-policy. Internal `coordinate` is not a model-turn capability. The policy
-checks project/effect assurance floors, declared mediation, supported effects,
-and current epochs. Resource leases and host obligation waiver are removed.
+`engram control` ships these as JSON lines, for the built-in
+`observe`/`communicate`/`mutate_local` policy. The other interfaces the design
+named (`control_bootstrap`, `delivery_ack`, `action_authorize`,
+`action_begin`, `action_complete`, `session_heartbeat` and `session_exit`) are
+not built; see the
+[behavioral control plane](features/behavioral-control-plane.md#planned-interfaces).
+Internal `coordinate` is not a model-turn capability. The policy checks
+project/effect assurance floors, declared mediation, supported effects, and
+current epochs. Resource leases and host obligation waiver are removed.
 Resource intents may be empty; supplied subjects are project-bound and normalized,
 not exclusive reservations.
 
 Exact retry evidence survives restart. New connections fence predecessors and
 invalidate unbegun grants. Begun grants stay open until the host reports them
 and are discoverable through session status; no prompt or payload is
-redelivered. The remaining protocol operations and individual
-action/shared/external/lifecycle authority are not shipped; `action_gated`
-declarations are rejected.
+redelivered. Individual action/shared/external/lifecycle authority is not
+shipped; `action_gated` declarations are rejected.
 Every `HostControlRequest` variant is strict: the paired consumer must send
 exactly the current field set for every operation. Any additive, unknown, or
 removed request field is an `invalid_request` refusal that names the request
@@ -1187,7 +1166,7 @@ local gateway. It is never exposed as an agent-callable way to mint grants.
 The host must bind a local work item/run before delivering a task prompt, obtain a `TurnGrant`
 before every model turn, activate it through `turn_begin`, and persist
 a checkpoint before the next turn.
-An `action_gated` host must additionally
+Action gating is not built. An `action_gated` host would additionally
 intercept every declared material capability, obtain and begin a matching
 single-use action grant, and record its outcome even if the model turn later
 fails.
@@ -1363,7 +1342,7 @@ evaluation harness:
 
 | Phase | Contents |
 | --- | --- |
-| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts; deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
+| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts (not built); deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
 | **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction; completed-work retention compaction; budget and ready-ranking tuning; optional configured external backup automation. |
 | **v2+** | Optional live cross-host `Sync`/team backend; real GitHub/Jira/proprietary source and publication adapters; optional embeddings; comments/link-backs; real Redactor/DLP; Postgres/service `Store`; Signer-based attestation; envelope encryption for crypto-shredding. |
 

@@ -1,12 +1,12 @@
 use super::{
     ActorContext, CONTROL_SCHEMA_VERSION, CanonicalObject, Connection, ControlAssurance,
-    ControlEpochs, ControlHealth, ControlSessionBindFingerprint, ControlSessionBinding,
-    ControlSessionStatus, ControlTurnBeginDecision, ControlTurnBeginFingerprint,
-    ControlTurnCheckpointDecision, ControlTurnCheckpointFingerprint, ControlTurnDecision,
-    ControlWorkBinding, DateTime, DevelopmentNoopRedactor, EffectClass, EnvironmentComponents,
-    EnvironmentEvidence, EnvironmentEvidenceInput, EnvironmentEvidenceReference,
-    ExecutionObservation, ExecutionObservationInput, ExecutionObservationReference,
-    ExecutionOutcome, HashMap, HashSet, IssuedTurnGrant, MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT,
+    ControlEpochs, ControlSessionBindFingerprint, ControlSessionBinding, ControlSessionStatus,
+    ControlTurnBeginDecision, ControlTurnBeginFingerprint, ControlTurnCheckpointDecision,
+    ControlTurnCheckpointFingerprint, ControlTurnDecision, ControlWorkBinding, DateTime,
+    DevelopmentNoopRedactor, EffectClass, EnvironmentComponents, EnvironmentEvidence,
+    EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservation,
+    ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome, HashMap, HashSet,
+    IssuedTurnGrant, MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT,
     MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT, MAX_TYPED_EVIDENCE_REF_BYTES,
     MAX_TYPED_EVIDENCE_REFS, MAX_TYPED_EVIDENCE_SUMMARY_BYTES,
     MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT, ObjectId, OptionalExtension, ParticipantMembership,
@@ -529,8 +529,6 @@ impl SqliteStore {
             },
             anchor_exists,
             phase: session.phase,
-            health: ControlHealth::Healthy,
-            active_policy_known: true,
             host_assurance: session.assurance,
             required_assurance: policy.required_assurance,
             policy_effects: policy.supported_effects,
@@ -540,8 +538,6 @@ impl SqliteStore {
                 task_admission: TaskAdmissionEpoch(task_admission_epoch),
             },
             session_epochs: session.epochs,
-            has_unknown_action_outcome: false,
-            authority_satisfied: true,
             capability_map_revision: session.capability_map_revision,
             intent: intent.clone(),
             evaluated_at: now,
@@ -597,7 +593,6 @@ impl SqliteStore {
                 }
                 ControlTurnDecision::Refuse { directive }
             }
-            TurnDecision::Defer { deferral } => ControlTurnDecision::Defer { deferral },
         };
         let decision_object = CanonicalObject::freeze(&decision)?;
         transaction.execute(
@@ -794,6 +789,8 @@ impl SqliteStore {
                         | crate::domain::ControlRefusalCode::PolicyEpochChanged
                         | crate::domain::ControlRefusalCode::TaskAdmissionEpochChanged
                         | crate::domain::ControlRefusalCode::StaleFence
+                        | crate::domain::ControlRefusalCode::TaskUnbound
+                        | crate::domain::ControlRefusalCode::TaskAccessDenied
                 ) && matches!(grant.state, TurnGrantState::Issued)
                 {
                     transaction.execute(

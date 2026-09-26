@@ -1593,7 +1593,7 @@ the ambient query/focus views. Stats, stale/orphan diagnostics, approval
 decisions, import/export, and report publication remain administrative tools
 over the same core. Successful model responses are terse; refusals return a
 stable code plus a satisfiable remedy. Full durable receipts go to the host. No
-replayable control-plane turn/action grant token appears in model-visible MCP
+replayable control-plane turn grant token appears in model-visible MCP
 output. Agent-facing work itself has no grant token.
 
 One capture powers peer context and the ordered feed. The host may use a

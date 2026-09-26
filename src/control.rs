@@ -4,7 +4,7 @@
 //! support the host-private persisted lifecycle, whose storage transaction is
 //! responsible for minting and consuming authority.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 use chrono::TimeDelta;
 use serde::Serialize;
@@ -12,16 +12,15 @@ use serde::Serialize;
 use crate::{
     CanonicalObject, ObjectId,
     domain::{
-        ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, BuiltinObligationRuleRef,
-        BuiltinObligationTrigger, CONTROL_SCHEMA_VERSION, ContextPacket, ControlAssurance,
-        ControlDirective, ControlHealth, ControlRefusalCode, DirectiveSatisfaction,
+        BuiltinObligationRuleRef, BuiltinObligationTrigger, CONTROL_SCHEMA_VERSION, ContextPacket,
+        ControlAssurance, ControlDirective, ControlRefusalCode, DirectiveSatisfaction,
         DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
         OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition, ObligationRuleSet,
-        ObservedActionBeginDecision, ObservedTurnDecision, ParticipantMembership, SessionPhase,
-        TaskDelta, TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision,
-        TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState,
-        VerificationEvidence, VerificationEvidenceMismatch, VerificationRequirement,
-        VerificationResult, WorkEvidenceKind, WorkObligation, WorkObligationId,
+        ObservedTurnDecision, ParticipantMembership, SessionPhase, TaskDelta, TurnBeginDecision,
+        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision,
+        TurnEvaluationInput, TurnGrantBasis, TurnGrantState, VerificationEvidence,
+        VerificationEvidenceMismatch, VerificationRequirement, VerificationResult,
+        WorkEvidenceKind, WorkObligation, WorkObligationId,
     },
     storage::StoreError,
 };
@@ -347,30 +346,6 @@ pub fn observe_turn(input: &TurnEvaluationInput) -> ObservedTurnDecision {
     }
 }
 
-/// Rechecks the complete action-grant basis at the execution boundary.
-///
-/// Like [`observe_turn`], this is shadow-only. It proves deterministic
-/// comparison semantics without consuming a grant or authorizing a side
-/// effect.
-#[must_use]
-pub fn observe_action_begin(
-    grant: &ActionGrantBasis,
-    snapshot: &ActionBeginSnapshot,
-) -> ObservedActionBeginDecision {
-    let decision = match action_begin_refusal(grant, snapshot) {
-        Some(code) => ActionBeginDecision::Refuse { code },
-        None => ActionBeginDecision::Begin {
-            grant_id: grant.grant_id.clone(),
-        },
-    };
-    ObservedActionBeginDecision {
-        control_schema_version: CONTROL_SCHEMA_VERSION,
-        grant_id: grant.grant_id.clone(),
-        observed_at: snapshot.observed_at,
-        decision,
-    }
-}
-
 /// Rechecks a persisted turn grant immediately before prompt dispatch.
 ///
 /// This function performs no I/O. The storage layer must evaluate it and
@@ -405,17 +380,19 @@ pub fn evaluate_turn_begin(
             code: ControlRefusalCode::StaleFence,
         };
     }
+    // Anchor before membership, as turn permission checks them: storage
+    // derives membership through the anchor, so a lost anchor also clears it.
+    if !snapshot.anchor_exists {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::TaskUnbound,
+        };
+    }
     if !matches!(
         snapshot.participant_membership,
         ParticipantMembership::Member
     ) {
         return TurnBeginDecision::Refuse {
             code: ControlRefusalCode::TaskAccessDenied,
-        };
-    }
-    if !snapshot.anchor_exists {
-        return TurnBeginDecision::Refuse {
-            code: ControlRefusalCode::LifecycleHold,
         };
     }
     if snapshot.observed_at >= basis.expires_at {
@@ -529,144 +506,6 @@ fn delivery_delta_matches(page: &crate::domain::DeliveryPage, delta: &TaskDelta)
         })
 }
 
-fn action_begin_refusal(
-    grant: &ActionGrantBasis,
-    snapshot: &ActionBeginSnapshot,
-) -> Option<ControlRefusalCode> {
-    if grant.control_schema_version != CONTROL_SCHEMA_VERSION
-        || snapshot.control_schema_version != CONTROL_SCHEMA_VERSION
-    {
-        return Some(ControlRefusalCode::UnknownControlSchema);
-    }
-    action_identity_refusal(grant, snapshot)
-        .or_else(|| action_freshness_refusal(grant, snapshot))
-        .or_else(|| action_authority_refusal(grant, snapshot))
-        .or_else(|| action_resolution_refusal(grant, snapshot))
-}
-
-fn action_identity_refusal(
-    grant: &ActionGrantBasis,
-    snapshot: &ActionBeginSnapshot,
-) -> Option<ControlRefusalCode> {
-    if !matches!(
-        snapshot.grant_state,
-        crate::domain::ActionGrantState::Available
-    ) || !matches!(
-        snapshot.parent_turn_state,
-        crate::domain::ParentTurnState::Open
-    ) || snapshot.parent_turn_id != grant.parent_turn_id
-    {
-        return Some(ControlRefusalCode::GrantScopeMismatch);
-    }
-    if grant.grant_id.trim().is_empty()
-        || grant.parent_turn_id.trim().is_empty()
-        || grant.session_id.0.trim().is_empty()
-        || grant.epochs.project_policy.0 < 0
-        || grant.epochs.task_admission.0 < 0
-        || snapshot.current_epochs.project_policy.0 < 0
-        || snapshot.current_epochs.task_admission.0 < 0
-    {
-        return Some(ControlRefusalCode::GrantScopeMismatch);
-    }
-    if snapshot.session_id != grant.session_id
-        || snapshot.task_id != grant.task_id
-        || snapshot.turn_purpose != grant.turn_purpose
-        || snapshot.effect != grant.effect
-        || snapshot.resource_subjects != grant.resource_subjects
-        || snapshot.request_fingerprint != grant.request_fingerprint
-    {
-        return Some(ControlRefusalCode::GrantScopeMismatch);
-    }
-    if snapshot.observed_at >= grant.expires_at {
-        return Some(ControlRefusalCode::GrantExpired);
-    }
-
-    None
-}
-
-fn action_freshness_refusal(
-    grant: &ActionGrantBasis,
-    snapshot: &ActionBeginSnapshot,
-) -> Option<ControlRefusalCode> {
-    if snapshot.current_epochs.project_policy != grant.epochs.project_policy {
-        return Some(ControlRefusalCode::PolicyEpochChanged);
-    }
-    if snapshot.current_epochs.task_admission != grant.epochs.task_admission {
-        return Some(ControlRefusalCode::TaskAdmissionEpochChanged);
-    }
-    if !matches!(snapshot.phase, SessionPhase::TurnOpen) {
-        return Some(ControlRefusalCode::LifecycleHold);
-    }
-    if snapshot.capability_map_revision != grant.capability_map_revision
-        || grant.capability_map_revision < 0
-        || !effect_fits_ordinary_turn(grant.effect)
-        || grant.resource_subjects.is_empty()
-        || !grant
-            .resource_subjects
-            .iter()
-            .all(crate::domain::ResourceSubject::has_valid_shape)
-    {
-        return Some(ControlRefusalCode::GrantScopeMismatch);
-    }
-
-    None
-}
-
-fn action_authority_refusal(
-    grant: &ActionGrantBasis,
-    snapshot: &ActionBeginSnapshot,
-) -> Option<ControlRefusalCode> {
-    if grant.authority_references.is_empty()
-        || grant
-            .authority_references
-            .iter()
-            .any(|reference| reference.trim().is_empty())
-        || !matches!(
-            snapshot.authority_state,
-            crate::domain::AuthorityState::Valid
-        )
-        || !same_unique_strings(&snapshot.authority_references, &grant.authority_references)
-    {
-        return Some(ControlRefusalCode::MissingAuthority);
-    }
-    None
-}
-
-fn action_resolution_refusal(
-    grant: &ActionGrantBasis,
-    snapshot: &ActionBeginSnapshot,
-) -> Option<ControlRefusalCode> {
-    let has_path_subject = grant
-        .resource_subjects
-        .iter()
-        .any(crate::domain::ResourceSubject::is_path);
-    if has_path_subject {
-        if !matches!(
-            snapshot.resolution_assurance,
-            crate::domain::ResolutionAssurance::PinnedThroughInvocation
-        ) {
-            return Some(ControlRefusalCode::ControlAssuranceInsufficient);
-        }
-        if grant.resolution_binding_digest.is_none()
-            || snapshot.resolution_binding_digest != grant.resolution_binding_digest
-        {
-            return Some(ControlRefusalCode::ResourceRemapped);
-        }
-    } else if grant.resolution_binding_digest.is_some()
-        || snapshot.resolution_binding_digest.is_some()
-    {
-        return Some(ControlRefusalCode::GrantScopeMismatch);
-    }
-
-    None
-}
-
-fn same_unique_strings(left: &[String], right: &[String]) -> bool {
-    let left_set: BTreeSet<_> = left.iter().collect();
-    let right_set: BTreeSet<_> = right.iter().collect();
-    left_set.len() == left.len() && right_set.len() == right.len() && left_set == right_set
-}
-
 fn effects_are_unique(effects: &[EffectClass]) -> bool {
     let unique: HashSet<_> = effects.iter().collect();
     unique.len() == effects.len()
@@ -679,12 +518,6 @@ fn effects_are_unique(effects: &[EffectClass]) -> bool {
 fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
     if input.control_schema_version != CONTROL_SCHEMA_VERSION {
         return refusal(input, ControlRefusalCode::UnknownControlSchema);
-    }
-    if let Some(code) = health_refusal(input.health) {
-        return refusal(input, code);
-    }
-    if !input.active_policy_known {
-        return refusal(input, ControlRefusalCode::ControlPolicyMissing);
     }
     if input.work_binding.is_some() && !input.work_binding_current {
         return refusal(input, ControlRefusalCode::StaleFence);
@@ -735,12 +568,6 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
     }
     if input.current_epochs.task_admission != input.session_epochs.task_admission {
         return refusal(input, ControlRefusalCode::TaskAdmissionEpochChanged);
-    }
-    if input.has_unknown_action_outcome {
-        return refusal(input, ControlRefusalCode::ActionOutcomeUnknown);
-    }
-    if !input.authority_satisfied {
-        return refusal(input, ControlRefusalCode::MissingAuthority);
     }
     if turn_input_has_invalid_shape(input) {
         return refusal(input, ControlRefusalCode::GrantScopeMismatch);
@@ -850,30 +677,13 @@ fn effect_assurance_refusal(
     None
 }
 
-const fn health_refusal(health: ControlHealth) -> Option<ControlRefusalCode> {
-    match health {
-        ControlHealth::Healthy => None,
-        ControlHealth::Unavailable => Some(ControlRefusalCode::ControlUnavailable),
-        ControlHealth::Corrupt => Some(ControlRefusalCode::StoreCorrupt),
-        ControlHealth::UnknownSchema => Some(ControlRefusalCode::UnknownControlSchema),
-    }
-}
-
 /// A `sync_required` row written before grants stopped carrying a delivery
 /// page admits a turn as `ready` does: there is nothing left to catch up on.
 const fn phase_refusal(phase: SessionPhase) -> Option<ControlRefusalCode> {
     match phase {
         SessionPhase::Ready | SessionPhase::SyncRequired => None,
-        SessionPhase::Unbound => Some(ControlRefusalCode::TaskUnbound),
         SessionPhase::Exited => Some(ControlRefusalCode::SessionExited),
         SessionPhase::TurnOpen => Some(ControlRefusalCode::TurnAlreadyOpen),
-        SessionPhase::CheckpointRequired => Some(ControlRefusalCode::CheckpointRequired),
-        SessionPhase::HandoffPending | SessionPhase::RecoveryOpen => {
-            Some(ControlRefusalCode::LifecycleHold)
-        }
-        SessionPhase::ContributionRequired | SessionPhase::ParticipantReady => {
-            Some(ControlRefusalCode::ParticipantNotReady)
-        }
     }
 }
 
@@ -952,22 +762,12 @@ fn directive_shape(
     code: ControlRefusalCode,
 ) -> (DirectiveTarget, DirectiveSatisfaction, Vec<EffectClass>) {
     match code {
-        ControlRefusalCode::MissingAuthority => (
-            DirectiveTarget::Human,
-            DirectiveSatisfaction::HumanAuthority,
-            vec![EffectClass::Observe],
-        ),
-        ControlRefusalCode::PinnedBudgetExceeded
-        | ControlRefusalCode::RecoveryRequired
-        | ControlRefusalCode::ActionOutcomeUnknown => (
+        ControlRefusalCode::PinnedBudgetExceeded | ControlRefusalCode::RecoveryRequired => (
             DirectiveTarget::Agent,
             DirectiveSatisfaction::RecoveryCheckpoint,
             vec![EffectClass::Observe, EffectClass::Communicate],
         ),
-        ControlRefusalCode::ControlUnavailable
-        | ControlRefusalCode::StoreCorrupt
-        | ControlRefusalCode::UnknownControlSchema
-        | ControlRefusalCode::ControlPolicyMissing
+        ControlRefusalCode::UnknownControlSchema
         | ControlRefusalCode::ControlAssuranceInsufficient
         | ControlRefusalCode::CapabilityNotPermitted
         | ControlRefusalCode::TaskUnbound
@@ -977,16 +777,12 @@ fn directive_shape(
         | ControlRefusalCode::ContextRequired
         | ControlRefusalCode::DeltaRequired
         | ControlRefusalCode::DeliveryInvalid
-        | ControlRefusalCode::CheckpointRequired
         | ControlRefusalCode::TurnAlreadyOpen
         | ControlRefusalCode::TurnPurposeMismatch
-        | ControlRefusalCode::LifecycleHold
-        | ControlRefusalCode::ParticipantNotReady
         | ControlRefusalCode::GrantExpired
         | ControlRefusalCode::GrantNotBegun
         | ControlRefusalCode::GrantScopeMismatch
         | ControlRefusalCode::StaleFence
-        | ControlRefusalCode::ResourceRemapped
         | ControlRefusalCode::LeaseRequired
         | ControlRefusalCode::SessionExited => (
             DirectiveTarget::Host,
@@ -1004,11 +800,9 @@ mod tests {
     use crate::{
         ObjectId,
         domain::{
-            ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, ActionGrantState,
-            AuthorityState, ChangeCursor, ControlAssurance, ControlEpochs, DeliveryPage,
-            ParentTurnState, ParticipantMembership, ProjectId, ProjectPolicyEpoch,
-            ResolutionAssurance, ResourceCoverage, ResourceSubject, SessionId, TaskAdmissionEpoch,
-            TaskId, TurnIntent, TurnPurpose,
+            ChangeCursor, ControlAssurance, ControlEpochs, DeliveryPage, ParticipantMembership,
+            ProjectId, ProjectPolicyEpoch, ResourceCoverage, ResourceSubject, SessionId,
+            TaskAdmissionEpoch, TaskId, TurnIntent, TurnPurpose,
         },
     };
 
@@ -1026,8 +820,6 @@ mod tests {
             participant_membership: ParticipantMembership::Member,
             anchor_exists: true,
             phase: SessionPhase::Ready,
-            health: ControlHealth::Healthy,
-            active_policy_known: true,
             host_assurance: ControlAssurance::Advisory,
             required_assurance: ControlAssurance::Advisory,
             policy_effects: all_effects(),
@@ -1040,8 +832,6 @@ mod tests {
                 project_policy: ProjectPolicyEpoch(4),
                 task_admission: TaskAdmissionEpoch(9),
             },
-            has_unknown_action_outcome: false,
-            authority_satisfied: true,
             capability_map_revision: 3,
             intent: TurnIntent {
                 idempotency_key: "turn-a".into(),
@@ -1070,70 +860,7 @@ mod tests {
     fn refusal_code(observation: &ObservedTurnDecision) -> Option<ControlRefusalCode> {
         match &observation.decision {
             TurnDecision::Refuse { directive } => Some(directive.code),
-            TurnDecision::Grant { .. } | TurnDecision::Defer { .. } => None,
-        }
-    }
-
-    fn action() -> (ActionGrantBasis, ActionBeginSnapshot) {
-        let task_id = TaskId::new();
-        let session_id = SessionId("session-a".into());
-        let epochs = ControlEpochs {
-            project_policy: ProjectPolicyEpoch(4),
-            task_admission: TaskAdmissionEpoch(9),
-        };
-        let subjects = vec![ResourceSubject::Path {
-            project_id: ProjectId("project-a".into()),
-            segments: vec!["src".into(), "control.rs".into()],
-            coverage: ResourceCoverage::Exact,
-        }];
-        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-        let binding = Some(hash("resolution binding"));
-        let grant = ActionGrantBasis {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            grant_id: "action-grant-a".into(),
-            parent_turn_id: "turn-grant-a".into(),
-            session_id: session_id.clone(),
-            task_id,
-            turn_purpose: TurnPurpose::Ordinary,
-            effect: EffectClass::MutateShared,
-            resource_subjects: subjects.clone(),
-            request_fingerprint: hash("write request"),
-            authority_references: vec!["host-policy:workspace-write".into()],
-            epochs,
-            capability_map_revision: 3,
-            resolution_binding_digest: binding.clone(),
-            expires_at: now + TimeDelta::seconds(30),
-        };
-        let snapshot = ActionBeginSnapshot {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            parent_turn_id: "turn-grant-a".into(),
-            parent_turn_state: ParentTurnState::Open,
-            grant_state: ActionGrantState::Available,
-            session_id,
-            task_id,
-            phase: SessionPhase::TurnOpen,
-            turn_purpose: TurnPurpose::Ordinary,
-            effect: EffectClass::MutateShared,
-            resource_subjects: subjects,
-            request_fingerprint: hash("write request"),
-            authority_references: vec!["host-policy:workspace-write".into()],
-            authority_state: AuthorityState::Valid,
-            current_epochs: epochs,
-            capability_map_revision: 3,
-            resolution_binding_digest: binding,
-            resolution_assurance: ResolutionAssurance::PinnedThroughInvocation,
-            observed_at: now,
-        };
-        (grant, snapshot)
-    }
-
-    fn action_refusal_code(
-        grant: &ActionGrantBasis,
-        snapshot: &ActionBeginSnapshot,
-    ) -> Option<ControlRefusalCode> {
-        match observe_action_begin(grant, snapshot).decision {
-            ActionBeginDecision::Begin { .. } => None,
-            ActionBeginDecision::Refuse { code } => Some(code),
+            TurnDecision::Grant { .. } => None,
         }
     }
 
@@ -1360,16 +1087,6 @@ mod tests {
     }
 
     #[test]
-    fn a_never_written_recovery_phase_holds_the_turn() {
-        let mut input = input();
-        input.phase = SessionPhase::RecoveryOpen;
-        assert_eq!(
-            refusal_code(&observe_turn(&input)),
-            Some(ControlRefusalCode::LifecycleHold)
-        );
-    }
-
-    #[test]
     fn stale_policy_epoch_precedes_a_would_be_grant() {
         let mut input = input();
         input.current_epochs.project_policy = ProjectPolicyEpoch(5);
@@ -1377,23 +1094,6 @@ mod tests {
         assert_eq!(
             refusal_code(&observe_turn(&input)),
             Some(ControlRefusalCode::PolicyEpochChanged)
-        );
-    }
-
-    #[test]
-    fn checkpoint_and_unknown_outcome_are_fail_closed_observations() {
-        let mut checkpoint = input();
-        checkpoint.phase = SessionPhase::CheckpointRequired;
-        assert_eq!(
-            refusal_code(&observe_turn(&checkpoint)),
-            Some(ControlRefusalCode::CheckpointRequired)
-        );
-
-        let mut unknown = input();
-        unknown.has_unknown_action_outcome = true;
-        assert_eq!(
-            refusal_code(&observe_turn(&unknown)),
-            Some(ControlRefusalCode::ActionOutcomeUnknown)
         );
     }
 
@@ -1503,65 +1203,55 @@ mod tests {
     }
 
     #[test]
-    fn exact_action_basis_would_begin_deterministically() {
-        let (grant, snapshot) = action();
-        let first = observe_action_begin(&grant, &snapshot);
-        let replay = observe_action_begin(&grant, &snapshot);
-
-        assert_eq!(first, replay);
-        assert!(matches!(
-            first.decision,
-            ActionBeginDecision::Begin { grant_id } if grant_id == grant.grant_id
-        ));
-    }
-
-    #[test]
-    fn action_begin_rechecks_epochs() {
-        let (grant, snapshot) = action();
-
-        let mut stale_epoch = snapshot.clone();
-        stale_epoch.current_epochs.task_admission = TaskAdmissionEpoch(10);
+    fn permission_and_turn_start_both_refuse_a_missing_anchor_as_task_unbound() {
+        let mut unanchored = input();
+        unanchored.anchor_exists = false;
         assert_eq!(
-            action_refusal_code(&grant, &stale_epoch),
-            Some(ControlRefusalCode::TaskAdmissionEpochChanged)
+            refusal_code(&observe_turn(&unanchored)),
+            Some(ControlRefusalCode::TaskUnbound)
         );
 
-        let mut stale_policy = snapshot;
-        stale_policy.current_epochs.project_policy = ProjectPolicyEpoch(5);
+        let (grant, mut snapshot) = begin();
+        snapshot.anchor_exists = false;
         assert_eq!(
-            action_refusal_code(&grant, &stale_policy),
-            Some(ControlRefusalCode::PolicyEpochChanged)
-        );
-    }
-
-    #[test]
-    fn filesystem_action_requires_pinned_unchanged_resolution() {
-        let (grant, snapshot) = action();
-
-        let mut unpinned = snapshot.clone();
-        unpinned.resolution_assurance = ResolutionAssurance::DetectionOnly;
-        assert_eq!(
-            action_refusal_code(&grant, &unpinned),
-            Some(ControlRefusalCode::ControlAssuranceInsufficient)
+            evaluate_turn_begin(&grant, &snapshot),
+            TurnBeginDecision::Refuse {
+                code: ControlRefusalCode::TaskUnbound
+            }
         );
 
-        let mut remapped = snapshot;
-        remapped.resolution_binding_digest = Some(hash("different target"));
+        // Storage derives membership through the anchor, so a lost anchor
+        // clears both; each check still answers the anchor first.
+        unanchored.participant_membership = ParticipantMembership::NotMember;
         assert_eq!(
-            action_refusal_code(&grant, &remapped),
-            Some(ControlRefusalCode::ResourceRemapped)
+            refusal_code(&observe_turn(&unanchored)),
+            Some(ControlRefusalCode::TaskUnbound)
+        );
+        snapshot.participant_membership = ParticipantMembership::NotMember;
+        assert_eq!(
+            evaluate_turn_begin(&grant, &snapshot),
+            TurnBeginDecision::Refuse {
+                code: ControlRefusalCode::TaskUnbound
+            }
         );
     }
 
     #[test]
-    fn mutation_still_requires_matching_authority() {
-        let (grant, snapshot) = action();
-        assert_eq!(action_refusal_code(&grant, &snapshot), None);
-        let mut missing = snapshot.clone();
-        missing.authority_references.clear();
+    fn every_live_phase_has_one_answer() {
+        let answer = |phase| {
+            let mut input = input();
+            input.phase = phase;
+            refusal_code(&observe_turn(&input))
+        };
+        assert_eq!(answer(SessionPhase::Ready), None);
+        assert_eq!(answer(SessionPhase::SyncRequired), None);
         assert_eq!(
-            action_refusal_code(&grant, &missing),
-            Some(ControlRefusalCode::MissingAuthority)
+            answer(SessionPhase::TurnOpen),
+            Some(ControlRefusalCode::TurnAlreadyOpen)
+        );
+        assert_eq!(
+            answer(SessionPhase::Exited),
+            Some(ControlRefusalCode::SessionExited)
         );
     }
 

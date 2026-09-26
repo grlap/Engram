@@ -26,9 +26,11 @@ receipt ends with `reminders` and `next`. The separate JSON-lines host service
 process-tests a
 restart-safe `session_bind → turn_evaluate → turn_begin → turn_checkpoint`
 loop with transactional context and stale-grant refusal, plus turn-gated local
-mutation. Resource leases, host obligation waiver, and the finalizer turn
-purpose/phase have been removed. Per-action mediation and optional report
-assembly remain deferred.
+mutation. Resource leases, host obligation waiver, the finalizer turn
+purpose/phase, the "defer" answer and the never-written session phases have
+been removed. Per-action mediation is not built; its intent is kept under
+[planned interfaces](features/behavioral-control-plane.md#planned-interfaces).
+Optional report assembly remains deferred.
 
 - Rust core; local SQLite canonical store (append-only, minted record ids)
   with stable project identity, WAL multi-process access, ordered task events,
@@ -41,8 +43,9 @@ assembly remain deferred.
   [local work system](features/local-work-system.md)
 - Behavioral control: deterministic turn decisions, typed refusal
   directives, checkpoints (inline packet/delta delivery and recovery grants
-  are dropped: turn grants carry no delivery page), effect-specific degraded debt, mediation coverage reporting,
-  and honest advisory/turn-gated/action-gated assurance —
+  are dropped: turn grants carry no delivery page), effect-specific degraded
+  debt, mediation coverage reporting, and honest advisory/turn-gated
+  assurance (action-gated is not built) —
   [behavioral control plane](features/behavioral-control-plane.md)
 - Same-host multi-session roots: one executor/claim per child `WorkRun` under a
   `RootExecution`, fenced work claims, explicit handoff, root-shared memory,
