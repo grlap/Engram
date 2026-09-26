@@ -156,9 +156,13 @@ already returns its session object.
 Reading an item never steers where a later write lands: `show REF`, including
 notes, history, continuations and note detail, preserves ambient focus and
 staged delivery. Use the explicitly targeted commands offered by its receipt.
-Claiming or explicitly targeting a mutation establishes focus; a bare mutation
-keeps its existing target, not the item just read. These reads do not register
-a fresh process-default session; registration waits for a stateful operation.
+Claiming or explicitly targeting a mutation establishes focus, except that a
+`note`, `gate` or `evaluate` naming an item this session does not hold leaves
+focus where it was (see
+[turns, focus and evaluation timing](acceptance-evaluation.md#turns-focus-and-evaluation-timing)).
+A bare mutation keeps its existing target, not the item just read. These
+reads do not register a fresh process-default session; registration waits for
+a stateful operation.
 
 ```bash
 engram work next --peek [--verbose]  # orientation without advancing delivery

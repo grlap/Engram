@@ -295,7 +295,11 @@ Rules that matter:
 - Reading never steers a later write: `show REF`, including notes, history,
   continuations and detail, preserves focus and staged delivery. Follow its
   explicitly targeted commands. Claiming or explicitly targeting a mutation
-  establishes focus; a bare mutation keeps its existing target.
+  establishes focus, except that a `note`, `gate` or `evaluate` naming an item
+  this session does not hold leaves focus where it was; a bare mutation keeps
+  its existing target. A host binds each turn to the focused claim, so switch
+  claims at a turn boundary (see
+  [turns, focus and evaluation timing](../../../docs/features/acceptance-evaluation.md#turns-focus-and-evaluation-timing)).
 
 - For unfinished work stranded beneath a completed, cancelled, or superseded
   ancestor, follow the exact `update CHILD --detach "why"` command offered by

@@ -32,7 +32,7 @@ there is no check on individual tool calls.
 ## What TermAl calls, and what nothing calls
 
 TermAl calls those five, and a few settings commands: `readiness`, `doctor`,
-`control-session-inspect`, `authority revoke` and `control-policy show`.
+`control-session-inspect` and `control-policy show`.
 
 | | Engram store | PhoenixCodeNav |
 | --- | ---: | ---: |

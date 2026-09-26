@@ -330,6 +330,44 @@ impl LocalWorkService {
         Ok(Some(work.work_id))
     }
 
+    /// Resolves an optional caller-supplied target without moving focus.
+    pub(super) fn resolve_target(
+        &self,
+        store: &SqliteStore,
+        work_ref: Option<&str>,
+    ) -> Result<Option<WorkId>, StoreError> {
+        work_ref
+            .map(|work_ref| {
+                store
+                    .resolve_work_ref(&self.project_id, work_ref)
+                    .map(|work| work.work_id)
+            })
+            .transpose()
+    }
+
+    /// Makes `target` the ambient focus only when this session holds its live
+    /// claim. A word acting on someone else's item (a peer's note, a late
+    /// gate, an independent evaluation) leaves focus, and so the claim the
+    /// session's next host turn binds, where it was.
+    pub(super) fn focus_if_held(
+        &self,
+        store: &mut SqliteStore,
+        target: Option<WorkId>,
+        claim: Option<&WorkClaim>,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        if let Some(target) = target
+            && claim.is_some_and(|claim| {
+                claim.holder == self.session_id
+                    && claim.state == WorkClaimState::Active
+                    && claim.expires_at > now
+            })
+        {
+            store.focus_work_session(&self.project_id, &self.session_id, target, now)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn actor(&self, tool_name: &str, reason: &str) -> ActorContext {
         let mut provenance_chain = vec![ProvenanceLink {
             relation: ProvenanceRelation::AssertedBy,

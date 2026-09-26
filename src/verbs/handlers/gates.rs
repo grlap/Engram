@@ -23,7 +23,7 @@ impl AgentVerbs {
             failed,
             evidence_ref,
         } = input;
-        let view = self.target(target_ref.as_deref(), now).map_err(|error| {
+        let view = self.target_unfocused(target_ref.as_deref(), now).map_err(|error| {
             if matches!(&error.error, StoreError::InvalidWork(reason) if reason.contains("no focused work")) {
                 VerbError::from(StoreError::InvalidWork(super::super::GATE_WORK_REF_REQUIRED.into()))
             } else {
@@ -82,7 +82,7 @@ impl AgentVerbs {
     /// stale, a word or citation is malformed, or the core refuses the record
     /// for policy, identity, criteria, or provenance reasons.
     pub fn evaluate(&self, input: EvaluateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let view = self.target(input.work_ref.as_deref(), now).map_err(|error| {
+        let view = self.target_unfocused(input.work_ref.as_deref(), now).map_err(|error| {
             if matches!(&error.error, StoreError::InvalidWork(reason) if reason.contains("no focused work")) {
                 VerbError::from(StoreError::InvalidWork(
                     super::super::EVALUATE_WORK_REF_REQUIRED.into(),

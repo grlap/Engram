@@ -279,7 +279,7 @@ struct EvaluateArgs {
     mode: String,
     /// The item revision whose criteria the verdicts address, as printed by show.
     acceptance_basis: i64,
-    /// The run-feed position the evaluator read through, as printed by show; a host-observed change after it refuses.
+    /// The run-feed position the evaluator read through, as printed by show. A host check after it asks for a resubmission; a source change after it voids the evaluation, unless it is to the revision given as `source_fingerprint`.
     evidence_basis: i64,
     /// One verdict per current criterion by one-based position; a pass cites note/gate locators as `show` with notes and gates prints them, or full hashes of host-minted verification or environment evidence.
     verdicts: Vec<crate::WorkCriterionVerdictInput>,
@@ -1008,6 +1008,15 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "work_id": work,
             "cause": cause,
         }),
+        StoreError::AcceptanceEvaluationBasisMoved {
+            work,
+            moved,
+            reason,
+        } => json!({
+            "work_id": work,
+            "reason": reason,
+            "remedy": moved.remedy(),
+        }),
         _ => Value::Null,
     };
     json!({
@@ -1080,6 +1089,9 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
+        StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
+            crate::host::evaluation_basis_move_code(*moved)
+        }
         StoreError::GraphDestinationNotEmpty => "graph_destination_not_empty",
         StoreError::GraphProjectMismatch { .. } => "graph_project_mismatch",
         StoreError::GraphDifferentBuild => "different_build",

@@ -205,7 +205,6 @@ gating:
 - `readiness`, when you verify or save the project settings;
 - `doctor`, for a full audit;
 - `control-session-inspect`, during a strict save;
-- `authority revoke`;
 - `control-policy show`, for the acceptance settings.
 
 ## What surrounds the questions

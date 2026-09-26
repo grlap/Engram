@@ -140,9 +140,19 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   follow it, and no citation may lie beyond it. The record's `evaluated_cut`
   is that supplied position; the head at submission time is never substituted.
   A mutation observed between the evaluator's read and its submission
-  therefore refuses the record instead of being covered by it. Likewise the
-  source fingerprint is the value measured for the evaluated content, not one
-  taken at submission.
+  therefore refuses the record instead of being covered by it, and the refusal
+  names its class. `acceptance_evaluation_resubmit`: only a host check was
+  recorded after the cut; re-read `show`, take the check into account, and
+  submit again. `acceptance_evaluation_void`: the source changed after the cut
+  to a revision the evaluation did not judge; the evaluation is void, so
+  request a new one. The one source change that does not count is a change to
+  the revision the evaluation declared it judged (below), together with the
+  obligation it opened; a later check, including the test that resolves that
+  obligation, still asks for a resubmission. Likewise the source fingerprint
+  is the value measured for the evaluated content, not one taken at
+  submission. It is the host's source revision, as the host reports it on turn
+  observations; a declared workspace id must match the observation's workspace
+  too.
 - **R4 independence.** `independent_session`: the evaluator session differs
   from the claim holder and from every recorded executor session of the run.
   `sub_agent`: `execution_identity` and `parent_session` are present and the
@@ -228,7 +238,19 @@ stale reason named.
 - **F3 host-observed mutation.** No execution observation with
   `source_changed`, no verification or environment evidence, and no obligation
   definition or resolution was appended to the run feed after `evaluated_cut`.
-  These are host-minted facts about the workspace and its checks.
+  These are host-minted facts about the workspace and its checks. The only
+  exception is a source change that left the source at the revision the
+  evaluation declared it judged (its `source_basis`), with the obligation that
+  change opened: the evaluator saw that state, so the host's late report of it
+  does not void the evaluation. A check recorded after the cut, including the
+  one that resolves that obligation, still asks for a resubmission. The
+  declared revision is the evaluator's assertion, recorded like its verdicts;
+  Engram cannot attest what the evaluator read, so this exception carries the
+  evaluation's own asserted assurance. A host that wants the revision to be one
+  it measured passes that revision to the evaluator itself (see
+  [turns, focus and evaluation timing](#turns-focus-and-evaluation-timing)). A
+  `same_session` implementer gains nothing from it: it can re-read and submit
+  at the new cut in any case.
 - **F4 source fingerprint.** When policy `require_source_freshness` is on, the
   completion attempt presents a `source_fingerprint` measured by the host at
   completion time (`done --source-fingerprint F`) that equals
@@ -399,7 +421,7 @@ tests cite the row identifier in a nearby comment.
 | B28 | `done "summary"` capture and its checkpoint after the evaluation | still fresh; seal binds the evaluation |
 | B29 | `show` and `next` on an evaluated item | per-criterion newest verdict, basis, evaluator label, mode, and freshness; `done` receipt names the path |
 | B30 | host-owned (not a core test): TermAl evaluator spawn, attested sub-agent identity, fingerprint at completion, observed build via the control channel | documented in the host item; end-to-end acceptance stays open until exercised |
-| B31 | evaluator reads at cut `c`; a host-observed `source_changed` observation or check lands after `c`; the verdicts are submitted with `evidence_basis = c` | refuse at write ("the run changed after evidence basis"); a citation beyond `c` also refuses; resubmission with the current basis records |
+| B31 | evaluator reads at cut `c`; a host-observed `source_changed` observation or check lands after `c`; the verdicts are submitted with `evidence_basis = c` | refuse at write: `acceptance_evaluation_resubmit` after a check, `acceptance_evaluation_void` after a source change the evaluation did not judge; a change to the declared judged revision does not refuse; a citation beyond `c` also refuses; resubmission with the current basis records |
 | B32 | passing `asserted` evaluation, then policy `mechanical_basis` → `observed`; passing evaluation without a source basis, then `require_source_freshness` → on | `done` refuses `AcceptanceEvaluationStale { policy }` / `{ source }`; no older, weaker record seals |
 | B33 | `pass` cites gate `cargo-test`; a newer `cargo-test` record (any result) lands after the cut; an unrelated gate lands after another passing evaluation | `done` refuses `AcceptanceEvaluationStale { evidence }` / the unrelated gate leaves the evaluation fresh |
 | B34 | passing evaluation followed by a newer `fail`, `insufficient_evidence`, or `needs_human` record | `done` refuses with the newer verdict's cause; the older pass is never selected |
@@ -518,6 +540,35 @@ process:
   `observed` pass can exist. The bootstrap policy requires `turn_gated`
   assurance, so this needs the host channel for the pilot project; lowering the
   assurance to dodge that prerequisite is not the plan.
+
+### Turns, focus and evaluation timing
+
+A host reports each turn's execution observations, a source change among them,
+against the claim the turn was bound to when it started, and it binds the
+session's focused claim (the row `held` marks as focused). Engram cannot tell
+which claim a changed file belongs to: the observation carries the session's
+workspace, which every claim the session holds shares. Two things follow for a
+session that holds several claims.
+
+- Switch claims at a turn boundary with `claim REF`: a repeat claim on an
+  item the session holds renews it and moves focus there (a host or operator
+  can also use `work core focus`). Words that name
+  an item move focus to it: `claim`, `update`, `add --under`, `handoff`,
+  `done`, and a holder's `note`, `gate` or `evaluate`. The next turn binds
+  the new focus; the current turn still reports against the claim it started
+  with. So after moving focus, end the turn before editing for the newly
+  focused claim. A `note`, `gate` or `evaluate` naming an item the session
+  does not hold (a peer's observation, a late gate, an independent
+  evaluation) leaves focus where it was. A planning `update` or `add --under`
+  on a peer's item still moves focus there; `held` then marks none of the
+  session's claims as focused, and the host binds by its own rule, so
+  `claim` the item you are working on again before the next turn.
+- Request an evaluation at a turn boundary, not after changing the source in
+  the same turn. The host fixes the evidence basis when it starts the
+  evaluator; the requesting turn's own report arrives after that, and unless
+  the evaluation declared the revision it judged, it voids the evaluation.
+  A host can instead defer the evaluator until the requesting turn's
+  checkpoint and declare the revision it measured then.
 
 Fixture coverage of the matrix is not live proof. The end-to-end acceptance —
 a real port-PR task with a real evaluator and an observed build — stays open

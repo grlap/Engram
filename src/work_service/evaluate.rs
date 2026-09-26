@@ -66,8 +66,11 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkEvaluateResult, StoreError> {
         let mut store = self.store_at(now)?;
-        let target = self.bind_target(&mut store, input.work_ref.as_deref(), now)?;
+        let target = self.resolve_target(&store, input.work_ref.as_deref())?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
+        // An independent evaluator does not hold the item; its evaluation
+        // leaves its focus where it was.
+        self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("evaluation attempt has no bound focused work".into())
         })?;

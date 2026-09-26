@@ -460,6 +460,15 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
     }
 }
 
+/// Stable code for each way a run can move past an evaluation's basis: a
+/// check asks for a resubmission, an unseen source change voids it.
+pub(crate) const fn evaluation_basis_move_code(moved: crate::EvaluationBasisMove) -> &'static str {
+    match moved {
+        crate::EvaluationBasisMove::CheckRecorded => "acceptance_evaluation_resubmit",
+        crate::EvaluationBasisMove::SourceChanged => "acceptance_evaluation_void",
+    }
+}
+
 fn store_error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::StoreNotInitialized => "store_not_initialized",
@@ -482,6 +491,9 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::EnvironmentBasisMismatch(_) => "environment_basis_mismatch",
         StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
         StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
+        StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
+            evaluation_basis_move_code(*moved)
+        }
         StoreError::DifferentBuildSchema | StoreError::InvalidControlProjection(_) => {
             "control_projection_invalid"
         }

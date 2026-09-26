@@ -26,10 +26,10 @@ use crate::domain::{
     MAX_ACCEPTANCE_EVALUATION_BYTES, MAX_ACCEPTANCE_SOURCE_BASIS_BYTES,
     MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis, ProjectId,
     RecordAcceptanceEvaluationRequest, VerificationEvidence, VerificationResult, WorkEvent,
-    WorkEvidence, WorkLifecycle, WorkTransition,
+    WorkEvidence, WorkLifecycle, WorkObligation, WorkTransition,
 };
 use crate::memory::Redactor;
-use crate::storage::{SqliteStore, StoreError};
+use crate::storage::{EvaluationBasisMove, SqliteStore, StoreError};
 
 /// Canonical object kind and run-feed entry kind of one evaluation.
 pub(crate) const KIND: &str = "acceptance_evaluation";
@@ -238,13 +238,23 @@ impl SqliteStore {
                 ),
             ));
         }
-        if mutation_after(&transaction, run_id, cut)? {
-            return Err(refused(
-                item.work_id,
-                format!(
-                    "the run changed after evidence basis {cut} (a host-observed mutation or check); re-read show and evaluate the current state"
-                ),
-            ));
+        if let Some(moved) =
+            basis_moved_after(&transaction, run_id, cut, request.source_basis.as_ref())?
+        {
+            return Err(StoreError::AcceptanceEvaluationBasisMoved {
+                work: item.work_id,
+                moved,
+                reason: match moved {
+                    EvaluationBasisMove::CheckRecorded => format!(
+                        "a host check was recorded after evidence basis {cut}; {}",
+                        moved.remedy()
+                    ),
+                    EvaluationBasisMove::SourceChanged => format!(
+                        "the source changed after evidence basis {cut} and this evaluation did not judge that revision; {}",
+                        moved.remedy()
+                    ),
+                },
+            });
         }
         let verdicts = bind_verdicts(&transaction, &item, run_id, &policy, cut, &request.verdicts)?;
         let evaluated_cut = FeedPosition {
@@ -1206,12 +1216,23 @@ pub(super) fn newest_evaluation_through(
         .transpose()
 }
 
-/// Whether a host-observed mutation followed the evaluated cut.
-fn mutation_after(
+/// What, if anything, the host recorded on the run after the evaluated cut
+/// that the evaluation did not see.
+///
+/// A source change voids the evaluation, unless it left the source at the
+/// revision the evaluation declared it judged: then the evaluator saw that
+/// change, and neither it nor the obligation it opened counts. The declared
+/// fingerprint is the host's source revision, as it reports it on turn
+/// observations; a declared workspace must match too. Any other host check
+/// (a verification, an environment record, an obligation opened or
+/// resolved) asks for a re-read and resubmission. A change the evaluator
+/// did not see wins over a check.
+fn basis_moved_after(
     connection: &Connection,
     run_id: WorkRunId,
     position: i64,
-) -> Result<bool, StoreError> {
+    declared: Option<&crate::domain::AcceptanceSourceBasis>,
+) -> Result<Option<EvaluationBasisMove>, StoreError> {
     let mut statement = connection.prepare(
         "SELECT object_kind, object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position > ?2
@@ -1222,22 +1243,53 @@ fn mutation_after(
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut check = false;
     for (kind, stored) in rows {
         if !MUTATION_KINDS.contains(&kind.as_str()) {
             continue;
         }
-        if kind == "execution_observation" {
-            let hash = ObjectId::from_stored(stored.clone())
-                .ok_or(StoreError::InvalidStoredKey(stored))?;
-            let observation: ExecutionObservation =
-                load_typed_work_object(connection, &hash, "execution_observation")?;
-            if !observation.source_changed {
-                continue;
+        let hash =
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+        match kind.as_str() {
+            "execution_observation" => {
+                let observation: ExecutionObservation =
+                    load_typed_work_object(connection, &hash, "execution_observation")?;
+                if !observation.source_changed {
+                    continue;
+                }
+                if !judged_revision(declared, &observation) {
+                    return Ok(Some(EvaluationBasisMove::SourceChanged));
+                }
+                seen.insert(hash);
             }
+            "work_obligation" => {
+                let obligation: WorkObligation =
+                    load_typed_work_object(connection, &hash, "work_obligation")?;
+                if !seen.contains(&obligation.triggering_observation) {
+                    check = true;
+                }
+            }
+            _ => check = true,
         }
-        return Ok(true);
     }
-    Ok(false)
+    Ok(check.then_some(EvaluationBasisMove::CheckRecorded))
+}
+
+/// Whether a source change left the source at the revision the evaluation
+/// declared it judged, in the declared workspace when one was named.
+fn judged_revision(
+    declared: Option<&crate::domain::AcceptanceSourceBasis>,
+    observation: &ExecutionObservation,
+) -> bool {
+    let (Some(declared), Some(basis)) = (declared, observation.source_basis.as_ref()) else {
+        return false;
+    };
+    declared.fingerprint == basis.source_revision
+        && declared
+            .workspace_id
+            .as_ref()
+            .is_none_or(|workspace| *workspace == basis.workspace_id)
 }
 
 fn staleness(
@@ -1288,7 +1340,14 @@ fn staleness(
             return Ok(Some(AcceptanceStaleReason::Identity));
         }
     }
-    if mutation_after(connection, run_id, record.evaluated_cut.position)? {
+    if basis_moved_after(
+        connection,
+        run_id,
+        record.evaluated_cut.position,
+        record.source_basis.as_ref(),
+    )?
+    .is_some()
+    {
         return Ok(Some(AcceptanceStaleReason::Mutation));
     }
     let relied_on = cited_gate_names(connection, run_id, record)?;

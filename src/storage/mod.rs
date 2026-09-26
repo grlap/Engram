@@ -680,6 +680,34 @@ enum ControlPolicyOperationFingerprint<'a> {
     },
 }
 
+/// What moved a run past the evidence basis an acceptance evaluation read
+/// through.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EvaluationBasisMove {
+    /// A host check was recorded after the basis: a verification, an
+    /// environment record, or an obligation opened or resolved. Re-read the
+    /// item, take the check into account, and submit again.
+    CheckRecorded,
+    /// The source changed after the basis, and not to the revision the
+    /// evaluation declared it judged. The evaluation is void; request a new
+    /// one.
+    SourceChanged,
+}
+
+impl EvaluationBasisMove {
+    /// What the evaluator does next. The refusal message and the MCP details
+    /// both carry this text, because a host may relay only the message.
+    #[must_use]
+    pub const fn remedy(self) -> &'static str {
+        match self {
+            Self::CheckRecorded => "re-read show, take the new check into account and submit again",
+            Self::SourceChanged => {
+                "the evaluation is void, so request a new evaluation of the current source"
+            }
+        }
+    }
+}
+
 /// Errors at the immutable storage boundary.
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -787,6 +815,15 @@ pub enum StoreError {
     #[error("acceptance evaluation for {work:?} was refused: {reason}")]
     AcceptanceEvaluationRefused {
         work: crate::domain::WorkId,
+        reason: String,
+    },
+    /// The run moved past the evidence basis an evaluation read through.
+    /// `moved` says whether a re-read and resubmission can still stand or
+    /// the evaluation is void.
+    #[error("acceptance evaluation for {work:?} was refused: {reason}")]
+    AcceptanceEvaluationBasisMoved {
+        work: crate::domain::WorkId,
+        moved: EvaluationBasisMove,
         reason: String,
     },
     #[error("local work item {0:?} does not exist")]

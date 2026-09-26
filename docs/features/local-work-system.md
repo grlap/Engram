@@ -886,6 +886,11 @@ events, evidence, and result objects remain intact.
 
 A targeted agent read never changes focus or staged delivery. Reading an item
 does not steer a later write; use the explicit target in receipt commands.
+A `note`, `gate` or `evaluate` by a session that does not hold the item
+leaves focus where it was; a holder's moves focus like any targeted
+mutation. A host binds a turn to the focused claim, so switch claims at a
+turn boundary (see
+[acceptance evaluation](acceptance-evaluation.md#turns-focus-and-evaluation-timing)).
 Process-default session registration is lazy for these reads, catalog queries,
 and project-memory reads; a subsequent stateful operation registers normally.
 

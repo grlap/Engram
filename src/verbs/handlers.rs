@@ -1436,7 +1436,7 @@ impl AgentVerbs {
         if text.is_empty() {
             return Err(StoreError::InvalidWork("note text must not be empty".into()).into());
         }
-        let view = self.target(input.work_ref.as_deref(), now)?;
+        let view = self.target_unfocused(input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let target = view.status.work.work_id.0.to_string();
         let refs = trimmed(&input.refs);
@@ -1777,6 +1777,24 @@ impl AgentVerbs {
                 )
                 .into()
             }),
+        }
+    }
+
+    /// Resolves a named item without focusing it, for a word a non-holder may
+    /// use (note, gate, evaluate): the service moves focus only for the
+    /// item's live holder, so a peer's word leaves focus, and the claim the
+    /// next host turn binds, where it was.
+    pub(super) fn target_unfocused(
+        &self,
+        work_ref: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<WorkFocusView, VerbError> {
+        match work_ref {
+            Some(work_ref) => self
+                .service
+                .inspect_work(work_ref, now)
+                .map_err(|error| VerbError::at(error, work_ref)),
+            None => self.target(None, now),
         }
     }
 

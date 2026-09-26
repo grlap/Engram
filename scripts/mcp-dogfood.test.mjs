@@ -1568,9 +1568,13 @@ test("targeted reads do not steer later bare writes on CLI or MCP", async (t) =>
         ? cliJson(engramHome, session, "note", other, text)
         : receipt(await client.call("note", { work_ref: other, text }));
       assert.equal(written.work.short_ref, other);
-      // An explicit mutation still selects its target; restore execution focus
-      // by renewing the existing claim before the next surface's read matrix.
-      cliJson(engramHome, session, "claim", held);
+      // An observation on an item this session does not hold leaves its
+      // focus: a following bare note still lands on the held item.
+      const bare = `Bare note after the observation ${surface}`;
+      const after = surface === "cli"
+        ? cliJson(engramHome, session, "note", bare)
+        : receipt(await client.call("note", { text: bare }));
+      assert.equal(after.work.short_ref, held);
     }
   } finally {
     try {

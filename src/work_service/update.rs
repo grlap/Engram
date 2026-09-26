@@ -47,8 +47,10 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
         let mut store = self.store_at(now)?;
-        let target = self.bind_target(&mut store, work_ref, now)?;
+        let target = self.resolve_target(&store, work_ref)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
+        // A late gate on someone else's or completed work leaves focus.
+        self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("gate attempt has no bound focused work".into())
         })?;
@@ -187,8 +189,11 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkNoteResult, StoreError> {
         let mut store = self.store_at(now)?;
-        let target = self.bind_target(&mut store, work_ref, now)?;
+        let target = self.resolve_target(&store, work_ref)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
+        // A holder's note moves focus; anyone else's note is an observation
+        // and leaves focus where it was.
+        self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
         let note = WorkNoteIntent {
             status,
             summary,

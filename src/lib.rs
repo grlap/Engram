@@ -97,7 +97,7 @@ pub use project::{
 pub use storage::{
     AcceptanceEvaluationPolicyUpdateReceipt, AcceptanceEvaluationReceipt,
     AcceptanceEvaluationStatus, BackupManifest, ControlDiagnostics, ControlPolicyRecoveryFinding,
-    ControlPolicyRecoveryReport, ControlPolicyUpdateReceipt, IntegrityReport,
+    ControlPolicyRecoveryReport, ControlPolicyUpdateReceipt, EvaluationBasisMove, IntegrityReport,
     ObligationRuleSetUpdateReceipt, SqliteStore, StoreError, describe_host_path_policy,
     install_store_copy_without_replacing,
 };

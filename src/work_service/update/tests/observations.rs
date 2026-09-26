@@ -637,5 +637,308 @@ fn phoenix_gate_without_focus_names_explicit_target_and_never_guesses_completed_
         crate::verbs::GATE_WORK_REF_REQUIRED
     );
     words.gate(gate(Some(root.short_ref)), at(4)).unwrap();
-    words.gate(gate(None), at(5)).unwrap();
+    // A late gate on work this session does not hold leaves its focus where
+    // it was, so a bare gate still names no item rather than guessing the
+    // completed one.
+    let again = words.gate(gate(None), at(5)).unwrap_err();
+    assert!(matches!(&again.error, StoreError::InvalidWork(reason)
+        if reason == "no item is selected for this gate; use gate NAME --work-ref REF"));
+}
+
+/// The claim `held` reports as focused, with the binding a host would bind.
+fn focused_binding(
+    session: &LocalWorkService,
+    now: chrono::DateTime<chrono::Utc>,
+) -> crate::ControlWorkBinding {
+    session
+        .work_held(now)
+        .expect("held")
+        .items
+        .into_iter()
+        .find(|row| row.focused)
+        .and_then(|row| row.control_binding)
+        .expect("the focused claim is bindable")
+}
+
+/// One host turn, as the host runs it: bind the holder's control session to
+/// `binding`, then grant, begin and report a turn that changed the source.
+fn host_turn_changing_source(
+    database: &std::path::Path,
+    binding: &crate::ControlWorkBinding,
+    key: &str,
+    second: i64,
+) {
+    use crate::domain::{
+        EffectClass, ExecutionObservationInput, ExecutionOutcome, ExecutionSourceBasis,
+        ResourceCoverage, ResourceSubject, TurnIntent, TurnNextIntent, TurnPurpose,
+    };
+    let mut host = crate::storage::SqliteStore::open(database).expect("host store");
+    let project = ProjectId("observation-test".into());
+    let holder = SessionId("holder".into());
+    let connection = host
+        .resume_control_connection(&holder, at(second))
+        .expect("host connection");
+    let actor = ActorContext {
+        actor_id: "host".into(),
+        actor_kind: "host".into(),
+        assurance: AssuranceLevel::Asserted,
+        run_id: Some(binding.run_id.0.to_string()),
+        session_id: Some(holder.clone()),
+        source_tool: Some("host-control:bind".into()),
+        source_skill: None,
+        provenance_chain: Vec::new(),
+        reason: "bind the focused claim".into(),
+    };
+    let bound = host
+        .bind_control_session_with_work(
+            &project,
+            &format!("local-work:{key}"),
+            "Focused claim",
+            &holder,
+            &connection,
+            &actor,
+            Some(binding),
+            crate::ControlAssurance::TurnGated,
+            &[EffectClass::Observe, EffectClass::MutateLocal],
+            1,
+            &format!("bind-{key}"),
+            at(second),
+        )
+        .expect("bind");
+    let decision = host
+        .evaluate_control_turn(
+            &project,
+            &holder,
+            &connection,
+            &bound.routing_token,
+            &TurnIntent {
+                idempotency_key: format!("evaluate-{key}"),
+                intent_fingerprint: crate::ObjectId::from_canonical_bytes(key.as_bytes()),
+                purpose: Some(TurnPurpose::Ordinary),
+                requested_effects: vec![EffectClass::MutateLocal],
+                resource_intents: vec![ResourceSubject::Path {
+                    project_id: project.clone(),
+                    segments: vec!["src".into()],
+                    coverage: ResourceCoverage::Tree,
+                }],
+            },
+            at(second + 1),
+        )
+        .expect("evaluate");
+    let crate::ControlTurnDecision::Grant { grant } = decision else {
+        panic!("the turn must grant: {decision:?}");
+    };
+    assert!(matches!(
+        host.begin_control_turn(
+            &project,
+            &holder,
+            &connection,
+            &bound.routing_token,
+            &grant.grant_id,
+            &[],
+            &format!("begin-{key}"),
+            at(second + 2),
+        )
+        .expect("begin"),
+        crate::ControlTurnBeginDecision::Begin { .. }
+    ));
+    host.checkpoint_control_turn_with_observations(
+        &project,
+        &holder,
+        &connection,
+        &bound.routing_token,
+        &grant.grant_id,
+        TurnNextIntent::Continue,
+        &[ExecutionObservationInput {
+            observation_id: format!("write-{key}"),
+            action_fingerprint: crate::ObjectId::from_canonical_bytes(
+                format!("write {key}").as_bytes(),
+            ),
+            effect: EffectClass::MutateLocal,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: true,
+            source_basis: Some(ExecutionSourceBasis {
+                workspace_id: "workspace".into(),
+                source_revision: format!("after-{key}"),
+            }),
+            observed_at: Some(at(second + 3)),
+        }],
+        &format!("checkpoint-{key}"),
+        at(second + 3),
+    )
+    .expect("checkpoint");
+}
+
+/// The agent words for the holder session, as CLI and MCP drive them.
+fn note_word(database: &std::path::Path) -> crate::verbs::AgentVerbs {
+    crate::verbs::AgentVerbs::new(
+        database.to_owned(),
+        ProjectId("observation-test".into()),
+        "shared-actor".into(),
+        SessionId("holder".into()),
+        None,
+    )
+}
+
+/// How many stored records of `kind` name `work` as their work item.
+fn records_on(database: &std::path::Path, kind: &str, work: &WorkItemSummary) -> i64 {
+    let path = if kind == "execution_observation" {
+        "$.binding.work_id"
+    } else {
+        "$.work_id"
+    };
+    rusqlite::Connection::open(database)
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM objects WHERE object_kind = ?1
+             AND json_extract(CAST(canonical_json AS TEXT), ?2) = ?3",
+            rusqlite::params![kind, path, work.work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+/// A note on an item this session does not hold is an observation, not a
+/// switch of work: it leaves the session's focus, and so the claim `held`
+/// reports as focused, where it was. A host binds the next turn from that
+/// focused claim, so the turn's source change lands on the work the session
+/// was doing, not on the item it only commented on.
+#[test]
+fn a_non_holder_note_leaves_focus_and_the_next_turn_on_the_focused_claim() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("work.db");
+    let session = service(&database, "holder");
+    let first = proposed_root(
+        session
+            .work_propose(root_input("first", "first"), at(0))
+            .unwrap(),
+    );
+    let second = proposed_root(
+        session
+            .work_propose(root_input("second", "second"), at(0))
+            .unwrap(),
+    );
+    let other = proposed_root(
+        session
+            .work_propose(root_input("other", "other"), at(0))
+            .unwrap(),
+    );
+    claim(&session, &first.short_ref, 1);
+    claim(&session, &second.short_ref, 2);
+    assert_eq!(focused_binding(&session, at(3)).work_id, second.work_id);
+
+    let observed = session
+        .work_note_on(
+            Some(&other.short_ref),
+            "a comment on work I do not hold",
+            &[],
+            at(4),
+        )
+        .expect("non-holder note");
+    assert!(observed.non_holder);
+    let binding = focused_binding(&session, at(5));
+    assert_eq!(
+        binding.work_id, second.work_id,
+        "a non-holder note must not move focus"
+    );
+    // The note word is the path CLI and MCP take. It resolves the named item
+    // too, and must not focus it ahead of the holder check.
+    let words = note_word(&database);
+    let worded = words
+        .note(
+            &crate::verbs::NoteInput {
+                status: false,
+                work_ref: Some(other.short_ref.clone()),
+                text: "another comment, through the note word".into(),
+                refs: Vec::new(),
+            },
+            at(5),
+        )
+        .expect("non-holder note word");
+    assert!(
+        worded.text().contains("(observation, no run credit)"),
+        "{}",
+        worded.text()
+    );
+    let binding = focused_binding(&session, at(5));
+    assert_eq!(
+        binding.work_id, second.work_id,
+        "the note word must not move focus either"
+    );
+    // A gate or an evaluation naming work the session does not hold is
+    // refused here, and neither moves focus on the way.
+    let gate: crate::verbs::GateInput = serde_json::from_value(serde_json::json!({
+        "work_ref": other.short_ref,
+        "name": "a peer's check",
+    }))
+    .unwrap();
+    assert!(words.gate(gate, at(5)).is_err());
+    let evaluation: crate::verbs::EvaluateInput = serde_json::from_value(serde_json::json!({
+        "work_ref": other.short_ref,
+        "mode": "independent_session",
+        "acceptance_basis": 1,
+        "evidence_basis": 1,
+        "verdicts": [],
+    }))
+    .unwrap();
+    assert!(words.evaluate(evaluation, at(5)).is_err());
+    assert_eq!(
+        focused_binding(&session, at(5)).work_id,
+        second.work_id,
+        "a gate or evaluation on work the session does not hold must not move focus"
+    );
+
+    host_turn_changing_source(&database, &binding, "edit", 6);
+    assert_eq!(records_on(&database, "execution_observation", &second), 1);
+    assert_eq!(records_on(&database, "execution_observation", &other), 0);
+    assert_eq!(records_on(&database, "execution_observation", &first), 0);
+}
+
+/// Engram cannot tell which claim a file belongs to: a host reports each
+/// turn's source change against the claim bound when the turn started, and
+/// it binds the focused claim. A holder's targeted note moves focus, so the
+/// next turn's change, and the "tests have not run" obligation it opens,
+/// land on the noted claim even when the edit was for another one. Switch
+/// claims at a turn boundary to keep a change on the work it belongs to.
+#[test]
+fn a_holder_note_moves_focus_so_the_next_source_change_lands_on_that_claim() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("work.db");
+    let session = service(&database, "holder");
+    let first = proposed_root(
+        session
+            .work_propose(root_input("first", "first"), at(0))
+            .unwrap(),
+    );
+    let second = proposed_root(
+        session
+            .work_propose(root_input("second", "second"), at(0))
+            .unwrap(),
+    );
+    claim(&session, &first.short_ref, 1);
+    claim(&session, &second.short_ref, 2);
+    assert_eq!(focused_binding(&session, at(3)).work_id, second.work_id);
+
+    // Through the note word, the path CLI and MCP take.
+    let words = note_word(&database);
+    let noted = words
+        .note(
+            &crate::verbs::NoteInput {
+                status: false,
+                work_ref: Some(first.short_ref.clone()),
+                text: "a finding on the first claim".into(),
+                refs: Vec::new(),
+            },
+            at(4),
+        )
+        .expect("holder note");
+    assert!(!noted.text().contains("observation"), "{}", noted.text());
+    let binding = focused_binding(&session, at(5));
+    assert_eq!(binding.work_id, first.work_id, "a holder note moves focus");
+
+    host_turn_changing_source(&database, &binding, "edit", 6);
+    assert_eq!(records_on(&database, "execution_observation", &first), 1);
+    assert_eq!(records_on(&database, "work_obligation", &first), 1);
+    assert_eq!(records_on(&database, "execution_observation", &second), 0);
+    assert_eq!(records_on(&database, "work_obligation", &second), 0);
 }

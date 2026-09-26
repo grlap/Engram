@@ -305,7 +305,9 @@ pub struct AcceptanceEvaluation {
     pub criteria: Vec<String>,
     /// The run-feed position the evaluator read through, exactly as the
     /// submission supplied it (R3b); the head at submission time is never
-    /// substituted, and a host-observed change after it refuses the record.
+    /// substituted. A host check after it asks for a resubmission, and a
+    /// source change after it voids the record unless it is to the declared
+    /// judged revision (`source_basis`).
     pub evaluated_cut: FeedPosition,
     /// Every run evidence object on the feed at or before `evaluated_cut`:
     /// the selection the evaluator could have read.
@@ -362,7 +364,9 @@ pub enum AcceptanceStaleReason {
     Revision,
     /// The evaluated run is not the completing run.
     Run,
-    /// A host-observed mutation followed the evaluated cut.
+    /// A host-observed mutation followed the evaluated cut: a check, or a
+    /// source change to a revision other than the one the evaluation
+    /// declared it judged.
     Mutation,
     /// The source fingerprint presented at completion differs or is missing.
     Source,
@@ -413,9 +417,11 @@ pub struct RecordAcceptanceEvaluationRequest {
     /// The acceptance basis the evaluator read; a changed revision refuses.
     pub expected_work_revision: i64,
     /// The run-feed position the evaluator read through (the evidence
-    /// basis printed by `show`). A host-observed change after it, or a
-    /// citation beyond it, refuses: the record binds what was evaluated,
-    /// never the feed head sampled at submission.
+    /// basis printed by `show`). A host check after it asks for a
+    /// resubmission, a source change after it voids the evaluation unless it
+    /// is to the declared judged revision, and a citation beyond it refuses:
+    /// the record binds what was evaluated, never the feed head sampled at
+    /// submission.
     pub evaluated_through: i64,
     pub mode: AcceptanceEvaluationMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
