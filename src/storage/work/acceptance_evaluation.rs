@@ -1223,16 +1223,41 @@ pub(super) fn newest_evaluation_through(
 /// revision the evaluation declared it judged: then the evaluator saw that
 /// change, and neither it nor the obligation it opened counts. The declared
 /// fingerprint is the host's source revision, as it reports it on turn
-/// observations; a declared workspace must match too. Any other host check
-/// (a verification, an environment record, an obligation opened or
-/// resolved) asks for a re-read and resubmission. A change the evaluator
-/// did not see wins over a check.
+/// observations; a declared workspace must match too.
+///
+/// The source can also move without a reported change, as when a check runs
+/// after someone else's edit. So when the newest sighting after the cut
+/// shows the source at a revision other than the judged one, the evaluation
+/// is void too, whatever that sighting claims. The judged revision is the
+/// declared one, or else the revision the run was last seen at when the
+/// basis was cut; with neither, there is nothing to compare. The revision
+/// fingerprints the full content, so it is compared whatever workspace
+/// reported it.
+///
+/// Only an execution observation is a sighting of the source: the host lists
+/// a turn's observations in the order it saw them, each at the revision the
+/// source had then. A turn reported after the cut may still hold sightings
+/// from before the evaluation, such as a check that ran before the edit the
+/// evaluator judged. So the newest sighting decides: a later quiet sighting
+/// of the judged revision, or a reported change to the declared revision,
+/// puts the source back where it was judged. Verification and environment
+/// records describe a check and carry the content basis that check ran on,
+/// which is its producer's and may predate the cut, so neither is ever
+/// compared.
+///
+/// Any other host check (a verification, an environment record, an
+/// obligation opened or resolved) asks for a re-read and resubmission. A
+/// move the evaluator did not see wins over a check.
 fn basis_moved_after(
     connection: &Connection,
     run_id: WorkRunId,
     position: i64,
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
 ) -> Result<Option<EvaluationBasisMove>, StoreError> {
+    let judged = match declared {
+        Some(declared) => Some(declared.fingerprint.clone()),
+        None => revision_seen_through(connection, run_id, position)?,
+    };
     let mut statement = connection.prepare(
         "SELECT object_kind, object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position > ?2
@@ -1245,6 +1270,7 @@ fn basis_moved_after(
         .collect::<Result<Vec<_>, _>>()?;
     let mut seen = std::collections::BTreeSet::new();
     let mut check = false;
+    let mut quiet_move = false;
     for (kind, stored) in rows {
         if !MUTATION_KINDS.contains(&kind.as_str()) {
             continue;
@@ -1256,11 +1282,21 @@ fn basis_moved_after(
                 let observation: ExecutionObservation =
                     load_typed_work_object(connection, &hash, "execution_observation")?;
                 if !observation.source_changed {
+                    // The newest sighting decides where the source is.
+                    if let (Some(judged_at), Some(sighting)) =
+                        (judged.as_deref(), observation.source_basis.as_ref())
+                    {
+                        quiet_move = sighting.source_revision != judged_at;
+                    }
                     continue;
                 }
                 if !judged_revision(declared, &observation) {
                     return Ok(Some(EvaluationBasisMove::SourceChanged));
                 }
+                // The reported change left the source at the declared
+                // revision, so any sighting of another revision before it
+                // is older than that change.
+                quiet_move = false;
                 seen.insert(hash);
             }
             "work_obligation" => {
@@ -1273,7 +1309,36 @@ fn basis_moved_after(
             _ => check = true,
         }
     }
+    if quiet_move {
+        return Ok(Some(EvaluationBasisMove::SourceChanged));
+    }
     Ok(check.then_some(EvaluationBasisMove::CheckRecorded))
+}
+
+/// The revision the run was last seen at, at or before `through`: that of
+/// the newest execution observation there that carries one. Verification
+/// and environment records are left out: they carry the basis of the check
+/// they describe, not where the source was when they were recorded.
+fn revision_seen_through(
+    connection: &Connection,
+    run_id: WorkRunId,
+    through: i64,
+) -> Result<Option<String>, StoreError> {
+    Ok(connection
+        .query_row(
+            "SELECT json_extract(object.canonical_json, '$.source_basis.source_revision')
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.position <= ?2
+               AND entry.object_kind = 'execution_observation'
+               AND json_extract(object.canonical_json, '$.source_basis.source_revision')
+                   IS NOT NULL
+             ORDER BY entry.position DESC LIMIT 1",
+            params![run_id.0.to_string(), through],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?)
 }
 
 /// Whether a source change left the source at the revision the evaluation

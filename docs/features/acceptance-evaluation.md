@@ -145,8 +145,11 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   recorded after the cut; re-read `show`, take the check into account, and
   submit again. `acceptance_evaluation_void`: the source changed after the cut
   to a revision the evaluation did not judge; the evaluation is void, so
-  request a new one. The one source change that does not count is a change to
-  the revision the evaluation declared it judged (below), together with the
+  request a new one. The source also counts as changed when the newest
+  execution observation after the cut that carries a revision shows it at
+  another revision than the judged one, even while reporting no change (F3
+  below). The one source change that does not count is a change to the
+  revision the evaluation declared it judged (below), together with the
   obligation it opened; a later check, including the test that resolves that
   obligation, still asks for a resubmission. Likewise the source fingerprint
   is the value measured for the evaluated content, not one taken at
@@ -237,23 +240,49 @@ stale reason named.
   without an evaluation.
 - **F3 host-observed mutation.** No execution observation with
   `source_changed`, no verification or environment evidence, and no obligation
-  definition or resolution was appended to the run feed after `evaluated_cut`.
+  definition or resolution was appended to the run feed after
+  `evaluated_cut`, and the newest execution observation after it that
+  carries a revision does not show the source at another revision than the
+  judged one.
   These are host-minted facts about the workspace and its checks, with
   `source_changed` recorded as the core's reading of the host's report: a
   reported change that leaves the source at the revision of the run's newest
-  recorded source change, with no other revision seen since (in an
-  observation or environment evidence), is recorded as no change, so it never
-  moves the basis. The only
-  exception is a source change that left the source at the revision the
-  evaluation declared it judged (its `source_basis`), with the obligation that
-  change opened: the evaluator saw that state, so the host's late report of it
-  does not void the evaluation. A check recorded after the cut, including the
-  one that resolves that obligation, still asks for a resubmission. The
+  recorded source change, with no other revision seen since (in an observation
+  or environment evidence), is recorded as no change. That clears only its
+  change flag: like any observation, it is still compared with the judged
+  revision below. The only exception is a source change that left the source
+  at the revision the evaluation declared it judged (its `source_basis`), with
+  the obligation that change opened: the evaluator saw that state, so the
+  host's late report of it does not void the evaluation. The source can also
+  move without a reported change, as when a check runs after someone else's
+  edit. So when the newest execution observation after the cut that carries a
+  revision shows the source at another revision than the judged one, the
+  evaluation is void, whatever that observation claims. The judged revision is
+  the declared one, or else the revision the run was last seen at when the cut
+  was taken: that of the newest execution observation at or before the cut
+  that carries one. With neither there is nothing to compare. The revision
+  fingerprints the full content, so it is compared whatever workspace reported
+  it. Here only an execution observation counts as a sighting of the source:
+  the host lists a turn's observations in the order it saw them, each at the
+  revision the source had then. A turn reported after the cut may still hold
+  sightings from before the evaluation, such as a check that ran before the
+  edit the evaluator judged. So the newest sighting decides: a later sighting
+  of the judged revision, or a reported change to the declared revision, puts
+  the source back where it was judged, and sightings of another revision
+  before it no longer count. The repeat reading above also counts environment
+  evidence, which there only errs toward keeping a reported change.
+  Verification and environment records describe a check and carry the content
+  basis that check ran on, its producer's, which may predate the cut. So
+  neither is ever compared, and either one recorded after the cut, including
+  the check that resolves that obligation, asks for a resubmission. The
   declared revision is the evaluator's assertion, recorded like its verdicts;
   Engram cannot attest what the evaluator read, so this exception carries the
-  evaluation's own asserted assurance. A host that wants the revision to be one
-  it measured passes that revision to the evaluator itself (see
-  [turns, focus and evaluation timing](#turns-focus-and-evaluation-timing)). A
+  evaluation's own asserted assurance. It must be the host's source revision
+  as the host reports it: a declaration in another form, such as a Git commit
+  id, matches no host sighting, so the host's next sighting of the source
+  voids the evaluation. A host that wants the revision to be one it measured
+  passes that revision to the evaluator itself (see [turns, focus and
+  evaluation timing](#turns-focus-and-evaluation-timing)). A
   `same_session` implementer gains nothing from it: it can re-read and submit
   at the new cut in any case.
 - **F4 source fingerprint.** When policy `require_source_freshness` is on, the
@@ -415,7 +444,7 @@ tests cite the row identifier in a nearby comment.
 | B17 | citation from another run, another item, or a non-holder observation | refuse at write |
 | B18 | verdict list missing a criterion, duplicate position, or `acceptance_basis` behind the current revision | refuse at write with "re-read show" |
 | B19 | criteria revised after a passing evaluation | `done` refuses `AcceptanceEvaluationStale { revision }` |
-| B20 | host-observed `source_changed` observation after the evaluation | `done` refuses `AcceptanceEvaluationStale { mutation }` |
+| B20 | host-observed `source_changed` observation after the evaluation, or the newest execution observation after it that carries a revision shows another revision than the judged one, even when it reports no change | `done` refuses `AcceptanceEvaluationStale { mutation }` |
 | B21 | `require_source_freshness`; `done` without fingerprint / with a different fingerprint / with the same fingerprint | refuse (missing) / refuse `AcceptanceEvaluationStale { source }` / seal |
 | B22 | holder note, a gate the pass did not cite, and non-holder observation appended after a passing evaluation | still fresh; `done` seals |
 | B23 | new run generation after reopen (a recovery claim keeps the run and its evaluation) | evaluation of the old run is absent for the new run; `done` refuses `MissingAcceptanceEvaluation`; the same payload records a fresh object on the new run rather than replaying |
@@ -426,7 +455,7 @@ tests cite the row identifier in a nearby comment.
 | B28 | `done "summary"` capture and its checkpoint after the evaluation | still fresh; seal binds the evaluation |
 | B29 | `show` and `next` on an evaluated item | per-criterion newest verdict, basis, evaluator label, mode, and freshness; `done` receipt names the path |
 | B30 | host-owned (not a core test): TermAl evaluator spawn, attested sub-agent identity, fingerprint at completion, observed build via the control channel | documented in the host item; end-to-end acceptance stays open until exercised |
-| B31 | evaluator reads at cut `c`; a host-observed `source_changed` observation or check lands after `c`; the verdicts are submitted with `evidence_basis = c` | refuse at write: `acceptance_evaluation_resubmit` after a check, `acceptance_evaluation_void` after a source change the evaluation did not judge; a change to the declared judged revision does not refuse; a citation beyond `c` also refuses; resubmission with the current basis records |
+| B31 | evaluator reads at cut `c`; a host-observed `source_changed` observation or check lands after `c`; the verdicts are submitted with `evidence_basis = c` | refuse at write: `acceptance_evaluation_resubmit` after a check, `acceptance_evaluation_void` after a source change the evaluation did not judge, or when the newest execution observation after `c` that carries a revision is at another revision than the judged one, even when it reports no change; a change to the declared judged revision does not refuse; a citation beyond `c` also refuses; resubmission with the current basis records |
 | B32 | passing `asserted` evaluation, then policy `mechanical_basis` → `observed`; passing evaluation without a source basis, then `require_source_freshness` → on | `done` refuses `AcceptanceEvaluationStale { policy }` / `{ source }`; no older, weaker record seals |
 | B33 | `pass` cites gate `cargo-test`; a newer `cargo-test` record (any result) lands after the cut; an unrelated gate lands after another passing evaluation | `done` refuses `AcceptanceEvaluationStale { evidence }` / the unrelated gate leaves the evaluation fresh |
 | B34 | passing evaluation followed by a newer `fail`, `insufficient_evidence`, or `needs_human` record | `done` refuses with the newer verdict's cause; the older pass is never selected |
@@ -463,7 +492,10 @@ revision from `show` (exactly as `done --link`), `--evidence-basis` the
 run-feed position `show` prints beside it under an evaluated policy, which the
 evaluator read through, and `LOCATOR` a note/gate locator from `show --notes
 --gates` or the full id of host-minted verification or environment evidence
-(R7). Open items in self-asserted projects keep their unchanged `show` shape. MCP `evaluate` takes
+(R7). `--source-fingerprint F` declares the host's source revision the
+evaluator judged (F3); a value in another form, such as a Git commit id,
+voids the evaluation at the host's next sighting of the source. Open items in
+self-asserted projects keep their unchanged `show` shape. MCP `evaluate` takes
 the same data as `mode`, `acceptance_basis`, `evidence_basis`, `verdicts:
 [{criterion, verdict, basis, rationale, evidence: [locator]}]`, and the
 optional fields. The receipt is a bounded projection of the immutable record,

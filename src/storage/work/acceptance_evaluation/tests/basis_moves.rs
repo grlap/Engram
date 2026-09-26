@@ -658,7 +658,7 @@ fn a_late_verification_of_an_older_producer_is_not_a_move() {
     // A later turn records verification evidence for that earlier build: it
     // copies the producer's R0 at a feed position after the change, but the
     // producer itself is where that revision was seen.
-    host.cite_earlier_producer(store, &producer, 40);
+    host.cite_earlier_producer(store, &producer, None, 40);
     let read = cut(store, &work);
     host.report(store, &[(true, Some("content-revision-1"))], 50);
     assert_eq!(recorded_changes(store, &work, start), [false, true, false]);
@@ -696,4 +696,512 @@ fn a_declared_workspace_must_match_the_reported_one() {
         ),
     )
     .expect("the declared workspace and revision match the report");
+}
+
+/// The newest evaluation on the run and why completion would refuse it, if
+/// it would.
+fn freshness(
+    store: &SqliteStore,
+    work: &WorkItem,
+) -> Option<(ObjectId, Option<AcceptanceStaleReason>)> {
+    store
+        .acceptance_evaluation_status(work.work_id, None)
+        .expect("status read")
+        .map(|status| (status.evaluation, status.stale))
+}
+
+/// A judgment at `cut` under its own attempt key, so that content identical
+/// to an earlier submission is submitted anew instead of replayed.
+fn judged_again(
+    work: &WorkItem,
+    note: &ObjectId,
+    cut: i64,
+    source: Option<AcceptanceSourceBasis>,
+    attempt: &str,
+    second: i64,
+) -> RecordAcceptanceEvaluationRequest {
+    let mut request = judged(work, note, cut, source, second);
+    request.attempt_key = Some(attempt.into());
+    request
+}
+
+// B20, B31: a check that sees the source at another revision, with no
+// reported change, makes the evaluation stale at completion and void at
+// recording; a late verification of an earlier check stays a check.
+#[test]
+fn a_check_at_another_revision_without_a_reported_change_voids_the_evaluation() {
+    let mut fixture = fixture("project-basis-quiet-check");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    disable_obligation_rules(store, 6);
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    host.checkpoint(store, true, None, 20);
+    let first = cut(store, &work);
+    let judged_first = record(store, &judged(&work, &note, first, None, 25))
+        .expect("an evaluation of the changed source records");
+    assert_eq!(
+        freshness(store, &work),
+        Some((judged_first.evaluation.clone(), None))
+    );
+
+    // A check that sees the judged revision is only a check: resubmit.
+    host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        26,
+    );
+    let producer = entries_after(store, &work, first, "execution_observation")[0].clone();
+    assert_eq!(
+        freshness(store, &work),
+        Some((
+            judged_first.evaluation.clone(),
+            Some(AcceptanceStaleReason::Mutation)
+        ))
+    );
+    assert_eq!(
+        moved(record(
+            store,
+            &judged_again(&work, &note, first, None, "after-the-check", 27)
+        )),
+        (
+            EvaluationBasisMove::CheckRecorded,
+            "acceptance_evaluation_resubmit".into()
+        )
+    );
+    let second = cut(store, &work);
+    let judged_second = record(store, &judged(&work, &note, second, None, 28))
+        .expect("a re-read resubmission records");
+
+    // Someone else's edit moves the source; the host reports no change, but
+    // the check it observed ran at another revision. The evaluation judged
+    // content that is gone: it is stale at completion and void at recording.
+    host.basis.source_revision = "content-revision-2".into();
+    host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        30,
+    );
+    assert_eq!(
+        recorded_changes(store, &work, second),
+        [false],
+        "the host reported no change"
+    );
+    assert_eq!(
+        freshness(store, &work),
+        Some((
+            judged_second.evaluation.clone(),
+            Some(AcceptanceStaleReason::Mutation)
+        ))
+    );
+    assert_eq!(
+        moved(record(
+            store,
+            &judged_again(&work, &note, second, None, "after-the-quiet-move", 31)
+        )),
+        (
+            EvaluationBasisMove::SourceChanged,
+            "acceptance_evaluation_void".into()
+        )
+    );
+    let third = cut(store, &work);
+    let judged_third = record(store, &judged(&work, &note, third, None, 35))
+        .expect("a new evaluation of the current source records");
+    assert_eq!(
+        freshness(store, &work),
+        Some((judged_third.evaluation.clone(), None))
+    );
+
+    // A late verification of the earlier check, with the environment it ran
+    // in, carries that check's older revision. Both describe the check, not
+    // where the source is now: a check to resubmit for, never a move.
+    host.cite_earlier_producer(store, &producer, Some("content-revision-1"), 36);
+    assert_eq!(
+        moved(record(
+            store,
+            &judged_again(&work, &note, third, None, "after-the-late-check", 39)
+        )),
+        (
+            EvaluationBasisMove::CheckRecorded,
+            "acceptance_evaluation_resubmit".into()
+        )
+    );
+    // Nor is that environment where the run was last seen: an evaluation cut
+    // after it judged R2, and a quiet observation at R2 leaves it fresh.
+    let fourth = cut(store, &work);
+    let judged_fourth = record(store, &judged(&work, &note, fourth, None, 40))
+        .expect("a re-read resubmission records");
+    host.report(store, &[(false, Some("content-revision-2"))], 41);
+    assert_eq!(
+        freshness(store, &work),
+        Some((judged_fourth.evaluation.clone(), None))
+    );
+}
+
+// B20, B31: a quiet observation alone at another revision voids the
+// evaluation.
+#[test]
+fn an_observation_alone_at_another_revision_voids_the_evaluation() {
+    let mut fixture = fixture("project-basis-quiet-record");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    disable_obligation_rules(store, 6);
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    host.checkpoint(store, true, None, 20);
+    let first = cut(store, &work);
+    let judged_first = record(store, &judged(&work, &note, first, None, 25))
+        .expect("an evaluation of the changed source records");
+
+    // Observations at the judged revision, or with none, move nothing.
+    host.report(
+        store,
+        &[(false, Some("content-revision-1")), (false, None)],
+        26,
+    );
+    assert_eq!(
+        freshness(store, &work),
+        Some((judged_first.evaluation.clone(), None))
+    );
+    // One at another revision voids it, though it claims no change.
+    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    assert_eq!(
+        freshness(store, &work),
+        Some((
+            judged_first.evaluation.clone(),
+            Some(AcceptanceStaleReason::Mutation)
+        ))
+    );
+    assert_eq!(
+        moved(record(
+            store,
+            &judged_again(&work, &note, first, None, "after-the-quiet-move", 31)
+        )),
+        (
+            EvaluationBasisMove::SourceChanged,
+            "acceptance_evaluation_void".into()
+        )
+    );
+
+    // An environment record describes a check, at whatever revision that
+    // check ran on: it asks for a resubmission and never voids.
+    let second = cut(store, &work);
+    record(store, &judged(&work, &note, second, None, 35))
+        .expect("an evaluation of the moved source records");
+    host.capture_environment(store, "content-revision-3", 36);
+    assert_eq!(
+        moved(record(
+            store,
+            &judged_again(&work, &note, second, None, "after-the-environment", 39)
+        )),
+        (
+            EvaluationBasisMove::CheckRecorded,
+            "acceptance_evaluation_resubmit".into()
+        )
+    );
+    // Nor does it set the revision the run was last seen at: an evaluation
+    // cut after it still judged R2.
+    let third = cut(store, &work);
+    let judged_third = record(store, &judged(&work, &note, third, None, 40))
+        .expect("a re-read resubmission records");
+    host.report(store, &[(false, Some("content-revision-2"))], 41);
+    assert_eq!(
+        freshness(store, &work),
+        Some((judged_third.evaluation.clone(), None))
+    );
+}
+
+// B20, B31: a quiet sighting is compared with the declared revision,
+// whatever workspace reported it.
+#[test]
+fn a_quiet_record_is_compared_with_the_declared_revision_in_any_workspace() {
+    let mut fixture = fixture("project-basis-quiet-declared");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    disable_obligation_rules(store, 6);
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    host.checkpoint(store, true, None, 20);
+    let read = cut(store, &work);
+    // The evaluator declares it judged R2, which the host has not reported
+    // yet; the run was last seen at R1.
+    let declared = judged_again(
+        &work,
+        &note,
+        read,
+        Some(revision("content-revision-2", Some("workspace-evaluated"))),
+        "declared",
+        25,
+    );
+    let recorded = record(store, &declared).expect("the declared evaluation records");
+    host.report(store, &[(false, Some("content-revision-2"))], 26);
+    assert_eq!(
+        freshness(store, &work),
+        Some((recorded.evaluation.clone(), None)),
+        "the declared revision is what was judged"
+    );
+    // Without that declaration, the same record moves the basis.
+    assert_eq!(
+        moved(record(
+            store,
+            &judged_again(&work, &note, read, None, "undeclared", 29)
+        )),
+        (
+            EvaluationBasisMove::SourceChanged,
+            "acceptance_evaluation_void".into()
+        )
+    );
+    // The revision fingerprints the full content, so a record from another
+    // workspace is compared too: at the declared revision it moves nothing.
+    host.basis.workspace_id = "another-workspace".into();
+    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    assert_eq!(
+        freshness(store, &work),
+        Some((recorded.evaluation.clone(), None))
+    );
+    // At R1 it is a move, in whatever workspace, though R1 is the revision
+    // the run was last seen at when the basis was cut.
+    host.report(store, &[(false, Some("content-revision-1"))], 34);
+    assert_eq!(
+        freshness(store, &work),
+        Some((
+            recorded.evaluation.clone(),
+            Some(AcceptanceStaleReason::Mutation)
+        ))
+    );
+}
+
+// B20: with no declared revision, a quiet sighting is compared with the
+// revision the run was last seen at when the cut was taken.
+#[test]
+fn a_quiet_record_is_compared_with_the_revision_last_seen_at_the_cut() {
+    let mut fixture = fixture("project-basis-quiet-last-seen");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    disable_obligation_rules(store, 6);
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    // With no revision seen at the cut and none declared, there is nothing
+    // to compare a quiet record with.
+    let blind = cut(store, &work);
+    let unanchored = record(store, &judged(&work, &note, blind, None, 15))
+        .expect("an evaluation before any revision records");
+    host.report(store, &[(false, Some("content-revision-1"))], 16);
+    assert_eq!(
+        freshness(store, &work),
+        Some((unanchored.evaluation.clone(), None))
+    );
+
+    // A change to R1, then a quiet move to R2 before the cut: the evaluation
+    // judged R2, the revision the run was last seen at, not the newest
+    // reported change.
+    host.report(store, &[(true, Some("content-revision-1"))], 20);
+    host.report(store, &[(false, Some("content-revision-2"))], 24);
+    let read = cut(store, &work);
+    let recorded = record(
+        store,
+        &judged_again(&work, &note, read, None, "after-the-quiet-move", 28),
+    )
+    .expect("the evaluation records");
+    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    assert_eq!(
+        freshness(store, &work),
+        Some((recorded.evaluation.clone(), None))
+    );
+    host.report(store, &[(false, Some("content-revision-1"))], 34);
+    assert_eq!(
+        freshness(store, &work),
+        Some((
+            recorded.evaluation.clone(),
+            Some(AcceptanceStaleReason::Mutation)
+        ))
+    );
+}
+
+// B20, B31: a late report of a change to the declared revision re-anchors
+// the source, so earlier sightings of another revision no longer count, and
+// the same judgment still records at its cut.
+#[test]
+fn a_late_report_ending_at_the_declared_revision_re_anchors_earlier_sightings() {
+    let mut fixture = fixture("project-basis-quiet-re-anchor");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    disable_obligation_rules(store, 6);
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    host.report(store, &[(true, Some("content-revision-0"))], 20);
+    // Mid-turn, after a check at R0 and an edit to R1, the evaluator judges
+    // R1 and declares it; the host reports that turn only when it ends.
+    let read = cut(store, &work);
+    let recorded = record(
+        store,
+        &judged_again(
+            &work,
+            &note,
+            read,
+            Some(revision("content-revision-1", None)),
+            "declared",
+            25,
+        ),
+    )
+    .expect("the declared evaluation records");
+    // The host lists the turn in the order it saw it: the check at R0, then
+    // the change to R1. The earlier sighting is older than that change.
+    host.report(
+        store,
+        &[
+            (false, Some("content-revision-0")),
+            (true, Some("content-revision-1")),
+        ],
+        26,
+    );
+    assert_eq!(
+        freshness(store, &work),
+        Some((recorded.evaluation.clone(), None))
+    );
+    let resubmitted = record(
+        store,
+        &judged_again(
+            &work,
+            &note,
+            read,
+            Some(revision("content-revision-1", None)),
+            "declared-after-the-report",
+            29,
+        ),
+    )
+    .expect("the same judgment still records at its cut");
+    // A sighting of R0 after that change is a move back.
+    host.report(store, &[(false, Some("content-revision-0"))], 30);
+    assert_eq!(
+        freshness(store, &work),
+        Some((
+            resubmitted.evaluation.clone(),
+            Some(AcceptanceStaleReason::Mutation)
+        ))
+    );
+}
+
+// B20: the newest sighting that carries a revision decides where the source
+// is.
+#[test]
+fn the_newest_sighting_decides_where_the_source_is() {
+    let mut fixture = fixture("project-basis-quiet-newest");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    disable_obligation_rules(store, 6);
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    host.report(store, &[(true, Some("content-revision-0"))], 20);
+    // Someone else's edit to R1, which the host does not flag, and the
+    // evaluator judges R1 and declares it.
+    let read = cut(store, &work);
+    let declared = record(
+        store,
+        &judged_again(
+            &work,
+            &note,
+            read,
+            Some(revision("content-revision-1", None)),
+            "declared",
+            25,
+        ),
+    )
+    .expect("the declared evaluation records");
+    // The turn lists a check before the edit and one after it: the source
+    // ended where it was judged.
+    host.report(
+        store,
+        &[
+            (false, Some("content-revision-0")),
+            (false, Some("content-revision-1")),
+            (false, None),
+        ],
+        26,
+    );
+    assert_eq!(
+        freshness(store, &work),
+        Some((declared.evaluation.clone(), None))
+    );
+    host.report(store, &[(false, Some("content-revision-2"))], 30);
+    assert_eq!(
+        freshness(store, &work),
+        Some((
+            declared.evaluation.clone(),
+            Some(AcceptanceStaleReason::Mutation)
+        ))
+    );
+
+    // Undeclared, the source moved away and back to the revision last seen
+    // at the cut: the newest sighting is where it was judged.
+    let second = cut(store, &work);
+    let undeclared = record(
+        store,
+        &judged_again(&work, &note, second, None, "undeclared", 35),
+    )
+    .expect("an evaluation of R2 records");
+    host.report(
+        store,
+        &[
+            (false, Some("content-revision-3")),
+            (false, Some("content-revision-2")),
+        ],
+        36,
+    );
+    assert_eq!(
+        freshness(store, &work),
+        Some((undeclared.evaluation.clone(), None))
+    );
+    host.report(store, &[(false, Some("content-revision-3"))], 40);
+    assert_eq!(
+        freshness(store, &work),
+        Some((
+            undeclared.evaluation.clone(),
+            Some(AcceptanceStaleReason::Mutation)
+        ))
+    );
 }

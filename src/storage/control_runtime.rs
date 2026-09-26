@@ -1025,8 +1025,8 @@ impl SqliteStore {
                     })?;
                     // The revision decides a source change: a reported change
                     // that leaves the revision where this run last saw it is
-                    // not one, so it neither opens a tests obligation nor
-                    // moves an evaluation's basis.
+                    // not one, so it opens no tests obligation. Evaluation
+                    // freshness still compares the revision it carries.
                     let source_changed = input.source_changed
                         && !work::source_revision_repeats_on(
                             &transaction,

@@ -555,16 +555,28 @@ impl HostSession {
 
     /// One turn that records only verification evidence, citing a producer
     /// observation recorded in an earlier turn, which carries that
-    /// producer's older revision at a new feed position.
-    fn cite_earlier_producer(&mut self, store: &mut SqliteStore, producer: &ObjectId, second: i64) {
+    /// producer's older revision at a new feed position. With
+    /// `environment_at`, the same checkpoint also records the check's
+    /// environment, which must carry the producer's revision too.
+    fn cite_earlier_producer(
+        &mut self,
+        store: &mut SqliteStore,
+        producer: &ObjectId,
+        environment_at: Option<&str>,
+        second: i64,
+    ) {
         let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
         self.begin(store, &grant, second + 1);
+        let environments: Vec<EnvironmentEvidenceInput> = environment_at
+            .map(|revision| self.environment(revision, second))
+            .into_iter()
+            .collect();
         let verification = VerificationEvidenceInput {
             producer_observation: ExecutionObservationReference::ObjectId {
                 object_id: producer.clone(),
             },
             check_kind: VerificationKind::Build,
-            environment: None,
+            environment: environment_at.map(|_| EnvironmentEvidenceReference::Index { index: 0 }),
             summary: Some("host observed an earlier build".into()),
             refs: vec!["command:build".into()],
         };
@@ -578,7 +590,7 @@ impl HostSession {
                 TurnNextIntent::Continue,
                 &[],
                 std::slice::from_ref(&verification),
-                &[],
+                &environments,
                 &self.key("checkpoint"),
                 at(second + 2),
             )
@@ -592,18 +604,15 @@ impl HostSession {
         );
     }
 
-    /// One turn that records only environment evidence, captured at
-    /// `revision`: no execution observation, no check.
-    fn capture_environment(&mut self, store: &mut SqliteStore, revision: &str, second: i64) {
-        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
-        self.begin(store, &grant, second + 1);
+    /// The environment of a check that ran on `revision`.
+    fn environment(&self, revision: &str, second: i64) -> EnvironmentEvidenceInput {
         let components = EnvironmentComponents {
             toolchain: "rustc-test".into(),
             sandbox: Some("test-host-sandbox".into()),
             workspace_id: self.basis.workspace_id.clone(),
             capability_map_revision: 1,
         };
-        let environment = EnvironmentEvidenceInput {
+        EnvironmentEvidenceInput {
             source_basis: ExecutionSourceBasis {
                 workspace_id: self.basis.workspace_id.clone(),
                 source_revision: revision.into(),
@@ -614,7 +623,15 @@ impl HostSession {
                 .clone(),
             components: Some(components),
             observed_at: at(second + 1),
-        };
+        }
+    }
+
+    /// One turn that records only environment evidence, captured at
+    /// `revision`: no execution observation, no check.
+    fn capture_environment(&mut self, store: &mut SqliteStore, revision: &str, second: i64) {
+        let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
+        self.begin(store, &grant, second + 1);
+        let environment = self.environment(revision, second);
         let checkpointed = store
             .checkpoint_control_turn_with_evidence(
                 &self.project_id,
