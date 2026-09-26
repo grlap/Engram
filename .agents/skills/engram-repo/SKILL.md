@@ -536,4 +536,6 @@ and freeze the corrected input for review. After clean acceptance, record the
 delivered outcome and complete owned implementation items when their obligations
 are satisfied. Pause only for a real blocker, disputed acceptance, or a decision
 outside the agreed scope or authority; reviewer leaves remain read-only.
-Do not commit, push, or sync remotes without explicit authority.
+Do not commit, push, or sync remotes without explicit authority: Greg's word
+or, for commit, push and install only, the standing approval in AGENTS.md
+"Authority and Git".

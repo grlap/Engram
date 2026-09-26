@@ -29,6 +29,8 @@ Fix the Engram work item whose ref is supplied in `$ARGUMENTS`.
    independent root with a provenance note.
 9. `engram work note` the validation evidence, then `engram work done` with
    what was delivered; it tells you if anything is still owed. Never commit,
-   push, or sync without explicit authority.
+   push, or sync without explicit authority: Greg's word or, for commit,
+   push and install only, the standing approval in AGENTS.md "Authority and
+   Git".
 
 If `$ARGUMENTS` is omitted, run `engram work next` and ask which bug to take.

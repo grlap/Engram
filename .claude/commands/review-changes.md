@@ -17,7 +17,8 @@ Engram. Delegate review only to the two `/review-code` children, both with
 runner as described below; it does not become a reviewer or validation owner.
 
 **Never commit, push, rebase, or sync remotes without explicit user
-authority.**
+authority.** That is Greg's word or, for commit, push and install only, the
+standing approval in AGENTS.md "Authority and Git".
 
 This workflow requires TermAl MCP delegation tools. Attempt exactly two review
 child spawns: one Codex and one Claude. Do not substitute platform subagents,

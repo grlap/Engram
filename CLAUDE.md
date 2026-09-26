@@ -32,7 +32,29 @@ their presence in a file alone does not prove delivery.
 ### Authority and Git
 
 - Never commit, push, rebase, or force-push without explicit user
-  permission. Read-only Git inspection is always allowed.
+  permission. Read-only Git inspection is always allowed. The standing
+  approval below is such permission for commit, push and install only; it
+  never covers a rebase, force-push or history rewrite.
+- Standing approval (Greg, 2026-09-26): once all of these hold, commit
+  the changeset without asking, push and install it as described below,
+  and report the landed commit to Greg afterwards:
+  - the full gate passes on the exact tree being committed, its input
+    fingerprint checks at completion, and nothing was edited since;
+  - the latest review round from both Codex and Claude, read-only on a
+    verified freeze of that same tree, is clean, and every finding from
+    earlier rounds, Low and Note included, was fixed and reviewed again;
+    a finding left unfixed, even one rejected on evidence, goes to Greg;
+  - the changeset delivers its items' acceptance criteria, and a
+    criterion bound to host-observed evidence has that evidence;
+  - before committing, the changeset was judged as the next rule
+    describes, and `readiness` with the new build reported every live
+    store ready.
+
+  Otherwise stop and ask Greg before committing: when a store needs
+  projection repair or migration, a criterion cannot be met or is
+  disputed, the changeset goes beyond its items' scope, a rebase,
+  force-push or history rewrite is needed, or a reviewer is unavailable
+  (an unavailable review is not a clean review).
 - Greg's word "commit" for a presented changeset also authorizes pushing
   it and installing its build (2026-09-23). `readiness` checks only schema
   and policy admission, so first judge the changeset itself. When it
@@ -404,5 +426,6 @@ engram work forget KEY
 - Never place work refs in source comments, identifiers, or docs prose.
 
 At session end: run the quality gates if code changed, update your Engram
-items (`note`, `done`), report changed files and validation, and wait for
-explicit authority before any commit or push.
+items (`note`, `done`), and report changed files and validation. Commit or
+push only on Greg's explicit word or under the standing approval in
+Authority and Git.

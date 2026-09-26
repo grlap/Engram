@@ -337,8 +337,10 @@ briefs explain.
 ## Git policy
 
 Conservative by default: **no commits or pushes without explicit
-authorization.** At handoff, report changed files, validation performed, and
-proposed next commands, then wait.
+authorization**, which is Greg's word or, for commit, push and install, the
+standing approval in [AGENTS.md](../AGENTS.md#authority-and-git). Without
+either, at handoff report changed files, validation performed, and proposed
+next commands, then wait.
 
 ## Review cadence
 
