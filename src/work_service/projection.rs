@@ -840,6 +840,7 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
         evidence,
         waived_by,
         untested_change: None,
+        reported_source_change: None,
         guidance,
     }
 }
@@ -859,7 +860,10 @@ pub(super) fn work_obligation_page(
     disclosed_work_obligation_page(store, store.work_run_obligations(run.run_id)?)
 }
 
+/// The obligations a refused completion answers with, read from the state
+/// before completion's own waivers, disclosed like any other page.
 pub(super) fn work_completion_recovery_page(
+    store: &SqliteStore,
     snapshot: &CompletionRecoverySnapshot,
 ) -> Result<WorkObligationPage, StoreError> {
     let state = matches!(
@@ -873,7 +877,7 @@ pub(super) fn work_completion_recovery_page(
         .filter(|record| state.is_none_or(|expected| record.state == expected))
         .cloned()
         .collect();
-    work_obligation_page_from_records(records)
+    disclosed_work_obligation_page(store, records)
 }
 
 pub(super) fn sealed_work_obligation_page(
@@ -913,6 +917,8 @@ pub(super) fn sealed_work_obligation_page(
     disclosed_work_obligation_page(store, records)
 }
 
+/// The bounded page of `records` alone, for tests of the bounds.
+#[cfg(test)]
 pub(super) fn work_obligation_page_from_records(
     records: Vec<crate::storage::WorkObligationRecord>,
 ) -> Result<WorkObligationPage, StoreError> {
@@ -934,9 +940,12 @@ fn records_untested_change(
         && crate::control::is_stock_source_change_obligation(rule, requirement)
 }
 
-/// The bounded page of `records` that also names, on each waived obligation
-/// of the stock source-change rule, the change no matching passing test
-/// followed, and counts every such change on the run.
+/// The bounded page of `records` that also says, on every obligation of the
+/// stock source-change rule, how the host reported the change that opened
+/// it; names, on each waived one, the change no matching passing test
+/// followed; and counts every such change on the run. It loads the
+/// triggering observation of each such obligation, so a missing one fails
+/// the page whatever the obligation's state.
 pub(super) fn disclosed_work_obligation_page(
     store: &SqliteStore,
     records: Vec<crate::storage::WorkObligationRecord>,
@@ -954,22 +963,27 @@ pub(super) fn disclosed_work_obligation_page(
     let mut page = count_bounded_work_obligation_page(records);
     page.untested_total = untested_total;
     for item in &mut page.items {
-        if !records_untested_change(item.state, &item.rule, &item.requirement) {
+        if !crate::control::is_stock_source_change_obligation(&item.rule, &item.requirement) {
             continue;
         }
         let change: crate::domain::ExecutionObservation =
             store.get(&item.triggering_observation)?.ok_or_else(|| {
                 StoreError::InvalidWorkProjection(format!(
-                    "waived source-change obligation {} has no canonical change observation",
+                    "source-change obligation {} has no canonical change observation",
                     item.obligation_id.0
                 ))
             })?;
+        item.reported_source_change = change.reported_source_change;
+        if !records_untested_change(item.state, &item.rule, &item.requirement) {
+            continue;
+        }
         item.untested_change = Some(super::UntestedSourceChange {
             observation_id: compact_text(&change.observation_id),
             source_revision: change
                 .source_basis
                 .map(|basis| compact_text(&basis.source_revision)),
             observed_at: change.observed_at,
+            reported_source_change: change.reported_source_change,
         });
     }
     while serde_json::to_vec(&page)?.len() > MAX_OBLIGATION_PAGE_BYTES

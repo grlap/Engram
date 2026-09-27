@@ -112,6 +112,7 @@ fn page(kind: VerificationKind, state: WorkObligationState) -> WorkObligationPag
             evidence: None,
             waived_by: None,
             untested_change: None,
+            reported_source_change: None,
             guidance: WorkObligationGuidance::RecordVerificationThenCheckpoint { requirement },
         }],
         omitted_count: 0,

@@ -286,6 +286,7 @@ fn completion_seals_a_tested_source_change_as_the_exact_terminal_basis() {
         effect: EffectClass::MutateLocal,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,
+        reported_source_change: None,
         obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: Some(source_basis.clone()),
         observed_at: Some(at(3)),
@@ -327,6 +328,7 @@ fn completion_seals_a_tested_source_change_as_the_exact_terminal_basis() {
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,
+        reported_source_change: None,
         obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: Some(source_basis.clone()),
         observed_at: Some(at(7)),
@@ -693,6 +695,7 @@ fn open_completion_obligation_refusal_is_bounded_and_counts_omissions() {
                 effect: EffectClass::MutateLocal,
                 outcome: ExecutionOutcome::Succeeded,
                 source_changed: true,
+                reported_source_change: None,
                 obligation_rule_set: active_rule_set_id(&transaction),
                 source_basis: Some(ExecutionSourceBasis {
                     workspace_id: "workspace-bounded".into(),
@@ -797,6 +800,9 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
                 effect: EffectClass::MutateLocal,
                 outcome: ExecutionOutcome::Succeeded,
                 source_changed: true,
+                reported_source_change: Some(
+                    crate::domain::SourceChangeDetection::AssumedMissingBaseline,
+                ),
                 obligation_rule_set: active_rule_set_id(&transaction),
                 source_basis: Some(source_basis.clone()),
                 observed_at: Some(at(3)),
@@ -874,6 +880,15 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
         &refusal.obligation_page.items[1].rule,
         &refusal.obligation_page.items[1].requirement,
     ));
+    // The refusal page says how the host found the change, like every page.
+    assert_eq!(
+        refusal.obligation_page.items[1].reported_source_change,
+        Some(crate::domain::SourceChangeDetection::AssumedMissingBaseline)
+    );
+    assert_eq!(
+        refusal.obligation_page.items[0].reported_source_change,
+        None
+    );
     assert_eq!(
         refusal.obligation_page.items[0].obligation_id,
         expected_obligation.obligation.obligation_id
@@ -1028,6 +1043,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
                 effect: EffectClass::Observe,
                 outcome: ExecutionOutcome::Succeeded,
                 source_changed: false,
+                reported_source_change: None,
                 obligation_rule_set: active_rule_set_id(&store.connection),
                 source_basis: Some(source_basis.clone()),
                 observed_at: Some(at(11)),
@@ -1122,6 +1138,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         },
         outcome: ExecutionOutcome::Succeeded,
         source_changed,
+        reported_source_change: None,
         obligation_rule_set: rule_set.clone(),
         source_basis: basis,
         observed_at: Some(at_time),

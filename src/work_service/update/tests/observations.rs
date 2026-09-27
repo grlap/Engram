@@ -668,6 +668,19 @@ fn host_turn_changing_source(
     key: &str,
     second: i64,
 ) {
+    host_turn_changing_source_detected(database, binding, key, second, None, None);
+}
+
+/// `host_turn_changing_source` with the host's word on how it found the
+/// change.
+fn host_turn_changing_source_detected(
+    database: &std::path::Path,
+    binding: &crate::ControlWorkBinding,
+    key: &str,
+    second: i64,
+    reported_source_change: Option<crate::SourceChangeDetection>,
+    actor_context: Option<&str>,
+) {
     use crate::domain::{
         EffectClass, ExecutionObservationInput, ExecutionOutcome, ExecutionSourceBasis,
         ResourceCoverage, ResourceSubject, TurnIntent, TurnNextIntent, TurnPurpose,
@@ -686,7 +699,16 @@ fn host_turn_changing_source(
         session_id: Some(holder.clone()),
         source_tool: Some("host-control:bind".into()),
         source_skill: None,
-        provenance_chain: Vec::new(),
+        // The links the host records for its actor context, which the
+        // compact next line prints in the peer label.
+        provenance_chain: actor_context
+            .map(|context| crate::domain::ProvenanceLink {
+                relation: crate::domain::ProvenanceRelation::DerivedFrom,
+                source: context.into(),
+                reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+            })
+            .into_iter()
+            .collect(),
         reason: "bind the focused claim".into(),
     };
     let bound = host
@@ -757,9 +779,11 @@ fn host_turn_changing_source(
             effect: EffectClass::MutateLocal,
             outcome: ExecutionOutcome::Succeeded,
             source_changed: true,
+            reported_source_change,
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace".into(),
-                source_revision: format!("after-{key}"),
+                // As long as a host's content fingerprint.
+                source_revision: format!("content-v1:{key:0>64}"),
             }),
             observed_at: Some(at(second + 3)),
         }],
@@ -892,6 +916,57 @@ fn a_non_holder_note_leaves_focus_and_the_next_turn_on_the_focused_claim() {
     assert_eq!(records_on(&database, "execution_observation", &second), 1);
     assert_eq!(records_on(&database, "execution_observation", &other), 0);
     assert_eq!(records_on(&database, "execution_observation", &first), 0);
+}
+
+/// The host's word on a change reaches a peer through the bounded `next`
+/// line, whatever the length of the host's actor context or the revision.
+#[test]
+fn a_peer_reads_how_the_host_found_a_change_in_its_next_line() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("work.db");
+    let session = service(&database, "holder");
+    let work = proposed_root(
+        session
+            .work_propose(root_input("watched", "watched"), at(0))
+            .unwrap(),
+    );
+    claim(&session, &work.short_ref, 1);
+    let binding = focused_binding(&session, at(2));
+    // A peer's `next`, as CLI and MCP print it. Its first call settles its
+    // delivery position; the host's turn then arrives as a change by others.
+    let peer = crate::verbs::AgentVerbs::new(
+        database.clone(),
+        ProjectId("observation-test".into()),
+        "peer-actor".into(),
+        SessionId("peer".into()),
+        None,
+    );
+    peer.next(&crate::verbs::NextInput::default(), at(2))
+        .expect("peer next before the turn");
+    host_turn_changing_source_detected(
+        &database,
+        &binding,
+        "edit",
+        3,
+        Some(crate::SourceChangeDetection::ContentComparison),
+        Some("agent=claude;model=claude-opus-5-5[1m];reasoning=high"),
+    );
+    // The line is bounded at 96 bytes and the work ref, kind and peer label
+    // take most of it, so the change and the host's word come first and in
+    // one word each.
+    let receipt = peer
+        .next(&crate::verbs::NextInput::default(), at(4))
+        .expect("peer next");
+    let text = receipt.text();
+    assert!(
+        text.contains("execution_observation: changed: compared"),
+        "the bounded line keeps the host's word: {text}"
+    );
+    // The attribution, with its context, follows the text on that line.
+    assert!(
+        text.contains("Succeeded by "),
+        "the attribution follows the change: {text}"
+    );
 }
 
 /// Engram cannot tell which claim a file belongs to: a host reports each

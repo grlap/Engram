@@ -2587,7 +2587,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ],
     });
     const untestedLine =
-      "untested source change: untested-source-mutation (source revision untested-revision-1); no matching passing test followed it";
+      "untested source change: untested-source-mutation (source revision untested-revision-1; detection not reported); no matching passing test followed it";
     const untestedDone = spawnSync(
       binary,
       [

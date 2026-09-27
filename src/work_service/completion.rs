@@ -299,7 +299,7 @@ impl LocalWorkService {
             Ok(acceptance) => acceptance,
             Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) => {
                 let snapshot = store.work_completion_recovery(&work, &claim, now, &cause)?;
-                let obligation_page = work_completion_recovery_page(&snapshot)?;
+                let obligation_page = work_completion_recovery_page(&store, &snapshot)?;
                 let result = completion_recovery_result(
                     work.work_id,
                     snapshot.recovery,
@@ -323,7 +323,7 @@ impl LocalWorkService {
         )? {
             crate::storage::AcceptanceEvaluationReadiness::Blocked(cause) => {
                 let snapshot = store.work_completion_recovery(&work, &claim, now, &cause)?;
-                let obligation_page = work_completion_recovery_page(&snapshot)?;
+                let obligation_page = work_completion_recovery_page(&store, &snapshot)?;
                 return Ok(completion_recovery_result(
                     work.work_id,
                     snapshot.recovery,
@@ -380,7 +380,7 @@ impl LocalWorkService {
         let result = match completion? {
             CompleteWorkStorageResult::Completed(seal) => completion_result(&store, &seal)?,
             CompleteWorkStorageResult::Recovery(snapshot) => {
-                let obligation_page = work_completion_recovery_page(&snapshot)?;
+                let obligation_page = work_completion_recovery_page(&store, &snapshot)?;
                 let result = completion_recovery_result(
                     work.work_id,
                     snapshot.recovery,

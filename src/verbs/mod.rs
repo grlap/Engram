@@ -248,8 +248,18 @@ fn collapsed_changes(
                 )
             })
             .unwrap_or_default();
+        // A source change is what a peer must not lose to the line bound,
+        // and the attribution can be long, so it comes after the text there.
+        let line = if matches!(
+            kind.as_str(),
+            "execution_observation" | "untested_source_change"
+        ) {
+            format!("{subject} {verb}: {}{actor}", short(text))
+        } else {
+            format!("{subject} {verb}{actor}: {}", short(text))
+        };
         lines.push(next_context::CompactChange {
-            line: format!("{subject} {verb}{actor}: {}", short(text)),
+            line,
             attribution: format!("{subject} {verb}{actor}"),
             note: matches!(kind.as_str(), "evidence" | "checkpoint")
                 .then(|| (subject.clone(), change.entry.object_id.as_str().into())),

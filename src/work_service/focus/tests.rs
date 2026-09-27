@@ -602,6 +602,7 @@ fn execution_observation_has_a_compact_agent_work_projection() {
         effect: crate::EffectClass::MutateLocal,
         outcome: crate::ExecutionOutcome::Succeeded,
         source_changed: true,
+        reported_source_change: None,
         obligation_rule_set: ObjectId::from_canonical_bytes(b"obligation-rule-set"),
         source_basis: Some(crate::ExecutionSourceBasis {
             workspace_id: "workspace-a".into(),
@@ -627,7 +628,7 @@ fn execution_observation_has_a_compact_agent_work_projection() {
         &project,
         Some(work.root_id),
         "execution_observation",
-        serde_json::to_value(observation).expect("observation json"),
+        serde_json::to_value(&observation).expect("observation json"),
         None,
     )
     .expect("agent projection");
@@ -638,6 +639,51 @@ fn execution_observation_has_a_compact_agent_work_projection() {
     assert_eq!(summary.change_kind, "execution_observation");
     assert!(summary.summary.contains("MutateLocal Succeeded"));
     assert!(!summary.summary.contains("write source"));
+    // A host that did not say how it found the change adds nothing; one
+    // that said is quoted with the protocol's spelling, first in the line.
+    assert!(
+        summary.summary.starts_with("changed; "),
+        "{}",
+        summary.summary
+    );
+    let mut said = observation;
+    said.reported_source_change = Some(crate::SourceChangeDetection::ContentComparison);
+    let WorkChangeProjection::Visible(summary) = agent_change_object(
+        &store,
+        &project,
+        Some(work.root_id),
+        "execution_observation",
+        serde_json::to_value(&said).expect("observation json"),
+        None,
+    )
+    .expect("agent projection") else {
+        panic!("execution observation must remain visible");
+    };
+    assert!(
+        summary.summary.starts_with("changed: compared; "),
+        "{}",
+        summary.summary
+    );
+    // The core may read the host's report as a repeated revision; the
+    // summary then keeps both facts apart.
+    let mut repeated = said;
+    repeated.source_changed = false;
+    let WorkChangeProjection::Visible(summary) = agent_change_object(
+        &store,
+        &project,
+        Some(work.root_id),
+        "execution_observation",
+        serde_json::to_value(repeated).expect("observation json"),
+        None,
+    )
+    .expect("agent projection") else {
+        panic!("execution observation must remain visible");
+    };
+    assert!(
+        summary.summary.starts_with("repeat; host: compared; "),
+        "{}",
+        summary.summary
+    );
 }
 
 #[test]

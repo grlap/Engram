@@ -808,6 +808,7 @@ fn task_only_control_checkpoint_cannot_append_execution_observations() {
             effect: EffectClass::Observe,
             outcome: crate::domain::ExecutionOutcome::Succeeded,
             source_changed: false,
+            reported_source_change: None,
             source_basis: None,
             observed_at: None,
         }],

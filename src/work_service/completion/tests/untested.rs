@@ -171,6 +171,107 @@ fn peers_read_a_completion_waiver_as_the_untested_change() {
 }
 
 #[test]
+fn how_the_host_found_a_change_is_shown_on_its_obligation_open_and_waived() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("engram.sqlite3");
+    let project = ProjectId("detected-untested".into());
+    let service = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("detected-session".into()),
+        Some("protocol-test".into()),
+    );
+    let root = proposed_root(
+        service
+            .work_propose(root_input("Detected change", "detected-root"), at(0))
+            .expect("root"),
+    );
+    service
+        .work_update(
+            WorkUpdateInput::Claim {
+                ttl_seconds: Some(3_600),
+                recovery_reason: None,
+                idempotency_key: "detected-claim".into(),
+            },
+            at(1),
+        )
+        .expect("claim");
+    SqliteStore::open(&database)
+        .expect("fixture store")
+        .append_detected_source_change_fixture(
+            root.work_id,
+            "detected",
+            at(2),
+            "detected-revision",
+            crate::SourceChangeDetection::ContentComparison,
+        );
+    // While the obligation is open the page already says how the host
+    // found the change, and names no untested change yet.
+    let open = service
+        .inspect_work(&root.short_ref, at(3))
+        .expect("focus view")
+        .obligation_page;
+    assert_eq!(open.items.len(), 1);
+    assert_eq!(
+        open.items[0].reported_source_change,
+        Some(crate::SourceChangeDetection::ContentComparison)
+    );
+    assert!(open.items[0].untested_change.is_none());
+
+    let WorkCompleteResult::Completed(receipt) = service
+        .work_complete(
+            completion_input("delivered detected", "detected-completion"),
+            at(4),
+        )
+        .expect("complete")
+    else {
+        panic!("an untested change must not refuse completion");
+    };
+    let waived = &receipt.obligation_page.items[0];
+    assert_eq!(
+        waived.reported_source_change,
+        Some(crate::SourceChangeDetection::ContentComparison)
+    );
+    let change = waived
+        .untested_change
+        .as_ref()
+        .expect("the untested change");
+    assert_eq!(
+        change.reported_source_change,
+        Some(crate::SourceChangeDetection::ContentComparison)
+    );
+    // Peers read the waiver as the change, with the host's word first, so
+    // that the bounded next line keeps it before a long id or revision.
+    let store = service.store().expect("store");
+    let resolution = store
+        .work_run_obligations(receipt.run_id)
+        .expect("obligations")
+        .pop()
+        .and_then(|record| record.resolution_id)
+        .expect("the completion waiver");
+    let object: serde_json::Value = store
+        .get(&resolution)
+        .expect("load waiver")
+        .expect("canonical waiver");
+    let WorkChangeProjection::Visible(delta) = agent_change_object(
+        &store,
+        &project,
+        Some(root.work_id),
+        "work_obligation_resolution",
+        object,
+        None,
+    )
+    .expect("peer projection") else {
+        panic!("the untested change must be visible to peers");
+    };
+    assert_eq!(
+        delta.summary,
+        "host said content_comparison; write-detected (source revision detected-revision); waiver attributed to agent"
+    );
+}
+
+#[test]
 fn interrupted_no_capture_completion_with_links_replays_after_an_untested_change() {
     let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");

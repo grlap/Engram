@@ -1044,6 +1044,7 @@ impl SqliteStore {
                         effect: input.effect,
                         outcome: input.outcome,
                         source_changed,
+                        reported_source_change: input.reported_source_change,
                         obligation_rule_set: obligation_rule_set.clone(),
                         source_basis: input.source_basis.clone(),
                         observed_at: input.observed_at,
@@ -1277,6 +1278,27 @@ fn validate_execution_observation_inputs(
             return Err(StoreError::InvalidControlProjection(format!(
                 "execution observation {id:?} reports a source mutation for a non-mutation effect"
             )));
+        }
+        if let Some(detection) = observation.reported_source_change {
+            if !observation.source_changed {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "execution observation {id:?} says how a source change was established ({}) and reports no change",
+                    detection.as_str()
+                )));
+            }
+            let watcher = detection == crate::domain::SourceChangeDetection::WatcherOnly;
+            if observation.source_basis.is_none() && !watcher {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "execution observation {id:?} reports {} without the source basis it was taken at",
+                    detection.as_str()
+                )));
+            }
+            if observation.source_basis.is_some() && watcher {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "execution observation {id:?} reports {} with a source basis, which that value says could not be taken",
+                    detection.as_str()
+                )));
+            }
         }
         match (&observation.source_basis, observation.observed_at) {
             (None, None) => {}

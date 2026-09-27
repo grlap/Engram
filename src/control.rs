@@ -1302,6 +1302,7 @@ mod tests {
             effect: EffectClass::MutateLocal,
             outcome: crate::domain::ExecutionOutcome::Succeeded,
             source_changed: true,
+            reported_source_change: None,
             obligation_rule_set: hash("obligation rule set"),
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
@@ -1322,6 +1323,7 @@ mod tests {
             effect: EffectClass::Observe,
             outcome: crate::domain::ExecutionOutcome::Succeeded,
             source_changed: false,
+            reported_source_change: None,
             obligation_rule_set: hash("obligation rule set"),
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-b".into(),

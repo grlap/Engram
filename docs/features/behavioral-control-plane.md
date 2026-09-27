@@ -399,6 +399,21 @@ The shipped path accepts execution observations directly on the host-private
 `turn_checkpoint` request. Each observation names an action fingerprint,
 effect, outcome, and whether source state changed. It may also carry
 `source_basis { workspace_id, source_revision }` and `observed_at`.
+With a reported change it may also say how the host established it, as
+`reported_source_change`: `content_comparison`, two content revisions
+were compared and differed; `assumed_missing_baseline`, the earlier
+revision was missing and the change is assumed; `watcher_only`, no closing
+revision could be taken and file notifications decided. The value is the
+host's word about its own method, stored as said; the core cannot check it
+and reads nothing into it: every value opens what a change opens. A value
+with `source_changed=false`, `content_comparison` or
+`assumed_missing_baseline` without a source basis, or `watcher_only` with
+one, refuses the checkpoint before anything is stored; a value the protocol
+does not name is refused by name. A host that does not say leaves the field out, and every
+observation recorded before hosts could say has none: absence never means
+that the change was measured. The field is kept when the repeat rule below
+reads the report as no change, so a record can say that the host assumed a
+change and the core recognised a repeated state.
 `source_revision` is a host-computed fingerprint of the complete relevant
 content state, including committed and dirty content; `workspace_id` is audit
 context and is not an equality requirement, so equal revisions in different

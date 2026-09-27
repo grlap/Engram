@@ -351,6 +351,7 @@ pub(super) fn host_verification_of(
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,
+        reported_source_change: None,
         obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: Some(source_basis.clone()),
         observed_at: Some(at(second)),
@@ -448,6 +449,35 @@ impl SqliteStore {
             Some(source_revision),
         )
     }
+
+    /// `append_source_change_fixture` for a host that also says how it
+    /// established the change.
+    pub(crate) fn append_detected_source_change_fixture(
+        &mut self,
+        work_id: WorkId,
+        key: &str,
+        observed_at: DateTime<Utc>,
+        source_revision: &str,
+        detection: crate::domain::SourceChangeDetection,
+    ) -> ObjectId {
+        let second = (observed_at - at(0)).num_seconds();
+        let work = super::query::load_work_item(&self.connection, work_id).expect("fixture work");
+        let run_id = work.active_run_id.expect("fixture work has an active run");
+        let claim = super::query::load_work_claim_optional(&self.connection, run_id)
+            .expect("fixture claim read")
+            .expect("fixture run is claimed");
+        let holder = claim.holder.0.clone();
+        source_mutation_detected(
+            self,
+            &work,
+            &claim,
+            &holder,
+            key,
+            second,
+            Some(source_revision),
+            Some(detection),
+        )
+    }
 }
 
 /// Appends a host-observed source mutation on the claimed run that leaves
@@ -462,6 +492,33 @@ pub(super) fn source_mutation(
     key: &str,
     second: i64,
     source_revision: Option<&str>,
+) -> ObjectId {
+    source_mutation_detected(
+        store,
+        work,
+        claim,
+        holder,
+        key,
+        second,
+        source_revision,
+        None,
+    )
+}
+
+/// `source_mutation` with the host's word on how it established the change.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one test helper mirrors the host observation surface"
+)]
+pub(super) fn source_mutation_detected(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    second: i64,
+    source_revision: Option<&str>,
+    reported_source_change: Option<crate::domain::SourceChangeDetection>,
 ) -> ObjectId {
     use crate::domain::{
         ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome,
@@ -488,6 +545,7 @@ pub(super) fn source_mutation(
         effect: EffectClass::MutateLocal,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,
+        reported_source_change,
         obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: source_revision.map(|revision| ExecutionSourceBasis {
             workspace_id: format!("workspace-{key}"),

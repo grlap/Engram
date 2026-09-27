@@ -709,6 +709,7 @@ fn untested_changes_are_named_and_the_rest_counted() {
         observation_id: "write-lib".into(),
         source_revision: Some("revision-7".into()),
         observed_at: None,
+        reported_source_change: None,
     });
     untested.omitted_count = 2;
     untested.untested_total = 3;
@@ -718,11 +719,38 @@ fn untested_changes_are_named_and_the_rest_counted() {
     assert_eq!(
         untested_change_lines(&untested),
         vec![
-            "untested source change: write-lib (source revision revision-7); no matching passing test followed it"
+            "untested source change: write-lib (source revision revision-7; detection not reported); no matching passing test followed it"
                 .to_owned(),
             "untested source changes: 2 more not shown (3 in total)".to_owned(),
         ]
     );
+    // What the host said about its method is shown as the host's word.
+    for (detection, said) in [
+        (
+            crate::SourceChangeDetection::ContentComparison,
+            "host compared content revisions",
+        ),
+        (
+            crate::SourceChangeDetection::AssumedMissingBaseline,
+            "host assumed the change, no earlier revision",
+        ),
+        (
+            crate::SourceChangeDetection::WatcherOnly,
+            "host had file notifications only",
+        ),
+    ] {
+        untested.items[0]
+            .untested_change
+            .as_mut()
+            .expect("the named change")
+            .reported_source_change = Some(detection);
+        assert_eq!(
+            untested_change_lines(&untested)[0],
+            format!(
+                "untested source change: write-lib (source revision revision-7; {said}); no matching passing test followed it"
+            )
+        );
+    }
 }
 
 #[test]

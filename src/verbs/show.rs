@@ -684,6 +684,21 @@ pub(super) fn untested_changes_omitted(page: &crate::WorkObligationPage) -> usiz
         .saturating_sub(untested_changes(page).len())
 }
 
+/// How the host says it established a source change, for a line of text. It
+/// is the host's word about its own method, never verification.
+pub(super) fn source_change_detection_label(
+    detection: Option<crate::SourceChangeDetection>,
+) -> &'static str {
+    match detection {
+        None => "detection not reported",
+        Some(crate::SourceChangeDetection::ContentComparison) => "host compared content revisions",
+        Some(crate::SourceChangeDetection::AssumedMissingBaseline) => {
+            "host assumed the change, no earlier revision"
+        }
+        Some(crate::SourceChangeDetection::WatcherOnly) => "host had file notifications only",
+    }
+}
+
 /// One line per source change on `page` that no matching passing test
 /// followed, then the exact count of those the bounded page leaves out.
 pub(super) fn untested_change_lines(page: &crate::WorkObligationPage) -> Vec<String> {
@@ -694,8 +709,9 @@ pub(super) fn untested_change_lines(page: &crate::WorkObligationPage) -> Vec<Str
                 || "no recorded source revision".to_owned(),
                 |revision| format!("source revision {}", super::terminal_safe_line(revision)),
             );
+            let detection = source_change_detection_label(change.reported_source_change);
             format!(
-                "untested source change: {} ({revision}); no matching passing test followed it",
+                "untested source change: {} ({revision}; {detection}); no matching passing test followed it",
                 super::terminal_safe_line(&change.observation_id)
             )
         })

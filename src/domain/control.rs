@@ -299,6 +299,33 @@ pub enum ExecutionOutcome {
     Unknown,
 }
 
+/// How the host established a source change it reports. It is the host's
+/// assertion about its own method; the core cannot check it and draws no
+/// conclusion from it: every value opens the obligations a change opens.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceChangeDetection {
+    /// Two content revisions were compared and differed.
+    ContentComparison,
+    /// The earlier revision was missing, so the change is assumed.
+    AssumedMissingBaseline,
+    /// No closing revision could be taken; file notifications decided. Such
+    /// an observation carries no source basis.
+    WatcherOnly,
+}
+
+impl SourceChangeDetection {
+    /// The value as the host protocol spells it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ContentComparison => "content_comparison",
+            Self::AssumedMissingBaseline => "assumed_missing_baseline",
+            Self::WatcherOnly => "watcher_only",
+        }
+    }
+}
+
 /// Host-selected source identity carried by an execution observation.
 ///
 /// A0 preserves this optional basis without treating it as verification. A1
@@ -321,6 +348,10 @@ pub struct ExecutionObservationInput {
     pub effect: EffectClass,
     pub outcome: ExecutionOutcome,
     pub source_changed: bool,
+    /// How the host established the change it reports; only with
+    /// `source_changed`. Absent when the host does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_source_change: Option<SourceChangeDetection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_basis: Option<ExecutionSourceBasis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -355,6 +386,13 @@ pub struct ExecutionObservation {
     /// stands. Observations recorded before this rule keep the host's literal
     /// flag and are read as stored.
     pub source_changed: bool,
+    /// How the host established the change it reported, as the host said
+    /// it. It describes the host's report, so it stays when the core reads
+    /// that report as no change. Absent when the host did not say, which is
+    /// every observation recorded before hosts could; absence never means
+    /// that the change was measured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_source_change: Option<SourceChangeDetection>,
     /// Exact immutable rule set selected by the frozen turn-policy basis.
     pub obligation_rule_set: ObjectId,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -209,6 +209,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,
+        reported_source_change: None,
         source_basis: None,
         observed_at: None,
     };
@@ -234,6 +235,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             effect: EffectClass::MutateLocal,
             outcome: ExecutionOutcome::Succeeded,
             source_changed: true,
+            reported_source_change: None,
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
                 source_revision: "content-revision-1".into(),
@@ -246,6 +248,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             effect: EffectClass::MutateLocal,
             outcome: ExecutionOutcome::Succeeded,
             source_changed: false,
+            reported_source_change: None,
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-b".into(),
                 source_revision: "content-revision-1".into(),

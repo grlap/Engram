@@ -1315,8 +1315,13 @@ fn agent_change_object(
                 revision: Some(observation.binding.work_revision),
                 change_kind: "execution_observation".into(),
                 summary: compact_text(&format!(
-                    "{:?} {:?}; source_changed={}",
-                    observation.effect, observation.outcome, observation.source_changed
+                    "{}; {:?} {:?}",
+                    source_change_words(
+                        observation.source_changed,
+                        observation.reported_source_change
+                    ),
+                    observation.effect,
+                    observation.outcome,
                 )),
                 actor_id: Some(compact_text(&observation.actor.actor_id)),
                 actor_context: projected_actor_context(&observation.actor),
@@ -1531,6 +1536,28 @@ fn agent_change_object(
     }
 }
 
+/// The change an execution observation reports, first in a peer's delta so
+/// that the bounded line keeps it: whether the source changed and, when the
+/// host said, how it established that, in one word each (`compared`,
+/// `assumed`, `watcher` for the protocol's three values). A report the core
+/// read as a repeated revision keeps the host's word beside that reading.
+fn source_change_words(
+    source_changed: bool,
+    reported: Option<crate::SourceChangeDetection>,
+) -> String {
+    let word = |detection: crate::SourceChangeDetection| match detection {
+        crate::SourceChangeDetection::ContentComparison => "compared",
+        crate::SourceChangeDetection::AssumedMissingBaseline => "assumed",
+        crate::SourceChangeDetection::WatcherOnly => "watcher",
+    };
+    match (source_changed, reported) {
+        (true, Some(detection)) => format!("changed: {}", word(detection)),
+        (true, None) => "changed".into(),
+        (false, Some(detection)) => format!("repeat; host: {}", word(detection)),
+        (false, None) => "unchanged".into(),
+    }
+}
+
 /// A waived obligation of the stock source-change rule records a change no
 /// matching passing test followed; peers read it as that change, not as a
 /// human exception.
@@ -1551,10 +1578,15 @@ fn untested_change_summary(
         || "no recorded source revision".to_owned(),
         |basis| format!("source revision {}", basis.source_revision),
     );
+    let said = change
+        .reported_source_change
+        .map_or_else(String::new, |detection| {
+            format!("host said {}; ", detection.as_str())
+        });
     Ok((
         "untested_source_change",
         format!(
-            "{} ({revision}); waiver attributed to {}",
+            "{said}{} ({revision}); waiver attributed to {}",
             change.observation_id,
             compact_text(waived_by)
         ),

@@ -440,6 +440,7 @@ impl HostSession {
                 effect: EffectClass::MutateLocal,
                 outcome: ExecutionOutcome::Succeeded,
                 source_changed: true,
+                reported_source_change: None,
                 source_basis: Some(self.basis.clone()),
                 observed_at: Some(at(second + 1)),
             });
@@ -455,6 +456,7 @@ impl HostSession {
                 effect: EffectClass::MutateLocal,
                 outcome,
                 source_changed: false,
+                reported_source_change: None,
                 source_basis: Some(self.basis.clone()),
                 observed_at: Some(at(second + 1)),
             });
@@ -521,6 +523,7 @@ impl HostSession {
                     effect: EffectClass::MutateLocal,
                     outcome: ExecutionOutcome::Succeeded,
                     source_changed: *source_changed,
+                    reported_source_change: None,
                     source_basis: revision.map(|revision| ExecutionSourceBasis {
                         workspace_id: self.basis.workspace_id.clone(),
                         source_revision: revision.into(),

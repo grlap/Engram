@@ -764,6 +764,11 @@ pub struct WorkObligationSummary {
     /// was opened for: no matching passing test followed it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub untested_change: Option<UntestedSourceChange>,
+    /// On an obligation of the stock source-change rule: how the host says
+    /// it established the change that opened it. A host source observation,
+    /// never verification. Absent when the host did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_source_change: Option<crate::SourceChangeDetection>,
     pub guidance: WorkObligationGuidance,
 }
 
@@ -777,6 +782,10 @@ pub struct UntestedSourceChange {
     pub source_revision: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_at: Option<DateTime<Utc>>,
+    /// How the host says it established the change: a host source
+    /// observation, never verification. Absent when the host did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_source_change: Option<crate::SourceChangeDetection>,
 }
 
 /// Count- and byte-bounded typed completion obligations. `omitted_count`

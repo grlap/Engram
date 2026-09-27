@@ -1242,11 +1242,31 @@ adds top-level `effective_session_id`. `done` exits with status 2 when the typed
 source-change rule never causes that refusal. A source change that no matching
 passing test followed is recorded at `done` as a waiver in the completing
 actor's name. The item still completes, and `done` and `show` each print
-`untested source change: ID (source revision REV); no matching passing test
-followed it`, then `untested source changes: N more not shown (T in total)`
-when the bounded obligation page names only some of them. With `--json`, the
-named changes are in `untested_changes` and the count left out is in
-`untested_changes_omitted`.
+`untested source change: ID (source revision REV; HOW); no matching passing
+test followed it`, then `untested source changes: N more not shown (T in
+total)` when the bounded obligation page names only some of them. `HOW` is
+how the host said it established the change (`host compared content
+revisions`, `host assumed the change, no earlier revision`, `host had file
+notifications only`) or `detection not reported`: the host's word, never
+verification. With `--json`, the named changes are in `untested_changes`,
+each with `reported_source_change` when the host said, and the count left
+out is in `untested_changes_omitted`; every obligation of the stock
+source-change rule on the obligation page carries the same
+`reported_source_change`, when the host said. A peer's `next` delta for an
+execution observation begins with the change, in one word each: `changed:
+WORD` when the host said how it found the change, `changed` when it did
+not, `repeat; host: WORD` when the host said how it found a change the core
+read as a repeated revision, `unchanged` otherwise; the effect and outcome
+follow. `WORD` is `compared` for `content_comparison`, `assumed` for
+`assumed_missing_baseline`, `watcher` for `watcher_only`. The delta for an
+untested change begins `host said VALUE; ` when the host said, before the
+observation id and the revision. In the compact `next` text these two kinds
+print their text before the peer attribution, and the line is bounded at
+96 bytes, so the change and the host's word survive while a long
+attribution, id or revision is cut; the delta's summary, in the same words
+and bounded at 192 bytes, is in the verbose `next --json` form. The
+protocol's value itself is on the obligation page and in the `--json` forms
+of `show` and `done`.
 Before completion, the receipt reminder says tests have not run since the last
 source change and that `done` records the change as untested without one. The
 remaining text is unchanged. Criteria bound with `--bind` still refuse, and
@@ -1672,7 +1692,15 @@ without a work-claim binding; that session cannot append run execution observati
 `turn_checkpoint.observations` accepts at most 64 host facts containing
 `observation_id`, `action_fingerprint`, `effect`, `outcome`, and
 `source_changed`. An observation may also carry
-`source_basis { workspace_id, source_revision }` and `observed_at`.
+`source_basis { workspace_id, source_revision }` and `observed_at`, and,
+with `source_changed=true`, `reported_source_change`: how the host
+established the change, `content_comparison`, `assumed_missing_baseline`
+or `watcher_only`, as the [checkpoint section](behavioral-control-plane.md#5-checkpoint-the-turn)
+defines them. The checkpoint is refused when the field comes with
+`source_changed=false`, when `content_comparison` or
+`assumed_missing_baseline` comes without `source_basis`, when `watcher_only`
+comes with one, or when the value is not one of the three, which is refused
+by name. A host that does not say leaves the field out.
 `source_revision` is the host's fingerprint of the full relevant content,
 including committed and dirty bytes. `workspace_id` is retained for audit but
 does not participate in anti-stale equality. Engram supplies the authoritative

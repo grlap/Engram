@@ -4,7 +4,7 @@
 //! count, at recording or at completion.
 
 use super::*;
-use crate::EvaluationBasisMove;
+use crate::{EvaluationBasisMove, SourceChangeDetection};
 
 /// The class and stable code of a moved-basis refusal. A host may relay
 /// only the error message to its evaluator, so the message itself must
@@ -1204,4 +1204,274 @@ fn the_newest_sighting_decides_where_the_source_is() {
             Some(AcceptanceStaleReason::Mutation)
         ))
     );
+}
+
+/// One mutation turn that reports `reports` in order: whether the host
+/// claims a change, the revision it reports, and how it says it established
+/// the change.
+fn report_detected(
+    host: &mut HostSession,
+    store: &mut SqliteStore,
+    reports: &[(bool, Option<&str>, Option<SourceChangeDetection>)],
+    second: i64,
+) -> Result<ControlTurnCheckpointDecision, StoreError> {
+    let grant = host.grant(store, &[EffectClass::MutateLocal], true, second);
+    host.begin(store, &grant, second + 1);
+    let observations: Vec<ExecutionObservationInput> = reports
+        .iter()
+        .enumerate()
+        .map(
+            |(index, (source_changed, revision, detection))| ExecutionObservationInput {
+                observation_id: host.key(&format!("detected-{index}")),
+                action_fingerprint: ObjectId::from_canonical_bytes(
+                    host.key(&format!("detected action {index}")).as_bytes(),
+                ),
+                effect: EffectClass::MutateLocal,
+                outcome: ExecutionOutcome::Succeeded,
+                source_changed: *source_changed,
+                reported_source_change: *detection,
+                source_basis: revision.map(|revision| ExecutionSourceBasis {
+                    workspace_id: host.basis.workspace_id.clone(),
+                    source_revision: revision.into(),
+                }),
+                observed_at: revision.map(|_| at(second + 1)),
+            },
+        )
+        .collect();
+    store.checkpoint_control_turn_with_evidence(
+        &host.project_id,
+        &host.session_id,
+        &host.connection_token,
+        &host.routing_token,
+        &grant.grant_id,
+        TurnNextIntent::Continue,
+        &observations,
+        &[],
+        &[],
+        &host.key("checkpoint"),
+        at(second + 2),
+    )
+}
+
+fn observations_after(
+    store: &SqliteStore,
+    work: &WorkItem,
+    read: i64,
+) -> Vec<ExecutionObservation> {
+    entries_after(store, work, read, "execution_observation")
+        .iter()
+        .map(|entry| {
+            load_typed_work_object(&store.connection, entry, "execution_observation")
+                .expect("stored observation")
+        })
+        .collect()
+}
+
+#[test]
+fn how_the_host_established_a_change_is_stored_as_said_and_changes_no_obligation() {
+    let mut fixture = fixture("project-detection-values");
+    let store = &mut fixture.store;
+    let work = fixture.work.clone();
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let said = [
+        (
+            Some("revision-a"),
+            Some(SourceChangeDetection::ContentComparison),
+        ),
+        (
+            Some("revision-b"),
+            Some(SourceChangeDetection::AssumedMissingBaseline),
+        ),
+        (None, Some(SourceChangeDetection::WatcherOnly)),
+        (Some("revision-d"), None),
+    ];
+    for (index, (revision, detection)) in said.iter().enumerate() {
+        let second = 20 + 10 * i64::try_from(index).expect("small index");
+        let read = cut(store, &work);
+        let decision = report_detected(&mut host, store, &[(true, *revision, *detection)], second)
+            .expect("a consistent report checkpoints");
+        assert!(matches!(
+            decision,
+            ControlTurnCheckpointDecision::Checkpointed { .. }
+        ));
+        let stored = observations_after(store, &work, read);
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].reported_source_change, *detection);
+        assert!(stored[0].source_changed, "every way of knowing is a change");
+        assert_eq!(
+            entries_after(store, &work, read, "work_obligation").len(),
+            1,
+            "{detection:?} opens the obligation a change opens"
+        );
+        // The stored record names the value as the protocol spells it, and
+        // leaves the field out when the host did not say.
+        let value = serde_json::to_value(&stored[0]).expect("observation as JSON");
+        assert_eq!(
+            value
+                .get("reported_source_change")
+                .and_then(|value| value.as_str()),
+            detection.map(SourceChangeDetection::as_str)
+        );
+    }
+}
+
+#[test]
+fn a_repeated_revision_keeps_what_the_host_said_and_is_read_as_no_change() {
+    let mut fixture = fixture("project-detection-repeated");
+    let store = &mut fixture.store;
+    let work = fixture.work.clone();
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    report_detected(
+        &mut host,
+        store,
+        &[(
+            true,
+            Some("revision-a"),
+            Some(SourceChangeDetection::ContentComparison),
+        )],
+        20,
+    )
+    .expect("first change");
+    let read = cut(store, &work);
+    report_detected(
+        &mut host,
+        store,
+        &[(
+            true,
+            Some("revision-a"),
+            Some(SourceChangeDetection::AssumedMissingBaseline),
+        )],
+        30,
+    )
+    .expect("the same revision again");
+    let stored = observations_after(store, &work, read);
+    assert_eq!(stored.len(), 1);
+    assert!(!stored[0].source_changed);
+    assert_eq!(
+        stored[0].reported_source_change,
+        Some(SourceChangeDetection::AssumedMissingBaseline)
+    );
+    assert!(entries_after(store, &work, read, "work_obligation").is_empty());
+}
+
+#[test]
+fn a_report_that_contradicts_itself_is_refused_and_stores_nothing() {
+    let contradictions = [
+        (
+            false,
+            Some("revision-a"),
+            SourceChangeDetection::ContentComparison,
+            "reports no change",
+        ),
+        (
+            false,
+            None,
+            SourceChangeDetection::WatcherOnly,
+            "reports no change",
+        ),
+        (
+            true,
+            None,
+            SourceChangeDetection::ContentComparison,
+            "without the source basis",
+        ),
+        (
+            true,
+            None,
+            SourceChangeDetection::AssumedMissingBaseline,
+            "without the source basis",
+        ),
+        (
+            true,
+            Some("revision-a"),
+            SourceChangeDetection::WatcherOnly,
+            "with a source basis",
+        ),
+    ];
+    for (index, (changed, revision, detection, why)) in contradictions.iter().enumerate() {
+        // A refused checkpoint leaves its turn open, so each case has a
+        // store of its own.
+        let mut fixture = fixture(&format!("project-detection-refusal-{index}"));
+        let store = &mut fixture.store;
+        let work = fixture.work.clone();
+        let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+        let second = 20;
+        let read = cut(store, &work);
+        // A consistent report in the same checkpoint is refused with it.
+        let refused = report_detected(
+            &mut host,
+            store,
+            &[
+                (
+                    true,
+                    Some("revision-good"),
+                    Some(SourceChangeDetection::ContentComparison),
+                ),
+                (*changed, *revision, Some(*detection)),
+            ],
+            second,
+        );
+        let Err(StoreError::InvalidControlProjection(message)) = refused else {
+            panic!("{detection:?} with changed={changed} must be refused: {refused:?}");
+        };
+        assert!(message.contains(why), "{message}");
+        assert!(message.contains(detection.as_str()), "{message}");
+        assert!(observations_after(store, &work, read).is_empty());
+        assert!(entries_after(store, &work, read, "work_obligation").is_empty());
+    }
+}
+
+#[test]
+fn an_observation_without_the_field_reads_as_stored_and_an_unknown_value_is_refused_by_name() {
+    let mut fixture = fixture("project-detection-old-bytes");
+    let store = &mut fixture.store;
+    let work = fixture.work.clone();
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let read = cut(store, &work);
+    report_detected(&mut host, store, &[(true, Some("revision-a"), None)], 20)
+        .expect("a host that does not say");
+    let entry = entries_after(store, &work, read, "execution_observation");
+    let stored = observations_after(store, &work, read);
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [entry[0].as_str()],
+            |row| row.get(0),
+        )
+        .expect("the stored canonical bytes");
+    let without: serde_json::Value = serde_json::from_slice(&bytes).expect("stored bytes are JSON");
+    assert!(without.get("reported_source_change").is_none());
+    // Those are the bytes every earlier observation has: they decode to the
+    // record and freeze back to the same bytes. The stored id is minted, not
+    // derived from the bytes, so it is not compared.
+    let decoded: ExecutionObservation =
+        serde_json::from_slice(&bytes).expect("a record without the field decodes");
+    assert_eq!(decoded, stored[0]);
+    let frozen = crate::CanonicalObject::freeze(&decoded).expect("freeze the decoded record");
+    assert_eq!(frozen.bytes(), bytes.as_slice());
+
+    let mut input = serde_json::to_value(ExecutionObservationInput {
+        observation_id: "unknown-value".into(),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"unknown value"),
+        effect: EffectClass::MutateLocal,
+        outcome: ExecutionOutcome::Succeeded,
+        source_changed: true,
+        reported_source_change: Some(SourceChangeDetection::WatcherOnly),
+        source_basis: None,
+        observed_at: None,
+    })
+    .expect("input as JSON");
+    input["reported_source_change"] = "measured_between_turns".into();
+    let refused = serde_json::from_value::<ExecutionObservationInput>(input)
+        .expect_err("a value the protocol does not name");
+    let message = refused.to_string();
+    assert!(message.contains("measured_between_turns"), "{message}");
+    for known in [
+        SourceChangeDetection::ContentComparison,
+        SourceChangeDetection::AssumedMissingBaseline,
+        SourceChangeDetection::WatcherOnly,
+    ] {
+        assert!(message.contains(known.as_str()), "{message}");
+    }
 }
