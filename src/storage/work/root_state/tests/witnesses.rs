@@ -259,6 +259,230 @@ fn root_delta_waiver_fact_proof_refuses_broken_chain_without_writes() {
     }
 }
 
+fn audit_failures(store: &SqliteStore) -> Vec<String> {
+    store.verify_work_projections().unwrap().1
+}
+
+#[test]
+fn root_delta_audit_compares_the_last_checksum_and_names_the_first_mismatch() {
+    let (mut store, root, id) = fixture();
+    let witness = append_waiver(&mut store, &root, 1);
+    advance_root(&mut store, &root);
+    let (_, current) = projected(&store.connection, id).unwrap();
+    let earlier = load_head(&store.connection, &witness.0).unwrap();
+    let last = load_head(&store.connection, &current).unwrap();
+    let mut false_earlier = earlier.clone();
+    false_earlier.state_checksum = current.head.clone();
+    let mut false_last = last.clone();
+    false_last.state_checksum = witness.0.head.clone();
+    let named = |head: &ObjectId, sequence: u64| {
+        format!("work_root_delta:{head}:first_checksum_mismatch:{sequence}")
+    };
+
+    // The last head alone: the strict replay runs and names it.
+    rewrite_head(&store, &current.head, &false_last);
+    COST.with_borrow_mut(|cost| *cost = Cost::default());
+    let failures = audit_failures(&store);
+    assert_eq!(COST.with_borrow(|cost| cost.resolves), 1);
+    assert!(
+        failures.contains(&named(&current.head, last.sequence)),
+        "{failures:?}"
+    );
+    assert!(
+        failures.contains(&format!("work_root_execution:{}", id.0)),
+        "{failures:?}"
+    );
+    assert!(!store.verify_all().unwrap().is_healthy());
+
+    // An earlier head too: the report names the earlier one only.
+    rewrite_head(&store, &witness.0.head, &false_earlier);
+    let failures = audit_failures(&store);
+    assert!(
+        failures.contains(&named(&witness.0.head, earlier.sequence)),
+        "{failures:?}"
+    );
+    assert!(
+        !failures.contains(&named(&current.head, last.sequence)),
+        "{failures:?}"
+    );
+
+    rewrite_head(&store, &witness.0.head, &earlier);
+    rewrite_head(&store, &current.head, &last);
+    COST.with_borrow_mut(|cost| *cost = Cost::default());
+    assert_eq!(audit_failures(&store), Vec::<String>::new());
+    assert_eq!(COST.with_borrow(|cost| cost.resolves), 0);
+
+    // The events still name the generation when its projection row is gone.
+    rewrite_head(&store, &current.head, &false_last);
+    store
+        .connection
+        .execute_batch("PRAGMA foreign_keys = OFF")
+        .unwrap();
+    store
+        .connection
+        .execute(
+            "DELETE FROM work_root_executions WHERE root_execution_id = ?1",
+            [id.0.to_string()],
+        )
+        .unwrap();
+    let failures = audit_failures(&store);
+    assert!(
+        failures.contains(&named(&current.head, last.sequence)),
+        "{failures:?}"
+    );
+    assert!(
+        failures.contains(&format!("work_root_execution:{}:missing_projection", id.0)),
+        "{failures:?}"
+    );
+}
+
+#[test]
+fn root_delta_audit_answers_the_same_head_for_each_address_asked() {
+    let (mut store, root, id) = fixture();
+    advance_root(&mut store, &root);
+    let (state, current) = projected(&store.connection, id).unwrap();
+    let mut another_generation = current.clone();
+    another_generation.generation += 1;
+    let mut audit = Audit::default();
+    assert!(
+        audit
+            .history(&store.connection, &another_generation)
+            .is_none()
+    );
+    assert_eq!(
+        audit
+            .history(&store.connection, &current)
+            .map(|history| &history.state),
+        Some(&state)
+    );
+    assert!(
+        audit
+            .history(&store.connection, &another_generation)
+            .is_none()
+    );
+}
+
+#[test]
+fn root_delta_audit_binds_a_waiver_event_to_the_state_at_its_own_head() {
+    let (mut store, root, id) = fixture();
+    let before = projected(&store.connection, id).unwrap().1;
+    let witness = append_waiver(&mut store, &root, 1);
+    let (original, _) = projected(&store.connection, id).unwrap();
+    let transaction = store.connection.unchecked_transaction().unwrap();
+    let mut removed = original.clone();
+    removed.required_child_waivers.clear();
+    removed.revision += 1;
+    persist(&transaction, &removed).unwrap();
+    let (_, removal) = projected(&transaction, id).unwrap();
+    let mut restored = original.clone();
+    restored.revision += 2;
+    persist(&transaction, &restored).unwrap();
+    let (_, readded) = projected(&transaction, id).unwrap();
+    transaction.commit().unwrap();
+    let predecessor = load_head(&store.connection, &witness.0)
+        .unwrap()
+        .predecessor
+        .unwrap();
+    assert_ne!(predecessor, before.head, "the fixture adds other deltas");
+
+    // The waiver is a member from the head that adds it up to the head that
+    // removes it, and again from the head that adds it back.
+    let mut bound = witness.0.head.clone();
+    for (head, member) in [
+        (witness.0.head.clone(), true),
+        (predecessor, false),
+        (removal.head.clone(), false),
+        (readded.head.clone(), true),
+    ] {
+        if head != bound {
+            rebind_events(&store, &bound, &head);
+            bound = head.clone();
+        }
+        let failures = audit_failures(&store);
+        let refused = |suffix: &str| failures.iter().any(|label| label.ends_with(suffix));
+        assert_eq!(
+            refused(":invalid_required_child_waiver"),
+            !member,
+            "{head}: {failures:?}"
+        );
+        assert_eq!(
+            refused(":invalid_required_child_waivers"),
+            !member,
+            "{head}: {failures:?}"
+        );
+    }
+}
+
+#[test]
+fn root_delta_audit_refuses_conflicting_waivers_that_a_later_delta_removes() {
+    let (store, root, id) = fixture();
+    let (base, _) = projected(&store.connection, id).unwrap();
+    let child_waiver = |work_id, reason: &str| {
+        RootExecutionMember::ChildWaiver(RequiredChildWaiver {
+            work_id,
+            work_revision: root.revision,
+            waived_by: "test".into(),
+            reason: reason.into(),
+        })
+    };
+    let participant_waiver = |participant: &str, reason: &str| {
+        RootExecutionMember::Waiver(CompletionWaiver {
+            participant: SessionId(participant.into()),
+            waived_by: "test".into(),
+            reason: reason.into(),
+        })
+    };
+    let mut with_one_each = base.clone();
+    with_one_each
+        .required_child_waivers
+        .push(RequiredChildWaiver {
+            work_id: root.work_id,
+            work_revision: root.revision,
+            waived_by: "test".into(),
+            reason: "first".into(),
+        });
+    with_one_each.waivers.push(CompletionWaiver {
+        participant: SessionId("absent".into()),
+        waived_by: "test".into(),
+        reason: "first".into(),
+    });
+    with_one_each.revision += 1;
+    let mut cleared = base.clone();
+    cleared.revision += 2;
+    let transaction = store.connection.unchecked_transaction().unwrap();
+    persist(&transaction, &with_one_each).unwrap();
+    let (_, added_ref) = projected(&transaction, id).unwrap();
+    persist(&transaction, &cleared).unwrap();
+    let (_, last) = projected(&transaction, id).unwrap();
+    transaction.commit().unwrap();
+    assert!(Audit::default().history(&store.connection, &last).is_some());
+    let adding = load_head(&store.connection, &added_ref).unwrap();
+    let removing = load_head(&store.connection, &last).unwrap();
+    // The same two deltas carry one more waiver, removed again before the
+    // last head, so the final state and its checksum stay as they were.
+    for (second, accepted) in [
+        (
+            child_waiver(crate::domain::WorkId::new(), "another child"),
+            true,
+        ),
+        (child_waiver(root.work_id, "second"), false),
+        (participant_waiver("another", "another participant"), true),
+        (participant_waiver("absent", "second"), false),
+    ] {
+        let mut adding = adding.clone();
+        adding.added.push(second.clone());
+        let mut removing = removing.clone();
+        removing.removed.push(second.clone());
+        rewrite_head(&store, &added_ref.head, &adding);
+        rewrite_head(&store, &last.head, &removing);
+        assert_eq!(
+            Audit::default().history(&store.connection, &last).is_some(),
+            accepted,
+            "{second:?}"
+        );
+    }
+}
+
 #[test]
 fn root_delta_waiver_live_proof_does_not_audit_historical_checksums() {
     let (mut store, root, id) = fixture();
@@ -289,27 +513,26 @@ fn root_delta_waiver_live_proof_does_not_audit_historical_checksums() {
             .to_string()
             .contains("replayed state checksum mismatch")
     );
-    assert!(!store.verify_all().unwrap().is_healthy());
-    assert!(
-        store
-            .save_work_graph_snapshot(
-                &root.project_id,
-                &actor("export"),
-                None,
-                crate::WorkGraphSnapshotDestinationKind::DefaultFile,
-                at(20),
-                &DevelopmentNoopRedactor,
-            )
-            .is_err()
-    );
+    // The full audit compares the last head's checksum, which is true here.
+    assert!(store.verify_all().unwrap().is_healthy());
     assert_eq!(
         test_database_shape_snapshot(&store.connection).unwrap(),
         snapshot
     );
-    // Repair only the intentionally false checksum. A healthy full audit now
-    // rules out another fixture fault as the cause.
+    store
+        .save_work_graph_snapshot(
+            &root.project_id,
+            &actor("export"),
+            None,
+            crate::WorkGraphSnapshotDestinationKind::DefaultFile,
+            at(20),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    // Repair only the intentionally false checksum: the strict read then
+    // succeeds, which rules out another fixture fault as its cause.
     rewrite_head(&store, &witness.0.head, &original_delta);
-    assert!(store.verify_all().unwrap().is_healthy());
+    assert_eq!(resolve(&store.connection, &address).unwrap(), state);
 }
 
 fn check_growing_waivers(counts: &[u32]) {
@@ -327,6 +550,7 @@ fn check_growing_waivers(counts: &[u32]) {
                 "terminal children do not consume the open-child budget"
             );
         }
+        super::cost::assert_audit_is_linear(&store, "growing_waivers", count);
         let (state, _) = projected(&store.connection, id).unwrap();
         let (deltas, changes): (i64, i64) = store.connection.query_row(
             "SELECT COUNT(*), SUM(json_array_length(canonical_json, '$.added') + json_array_length(canonical_json, '$.removed')) FROM objects WHERE object_kind = 'work_root_delta'",

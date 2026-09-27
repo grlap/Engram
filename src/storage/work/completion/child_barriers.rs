@@ -202,21 +202,21 @@ pub(in crate::storage::work) fn validated_required_child_waivers(
 }
 
 #[derive(Clone, Copy)]
-enum WaiverValidation {
+enum WaiverValidation<'a> {
     Live,
-    Audit,
+    Audit(&'a super::super::root_state::History),
 }
 
 fn required_child_waivers_on(
     connection: &Connection,
     parent_id: WorkId,
     execution: &RootExecution,
-    validation: WaiverValidation,
+    validation: WaiverValidation<'_>,
 ) -> Result<Vec<RequiredChildWaiver>, StoreError> {
     // The root-execution projection is already bound to the latest canonical
     // event. An empty projected waiver set cannot authorize completion, so it
     // is safe to avoid replaying the retained root history here. Doctor still
-    // performs the exhaustive comparison below for nonempty projected sets.
+    // compares nonempty projected sets with the replayed history below.
     if execution.required_child_waivers.is_empty() {
         return Ok(Vec::new());
     }
@@ -245,8 +245,8 @@ fn required_child_waivers_on(
         if event_execution.root_execution_id != execution.root_execution_id {
             continue;
         }
-        // Live completion needs only this parent's barriers. Exhaustive audit
-        // still checks the complete generation, including other parents.
+        // Live completion needs only this parent's barriers. The full audit
+        // checks the complete generation, including other parents.
         if matches!(validation, WaiverValidation::Live) && event.work_id != parent_id {
             continue;
         }
@@ -266,13 +266,8 @@ fn required_child_waivers_on(
             reason: reason.clone(),
         };
         let event_contains_exact_waiver = match validation {
-            WaiverValidation::Audit => {
-                super::super::root_state::resolve(connection, event_execution)?
-                    .required_child_waivers
-                    .iter()
-                    .filter(|candidate| *candidate == &waiver)
-                    .count()
-                    == 1
+            WaiverValidation::Audit(history) => {
+                history.child_waiver_at(event_execution, *child_id) == Some(&waiver)
             }
             WaiverValidation::Live => {
                 witnesses.push((event_execution.clone(), waiver.clone()));
@@ -336,6 +331,7 @@ fn required_child_waivers_on(
 
 pub(super) fn verify_required_child_waiver_bindings(
     connection: &Connection,
+    audit: &mut super::super::root_state::Audit,
     checked: &mut usize,
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
@@ -351,14 +347,19 @@ pub(super) fn verify_required_child_waiver_bindings(
         *checked += 1;
         let valid = super::super::query::parse_root_execution_id(&root_execution_id)
             .and_then(|id| super::super::root_state::projected(connection, id))
-            .is_ok_and(|(execution, _)| {
-                required_child_waivers_on(
-                    connection,
-                    execution.root_id,
-                    &execution,
-                    WaiverValidation::Audit,
-                )
-                .is_ok()
+            .is_ok_and(|(execution, address)| {
+                // An empty projected set needs no history, as the validator
+                // itself decides; do not replay a generation for it.
+                execution.required_child_waivers.is_empty()
+                    || audit.history(connection, &address).is_some_and(|history| {
+                        required_child_waivers_on(
+                            connection,
+                            execution.root_id,
+                            &execution,
+                            WaiverValidation::Audit(history),
+                        )
+                        .is_ok()
+                    })
             });
         if !valid {
             invalid.push(format!(

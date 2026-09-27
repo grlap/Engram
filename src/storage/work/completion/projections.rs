@@ -64,6 +64,8 @@ impl SqliteStore {
         let mut evidence_rows = HashMap::new();
         let mut gate_heads = HashMap::new();
         let mut completion_rows = HashMap::new();
+        let mut waived = Vec::new();
+        let mut audit = super::super::root_state::Audit::default();
 
         seed_restored_projection_expectations(
             connection,
@@ -198,19 +200,17 @@ impl SqliteStore {
                                 WorkLifecycle::Cancelled | WorkLifecycle::Superseded
                             )
                             && child.revision == *child_revision
-                            && event.root_execution.as_ref().is_some_and(|execution| {
-                                super::super::root_state::resolve(connection, execution).is_ok_and(
-                                    |state| {
-                                        state.required_child_waivers.iter().any(|waiver| {
-                                            waiver.work_id == *child_id
-                                                && waiver.work_revision == *child_revision
-                                        })
-                                    },
-                                )
-                            })
                     });
-                    if !transition_is_bound {
-                        invalid.push(format!("{label}:invalid_required_child_waiver"));
+                    // The root state at this event is read after the scan,
+                    // from the one replay of its generation.
+                    match event.root_execution.as_ref() {
+                        Some(execution) if transition_is_bound => waived.push((
+                            label.clone(),
+                            execution.clone(),
+                            *child_id,
+                            *child_revision,
+                        )),
+                        _ => invalid.push(format!("{label}:invalid_required_child_waiver")),
                     }
                 }
                 WorkTransition::PrerequisiteAdded {
@@ -424,6 +424,16 @@ impl SqliteStore {
             }
         }
         drop(statement);
+        for (label, execution, child_id, child_revision) in waived {
+            let bound = root_executions
+                .get(&execution.root_execution_id.0.to_string())
+                .and_then(|last| audit.history(connection, last))
+                .and_then(|history| history.child_waiver_at(&execution, child_id))
+                .is_some_and(|waiver| waiver.work_revision == child_revision);
+            if !bound {
+                invalid.push(format!("{label}:invalid_required_child_waiver"));
+            }
+        }
 
         #[cfg(test)]
         if let Some(after_scan) = AFTER_EVENT_SCAN.with(|callback| callback.borrow_mut().take()) {
@@ -448,6 +458,7 @@ impl SqliteStore {
         )?;
         super::super::root_state::verify_projections(
             connection,
+            &mut audit,
             &root_executions,
             &root_event_heads,
             &mut checked,
@@ -488,7 +499,7 @@ impl SqliteStore {
         verify_work_catalog_projections(connection, &mut checked, &mut invalid)?;
         verify_work_scalar_bindings(connection, &mut checked, &mut invalid)?;
         verify_canonical_work_rows(connection, &mut checked, &mut invalid)?;
-        verify_required_child_waiver_bindings(connection, &mut checked, &mut invalid)?;
+        verify_required_child_waiver_bindings(connection, &mut audit, &mut checked, &mut invalid)?;
         verify_work_protocol_attempts(connection, &mut checked, &mut invalid)?;
         verify_anchored_memory_feeds(connection, &mut checked, &mut invalid)?;
         Ok((checked, invalid))

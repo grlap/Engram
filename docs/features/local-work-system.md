@@ -192,9 +192,10 @@ Current storage keeps a fixed header/head row and separate member rows.
 Readers assemble these rows and check the complete state checksum, including
 missing or extra members. Historical reads follow the addressed generation
 back to its origin, check consecutive deltas and every intermediate result,
-and never substitute the current head. Doctor also checks historical event
-references in feed order and rejects unbound delta objects. These checks do
-not authorize repair of runtime state. See [SQLite storage](sqlite-store.md).
+and never substitute the current head. Doctor replays each generation once,
+as described below; it also checks historical event references in feed order
+and rejects unbound delta objects. These checks do not authorize repair of
+runtime state. See [SQLite storage](sqlite-store.md).
 
 This bounds the bytes written for a fixed-size new root fact, not the CPU
 cost of reading or hashing the aggregate. Current validation remains linear
@@ -212,10 +213,25 @@ historical-state read for this completion.
 
 This live proof does not check historical full-state checksums. A re-canonicalized
 historical head with a false checksum can pass the fact proof if the required
-facts, chain, and current full checksum are valid. Doctor and graph export
-retain exhaustive historical checksum verification and detect that fault.
-This is an explicit narrowing of live validation, not an unchanged integrity
-contract. Checksum representation and meaning have not changed.
+facts, chain, and current full checksum are valid. This is an explicit
+narrowing of live validation, not an unchanged integrity contract. Checksum
+representation and meaning have not changed.
+
+Doctor and graph export replay each generation once, from its empty origin to
+its last head. The replay checks that every delta continues the one before it,
+removes only members that are present, adds only members that are absent, and
+never leaves two waivers for the same child or participant. It compares the
+full-state checksum at the last head only, and compares that state with the
+current rows. The work is linear in the generation's deltas and their members.
+Required-child waiver events are checked against the membership the same
+replay recorded for their heads. A delta that changes the final state is
+therefore detected. Not detected: a stored checksum of an earlier head that
+disagrees with its own state while the last head agrees, and a change to an
+earlier delta that leaves the chain valid and the final state unchanged. When
+the last head disagrees, a second replay compares every head and the report
+names the first one whose checksum disagrees, as
+`work_root_delta:HEAD:first_checksum_mismatch:SEQUENCE`. A read of the root
+state frozen by one completion seal still compares every head up to it.
 
 For a fresh completion, the remaining checks have a specific scope:
 
@@ -235,15 +251,17 @@ These checks do not authenticate actors or prove that the whole store has
 never been rewritten. Acceptance and evidence relevance remain author
 assertions. A successful completion is not a full-store health report.
 
-Full historical checksum validation is on demand, not periodic. An explicit
-`engram doctor` or `engram graph save` checks this history. Projection repair
-also calls `verify_all` before commit, including full historical root replay;
-backup and restore verify their copies. An operator can include an audit in
-installation procedures, but installing a binary alone does not schedule one.
-Ordinary open and `done` do not schedule that audit, and fixture checks
-in CI do not audit the active store. A false historical checksum can therefore
-remain undetected until an operator or host requests a full check. Engram does
-not guarantee a maximum detection delay.
+The full audit is on demand, not periodic. An explicit `engram doctor` or
+`engram graph save` runs the replay described above. Projection repair also
+calls `verify_all` before commit, including that replay; backup and restore
+verify their copies. An operator can include an audit in installation
+procedures, but installing a binary alone does not schedule one. Ordinary open
+and `done` do not schedule that audit, and fixture checks in CI do not audit
+the active store. A last head whose checksum is false can therefore remain
+undetected until an operator or host requests a full audit; Engram does not
+guarantee a maximum detection delay. A false checksum on an earlier head is
+not detected by the audit at all while the last head agrees. Only a read of
+the root state frozen by a completion seal compares the heads up to that seal.
 
 The fact proof loads each delta once and hashes the current state once. Its
 member work depends on the current members, requested waivers, and actual
@@ -262,15 +280,20 @@ retain a proof of the suffix implied by the current state, but would no longer
 check the prefix or empty origin during live completion. The chosen contract
 keeps those checks. In the same 1,000-checkpoint fixture, the implemented proof
 reduced full-state checksum input for root completion from 103,248,645 bytes
-to 613,338 bytes; the full audit remained at 257,098,620 bytes. These are
-checksum-input counts, not elapsed time or the cost of scanning the suffix.
+to 613,338 bytes. The full audit of that fixture hashed 257,098,620 bytes
+while it compared every head; comparing the last head only, it hashes 209,661.
+These are checksum-input counts, not elapsed time or the cost of scanning the
+suffix.
 The additional loss of prefix validation was not accepted for an unmeasured
 further saving. This is a rejected design option, not unfinished work. A future
 measurement of traversal cost can justify reconsidering that trade-off.
 
-Full historical replay keeps predecessor addresses, then reloads each delta
-in forward order and hashes every intermediate state. Doctor and export can
-still incur quadratic checksum bytes when history and membership grow together.
+A replay walks back from the addressed head to the origin, keeping each
+decoded delta, then applies the deltas in forward order. Its memory is linear
+in the generation's delta payloads. Doctor and export hash the full state once
+per generation. The strict read of a sealed root state hashes every
+intermediate state, which is quadratic when history and membership grow
+together.
 Each native completion seal names the exact pre-completion `RootExecutionRef`
 instead of copying root contributors, contributions, and participant waivers.
 The completion delta must directly extend that head. A different head in the
@@ -538,7 +561,7 @@ execution's current waivers, without replaying root history or recursively
 verifying child completion proofs on each read. A missing seal binding for a
 listed required child stops the suggestion. Actual completion still verifies
 the full canonical seal and waiver proofs inside its transaction; `doctor`
-retains the exhaustive integrity checks. A suggestion never substitutes for
+runs the full audit. A suggestion never substitutes for
 those checks or grants authority.
 
 The suggestion remains conservative for required children completed through
@@ -673,7 +696,7 @@ per-session sequence. A position is always carried with its feed kind and id.
 A delivery position is separate from the vector of source-feed positions
 represented by that delivery. A global database row id is not a cursor. Object
 hashes reproduce content but never order changes. `engram doctor` and recovery
-still replay retained history exhaustively and compare it with
+still replay all retained history and compare it with
 those bindings. The serial scale regression covers claim, evidence,
 checkpoint, revision, block/unblock, handoff, completion, and `work_next` over
 500 items and 5,000 events, including one 500-event item, with a fixed

@@ -13,7 +13,7 @@ use crate::{CanonicalObject, ObjectId, RootExecution, RootExecutionId, SqliteSto
 
 use super::feeds::load_typed_work_object;
 use crate::domain::{
-    CompletionWaiver, RequiredChildWaiver, RootContribution, SessionId, WorkRunId,
+    CompletionWaiver, RequiredChildWaiver, RootContribution, SessionId, WorkId, WorkRunId,
 };
 use std::cmp::Ordering;
 
@@ -429,7 +429,7 @@ pub(super) fn current_ref(
 /// full-state checksums. Start at a fully verified current projection, undo
 /// each canonical delta to the empty origin, and require each cited addition
 /// on that exact path with no subsequent removal (even followed by re-add).
-/// Doctor/export retain `resolve` and its exhaustive checksum verification.
+/// Doctor and export replay each generation through [`Audit`].
 ///
 /// One head load per delta, one current-state checksum, and member hashing
 /// proportional to current members, requested facts, and actual delta payloads.
@@ -536,66 +536,145 @@ pub(super) fn verify_waiver_witnesses(
     Ok(())
 }
 
+/// Which heads of a generation a replay compares with their stored full-state
+/// checksum.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Checksums {
+    EveryHead,
+    FinalHead,
+}
+
+enum ReplayFailure {
+    Store(StoreError),
+    Checksum { head: ObjectId, sequence: u64 },
+}
+
+impl From<StoreError> for ReplayFailure {
+    fn from(error: StoreError) -> Self {
+        Self::Store(error)
+    }
+}
+
+struct WaiverSpan {
+    waiver: RequiredChildWaiver,
+    added: u64,
+    removed: Option<u64>,
+}
+
+/// One generation replayed from its empty origin to the addressed head: the
+/// state at that head, the sequence of every head on the chain, and when each
+/// required-child waiver was a member. It holds no intermediate state.
+pub(super) struct History {
+    address: RootExecutionRef,
+    state: RootExecution,
+    sequences: HashMap<ObjectId, u64>,
+    child_waivers: HashMap<WorkId, Vec<WaiverSpan>>,
+}
+
+impl History {
+    /// `None` when the address names another root or generation, or a head
+    /// that is not on this chain.
+    fn sequence(&self, address: &RootExecutionRef) -> Option<u64> {
+        let mut same_generation = self.address.clone();
+        same_generation.head = address.head.clone();
+        if same_generation != *address {
+            return None;
+        }
+        self.sequences.get(&address.head).copied()
+    }
+
+    /// The waiver of `child` that was a member of the state at `address`.
+    pub(super) fn child_waiver_at(
+        &self,
+        address: &RootExecutionRef,
+        child: WorkId,
+    ) -> Option<&RequiredChildWaiver> {
+        let sequence = self.sequence(address)?;
+        self.child_waivers.get(&child)?.iter().find_map(|span| {
+            (span.added <= sequence && span.removed.is_none_or(|removed| sequence < removed))
+                .then_some(&span.waiver)
+        })
+    }
+}
+
 /// Replay only the addressed generation, never a project-feed prefix or a newer
-/// generation. Every predecessor is a real object and every intermediate result
-/// is checked. Full-state hashing at each step is quadratic when history and
-/// membership grow together. This is the exhaustive audit/read contract, not
-/// the narrower live completion waiver-fact proof above.
-pub(super) fn resolve(
+/// generation. Every predecessor is a real object, every delta has to continue
+/// the one before it, remove only present members, add only absent ones, and
+/// leave no two members with the same waiver identity. Work is linear in the
+/// generation's deltas and their members, plus one full-state checksum for
+/// each head that `checksums` selects.
+fn replay(
     connection: &Connection,
     address: &RootExecutionRef,
-) -> Result<RootExecution, StoreError> {
-    #[cfg(test)]
-    COST.with_borrow_mut(|cost| cost.resolves += 1);
+    checksums: Checksums,
+) -> Result<History, ReplayFailure> {
+    // The backward walk keeps each decoded delta, so that a delta is loaded
+    // once. Memory is therefore linear in the generation's delta payloads
+    // until the forward walk has applied them, not in the current state only.
     let mut chain = Vec::new();
     let mut cursor = address.clone();
     let mut expected_sequence = None;
     loop {
         let head = load_head(connection, &cursor)?;
         if expected_sequence.is_some_and(|expected| expected != head.sequence) {
-            return Err(invalid("noncontiguous delta sequence"));
+            return Err(invalid("noncontiguous delta sequence").into());
         }
-        let predecessor = head.predecessor.clone();
-        let sequence = head.sequence;
-        // Keep addresses, not decoded member payloads, during the backward
-        // walk. The forward walk verifies each object again before applying it.
-        chain.push(cursor.head.clone());
-        match predecessor {
-            Some(hash) => {
+        let hash = cursor.head.clone();
+        match head.predecessor.clone() {
+            Some(predecessor) => {
                 expected_sequence = Some(
-                    sequence
+                    head.sequence
                         .checked_sub(1)
                         .ok_or_else(|| invalid("origin has a predecessor"))?,
                 );
-                cursor.head = hash;
+                cursor.head = predecessor;
+                chain.push((hash, head));
             }
-            None if sequence == 0 => break,
-            None => return Err(invalid("missing generation origin")),
+            None if head.sequence == 0 => {
+                chain.push((hash, head));
+                break;
+            }
+            None => return Err(invalid("missing generation origin").into()),
         }
     }
+    let final_sequence = chain.first().map(|(_, head)| head.sequence);
     let mut values = BTreeMap::new();
+    let mut sequences = HashMap::with_capacity(chain.len());
+    let mut child_waivers = HashMap::<WorkId, Vec<WaiverSpan>>::new();
+    let mut waived_participants = HashSet::new();
     let mut previous: Option<RootExecutionHeader> = None;
     let mut result = None;
-    for hash in chain.into_iter().rev() {
-        let mut step = address.clone();
-        step.head = hash;
-        let head = load_head(connection, &step)?;
+    for (hash, head) in chain.into_iter().rev() {
         if let Some(prior) = &previous {
             if head.previous_revision != Some(prior.revision)
                 || head.header.revision < prior.revision
                 || head.header.created_at != prior.created_at
             {
-                return Err(invalid("delta revision or origin discontinuity"));
+                return Err(invalid("delta revision or origin discontinuity").into());
             }
         } else if head.previous_revision.is_some()
             || !head.added.is_empty()
             || !head.removed.is_empty()
         {
-            return Err(invalid("origin is not empty"));
+            return Err(invalid("origin is not empty").into());
         }
         for member in &head.removed {
             if values.remove(&member_hash(member)?).as_ref() != Some(member) {
-                return Err(invalid("delta removes an absent member"));
+                return Err(invalid("delta removes an absent member").into());
+            }
+            match member {
+                RootExecutionMember::ChildWaiver(waiver) => {
+                    let open = child_waivers
+                        .get_mut(&waiver.work_id)
+                        .and_then(|spans| spans.last_mut())
+                        .filter(|span| span.removed.is_none() && span.waiver == *waiver)
+                        .ok_or_else(|| invalid("delta removes an absent member"))?;
+                    open.removed = Some(head.sequence);
+                }
+                RootExecutionMember::Waiver(waiver) => {
+                    waived_participants.remove(&waiver.participant);
+                }
+                _ => {}
             }
         }
         for member in &head.added {
@@ -603,17 +682,143 @@ pub(super) fn resolve(
                 .insert(member_hash(member)?, member.clone())
                 .is_some()
             {
-                return Err(invalid("delta adds an existing member"));
+                return Err(invalid("delta adds an existing member").into());
+            }
+            let unique = match member {
+                RootExecutionMember::ChildWaiver(waiver) => {
+                    let spans = child_waivers.entry(waiver.work_id).or_default();
+                    let unique = spans.last().is_none_or(|span| span.removed.is_some());
+                    spans.push(WaiverSpan {
+                        waiver: waiver.clone(),
+                        added: head.sequence,
+                        removed: None,
+                    });
+                    unique
+                }
+                RootExecutionMember::Waiver(waiver) => {
+                    waived_participants.insert(waiver.participant.clone())
+                }
+                _ => true,
+            };
+            if !unique {
+                return Err(invalid("conflicting member identities").into());
             }
         }
-        let state = assemble(&head.header, &values)?;
-        if checksum(&state)? != head.state_checksum {
-            return Err(invalid("replayed state checksum mismatch"));
+        sequences.insert(hash.clone(), head.sequence);
+        if checksums == Checksums::EveryHead || Some(head.sequence) == final_sequence {
+            let state = assemble(&head.header, &values)?;
+            if checksum(&state)? != head.state_checksum {
+                return Err(ReplayFailure::Checksum {
+                    head: hash,
+                    sequence: head.sequence,
+                });
+            }
+            result = Some(state);
         }
         previous = Some(head.header);
-        result = Some(state);
     }
-    result.ok_or_else(|| invalid("empty history"))
+    Ok(History {
+        address: address.clone(),
+        state: result.ok_or_else(|| invalid("empty history"))?,
+        sequences,
+        child_waivers,
+    })
+}
+
+/// The strict historical read: the state at the addressed head, with the
+/// full-state checksum of every head up to it compared. Hashing the whole
+/// state at each step is quadratic when history and membership grow together,
+/// so the full audit uses [`Audit`] instead and keeps this replay for naming
+/// the first head that disagrees.
+pub(super) fn resolve(
+    connection: &Connection,
+    address: &RootExecutionRef,
+) -> Result<RootExecution, StoreError> {
+    #[cfg(test)]
+    COST.with_borrow_mut(|cost| cost.resolves += 1);
+    match replay(connection, address, Checksums::EveryHead) {
+        Ok(history) => Ok(history.state),
+        Err(ReplayFailure::Store(error)) => Err(error),
+        Err(ReplayFailure::Checksum { .. }) => Err(invalid("replayed state checksum mismatch")),
+    }
+}
+
+enum Audited {
+    Valid(Box<History>),
+    Invalid {
+        first_checksum_mismatch: Option<(ObjectId, u64)>,
+    },
+}
+
+/// The generations one full audit has replayed, each at most once for the
+/// address it was asked about. It keeps every replayed generation's sequence
+/// index, waiver spans and final state until the audit ends. A replay compares the full-state checksum of the
+/// addressed head only: the state there is the result of every delta before
+/// it, so a delta that changes that result is caught there. A stored checksum
+/// of an earlier head that disagrees with its own state is not detected while
+/// the addressed head agrees. When the addressed head disagrees, a second,
+/// strict replay names the first head whose checksum does.
+#[derive(Default)]
+pub(super) struct Audit {
+    // By head, then by the whole address: the same head asked about under
+    // another root identity or generation is another question.
+    generations: HashMap<ObjectId, Vec<(RootExecutionRef, Audited)>>,
+}
+
+impl Audit {
+    fn audited(&mut self, connection: &Connection, address: &RootExecutionRef) -> &Audited {
+        let asked = self.generations.entry(address.head.clone()).or_default();
+        let known = asked.iter().position(|(known, _)| known == address);
+        let index = known.unwrap_or_else(|| {
+            asked.push((address.clone(), Self::replay(connection, address)));
+            asked.len() - 1
+        });
+        &asked[index].1
+    }
+
+    fn replay(connection: &Connection, address: &RootExecutionRef) -> Audited {
+        match replay(connection, address, Checksums::FinalHead) {
+            Ok(history) => Audited::Valid(Box::new(history)),
+            Err(ReplayFailure::Store(_)) => Audited::Invalid {
+                first_checksum_mismatch: None,
+            },
+            Err(ReplayFailure::Checksum { .. }) => {
+                #[cfg(test)]
+                COST.with_borrow_mut(|cost| cost.resolves += 1);
+                let strict = replay(connection, address, Checksums::EveryHead);
+                Audited::Invalid {
+                    first_checksum_mismatch: match strict {
+                        Err(ReplayFailure::Checksum { head, sequence }) => Some((head, sequence)),
+                        _ => None,
+                    },
+                }
+            }
+        }
+    }
+
+    pub(super) fn history(
+        &mut self,
+        connection: &Connection,
+        address: &RootExecutionRef,
+    ) -> Option<&History> {
+        match self.audited(connection, address) {
+            Audited::Valid(history) => Some(history),
+            Audited::Invalid { .. } => None,
+        }
+    }
+
+    fn first_checksum_mismatch(
+        &mut self,
+        connection: &Connection,
+        address: &RootExecutionRef,
+    ) -> Option<(ObjectId, u64)> {
+        match self.audited(connection, address) {
+            Audited::Invalid {
+                first_checksum_mismatch,
+            } => first_checksum_mismatch.clone(),
+            Audited::Valid(_) => None,
+        }
+    }
 }
 
 pub(super) fn initialize(
@@ -678,7 +883,7 @@ pub(super) fn persist_completion(
 }
 
 /// Check the canonical pair without replaying historical full states on a
-/// live child-seal read. Exhaustive audit still checks every state checksum.
+/// live child-seal read.
 pub(super) fn verify_completion_predecessor(
     connection: &Connection,
     pre_seal: &RootExecutionRef,
@@ -797,43 +1002,41 @@ fn persist_loaded(
     Ok(reference(&metadata, object.key().clone()))
 }
 
-/// The exhaustive audit uses canonical history, never the projection as its
+/// The full audit uses canonical history, never the projection as its
 /// expected state. A missing or extra generation is also an integrity failure.
 pub(super) fn verify_projections(
     connection: &Connection,
+    audit: &mut Audit,
     expected: &std::collections::HashMap<String, RootExecutionRef>,
     event_heads: &[RootExecutionRef],
     checked: &mut usize,
     failures: &mut Vec<String>,
 ) -> Result<(), StoreError> {
-    let mut unseen = expected.clone();
+    // Canonical history is replayed for every generation the events name,
+    // whether or not its projection row exists.
     let mut reachable = std::collections::HashSet::new();
+    let mut generations = expected.values().collect::<Vec<_>>();
+    generations.sort_by_key(|address| address.root_execution_id.0);
+    for address in generations {
+        if let Some(history) = audit.history(connection, address) {
+            reachable.extend(history.sequences.keys().cloned());
+        }
+        if let Some((head, sequence)) = audit.first_checksum_mismatch(connection, address) {
+            failures.push(format!(
+                "work_root_delta:{head}:first_checksum_mismatch:{sequence}"
+            ));
+        }
+    }
+    let mut unseen = expected.clone();
     let mut statement = connection
         .prepare("SELECT root_execution_id FROM work_root_executions ORDER BY root_execution_id")?;
     for row in statement.query_map([], |row| row.get::<_, String>(0))? {
         let id = row?;
         *checked += 1;
         let valid = unseen.remove(&id).is_some_and(|address| {
-            projected(connection, address.root_execution_id).is_ok_and(|(state, actual)| {
-                if actual != address
-                    || !resolve(connection, &address).is_ok_and(|canonical| canonical == state)
-                {
-                    return false;
-                }
-                let mut cursor = address;
-                loop {
-                    if !reachable.insert(cursor.head.clone()) {
-                        break;
-                    }
-                    let Ok(head) = load_head(connection, &cursor) else {
-                        return false;
-                    };
-                    let Some(previous) = head.predecessor else {
-                        break;
-                    };
-                    cursor.head = previous;
-                }
-                true
+            audit.history(connection, &address).is_some_and(|history| {
+                projected(connection, address.root_execution_id)
+                    .is_ok_and(|(state, actual)| actual == address && history.state == state)
             })
         });
         if !valid {
@@ -862,10 +1065,14 @@ pub(super) fn verify_projections(
     for address in event_heads {
         *checked += 1;
         let valid = reachable.contains(&address.head)
-            && load_head(connection, address).is_ok_and(|head| {
-                let prior = sequences.insert(address.root_execution_id, head.sequence);
-                prior.is_none_or(|sequence| sequence <= head.sequence)
-            });
+            && expected
+                .get(&address.root_execution_id.0.to_string())
+                .and_then(|last| audit.history(connection, last))
+                .and_then(|history| history.sequence(address))
+                .is_some_and(|sequence| {
+                    let prior = sequences.insert(address.root_execution_id, sequence);
+                    prior.is_none_or(|prior| prior <= sequence)
+                });
         if !valid {
             failures.push(format!(
                 "work_root_event_head:{}:invalid_history",

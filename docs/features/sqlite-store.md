@@ -51,14 +51,15 @@ The checksum is not a stored-object address. Live completion uses a narrower
 waiver fact proof: one fully checked current state, exact ancestor additions,
 and no later removal, including remove/re-add. It checks the canonical delta
 chain but not its historical full-state checksums. Doctor and graph export
-retain those exhaustive checks, including detection of a re-canonicalized
-historical head with a false checksum. They do not repair runtime rows. See the
+replay every generation once: they check the whole delta chain and compare the
+full-state checksum of its last head, not of each earlier head, so a false
+checksum on an earlier head passes while the last head agrees. They do not
+repair runtime rows. See the
 [root-state contract](local-work-system.md#root-execution-and-work-run).
 These full-history checks are requested explicitly, not scheduled by ordinary
 open or completion. Projection repair calls `verify_all`, including full root
 history replay, before commit; backup and restore check their copies. Installing
-a binary alone does not schedule an audit. Without an explicit full check, a
-false historical checksum may remain undetected for an unbounded time.
+a binary alone does not schedule an audit.
 CI fixture audits do not check the
 active store.
 

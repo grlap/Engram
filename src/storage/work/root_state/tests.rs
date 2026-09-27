@@ -310,7 +310,15 @@ fn root_delta_audit_checks_each_historical_event_reference() {
         vec![wrong_generation, last.clone()],
     ] {
         let mut failures = Vec::new();
-        verify_projections(&store.connection, &expected, &refs, &mut 0, &mut failures).unwrap();
+        verify_projections(
+            &store.connection,
+            &mut Audit::default(),
+            &expected,
+            &refs,
+            &mut 0,
+            &mut failures,
+        )
+        .unwrap();
         assert!(
             failures
                 .iter()
@@ -321,6 +329,7 @@ fn root_delta_audit_checks_each_historical_event_reference() {
     let mut failures = Vec::new();
     verify_projections(
         &store.connection,
+        &mut Audit::default(),
         &expected,
         &[first.clone(), first, last],
         &mut 0,
@@ -354,6 +363,7 @@ fn root_delta_doctor_rejects_orphan_projection_members() {
     let mut failures = Vec::new();
     verify_projections(
         &store.connection,
+        &mut Audit::default(),
         &std::collections::HashMap::new(),
         &[],
         &mut 0,

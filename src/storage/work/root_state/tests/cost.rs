@@ -64,29 +64,47 @@ fn root_delta_mutation_cost_measurement() {
     }
 }
 
-// Exhaustive audit intentionally retains intermediate full-state checksums.
-// Keep its measured no-regression ceiling separate from the algorithm-derived
-// live bounds below. These numbers do not claim a bounded audit algorithm.
-fn assert_audit_replay_ceiling(prior: u32) {
-    let (bytes, loads, decodes) = match prior {
-        10 => (92_525, 206, 441),
-        100 => (3_003_835, 1_286, 2_601),
-        1000 => (257_098_620, 12_086, 24_201),
-        _ => panic!("unmeasured audit fixture: {prior}"),
-    };
-    let cost = report("verify_all", prior);
+// Runs the full audit of a healthy single-generation store and holds it to
+// bounds derived from the algorithm, not from a measurement. The generation is
+// replayed once: each delta is loaded once and the full state is hashed for
+// the last head only. Two passes also read the current state, which loads the
+// current head and hashes the state once each. Neither count depends on the
+// length of the history or on the number of waivers.
+pub(super) fn assert_audit_is_linear(store: &SqliteStore, fixture: &str, size: u32) {
+    const CURRENT_READS: usize = 2;
+    let largest_state = store
+        .connection
+        .prepare("SELECT root_execution_id FROM work_root_executions")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .map(|id| {
+            let id = super::super::super::query::parse_root_execution_id(&id.unwrap()).unwrap();
+            let state = projected(&store.connection, id).unwrap().0;
+            CanonicalObject::freeze(&state).unwrap().bytes().len()
+        })
+        .max()
+        .unwrap();
+    let deltas: i64 = store
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM objects WHERE object_kind = 'work_root_delta'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let deltas = usize::try_from(deltas).unwrap();
+    reset();
+    let audit = store.verify_all().unwrap();
+    let cost = report(&format!("verify_all_{fixture}"), size);
+    assert!(audit.is_healthy(), "{audit:?}");
+    assert_eq!(cost.resolves, 0, "{cost:?}");
+    assert!(cost.checksums <= 1 + CURRENT_READS, "{cost:?}");
     assert!(
-        cost.checksum_bytes <= bytes,
-        "temporary checksum regression: {cost:?}"
+        cost.checksum_bytes <= (1 + CURRENT_READS) * largest_state,
+        "{cost:?}"
     );
-    assert!(
-        cost.head_loads <= loads,
-        "temporary head-load regression: {cost:?}"
-    );
-    assert!(
-        crate::canonical::canonical_decode_count() <= decodes,
-        "audit canonical-decode regression: {prior}"
-    );
+    assert!(cost.head_loads <= deltas + CURRENT_READS, "{cost:?}");
 }
 
 struct LiveBudget {
@@ -152,9 +170,18 @@ impl LiveBudget {
 }
 
 #[test]
-#[ignore = "root history cost measurement belongs to the separate scale phase"]
+fn root_delta_history_cost_measurement() {
+    check_history_cost(&[10, 100]);
+}
+
+#[test]
+#[ignore = "thousand-delta fixture belongs to the separate scale phase"]
 fn root_delta_scale_history_cost_measurement() {
-    for prior in [10, 100, 1000] {
+    check_history_cost(&[1000]);
+}
+
+fn check_history_cost(lengths: &[u32]) {
+    for &prior in lengths {
         let (mut store, root, _) = fixture();
         let plan = store
             .decompose_work(
@@ -224,10 +251,7 @@ fn root_delta_scale_history_cost_measurement() {
                 )
                 .unwrap();
         }
-        reset();
-        let audit = store.verify_all().unwrap();
-        assert_audit_replay_ceiling(prior);
-        assert!(audit.is_healthy(), "{audit:?}");
+        assert_audit_is_linear(&store, "long_history", prior);
 
         // The waivers belong to the root, not this optional child. Its done
         // nevertheless reaches the generation-wide waiver validator.

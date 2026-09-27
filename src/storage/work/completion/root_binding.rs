@@ -83,7 +83,7 @@ pub(in crate::storage::work) fn validate_stored_seal_root(
 impl SqliteStore {
     /// Reads the full root accounting frozen by a native completion seal.
     /// This historical read checks the exact completion binding and replays
-    /// every state checksum. It never substitutes the later current root.
+    /// every state checksum up to it. It never substitutes the later current root.
     ///
     /// # Errors
     ///
