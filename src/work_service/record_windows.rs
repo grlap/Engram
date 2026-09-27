@@ -189,7 +189,7 @@ impl LocalWorkService {
     }
 
     /// Complete immutable note detail; deliberately no window byte limit.
-    /// Hash prefixes resolve only within this item's note membership.
+    /// Record-id prefixes resolve only within this item's note membership.
     pub(crate) fn work_note_detail(
         &self,
         work_ref: &str,
@@ -198,7 +198,7 @@ impl LocalWorkService {
     ) -> Result<(String, WorkRecordRow), StoreError> {
         let (prefix, member) = locator
             .split_once(':')
-            .map_or((locator, None), |(hash, member)| (hash, Some(member)));
+            .map_or((locator, None), |(prefix, member)| (prefix, Some(member)));
         if !(8..=64).contains(&prefix.len())
             || !prefix.bytes().all(|byte| byte.is_ascii_hexdigit())
             || member

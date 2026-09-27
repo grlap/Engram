@@ -235,13 +235,15 @@ label cannot create an offer the intended recipient cannot accept. Ask the
 host or coordinator for the recipient's real session id. This refusal does
 not authenticate the target or resolve aliases. Stored audit attribution is
 unchanged. Arbitrary bodies and host context may themselves identify people.
-Raw actor/session metadata is not part of the ordinary terse show projection.
-It otherwise omits canonical UUIDs and hashes, revision and fence counters,
-and host-only run, claim, control-binding, obligation-page, and memory-version
-fields. The scoped exceptions are note/detail locators, sealed evidence links,
-and an open item's `acceptance_basis` when it has criteria to link; the basis
-is a read-concurrency token, not execution authority. Humans and hosts that
-need the rich projection use
+Ordinary terse show represents work items by short refs. It omits raw
+actor/session metadata, claim fences, and host-only run, claim,
+control-binding, obligation-page, and memory-version fields. It retains
+note/detail locators, sealed evidence links, and an open item's
+`acceptance_basis` when it has criteria to link; the basis is a
+read-concurrency token, not execution authority. Acceptance evaluation
+exposes its full record id in JSON; the text evaluation summary uses a
+12-character prefix. The evaluated work revision and any source fingerprint
+also remain visible. Humans and hosts that need the rich projection use
 host-only `work core focus`. Core Summary focus, including core `next` and
 `work_propose`, bounds `outcome` to 192 UTF-8 bytes like other summary
 fields; `show REF --full` returns the complete authored contract. Full
@@ -771,12 +773,16 @@ Rules that matter:
   read fails, `child_obligations_unavailable: true`, a fixed
   `child_obligations_error_class`, and parent navigation retain the successful
   outcome without pretending the remaining count is zero. The diagnostic
-  class never contains the underlying error body, path, hash, or actor text.
+  class never contains the underlying error body, path, record id, or actor text.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
-  (commands you can run now). Ordinary mutation words never ask for hashes,
-  fences, or idempotency keys. Optional criterion linking explicitly reuses
-  note locators and the `acceptance_basis` read token; it grants no authority.
-  Note-detail navigation is the other scoped locator exception, as above.
+  (commands you can run now). Ordinary mutation words never ask for fences or
+  idempotency keys. Words accept record ids as inputs only for scoped evidence
+  citations and note-detail navigation. Structured receipts also return record
+  ids in fields such as `seal`, `evidence`, and `evaluation`.
+  Optional criterion linking explicitly reuses note locators and the
+  `acceptance_basis` read token; it grants no authority.
+  `evaluate` also accepts full record ids of host-minted verification or
+  environment evidence on the active run, which no note-locator window prints.
   Safe project-memory keys are
   intentional navigation tokens for `memories` and `forget`. JSON retains the
   complete command list; the text renderer shows at most four and prints
@@ -1366,10 +1372,12 @@ suggests reopening merely to record evidence.
 Errors keep their stable code and details and add the same two fields. The
 shell prints a one-line receipt followed by `reminders:` and `next:`; `--json`
 prints the structured receipt plus `effective_session_id` only for a successful
-default-session mutation. Text output never contains a 64-hex hash, fence
-number, or idempotency key. `scripts/parity.test.mjs` checks that on a fresh
-store and counts `add → claim → done` at three commands and at most three
-agent-supplied fields.
+default-session mutation. In the baseline `add → claim → done` lifecycle,
+text output contains no full record id (32 or 64 lowercase hex), fence number,
+or idempotency key. `scripts/parity.test.mjs` checks that on a fresh store and
+counts three commands and at most three agent-supplied fields. Scoped
+note/detail navigation and evidence locators may expose full record ids,
+including read commands for clipped status notes.
 
 `ls --mine` returns items assigned to the actor plus the session's focused
 item when this session holds it; claims on other items are visible through
@@ -1912,10 +1920,10 @@ is shared; the MCP processes are not.
 `scripts/parity.test.mjs` runs the real binary against a fresh home with
 `engram init` as host setup outside the count,
 then drives `add → claim → done` and fails if the agent needed more than three
-commands or three supplied fields, typed JSON, or saw a hash, fence, or key in
-text output. It also checks that an unheld `note` records a marked observation
-without execution credit, while an unnoted `done` supplies its resolving
-command even when observations exist.
+commands or three supplied fields, typed JSON, or saw a full record id
+(32 or 64 lowercase hex), fence, or key in text output. It also checks that an
+unheld `note` records a marked observation without execution credit, while an
+unnoted `done` supplies its resolving command even when observations exist.
 
 `scripts/mcp-dogfood.test.mjs` launches real stdio MCP processes against a
 fresh home. Its main lifecycle uses only the agent-facing MCP tools: one session
@@ -1923,10 +1931,12 @@ creates, claims, blocks/unblocks, notes, and offers a root; a peer accepts the
 checkpoint-coupled handoff, notes, and seals it with `done`. Keyless replay,
 `reminders`/`next` derivation, catalog and search filters, cancellation,
 compact completion, child creation under a parent, and field revision are
-asserted along the way, and no `reminders` or `next` line ever carries a hash,
-fence, or key. The CLI path drives the same lifecycle through the words in text
-and `--json` modes and keeps one `engram work core focus` call. Both scripts are
-part of `scripts/check.sh`.
+asserted along the way. The receipt checks in this lifecycle reject full
+record ids (32 or 64 lowercase hex), fences, and keys in `reminders` and
+`next`; separate status-recovery tests preserve the scoped note-locator
+exceptions. The CLI path drives the same lifecycle through the words in
+text and `--json` modes and keeps one
+`engram work core focus` call. Both scripts are part of `scripts/check.sh`.
 
 The shared [test launcher](../development.md#test-launcher) drives these gates;
 `scripts/test-launcher.test.mjs` checks its execution, diagnostics and completion

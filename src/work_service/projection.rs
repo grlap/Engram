@@ -563,9 +563,9 @@ pub(super) fn prioritized_focus_evidence(
     selected
 }
 
-fn push_focus_evidence(selected: &mut Vec<ObjectId>, hash: &ObjectId) {
-    if selected.len() < MAX_FOCUS_RELATIONS && !selected.contains(hash) {
-        selected.push(hash.clone());
+fn push_focus_evidence(selected: &mut Vec<ObjectId>, evidence_id: &ObjectId) {
+    if selected.len() < MAX_FOCUS_RELATIONS && !selected.contains(evidence_id) {
+        selected.push(evidence_id.clone());
     }
 }
 
@@ -636,13 +636,13 @@ fn gate_evidence_summary(gate: &crate::GateEvidenceRecord, compact: bool) -> Str
 pub(super) fn work_evidence_summary(
     store: &SqliteStore,
     run_id: WorkRunId,
-    hash: &ObjectId,
+    evidence_id: &ObjectId,
 ) -> Result<WorkEvidenceSummary, StoreError> {
-    match store.work_evidence_kind(run_id, hash)? {
+    match store.work_evidence_kind(run_id, evidence_id)? {
         WorkEvidenceKind::Generic => {
-            let evidence = store.get::<WorkEvidence>(hash)?.ok_or_else(|| {
+            let evidence = store.get::<WorkEvidence>(evidence_id)?.ok_or_else(|| {
                 StoreError::InvalidWorkProjection(format!(
-                    "generic evidence object {hash} is missing"
+                    "generic evidence object {evidence_id} is missing"
                 ))
             })?;
             let summary = compact_work_evidence(&evidence)?;
@@ -655,7 +655,7 @@ pub(super) fn work_evidence_summary(
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
                 root_position: None,
-                evidence: hash.clone(),
+                evidence: evidence_id.clone(),
                 evidence_kind: WorkEvidenceKind::Generic,
                 non_holder: false,
                 gate,
@@ -675,12 +675,12 @@ pub(super) fn work_evidence_summary(
             })
         }
         WorkEvidenceKind::Verification => {
-            let evidence = store.load_verification_evidence(hash)?;
+            let evidence = store.load_verification_evidence(evidence_id)?;
             Ok(WorkEvidenceSummary {
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
                 root_position: None,
-                evidence: hash.clone(),
+                evidence: evidence_id.clone(),
                 evidence_kind: WorkEvidenceKind::Verification,
                 non_holder: false,
                 gate: None,
@@ -700,12 +700,12 @@ pub(super) fn work_evidence_summary(
             })
         }
         WorkEvidenceKind::Environment => {
-            let evidence = store.load_environment_evidence(hash)?;
+            let evidence = store.load_environment_evidence(evidence_id)?;
             Ok(WorkEvidenceSummary {
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
                 root_position: None,
-                evidence: hash.clone(),
+                evidence: evidence_id.clone(),
                 evidence_kind: WorkEvidenceKind::Environment,
                 non_holder: false,
                 gate: None,
@@ -728,7 +728,7 @@ pub(super) fn work_evidence_summary(
 }
 
 pub(super) fn restored_work_evidence_summary(
-    hash: ObjectId,
+    evidence_id: ObjectId,
     evidence: &RestoredWorkEvidence,
 ) -> Result<WorkEvidenceSummary, StoreError> {
     let summary = compact_restored_work_evidence(evidence)?;
@@ -741,7 +741,7 @@ pub(super) fn restored_work_evidence_summary(
         display_actor_id: Some(evidence.actor.actor_id.clone()),
         display_actor_session_id: evidence.actor.session_id.clone(),
         root_position: None,
-        evidence: hash,
+        evidence: evidence_id,
         non_holder: false,
         evidence_kind: WorkEvidenceKind::Generic,
         gate,
@@ -762,14 +762,14 @@ pub(super) fn restored_work_evidence_summary(
 }
 
 pub(super) fn work_observation_summary(
-    hash: ObjectId,
+    observation_id: ObjectId,
     observation: &crate::domain::WorkObservation,
 ) -> WorkEvidenceSummary {
     WorkEvidenceSummary {
         display_actor_id: Some(observation.actor.actor_id.clone()),
         display_actor_session_id: observation.actor.session_id.clone(),
         root_position: None,
-        evidence: hash,
+        evidence: observation_id,
         non_holder: true,
         evidence_kind: WorkEvidenceKind::Generic,
         gate: None,

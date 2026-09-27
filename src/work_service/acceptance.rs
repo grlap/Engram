@@ -47,12 +47,15 @@ impl WorkAcceptanceEvidence {
                 .iter()
                 .enumerate()
                 .flat_map(|(index, result)| {
-                    result.evidence.iter().map(move |hash| WorkAcceptanceLink {
-                        criterion: index + 1,
-                        evidence: hash.clone(),
-                        preview: None,
-                        preview_error_class: None,
-                    })
+                    result
+                        .evidence
+                        .iter()
+                        .map(move |evidence_id| WorkAcceptanceLink {
+                            criterion: index + 1,
+                            evidence: evidence_id.clone(),
+                            preview: None,
+                            preview_error_class: None,
+                        })
                 })
                 .take(16)
                 .collect(),
@@ -99,12 +102,12 @@ pub(super) fn provenance(
     let Some(evaluation) = store.completion_seal_evaluation(seal)? else {
         return Ok(super::WorkAcceptanceProvenance::SelfAsserted);
     };
-    let hash = seal.acceptance_evaluation.clone().ok_or_else(|| {
+    let evaluation_id = seal.acceptance_evaluation.clone().ok_or_else(|| {
         StoreError::InvalidWorkProjection("validated seal lost its evaluation binding".into())
     })?;
     Ok(super::WorkAcceptanceProvenance::Evaluated(Box::new(
         super::WorkEvaluatedProvenance {
-            evaluation: hash,
+            evaluation: evaluation_id,
             mode: evaluation.mode,
             assurance: seal
                 .acceptance
@@ -118,14 +121,14 @@ pub(super) fn provenance(
     )))
 }
 
-/// The completion seal named by hash, bound to the expected work and run.
+/// The completion seal named by record id, bound to the expected work and run.
 pub(super) fn bound_seal(
     store: &SqliteStore,
-    hash: &ObjectId,
+    seal_id: &ObjectId,
     work: WorkId,
     run: WorkRunId,
 ) -> Result<CompletionSeal, StoreError> {
-    let seal: CompletionSeal = store.get(hash)?.ok_or_else(|| {
+    let seal: CompletionSeal = store.get(seal_id)?.ok_or_else(|| {
         StoreError::InvalidWorkProjection("acceptance provenance has no canonical seal".into())
     })?;
     if seal.work_id != work || seal.run_id != run {
@@ -136,14 +139,14 @@ pub(super) fn bound_seal(
     Ok(seal)
 }
 
-/// Provenance of a seal named by hash, bound to the expected work and run.
+/// Provenance of a seal named by record id, bound to the expected work and run.
 pub(super) fn provenance_for_seal(
     store: &SqliteStore,
-    hash: &ObjectId,
+    seal_id: &ObjectId,
     work: WorkId,
     run: WorkRunId,
 ) -> Result<super::WorkAcceptanceProvenance, StoreError> {
-    provenance(store, &bound_seal(store, hash, work, run)?)
+    provenance(store, &bound_seal(store, seal_id, work, run)?)
 }
 
 pub(super) fn for_completed_run(
@@ -151,21 +154,25 @@ pub(super) fn for_completed_run(
     run: Option<&WorkRun>,
     work: WorkId,
 ) -> Result<WorkAcceptanceEvidence, StoreError> {
-    let (run_id, hash) = run
-        .and_then(|run| run.completion_seal.as_ref().map(|hash| (run.run_id, hash)))
+    let (run_id, seal_id) = run
+        .and_then(|run| {
+            run.completion_seal
+                .as_ref()
+                .map(|seal_id| (run.run_id, seal_id))
+        })
         .ok_or_else(|| {
             StoreError::InvalidWorkProjection("completed work has no completion seal".into())
         })?;
-    for_seal(store, hash, work, run_id)
+    for_seal(store, seal_id, work, run_id)
 }
 
 pub(super) fn for_seal(
     store: &SqliteStore,
-    hash: &ObjectId,
+    seal_id: &ObjectId,
     work: WorkId,
     run: WorkRunId,
 ) -> Result<WorkAcceptanceEvidence, StoreError> {
-    let seal: CompletionSeal = store.get(hash)?.ok_or_else(|| {
+    let seal: CompletionSeal = store.get(seal_id)?.ok_or_else(|| {
         StoreError::InvalidWorkProjection("acceptance disclosure has no canonical seal".into())
     })?;
     if seal.work_id != work || seal.run_id != run {
@@ -209,7 +216,7 @@ mod tests {
                 at(1),
             )
             .unwrap();
-        let hash: ObjectId = serde_json::from_value(
+        let evidence_id: ObjectId = serde_json::from_value(
             service
                 .work_update(
                     WorkUpdateInput::Evidence {
@@ -231,7 +238,7 @@ mod tests {
             link_count: 1,
             links: vec![WorkAcceptanceLink {
                 criterion: 1,
-                evidence: hash.clone(),
+                evidence: evidence_id.clone(),
                 preview: None,
                 preview_error_class: None,
             }],
@@ -251,13 +258,13 @@ mod tests {
         connection
             .execute(
                 "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_id = ?1",
-                [hash.as_str()],
+                [evidence_id.as_str()],
             )
             .unwrap();
         let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
         let failed = facts.with_previews(&store);
         assert_eq!(failed.link_count, 1);
-        assert_eq!(failed.links[0].evidence, hash);
+        assert_eq!(failed.links[0].evidence, evidence_id);
         assert!(failed.links[0].preview.is_none());
         assert_eq!(
             failed.links[0].preview_error_class,

@@ -914,6 +914,44 @@ fn project_memory_attribution_is_bounded_and_redacted_on_create_and_forget() {
 }
 
 #[test]
+fn project_memory_attribution_canonical_byte_limit_is_inclusive() {
+    let mut attribution = actor("attribution-size-boundary");
+    attribution.provenance_chain = (0..MAX_PROJECT_MEMORY_PROVENANCE_LINKS)
+        .map(|_| ProvenanceLink {
+            relation: crate::domain::ProvenanceRelation::AssertedBy,
+            source: "x".into(),
+            reference: None,
+        })
+        .collect();
+    let initial_size = crate::canonical::canonical_bytes(&attribution)
+        .unwrap()
+        .len();
+    let mut remaining = MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES - initial_size;
+    for link in &mut attribution.provenance_chain {
+        let additional = remaining.min(MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES - 1);
+        link.source.push_str(&"x".repeat(additional));
+        remaining -= additional;
+    }
+    assert_eq!(remaining, 0);
+    assert_eq!(
+        crate::canonical::canonical_bytes(&attribution)
+            .unwrap()
+            .len(),
+        MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES
+    );
+    validate_project_memory_actor_shape(&attribution).expect("exact byte limit is admitted");
+
+    attribution.reason.push('x');
+    assert!(matches!(
+        validate_project_memory_actor_shape(&attribution),
+        Err(StoreError::InvalidProjectMemory(message))
+            if message == format!(
+                "project-memory attribution exceeds the {MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES}-byte canonical limit"
+            )
+    ));
+}
+
+#[test]
 fn project_memory_context_only_retry_uses_the_stored_delivery_envelope() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let project = ProjectId("project-memory-context-replay-boundary".into());

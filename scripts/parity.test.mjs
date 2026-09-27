@@ -3,7 +3,8 @@
 // Measured acceptance for the fourteen-word agent surface: on a fresh store, an
 // agent goes from nothing to a sealed item with add -> claim -> done in at
 // most three commands and at most three agent-supplied fields, typing no
-// JSON, and never seeing a hash, fence, or idempotency key in text output.
+// JSON, and seeing no full record id, fence, or idempotency key in this
+// baseline lifecycle's text output.
 
 import assert from "node:assert/strict";
 
@@ -26,7 +27,7 @@ const binary = join(target, "debug", "engram");
 const MAX_COMMANDS = 3;
 const MAX_FIELDS = 3;
 // A full record id: minted ids are 32 hex digits, earlier ids are 64.
-const HASH = /\b(?:[0-9a-f]{32}|[0-9a-f]{64})\b/u;
+const RECORD_ID = /\b(?:[0-9a-f]{32}|[0-9a-f]{64})\b/u;
 
 /**
  * Test oracle for the claim clock the receipts render. Same UTC day as `now`
@@ -464,7 +465,7 @@ test("add -> claim -> done takes three commands and at most three fields", (t) =
       fields += agentArgs.length;
       for (const value of agentArgs) {
         assert.doesNotMatch(value, /^[\[{]/u, `agent typed JSON: ${value}`);
-        assert.doesNotMatch(value, HASH, `agent typed a hash: ${value}`);
+        assert.doesNotMatch(value, RECORD_ID, `agent typed a record id: ${value}`);
       }
       const executed = run([...hostContext, word, ...agentArgs]);
       transcript += `${executed.stdout}\n${executed.stderr}\n`;
@@ -488,7 +489,7 @@ test("add -> claim -> done takes three commands and at most three fields", (t) =
 
     assert.ok(commands <= MAX_COMMANDS, `${commands} commands`);
     assert.ok(fields <= MAX_FIELDS, `${fields} agent-supplied fields`);
-    assert.doesNotMatch(transcript, HASH, "text output leaked a hash");
+    assert.doesNotMatch(transcript, RECORD_ID, "text output leaked a record id");
     assert.doesNotMatch(transcript, /fence/iu, "text output leaked a fence");
     assert.doesNotMatch(transcript, /idempotency/iu, "text output leaked a key");
     assert.doesNotMatch(transcript, /"[a-z_]+":/u, "text output contained JSON");
@@ -505,7 +506,7 @@ test("add -> claim -> done takes three commands and at most three fields", (t) =
     assertTerseShow(view);
     const shownText = run([...hostContext, "show", ref]);
     assert.equal(shownText.status, 0, shownText.stderr);
-    assert.doesNotMatch(shownText.stdout, HASH);
+    assert.doesNotMatch(shownText.stdout, RECORD_ID);
     assert.doesNotMatch(shownText.stdout, UUID);
     assert.doesNotMatch(
       shownText.stdout,
@@ -1447,7 +1448,7 @@ test("done says what is owed and exits 2 when the item cannot seal yet", (t) => 
     assert.notEqual(bare.status, 0);
     assert.match(bare.stderr, /nothing has been noted for this execution yet/u);
     assert.match(bare.stderr, new RegExp(`engram work done ${ref} "…"`, "u"));
-    assert.doesNotMatch(bare.stdout + bare.stderr, HASH);
+    assert.doesNotMatch(bare.stdout + bare.stderr, RECORD_ID);
     const beforeNote = new Date().toISOString();
     const noted = run([...hostContext, "note", "found the missing piece", "--ref", "src/lib.rs"]);
     const afterNote = new Date().toISOString();
@@ -1463,7 +1464,7 @@ test("done says what is owed and exits 2 when the item cannot seal yet", (t) => 
       noted.stdout,
     );
     assertHeldUntilClock(noted.stdout, heldUntil, beforeNote, afterNote);
-    assert.doesNotMatch(noted.stdout, HASH);
+    assert.doesNotMatch(noted.stdout, RECORD_ID);
     const done = run([...hostContext, "done"]);
     assert.equal(done.status, 0, done.stderr);
     assert.match(done.stdout, /^done w-/u);

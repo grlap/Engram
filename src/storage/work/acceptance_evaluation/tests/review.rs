@@ -662,10 +662,10 @@ fn seal_evaluation_binding_is_validated_per_relationship() {
     );
 }
 
-// Host-minted verification evidence is cited by its full hash through the
-// word; no locator window prints it.
+// Host-minted verification evidence is cited by its full record id through
+// the word; no locator window prints it.
 #[test]
-fn the_word_accepts_full_hashes_of_host_minted_verification_evidence() {
+fn the_word_accepts_full_record_ids_of_host_minted_verification_evidence() {
     let mut fx = fixture("project-evaluation-typed-citation");
     let database = fx.directory.path().join("engram.sqlite3");
     let store = &mut fx.store;

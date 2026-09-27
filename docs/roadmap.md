@@ -20,9 +20,9 @@ work.
 Current milestone: agents use fourteen words — `next`, `ls`, `show`, `add`,
 `claim`, `update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`,
 `forget` — as flat CLI commands and MCP tools over the unchanged six-operation
-core; `add → claim → done` is
-measured at three commands and no JSON, hashes, fences, or keys, and every
-receipt ends with `reminders` and `next`. The separate JSON-lines host service
+core; the baseline `add → claim → done` lifecycle is measured at three
+commands with no JSON, full record ids, fences, or keys, and every receipt
+ends with `reminders` and `next`. The separate JSON-lines host service
 process-tests a
 restart-safe `session_bind → turn_evaluate → turn_begin → turn_checkpoint`
 loop with transactional context and stale-grant refusal, plus turn-gated local

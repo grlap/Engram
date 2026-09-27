@@ -232,9 +232,13 @@ engram work forget KEY
 ```
 
 Add `--json` to any word for its structured receipt. `next` and `ls` stay
-short in text, JSON, and MCP; use `show REF` for safe agent detail. Apart from
-note/detail locators, sealed links and the scoped `acceptance_basis` read token,
-it hides canonical ids, hashes, fences, and host-control fields. `--verbose` restores
+short in text, JSON, and MCP; use `show REF` for bounded agent detail. Show
+uses short work refs and omits raw actor/session metadata, claim fences and
+host-control fields. It retains note/detail locators, sealed evidence links
+and the scoped `acceptance_basis` read token. Acceptance evaluation exposes
+its full record id in JSON; the text evaluation summary uses a 12-character
+prefix. The evaluated work revision and any source fingerprint remain
+visible. `--verbose` restores
 the full structured list projection for a human or host that explicitly needs
 it, including raw identity and integrity metadata. The MCP `verbose` options
 have the same rich contract. This is optional presentation, not a global
@@ -339,9 +343,10 @@ Rules that matter:
   beyond 12 KiB, independently of the gate filter. Native locators are unique
   prefixes of a record's id, at least eight hex digits of an id of 32 or 64;
   inherited locators are `RECORD_ID:INDEX`, where INDEX is an
-  immutable one-based member position, never a display ordinal. These are
-  read-only exceptions to hidden canonical identity. MCP uses `notes`,
-  `history`, `after`, and `note` with the same meaning. New note bodies have a
+  immutable one-based member position, never a display ordinal. Locators are
+  scoped record-id exposures alongside sealed evidence links and acceptance
+  evaluation ids. MCP uses `notes`, `history`, `after`, and `note` with the
+  same meaning. New note bodies have a
   64 KiB UTF-8 write limit; carry bulk content as a reference. Existing larger
   bodies remain readable. See the
   [window/detail contract](../../../docs/features/cli-and-mcp.md#using-engram-as-an-agent).
@@ -466,10 +471,14 @@ Rules that matter:
   `full_detail` command for the full item or durable note/gate evidence;
   completion still includes optional-child follow-ups and detach commands.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
-  (commands you can run now). Ordinary mutation words never ask for hashes,
-  fences, or idempotency keys. Optional criterion linking explicitly reuses
-  note locators and the `acceptance_basis` read token; it grants no authority.
-  Note-detail navigation is the other scoped locator exception.
+  (commands you can run now). Ordinary mutation words never ask for fences or
+  idempotency keys. Words accept record ids as inputs only for scoped evidence
+  citations and note-detail navigation. Structured receipts also return record
+  ids in fields such as `seal`, `evidence`, and `evaluation`.
+  Optional criterion linking explicitly reuses note locators and the
+  `acceptance_basis` read token; it grants no authority.
+  `evaluate` also accepts full record ids of host-minted verification or
+  environment evidence on the active run, which no note-locator window prints.
   The `next` build token is a
   diagnostic exception: compare it with `engram --version` after an install
   to detect a stale MCP child, never copy it into a work command. See

@@ -428,9 +428,9 @@ impl SqliteStore {
         )
     }
 
-    /// Whether `hash` is host-minted verification or environment evidence on
-    /// `run_id`: typed evidence an evaluator cites by its full hash rather
-    /// than by a note/gate locator.
+    /// Whether `evidence_id` is host-minted verification or environment
+    /// evidence on `run_id`: typed evidence an evaluator cites by its full
+    /// record id rather than by a note/gate locator.
     ///
     /// # Errors
     ///
@@ -438,7 +438,7 @@ impl SqliteStore {
     pub(crate) fn host_minted_run_evidence(
         &self,
         run_id: WorkRunId,
-        hash: &ObjectId,
+        evidence_id: &ObjectId,
     ) -> Result<bool, StoreError> {
         Ok(self.connection.query_row(
             "SELECT EXISTS(
@@ -446,7 +446,7 @@ impl SqliteStore {
                  WHERE run_id = ?1 AND evidence_id = ?2
                    AND evidence_kind IN ('verification', 'environment')
              )",
-            params![run_id.0.to_string(), hash.as_str()],
+            params![run_id.0.to_string(), evidence_id.as_str()],
             |row| row.get(0),
         )?)
     }

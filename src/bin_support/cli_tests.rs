@@ -3,6 +3,50 @@
 //! subcommands.
 
 #[test]
+fn authority_waiver_accepts_record_ids_and_reports_invalid_definition_ids() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("waiver-record-ids.db");
+    let obligation_id = uuid::Uuid::new_v4();
+    let waive = |expected_definition: String| {
+        super::run_authority(
+            &database,
+            None,
+            super::AuthorityCommand::WaiveObligation {
+                obligation_id: obligation_id.to_string(),
+                expected_definition,
+                waived_by: "operator".into(),
+                reason: "record-id parser regression".into(),
+                idempotency_key: "record-id-parser".into(),
+            },
+        )
+        .unwrap_err()
+    };
+    for valid in [
+        engram::ObjectId::mint().to_string(),
+        format!("{}{}", engram::ObjectId::mint(), engram::ObjectId::mint()),
+    ] {
+        let error = waive(valid);
+        assert!(
+            matches!(error.downcast_ref::<engram::StoreError>(),
+                Some(engram::StoreError::InvalidWork(message))
+                    if message == &format!("work obligation {obligation_id} does not exist")),
+            "valid record id must reach obligation lookup: {error}"
+        );
+    }
+    for invalid in [
+        "A".repeat(32),
+        "g".repeat(64),
+        "a".repeat(31),
+        String::new(),
+    ] {
+        assert_eq!(
+            waive(invalid).to_string(),
+            "invalid definition id: expected a lowercase hex record id"
+        );
+    }
+}
+
+#[test]
 fn cli_command_construction_uses_only_package_version_metadata() {
     use clap::{CommandFactory, Parser};
     assert_eq!(
@@ -22,6 +66,33 @@ fn cli_command_construction_uses_only_package_version_metadata() {
     let help = super::Cli::try_parse_from(["engram", "--help"]).unwrap_err();
     assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);
     assert!(super::Cli::try_parse_from(["engram", "work", "ls"]).is_ok());
+}
+
+#[test]
+fn record_id_help_preserves_existing_cli_flags() {
+    use clap::Parser;
+
+    for (word, field, terminology) in [
+        ("show", "--note", "record-id prefix"),
+        ("evaluate", "--evidence", "full record id"),
+    ] {
+        let help = super::Cli::try_parse_from(["engram", "work", word, "--help"])
+            .unwrap_err()
+            .to_string();
+        assert!(help.contains(field), "{help}");
+        assert!(help.contains(terminology), "{help}");
+        assert!(!help.contains("RECORD_HASH") && !help.contains("full hash"));
+    }
+    let help = super::Cli::try_parse_from([
+        "engram",
+        "control-policy",
+        "set-required-assurance",
+        "--help",
+    ])
+    .unwrap_err()
+    .to_string();
+    assert!(help.contains("--expected-policy-hash"), "{help}");
+    assert!(!help.contains("--expected-policy-id"), "{help}");
 }
 
 use clap::CommandFactory;

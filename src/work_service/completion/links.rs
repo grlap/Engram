@@ -71,7 +71,7 @@ pub(super) fn acceptance(
                 reason: "criterion position is outside the acceptance list; read show for its one-based positions",
             });
         };
-        let hash = store.resolve_criterion_evidence(
+        let evidence_id = store.resolve_criterion_evidence(
             &work.project_id,
             work.work_id,
             claim.run_id,
@@ -79,13 +79,13 @@ pub(super) fn acceptance(
             &link.locator,
             &index,
         )?;
-        if !evidence.contains(&hash) {
+        if !evidence.contains(&evidence_id) {
             return Err(StoreError::WorkCriterionLinkInvalid {
                 criterion: (link.criterion > 0).then_some(link.criterion),
                 reason: "the note is outside the explicitly requested completion evidence set; choose evidence included in that set",
             });
         }
-        result.evidence.push(hash);
+        result.evidence.push(evidence_id);
         result.evidence.sort();
         result.evidence.dedup();
     }
@@ -98,7 +98,7 @@ pub(super) fn acceptance(
                 evidence: result
                     .evidence
                     .into_iter()
-                    .map(|hash| hash.to_string())
+                    .map(|evidence_id| evidence_id.to_string())
                     .collect(),
                 note: result.note,
             })
@@ -197,7 +197,7 @@ pub(super) fn validate_recovered_seal(
     let requested_evidence = if input.evidence.is_empty() {
         seal.evidence.clone()
     } else {
-        super::parse_hashes(&input.evidence)?
+        super::parse_record_ids(&input.evidence)?
     };
     let mut expected = LocalWorkService::prevalidate_completion_acceptance(
         work,
@@ -217,12 +217,12 @@ pub(super) fn validate_recovered_seal(
         let mut matching = seal
             .evidence
             .iter()
-            .filter(|hash| hash.as_str().starts_with(&prefix));
-        let hash = matching.next().ok_or_else(refuse)?;
-        if matching.next().is_some() || !requested_evidence.contains(hash) {
+            .filter(|evidence_id| evidence_id.as_str().starts_with(&prefix));
+        let evidence_id = matching.next().ok_or_else(refuse)?;
+        if matching.next().is_some() || !requested_evidence.contains(evidence_id) {
             return Err(refuse());
         }
-        result.evidence.push(hash.clone());
+        result.evidence.push(evidence_id.clone());
         result.evidence.sort();
         result.evidence.dedup();
     }

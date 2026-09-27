@@ -149,6 +149,32 @@ fn import_preview_guard_and_refresh_preserve_authored_work() {
 }
 
 #[test]
+fn work_source_snapshot_canonical_byte_limit_is_inclusive() {
+    use crate::storage::work::{
+        MAX_WORK_SOURCE_SNAPSHOT_BYTES, feeds::validate_work_source_snapshot_shape,
+    };
+
+    let mut snapshot = input().snapshot;
+    snapshot.projected.body = Some(String::new());
+    let initial_size = crate::canonical::canonical_bytes(&snapshot).unwrap().len();
+    snapshot.projected.body = Some("x".repeat(MAX_WORK_SOURCE_SNAPSHOT_BYTES - initial_size));
+    assert_eq!(
+        crate::canonical::canonical_bytes(&snapshot).unwrap().len(),
+        MAX_WORK_SOURCE_SNAPSHOT_BYTES
+    );
+    validate_work_source_snapshot_shape(&snapshot).expect("exact byte limit is admitted");
+
+    snapshot.projected.body.as_mut().unwrap().push('x');
+    assert!(matches!(
+        validate_work_source_snapshot_shape(&snapshot),
+        Err(StoreError::InvalidWork(message))
+            if message == format!(
+                "work source snapshot exceeds the {MAX_WORK_SOURCE_SNAPSHOT_BYTES}-byte canonical limit"
+            )
+    ));
+}
+
+#[test]
 fn import_input_refuses_missing_draft_blank_criteria_and_duplicate_json() {
     let store = SqliteStore::open_in_memory().unwrap();
     let project = ProjectId("input-test".into());

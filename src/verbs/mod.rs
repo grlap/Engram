@@ -4,12 +4,15 @@
 //! Every word here is a thin translation of flat CLI flags or MCP arguments
 //! into existing [`LocalWorkService`] calls; `evaluate` reaches the
 //! service's own evaluation entry, which the six-operation host protocol
-//! does not expose. The agent never supplies JSON,
-//! mutation hashes, fences, or idempotency keys: keys are server-derived, focus is
-//! ambient, and every receipt carries `reminders` (what is owed, in words)
+//! does not expose. The agent never supplies JSON, fences, or idempotency
+//! keys: keys are server-derived, focus is ambient, and every receipt
+//! carries `reminders` (what is owed, in words)
 //! and `next` (commands the agent can run now) derived by fixed tables from
 //! the core's readiness strings, obligation page, and `allowed_next` tags.
-//! Explicit note-detail locators are the read-only canonical-identity exception.
+//! Output includes record ids in note/detail locators, sealed evidence links,
+//! acceptance evaluation output, and structured receipt fields such as `seal`
+//! and `evidence`. `evaluate` also accepts full record ids of host-minted
+//! verification or environment evidence on the active run.
 
 use std::{path::PathBuf, sync::Arc};
 

@@ -1769,13 +1769,13 @@ pub(super) fn restored_records_for_item(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<RestoredRecord>, StoreError> {
-    Ok(restored_records_with_hash_for_item(connection, work_id)?
+    Ok(restored_records_with_id_for_item(connection, work_id)?
         .into_iter()
         .map(|(_, record)| record)
         .collect())
 }
 
-pub(super) fn restored_records_with_hash_for_item(
+pub(super) fn restored_records_with_id_for_item(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<(ObjectId, RestoredRecord)>, StoreError> {
@@ -1790,22 +1790,22 @@ pub(super) fn restored_records_with_hash_for_item(
         .collect::<Result<Vec<_>, _>>()?;
     rows.into_iter()
         .enumerate()
-        .map(|(expected, (generation, stored_hash))| {
+        .map(|(expected, (generation, stored_record_id))| {
             if i64::try_from(expected).ok() != Some(generation) {
                 return Err(StoreError::InvalidWorkProjection(format!(
                     "restored history for {work_id:?} is not dense"
                 )));
             }
-            let hash = ObjectId::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
+            let record_id = ObjectId::from_stored(stored_record_id.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_record_id))?;
             let record: RestoredRecord =
-                load_typed_work_object(connection, &hash, "work_restored_record")?;
+                load_typed_work_object(connection, &record_id, "work_restored_record")?;
             if record.work_id != work_id || record.generation_index != expected {
                 return Err(StoreError::InvalidWorkProjection(format!(
                     "restored history for {work_id:?} differs from its projection binding"
                 )));
             }
-            Ok((hash, record))
+            Ok((record_id, record))
         })
         .collect()
 }

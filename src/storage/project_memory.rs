@@ -609,8 +609,8 @@ fn validate_project_memory_actor_shape(actor: &ActorContext) -> Result<(), Store
             &format!("project-memory provenance reference {index}"),
         )?;
     }
-    let canonical_candidate = CanonicalObject::freeze(actor)?;
-    if canonical_candidate.bytes().len() > MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES {
+    let attribution_bytes = crate::canonical::canonical_bytes(actor)?;
+    if attribution_bytes.len() > MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES {
         return Err(StoreError::InvalidProjectMemory(format!(
             "project-memory attribution exceeds the {MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES}-byte canonical limit"
         )));

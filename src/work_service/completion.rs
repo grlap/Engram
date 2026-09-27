@@ -162,9 +162,9 @@ impl LocalWorkService {
                         let checkpoint = seal
                             .checkpoint
                             .as_ref()
-                            .map(|hash| {
+                            .map(|checkpoint_id| {
                                 store
-                                    .get::<crate::domain::WorkCheckpoint>(hash)?
+                                    .get::<crate::domain::WorkCheckpoint>(checkpoint_id)?
                                     .ok_or_else(|| {
                                         StoreError::InvalidWorkProjection(
                                             "completed pending run has no canonical checkpoint"
@@ -491,14 +491,17 @@ impl LocalWorkService {
         supplied: &[String],
     ) -> Result<Vec<ObjectId>, StoreError> {
         let available = store.work_run_evidence(claim.run_id)?;
-        let mut requested = parse_hashes(supplied)?;
+        let mut requested = parse_record_ids(supplied)?;
         if requested.is_empty() {
             return Ok(available);
         }
         let available = available.iter().collect::<std::collections::HashSet<_>>();
-        if let Some(hash) = requested.iter().find(|hash| !available.contains(hash)) {
+        if let Some(evidence_id) = requested
+            .iter()
+            .find(|evidence_id| !available.contains(evidence_id))
+        {
             return Err(StoreError::InvalidWork(format!(
-                "evidence object {hash} does not belong to the focused run"
+                "evidence object {evidence_id} does not belong to the focused run"
             )));
         }
         requested.sort();
@@ -536,7 +539,7 @@ impl LocalWorkService {
                     Ok(AcceptanceResult {
                         criterion,
                         satisfied: result.satisfied,
-                        evidence: parse_hashes(&result.evidence)?,
+                        evidence: parse_record_ids(&result.evidence)?,
                         assurance,
                         note: result.note.clone(),
                     })
@@ -566,15 +569,15 @@ impl LocalWorkService {
             .iter()
             .collect::<std::collections::HashSet<_>>();
         for result in &normalized {
-            if let Some(hash) = result
+            if let Some(evidence_id) = result
                 .evidence
                 .iter()
-                .find(|hash| !evidence_basis.contains(hash))
+                .find(|evidence_id| !evidence_basis.contains(evidence_id))
             {
                 return Err(StoreError::WorkCompletionRefused {
                     work: work.work_id,
                     reason: format!(
-                        "acceptance criterion {:?} cites evidence {hash} outside the requested completion basis",
+                        "acceptance criterion {:?} cites evidence {evidence_id} outside the requested completion basis",
                         result.criterion
                     ),
                 });

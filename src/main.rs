@@ -563,7 +563,7 @@ enum WorkCommand {
         /// Item-bound continuation from the same note/history window.
         #[arg(long, conflicts_with = "note")]
         after: Option<String>,
-        /// Complete note body: HASH prefix (8+ hex), or `RECORD_HASH:INDEX`.
+        /// Complete note body: record-id prefix (8+ hex), or `RECORD_ID:INDEX`.
         #[arg(long)]
         note: Option<String>,
         /// Complete stored title, outcome, and acceptance; reading changes neither focus nor claims.
@@ -689,7 +689,7 @@ enum WorkCommand {
             required = true
         )]
         rationales: Vec<String>,
-        /// POSITION=LOCATOR citation: a note/gate locator as `show REF --notes --gates` prints it, or the full hash of host-minted verification or environment evidence; repeatable. A pass needs at least one.
+        /// POSITION=LOCATOR citation: a note/gate locator as `show REF --notes --gates` prints it, or the full record id of host-minted verification or environment evidence; repeatable. A pass needs at least one.
         #[arg(
             long = "evidence",
             value_name = "POSITION=LOCATOR",
@@ -1226,7 +1226,7 @@ fn run_control_policy(
             expected_policy_hash,
         } => {
             let level = ControlAssurance::from(level);
-            let expected_policy = parse_expected_policy_hash(expected_policy_hash)?;
+            let expected_policy = parse_expected_policy_id(expected_policy_hash)?;
             let receipt = store.set_required_control_assurance(
                 level,
                 &control_policy_actor(authorized_by),
@@ -1259,7 +1259,7 @@ fn run_control_policy(
                 MAX_CONTROL_POLICY_CLI_INPUT_BYTES,
             )?;
             let rule_set = ObligationRuleSet::from(input);
-            let expected_policy = parse_expected_policy_hash(expected_policy_hash)?;
+            let expected_policy = parse_expected_policy_id(expected_policy_hash)?;
             let receipt = store.set_obligation_rule_set(
                 &rule_set,
                 &control_policy_actor(authorized_by),
@@ -1303,7 +1303,7 @@ fn run_control_policy(
                 },
                 require_source_freshness,
             };
-            let expected_policy = parse_expected_policy_hash(expected_policy_hash)?;
+            let expected_policy = parse_expected_policy_id(expected_policy_hash)?;
             let receipt = store.set_acceptance_evaluation_policy(
                 &policy,
                 &control_policy_actor(authorized_by),
@@ -1413,7 +1413,7 @@ fn control_policy_actor(actor_id: String) -> ActorContext {
     }
 }
 
-fn parse_expected_policy_hash(value: Option<String>) -> Result<Option<ObjectId>> {
+fn parse_expected_policy_id(value: Option<String>) -> Result<Option<ObjectId>> {
     value
         .map(|value| {
             ObjectId::from_str(&value)

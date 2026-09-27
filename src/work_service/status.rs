@@ -13,7 +13,7 @@ pub struct WorkCurrentStatus {
     pub complete: bool,
     /// Asserted capture time, not selection order.
     pub recorded_at: DateTime<Utc>,
-    /// Read-only native hash or inherited `RECORD_HASH:INDEX` detail address.
+    /// Read-only native record id or inherited `RECORD_ID:INDEX` detail address.
     pub locator: String,
     /// Relative asserted actor/session context; not authenticated identity.
     pub by: String,

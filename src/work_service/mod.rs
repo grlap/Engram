@@ -831,7 +831,7 @@ fn completion_command_ref_from_resolution(
     }
 }
 
-fn parse_hashes(values: &[String]) -> Result<Vec<ObjectId>, StoreError> {
+fn parse_record_ids(values: &[String]) -> Result<Vec<ObjectId>, StoreError> {
     values
         .iter()
         .map(|value| {
@@ -840,7 +840,7 @@ fn parse_hashes(values: &[String]) -> Result<Vec<ObjectId>, StoreError> {
         .collect()
 }
 
-fn parse_hash(value: &str) -> Result<ObjectId, StoreError> {
+fn parse_record_id(value: &str) -> Result<ObjectId, StoreError> {
     ObjectId::from_str(value).map_err(|message| StoreError::InvalidWork(message.to_owned()))
 }
 

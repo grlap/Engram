@@ -1333,10 +1333,11 @@ impl SqliteStore {
 
     pub(crate) fn load_obligation_rule_set_on(
         connection: &Connection,
-        hash: &ObjectId,
+        rule_set_id: &ObjectId,
     ) -> Result<ObligationRuleSet, StoreError> {
-        let bytes = Self::load_control_object_bytes(connection, hash, "obligation_rule_set")?;
-        let rule_set: ObligationRuleSet = CanonicalObject::stored(hash, bytes)?.decode()?;
+        let bytes =
+            Self::load_control_object_bytes(connection, rule_set_id, "obligation_rule_set")?;
+        let rule_set: ObligationRuleSet = CanonicalObject::stored(rule_set_id, bytes)?.decode()?;
         Self::validate_obligation_rule_set(&rule_set)?;
         Ok(rule_set)
     }
@@ -1346,16 +1347,16 @@ impl SqliteStore {
         policy_id: &ObjectId,
     ) -> Result<(ObjectId, ObligationRuleSet), StoreError> {
         let (policy, _) = Self::load_control_policy_version(connection, policy_id)?;
-        let hash = policy.obligation_rule_set;
-        let rule_set = Self::load_obligation_rule_set_on(connection, &hash)?;
-        Ok((hash, rule_set))
+        let rule_set_id = policy.obligation_rule_set;
+        let rule_set = Self::load_obligation_rule_set_on(connection, &rule_set_id)?;
+        Ok((rule_set_id, rule_set))
     }
 
     pub(super) fn obligation_rule_set_for_policy_epoch_on(
         connection: &Connection,
         epoch: ProjectPolicyEpoch,
     ) -> Result<(ObjectId, ObligationRuleSet), StoreError> {
-        let stored_hash = connection
+        let stored_policy_id = connection
             .query_row(
                 "SELECT policy_id FROM control_policy_versions WHERE policy_epoch = ?1",
                 [epoch.0],
@@ -1368,8 +1369,8 @@ impl SqliteStore {
                     epoch.0
                 ))
             })?;
-        let policy_id = ObjectId::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
+        let policy_id = ObjectId::from_stored(stored_policy_id.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_policy_id))?;
         Self::obligation_rule_set_for_policy_on(connection, &policy_id)
     }
 

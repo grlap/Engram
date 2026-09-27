@@ -96,7 +96,7 @@ impl LocalWorkService {
         // A citation is what the agent saw: a note/gate locator from `show
         // --notes --gates`, resolved exactly as `done --link` resolves it
         // (observations, inherited members, and other runs refuse), or the
-        // full hash of host-minted verification or environment evidence on
+        // full record id of host-minted verification or environment evidence on
         // this run, which no locator window prints.
         let index = store.work_record_index(
             &self.project_id,
@@ -104,10 +104,10 @@ impl LocalWorkService {
             crate::storage::WorkRecordKind::NotesWithGates,
         )?;
         let resolve_citation = |criterion: usize, value: &str| -> Result<ObjectId, StoreError> {
-            if let Ok(hash) = value.parse::<ObjectId>()
-                && store.host_minted_run_evidence(run_id, &hash)?
+            if let Ok(record_id) = value.parse::<ObjectId>()
+                && store.host_minted_run_evidence(run_id, &record_id)?
             {
-                return Ok(hash);
+                return Ok(record_id);
             }
             store
                 .resolve_criterion_evidence(
@@ -187,8 +187,8 @@ impl LocalWorkService {
         // Preflight the actual representation before the commit. The item
         // receipt, guidance, and obligation page do not change with the
         // record, so the row prefix that fits now fits afterwards too; the
-        // placeholder hash has the length of every real hash, and the attempt
-        // key is the exact one the core will record.
+        // placeholder fingerprint is at least as long as supported record ids,
+        // and the attempt key is the exact one the core will record.
         let attempt = crate::storage::acceptance_attempt_identity(&request, run_id)?;
         // An exact resend recovers the committed attempt before any fresh
         // write admission, whatever the item's revision or lifecycle is now;

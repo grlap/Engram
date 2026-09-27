@@ -64,16 +64,16 @@ pub(crate) struct WorkRecordAddress {
 }
 
 impl WorkRecordAddress {
-    pub(crate) fn locator(&self, hash_chars: usize) -> String {
+    pub(crate) fn locator(&self, prefix_chars: usize) -> String {
         // A record id is 32 characters; records written earlier keep a
         // 64-character id. "Full" means the whole id, whichever it is.
         let id = self.hash.as_str();
-        let hash = &id[..hash_chars.min(id.len())];
+        let prefix = &id[..prefix_chars.min(id.len())];
         match self.member {
-            None => hash.to_owned(),
-            Some(RestoredMember::Note(index)) => format!("{hash}:{index}"),
-            Some(RestoredMember::Event(index)) => format!("{hash}:event-{index}"),
-            Some(RestoredMember::Completion) => format!("{hash}:completion"),
+            None => prefix.to_owned(),
+            Some(RestoredMember::Note(index)) => format!("{prefix}:{index}"),
+            Some(RestoredMember::Event(index)) => format!("{prefix}:event-{index}"),
+            Some(RestoredMember::Completion) => format!("{prefix}:completion"),
         }
     }
 }
@@ -142,11 +142,11 @@ impl SqliteStore {
         let carried_disposals = crate::graph_snapshot::carried_disposal_layers(&records);
         for (record, carried_disposal) in records.into_iter().zip(carried_disposals) {
             // Use the verified stored identity, never re-freeze historical data.
-            let raw: String = self.connection.query_row(
+            let stored_record_id: String = self.connection.query_row(
                 "SELECT record_id FROM work_restored_records WHERE work_id = ?1 AND generation_index = ?2",
                 params![work_id.0.to_string(), i64::try_from(record.generation_index).map_err(|_| invalid("record generation overflow"))?], |row| row.get(0),
             )?;
-            let hash = parse_hash(raw)?;
+            let record_id = parse_record_id(stored_record_id)?;
             let record = Arc::new(record);
             let mut members = record
                 .history
@@ -197,7 +197,7 @@ impl SqliteStore {
                 indexed.push(WorkRecordIndex {
                     record_family,
                     address: WorkRecordAddress {
-                        hash: hash.clone(),
+                        hash: record_id.clone(),
                         member: Some(member),
                     },
                     order: WorkRecordOrder {
@@ -247,7 +247,7 @@ impl SqliteStore {
                     _ => return Err(invalid("unknown record family")),
                 },
                 address: WorkRecordAddress {
-                    hash: parse_hash(row.get(0)?)?,
+                    hash: parse_record_id(row.get(0)?)?,
                     member: None,
                 },
                 order: WorkRecordOrder {
@@ -375,7 +375,7 @@ fn inherited_content(
     })
 }
 
-fn parse_hash(raw: String) -> Result<ObjectId, StoreError> {
+fn parse_record_id(raw: String) -> Result<ObjectId, StoreError> {
     ObjectId::from_stored(raw.clone()).ok_or(StoreError::InvalidStoredKey(raw))
 }
 fn invalid(message: &str) -> StoreError {

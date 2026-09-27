@@ -5,7 +5,7 @@ use rusqlite::{OptionalExtension, params};
 
 use super::feeds::load_typed_work_object;
 use super::notes::{NOTE_OBJECTS, WorkNoteRecord, load_note};
-use super::query::{load_work_claim_optional, restored_records_with_hash_for_item};
+use super::query::{load_work_claim_optional, restored_records_with_id_for_item};
 use crate::domain::{StatusNoteRole, status_note_role};
 use crate::storage::{SqliteStore, StoreError};
 use crate::{ObjectId, WorkClaimState, WorkEvent, WorkItem};
@@ -14,7 +14,7 @@ use crate::{ObjectId, WorkClaimState, WorkEvent, WorkItem};
 /// notes, after inherited generation/member order. Capture time is not order.
 pub(crate) struct SelectedStatusNote {
     pub note: WorkNoteRecord,
-    /// Read-only native hash or inherited `RECORD_HASH:INDEX` detail address.
+    /// Read-only native record id or inherited `RECORD_ID:INDEX` detail address.
     pub locator: String,
 }
 
@@ -33,9 +33,9 @@ impl SqliteStore {
         let mut peer = self.select_status_note(item, None)?;
         if (owner.is_some() && current.is_none()) || peer.is_none() {
             // The indexed empty result costs no canonical decode. Both
-            // selections share verified history and its source hash.
-            for (hash, record) in
-                restored_records_with_hash_for_item(&self.connection, item.work_id)?
+            // selections share verified history and its source record id.
+            for (record_id, record) in
+                restored_records_with_id_for_item(&self.connection, item.work_id)?
                     .into_iter()
                     .rev()
             {
@@ -54,7 +54,7 @@ impl SqliteStore {
                         _ => continue,
                     };
                     *target = Some(SelectedStatusNote {
-                        locator: format!("{hash}:{}", index + 1),
+                        locator: format!("{record_id}:{}", index + 1),
                         note: WorkNoteRecord {
                             kind: note.evidence_kind,
                             summary: note.summary.clone(),
@@ -89,7 +89,7 @@ impl SqliteStore {
         };
         // A session spelling is not an actor principal. Resolve the actor from
         // this claim epoch's verified claim/renewal/accepted-handoff event.
-        let hash: Option<String> = self
+        let record_id: Option<String> = self
             .connection
             .query_row(
                 "SELECT entry.object_id FROM work_feed_entries entry
@@ -110,9 +110,10 @@ impl SqliteStore {
                 |row| row.get(0),
             )
             .optional()?;
-        let hash = hash.ok_or_else(|| invalid("live claim has no accountable actor event"))?;
+        let record_id =
+            record_id.ok_or_else(|| invalid("live claim has no accountable actor event"))?;
         let event: WorkEvent =
-            load_typed_work_object(&self.connection, &parse_hash(hash)?, "work_event")?;
+            load_typed_work_object(&self.connection, &parse_record_id(record_id)?, "work_event")?;
         if event.project_id != item.project_id
             || event.work_id != item.work_id
             || event.actor.session_id.as_ref() != Some(&claim.holder)
@@ -158,12 +159,12 @@ impl SqliteStore {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?;
-        if let Some((hash, family, kind)) = selected {
-            let hash = parse_hash(hash)?;
-            let note = load_note(&self.connection, item.work_id, &hash, &family, &kind)?;
+        if let Some((record_id, family, kind)) = selected {
+            let record_id = parse_record_id(record_id)?;
+            let note = load_note(&self.connection, item.work_id, &record_id, &family, &kind)?;
             validate_selection(&note, owner)?;
             return Ok(Some(SelectedStatusNote {
-                locator: hash.as_str().into(),
+                locator: record_id.as_str().into(),
                 note,
             }));
         }
@@ -189,7 +190,7 @@ fn validate_selection(note: &WorkNoteRecord, owner: Option<&str>) -> Result<(), 
     Ok(())
 }
 
-fn parse_hash(value: String) -> Result<ObjectId, StoreError> {
+fn parse_record_id(value: String) -> Result<ObjectId, StoreError> {
     ObjectId::from_stored(value.clone()).ok_or(StoreError::InvalidStoredKey(value))
 }
 

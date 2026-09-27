@@ -136,7 +136,7 @@ struct ShowArgs {
     history: Option<bool>,
     /// Item/kind-bound continuation; readable query context, not confidential.
     after: Option<String>,
-    /// Complete note body beyond the window ceiling: HASH or `RECORD_HASH:INDEX`.
+    /// Complete note body beyond the window ceiling: record id or `RECORD_ID:INDEX`.
     note: Option<String>,
     /// Complete stored title, outcome, and acceptance; exclusive of windows.
     full: Option<bool>,
@@ -284,7 +284,7 @@ struct EvaluateArgs {
     acceptance_basis: i64,
     /// The run-feed position the evaluator read through, as printed by show. A host check after it asks for a resubmission; a source change after it voids the evaluation, unless it is to the revision given as `source_fingerprint`.
     evidence_basis: i64,
-    /// One verdict per current criterion by one-based position; a pass cites note/gate locators as `show` with notes and gates prints them, or full hashes of host-minted verification or environment evidence.
+    /// One verdict per current criterion by one-based position; a pass cites note/gate locators as `show` with notes and gates prints them, or full record ids of host-minted verification or environment evidence.
     verdicts: Vec<crate::WorkCriterionVerdictInput>,
     /// Explicit attempt key; identical resends replay, contradicting content under the same key refuses.
     attempt: Option<String>,
@@ -1147,6 +1147,33 @@ fn invalid_argument(field: &str, message: &str) -> CallToolResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn record_id_descriptions_preserve_mcp_argument_names() {
+        let show = serde_json::to_value(schemars::schema_for!(ShowArgs)).unwrap();
+        let note = show["properties"]["note"]["description"].as_str().unwrap();
+        assert!(note.contains("record id") && note.contains("RECORD_ID:INDEX"));
+        assert!(!note.contains("HASH"));
+
+        let evaluate = serde_json::to_value(schemars::schema_for!(EvaluateArgs)).unwrap();
+        let verdicts = evaluate["properties"]["verdicts"]["description"]
+            .as_str()
+            .unwrap();
+        assert!(verdicts.contains("full record ids"));
+        assert!(!verdicts.contains("full hashes"));
+        let verdict_definition = evaluate["properties"]["verdicts"]["items"]["$ref"]
+            .as_str()
+            .unwrap()
+            .strip_prefix('#')
+            .unwrap();
+        let evidence = &evaluate.pointer(verdict_definition).unwrap()["properties"]["evidence"];
+        let description = evidence["description"].as_str().unwrap();
+        assert!(description.contains("full record ids"));
+        assert!(!description.contains("full hashes"));
+        assert_eq!(evidence["type"], "array");
+        assert_eq!(evidence["items"]["type"], "string");
+        assert!(evaluate["properties"].get("source_fingerprint").is_some());
+    }
 
     #[test]
     fn different_build_refusal_preserves_mcp_wire_code_and_neutral_message() {

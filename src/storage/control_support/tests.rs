@@ -22,7 +22,7 @@ fn policy_operation_result_enforces_the_canonical_byte_limit() {
     // A JSON string adds two quote bytes to this ASCII payload.
     let at_limit = "x".repeat(MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES - 2);
     assert_eq!(
-        CanonicalObject::freeze(&at_limit).unwrap().bytes().len(),
+        crate::canonical::canonical_bytes(&at_limit).unwrap().len(),
         MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES
     );
     SqliteStore::persist_control_policy_operation(
@@ -67,6 +67,41 @@ fn policy_operation_result_enforces_the_canonical_byte_limit() {
         ["at-result-limit"],
         &at_limit,
     );
+    let replayed = SqliteStore::replay_control_policy_operation::<String>(
+        &store.connection,
+        "set_required_assurance",
+        "at-result-limit",
+        &intent,
+    )
+    .expect("exact limit is replayable");
+    assert_eq!(replayed, Some(at_limit));
+
+    // Simulate an oversized stored result to exercise the read-side guard
+    // independently of the write-side refusal above.
+    store
+        .connection
+        .execute(
+            "UPDATE control_policy_operation_results SET result_json = ?1
+             WHERE operation = 'set_required_assurance' AND idempotency_key = ?2",
+            params![
+                crate::canonical::canonical_bytes(&over_limit).unwrap(),
+                "at-result-limit"
+            ],
+        )
+        .unwrap();
+    let error = SqliteStore::replay_control_policy_operation::<String>(
+        &store.connection,
+        "set_required_assurance",
+        "at-result-limit",
+        &intent,
+    )
+    .expect_err("one byte over the limit refuses replay too");
+    assert!(matches!(
+        error,
+        StoreError::InvalidControlProjection(message)
+            if message.starts_with("control policy operation result ")
+                && message.ends_with(" exceeds its canonical byte limit")
+    ));
 }
 
 #[test]

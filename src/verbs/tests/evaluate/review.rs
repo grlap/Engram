@@ -96,7 +96,7 @@ fn family(row: &serde_json::Value) -> String {
 }
 
 // Review 2 (Medium): the locators that `show --notes --gates` prints are the
-// citations `evaluate` accepts; the record keeps full hashes, and
+// citations `evaluate` accepts; the record keeps full record ids, and
 // observations or another run's records stay refused.
 #[test]
 fn evaluate_accepts_the_locators_show_prints_and_refuses_observations() {

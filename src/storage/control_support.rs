@@ -21,11 +21,12 @@ mod tests;
 
 impl SqliteStore {
     /// Loads the active policy used by one control decision without walking
-    /// predecessor objects. The selected version is hash- and byte-verified,
-    /// its scalar projection must match, and one aggregate must prove that it
-    /// is the unique maximal contiguous head. Open, activation, and doctor use
-    /// [`Self::verify_control_policy_history`] to additionally walk the audit
-    /// chain; no prior version participates in a live grant decision.
+    /// predecessor objects. Stored canonical object and projection bytes must
+    /// match, as must scalar projections; an indexed successor probe refuses
+    /// a selected version when a higher epoch exists in history. Open, activation,
+    /// and doctor use [`Self::verify_control_policy_history`] to walk the
+    /// audit chain and check contiguous epochs; no prior version participates
+    /// in a live grant decision.
     pub(super) fn load_active_control_policy(
         connection: &Connection,
     ) -> Result<ControlPolicyProjection, StoreError> {
@@ -143,9 +144,9 @@ impl SqliteStore {
                 "active control policy has no selected version".into(),
             )
         })?;
-        let active_hash = ObjectId::from_stored(policy_id.clone())
+        let active_policy_id = ObjectId::from_stored(policy_id.clone())
             .ok_or(StoreError::InvalidStoredKey(policy_id))?;
-        let (policy, authority) = Self::load_control_policy_version(connection, &active_hash)?;
+        let (policy, authority) = Self::load_control_policy_version(connection, &active_policy_id)?;
         Self::validate_control_policy_shape(&policy)?;
         if authority.schema_version != CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION {
             return Err(StoreError::InvalidControlProjection(
@@ -177,7 +178,7 @@ impl SqliteStore {
         }
         let projection = ControlPolicyProjection {
             state_schema_version: schema_version,
-            policy_id: active_hash,
+            policy_id: active_policy_id,
             authority_id: policy.authority.clone(),
             epoch: policy.policy_epoch,
             required_assurance: policy.required_assurance,
@@ -255,29 +256,29 @@ impl SqliteStore {
 
     pub(super) fn load_control_object_bytes(
         connection: &Connection,
-        hash: &ObjectId,
+        record_id: &ObjectId,
         expected_kind: &str,
     ) -> Result<Vec<u8>, StoreError> {
         let (stored_kind, bytes): (String, Vec<u8>) = connection
             .query_row(
                 "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
-                [hash.as_str()],
+                [record_id.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?
             .ok_or_else(|| {
                 StoreError::InvalidControlProjection(format!(
-                    "canonical {expected_kind} object {hash} is missing"
+                    "canonical {expected_kind} object {record_id} is missing"
                 ))
             })?;
         if stored_kind != expected_kind {
             return Err(StoreError::ObjectKindMismatch {
-                hash: hash.clone(),
+                hash: record_id.clone(),
                 stored: stored_kind,
                 requested: expected_kind.into(),
             });
         }
-        CanonicalObject::stored(hash, bytes.clone())?;
+        CanonicalObject::stored(record_id, bytes.clone())?;
         Ok(bytes)
     }
 
@@ -389,24 +390,24 @@ impl SqliteStore {
 
     fn verify_control_policy_chain(
         connection: &Connection,
-        active_hash: &ObjectId,
+        active_policy_id: &ObjectId,
         active_policy: &ControlPolicy,
         active_authority: ProjectPolicyAuthorityDecision,
     ) -> Result<(), StoreError> {
         let mut seen = HashSet::new();
-        let mut current_hash = active_hash.clone();
+        let mut current_policy_id = active_policy_id.clone();
         let mut current_policy = active_policy.clone();
         let mut current_authority = active_authority;
         loop {
-            if !seen.insert(current_hash.clone()) {
+            if !seen.insert(current_policy_id.clone()) {
                 return Err(StoreError::InvalidControlProjection(
                     "control policy history contains a cycle".into(),
                 ));
             }
             match current_policy.previous_policy.clone() {
-                Some(previous_hash) => {
+                Some(previous_policy_id) => {
                     let (previous, previous_authority) =
-                        Self::load_control_policy_version(connection, &previous_hash)?;
+                        Self::load_control_policy_version(connection, &previous_policy_id)?;
                     if previous.policy_epoch.0.checked_add(1) != Some(current_policy.policy_epoch.0)
                     {
                         return Err(StoreError::InvalidControlProjection(
@@ -418,7 +419,7 @@ impl SqliteStore {
                         &current_policy,
                         &current_authority,
                     )?;
-                    current_hash = previous_hash;
+                    current_policy_id = previous_policy_id;
                     current_policy = previous;
                     current_authority = previous_authority;
                 }
@@ -899,12 +900,12 @@ impl SqliteStore {
     }
 
     pub(super) fn decode_canonical_projection<T: DeserializeOwned>(
-        stored_hash: &str,
+        stored_record_id: &str,
         bytes: Vec<u8>,
     ) -> Result<T, StoreError> {
-        let hash = ObjectId::from_stored(stored_hash.to_owned())
-            .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.to_owned()))?;
-        CanonicalObject::stored(&hash, bytes)?.decode()
+        let record_id = ObjectId::from_stored(stored_record_id.to_owned())
+            .ok_or_else(|| StoreError::InvalidStoredKey(stored_record_id.to_owned()))?;
+        CanonicalObject::stored(&record_id, bytes)?.decode()
     }
 
     pub(super) fn decode_json_projection<T: DeserializeOwned>(
@@ -1147,8 +1148,8 @@ fn normalized_control_policy_actor(actor: &ActorContext) -> Result<ActorContext,
         )?;
     }
 
-    let canonical_bytes = crate::canonical::canonical_bytes(&normalized)?;
-    if canonical_bytes.len() > MAX_CONTROL_POLICY_ATTRIBUTION_BYTES {
+    let attribution_bytes = crate::canonical::canonical_bytes(&normalized)?;
+    if attribution_bytes.len() > MAX_CONTROL_POLICY_ATTRIBUTION_BYTES {
         return Err(StoreError::InvalidControlProjection(format!(
             "control policy administrator attribution exceeds the {MAX_CONTROL_POLICY_ATTRIBUTION_BYTES}-byte canonical limit"
         )));

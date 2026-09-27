@@ -121,16 +121,16 @@ fn prepare_work_observation_on(
     {
         return Err(StoreError::WorkClaimMismatch { work: item.work_id });
     }
-    // load_work_item verified this projected hash against the canonical
-    // feed head. Keep its original bytes' identity, never re-freeze it.
+    // load_work_item verified this projected event id against the canonical
+    // feed head. Keep its stored record id; never re-freeze it.
     let event_id: Option<String> = transaction.query_row(
         "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
         [item.work_id.0.to_string()],
         |row| row.get(0),
     )?;
-    let basis = if let Some(hash) = event_id {
+    let basis = if let Some(event_id) = event_id {
         WorkObservationBasis::NativeEvent {
-            event: parse_hash(hash)?,
+            event: parse_record_id(event_id)?,
         }
     } else {
         let (record, _) = latest_restored_record(transaction, item.work_id)?
@@ -265,10 +265,10 @@ pub(in crate::storage) fn observations_on(
         )?
         .collect::<Result<Vec<_>, _>>()?;
     let mut observations = Vec::with_capacity(rows.len());
-    for (hash, sequence, created_at_ms) in rows.into_iter().rev() {
-        let hash = parse_hash(hash)?;
+    for (observation_id, sequence, created_at_ms) in rows.into_iter().rev() {
+        let observation_id = parse_record_id(observation_id)?;
         let observation: WorkObservation =
-            load_typed_work_object(connection, &hash, "work_observation")?;
+            load_typed_work_object(connection, &observation_id, "work_observation")?;
         validate(connection, &observation)?;
         if observation.work_id != work_id
             || observation.sequence != sequence
@@ -276,7 +276,7 @@ pub(in crate::storage) fn observations_on(
         {
             return Err(invalid("work observation differs from its projection"));
         }
-        observations.push((hash, observation));
+        observations.push((observation_id, observation));
     }
     Ok(observations)
 }
@@ -341,14 +341,14 @@ fn validate_basis(connection: &Connection, value: &WorkObservation) -> Result<()
 
 fn insert_projection(
     connection: &Connection,
-    hash: &ObjectId,
+    observation_id: &ObjectId,
     value: &WorkObservation,
 ) -> Result<(), StoreError> {
     connection.execute(
         "INSERT INTO work_observations
         (observation_id, work_id, sequence, created_at_ms) VALUES (?1, ?2, ?3, ?4)",
         params![
-            hash.as_str(),
+            observation_id.as_str(),
             value.work_id.0.to_string(),
             value.sequence,
             value.created_at.timestamp_millis()
@@ -367,11 +367,11 @@ pub(super) fn rebuild(connection: &Connection) -> Result<(), StoreError> {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    for (hash, bytes) in rows {
-        let hash = parse_hash(hash)?;
-        let value: WorkObservation = CanonicalObject::stored(&hash, bytes)?.decode()?;
+    for (observation_id, bytes) in rows {
+        let observation_id = parse_record_id(observation_id)?;
+        let value: WorkObservation = CanonicalObject::stored(&observation_id, bytes)?.decode()?;
         validate(connection, &value)?;
-        insert_projection(connection, &hash, &value)?;
+        insert_projection(connection, &observation_id, &value)?;
     }
     Ok(())
 }
@@ -389,25 +389,25 @@ pub(super) fn verify_rows(
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     let mut ordered = BTreeMap::<String, BTreeMap<i64, [i64; 2]>>::new();
-    for stored_hash in rows {
+    for stored_observation_id in rows {
         *checked += 1;
         let valid = (|| -> Result<bool, StoreError> {
-            let hash = parse_hash(stored_hash.clone())?;
+            let observation_id = parse_record_id(stored_observation_id.clone())?;
             let value: WorkObservation =
-                load_typed_work_object(connection, &hash, "work_observation")?;
+                load_typed_work_object(connection, &observation_id, "work_observation")?;
             validate(connection, &value)?;
-            let positions = observation_feed_positions(connection, &hash, &value)?;
+            let positions = observation_feed_positions(connection, &observation_id, &value)?;
             ordered
                 .entry(value.work_id.0.to_string())
                 .or_default()
                 .insert(value.sequence, positions);
             connection.query_row("SELECT EXISTS(SELECT 1 FROM work_observations
                 WHERE observation_id = ?1 AND work_id = ?2 AND sequence = ?3 AND created_at_ms = ?4)",
-                params![hash.as_str(), value.work_id.0.to_string(), value.sequence, value.created_at.timestamp_millis()],
+                params![observation_id.as_str(), value.work_id.0.to_string(), value.sequence, value.created_at.timestamp_millis()],
                 |row| row.get(0)).map_err(StoreError::from)
         })();
         if !matches!(valid, Ok(true)) {
-            invalid_rows.push(format!("work_observation:{stored_hash}"));
+            invalid_rows.push(format!("work_observation:{stored_observation_id}"));
         }
     }
     for (work_id, positions) in ordered {
@@ -434,7 +434,7 @@ pub(super) fn verify_rows(
 
 fn observation_feed_positions(
     connection: &Connection,
-    hash: &ObjectId,
+    observation_id: &ObjectId,
     value: &WorkObservation,
 ) -> Result<[i64; 2], StoreError> {
     let mut positions = [0; 2];
@@ -445,17 +445,17 @@ fn observation_feed_positions(
     .into_iter()
     .enumerate()
     {
-        let position = |hash: &ObjectId| -> Result<i64, StoreError> {
+        let position = |record_id: &ObjectId| -> Result<i64, StoreError> {
             connection
                 .query_row(
                     "SELECT position FROM work_feed_entries
                  WHERE feed_kind = ?1 AND feed_id = ?2 AND object_id = ?3",
-                    params![kind, id, hash.as_str()],
+                    params![kind, id, record_id.as_str()],
                     |row| row.get(0),
                 )
                 .map_err(StoreError::from)
         };
-        positions[index] = position(hash)?;
+        positions[index] = position(observation_id)?;
         if let WorkObservationBasis::NativeEvent { event } = &value.basis
             && position(event)? >= positions[index]
         {
@@ -465,7 +465,7 @@ fn observation_feed_positions(
     Ok(positions)
 }
 
-fn parse_hash(value: String) -> Result<ObjectId, StoreError> {
+fn parse_record_id(value: String) -> Result<ObjectId, StoreError> {
     ObjectId::from_stored(value.clone()).ok_or(StoreError::InvalidStoredKey(value))
 }
 

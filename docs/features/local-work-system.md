@@ -1057,10 +1057,13 @@ Handoff targets come from the host or coordinator as real session ids.
 The agent `handoff --to SESSION` refuses generated peer display labels before
 target binding or offer creation. This prevents an unusable pending offer;
 it is a usability check, not authentication or alias resolution.
-The view excludes raw actor/session identifiers, canonical UUIDs and hashes,
-revisions and fences, and host-only run, claim, control, obligation, seal, and
-memory-version fields. Active core
-blockers include their id, type, and compact detail; when exactly one blocker
+Ordinary terse show uses short work refs and omits raw actor/session metadata,
+claim fences, and host-only run, claim, control-binding, obligation-page, and
+memory-version fields. It retains note/detail locators, sealed evidence links,
+and the scoped `acceptance_basis` read token. Acceptance evaluation exposes its
+full record id in JSON; the text evaluation summary uses a 12-character prefix.
+The evaluated work revision and any source fingerprint remain visible. Active
+core blockers include their id, type, and compact detail; when exactly one blocker
 is active the agent word infers it for `unblock`. Authorized memory bodies
 remain available on demand through their version id on host-only reads.
 An explicit `show REF --notes` / MCP `notes: true` substitutes complete note
@@ -1099,9 +1102,10 @@ project, kind, member locator, order and the shared listing read cut. Changed
 feeds, reversed clocks and time-boundary expiry refuse with fresh navigation.
 The encoded context is readable, not confidential or authoritative.
 
-Explicit note locators are the narrow exception to the default safe view's
-identity omission. Native notes use a unique prefix of the record's id (at
-least eight hex digits, from an id of 32 or 64); inherited notes use
+Explicit note locators are scoped record-id exposures alongside sealed
+evidence links and acceptance evaluation ids. Native notes use a unique
+prefix of the record's id (at least eight hex digits, from an id of 32 or 64);
+inherited notes use
 `RECORD_ID:INDEX`, with a one-based immutable member index rather than a display
 ordinal. No id is derived from content to build a locator.
 `show REF --note LOCATOR` / MCP `note: LOCATOR` returns complete detail and

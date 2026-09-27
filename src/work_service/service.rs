@@ -602,7 +602,7 @@ impl LocalWorkService {
             .map(|run| {
                 evidence
                     .iter()
-                    .map(|hash| work_evidence_summary(store, run.run_id, hash))
+                    .map(|evidence_id| work_evidence_summary(store, run.run_id, evidence_id))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?
@@ -612,7 +612,7 @@ impl LocalWorkService {
                 .map(|run| {
                     store
                         .latest_work_run_evidence(run.run_id)?
-                        .map(|hash| work_evidence_summary(store, run.run_id, &hash))
+                        .map(|evidence_id| work_evidence_summary(store, run.run_id, &evidence_id))
                         .transpose()
                 })
                 .transpose()?
@@ -627,8 +627,8 @@ impl LocalWorkService {
                 .len()
                 .saturating_add(native_evidence_items.len()),
         );
-        for (hash, evidence) in restored_evidence {
-            evidence_items.push(restored_work_evidence_summary(hash, &evidence)?);
+        for (evidence_id, evidence) in restored_evidence {
+            evidence_items.push(restored_work_evidence_summary(evidence_id, &evidence)?);
         }
         let restored_latest_evidence_item = with_latest_evidence
             .then(|| evidence_items.last().cloned())
@@ -657,8 +657,8 @@ impl LocalWorkService {
         };
         let observation_slots = MAX_FOCUS_RELATIONS.saturating_sub(evidence_items.len());
         let omitted_observations = observations.len().saturating_sub(observation_slots);
-        for (index, (hash, observation)) in observations.into_iter().enumerate() {
-            let summary = work_observation_summary(hash, &observation);
+        for (index, (observation_id, observation)) in observations.into_iter().enumerate() {
+            let summary = work_observation_summary(observation_id, &observation);
             if with_latest_evidence {
                 let position =
                     store.work_root_object_position(status.work.root_id, &summary.evidence)?;
@@ -893,12 +893,13 @@ impl LocalWorkService {
                 && status.work.lifecycle == crate::WorkLifecycle::Completed
                 && !completed_by_record
             {
-                match run
-                    .as_ref()
-                    .and_then(|run| run.completion_seal.as_ref().map(|hash| (run.run_id, hash)))
-                {
-                    Some((run_id, hash)) => {
-                        match super::acceptance::bound_seal(store, hash, work_id, run_id) {
+                match run.as_ref().and_then(|run| {
+                    run.completion_seal
+                        .as_ref()
+                        .map(|seal_id| (run.run_id, seal_id))
+                }) {
+                    Some((run_id, seal_id)) => {
+                        match super::acceptance::bound_seal(store, seal_id, work_id, run_id) {
                             Ok(seal) => match super::acceptance::provenance(store, &seal) {
                                 Ok(provenance) => (Some(provenance), None),
                                 Err(error) => (None, Some(super::advisory_error_class(&error))),

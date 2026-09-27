@@ -59,7 +59,7 @@ impl LocalWorkService {
             // with identical text and time. There is no caller retry key on
             // this word; do not replay a receipt against the immutable item
             // basis. Storage binds the current restored proof, next dense
-            // position, and prior gate hash in the same append transaction.
+            // position, and prior gate record id in the same append transaction.
             let evidence = store.append_restored_work_gate(
                 &AppendRestoredWorkGateRequest {
                     work_id: work.work_id,
@@ -776,7 +776,7 @@ impl LocalWorkService {
                         claim_id: claim.claim_id,
                         claim_fence: claim.fence,
                         summary,
-                        evidence: evidence.as_deref().map(parse_hashes).transpose()?,
+                        evidence: evidence.as_deref().map(parse_record_ids).transpose()?,
                         actor: self.actor("work_update", "checkpoint ambient local work"),
                         idempotency_key: scoped_key,
                         checkpointed_at: now,
@@ -799,7 +799,7 @@ impl LocalWorkService {
                                 .into(),
                         ));
                     }
-                    let evidence = parse_hash(&attach.evidence)?;
+                    let evidence = parse_record_id(&attach.evidence)?;
                     let evidence_kind = store.work_evidence_kind(claim.run_id, &evidence)?;
                     if evidence_kind == WorkEvidenceKind::Generic {
                         return Err(StoreError::InvalidWork(

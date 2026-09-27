@@ -460,7 +460,7 @@ agent-recorded `work_evidence` remains useful context but never verifies a
 check.
 
 The active immutable `ControlPolicy` selects a canonical
-`ObligationRuleSet` by hash. The built-in set contains the typed
+`ObligationRuleSet` by record id. The built-in set contains the typed
 `source_mutation_requires_test` rule, which evaluates every work-bound
 observation with `source_changed=true`, regardless of outcome or whether a
 source basis is present. The recorded `source_changed` is the core's reading
@@ -621,7 +621,7 @@ Control uses two explicit persistence tiers:
 
 The minimum records are:
 
-- `ControlPolicy`: version and hash, control mode, mediated effect classes,
+- `ControlPolicy`: version and record id, control mode, mediated effect classes,
   project epoch, classifier version, synchronization rules, grant TTLs,
   degraded-envelope rules and portable writer-validation maximum age. Machine
   policy is never inferred from documentation prose.
@@ -670,7 +670,7 @@ policy languages are out of scope. The per-project SQLite store is the V1
 selection scope. `engram init --required-assurance advisory|turn_gated|action_gated`
 with `--authorized-by <actor>` installs a versioned built-in safe policy,
 records the explicit operator choice as asserted attribution, and atomically
-selects its hash. `turn_gated` is the default; plain `engram init`
+selects its record id. `turn_gated` is the default; plain `engram init`
 uses synthetic system attribution because no operator choice was made. Plain
 `engram init` preserves the selected policy on an existing current store. Any
 missing, different-build, or corrupt schema or active policy fails store open for
@@ -681,40 +681,41 @@ On a cold store, core/control DDL, host path-policy binding, and the canonical
 policy selector/history commit in the same immediate transaction, so a crash
 cannot leave an empty policy table that later resembles established state.
 
-A shipped assurance update runs through
-`engram control-policy set-required-assurance`. It creates a new immutable
-policy version plus an
-attributed canonical authority-decision object—not one arbitrary task's
-work claim. V1 records the operator identity as asserted host context;
+A shipped assurance update runs through `engram control-policy
+set-required-assurance`. It creates a new immutable policy version plus an
+attributed canonical authority-decision object—not one arbitrary task's work
+claim. V1 records the operator identity as asserted host context;
 authenticated `project_policy_admin` mediation remains unavailable and is
 reported as an unavailable authority-mediation capability by `doctor`; the
-setter also warns that the specific supplied identity is asserted rather than
-authenticated. Selecting the hash and incrementing the project epoch is one
-SQLite transaction with an optional expected-policy-hash compare and swap.
-Both host/operator policy setters require a store-scoped idempotency key. The
-normalized intent deliberately excludes the caller's retry-time clock, while
-the exact receipt retains the originally committed activation timestamp. The
-receipt commits with the policy activation and replays after restart or an
-uncertain response before the expected-hash check; same-key different-intent
-reuse is refused. Reapplying the active assurance under a fresh key persists
-an exactly replayable no-op receipt. Every `turn_begin` reads that
-project epoch plus the bound task's `admission_epoch`, so a project mismatch
-invalidates issued grants across all active tasks without a non-atomic
-row-by-row update; the refused session adopts the new epoch and must evaluate
-once again. When the new requirement exceeds the host's declared assurance,
-the assurance check runs first and fresh evaluation refuses with
-`control_assurance_insufficient` instead of `policy_epoch_changed`. Selecting
-`action_gated` warns immediately that no current V1 host can bind at that
-level and prints the `set-required-assurance turn_gated` recovery command. A
-begun grant remains checkpointable under its frozen basis so durable progress
-is not lost. Notifications are only doorbells.
+setter also warns that the specific supplied identity is asserted rather
+than authenticated. Selecting the record id and incrementing the project
+epoch is one SQLite transaction with an optional expected-policy-hash
+compare and swap. Both host/operator policy setters require a store-scoped
+idempotency key. The normalized intent deliberately excludes the caller's
+retry-time clock, while the exact receipt retains the originally committed
+activation timestamp. The receipt commits with the policy activation and
+replays after restart or an uncertain response before the
+expected-policy-hash (active policy id) comparison; same-key
+different-intent reuse is refused. Reapplying the active assurance under a
+fresh key persists an exactly replayable no-op receipt. Every `turn_begin`
+reads that project epoch plus the bound task's `admission_epoch`, so a
+project mismatch invalidates issued grants across all active tasks without a
+non-atomic row-by-row update; the refused session adopts the new epoch and
+must evaluate once again. When the new requirement exceeds the host's
+declared assurance, the assurance check runs first and fresh evaluation
+refuses with `control_assurance_insufficient` instead of
+`policy_epoch_changed`. Selecting `action_gated` warns immediately that no
+current V1 host can bind at that level and prints the
+`set-required-assurance turn_gated` recovery command. A begun grant remains
+checkpointable under its frozen basis so durable progress is not lost.
+Notifications are only doorbells.
 
 Policy history is ordered exclusively by `policy_epoch`. `activated_at` and
 authority `decided_at` are attribution timestamps; clock skew does not reorder
 the immutable chain or block activation.
 
-The bind/evaluate/begin hot path verifies the selected version's
-canonical hash and projection bytes, matches its selector scalars, and uses an
+The bind/evaluate/begin hot path compares the selected version's stored
+canonical object and projection bytes, matches its selector scalars, and uses an
 indexed successor probe to refuse a rolled-back head. It deliberately does not
 walk predecessor objects because prior versions do not participate in a
 live decision. Store open, policy activation, `doctor`, and integrity
@@ -729,7 +730,7 @@ operator-only
 `engram control-policy set-obligation-rule-set` command may append an
 attributed successor under an epoch/id compare-and-swap. It accepts bounded,
 strict JSON inline or through `@file`, and activates only the fully re-supplied
-typed set; rollback never trusts a hash alone. The command is not exposed
+typed set; rollback never trusts a record id alone. The command is not exposed
 through MCP or the host turn protocol. V1 rule sets are bounded typed data,
 not a natural-language rule engine; unknown schemas, nested fields, duplicate
 rule identities, and unknown triggers fail closed. General conditions,
@@ -774,7 +775,7 @@ stricter but cannot weaken non-overridable cells:
 | User/host denial or missing authority (not built: needs action checks) | As host permits | Closed for denied capability | Closed for denied capability | Closed | Closed |
 
 `degraded_open` is never silent fail-open. While Engram is healthy it may issue
-a cached `DegradedEnvelope` bound to session, policy hash/epoch, capability and
+a cached `DegradedEnvelope` bound to session, policy id/epoch, capability and
 resource bounds, work-claim basis, expiry, maximum actions/bytes, and the host
 mediation map. The host may use it only for policy-designated reversible local
 work; without a valid envelope it fails closed. The host does not independently
@@ -997,7 +998,7 @@ write-only audit trail that no grant delivers and no decision reads.
 rejected. The decision service becomes a real `turn_gated` deployment only when
 an embedding host makes it mandatory, as TermAl does.
 `engram doctor` verifies the immutable active-policy chain and reports its
-hash, epoch, required assurance, built-in effect envelope, live turn counts,
+record id, epoch, required assurance, built-in effect envelope, live turn counts,
 and explicitly discloses that action gating, organizational authority
 mediation, and action-outcome reconciliation are unavailable. Selecting an
 `action_gated` requirement is therefore a deliberate fail-closed

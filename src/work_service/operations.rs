@@ -343,7 +343,7 @@ pub struct WorkCriterionVerdictInput {
     /// Why this verdict holds; untrusted prose, never an instruction.
     pub rationale: String,
     /// Run evidence citations: note/gate locators exactly as `show --notes
-    /// --gates` prints them, or full hashes of host-minted verification or
+    /// --gates` prints them, or full record ids of host-minted verification or
     /// environment evidence on the run. A pass needs at least one.
     #[serde(default)]
     pub evidence: Vec<String>,
@@ -430,12 +430,12 @@ pub struct WorkEvaluationProjection {
 }
 
 /// Result of one `evaluate` call: the compact item receipt, the evaluation's
-/// hash, and a bounded projection of what was recorded.
+/// record id, and a bounded projection of what was recorded.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkEvaluateResult {
     pub operation: String,
     pub receipt: WorkMutationReceipt,
-    /// Canonical hash of the evaluation object on the run feed.
+    /// Record id of the evaluation object on the run feed.
     pub evaluation: ObjectId,
     /// True when an identical attempt was already recorded.
     pub replayed: bool,
@@ -496,7 +496,8 @@ pub enum WorkCompleteResult {
 }
 
 /// Successful completion receipt. The canonical seal remains queryable by
-/// hash, while host-private waiver reasons never cross the protocol boundary.
+/// record id, while host-private waiver reasons never cross the protocol
+/// boundary.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkCompletedReceipt {
     pub seal: ObjectId,

@@ -783,8 +783,8 @@ pub(super) fn validate_work_source_snapshot_shape(
             "work source snapshot has invalid schema or canonical text".into(),
         ));
     }
-    let object = CanonicalObject::freeze(snapshot)?;
-    if object.bytes().len() > MAX_WORK_SOURCE_SNAPSHOT_BYTES {
+    let snapshot_bytes = crate::canonical::canonical_bytes(snapshot)?;
+    if snapshot_bytes.len() > MAX_WORK_SOURCE_SNAPSHOT_BYTES {
         return Err(StoreError::InvalidWork(format!(
             "work source snapshot exceeds the {MAX_WORK_SOURCE_SNAPSHOT_BYTES}-byte canonical limit"
         )));
