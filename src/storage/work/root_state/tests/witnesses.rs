@@ -657,5 +657,7 @@ fn root_delta_waiver_cost_grows_with_payload_not_repeated_full_states() {
 #[test]
 #[ignore = "growing waiver history belongs to the separate scale phase"]
 fn root_delta_scale_growing_waiver_cost() {
-    check_growing_waivers(&[10, 100, 1000]);
+    // 100 is a second point on the growth curve for a reader of the log; no
+    // assertion compares the sizes.
+    check_growing_waivers(&[100, super::scale_size("growing_waiver_cost")]);
 }

@@ -278,9 +278,10 @@ full-state hashing, not dependence on history length.
 Stopping at the oldest requested waiver was considered and rejected. It would
 retain a proof of the suffix implied by the current state, but would no longer
 check the prefix or empty origin during live completion. The chosen contract
-keeps those checks. In the same 1,000-checkpoint fixture, the implemented proof
-reduced full-state checksum input for root completion from 103,248,645 bytes
-to 613,338 bytes. The full audit of that fixture hashed 257,098,620 bytes
+keeps those checks. In the scale phase's history fixture at 1,000 checkpoints
+(the gate now builds 500; `ENGRAM_ROOT_DELTA_SCALE=1000` builds 1,000 on
+demand), the implemented proof reduced full-state checksum input for root
+completion from 103,248,645 bytes to 613,338 bytes. The full audit of that fixture hashed 257,098,620 bytes
 while it compared every head; comparing the last head only, it hashes 209,661.
 These are checksum-input counts, not elapsed time or the cost of scanning the
 suffix.

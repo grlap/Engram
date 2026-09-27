@@ -11,6 +11,88 @@ mod witnesses;
 const CANONICAL_ROOT_WRITE_BUDGET: i64 = 4096;
 const PROJECTION_ROOT_WRITE_BUDGET: i64 = 1024;
 
+/// Raises the history size of the ignored `root_delta_scale_` tests.
+const SCALE_VARIABLE: &str = "ENGRAM_ROOT_DELTA_SCALE";
+/// Default and minimum history size of the ignored scale tests. The ordinary
+/// tests cover the smaller sizes, so the variable can only raise it.
+const DEFAULT_SCALE: u32 = 500;
+/// Largest history size the scale fixtures are laid out for: their fixed
+/// timestamps and claim lifetimes assume at most this many steps.
+const MAX_SCALE: u32 = 1000;
+
+/// The history size an ignored scale test builds. It is printed with its
+/// source, so a gate log shows which size ran and a variable left set in a
+/// shell is visible. A value that is not a whole number from the default to
+/// `MAX_SCALE` fails the test.
+fn scale_size(test: &str) -> u32 {
+    let (size, source) =
+        parse_scale(std::env::var(SCALE_VARIABLE)).unwrap_or_else(|refusal| panic!("{refusal}"));
+    eprintln!("root_delta_scale test={test} size={size} source={source}");
+    size
+}
+
+fn parse_scale(value: Result<String, std::env::VarError>) -> Result<(u32, &'static str), String> {
+    let value = match value {
+        Err(std::env::VarError::NotPresent) => return Ok((DEFAULT_SCALE, "default")),
+        Err(std::env::VarError::NotUnicode(value)) => {
+            return Err(format!("{SCALE_VARIABLE} is not valid Unicode: {value:?}"));
+        }
+        Ok(value) => value,
+    };
+    let size = value.parse::<u32>().map_err(|_| {
+        format!(
+            "{SCALE_VARIABLE} must be a whole number of history steps from {DEFAULT_SCALE} to {MAX_SCALE}; got {value:?}"
+        )
+    })?;
+    if size < DEFAULT_SCALE {
+        return Err(format!(
+            "{SCALE_VARIABLE}={size} is below the minimum {DEFAULT_SCALE}: the ordinary tests already cover smaller sizes; unset it to run the default"
+        ));
+    }
+    if size > MAX_SCALE {
+        return Err(format!(
+            "{SCALE_VARIABLE}={size} is above the maximum {MAX_SCALE}: the scale fixtures' timestamps and claim lifetimes are laid out for at most {MAX_SCALE} steps"
+        ));
+    }
+    Ok((size, SCALE_VARIABLE))
+}
+
+#[test]
+fn the_scale_size_defaults_to_500_and_can_be_raised_to_1000() {
+    assert_eq!(
+        parse_scale(Err(std::env::VarError::NotPresent)),
+        Ok((500, "default"))
+    );
+    assert_eq!(parse_scale(Ok("1000".into())), Ok((1000, SCALE_VARIABLE)));
+    assert_eq!(parse_scale(Ok("500".into())), Ok((500, SCALE_VARIABLE)));
+    for refused in ["499", "10", "0", "-1000", "1e3", " 1000", "", "many"] {
+        let refusal = parse_scale(Ok(refused.into())).unwrap_err();
+        assert!(
+            refusal.contains(SCALE_VARIABLE) && refusal.contains("500"),
+            "{refused:?}: {refusal}"
+        );
+    }
+    for refused in ["1001", "4000"] {
+        let refusal = parse_scale(Ok(refused.into())).unwrap_err();
+        assert!(
+            refusal.contains(SCALE_VARIABLE) && refusal.contains("maximum 1000"),
+            "{refused:?}: {refusal}"
+        );
+    }
+    #[cfg(windows)]
+    let not_unicode = {
+        use std::os::windows::ffi::OsStringExt;
+        std::ffi::OsString::from_wide(&[0xD800])
+    };
+    #[cfg(unix)]
+    let not_unicode = {
+        use std::os::unix::ffi::OsStringExt;
+        std::ffi::OsString::from_vec(vec![0xFF])
+    };
+    let refusal = parse_scale(Err(std::env::VarError::NotUnicode(not_unicode))).unwrap_err();
+    assert!(refusal.contains(SCALE_VARIABLE), "{refusal}");
+}
+
 fn fixture() -> (SqliteStore, crate::WorkItem, RootExecutionId) {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let root = store
@@ -72,16 +154,19 @@ fn written(store: &SqliteStore) -> i64 {
 
 #[test]
 fn root_delta_constant_fact_write_bytes_do_not_grow_with_history() {
-    check_constant_fact_writes(&[10, 100]);
+    check_constant_fact_writes(&[10, 100], false);
 }
 
 #[test]
-#[ignore = "thousand-delta fixture belongs to the separate scale phase"]
+#[ignore = "long-history fixture belongs to the separate scale phase"]
 fn root_delta_scale_constant_fact_write_bytes() {
-    check_constant_fact_writes(&[1000]);
+    check_constant_fact_writes(&[scale_size("constant_fact_write_bytes")], true);
 }
 
-fn check_constant_fact_writes(lengths: &[u32]) {
+/// With `prove_budgets`, each size must also be large enough that a full copy
+/// of the root state would exceed both write budgets: otherwise a return to
+/// full copies could pass at that size.
+fn check_constant_fact_writes(lengths: &[u32], prove_budgets: bool) {
     for &prior in lengths {
         let (mut store, root, id) = fixture();
         install_write_probe(&store);
@@ -112,6 +197,18 @@ fn check_constant_fact_writes(lengths: &[u32]) {
             state.expected_contributors.len(),
             usize::try_from(prior + 1).unwrap()
         );
+        if prove_budgets {
+            let full = i64::try_from(old_full_payload).unwrap();
+            for (write, budget) in [
+                ("canonical", CANONICAL_ROOT_WRITE_BUDGET),
+                ("projection", PROJECTION_ROOT_WRITE_BUDGET),
+            ] {
+                assert!(
+                    full >= budget,
+                    "{SCALE_VARIABLE} size {prior}: a full-root copy is {full} bytes, within the {budget}-byte {write} write budget, so this size cannot catch a return to full copies"
+                );
+            }
+        }
     }
 }
 

@@ -83,8 +83,9 @@ even one unexplained byte fails; small regressions are not hidden by metadata
 slack. These checks do not promise constant size for a larger actual change.
 The ordinary Rust gate also writes a counterfactual full-copy payload and
 requires it to exceed the same budgets as the positive tests. Both Rust gate
-launchers run the thousand-delta fixture in a separate ignored-test scale
-phase. That phase also measures real completion and audit calls; flat replay
+launchers run the long-history fixtures in a separate ignored-test scale
+phase: 500 steps by default, or up to 1,000 with `ENGRAM_ROOT_DELTA_SCALE`.
+Each step writes one or more root deltas. That phase also measures real completion and audit calls; flat replay
 call counts do not imply bounded hashing work.
 No old database bytes are rewritten or reclaimed by this format change.
 Existing different-build stores still refuse ordinary open; cutover and any

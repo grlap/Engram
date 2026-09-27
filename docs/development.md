@@ -110,9 +110,17 @@ process, and the `diagnostics_cli` test binary 14 s in place of 101 s. With
 SQLite optimized the unit tests, run on one thread with `sha2` optimized in
 both builds, used about 15% less processor time: 231 s in place of 273 s.
 
-The root-delta phase includes 1,000-step history fixtures and can take several
-minutes. Recent Windows debug runs took about 6–9 minutes for that phase;
-this is an observation, not a timeout or a performance limit. The test harness
+The root-delta phase builds long-history fixtures, 500 steps by default. Each
+scale test prints the size it builds and where the size came from. Set
+`ENGRAM_ROOT_DELTA_SCALE` to a whole number from 500 to 1000, for example
+1000, to run the fixtures at that size. Other values fail the test: the
+ordinary tests already cover smaller histories, and the fixtures' timestamps
+and claim lifetimes are laid out for at most 1,000 steps. The review
+fingerprint does not record the variable, so unset it after a deliberate run.
+Every root mutation reads the whole root state, so each fixture's build time
+grows with the square of its size; the waiver fixture dominates. On a Windows
+debug build the phase took about 2 minutes at 500 steps and about 7 minutes at
+1,000; this is an observation, not a timeout or a performance limit. The test harness
 can print "running for over 60 seconds" while a fixture is still working.
 Measurements appear when each fixture reaches its reporting point, not as a
 periodic heartbeat. Do not stop the gate just because it is quiet or passes

@@ -175,9 +175,9 @@ fn root_delta_history_cost_measurement() {
 }
 
 #[test]
-#[ignore = "thousand-delta fixture belongs to the separate scale phase"]
+#[ignore = "long-history fixture belongs to the separate scale phase"]
 fn root_delta_scale_history_cost_measurement() {
-    check_history_cost(&[1000]);
+    check_history_cost(&[super::scale_size("history_cost_measurement")]);
 }
 
 fn check_history_cost(lengths: &[u32]) {
