@@ -513,6 +513,165 @@ fn show_reports_the_true_note_total_and_latest_feed_entry() {
     ));
 }
 
+/// The default show page emits every row in the item's dense feed order, never
+/// by asserted timestamps. A holder's notes and a peer's non-holder notes
+/// interleave exactly as they were appended, and so do late notes that both
+/// sessions add after completion. Record ids are random, so no fixture can fix
+/// their order; the interleaved peer notes are what an order by record kind,
+/// such as native evidence before observations, cannot reproduce.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture walks open and late notes by two sessions through show"
+)]
+fn show_emits_every_page_row_in_dense_feed_order() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let database = directory.path().join("engram.sqlite3");
+    let project = ProjectId("show-dense-order".into());
+    let service_for = |session: &str| {
+        Arc::new(LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            SessionId(session.into()),
+            Some("show-dense-order-test".into()),
+        ))
+    };
+    let owner = service_for("holder");
+    let peer = service_for("peer");
+    let verbs =
+        AgentVerbs::with_shared_service(owner.clone(), "agent".into(), SessionId("holder".into()));
+    let rows = |value: &serde_json::Value| -> Vec<(String, bool)> {
+        value["notes"]
+            .as_array()
+            .expect("notes")
+            .iter()
+            .map(|note| {
+                (
+                    note["summary"].as_str().expect("summary").to_owned(),
+                    note["non_holder"].as_bool().unwrap_or(false),
+                )
+            })
+            .collect()
+    };
+    let propose_and_claim = |title: &str, key: &str, second: i64| {
+        let work = match owner
+            .work_propose(root_input(title, key), at(second))
+            .expect("root proposal")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+                panic!("expected root")
+            }
+        };
+        owner
+            .work_update_on(
+                Some(&work.short_ref),
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(3_600),
+                    recovery_reason: None,
+                    idempotency_key: format!("{key}-claim"),
+                },
+                at(second + 1),
+            )
+            .expect("claim work");
+        work
+    };
+
+    // Open work: the asserted clocks run against the append order, and the
+    // peer's non-holder notes fall between the holder's.
+    let open = propose_and_claim("Dense order", "dense-order-open", 0);
+    for (service, text, clock) in [
+        (&owner, "holder note one, clock 50", 50),
+        (&peer, "peer note two, clock 5", 5),
+        (&owner, "holder note three, clock 40", 40),
+        (&peer, "peer note four, clock 30", 30),
+        (&owner, "holder note five, clock 20", 20),
+    ] {
+        service
+            .work_note_on(Some(&open.short_ref), text, &[], at(clock))
+            .expect("record note");
+    }
+    let shown = verbs.show(&open.short_ref, at(60)).expect("show open work");
+    assert_eq!(
+        rows(&shown.value),
+        [
+            ("holder note one, clock 50", false),
+            ("peer note two, clock 5", true),
+            ("holder note three, clock 40", false),
+            ("peer note four, clock 30", true),
+            ("holder note five, clock 20", false),
+        ]
+        .map(|(text, non_holder)| (text.to_owned(), non_holder))
+    );
+
+    // Completed work: late notes by both sessions follow the completion in
+    // the order they were appended, whatever their asserted clocks say.
+    let late = propose_and_claim("Late order", "dense-order-late", 100);
+    owner
+        .work_note_on(
+            Some(&late.short_ref),
+            "holder note before completion, clock 130",
+            &[],
+            at(130),
+        )
+        .expect("record note");
+    assert!(matches!(
+        owner
+            .work_complete(
+                WorkCompleteInput {
+                    source_fingerprint: None,
+                    links: Vec::new(),
+                    link_basis: None,
+                    capture: Some(WorkCompletionCaptureInput {
+                        summary: "Late order delivered".into(),
+                        refs: Vec::new(),
+                    }),
+                    evidence: Vec::new(),
+                    acceptance: None,
+                    note: None,
+                    idempotency_key: "dense-order-late-complete".into(),
+                },
+                at(131),
+            )
+            .expect("complete work"),
+        WorkCompleteResult::Completed(_)
+    ));
+    // A late note may not claim a time before the completion; between the
+    // two late notes the clocks still run against the append order.
+    peer.work_note_on(
+        Some(&late.short_ref),
+        "late peer note, clock 150",
+        &[],
+        at(150),
+    )
+    .expect("record late peer note");
+    owner
+        .work_note_on(
+            Some(&late.short_ref),
+            "late holder note, clock 140",
+            &[],
+            at(140),
+        )
+        .expect("record late holder note");
+    let shown = verbs
+        .show(&late.short_ref, at(160))
+        .expect("show late work");
+    let summaries = rows(&shown.value)
+        .into_iter()
+        .map(|(text, _)| text)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        summaries,
+        [
+            "holder note before completion, clock 130",
+            "Late order delivered",
+            "late peer note, clock 150",
+            "late holder note, clock 140",
+        ]
+    );
+}
+
 #[test]
 fn completed_show_advertises_late_note_without_hijacking_done_navigation() {
     let tags = [

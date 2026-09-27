@@ -1037,8 +1037,10 @@ ref, and allowed actions. It preserves the exact evidence count and the latest
 note independently from the bounded evidence page; latest means the highest
 dense run-feed position for execution evidence, or their shared root-feed
 position when non-holder observations are present. Evidence timestamps are
-asserted metadata, never ordering authority. The latest note is emitted last
-in `notes`; on a full page, it replaces the least-priority selected note.
+asserted metadata, never ordering authority. Selection decides which rows the
+bounded page keeps, and on a full page the latest note replaces the
+least-priority selected note. `notes` then emits every kept row in the item's
+dense root-work feed order, so the latest note comes last.
 `notes_omitted` is the
 exact remainder after all fitting, while `evidence_count_limit` reports its
 count-limit share. Display attribution uses `you` only for the reading session,

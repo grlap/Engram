@@ -673,6 +673,18 @@ impl LocalWorkService {
                 evidence_items.push(summary);
             }
         }
+        if with_latest_evidence {
+            // Show emits its page in the item's dense root-work feed order,
+            // which every row has; asserted timestamps stay metadata. Only the
+            // position is recorded here, so selection and priority are unchanged.
+            for item in evidence_items
+                .iter_mut()
+                .chain(latest_evidence_item.as_mut())
+            {
+                item.root_position =
+                    Some(store.work_root_object_position(status.work.root_id, &item.evidence)?);
+            }
+        }
         let history_total = store.work_event_count(work_id)?;
         let mut history = Vec::new();
         for entry in store.work_event_tail(work_id, MAX_FOCUS_HISTORY)? {

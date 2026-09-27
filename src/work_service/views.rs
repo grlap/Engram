@@ -701,6 +701,13 @@ pub struct WorkEvidenceSummary {
     /// producer, which is not necessarily the actor recording the evidence.
     #[serde(skip)]
     pub(crate) display_actor_session_id: Option<SessionId>,
+    /// The record's position in its item's root-work feed, which every row
+    /// of the evidence page has. Filled for every focus view that carries the
+    /// latest note (show, the agent and host focus reads, record windows),
+    /// never for `next`; only show's output reads it, emitting its rows in
+    /// this order rather than by the asserted `created_at`.
+    #[serde(skip)]
+    pub(crate) root_position: Option<i64>,
     pub evidence: ObjectId,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub non_holder: bool,

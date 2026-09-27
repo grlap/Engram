@@ -1295,7 +1295,12 @@ fn show_evidence(view: &WorkFocusView) -> Vec<crate::work_service::WorkEvidenceS
 }
 
 pub(super) fn show_notes(view: &WorkFocusView, identity: DisplayIdentity<'_>) -> Vec<ShowNote> {
-    show_evidence(view)
+    let mut notes = show_evidence(view);
+    // Rows render in the item's dense root-work feed order, never by their
+    // asserted timestamps. Only this output copy is sorted: which rows the page
+    // keeps, and which it sheds for bytes, stays with the view.
+    notes.sort_by_key(|note| note.root_position);
+    notes
         .into_iter()
         .map(|note| ShowNote {
             kind: note.evidence_kind,

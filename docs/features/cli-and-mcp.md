@@ -205,8 +205,11 @@ highest dense run-feed position for execution evidence, or their shared
 root-feed position when non-holder observations are present. Evidence
 timestamps are asserted metadata, never ordering authority. Observations fill
 spare evidence-page slots without displacing selected execution evidence.
-The latest note is emitted last in `notes`; on a full page, it replaces the
-least-priority selected note.
+Selection decides which rows the bounded page keeps. On a full page the latest
+note replaces the least-priority selected note. `notes` then emits every kept
+row in the item's dense root-work feed order, whatever its asserted timestamp,
+so the latest note comes last. This is the order of the rows this page keeps;
+the `--notes` window below pages the item's whole note stream instead.
 `notes_omitted` is the exact remainder after all fitting, while
 `evidence_count_limit` reports its count-limit share. Open or proposed children
 precede terminal children inside the bounded relation page,

@@ -654,6 +654,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
+                root_position: None,
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Generic,
                 non_holder: false,
@@ -678,6 +679,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
+                root_position: None,
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Verification,
                 non_holder: false,
@@ -702,6 +704,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
+                root_position: None,
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Environment,
                 non_holder: false,
@@ -737,6 +740,7 @@ pub(super) fn restored_work_evidence_summary(
     Ok(WorkEvidenceSummary {
         display_actor_id: Some(evidence.actor.actor_id.clone()),
         display_actor_session_id: evidence.actor.session_id.clone(),
+        root_position: None,
         evidence: hash,
         non_holder: false,
         evidence_kind: WorkEvidenceKind::Generic,
@@ -764,6 +768,7 @@ pub(super) fn work_observation_summary(
     WorkEvidenceSummary {
         display_actor_id: Some(observation.actor.actor_id.clone()),
         display_actor_session_id: observation.actor.session_id.clone(),
+        root_position: None,
         evidence: hash,
         non_holder: true,
         evidence_kind: WorkEvidenceKind::Generic,
