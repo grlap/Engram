@@ -244,9 +244,20 @@ protocol). Ceremony is the enemy; speed of change is the point.
 
 Run these before handing off code changes:
 
-Use `node scripts/test-launcher.mjs full` to execute this sequence with full
-logs on disk and compact failures/warnings in context. For an authorized focused
-check use `node scripts/test-launcher.mjs focused -- COMMAND ARGS...`.
+The launcher has two modes, for two different jobs:
+
+- **Full landing validation:** `node scripts/test-launcher.mjs full` runs
+  this whole sequence, with full logs on disk and compact failures and
+  warnings in context. It runs on the frozen tree that is to be committed,
+  beside that tree's reviews; for a code change, only its pass counts
+  toward landing.
+- **Fast correction check:** `node scripts/test-launcher.mjs focused --
+  COMMAND ARGS...` runs one command, typically the tests that cover what a
+  fix touched, such as `focused -- cargo test --lib planning::detach`. Run
+  it after each fix and before freezing the next input, so that a broken
+  fix fails fast rather than in a full gate. It never stands in for the
+  full run on a changeset that needs one.
+
 See [launcher usage](docs/development.md#test-launcher) for completion delivery.
 
 ```bash
