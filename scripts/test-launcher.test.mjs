@@ -9,7 +9,8 @@ import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import {
-  createRun, diagnostics, executeRun, notifyRun, renameWithRetry, requiredStages, startDetached, summarize,
+  commandKind, countTests, createRun, diagnostics, executeRun, machineRecord, notifyRun, renameWithRetry,
+  requiredStages, selectsTests, startDetached, summarize,
 } from "./test-launcher.mjs";
 import { fixtureHome, fixtureRoot, removeFixtureHomes, removeFixturePath, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 
@@ -207,6 +208,14 @@ test("detached parent emits exact recovery receipt and child completes once", as
     assert.equal(json(join(runDir, "results.json")).state, "passed");
     assert.equal(json(join(runDir, "notification.json")).code, 0);
     assert.equal(readFileSync(counter, "utf8"), "run\n");
+    // The detached parent prints no record, because its run has not
+    // finished. The worker ends launcher.log with the record instead.
+    assert.doesNotMatch(receipt, /test-launcher\/v1/u);
+    const logged = readFileSync(join(runDir, "launcher.log"), "utf8");
+    const record = parseRecord(logged.slice(logged.indexOf("\ntest-launcher/v1") + 1));
+    assert.equal(record.run, basename(runDir));
+    assert.equal(record.state, "passed");
+    assert.deepEqual(record.stages.map(({ name, state }) => [name, state]), [["once", "passed"]]);
     if (process.platform !== "win32") {
       assert.equal(statSync(runDir).mode & 0o077, 0);
       for (const file of readdirSync(runDir)) assert.equal(statSync(join(runDir, file)).mode & 0o077, 0, file);
@@ -1407,4 +1416,664 @@ default_test_threads`;
     if (threadLimit) variables.OMP_THREAD_LIMIT = threadLimit;
     assert.equal(runHostFunction(harness, variables, name, { replaceEnvironment: true }), expected, name);
   }
+});
+
+// The record a host reads. Its grammar is a contract with that host; these
+// tests hold the launcher to it, and to never giving a count that the runners'
+// own summaries do not give.
+const stageLine = /^test-launcher\/v1 run=(test-[0-9a-f-]+) stage=([a-z0-9][a-z0-9-]*) kind=(test|build|lint|typecheck|other) state=(passed|failed|skipped|interrupted) exit=(\d+|none)(?: executed=(?:(\d+) passed=(\d+) failed=(\d+) ignored=(\d+)|unknown why=([a-z0-9][a-z0-9-]*)) runners=(\d+) filtered=(yes|no))?$/u;
+const overallLine = /^test-launcher\/v1 run=(test-[0-9a-f-]+) overall=(passed|failed|interrupted) scope=(full|focused) stages=(\d+)(?: reason=([a-z0-9][a-z0-9-]*))?$/u;
+function parseRecord(text) {
+  assert.ok(text.endsWith("\n"), "the record ends with a newline");
+  const lines = text.slice(0, -1).split("\n");
+  const overall = overallLine.exec(lines.at(-1));
+  assert.ok(overall, `overall line does not parse: ${lines.at(-1)}`);
+  const stages = lines.slice(0, -1).map((line) => {
+    const parsed = stageLine.exec(line);
+    assert.ok(parsed, `stage line does not parse: ${line}`);
+    assert.ok(Buffer.byteLength(line) < 1024, `a line the host would cut: ${line}`);
+    const [, run, name, kind, state, exit, executed, passed, failed, ignored, why, runners, filtered] = parsed;
+    assert.equal(runners !== undefined, kind === "test", `only a test stage carries counts: ${line}`);
+    return { run, name, kind, state, exit, executed: executed ?? (why ? "unknown" : undefined), passed, failed, ignored, why, runners, filtered };
+  });
+  const [, run, state, scope, count, reason] = overall;
+  assert.equal(Number(count), stages.length);
+  assert.ok(stages.every((stage) => stage.run === run), "every line carries the same run");
+  assert.equal(reason === undefined, state === "passed", "a reason is given exactly when the run did not pass");
+  return { run, state, scope, reason, stages };
+}
+// The rule the host applies to a record, as agreed with it.
+const countsAsPassedTests = ({ state, stages }) => state === "passed"
+  && stages.every((stage) => stage.state !== "failed" && stage.state !== "interrupted")
+  && stages.filter(({ kind }) => kind === "test").every((stage) =>
+    stage.state === "passed" && stage.executed !== "unknown" && stage.failed === "0")
+  && stages.some((stage) => stage.kind === "test" && Number(stage.executed) >= 1);
+const libtest = (passed, failed, ignored, filteredOut, verdict = failed ? "FAILED" : "ok") =>
+  `running ${passed + failed + ignored} tests\ntest result: ${verdict}. ${passed} passed; ${failed} failed; ${ignored} ignored; 0 measured; ${filteredOut} filtered out; finished in 1.25s\n`;
+const nodeSummary = (mark, { tests, pass, fail = 0, cancelled = 0, skipped = 0, todo = 0 }) =>
+  [`tests ${tests}`, "suites 0", `pass ${pass}`, `fail ${fail}`, `cancelled ${cancelled}`, `skipped ${skipped}`,
+    `todo ${todo}`, "duration_ms 12.5"].map((line) => `${mark} ${line}\n`).join("");
+const printing = (name, kind, text, exit = 0) => ({ name, kind, command: process.execPath,
+  args: ["-e", `process.stdout.write(${JSON.stringify(text)}); process.exitCode = ${exit}`] });
+async function recordOf(root, stages, options = {}) {
+  const runDir = createRun({ root, stages, ...options }, env);
+  const result = await executeRun(runDir, env);
+  return { result, record: parseRecord(machineRecord(result.plan, result)) };
+}
+async function counted(root, text) {
+  const log = join(root, `${randomUUID()}.log`);
+  writeFileSync(log, text);
+  try { return await countTests(log); } finally { unlinkSync(log); }
+}
+const complete = (executed, passed, failed, ignored, runners, filteredOut) =>
+  ({ executed, passed, failed, ignored, runners, filteredOut, failures: failed });
+
+test("every required stage has a kind, and only runner stages are tests", () => {
+  for (const platform of ["win32", "linux"]) {
+    assert.deepEqual(requiredStages(platform).map(({ name, kind }) => [name, kind]), [
+      ["fmt", "lint"], ["check", "build"], ["clippy", "lint"], ["rust", "test"], ["freeze", "test"],
+      ["mcp", "test"], ["control", "test"], ["parity", "test"], ["docs", "other"],
+    ]);
+  }
+});
+
+test("a focused command is a test only when the launcher starts the runner itself", () => {
+  for (const [command, args, kind] of [
+    ["cargo", ["test", "--lib", "name"], "test"],
+    ["cargo", ["+stable", "test"], "test"],
+    ["C:\\tools\\cargo.exe", ["test"], "test"],
+    ["/usr/local/bin/cargo", ["test"], "test"],
+    ["cargo", ["clippy", "--all-targets"], "lint"],
+    ["cargo", ["fmt", "--check"], "lint"],
+    ["cargo", ["check"], "build"],
+    ["cargo", ["build", "--release"], "build"],
+    ["cargo", ["run", "--", "test"], "other"],
+    ["cargo", ["nextest", "run"], "other"],
+    [process.execPath, ["--test", "scripts/a.test.mjs"], "test"],
+    ["node", ["--test-reporter=tap", "--test", "a.mjs"], "test"],
+    ["node", ["--no-warnings", "--test-reporter=tap", "--test"], "test"],
+    ["node", ["--test-reporter", "spec", "--test", "a.mjs"], "test"],
+    // Each reporter prints a summary of its own.
+    ["node", ["--test-reporter=spec", "--test-reporter-destination=stdout", "--test-reporter=tap", "--test-reporter-destination=stderr", "--test"], "other"],
+    ["node", ["--test", "--test-reporter", "spec", "--test-reporter=tap", "a.mjs"], "other"],
+    ["node", ["--test-reporter=tap", "--test", "a.mjs", "--", "--test-reporter=spec"], "test"],
+    ["node", ["scripts/check-doc-links.mjs", "--test"], "other"],
+    ["node", ["-e", "console.log('cargo test')"], "other"],
+    // `--` ends Node's options: what follows is a script, whatever its name.
+    ["node", ["--", "--test"], "other"],
+    ["node", ["--import", "./setup.mjs", "run.mjs", "--test"], "other"],
+    // An option the table does not know may take `--test` as its value.
+    ["node", ["--disable-warning", "--test", "fake.mjs"], "other"],
+    ["node", ["--title", "--test", "fake.mjs"], "other"],
+    ["node", ["--unknown-option=1", "--test"], "other"],
+    // A wrapper may run anything and end as it likes.
+    ["npm", ["test"], "other"],
+    ["npm", ["run", "test"], "other"],
+    ["npx", ["vitest", "run"], "other"],
+    ["sh", ["scripts/test-rust.sh"], "other"],
+    ["pwsh", ["-NoProfile", "-File", "scripts/test-rust.ps1"], "other"],
+    ["echo", ["cargo", "test"], "other"],
+  ]) assert.equal(commandKind(command, args), kind, `${command} ${args.join(" ")}`);
+});
+
+test("counts are sums over complete runner summaries, including runners that ran nothing", async () => {
+  await repository(async (root) => {
+    assert.deepEqual(await counted(root, `${libtest(1057, 0, 4, 0)}noise\n${libtest(3, 0, 0, 1066)}`
+      + `   Doc-tests engram\n${libtest(0, 0, 0, 0)}`), complete(1060, 1060, 0, 4, 3, 1066));
+    assert.deepEqual(await counted(root, libtest(2, 1, 0, 0)), complete(3, 2, 1, 0, 1, 0));
+    for (const [mark, opening] of [["ℹ", ""], ["#", "TAP version 13\n"]]) {
+      assert.deepEqual(await counted(root, `${opening}✔ a test named tests 5\n${nodeSummary(mark, { tests: 7, pass: 4, fail: 1, skipped: 1, todo: 1 })}`),
+        complete(5, 4, 1, 2, 1, 0));
+    }
+    // Coloured output and Windows line endings are the same summaries.
+    assert.deepEqual(await counted(root, `\x1b[32m${libtest(2, 0, 0, 0).replaceAll("\n", "\r\n")}`.replace("running", "\x1b[0mrunning")),
+      complete(2, 2, 0, 0, 1, 0));
+    assert.deepEqual(await counted(root, libtest(0, 0, 3, 40)), complete(0, 0, 0, 3, 1, 40));
+    // A line too long to read is skipped, not interpreted and not held in memory.
+    assert.deepEqual(await counted(root, `${"x".repeat(200_000)}test result: ok. 9 passed; 0 failed\n${libtest(2, 0, 0, 0)}`),
+      complete(2, 2, 0, 0, 1, 0));
+  });
+});
+
+test("nothing but a runner's own summary is read: no line is taken for a test or a failure", async () => {
+  await repository(async (root) => {
+    // What a log may hold beside the summaries: failed tests' own lines, a
+    // reporter's list of them, cargo's closing lines, a compiler's or another
+    // tool's complaint. The summaries count; none of these lines does.
+    for (const line of [
+      "test storage::tests::breaks ... FAILED", "not ok 3 - breaks", "not ok 3 - pending # TODO",
+      "✖ breaks (1.2ms)", "⚠ pending (0.4ms) # TODO", "✖ failing tests:",
+      "✖ 2 problems (0 errors, 2 warnings)", "error: test failed, to rerun pass `--lib`",
+      "error: 2 targets failed:", "error[E0425]: cannot find value", "warning: unused variable",
+    ]) {
+      assert.deepEqual(await counted(root, `${line}\n${libtest(2, 0, 0, 0)}${line}\n`), complete(2, 2, 0, 0, 1, 0), line);
+      assert.deepEqual(await counted(root, `${line}\n${nodeSummary("ℹ", { tests: 3, pass: 2, todo: 1 })}${line}\n`),
+        complete(2, 2, 0, 1, 1, 0), line);
+      assert.deepEqual(await counted(root, `${line}\n`),
+        { executed: "unknown", why: "no-summary", runners: 0, filteredOut: 0, failures: 0 }, line);
+    }
+  });
+});
+
+test("a missing, partial, contradictory or unsupported summary makes the count unknown and says why", async () => {
+  await repository(async (root) => {
+    const unknown = async (text, why, runners, because, failures = 0) => {
+      assert.deepEqual(await counted(root, text), { executed: "unknown", why, runners, filteredOut: 0, failures }, because);
+    };
+    await unknown("", "no-summary", 0, "an empty log");
+    await unknown("error[E0425]: cannot find value\nerror: could not compile `engram`\n", "no-summary", 0,
+      "compilation failed before any runner");
+    await unknown(`${libtest(5, 0, 0, 0)}running 3 tests\ntest a ... ok\n`, "incomplete-summary", 1,
+      "a runner that started and never reported");
+    await unknown(`running 4 tests\n${libtest(5, 0, 0, 0)}`, "incomplete-summary", 1,
+      "a runner that announced tests and never reported");
+    await unknown(`${nodeSummary("ℹ", { tests: 2, pass: 2 })}TAP version 13\n# Subtest: unfinished\n`, "incomplete-summary", 1,
+      "a TAP stream that started and never summarized");
+    await unknown(nodeSummary("ℹ", { tests: 2, pass: 2 }).split("\n").slice(0, 4).join("\n"), "incomplete-summary", 0,
+      "a node summary cut short");
+    await unknown(`${libtest(5, 0, 0, 0)}${nodeSummary("#", { tests: 2, pass: 2 }).replace("# fail 0\n", "")}`, "incomplete-summary", 1,
+      "a complete runner does not stand for an incomplete one");
+    await unknown("test result: ok. 2 passed; 0 failed\n", "malformed-summary", 0, "a result line cut short");
+    await unknown(libtest(5, 0, 0, 0).replace("5 passed", "99999999999999999999 passed"), "malformed-summary", 0,
+      "a count that is not an exact integer");
+    await unknown(libtest(5, 0, 0, 0).replace("0 measured", "2 measured"), "benchmarks", 0, "benchmarks are not tests");
+    await unknown(nodeSummary("ℹ", { tests: 3, pass: 2, cancelled: 1 }), "cancelled-tests", 0,
+      "a cancelled test may or may not have run");
+    await unknown(nodeSummary("ℹ", { tests: 2, pass: 2, cancelled: 1 }), "inconsistent-summary", 0,
+      "cancelled tests are part of the total");
+    await unknown(nodeSummary("ℹ", { tests: 9, pass: 2 }), "inconsistent-summary", 0, "totals that do not add up");
+    for (const mark of ["ℹ", "#"]) {
+      await unknown(nodeSummary(mark, { tests: 2, pass: 1, fail: 1 }).replace(`${mark} suites 0`, `${mark} suites 0.5`),
+        "malformed-summary", 0, "a suite count that is not an integer", 1);
+    }
+    // A summary's first line that does not read, before or after a good one.
+    for (const mark of ["ℹ", "#"]) {
+      const good = nodeSummary(mark, { tests: 1, pass: 1 });
+      for (const opener of [`${mark} tests`, `${mark} tests invalid`, `${mark} tests 1 2`, `${mark} tests ${"1".repeat(20_000)}`]) {
+        await unknown(`${good}${opener}\n`, "malformed-summary", 1, `${opener.slice(0, 20)} after a summary`);
+        await unknown(`${opener}\n${good}`, "malformed-summary", 1, `${opener.slice(0, 20)} before a summary`);
+      }
+    }
+    await unknown(`${libtest(2, 0, 0, 0)}running 1 test\ntest result: ok. ${"1".repeat(20_000)} passed\n`, "malformed-summary", 1,
+      "a result line too long to read");
+    // Any other line may be as long as it likes.
+    assert.equal((await counted(root, `${"x".repeat(20_000)}\n${libtest(2, 0, 0, 0)}tests ${"y".repeat(20_000)}\n`)).executed, 2);
+    await unknown("test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s\n",
+      "inconsistent-summary", 0, "a result that no runner announced");
+    await unknown(libtest(5, 0, 0, 0).replace("running 5 tests", "running 6 tests"), "inconsistent-summary", 0,
+      "a result that does not account for the tests announced");
+    // The first reason met is the one given, and a later clean summary does
+    // not take it back.
+    await unknown(`running 3 tests\n${nodeSummary("ℹ", { tests: 9, pass: 2 })}${libtest(1, 0, 0, 0)}`, "inconsistent-summary", 1,
+      "the first of several reasons");
+    // Only its length is wrong with this field: read whole, it would be 2.
+    await unknown(nodeSummary("ℹ", { tests: 2, pass: 2 }).replace("ℹ pass 2", `ℹ pass ${"0".repeat(20_000)}2`),
+      "malformed-summary", 0, "a summary field too long to read");
+    // The bound holds wherever the line falls in the 8,192-byte chunks read.
+    for (const offset of [0, 1, 4_000, 8_191, 8_192, 8_193, 16_000]) {
+      const padded = (zeroes) => `${"x".repeat(offset)}\n${nodeSummary("ℹ", { tests: 2, pass: 2 })
+        .replace("ℹ pass 2", `ℹ pass ${"0".repeat(zeroes)}2`)}`;
+      await unknown(padded(16_384 - "ℹ pass 2".length + 1), "malformed-summary", 0, `one character over the bound at offset ${offset}`);
+      assert.equal((await counted(root, padded(16_384 - "ℹ pass 2".length))).executed, 2,
+        `exactly at the bound at offset ${offset}`);
+    }
+    // The failed count of a complete summary is kept whatever became of the rest.
+    await unknown(`${libtest(1, 2, 0, 0)}running 1 test\n`, "incomplete-summary", 1, "failures beside a runner that never reported", 2);
+    await unknown(nodeSummary("ℹ", { tests: 2, pass: 0, fail: 1, cancelled: 1 }), "cancelled-tests", 0,
+      "failures beside cancelled tests", 1);
+    await unknown(nodeSummary("#", { tests: 9, pass: 2, fail: 4 }), "inconsistent-summary", 0,
+      "failures in a summary that does not add up", 4);
+    await unknown(libtest(1, 3, 0, 0).replace("0 measured", "2 measured"), "benchmarks", 0, "failures beside benchmarks", 3);
+    await unknown(`${nodeSummary("ℹ", { tests: 9, pass: 2 })}${libtest(2, 3, 0, 0)}`, "inconsistent-summary", 1,
+      "failures after a summary that does not add up", 3);
+    // Each runner keeps its failed count when that count reads, whatever
+    // another field of the same summary says.
+    await unknown(libtest(1, 3, 0, 0).replace("1 passed", "99999999999999999999 passed"), "malformed-summary", 0,
+      "libtest failures beside a count that is not an exact integer", 3);
+    // A log that cannot be read gives no count and throws nothing: the stage
+    // keeps its exit.
+    for (const unreadable of [join(root, "no-such.log"), root]) {
+      assert.deepEqual(await countTests(unreadable), { executed: "unknown", why: "no-summary", runners: 0, filteredOut: 0, failures: 0 },
+        unreadable);
+    }
+  });
+});
+
+test("the counts agree with what Node's own runner prints, for each reporter", async () => {
+  await repository(async (root) => {
+    // An independent runner, not a worker of the one running this file.
+    const runnerEnv = { ...env };
+    delete runnerEnv.NODE_TEST_CONTEXT;
+    const run = (name, source, reporter) => {
+      const file = join(root, `${name}.test.mjs`);
+      writeFileSync(file, `import test from "node:test";\nimport assert from "node:assert/strict";\n${source}`);
+      try {
+        return spawnSync(process.execPath, ["--test", ...(reporter ? [`--test-reporter=${reporter}`] : []), file],
+          { cwd: root, env: runnerEnv, encoding: "utf8", windowsHide: true });
+      } finally { unlinkSync(file); }
+    };
+    // A failing test marked todo is todo to its runner, which exits 0. How a
+    // reporter marks it differs between Node versions; its summary does not.
+    const todo = `test("passes", () => {});
+      test("pending", { todo: true }, () => { assert.equal(1, 2); });
+      test("pending with a reason", { todo: "not written yet" }, () => { throw new Error("no"); });
+      test("left out", { skip: true }, () => {});`;
+    const failing = `test("passes", () => {});
+      test("breaks", () => { assert.equal(1, 2); });`;
+    for (const reporter of [undefined, "spec", "tap"]) {
+      const passed = run("todo", todo, reporter);
+      assert.equal(passed.status, 0, `${reporter}: ${passed.stderr}`);
+      assert.deepEqual(await counted(root, passed.stdout), complete(1, 1, 0, 3, 1, 0), `${reporter}\n${passed.stdout}`);
+      const failed = run("failing", failing, reporter);
+      assert.equal(failed.status, 1, `${reporter}: ${failed.stderr}`);
+      assert.deepEqual(await counted(root, failed.stdout), complete(2, 1, 1, 0, 1, 0), `${reporter}\n${failed.stdout}`);
+      // Without its summary a run gives no count, and no failure is guessed.
+      const cut = failed.stdout.split("\n").filter((line) => !/^(?:ℹ|#) /u.test(line)).join("\n");
+      const partial = await counted(root, cut);
+      assert.equal(partial.executed, "unknown", reporter);
+      assert.equal(partial.failures, 0, `${reporter}\n${cut}`);
+    }
+    // TAP prints what a test writes behind `# `, which gives a line that
+    // begins with `tests` the beginning of a summary: no count. The default
+    // reporter prints the line as it is.
+    const talking = `test("passes", () => { console.log("tests passed"); });`;
+    for (const [reporter, expected] of [["tap", { executed: "unknown", why: "malformed-summary", runners: 1, filteredOut: 0, failures: 0 }],
+      ["spec", complete(1, 1, 0, 0, 1, 0)]]) {
+      const printed = run("talking", talking, reporter);
+      assert.equal(printed.status, 0, `${reporter}: ${printed.stderr}`);
+      assert.match(printed.stdout, reporter === "tap" ? /^# tests passed$/mu : /^tests passed$/mu, reporter);
+      assert.deepEqual(await counted(root, printed.stdout), expected, `${reporter}\n${printed.stdout}`);
+    }
+  });
+});
+
+test("the record follows the agreed grammar for a passing run of several kinds", async () => {
+  await repository(async (root) => {
+    const { result, record } = await recordOf(root, [
+      printing("lint-first", "lint", "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1s\n"),
+      printing("rust", "test", `${libtest(10, 0, 1, 0)}${libtest(2, 0, 0, 30)}`),
+      printing("node-tests", "test", nodeSummary("ℹ", { tests: 4, pass: 4 })),
+      printing("unclassified", undefined, ""),
+    ], { full: true });
+    assert.equal(result.state, "passed");
+    const bare = { executed: undefined, passed: undefined, failed: undefined, ignored: undefined, why: undefined,
+      runners: undefined, filtered: undefined };
+    assert.deepEqual(record, { run: result.runId, state: "passed", scope: "full", reason: undefined, stages: [
+      { run: result.runId, name: "lint-first", kind: "lint", state: "passed", exit: "0", ...bare },
+      { run: result.runId, name: "rust", kind: "test", state: "passed", exit: "0", executed: "12",
+        passed: "12", failed: "0", ignored: "1", why: undefined, runners: "2", filtered: "yes" },
+      { run: result.runId, name: "node-tests", kind: "test", state: "passed", exit: "0", executed: "4",
+        passed: "4", failed: "0", ignored: "0", why: undefined, runners: "1", filtered: "no" },
+      { run: result.runId, name: "unclassified", kind: "other", state: "passed", exit: "0", ...bare },
+    ] });
+    assert.equal(countsAsPassedTests(record), true);
+    // Counts are kept with the results, not only printed.
+    assert.deepEqual(json(join(dirname(result.stages[1].log), "results.json")).stages[1].tests, complete(12, 12, 0, 1, 2, 30));
+  });
+});
+
+test("a command that exits 0 passes, and a count that is not complete keeps the run from counting", async () => {
+  await repository(async (root) => {
+    // Each of these stages ends with exit 0 beside a stage with a good count.
+    // The launcher calls none of them failed: it cannot read them. The host's
+    // rule asks every test stage for a complete count, so none of these runs
+    // counts as passed tests.
+    for (const [text, why] of [
+      ["finished\n", "no-summary"],
+      [`${libtest(2, 0, 0, 0)}running 1 test\ntest breaks ... FAILED\n`, "incomplete-summary"],
+      [`TAP version 13\nnot ok 1 - breaks\nTAP version 13\n${nodeSummary("#", { tests: 1, pass: 1 })}`, "incomplete-summary"],
+      [`✖ breaks (1ms)\n${nodeSummary("ℹ", { tests: 1, pass: 1 }).split("\n").slice(0, 4).join("\n")}\n`, "incomplete-summary"],
+      [nodeSummary("ℹ", { tests: 3, pass: 2, cancelled: 1 }), "cancelled-tests"],
+    ]) {
+      const { result, record } = await recordOf(root, [printing("unread", "test", text), printing("good", "test", libtest(3, 0, 0, 0))]);
+      assert.equal(result.state, "passed", why);
+      assert.equal(record.state, "passed", why);
+      assert.deepEqual(record.stages.map(({ state, exit, executed, why: given, passed }) => [state, exit, executed, given, passed]),
+        [["passed", "0", "unknown", why, undefined], ["passed", "0", "3", undefined, "3"]], why);
+      assert.equal(countsAsPassedTests(record), false, why);
+    }
+    // Tests that ran and were all ignored or filtered out are counted, as none.
+    const none = await recordOf(root, [printing("all-ignored", "test", libtest(0, 0, 6, 0)), printing("no-match", "test", libtest(0, 0, 0, 1070))]);
+    assert.deepEqual(none.record.stages.map(({ executed, passed, runners, filtered }) => [executed, passed, runners, filtered]),
+      [["0", "0", "1", "no"], ["0", "0", "1", "yes"]]);
+    assert.equal(countsAsPassedTests(none.record), false, "no test was executed");
+    // Another tool's line that looks like a failure fails nothing.
+    const linted = await recordOf(root, [printing("with-lint", "test",
+      `${nodeSummary("ℹ", { tests: 2, pass: 1, todo: 1 })}✖ failing tests:\n✖ pending (1ms) # TODO\n✖ 2 problems (0 errors, 2 warnings)\n`)]);
+    assert.equal(linted.record.state, "passed");
+    assert.equal(countsAsPassedTests(linted.record), true);
+  });
+});
+
+test("complete summaries that count failed tests fail the stage whatever the command's exit", async () => {
+  await repository(async (root) => {
+    const { result, record } = await recordOf(root, [
+      printing("masked", "test", nodeSummary("ℹ", { tests: 1, pass: 0, fail: 1 }), 0),
+      printing("later", "test", libtest(1, 0, 0, 0)),
+    ]);
+    assert.equal(result.state, "failed");
+    assert.notEqual(result.exitCode, 0);
+    assert.equal(record.state, "failed");
+    assert.equal(record.reason, "stage-failed");
+    // The exit the process gave is kept; the state is what the runner counted.
+    assert.deepEqual(record.stages.map(({ state, exit, executed, passed, failed, why }) => [state, exit, executed, passed, failed, why]),
+      [["failed", "0", "1", "0", "1", undefined], ["skipped", "none", "unknown", undefined, undefined, "not-run"]]);
+    assert.match(await summarize(dirname(result.stages[0].log)), /the runners' summaries count 1 failed tests and the command exited 0/u);
+    assert.equal(countsAsPassedTests(record), false);
+
+    // The same when another runner of the stage left no complete summary.
+    const partial = await recordOf(root, [
+      printing("masked", "test", `${libtest(1, 1, 0, 0)}running 1 test\n`, 0),
+      printing("later", "test", libtest(1, 0, 0, 0)),
+    ]);
+    assert.equal(partial.record.state, "failed");
+    assert.equal(partial.record.reason, "stage-failed");
+    assert.deepEqual(partial.record.stages.map(({ state, exit, executed, why, runners }) => [state, exit, executed, why, runners]),
+      [["failed", "0", "unknown", "incomplete-summary", "1"], ["skipped", "none", "unknown", "not-run", "0"]]);
+
+    // And when the summary that counts the failure counts cancelled tests too.
+    const cancelled = await recordOf(root, [
+      printing("masked", "test", nodeSummary("ℹ", { tests: 2, pass: 0, fail: 1, cancelled: 1 }), 0),
+      printing("later", "test", libtest(1, 0, 0, 0)),
+    ]);
+    assert.equal(cancelled.record.reason, "stage-failed");
+    assert.deepEqual(cancelled.record.stages.map(({ state, exit, executed, why }) => [state, exit, executed, why]),
+      [["failed", "0", "unknown", "cancelled-tests"], ["skipped", "none", "unknown", "not-run"]]);
+    assert.equal(countsAsPassedTests(cancelled.record), false);
+  });
+});
+
+test("a stage that ran and was never counted is not printed as not run", () => {
+  const plan = { full: false, stages: [{ name: "ran", kind: "test" }, { name: "killed", kind: "test" }, { name: "waiting", kind: "test" }] };
+  const record = parseRecord(machineRecord(plan, { runId: "test-0a1b", state: "failed", reason: "launcher-error", stages: [
+    { name: "ran", state: "passed", code: 0 },
+    { name: "killed", state: "failed", code: null, signal: "SIGTERM" },
+    { name: "waiting", state: "unrun" },
+  ] }));
+  assert.deepEqual(record.stages.map(({ state, exit, executed, why }) => [state, exit, executed, why]),
+    [["passed", "0", "unknown", "no-summary"], ["interrupted", "none", "unknown", "no-summary"], ["skipped", "none", "unknown", "not-run"]]);
+  assert.equal(countsAsPassedTests(record), false);
+});
+
+test("filtered says whether the command line or a runner selected a part of the tests", async () => {
+  for (const [command, args, selects] of [
+    ["cargo", ["test"], false],
+    ["cargo", ["test", "--all-features", "--", "--nocapture"], false],
+    ["cargo", ["test", "--jobs", "1"], false],
+    ["cargo", ["test", "-j8"], false],
+    ["cargo", ["test", "-j", "8"], false],
+    ["cargo", ["test", "--jobs=1", "--features", "x", "--", "--test-threads", "8"], false],
+    ["cargo", ["test", "root_delta"], true],
+    ["cargo", ["test", "--lib"], true],
+    ["cargo", ["test", "-p", "engram"], true],
+    ["cargo", ["test", "-pengram"], true],
+    ["cargo", ["test", "--package=engram"], true],
+    // Every target, but not the doctests.
+    ["cargo", ["test", "--all-targets"], true],
+    ["cargo", ["test", "--", "--ignored"], true],
+    ["cargo", ["test", "--", "--skip", "slow"], true],
+    ["cargo", ["clippy", "--lib"], false],
+    ["node", ["--test"], false],
+    ["node", ["--test", "--test-reporter", "spec"], false],
+    ["node", ["--test-reporter=spec", "--test", "--test-timeout=5000"], false],
+    ["node", ["--test", "scripts/parity.test.mjs"], true],
+    ["node", ["--test", "--test-name-pattern=record"], true],
+    ["node", ["--test-name-pattern", "record", "--test"], true],
+    ["node", ["scripts/check-doc-links.mjs"], false],
+    // Not a test to the launcher, so it selects none.
+    ["npm", ["test", "--", "--grep", "x"], false],
+  ]) assert.equal(selectsTests(command, args), selects, `${command} ${args.join(" ")}`);
+  await repository(async (root) => {
+    // Known from the request alone, so a stage that never ran still says it.
+    const runDir = createRun({ root, stages: [
+      { name: "absent", kind: "test", command: join(root, "no-such-cargo", "cargo"), args: ["test", "--lib", "name"] },
+    ] }, env);
+    const executed = await executeRun(runDir, env);
+    const record = parseRecord(machineRecord(executed.plan, executed));
+    assert.deepEqual(record.stages.map(({ state, executed: count, why, filtered }) => [state, count, why, filtered]),
+      [["skipped", "unknown", "not-run", "yes"]]);
+  });
+  // The gate's own stages say it themselves, run or not, whatever runs them.
+  for (const platform of ["win32", "linux"]) {
+    const stages = requiredStages(platform);
+    const record = parseRecord(machineRecord({ full: true, stages },
+      { runId: "test-0a1b", state: "failed", reason: "preflight-failed", stages: stages.map(({ name }) => ({ name, state: "unrun" })) }));
+    assert.deepEqual(record.stages.filter(({ kind }) => kind === "test").map(({ name, why, filtered }) => [name, why, filtered]),
+      [["rust", "not-run", "yes"], ["freeze", "not-run", "yes"], ["mcp", "not-run", "yes"], ["control", "not-run", "yes"], ["parity", "not-run", "yes"]]);
+  }
+});
+
+test("a failing stage keeps its exit and counts, and the stages after it are skipped without an exit", async () => {
+  await repository(async (root) => {
+    const { result, record } = await recordOf(root, [
+      printing("before", "build", ""),
+      printing("failing", "test", libtest(3, 2, 0, 0), 101),
+      printing("after", "test", libtest(1, 0, 0, 0)),
+      printing("last", "other", ""),
+    ]);
+    assert.equal(result.state, "failed");
+    assert.equal(record.state, "failed");
+    assert.equal(record.reason, "stage-failed");
+    assert.deepEqual(record.stages.map(({ state, exit, executed, failed, why }) => [state, exit, executed, failed, why]), [
+      ["passed", "0", undefined, undefined, undefined], ["failed", "101", "5", "2", undefined],
+      ["skipped", "none", "unknown", undefined, "not-run"], ["skipped", "none", undefined, undefined, undefined],
+    ]);
+  });
+});
+
+test("a run whose input changed is failed in the record although every stage passed", async () => {
+  await repository(async (root) => {
+    const { record } = await recordOf(root, [{ name: "changes-source", kind: "test", command: process.execPath, args: ["-e",
+      `require('node:fs').writeFileSync('tracked.txt', 'changed\\n'); process.stdout.write(${JSON.stringify(libtest(4, 0, 0, 0))})`] }]);
+    assert.equal(record.state, "failed");
+    assert.equal(record.reason, "input-changed");
+    assert.deepEqual(record.stages.map(({ state, executed }) => [state, executed]), [["passed", "4"]]);
+    assert.equal(countsAsPassedTests(record), false);
+  });
+});
+
+test("a command that cannot be found or spawned leaves stages without an exit and says why", async () => {
+  await repository(async (root) => {
+    const missing = await recordOf(root, [printing("first", "test", libtest(1, 0, 0, 0)),
+      { name: "absent", kind: "test", command: join(root, "no-such-program"), args: [] }]);
+    assert.equal(missing.record.state, "failed");
+    assert.equal(missing.record.reason, "preflight-failed");
+    assert.deepEqual(missing.record.stages.map(({ state, exit, why }) => [state, exit, why]),
+      [["skipped", "none", "not-run"], ["skipped", "none", "not-run"]]);
+
+    const unspawnable = await recordOf(root, [
+      { name: "invalid-argument", kind: "test", command: process.execPath, args: ["\0"] }, printing("later", "lint", "")]);
+    assert.equal(unspawnable.record.state, "failed");
+    assert.equal(unspawnable.record.reason, "spawn-failed");
+    assert.deepEqual(unspawnable.record.stages.map(({ state, exit, why }) => [state, exit, why]),
+      [["failed", "none", "not-run"], ["skipped", "none", undefined]]);
+
+    const prerequisite = createRun({ root, stages: [printing("unused", "test", "")], requiredBinaryEnv: ["ENGRAM_LAUNCHER_ABSENT_BIN"] }, env);
+    const refused = await executeRun(prerequisite, env);
+    assert.equal(parseRecord(machineRecord(refused.plan, refused)).reason, "preflight-failed");
+
+    // A toolchain the full gate cannot find is a failed prerequisite, not a stage.
+    const unstartable = { ...env, ENGRAM_LAUNCHER_FIXTURE_BIN: process.execPath, PATH: "", Path: "" };
+    const probed = createRun({ root, stages: [printing("unused", "test", "")], full: true }, env);
+    const stopped = await executeRun(probed, unstartable);
+    const probedRecord = parseRecord(machineRecord(stopped.plan, stopped));
+    assert.equal(probedRecord.reason, "preflight-failed");
+    assert.deepEqual(probedRecord.stages.map(({ state, exit }) => [state, exit]), [["skipped", "none"]]);
+  });
+});
+
+test("any other refusal and a fingerprint that cannot be checked each have their own reason", async () => {
+  await repository(async (root) => {
+    const duplicated = await recordOf(root, [printing("twice", "test", ""), printing("twice", "test", "")]);
+    assert.equal(duplicated.record.state, "failed");
+    assert.equal(duplicated.record.reason, "launcher-error");
+    assert.deepEqual(duplicated.record.stages.map(({ state }) => state), ["skipped", "skipped"]);
+
+    const misnamed = createRun({ root, stages: [printing("Upper_Case", "test", "")] }, env);
+    const refused = await executeRun(misnamed, env);
+    assert.match(refused.error, /lowercase letters, digits and hyphens/u);
+    assert.equal(machineRecord(refused.plan, refused), "",
+      "a name outside the grammar is refused before it runs and is never printed");
+
+    const unreadable = await recordOf(root, [{ name: "breaks-git", kind: "test", command: process.execPath, args: ["-e",
+      `require('node:fs').writeFileSync('.git/HEAD', 'not a ref\\n'); process.stdout.write(${JSON.stringify(libtest(2, 0, 0, 0))})`] }]);
+    assert.equal(unreadable.record.state, "failed");
+    assert.equal(unreadable.record.reason, "fingerprint-check-failed");
+    assert.deepEqual(unreadable.record.stages.map(({ state, executed }) => [state, executed]), [["passed", "2"]]);
+  });
+});
+
+test("a child that a signal ended is an interrupted stage", { skip: process.platform === "win32" }, async () => {
+  await repository(async (root) => {
+    const { record } = await recordOf(root, [
+      { name: "killed", kind: "test", command: process.execPath, args: ["-e", "process.kill(process.pid, 'SIGKILL')"] },
+      printing("later", "lint", ""),
+    ]);
+    assert.equal(record.state, "interrupted");
+    assert.equal(record.reason, "stage-interrupted");
+    assert.deepEqual(record.stages.map(({ state, exit }) => [state, exit]), [["interrupted", "none"], ["skipped", "none"]]);
+  });
+});
+
+test("a stage ended by a signal is interrupted, and nothing about such a run is passed", () => {
+  const request = { full: true, stages: [{ kind: "lint" }, { kind: "test" }, { kind: "test" }] };
+  const record = parseRecord(machineRecord(request, { runId: "test-0a1b", state: "failed", stages: [
+    { name: "fmt", state: "passed", code: 0, signal: null },
+    { name: "rust", state: "failed", code: null, signal: "SIGKILL", tests: complete(7, 7, 0, 0, 1, 0) },
+    { name: "mcp", state: "unrun" },
+  ] }));
+  assert.equal(record.state, "interrupted");
+  assert.equal(record.reason, "stage-interrupted");
+  assert.deepEqual(record.stages.map(({ state, exit }) => [state, exit]),
+    [["passed", "0"], ["interrupted", "none"], ["skipped", "none"]]);
+  assert.equal(countsAsPassedTests(record), false);
+  // A reason or a why that is not a token is replaced, never printed.
+  const odd = parseRecord(machineRecord({ stages: [{ kind: "test" }] },
+    { runId: "test-0a1b", state: "failed", reason: "Not A Token", stages: [{ name: "only", state: "failed", code: 1,
+      tests: { executed: "unknown", why: "Not A Token", runners: 0, filteredOut: 0 } }] }));
+  assert.equal(odd.reason, "stage-failed");
+  assert.deepEqual(odd.stages.map(({ why }) => why), ["no-summary"]);
+});
+
+test("a run in a linked worktree lives under that worktree's Git directory and prints the same record", async () => {
+  await repository(async (root) => {
+    execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "baseline"],
+      { cwd: root });
+    const linked = join(root, "linked");
+    execFileSync("git", ["worktree", "add", "--quiet", linked], { cwd: root });
+    const runDir = createRun({ root: linked, stages: [printing("unit", "test", libtest(2, 0, 1, 0))] }, env);
+    assert.match(runDir.replaceAll("\\", "/"), /\/\.git\/worktrees\/linked\/review-runs\/test-[0-9a-f-]+$/u, runDir);
+    const result = await executeRun(runDir, env);
+    const record = parseRecord(machineRecord(result.plan, result));
+    assert.equal(record.run, basename(runDir));
+    assert.equal(record.state, "passed");
+    assert.deepEqual(record.stages.map(({ kind, state, executed, passed, ignored }) => [kind, state, executed, passed, ignored]),
+      [["test", "passed", "2", "2", "1"]]);
+    assert.ok(countsAsPassedTests(record));
+  });
+});
+
+test("a stage whose log cannot be read keeps its exit, gives no count and does not fail the run", async () => {
+  await repository(async (root) => {
+    // The stage deletes its own log and exits 0.
+    const deleting = `const fs = require('node:fs'), path = require('node:path');
+      process.stdout.write(${JSON.stringify(libtest(2, 0, 0, 0))});
+      const runs = path.join('.git', 'review-runs');
+      for (const run of fs.readdirSync(runs)) fs.rmSync(path.join(runs, run, 'gone.log'), { force: true });`;
+    const runDir = createRun({ root, stages: [{ name: "gone", kind: "test", command: process.execPath, args: ["-e", deleting] },
+      printing("after", "test", libtest(1, 0, 0, 0))] }, env);
+    const result = await executeRun(runDir, env);
+    assert.equal(existsSync(join(runDir, "gone.log")), false, "the stage removed its log");
+    const record = parseRecord(machineRecord(result.plan, result));
+    assert.equal(record.state, "passed", "an unreadable log does not fail the run");
+    assert.deepEqual(record.stages.map(({ name, state, exit, executed, why }) => [name, state, exit, executed, why]),
+      [["gone", "passed", "0", "unknown", "no-summary"], ["after", "passed", "0", "1", undefined]]);
+    assert.equal(countsAsPassedTests(record), false, "the host still asks every test stage for a count");
+    assert.match(json(join(runDir, "results.json")).stages[0].diagnostics.text, /the log could not be read/u);
+    for (const unreadable of [join(root, "no-such.log"), root]) {
+      assert.match((await diagnostics(unreadable, true)).text, /^\[the log could not be read: [A-Z]+\]\n$/u, unreadable);
+    }
+  });
+});
+
+test("the record ends the executing process's stdout, and summary and notify never print one", async () => {
+  await repository(async (root) => {
+    mkdirSync(join(root, "scripts"));
+    for (const name of ["test-launcher.mjs", "review-freeze-fingerprint.mjs"]) {
+      copyFileSync(fileURLToPath(new URL(name, import.meta.url)), join(root, "scripts", name));
+    }
+    const copied = join(root, "scripts", "test-launcher.mjs");
+    execFileSync("git", ["add", "scripts"], { cwd: root });
+    const run = (...args) => spawnSync(process.execPath, [copied, ...args], { cwd: root, env, encoding: "utf8", windowsHide: true });
+    // A warning on stderr and a bounded diagnostic excerpt on stdout precede it.
+    const source = `console.error('warning: noise on stderr'); process.stdout.write(${JSON.stringify(libtest(3, 0, 0, 0))})`;
+    const passed = run("focused", "--", process.execPath, "--test-reporter=spec", "-e", source);
+    assert.equal(passed.status, 0, passed.stderr);
+    const runDir = /^STARTED (.+)$/mu.exec(passed.stdout)?.[1];
+    assert.ok(runDir);
+    const human = await summarize(runDir);
+    assert.ok(passed.stdout.includes(human), "the human summary is unchanged and still printed");
+    const tail = passed.stdout.slice(passed.stdout.indexOf(human) + human.length);
+    const record = parseRecord(tail);
+    assert.equal(record.run, basename(runDir));
+    assert.equal(record.state, "passed");
+    assert.equal(record.scope, "focused");
+    // `node -e` is not the test runner, whatever it prints.
+    assert.deepEqual(record.stages.map(({ name, kind, executed }) => [name, kind, executed]), [["focused", "other", undefined]]);
+
+    // A stage can write to its run directory. What the record says of the
+    // stage is what the launcher read before the stage ran.
+    const rewriting = `const fs = require('node:fs'), path = require('node:path');
+      const runs = path.join('.git', 'review-runs');
+      for (const run of fs.readdirSync(runs)) {
+        const file = path.join(runs, run, 'request.json');
+        const request = JSON.parse(fs.readFileSync(file, 'utf8'));
+        request.full = true;
+        for (const stage of request.stages) Object.assign(stage, { kind: 'test', selects: true });
+        fs.writeFileSync(file, JSON.stringify(request));
+      }
+      process.stdout.write(${JSON.stringify(libtest(3, 0, 0, 0))});`;
+    const rewritten = run("focused", "--", process.execPath, "-e", rewriting);
+    assert.equal(rewritten.status, 0, rewritten.stderr);
+    const unchanged = parseRecord(rewritten.stdout.slice(rewritten.stdout.indexOf("\ntest-launcher/v1") + 1));
+    assert.equal(unchanged.scope, "focused");
+    assert.deepEqual(unchanged.stages.map(({ kind, executed, filtered }) => [kind, executed, filtered]), [["other", undefined, undefined]]);
+
+    const failed = run("focused", "--", process.execPath, "-e", "process.exit(7)");
+    assert.equal(failed.status, 7);
+    const failure = parseRecord(failed.stdout.slice(failed.stdout.lastIndexOf("\ntest-launcher/v1", failed.stdout.lastIndexOf("\ntest-launcher/v1") - 1) + 1));
+    assert.equal(failure.state, "failed");
+    assert.deepEqual(failure.stages.map(({ state, exit }) => [state, exit]), [["failed", "7"]]);
+
+    const replayed = run("summary", runDir);
+    assert.equal(replayed.status, 0);
+    assert.equal(replayed.stdout, human);
+    assert.doesNotMatch(replayed.stdout, /test-launcher\/v1/u);
+
+    // The fixture's transport is `node`, which refuses the mailbox arguments:
+    // the notification is attempted and fails, and neither the executing run
+    // nor a later `notify` lets that change or repeat the record.
+    const notified = run("focused", "--notify", "coordinator", "--", process.execPath, "-e", "");
+    assert.equal(notified.status, 1);
+    assert.match(notified.stderr, /notification failed; tests were NOT rerun/u);
+    const kept = parseRecord(notified.stdout.slice(notified.stdout.indexOf("\ntest-launcher/v1") + 1));
+    assert.equal(kept.state, "passed", "the record covers validation, not the notification");
+    const notifiedRun = /^STARTED (.+)$/mu.exec(notified.stdout)?.[1];
+    assert.doesNotMatch(readFileSync(join(notifiedRun, "notification.message.txt"), "utf8"), /test-launcher\/v1/u);
+    const resent = run("notify", notifiedRun);
+    assert.equal(resent.status, 1);
+    assert.doesNotMatch(resent.stdout, /test-launcher\/v1/u);
+
+    // A stage that breaks request.json cannot take the record away. Last,
+    // because it breaks every run's request in this fixture.
+    const breaking = `const fs = require('node:fs'), path = require('node:path');
+      const runs = path.join('.git', 'review-runs');
+      for (const run of fs.readdirSync(runs)) fs.writeFileSync(path.join(runs, run, 'request.json'), '{');
+      process.stdout.write(${JSON.stringify(libtest(3, 0, 0, 0))});`;
+    const broken = run("focused", "--", process.execPath, "-e", breaking);
+    assert.equal(broken.status, 0, broken.stderr);
+    const survived = parseRecord(broken.stdout.slice(broken.stdout.lastIndexOf("\ntest-launcher/v1", broken.stdout.lastIndexOf("\ntest-launcher/v1") - 1) + 1));
+    assert.equal(survived.state, "passed");
+    assert.deepEqual(survived.stages.map(({ state, exit }) => [state, exit]), [["passed", "0"]]);
+  });
 });

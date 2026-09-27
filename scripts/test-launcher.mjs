@@ -51,19 +51,257 @@ function save(path, value) {
   } finally { rmSync(temporary, { force: true }); }
 }
 
+// Why a run did not pass, as the record's reason token.
+const because = (reason, error) => Object.assign(error, { reason });
+
 export function requiredStages(platform = process.platform) {
   return [
-    ["fmt", "cargo", ["fmt", "--check"]],
-    ["check", "cargo", ["check"]],
-    ["clippy", "cargo", ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]],
-    ["rust", platform === "win32" ? "pwsh" : "sh", platform === "win32"
+    ["fmt", "lint", "cargo", ["fmt", "--check"]],
+    ["check", "build", "cargo", ["check"]],
+    ["clippy", "lint", "cargo", ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]],
+    ["rust", "test", platform === "win32" ? "pwsh" : "sh", platform === "win32"
       ? ["-NoProfile", "-File", "scripts/test-rust.ps1"] : ["scripts/test-rust.sh"]],
-    ["freeze", process.execPath, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs"]],
-    ["mcp", process.execPath, ["--test", "scripts/mcp-dogfood.test.mjs"]],
-    ["control", process.execPath, ["--test", "scripts/control-dogfood.test.mjs"]],
-    ["parity", process.execPath, ["--test", "scripts/parity.test.mjs"]],
-    ["docs", process.execPath, ["scripts/check-doc-links.mjs"]],
-  ].map(([name, command, args]) => ({ name, command, args }));
+    ["freeze", "test", process.execPath, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs"]],
+    ["mcp", "test", process.execPath, ["--test", "scripts/mcp-dogfood.test.mjs"]],
+    ["control", "test", process.execPath, ["--test", "scripts/control-dogfood.test.mjs"]],
+    ["parity", "test", process.execPath, ["--test", "scripts/parity.test.mjs"]],
+    ["docs", "other", process.execPath, ["scripts/check-doc-links.mjs"]],
+    // Every test stage of the gate selects: the Rust script's scale phases
+    // name their tests and each Node stage names its files. Said here, so
+    // that a stage says it whether or not it ran and whatever ran it.
+  ].map(([name, kind, command, args]) => ({ name, kind, command, args, ...(kind === "test" ? { selects: true } : {}) }));
+}
+
+// The record a host reads: what each stage was and what its runner reported.
+// docs/development.md gives the grammar and who may treat it as evidence.
+const stageKinds = new Set(["test", "build", "lint", "typecheck", "other"]);
+const recordToken = /^[a-z0-9][a-z0-9-]*$/u;
+// Either separator ends a directory on every host: a record names the runner
+// the same way wherever it was produced.
+const runnerName = (command) => command.split(/[\\/]/u).at(-1).toLowerCase().replace(/\.(?:exe|cmd|bat)$/u, "");
+// Options whose value is the next argument, and the arguments that select a
+// part of the tests. Any other option changes how tests run, not which.
+const runners = {
+  cargo: {
+    valued: new Set(["-j", "--jobs", "-F", "--features", "--target", "--profile", "--manifest-path", "--target-dir",
+      "--color", "--config", "-Z", "--message-format", "--test-threads", "--format", "--logfile"]),
+    // `--all-targets` runs every target but not the doctests.
+    selecting: new Set(["--lib", "--bins", "--bin", "--tests", "--test", "--examples", "--example", "--benches",
+      "--bench", "--all-targets", "--doc", "-p", "--package", "--exclude", "--ignored", "--skip", "--exact"]),
+  },
+  node: {
+    valued: new Set(["--test-reporter", "--test-reporter-destination", "--test-concurrency", "--test-timeout",
+      "--test-name-pattern", "--test-skip-pattern", "--test-shard", "-r", "--require", "--import", "--loader",
+      "--experimental-loader", "--env-file", "-C", "--conditions"]),
+    selecting: new Set(["--test-name-pattern", "--test-skip-pattern", "--test-only", "--test-shard"]),
+    // Options known to take no value. Before `--test`, any option that is
+    // neither here nor valued might take `--test` as its value.
+    plain: new Set(["--test", "--test-only", "--test-force-exit", "--test-update-snapshots",
+      "--experimental-test-coverage", "--experimental-strip-types", "--no-warnings", "--enable-source-maps",
+      "--trace-warnings", "--trace-uncaught", "--throw-deprecation"]),
+  },
+};
+// `--name=value` and the attached short form `-nVALUE` name the option too.
+const optionName = (arg) => arg.startsWith("--") ? arg.split("=", 1)[0]
+  : /^-[A-Za-z]./u.test(arg) ? arg.slice(0, 2) : arg;
+
+// Node's own options end at `--` or at the script; `--test` counts only
+// there, and only after options this table knows: behind an option it does
+// not know, `--test` could be that option's value.
+function nodeRunsTests(args) {
+  const { valued, plain } = runners.node;
+  // Each reporter prints a summary of its own, so with more than one the
+  // log would count the one runner's tests once for each.
+  const options = args.includes("--") ? args.slice(0, args.indexOf("--")) : args;
+  if (options.filter((arg) => optionName(arg) === "--test-reporter").length > 1) return false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--" || !arg.startsWith("-")) return false;
+    if (arg === "--test") return true;
+    if (valued.has(arg)) index += 1;
+    else if (!plain.has(arg) && !(arg.includes("=") && valued.has(optionName(arg)))) return false;
+  }
+  return false;
+}
+
+// A focused command's kind comes from this fixed table. Only a runner the
+// launcher starts itself is a test: its exit is the runner's own. A wrapper,
+// `npm test` included, may run anything and end as it likes, so it is
+// `other`, as every unknown command is.
+export function commandKind(command, args) {
+  const name = runnerName(command);
+  const first = args.find((arg) => !arg.startsWith("+"));
+  if (name === "cargo") {
+    return { test: "test", clippy: "lint", fmt: "lint", check: "build", build: "build" }[first] ?? "other";
+  }
+  if (name === "node") return nodeRunsTests(args) ? "test" : "other";
+  return "other";
+}
+
+// Whether the command line itself selects a part of the tests: a test name,
+// a test file, or an option that restricts what runs. A wrapper script's own
+// selection is not visible here; its runners report it.
+export function selectsTests(command, args) {
+  const name = runnerName(command);
+  if (commandKind(command, args) !== "test") return false;
+  const { valued, selecting } = runners[name];
+  const rest = name === "node" ? args : args.slice(args.indexOf("test") + 1);
+  for (let index = 0; index < rest.length; index += 1) {
+    const arg = rest[index];
+    if (arg === "--") continue;
+    if (!arg.startsWith("-") || selecting.has(optionName(arg))) return true;
+    if (valued.has(arg)) index += 1;
+  }
+  return false;
+}
+
+const longestLine = 16384;
+// Reads a log line by line in bounded memory. A line longer than the bound is
+// reported as too long and its content is never interpreted.
+const lineHead = 256;
+async function eachLine(log, accept) {
+  let pending = "", continuation = false;
+  for await (const chunk of createReadStream(log, { encoding: "utf8", highWaterMark: 8192 })) {
+    pending += chunk;
+    let end;
+    while ((end = pending.indexOf("\n")) >= 0) {
+      if (continuation) continuation = false;
+      else if (end > longestLine) accept(pending.slice(0, lineHead), true);
+      else accept(pending.slice(0, end).replace(/\r$/u, ""), false);
+      pending = pending.slice(end + 1);
+    }
+    if (pending.length > longestLine) {
+      if (!continuation) accept(pending.slice(0, lineHead), true);
+      pending = ""; continuation = true;
+    }
+  }
+  if (pending && !continuation) {
+    if (pending.length > longestLine) accept(pending.slice(0, lineHead), true);
+    else accept(pending.replace(/\r$/u, ""), false);
+  }
+}
+
+// Reads the complete log once after the stage closed. A count is given only
+// when every runner summary in the log is complete, valid and consistent;
+// otherwise it is unknown, with the first reason met. Nothing but a runner's
+// own summary is read: no line of a log is taken for a test or a failure.
+// A summary is known by its shape, so text of that shape which a test prints
+// at the start of a line is counted as one. `failures` is the failed count
+// of every complete summary whose failed count reads, whatever became of the
+// executed count. A log that cannot be read gives no count.
+export async function countTests(log) {
+  const counted = { passed: 0, failed: 0, ignored: 0, runners: 0, filteredOut: 0 };
+  const nodeFields = ["tests", "suites", "pass", "fail", "cancelled", "skipped", "todo", "duration_ms"];
+  // `running` is the size libtest announced and has not yet reported on;
+  // `streams` counts TAP runners that started and have not yet summarized.
+  let why = null, running = null, streams = 0, block = null, failures = 0;
+  const unknown = (reason) => { why ??= reason; };
+  const add = (passed, failed, ignored, filteredOut) => {
+    counted.passed += passed; counted.failed += failed; counted.ignored += ignored;
+    counted.filteredOut += filteredOut; counted.runners += 1;
+  };
+  const read = (raw, tooLong) => {
+    const line = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/gu, "");
+    if (tooLong) {
+      // Only its beginning is known. Inside a summary, or beginning as one,
+      // it is a summary line that does not read.
+      if (block || /^(?:test result:|(?:ℹ|#) tests(?:\s|$))/u.test(line)) unknown("malformed-summary");
+      if (block?.mark === "#") streams -= 1;
+      if (line.startsWith("test result:")) running = null;
+      block = null;
+      return;
+    }
+    if (block) {
+      const field = nodeFields[block.values.length];
+      const value = new RegExp(`^${block.mark} ${field} (\\d+(?:\\.\\d+)?)$`, "u").exec(line)?.[1];
+      if (value === undefined) { unknown("incomplete-summary"); block = null; }
+      else {
+        block.values.push(Number(value));
+        if (block.values.length === nodeFields.length) {
+          const [tests, suites, pass, fail, cancelled, skipped, todo] = block.values;
+          if (Number.isSafeInteger(fail)) failures += fail;
+          if (![tests, suites, pass, fail, cancelled, skipped, todo].every(Number.isSafeInteger)) unknown("malformed-summary");
+          else {
+            if (tests !== pass + fail + cancelled + skipped + todo) unknown("inconsistent-summary");
+            else if (cancelled !== 0) unknown("cancelled-tests");
+            else add(pass, fail, skipped + todo, 0);
+          }
+          if (block.mark === "#") streams -= 1;
+          block = null;
+        }
+        return;
+      }
+    }
+    const first = /^(ℹ|#) tests (\d+)$/u.exec(line);
+    if (first) { block = { mark: first[1], values: [Number(first[2])] }; return; }
+    // A summary's first line that does not read is still a summary's.
+    if (/^(?:ℹ|#) tests(?:\s|$)/u.test(line)) { unknown("malformed-summary"); return; }
+    if (line === "TAP version 13") { streams += 1; return; }
+    const announced = /^running (\d+) tests?$/u.exec(line);
+    if (announced) {
+      if (running !== null) unknown("incomplete-summary");
+      running = Number(announced[1]);
+      return;
+    }
+    if (!line.startsWith("test result:")) return;
+    const result = /^test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out; finished in \d+(?:\.\d+)?s$/u.exec(line);
+    const [passed, failed, ignored, measured, filteredOut] = (result ?? []).slice(1).map(Number);
+    if (result && Number.isSafeInteger(failed)) failures += failed;
+    if (!result || ![passed, failed, ignored, measured, filteredOut].every(Number.isSafeInteger)) unknown("malformed-summary");
+    else {
+      if (measured !== 0) unknown("benchmarks");
+      else if (running !== passed + failed + ignored) unknown("inconsistent-summary");
+      else add(passed, failed, ignored, filteredOut);
+    }
+    running = null;
+  };
+  // An unreadable log gives no count; the stage keeps its exit.
+  try { await eachLine(log, read); } catch { unknown("no-summary"); }
+  if (block || running !== null || streams !== 0) unknown("incomplete-summary");
+  if (!Object.values(counted).every(Number.isSafeInteger)) unknown("malformed-summary");
+  const { passed, failed, ignored, runners: summaries, filteredOut } = counted;
+  if (summaries === 0) unknown("no-summary");
+  if (!Number.isSafeInteger(failures)) failures = Number.MAX_SAFE_INTEGER;
+  return why
+    ? { executed: "unknown", why, runners: summaries, filteredOut, failures }
+    : { executed: passed + failed, passed, failed, ignored, runners: summaries, filteredOut, failures };
+}
+
+// One line per stage in stage order, then the overall line. Printed once, by
+// the process that executed the stages, as the end of its stdout.
+export function machineRecord(request, result) {
+  const stages = result.stages ?? [];
+  if (!recordToken.test(result.runId ?? "") || stages.some(({ name }) => !recordToken.test(name))) return "";
+  const prefix = `test-launcher/v1 run=${result.runId}`;
+  const described = stages.map((entry, index) => {
+    const planned = request.stages?.[index] ?? {};
+    const kind = stageKinds.has(planned.kind) ? planned.kind : "other";
+    const signalled = entry.signal !== undefined && entry.signal !== null;
+    const state = entry.state === "passed" ? "passed" : entry.state === "unrun" ? "skipped"
+      : signalled ? "interrupted" : "failed";
+    const exited = Number.isInteger(entry.code) && !entry.error && !signalled;
+    let line = `${prefix} stage=${entry.name} kind=${kind} state=${state} exit=${exited ? entry.code : "none"}`;
+    if (kind === "test") {
+      const tests = entry.tests ?? { executed: "unknown", why: exited || signalled ? "no-summary" : "not-run", runners: 0, filteredOut: 0 };
+      const filtered = planned.selects === true || tests.filteredOut > 0
+        || (typeof planned.command === "string" && Array.isArray(planned.args) && selectsTests(planned.command, planned.args));
+      line += ` executed=${tests.executed}`;
+      if (tests.executed !== "unknown") line += ` passed=${tests.passed} failed=${tests.failed} ignored=${tests.ignored}`;
+      else line += ` why=${recordToken.test(tests.why ?? "") ? tests.why : "no-summary"}`;
+      line += ` runners=${tests.runners} filtered=${filtered ? "yes" : "no"}`;
+    }
+    return { state, line };
+  });
+  const interrupted = described.some(({ state }) => state === "interrupted");
+  const passed = !interrupted && result.state === "passed" && described.every(({ state }) => state === "passed");
+  const overall = interrupted ? "interrupted" : passed ? "passed" : "failed";
+  const recorded = recordToken.test(result.reason ?? "") ? result.reason : undefined;
+  const reason = interrupted ? "stage-interrupted"
+    : recorded ?? (stages.some(({ error }) => error) ? "spawn-failed"
+      : described.some(({ state }) => state === "failed") ? "stage-failed" : "launcher-error");
+  return [...described.map(({ line }) => line),
+    `${prefix} overall=${overall} scope=${request.full ? "full" : "focused"} stages=${stages.length}${passed ? "" : ` reason=${reason}`}`,
+  ].join("\n").concat("\n");
 }
 
 function executable(command, cwd, env) {
@@ -128,7 +366,9 @@ export async function runCommand(command, args, { cwd, env, log }) {
   try {
     return await new Promise((done) => {
       let error;
-      const child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ["ignore", fd, fd] });
+      let child;
+      try { child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ["ignore", fd, fd] }); }
+      catch (failure) { throw because("spawn-failed", failure); }
       child.on("error", (value) => { error = value.message; });
       child.on("close", (code, signal) => done({ code, signal, ...(error ? { error } : {}) }));
     });
@@ -138,6 +378,13 @@ export async function runCommand(command, args, { cwd, env, log }) {
 // Inspect logs once AFTER close, never tail them. Bound memory even for a single
 // enormous line; keep the full bytes on disk. Filtering never determines success.
 export async function diagnostics(log, failed) {
+  // A log that cannot be read gives no excerpt, only that note; the stage
+  // keeps its exit and the run goes on.
+  try { return await readDiagnostics(log, failed); }
+  catch (error) { return { text: `[the log could not be read: ${error.code ?? "error"}]\n`, truncated: false }; }
+}
+
+async function readDiagnostics(log, failed) {
   let selected = "", errors = "", tail = "", pending = "", matchingBytes = 0, longLine = false;
   let continuation = false;
   let context = 0, errorContext = false;
@@ -191,9 +438,14 @@ function inputDrift(message, root) {
   const detail = status.error || status.status !== 0
     ? `status unavailable: ${status.error?.message ?? status.stderr}`
     : status.stdout || "(clean; inspect HEAD/index and the saved input)";
-  return new Error(`${message}\nCurrent Git status (investigation context, not a since-capture diff):\n`
+  return because("input-changed", new Error(`${message}\nCurrent Git status (investigation context, not a since-capture diff):\n`
     + detail.slice(0, diagnosticLimit).trimEnd()
-    + (detail.length > diagnosticLimit ? "\n[status truncated]" : ""));
+    + (detail.length > diagnosticLimit ? "\n[status truncated]" : "")));
+}
+
+function currentFingerprint(root) {
+  try { return captureFingerprint(root).fingerprint; }
+  catch (error) { throw because("fingerprint-check-failed", error); }
 }
 
 function validateNotification(request, env) {
@@ -220,19 +472,26 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   }
   const probe = async (name, command, args) => {
     const log = join(runDir, `preflight-${name}.log`);
-    const outcome = await runCommand(command, args, { cwd: request.root, env: childEnv, log });
+    let outcome;
+    try { outcome = await runCommand(command, args, { cwd: request.root, env: childEnv, log }); }
+    catch (error) { throw because("preflight-failed", error); }
     result.preflight.push({ name, ...outcome, log,
       diagnostics: await diagnostics(log, outcome.code !== 0 || Boolean(outcome.error)) });
     save(resultPath, result);
-    if (outcome.code !== 0 || outcome.error) throw new Error(`${name} preflight failed (${outcome.error ?? outcome.code}); see ${log}`);
+    if (outcome.code !== 0 || outcome.error) throw because("preflight-failed", new Error(`${name} preflight failed (${outcome.error ?? outcome.code}); see ${log}`));
   };
   try {
     request = readJson(join(runDir, "request.json"));
+    // What the record says of each stage is what was read here, before any
+    // stage ran: a stage can write to the run directory.
+    const plan = { full: request.full === true, stages: (request.stages ?? []).map(({ kind, selects, command, args }) =>
+      ({ kind, selects, command, args: Array.isArray(args) ? [...args] : args })) };
     result.started = request.started;
     result.stages = (request.stages ?? []).map(({ name }) => ({ name, state: "unrun" }));
     const saved = readJson(resultPath);
     if (!saved || !Array.isArray(saved.stages)) throw new Error("invalid initial results: stages missing");
     result = saved;
+    result.plan = plan;
     if (result.state === "failed") return result;
     // The cadence createRun recorded, held to the same bounds as the setting;
     // anything else falls back to this worker's own setting.
@@ -253,30 +512,34 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     if (!Array.isArray(request.stages) || request.stages.length === 0) throw new Error("at least one stage is required");
     const names = new Set();
     for (const stage of request.stages) {
-      if (!/^[a-zA-Z0-9_-]+$/u.test(stage.name) || names.has(stage.name)) throw new Error("stage names must be unique safe filenames");
+      if (!recordToken.test(stage.name) || names.has(stage.name)) throw new Error("stage names must be unique, of lowercase letters, digits and hyphens");
       names.add(stage.name);
       if (typeof stage.command !== "string" || !Array.isArray(stage.args) || !stage.args.every((arg) => typeof arg === "string")) throw new Error("stage must contain a command and string arguments");
-      stage.command = executable(stage.command, request.root, childEnv);
+      try { stage.command = executable(stage.command, request.root, childEnv); }
+      catch (error) { throw because("preflight-failed", error); }
     }
     if (request.notifyTo) validateNotification(request, env);
     for (const name of request.requiredBinaryEnv) {
       if (!/^[A-Z][A-Z0-9_]*$/u.test(name)) throw new Error("invalid binary environment variable name");
-      if (!env[name] || !isAbsolute(env[name])) throw new Error(`required binary environment variable ${name} must be an absolute executable path`);
+      if (!env[name] || !isAbsolute(env[name])) throw because("preflight-failed", new Error(`required binary environment variable ${name} must be an absolute executable path`));
       let binary;
       try { binary = executable(env[name], request.root, childEnv); }
-      catch (error) { throw new Error(`${name}: ${error.message}`); }
+      catch (error) { throw because("preflight-failed", new Error(`${name}: ${error.message}`)); }
       await probe(name, binary, ["--version"]);
     }
     if (request.full) {
       // Probe toolchain components before the expensive suite, preserving diagnostics.
       for (const [index, args] of [["version", ["--version"]], ["fmt", ["fmt", "--version"]], ["clippy", ["clippy", "--version"]]]) {
-        await probe(`cargo-${index}`, executable("cargo", request.root, childEnv), args);
+        let cargo;
+        try { cargo = executable("cargo", request.root, childEnv); }
+        catch (error) { throw because("preflight-failed", error); }
+        await probe(`cargo-${index}`, cargo, args);
       }
     }
-    const before = captureFingerprint(request.root);
-    if (before.fingerprint !== request.expectedFingerprint) throw inputDrift("input drift before execution; no stages run", request.root);
+    const before = currentFingerprint(request.root);
+    if (before !== request.expectedFingerprint) throw inputDrift("input drift before execution; no stages run", request.root);
     result.expectedFingerprint = request.expectedFingerprint;
-    result.before = before.fingerprint;
+    result.before = before;
     // The capture blocked the timer; beat with this save.
     result.heartbeat.at = new Date().toISOString();
     save(resultPath, result);
@@ -287,16 +550,26 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       save(resultPath, result);
       const outcome = await runCommand(stage.command, stage.args, { cwd: request.root, env: childEnv, log: entry.log });
       Object.assign(entry, outcome, { ended: new Date().toISOString(), state: outcome.code === 0 && !outcome.error ? "passed" : "failed" });
+      if (stage.kind === "test") {
+        entry.tests = await countTests(entry.log);
+        // The one thing besides its exit that fails a stage: its runners'
+        // own complete summaries counting failed tests.
+        if (entry.state === "passed" && entry.tests.failures > 0) {
+          entry.state = "failed";
+          entry.reported = `the runners' summaries count ${entry.tests.failures} failed tests and the command exited 0`;
+        }
+      }
       entry.diagnostics = await diagnostics(entry.log, entry.state === "failed");
       save(resultPath, result);
       if (entry.state === "failed") break;
     }
-    result.after = captureFingerprint(request.root).fingerprint;
+    result.after = currentFingerprint(request.root);
     if (result.after !== result.expectedFingerprint) throw inputDrift("input drift: results do not validate the current source", request.root);
     result.state = result.stages.every((stage) => stage.state === "passed") ? "passed" : "failed";
     result.exitCode = result.stages.find((stage) => stage.state === "failed")?.code || (result.state === "passed" ? 0 : 1);
   } catch (error) {
     result.state = "failed"; result.exitCode = 1; result.error = error.message;
+    result.reason = error.reason ?? "launcher-error";
     for (const stage of result.stages) if (stage.state === "running") { stage.state = "failed"; stage.error = error.message; }
   }
   clearInterval(heartbeat);
@@ -342,6 +615,7 @@ export async function summarize(runDir, { now = Date.now() } = {}) {
     })),
     ...result.stages.map((stage) => ({ ...stage, failed: stage.state === "failed",
       header: `${stage.name}: ${stage.state} exit=${stage.code ?? "unrun/unknown"}${stage.log ? ` log=${stage.log}` : ""}`,
+      ...(stage.reported ? { error: stage.reported } : {}),
     })),
   ].sort((a, b) => Number(b.failed) - Number(a.failed));
   for (const stage of entries) {
@@ -391,6 +665,10 @@ function startupReceipt(runDir, pid, completion) {
 }
 
 async function finish(runDir, { foregroundReceipt = false, workerHandshake = false } = {}) {
+  // Whether to notify is read before any stage runs: a stage can rewrite or
+  // break request.json. A request that cannot be read fails the run anyway.
+  let notifyTo;
+  try { notifyTo = readJson(join(runDir, "request.json")).notifyTo; } catch { notifyTo = undefined; }
   const result = await executeRun(runDir, process.env, async () => {
     if (foregroundReceipt) process.stdout.write(startupReceipt(runDir, process.pid, "host-process-wait"));
     if (workerHandshake && process.send) {
@@ -398,11 +676,17 @@ async function finish(runDir, { foregroundReceipt = false, workerHandshake = fal
       process.disconnect();
     }
   });
-  process.stdout.write(await summarize(runDir));
   process.exitCode = result.exitCode;
-  if (readJson(join(runDir, "request.json")).notifyTo) {
-    try { await notifyRun(runDir); }
-    catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode ||= 1; }
+  try {
+    process.stdout.write(await summarize(runDir));
+    if (notifyTo) {
+      try { await notifyRun(runDir); }
+      catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode ||= 1; }
+    }
+  } finally {
+    // The record describes validation only, and ends this process's stdout
+    // whatever happened after the stages.
+    process.stdout.write(machineRecord(result.plan ?? {}, result));
   }
 }
 
@@ -474,7 +758,8 @@ async function main(args) {
   if ((mode === "full" && args.length) || (mode === "focused" && !args.length)) throw new Error("full takes no command; focused requires -- COMMAND ARGS");
   if (detach && !notifyTo) throw new Error("detached mode requires a different coordinator --notify SESSION; otherwise use foreground host completion wait");
   if (notifyTo) validateNotification({ notifyTo, owner: process.env.TERMAL_SESSION_ID, root: repository }, process.env);
-  const stages = mode === "full" ? requiredStages() : [{ name: "focused", command: args[0], args: args.slice(1) }];
+  const stages = mode === "full" ? requiredStages()
+    : [{ name: "focused", kind: commandKind(args[0], args.slice(1)), command: args[0], args: args.slice(1) }];
   const runDir = createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full" });
   if (!detach) { await finish(runDir, { foregroundReceipt: true }); return; }
   await startDetached(runDir);

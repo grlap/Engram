@@ -201,9 +201,14 @@ literal when checking recovered results. Source and index must stay unchanged.
 `results.json` records
 stage exits, timestamps, full log paths and bounded diagnostics. Stdout/stderr
 go directly to logs, never through a terminal stream. Only the final summary,
-warnings and bounded failures reach context; truncation points to the full log.
-Filtering does not decide success: actual process exits do. A failed command
-stops subsequent stages, which stay explicitly unrun. Exceptions fail the run;
+warnings, bounded failures and the closing record for the host reach context;
+truncation points to the full log.
+Filtering does not decide success: actual process exits do, with one addition.
+A test stage whose runners' complete summaries count failed tests is failed
+even when its command exited 0.
+A failed command stops subsequent stages, which stay explicitly unrun. A stage
+name consists of lowercase letters, digits and hyphens. Exceptions fail the
+run;
 a killed process writes no terminal result, and its run is never a pass.
 
 `results.json` also carries `heartbeat: { at, everyMs }`. The launcher writes
@@ -290,6 +295,152 @@ separate launches; the caller owns repository-level serialization. After a
 crash, recover its artifacts and classify
 the failure before choosing a new run. Diagnose actual failures and repair them
 within the authorized scope, then validate the changed input; never retry blindly.
+
+#### Record for the host
+
+A process that executed the stages and waited for them ends its stdout with a
+record of what ran: one line per stage in stage order, then one overall line.
+The human summary above it is unchanged. The detached parent prints no record,
+because its run has not finished; `summary` and `notify` never print one, so a
+saved run cannot be replayed as a new one. A detached worker writes its record
+into `launcher.log`, which is a file like `results.json`.
+
+```text
+test-launcher/v1 run=ID stage=NAME kind=KIND state=STATE exit=EXIT
+test-launcher/v1 run=ID stage=NAME kind=test state=STATE exit=EXIT executed=N passed=N failed=N ignored=N runners=N filtered=yes|no
+test-launcher/v1 run=ID stage=NAME kind=test state=STATE exit=EXIT executed=unknown why=TOKEN runners=N filtered=yes|no
+test-launcher/v1 run=ID overall=passed|failed|interrupted scope=full|focused stages=N [reason=TOKEN]
+```
+
+Fields are separated by single spaces, in this order, and no value contains a
+space. `ID` is the run id, the name of the run directory. `NAME` and `TOKEN`
+match `[a-z0-9][a-z0-9-]*`. `stages` is the number of stage lines, and every
+line carries the same run. The format is agreed with TermAl, which reads it;
+change it only together with that reader.
+
+The record supports little, and that correctly. It gives test counts for
+runners whose exit the launcher can rely on: `cargo test` and `node --test`
+started by the launcher itself, and the stages of full mode, whose wrappers
+are this repository's own and pass their runners' exits on. It reads runner
+summaries and nothing else: no line of a log is taken for a test or for a
+failure. A summary is known by its shape alone. Text of that shape which a
+test prints at the start of a line, such as the forwarded output of a runner
+it started itself, cannot be told from the stage's own summary and is counted
+with it: it can add to the counts and fail a stage, and it cannot hide a
+failure, because the stage's exit and its runners' own summaries still count.
+Text that begins like a summary line but does not read as one makes the count
+unknown. Node's TAP reporter prints every line a test writes, and every
+diagnostic, behind `# `, and its default reporter prints a top-level
+diagnostic behind `ℹ `; so a test that prints a line beginning with `tests`
+under TAP, or gives such a diagnostic, leaves its stage without a count. So
+does a coverage run: with `--experimental-test-coverage` Node prints its
+coverage table behind the same mark, one row per directory, and a covered
+directory named `tests` gives a row that begins like a summary line.
+A wrapper that may run anything and end as it likes, `npm test` included, is
+not a test stage; it runs as before and the record claims nothing about its
+tests.
+
+- `kind` is `test`, `build`, `lint`, `typecheck` or `other`. Full mode assigns
+  it per stage: `fmt` and `clippy` are `lint`, `check` is `build`, `rust`,
+  `freeze`, `mcp`, `control` and `parity` are `test`, `docs` is `other`.
+  Focused mode takes it from the command: `cargo test` and `node --test` are
+  `test`; `cargo clippy` and `cargo fmt` are `lint`; `cargo check` and
+  `cargo build` are `build`; anything else is `other`. A `node` command
+  that names more than one `--test-reporter` is `other`: each reporter
+  prints a summary, and the log would count the tests once for each. For
+  `node`, `--test`
+  counts only among Node's own options, before `--` and before the script,
+  and only after options the launcher knows; after one it does not know the
+  command is `other`, because `--test` could be that option's value. Only a
+  `test` stage carries counts.
+- `state` is `passed`, `failed`, `skipped` or `interrupted`, and comes from
+  the stage's process: it passed when the process exited 0. `exit` is the
+  number the process exited with, or `none` when there is no exit code: the
+  stage was skipped after an earlier failure or never started, the command
+  could not be spawned (`failed`), or a signal that the launcher observed
+  ended it (`interrupted`). One thing besides its exit fails a stage: its
+  runners' complete summaries counting failed tests. Such a stage is `failed`
+  and keeps the exit it had, so `state=failed exit=0` is possible. A child
+  ended by a signal behind a wrapper that turns it into an exit code, such as
+  `scripts/test-temp.mjs`, is `failed` with that code.
+- Counts are read from the stage's complete log after it closed and are sums
+  over the stage. `runners` is the number of complete runner summaries summed:
+  one libtest `test result:` line per test binary and doctest run, one summary
+  block per `node --test` process, from its TAP or its default reporter.
+  `executed` is `passed` plus `failed`; ignored, skipped and todo tests are
+  `ignored`. A failing test marked todo is todo to its runner, which counts
+  it so whatever mark its reporter prints.
+- `executed=unknown` means the log gave no complete count, and `why` names
+  the first reason met: `not-run`, the stage was skipped or never started;
+  `no-summary`, as when compilation fails, the reporter is one the launcher
+  does not read, or the log could not be read; `incomplete-summary`, a
+  libtest runner that announced its tests and printed no result, a TAP
+  stream that started and printed no summary, or a summary cut short;
+  `malformed-summary`, a summary line that does not read, its first line
+  included, or one longer than 16,384 characters; `inconsistent-summary`,
+  totals that do not add up or a result that does not account for the tests
+  announced; `cancelled-tests`; `benchmarks`, a nonzero libtest `measured`
+  count. A line longer than 16,384 characters is known by its beginning: it
+  is a summary line when it lies inside a Node summary or begins as a
+  summary line does, and any other is passed over like any other line of
+  the log. A later complete summary does not take a reason back. Complete
+  summaries found beside an incomplete one still count in `runners`, and
+  never stand for the stage. An unknown count by itself fails nothing: the
+  stage's state is still its exit; an unreadable log does not fail the run.
+  The failed tests of every complete summary whose failed count reads are
+  kept, whatever its other numbers say, so a stage whose count is unknown
+  still fails on them, as when a summary counts both cancelled and failed
+  tests. It is the reader that asks every test stage for a
+  complete count. The log is read in bounded memory. Node's default reporter
+  prints no line when a runner starts, so a Node runner that ended without a
+  summary is visible only through its exit.
+- `filtered=yes` means a part of the tests was selected: a runner reported
+  filtered-out tests, or the stage's own command line names a selection. For
+  `cargo test` that is a test name, a target or package option (`--lib`,
+  `--bin`, `--test`, `--doc`, `-p` and the like, `-pNAME` included, and
+  `--all-targets`, which runs every target but not the doctests),
+  `--ignored`, `--skip` or `--exact`; for `node --test` a test file,
+  `--test-name-pattern`, `--test-skip-pattern`, `--test-only` or
+  `--test-shard`. Other options, with their values, change how tests run and
+  not which. The command line is known before a stage runs, so a skipped
+  stage says it too. A selection made through the environment, such as
+  `NODE_OPTIONS`, is not visible. Every test stage of a full run is
+  `filtered=yes`, and the stage list says so itself, whether or not the stage
+  ran: `rust` because its two scale phases select tests by name, the four
+  Node stages because each names its test files. `scope=full` says the
+  prescribed stage list ran, not that no runner filtered.
+- `overall` covers validation only: the stages and the input fingerprint check.
+  A failed completion notification changes the process's exit status, not the
+  record. `reason` is given when the run did not pass: `stage-failed`,
+  `stage-interrupted`, `preflight-failed`, `spawn-failed`, `input-changed`,
+  `fingerprint-check-failed`, or `launcher-error` for any other refusal. A
+  prerequisite probe that fails or cannot be started, and a stage's command
+  that cannot be found, are `preflight-failed`: every command is looked up
+  before any stage runs, so every stage is `skipped`. `spawn-failed` is a
+  command that was found and that the system refused to start; its stage is
+  `failed`.
+
+The record carries no source revision; the launcher's input fingerprint is its
+own drift check and is not a host's source revision. A killed launcher prints
+no record. Neither does a run whose id or whose stage name is not a token of
+the grammar; the command line cannot produce one, only a caller of the
+module. Each stage's kind and selection, the scope, and whether to notify
+are the ones read before the first stage ran; a stage that rewrites or
+breaks `request.json` changes neither what the record says of it nor
+whether the record is printed. The notification's target is read when it
+is sent. A stage that removes the run directory or makes `results.json`
+unwritable leaves the run without saved results, like any unwritable
+results directory, and then no record is printed: a host reads its absence
+as unknown. The lines are text that any command
+could print, so they are not evidence by themselves: a host may treat them
+as such only for a command it recognised as this launcher at its path
+inside the checked root, from the output of that process, and it records
+test evidence under its own name. TermAl's reader counts a run as passed
+tests only when `overall=passed`, no stage is `failed` or `interrupted`,
+every `test` stage is `passed` with a numeric `executed` and `failed=0`, and
+at least one of them has `executed` of one or more. Any `reason` means the
+run did not pass, and any `why` that there is no count. A record that does
+not parse means unknown.
 
 Run evidence is retained until explicitly removed by the operator; there is no
 automatic pruning. After a run has terminal results, its outcome has been
