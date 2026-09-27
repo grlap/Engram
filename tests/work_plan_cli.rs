@@ -107,3 +107,73 @@ fn atomic_plan_cli_creates_whole_graph_and_replays_the_complete_mapping() {
         String::from_utf8_lossy(&doctor.stderr)
     );
 }
+
+#[test]
+fn a_plan_root_binding_reads_back_through_show_and_core_inspect_before_and_after_replay() {
+    let directory = test_support::temp_home().expect("temp");
+    let home = directory.path();
+    assert!(run(home, &["init"]).status.success());
+    // The root's bound criterion is second as typed and first as stored.
+    let input = json!({"kind":"plan", "plan": {
+        "idempotency_key":"bound-plan",
+        "tasks":[
+            {"key":"root","title":"Root","outcome":"Whole result","acceptance":["write docs","run tests"],
+             "bindings":[{"criterion":2,"check_kind":"test"}]},
+            {"key":"child","parent_key":"root","title":"Child","outcome":"Part","acceptance":["part"],
+             "bindings":[{"criterion":1,"check_kind":"lint"}]},
+            {"key":"loose","title":"Loose","outcome":"Unbound","acceptance":["loose"]}
+        ],
+        "prerequisites":[]
+    }});
+    let receipt = success(&propose(home, &input.to_string()));
+    let rows = receipt["tasks"].as_array().expect("mapping").clone();
+    let reference = |key: &str| {
+        rows.iter()
+            .find(|row| row["key"] == key)
+            .and_then(|row| row["short_ref"].as_str())
+            .expect("mapped task")
+            .to_owned()
+    };
+    let read = |reference: &str| {
+        let shown = success(&run(home, &["work", "show", reference, "--json"]));
+        let inspected = success(&run(
+            home,
+            &[
+                "work",
+                "--actor-id",
+                "plan-author",
+                "--session-id",
+                "plan-session",
+                "core",
+                "inspect",
+                reference,
+            ],
+        ));
+        (
+            shown["status"]["work"]["acceptance_bindings"].clone(),
+            inspected["status"]["work"]["acceptance_bindings"].clone(),
+        )
+    };
+    let root_binding = json!([{"criterion":1,"requirement":{"check_kind":"test"}}]);
+    let child_binding = json!([{"criterion":1,"requirement":{"check_kind":"lint"}}]);
+    for pass in ["admitted", "replayed"] {
+        if pass == "replayed" {
+            assert_eq!(success(&propose(home, &input.to_string())), receipt);
+        }
+        assert_eq!(
+            read(&reference("root")),
+            (root_binding.clone(), root_binding.clone()),
+            "root {pass}"
+        );
+        assert_eq!(
+            read(&reference("child")),
+            (child_binding.clone(), child_binding.clone()),
+            "child {pass}"
+        );
+        let (shown, inspected) = read(&reference("loose"));
+        assert!(
+            shown.is_null() && (inspected.is_null() || inspected == json!([])),
+            "an unbound root stays unbound ({pass}): {shown} {inspected}"
+        );
+    }
+}

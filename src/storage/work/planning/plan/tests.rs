@@ -127,6 +127,140 @@ fn a_bound_plan_task_opens_its_obligation_and_a_record_id_pin_is_refused() {
     );
 }
 
+fn test_binding(
+    criterion: usize,
+    check_fingerprint: Option<String>,
+) -> crate::domain::WorkPlanBinding {
+    crate::domain::WorkPlanBinding {
+        criterion,
+        check_kind: crate::domain::VerificationKind::Test,
+        check_fingerprint,
+    }
+}
+
+#[test]
+fn a_bound_plan_root_keeps_its_normalized_binding_through_admission_and_replay() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let mut plan = request();
+    // The root's list as typed repeats and pads a criterion: stored, it is
+    // ["a", "z"], and the binding authored at position 3 follows "z" to 2.
+    plan.plan.tasks[1].acceptance = vec!["z".into(), " a ".into(), "z".into()];
+    plan.plan.tasks[1].bindings = vec![test_binding(3, None)];
+    // A bound child keeps its binding beside it.
+    plan.plan.tasks[2].acceptance = vec!["write docs".into(), "run tests".into()];
+    plan.plan.tasks[2].bindings = vec![test_binding(2, None)];
+    let receipt = store
+        .propose_work_plan(&plan, &DevelopmentNoopRedactor)
+        .expect("plan with a bound root");
+    let root = load_work_item(&store.connection, receipt.tasks[1].work_id).expect("root");
+    assert_eq!(root.parent_id, None);
+    assert_eq!(root.acceptance, vec!["a", "z"]);
+    assert_eq!(
+        root.acceptance_bindings,
+        vec![crate::domain::AcceptanceBinding {
+            criterion: 2,
+            requirement: crate::domain::VerificationRequirement {
+                check_kind: crate::domain::VerificationKind::Test,
+                check_fingerprint: None,
+                required_environment: None,
+            },
+        }]
+    );
+    // Its creation opened the obligation on the root's own run, as `add`
+    // with a binding does.
+    let owed = store
+        .work_run_obligations(root.active_run_id.expect("root run"))
+        .expect("root obligations");
+    assert_eq!(owed.len(), 1);
+    assert_eq!(
+        owed[0].obligation.rule.rule_id,
+        "acceptance_criterion_requires_verification:2"
+    );
+    let child = load_work_item(&store.connection, receipt.tasks[2].work_id).expect("child");
+    assert_eq!(child.acceptance, vec!["run tests", "write docs"]);
+    assert_eq!(child.acceptance_bindings.len(), 1);
+    assert_eq!(child.acceptance_bindings[0].criterion, 1);
+    // An unbound root stays unbound and owes nothing.
+    let other = load_work_item(&store.connection, receipt.tasks[3].work_id).expect("other root");
+    assert!(other.acceptance_bindings.is_empty());
+    assert!(
+        store
+            .work_run_obligations(other.active_run_id.expect("other run"))
+            .expect("other obligations")
+            .is_empty()
+    );
+    assert!(store.verify_all().expect("doctor").is_healthy());
+
+    // A keyed replay returns the same receipt, writes nothing, and the root
+    // reads back with the same binding.
+    let before = test_database_shape_snapshot(&store.connection).expect("before");
+    assert_eq!(
+        store
+            .propose_work_plan(&plan, &DevelopmentNoopRedactor)
+            .expect("replay"),
+        receipt
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+    assert_eq!(
+        load_work_item(&store.connection, root.work_id)
+            .expect("root after replay")
+            .acceptance_bindings,
+        root.acceptance_bindings
+    );
+}
+
+#[test]
+fn a_root_binding_that_cannot_be_admitted_refuses_the_whole_plan() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    store
+        .propose_work_plan(&request(), &DevelopmentNoopRedactor)
+        .expect("a first plan, so the store holds records");
+    let before = test_database_shape_snapshot(&store.connection).expect("before");
+    let stored: String = store
+        .connection
+        .query_row("SELECT object_id FROM objects LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("a stored record id");
+
+    // Two positions of the same criterion, both bound, are one criterion
+    // bound twice. Plan validation refuses this before admission, so it
+    // held for roots even when admission dropped their bindings.
+    let mut twice = request();
+    twice.plan.idempotency_key = "plan-root-bound-twice".into();
+    twice.plan.tasks[1].acceptance = vec!["z".into(), "z".into()];
+    twice.plan.tasks[1].bindings = vec![test_binding(1, None), test_binding(2, None)];
+    let reason = store
+        .propose_work_plan(&twice, &DevelopmentNoopRedactor)
+        .expect_err("a root criterion bound twice")
+        .to_string();
+    assert!(
+        reason.contains("task root") && reason.contains("bound twice"),
+        "{reason}"
+    );
+
+    // A root pinned to the id of a stored record is refused where it is
+    // authored, as a child's pin is. Only root creation checks this, so it
+    // is the half that fails when admission drops a root's bindings.
+    let mut pinned = request();
+    pinned.plan.idempotency_key = "plan-root-pinned-to-a-record".into();
+    pinned.plan.tasks[1].bindings = vec![test_binding(1, Some(stored))];
+    let reason = store
+        .propose_work_plan(&pinned, &DevelopmentNoopRedactor)
+        .expect_err("a root pin naming a stored record")
+        .to_string();
+    assert!(reason.contains("names a stored record"), "{reason}");
+
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("after"),
+        before,
+        "a refused plan creates nothing"
+    );
+}
+
 #[test]
 fn atomic_plan_two_levels_preserve_map_and_replay_without_writes() {
     let mut store = SqliteStore::open_in_memory().expect("store");

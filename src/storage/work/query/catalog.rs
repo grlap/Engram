@@ -108,9 +108,15 @@ pub(super) fn projected_detach_admitted(
     item: &WorkItem,
     now: DateTime<Utc>,
 ) -> Result<bool, StoreError> {
+    // Detach refuses a criterion pinned to an environment of this item's run,
+    // which the successor's new run cannot record, so it is not offered.
     if item.lifecycle != WorkLifecycle::Open
         || item.parent_id.is_none()
         || item.deferred_until.is_some_and(|until| until > now)
+        || item
+            .acceptance_bindings
+            .iter()
+            .any(|binding| binding.requirement.required_environment.is_some())
     {
         return Ok(false);
     }

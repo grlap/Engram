@@ -643,6 +643,369 @@ fn detach_is_atomic_and_replays_without_changing_old_authority() {
 }
 
 #[test]
+fn detach_refuses_a_criterion_pinned_to_the_environment_of_the_childs_run() {
+    use crate::ObjectId;
+    use crate::domain::{
+        AcceptanceBinding, VerificationKind, VerificationRequirement, VerificationResult,
+        WorkRevisionPatch,
+    };
+    let test_binding = |environment: Option<ObjectId>| AcceptanceBinding {
+        criterion: 1,
+        requirement: VerificationRequirement {
+            check_kind: VerificationKind::Test,
+            check_fingerprint: None,
+            required_environment: environment,
+        },
+    };
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let root = store
+        .create_work(
+            &root_request("detach-environment", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let mut draft = child("pinned", ChildRequirement::Optional, "Pinned follow-up");
+    draft.acceptance = vec!["run tests".into()];
+    draft.acceptance_bindings = vec![test_binding(None)];
+    let plan = store
+        .decompose_work(
+            &DecomposeWorkRequest {
+                parent_id: root.work_id,
+                expected_parent_revision: root.revision,
+                children: vec![draft],
+                prerequisites: vec![],
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "plan".into(),
+                created_at: at(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("plan");
+    let child = plan.children[0].clone();
+
+    // The child's own run records a host test and its environment, and the
+    // criterion is then pinned to that environment record.
+    let held = claim(&mut store, &child, "child", "claim-child", 2, 60);
+    let verification = host_verification(
+        &mut store,
+        &child,
+        &held,
+        "child",
+        "child-test",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        3,
+    );
+    let proof = evidence(&mut store, &child, &held, "child", "child-evidence", 4);
+    checkpoint(
+        &mut store,
+        &child,
+        &held,
+        "child",
+        "child-checkpoint",
+        5,
+        &[proof, verification.clone()],
+    );
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [verification.as_str()],
+            |row| row.get(0),
+        )
+        .expect("verification bytes");
+    let record: serde_json::Value = serde_json::from_slice(&bytes).expect("verification json");
+    let environment = ObjectId::from_stored(
+        record["environment"]
+            .as_str()
+            .expect("the verification names its environment")
+            .to_owned(),
+    )
+    .expect("an environment record id");
+    let child = store
+        .revise_work(
+            &ReviseWorkRequest {
+                work_id: child.work_id,
+                expected_revision: child.revision,
+                patch: WorkRevisionPatch {
+                    acceptance_bindings: Some(vec![test_binding(Some(environment))]),
+                    ..WorkRevisionPatch::default()
+                },
+                authority: WorkPlanningAuthority::Claim {
+                    run_id: held.run_id,
+                    holder: held.holder.clone(),
+                    claim_id: held.claim_id,
+                    claim_fence: held.fence,
+                },
+                actor: actor("child"),
+                idempotency_key: "pin-environment".into(),
+                updated_at: at(6),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("pin the run's environment");
+
+    let parent = plan.parent;
+    let owned = claim(&mut store, &parent, "parent", "claim-parent", 5000, 100);
+    let proof = evidence(
+        &mut store,
+        &parent,
+        &owned,
+        "parent",
+        "parent-evidence",
+        5001,
+    );
+    checkpoint(
+        &mut store,
+        &parent,
+        &owned,
+        "parent",
+        "parent-checkpoint",
+        5002,
+        std::slice::from_ref(&proof),
+    );
+    complete(
+        &mut store,
+        &parent,
+        &owned,
+        "parent",
+        &proof,
+        "parent-done",
+        5003,
+    )
+    .expect("parent done");
+
+    // Detach refuses, writes nothing, and names the update that binds the
+    // criterion again without the environment.
+    let before = test_database_shape_snapshot(&store.connection).expect("before");
+    let refusal = store
+        .detach_work(&request(&child), &DevelopmentNoopRedactor)
+        .expect_err("a criterion pinned to the child's run environment");
+    let StoreError::WorkDetachRefused { reason, remedy, .. } = &refusal else {
+        panic!("detach must refuse the environment pin: {refusal:?}");
+    };
+    assert!(
+        reason.contains("criterion 1 requires an environment recorded on this item's run"),
+        "{reason}"
+    );
+    assert_eq!(
+        remedy,
+        &format!("engram work update {} --bind 1=test", child.short_ref)
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+    assert!(matches!(
+        store.check_work_detach_admission(child.work_id, at(5004)),
+        Err(StoreError::WorkDetachRefused { .. })
+    ));
+    // The catalog's advisory, which show, next and ls --blocked read, does
+    // not offer the detach that would refuse.
+    let offers_detach = |store: &SqliteStore, second: i64| {
+        store
+            .inspect_work(child.work_id, at(second))
+            .expect("detach advisory")
+            .reason_codes
+            .contains(&WorkReadinessReason::DetachAvailable)
+    };
+    assert!(!offers_detach(&store, 5004));
+
+    // After that update the catalog offers detach, the child detaches, and
+    // its successor owes the bound verification with no environment pin.
+    let rebound = store
+        .revise_work(
+            &ReviseWorkRequest {
+                work_id: child.work_id,
+                expected_revision: child.revision,
+                patch: WorkRevisionPatch {
+                    acceptance_bindings: Some(vec![test_binding(None)]),
+                    ..WorkRevisionPatch::default()
+                },
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "bind-without-environment".into(),
+                updated_at: at(5004),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("bind the criterion again without the environment");
+    assert!(offers_detach(&store, 5005));
+    let mut detach = request(&rebound);
+    detach.detached_at = at(5005);
+    let successor = store
+        .detach_work(&detach, &DevelopmentNoopRedactor)
+        .expect("detach once no environment is pinned");
+    assert_eq!(successor.acceptance_bindings, vec![test_binding(None)]);
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn detach_keeps_a_bound_criterion_owed_by_the_successor() {
+    use crate::domain::{
+        AcceptanceBinding, FeedId, VerificationKind, VerificationRequirement, VerificationResult,
+        WorkObligationState,
+    };
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let root = store
+        .create_work(
+            &root_request("detach-bound", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let mut draft = child("bound", ChildRequirement::Optional, "Bound follow-up");
+    draft.acceptance = vec!["run tests".into(), "write docs".into()];
+    draft.acceptance_bindings = vec![AcceptanceBinding {
+        criterion: 1,
+        requirement: VerificationRequirement {
+            check_kind: VerificationKind::Test,
+            check_fingerprint: None,
+            required_environment: None,
+        },
+    }];
+    let plan = store
+        .decompose_work(
+            &DecomposeWorkRequest {
+                parent_id: root.work_id,
+                expected_parent_revision: root.revision,
+                children: vec![draft],
+                prerequisites: vec![],
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "plan".into(),
+                created_at: at(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("plan");
+    let child = plan.children[0].clone();
+    assert_eq!(child.acceptance_bindings.len(), 1);
+    let parent = plan.parent;
+    let owned = claim(&mut store, &parent, "parent", "claim-parent", 2, 100);
+    let proof = evidence(&mut store, &parent, &owned, "parent", "parent-evidence", 3);
+    checkpoint(
+        &mut store,
+        &parent,
+        &owned,
+        "parent",
+        "parent-checkpoint",
+        4,
+        std::slice::from_ref(&proof),
+    );
+    complete(
+        &mut store,
+        &parent,
+        &owned,
+        "parent",
+        &proof,
+        "parent-done",
+        5,
+    )
+    .expect("parent done");
+
+    // The successor keeps the child's criteria and what they are bound to,
+    // and owes the bound verification on its own new run.
+    let successor = store
+        .detach_work(&request(&child), &DevelopmentNoopRedactor)
+        .expect("detach");
+    assert_eq!(successor.acceptance, child.acceptance);
+    assert_eq!(successor.acceptance_bindings, child.acceptance_bindings);
+    let run_id = successor.active_run_id.expect("successor run");
+    assert_ne!(Some(run_id), child.active_run_id);
+    let opened = store.work_run_obligations(run_id).expect("obligations");
+    assert_eq!(opened.len(), 1);
+    assert_eq!(opened[0].state, WorkObligationState::Open);
+    assert_eq!(
+        opened[0].obligation.rule.rule_id,
+        "acceptance_criterion_requires_verification:1"
+    );
+    assert_eq!(
+        opened[0].obligation.requirement.check_kind,
+        VerificationKind::Test
+    );
+    assert_eq!(
+        opened[0].obligation.trigger_position.feed,
+        FeedId::RunExecution(run_id)
+    );
+
+    // Generic evidence does not complete it; a passing host test does.
+    let owned = claim(
+        &mut store,
+        &successor,
+        "runner",
+        "claim-successor",
+        5006,
+        300,
+    );
+    let generic = evidence(
+        &mut store,
+        &successor,
+        &owned,
+        "runner",
+        "successor-evidence",
+        5007,
+    );
+    checkpoint(
+        &mut store,
+        &successor,
+        &owned,
+        "runner",
+        "successor-checkpoint",
+        5008,
+        std::slice::from_ref(&generic),
+    );
+    let refused = complete(
+        &mut store,
+        &successor,
+        &owned,
+        "runner",
+        &generic,
+        "successor-unverified",
+        5009,
+    );
+    let Err(StoreError::OpenWorkObligations { obligations, .. }) = refused else {
+        panic!("a bound criterion without verification must refuse completion: {refused:?}");
+    };
+    assert_eq!(obligations[0].required_check, VerificationKind::Test);
+    let verification = host_verification(
+        &mut store,
+        &successor,
+        &owned,
+        "runner",
+        "successor-test",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        5010,
+    );
+    let all = store.work_run_evidence(run_id).expect("run evidence");
+    checkpoint(
+        &mut store,
+        &successor,
+        &owned,
+        "runner",
+        "successor-verified",
+        5011,
+        &all,
+    );
+    let mut request = completion_request(
+        &successor,
+        &owned,
+        "runner",
+        &generic,
+        "successor-done",
+        5012,
+    );
+    request.evidence.push(verification);
+    store
+        .complete_work(&request, &DevelopmentNoopRedactor)
+        .expect("complete once the bound criterion is verified");
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
 fn detach_refuses_independent_constraints_and_stale_or_cross_project_requests() {
     for case in [
         "blocker",

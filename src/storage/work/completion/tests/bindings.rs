@@ -14,14 +14,98 @@ fn bound(criterion: usize, kind: VerificationKind) -> AcceptanceBinding {
     }
 }
 
+/// How a bound root comes to be: created on its own, as `add` does, or
+/// admitted as the root of an atomic plan. Both must enforce its binding.
+#[derive(Clone, Copy, Debug)]
+enum Creation {
+    Add,
+    Plan,
+}
+
+/// A root with `acceptance` and one `binding`, created the given way.
+fn create_bound(
+    store: &mut SqliteStore,
+    project: &str,
+    acceptance: &[&str],
+    binding: AcceptanceBinding,
+    creation: Creation,
+) -> WorkItem {
+    let acceptance = acceptance
+        .iter()
+        .map(|criterion| (*criterion).to_owned())
+        .collect::<Vec<_>>();
+    match creation {
+        Creation::Add => {
+            let mut request = root_request(project, "create-bound-work", 1);
+            request.acceptance = acceptance;
+            request.acceptance_bindings = vec![binding];
+            store
+                .create_work(&request, &DevelopmentNoopRedactor)
+                .expect("create bound work")
+        }
+        Creation::Plan => {
+            // A plan binding names a kind and an optional pin, never an
+            // environment, so both paths build the same binding only
+            // without one.
+            assert_eq!(binding.requirement.required_environment, None);
+            let base = root_request(project, "plan-bound-work", 1);
+            let receipt = store
+                .propose_work_plan(
+                    &crate::domain::ProposeWorkPlanRequest {
+                        project_id: base.project_id.clone(),
+                        actor: base.actor.clone(),
+                        created_at: base.created_at,
+                        plan: crate::domain::WorkPlanInput {
+                            idempotency_key: "plan-bound-work".into(),
+                            tasks: vec![crate::domain::WorkPlanTask {
+                                key: "root".into(),
+                                parent_key: None,
+                                title: base.title.clone(),
+                                outcome: base.outcome.clone(),
+                                acceptance,
+                                bindings: vec![crate::domain::WorkPlanBinding {
+                                    criterion: binding.criterion,
+                                    check_kind: binding.requirement.check_kind,
+                                    check_fingerprint: binding
+                                        .requirement
+                                        .check_fingerprint
+                                        .as_ref()
+                                        .map(|pin| pin.as_str().to_owned()),
+                                }],
+                                requirement: None,
+                                kind: Some(base.kind),
+                                priority: Some(base.priority),
+                                labels: base.labels.clone(),
+                                assigned_to: None,
+                                deferred_until: None,
+                                external_ref: None,
+                                notes: Vec::new(),
+                            }],
+                            prerequisites: Vec::new(),
+                        },
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("plan a bound root");
+            crate::storage::work::query::load_work_item(&store.connection, receipt.tasks[0].work_id)
+                .expect("planned root")
+        }
+    }
+}
+
 /// A root whose first criterion requires host test verification.
 fn bound_root(store: &mut SqliteStore, project: &str) -> WorkItem {
-    let mut request = root_request(project, "create-bound-work", 1);
-    request.acceptance = vec!["run tests".into(), "write docs".into()];
-    request.acceptance_bindings = vec![bound(1, VerificationKind::Test)];
-    store
-        .create_work(&request, &DevelopmentNoopRedactor)
-        .expect("create bound work")
+    bound_root_via(store, project, Creation::Add)
+}
+
+fn bound_root_via(store: &mut SqliteStore, project: &str, creation: Creation) -> WorkItem {
+    create_bound(
+        store,
+        project,
+        &["run tests", "write docs"],
+        bound(1, VerificationKind::Test),
+        creation,
+    )
 }
 
 fn revise_bound(
@@ -61,200 +145,205 @@ fn revise_bound(
 
 #[test]
 fn a_bound_criterion_opens_an_obligation_and_completes_only_on_host_verification_of_its_kind() {
-    let directory = crate::test_support::temp_home().expect("temporary directory");
-    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
-    let work = bound_root(&mut store, "project-bound-criterion");
-    let run_id = work.active_run_id.expect("active run");
-    // Creation opened the obligation: the run owes a test verification for
-    // criterion 1, triggered by the creation event on its own feed.
-    let opened = store.work_run_obligations(run_id).expect("obligations");
-    assert_eq!(opened.len(), 1);
-    assert_eq!(opened[0].state, WorkObligationState::Open);
-    assert_eq!(
-        opened[0].obligation.rule.rule_id,
-        "acceptance_criterion_requires_verification:1"
-    );
-    assert_eq!(
-        opened[0].obligation.requirement.check_kind,
-        VerificationKind::Test
-    );
-    assert_eq!(
-        opened[0].obligation.trigger_position.feed,
-        FeedId::RunExecution(run_id)
-    );
+    for creation in [Creation::Add, Creation::Plan] {
+        let directory = crate::test_support::temp_home().expect("temporary directory");
+        let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+        let work = bound_root_via(&mut store, "project-bound-criterion", creation);
+        let run_id = work.active_run_id.expect("active run");
+        // Creation opened the obligation: the run owes a test verification for
+        // criterion 1, triggered by the creation event on its own feed.
+        let opened = store.work_run_obligations(run_id).expect("obligations");
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].state, WorkObligationState::Open);
+        assert_eq!(
+            opened[0].obligation.rule.rule_id,
+            "acceptance_criterion_requires_verification:1"
+        );
+        assert_eq!(
+            opened[0].obligation.requirement.check_kind,
+            VerificationKind::Test
+        );
+        assert_eq!(
+            opened[0].obligation.trigger_position.feed,
+            FeedId::RunExecution(run_id)
+        );
 
-    // A claim on the same run does not open it twice.
-    let claim = claim(&mut store, &work, "runner", "claim-bound", 2, 300);
-    assert_eq!(
-        store
-            .work_run_obligations(run_id)
-            .expect("obligations")
-            .len(),
-        1
-    );
+        // A claim on the same run does not open it twice.
+        let claim = claim(&mut store, &work, "runner", "claim-bound", 2, 300);
+        assert_eq!(
+            store
+                .work_run_obligations(run_id)
+                .expect("obligations")
+                .len(),
+            1
+        );
 
-    let generic = evidence(&mut store, &work, &claim, "runner", "generic-bound", 3);
-    checkpoint(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "checkpoint-bound-open",
-        4,
-        std::slice::from_ref(&generic),
-    );
-    let refused = complete(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        &generic,
-        "complete-bound-open",
-        5,
-    );
-    let Err(StoreError::OpenWorkObligations { obligations, .. }) = refused else {
-        panic!("a bound criterion without verification must refuse completion: {refused:?}");
-    };
-    assert_eq!(obligations[0].required_check, VerificationKind::Test);
+        let generic = evidence(&mut store, &work, &claim, "runner", "generic-bound", 3);
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "checkpoint-bound-open",
+            4,
+            std::slice::from_ref(&generic),
+        );
+        let refused = complete(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            &generic,
+            "complete-bound-open",
+            5,
+        );
+        let Err(StoreError::OpenWorkObligations { obligations, .. }) = refused else {
+            panic!("a bound criterion without verification must refuse completion: {refused:?}");
+        };
+        assert_eq!(obligations[0].required_check, VerificationKind::Test);
 
-    // A passing check of another kind satisfies nothing.
-    let build = host_verification(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "build-bound",
-        VerificationKind::Build,
-        VerificationResult::Passed,
-        6,
-    );
-    assert_eq!(
-        store.work_run_obligations(run_id).expect("obligations")[0].state,
-        WorkObligationState::Open
-    );
+        // A passing check of another kind satisfies nothing.
+        let build = host_verification(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "build-bound",
+            VerificationKind::Build,
+            VerificationResult::Passed,
+            6,
+        );
+        assert_eq!(
+            store.work_run_obligations(run_id).expect("obligations")[0].state,
+            WorkObligationState::Open
+        );
 
-    // A passing test verification does, although the run observed no source
-    // mutation at all: the source as it stands was verified.
-    let verification = host_verification(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "test-bound",
-        VerificationKind::Test,
-        VerificationResult::Passed,
-        7,
-    );
-    let terminal = store.work_run_obligations(run_id).expect("obligations");
-    assert_eq!(terminal.len(), 1);
-    assert_eq!(terminal[0].state, WorkObligationState::Satisfied);
-    assert!(matches!(
-        terminal[0].resolution.as_ref().map(|event| &event.resolution),
-        Some(WorkObligationResolution::Satisfied { evidence, .. }) if evidence == &verification
-    ));
+        // A passing test verification does, although the run observed no source
+        // mutation at all: the source as it stands was verified.
+        let verification = host_verification(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "test-bound",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            7,
+        );
+        let terminal = store.work_run_obligations(run_id).expect("obligations");
+        assert_eq!(terminal.len(), 1);
+        assert_eq!(terminal[0].state, WorkObligationState::Satisfied);
+        assert!(matches!(
+            terminal[0].resolution.as_ref().map(|event| &event.resolution),
+            Some(WorkObligationResolution::Satisfied { evidence, .. }) if evidence == &verification
+        ));
 
-    let all = store.work_run_evidence(run_id).expect("run evidence");
-    assert!(all.contains(&build) && all.contains(&verification));
-    checkpoint(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "checkpoint-bound-verified",
-        8,
-        &all,
-    );
-    let mut request = completion_request(&work, &claim, "runner", &generic, "complete-bound", 9);
-    request.evidence.push(verification.clone());
-    let seal = store
-        .complete_work(&request, &DevelopmentNoopRedactor)
-        .expect("complete once the bound criterion is verified");
-    // The seal binds the obligation, and the bound criterion cites the record
-    // that satisfied it; the free-text criterion is as the author left it.
-    assert_eq!(seal.obligations.len(), 1);
-    assert_eq!(
-        seal.obligations[0].obligation_id,
-        terminal[0].obligation.obligation_id
-    );
-    assert!(seal.acceptance[0].evidence.contains(&verification));
-    assert_eq!(seal.acceptance[1].evidence, vec![generic.clone()]);
-    assert!(store.verify_all().expect("doctor").is_healthy());
+        let all = store.work_run_evidence(run_id).expect("run evidence");
+        assert!(all.contains(&build) && all.contains(&verification));
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "checkpoint-bound-verified",
+            8,
+            &all,
+        );
+        let mut request =
+            completion_request(&work, &claim, "runner", &generic, "complete-bound", 9);
+        request.evidence.push(verification.clone());
+        let seal = store
+            .complete_work(&request, &DevelopmentNoopRedactor)
+            .expect("complete once the bound criterion is verified");
+        // The seal binds the obligation, and the bound criterion cites the record
+        // that satisfied it; the free-text criterion is as the author left it.
+        assert_eq!(seal.obligations.len(), 1);
+        assert_eq!(
+            seal.obligations[0].obligation_id,
+            terminal[0].obligation.obligation_id
+        );
+        assert!(seal.acceptance[0].evidence.contains(&verification));
+        assert_eq!(seal.acceptance[1].evidence, vec![generic.clone()]);
+        assert!(store.verify_all().expect("doctor").is_healthy());
+    }
 }
 
 #[test]
 fn a_newer_failed_verification_contradicts_a_satisfied_bound_criterion() {
-    let directory = crate::test_support::temp_home().expect("temporary directory");
-    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
-    let work = bound_root(&mut store, "project-bound-contradiction");
-    let run_id = work.active_run_id.expect("active run");
-    let claim = claim(&mut store, &work, "runner", "claim-contradiction", 2, 300);
-    let generic = evidence(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "generic-contradiction",
-        3,
-    );
-    let passed = host_verification(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "test-passed",
-        VerificationKind::Test,
-        VerificationResult::Passed,
-        4,
-    );
-    assert_eq!(
-        store.work_run_obligations(run_id).expect("obligations")[0].state,
-        WorkObligationState::Satisfied
-    );
-    // The host then observes the same kind of check failing. The obligation
-    // stays satisfied as a record, but completion holds the criterion to the
-    // newest verification of its kind.
-    let failed = host_verification(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "test-failed",
-        VerificationKind::Test,
-        VerificationResult::Failed,
-        5,
-    );
-    let all = store.work_run_evidence(run_id).expect("run evidence");
-    assert!(all.contains(&passed) && all.contains(&failed));
-    checkpoint(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "checkpoint-contradiction",
-        6,
-        &all,
-    );
-    let refused = complete(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        &generic,
-        "complete-contradicted",
-        7,
-    );
-    let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
-        panic!("a newer failed check must refuse completion: {refused:?}");
-    };
-    assert!(
-        reason.contains("criterion 1 requires test verification"),
-        "{reason}"
-    );
-    assert!(
-        reason.contains("contradicted by newer verification evidence"),
-        "{reason}"
-    );
-    assert!(reason.contains(failed.as_str()), "{reason}");
+    for creation in [Creation::Add, Creation::Plan] {
+        let directory = crate::test_support::temp_home().expect("temporary directory");
+        let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+        let work = bound_root_via(&mut store, "project-bound-contradiction", creation);
+        let run_id = work.active_run_id.expect("active run");
+        let claim = claim(&mut store, &work, "runner", "claim-contradiction", 2, 300);
+        let generic = evidence(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "generic-contradiction",
+            3,
+        );
+        let passed = host_verification(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "test-passed",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            4,
+        );
+        assert_eq!(
+            store.work_run_obligations(run_id).expect("obligations")[0].state,
+            WorkObligationState::Satisfied
+        );
+        // The host then observes the same kind of check failing. The obligation
+        // stays satisfied as a record, but completion holds the criterion to the
+        // newest verification of its kind.
+        let failed = host_verification(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "test-failed",
+            VerificationKind::Test,
+            VerificationResult::Failed,
+            5,
+        );
+        let all = store.work_run_evidence(run_id).expect("run evidence");
+        assert!(all.contains(&passed) && all.contains(&failed));
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "checkpoint-contradiction",
+            6,
+            &all,
+        );
+        let refused = complete(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            &generic,
+            "complete-contradicted",
+            7,
+        );
+        let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+            panic!("a newer failed check must refuse completion: {refused:?}");
+        };
+        assert!(
+            reason.contains("criterion 1 requires test verification"),
+            "{reason}"
+        );
+        assert!(
+            reason.contains("contradicted by newer verification evidence"),
+            "{reason}"
+        );
+        assert!(reason.contains(failed.as_str()), "{reason}");
+    }
 }
 
 #[test]
@@ -579,147 +668,151 @@ fn rewriting_a_bound_criterion_owes_its_verification_again() {
 
 #[test]
 fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_criterion() {
-    let directory = crate::test_support::temp_home().expect("temporary directory");
-    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
-    let mut request = root_request("project-stale-verification", "create-stale-work", 1);
-    request.acceptance = vec!["build is clean".into(), "write docs".into()];
-    request.acceptance_bindings = vec![bound(1, VerificationKind::Build)];
-    let work = store
-        .create_work(&request, &DevelopmentNoopRedactor)
-        .expect("create bound work");
-    let run_id = work.active_run_id.expect("active run");
-    let claim = claim(&mut store, &work, "runner", "claim-stale", 2, 300);
-    let build = host_verification(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "build-before",
-        VerificationKind::Build,
-        VerificationResult::Passed,
-        3,
-    );
+    for creation in [Creation::Add, Creation::Plan] {
+        let directory = crate::test_support::temp_home().expect("temporary directory");
+        let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+        let work = create_bound(
+            &mut store,
+            "project-stale-verification",
+            &["build is clean", "write docs"],
+            bound(1, VerificationKind::Build),
+            creation,
+        );
+        let run_id = work.active_run_id.expect("active run");
+        let claim = claim(&mut store, &work, "runner", "claim-stale", 2, 300);
+        let build = host_verification(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "build-before",
+            VerificationKind::Build,
+            VerificationResult::Passed,
+            3,
+        );
 
-    // The source then changes. The builtin rule asks for a test, which is
-    // given; nothing asks for the build again, yet the build on record
-    // certifies code that has since moved.
-    source_mutation(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "change",
-        4,
-        Some("revision-after-change"),
-    );
-    host_verification_of(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "test-after-change",
-        VerificationKind::Test,
-        VerificationResult::Passed,
-        5,
-        "revision-after-change",
-    );
-    assert!(
-        store
-            .work_run_obligations(run_id)
-            .expect("obligations")
-            .iter()
-            .all(|record| record.state == WorkObligationState::Satisfied)
-    );
-    let generic = evidence(&mut store, &work, &claim, "runner", "generic-stale", 6);
-    let all = store.work_run_evidence(run_id).expect("run evidence");
-    checkpoint(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "checkpoint-stale",
-        7,
-        &all,
-    );
-    let mut stale = completion_request(&work, &claim, "runner", &generic, "complete-stale", 8);
-    stale.evidence.push(build.clone());
-    let refused = store.complete_work(&stale, &DevelopmentNoopRedactor);
-    let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
-        panic!("a build older than the latest source change must not seal: {refused:?}");
-    };
-    assert!(
-        reason.contains("criterion 1 requires build verification")
-            && reason.contains("does not verify the run's latest source change"),
-        "{reason}"
-    );
+        // The source then changes. The builtin rule asks for a test, which is
+        // given; nothing asks for the build again, yet the build on record
+        // certifies code that has since moved.
+        source_mutation(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "change",
+            4,
+            Some("revision-after-change"),
+        );
+        host_verification_of(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "test-after-change",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            5,
+            "revision-after-change",
+        );
+        assert!(
+            store
+                .work_run_obligations(run_id)
+                .expect("obligations")
+                .iter()
+                .all(|record| record.state == WorkObligationState::Satisfied)
+        );
+        let generic = evidence(&mut store, &work, &claim, "runner", "generic-stale", 6);
+        let all = store.work_run_evidence(run_id).expect("run evidence");
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "checkpoint-stale",
+            7,
+            &all,
+        );
+        let mut stale = completion_request(&work, &claim, "runner", &generic, "complete-stale", 8);
+        stale.evidence.push(build.clone());
+        let refused = store.complete_work(&stale, &DevelopmentNoopRedactor);
+        let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+            panic!("a build older than the latest source change must not seal: {refused:?}");
+        };
+        assert!(
+            reason.contains("criterion 1 requires build verification")
+                && reason.contains("does not verify the run's latest source change"),
+            "{reason}"
+        );
 
-    // Recording order proves nothing about what was checked: a build recorded
-    // after the change, but of the source as it stood before it, is as stale.
-    let old_source = host_verification_of(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "build-of-the-old-source",
-        VerificationKind::Build,
-        VerificationResult::Passed,
-        9,
-        "revision-as-it-stands",
-    );
-    let all = store.work_run_evidence(run_id).expect("run evidence");
-    checkpoint(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "checkpoint-old-source",
-        10,
-        &all,
-    );
-    let mut rerecorded =
-        completion_request(&work, &claim, "runner", &generic, "complete-old-source", 11);
-    rerecorded.evidence.push(old_source);
-    let refused = store.complete_work(&rerecorded, &DevelopmentNoopRedactor);
-    let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
-        panic!("a build of the older source must not seal: {refused:?}");
-    };
-    assert!(
-        reason.contains("does not verify the run's latest source change")
-            && reason.contains("stale_source_revision"),
-        "{reason}"
-    );
+        // Recording order proves nothing about what was checked: a build recorded
+        // after the change, but of the source as it stood before it, is as stale.
+        let old_source = host_verification_of(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "build-of-the-old-source",
+            VerificationKind::Build,
+            VerificationResult::Passed,
+            9,
+            "revision-as-it-stands",
+        );
+        let all = store.work_run_evidence(run_id).expect("run evidence");
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "checkpoint-old-source",
+            10,
+            &all,
+        );
+        let mut rerecorded =
+            completion_request(&work, &claim, "runner", &generic, "complete-old-source", 11);
+        rerecorded.evidence.push(old_source);
+        let refused = store.complete_work(&rerecorded, &DevelopmentNoopRedactor);
+        let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+            panic!("a build of the older source must not seal: {refused:?}");
+        };
+        assert!(
+            reason.contains("does not verify the run's latest source change")
+                && reason.contains("stale_source_revision"),
+            "{reason}"
+        );
 
-    let rebuilt = host_verification_of(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "build-after",
-        VerificationKind::Build,
-        VerificationResult::Passed,
-        12,
-        "revision-after-change",
-    );
-    let all = store.work_run_evidence(run_id).expect("run evidence");
-    checkpoint(
-        &mut store,
-        &work,
-        &claim,
-        "runner",
-        "checkpoint-rebuilt",
-        13,
-        &all,
-    );
-    let mut fresh = completion_request(&work, &claim, "runner", &generic, "complete-rebuilt", 14);
-    fresh.evidence.push(rebuilt.clone());
-    let seal = store
-        .complete_work(&fresh, &DevelopmentNoopRedactor)
-        .expect("a build of the changed source carries the criterion");
-    // The criterion cites the verification the freshness rule accepted, not
-    // the older record that first satisfied the obligation.
-    assert!(seal.acceptance[0].evidence.contains(&rebuilt));
-    assert!(!seal.acceptance[0].evidence.contains(&build));
-    assert!(store.verify_all().expect("doctor").is_healthy());
+        let rebuilt = host_verification_of(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "build-after",
+            VerificationKind::Build,
+            VerificationResult::Passed,
+            12,
+            "revision-after-change",
+        );
+        let all = store.work_run_evidence(run_id).expect("run evidence");
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "checkpoint-rebuilt",
+            13,
+            &all,
+        );
+        let mut fresh =
+            completion_request(&work, &claim, "runner", &generic, "complete-rebuilt", 14);
+        fresh.evidence.push(rebuilt.clone());
+        let seal = store
+            .complete_work(&fresh, &DevelopmentNoopRedactor)
+            .expect("a build of the changed source carries the criterion");
+        // The criterion cites the verification the freshness rule accepted, not
+        // the older record that first satisfied the obligation.
+        assert!(seal.acceptance[0].evidence.contains(&rebuilt));
+        assert!(!seal.acceptance[0].evidence.contains(&build));
+        assert!(store.verify_all().expect("doctor").is_healthy());
+    }
 }
 
 #[test]

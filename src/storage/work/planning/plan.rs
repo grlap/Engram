@@ -429,8 +429,10 @@ fn admit_plan_on<R: Redactor>(
             items[index] = Some(create_root_with_validation_on(
                 transaction,
                 &CreateWorkRequest {
-                    acceptance_bindings: Vec::new(),
-                    evaluation_mode: None,
+                    // A root keeps what its draft was validated with, as a
+                    // child does through decomposition.
+                    acceptance_bindings: draft.acceptance_bindings.clone(),
+                    evaluation_mode: draft.evaluation_mode,
                     project_id: request.project_id.clone(),
                     parent_id: None,
                     child_requirement: ChildRequirement::Required,

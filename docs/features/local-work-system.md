@@ -1498,6 +1498,8 @@ successor reason and lifecycle in its reminder and
 in one transaction: it copies title, outcome, acceptance, kind, labels, and
 priority into a new Open, unclaimed root, adds creator provenance pointing to
 the source child, and appends a reason-attributed supersession on that child.
+The acceptance keeps its bindings to host verification and any pinned
+evaluation mode, so the new root owes each bound verification on its own run.
 The receipt returns the new root and its claim command. This is supersession,
 not reparenting: assignment, notes, evidence, and historical relations remain
 on the source and can be inspected through the provenance link. The old run
@@ -1512,7 +1514,10 @@ Admission requires an Open child below a Completed, Cancelled, or Superseded
 ancestor and no open/proposed descendants, live claim, or live handoff.
 Independent active blockers, incomplete prerequisites, or a future deferral
 refuse detach with `work_detach_refused` and a remedy naming what to resolve
-first. It never bypasses those constraints or reopens the parent. `show`,
+first. So does a criterion bound to an environment recorded on the child's
+run, which the new root's run cannot record; the remedy is the `update --bind`
+that binds every criterion again without its environment. It never bypasses
+those constraints or reopens the parent. `show`,
 `next` with that child focused, and `ls --blocked` name `parent completed` (or
 the actual terminal lifecycle) and offer the exact detach command only when
 currently admitted.

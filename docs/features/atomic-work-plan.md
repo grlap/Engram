@@ -71,7 +71,8 @@ Task options also include `kind`, `priority`, `labels`, `assigned_to`,
 `deferred_until`, `external_ref`, `notes`, and `bindings`: each
 `{ "criterion": N, "check_kind": "test", "check_fingerprint": FINGERPRINT? }`
 binds the criterion at one-based position `N` of `acceptance`, as typed, to
-host verification of that kind, exactly as `add --bind` does; the optional
+host verification of that kind, exactly as `add --bind` does, on a root task
+as on a child, and opens its obligation when the task is created; the optional
 `check_fingerprint` is the command fingerprint the host records on its
 verification evidence, and the id of a stored record there refuses the whole
 plan. Root priority defaults to 1;
