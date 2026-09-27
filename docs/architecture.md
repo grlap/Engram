@@ -34,7 +34,7 @@ optional intake ─────────────────────�
 
 Port contracts keep domain semantics independent of backends. These describe
 the target boundaries, not a catalog of shipped Rust traits; only `Redactor`
-is currently a trait. See the [installed inventory](shipped.md) for shipped
+is currently a trait. See the [source-tree inventory](shipped.md) for shipped
 capabilities.
 
 | Port | Responsibility | V1 implementation |

@@ -48,8 +48,8 @@ This project tracks its work in Engram — the fourteen agent words, documented 
 
 ## Quality gates
 
-Run `node scripts/test-launcher.mjs full` before any commit prompt for a code
-change; a changeset touching only `.md` files runs the two checks
+Run `node scripts/test-launcher.mjs full` before landing any changeset with a
+non-`.md` path; a changeset touching only `.md` files runs the two checks
 [Required Quality Gates](../AGENTS.md#required-quality-gates) names instead.
 Full mode preserves these gates in order:
 
@@ -178,9 +178,10 @@ node scripts/test-launcher.mjs focused -- node --test scripts/test-launcher.test
 node scripts/test-launcher.mjs focused -- cargo test --lib control_runtime
 ```
 
-Full mode is the landing validation of a frozen code change. Focused mode is
-the fast correction check between fixes: it runs the tests that cover a fix
-before the next freeze, and never replaces full mode for a code change. A
+Full mode is the landing validation of a frozen changeset with any non-`.md`
+path, including configuration, lockfiles and fixtures. Focused mode is the
+fast correction check between fixes: it runs the tests that cover a fix before
+the next freeze, and never replaces full mode for such a changeset. A
 changeset touching only `.md` files lands on two focused runs instead, the
 link check and the AGENTS/CLAUDE byte comparison (see
 [Required Quality Gates](../AGENTS.md#required-quality-gates)).

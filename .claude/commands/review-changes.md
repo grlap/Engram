@@ -86,6 +86,14 @@ node scripts/test-launcher.mjs focused -- git diff --no-index --exit-code AGENTS
 Both reviewers still review it. A changeset with any other path runs the
 full gate.
 
+Choose by file type: `.md` prose, agent instructions, skills and review
+commands use these two checks; executable tooling or examples, test-only
+changes, runtime code, CLI implementation and schemas use the full gate.
+A Markdown code block or quoted command is prose and does not trigger the
+full gate by itself. Even a comment-only change in a `.rs` test uses the full
+gate. Mixed or uncertain changes use the stronger applicable checks; focused
+correction checks never replace landing validation.
+
 ### Gate and review in parallel
 
 Run the foreground launcher under the host's background execution (for example
@@ -184,12 +192,16 @@ check name as its `--failed` label.
   contention, missing prerequisite): fix it in the current changeset and
   start a new round on the corrected input: gate, freeze and both reviewers
   in parallel.
-- Product defect: for open work, file one Engram child per defect with the
-  failing test as its acceptance criterion (`engram work add "…" --accept
-  "<test> passes" --kind bug --label gate --under <current item>`), mark the
-  current item blocked on it when landing depends on it, and fix it now when
-  it is in scope. For a late failed gate on completed work, record the gate
-  against that item and file an independent root follow-up (`engram work add
+- Product defect: for an in-scope defect on open work, record the failed
+  check, diagnosis, correction and verification on the held item. Create a
+  required child when separate ownership, independently scoped work or a real
+  dependency warrants it, with the failing test as its acceptance criterion;
+  block landing on that child when necessary. A small correction stays on the
+  held item. Every in-scope defect must still be fixed before completion.
+  Track a pre-existing defect outside the changed scope as an independent
+  root, with its evidence and provenance. For a late failed gate on completed
+  work, record the gate against that item and file an independent root
+  follow-up (`engram work add
   "Follow up the late gate failure" --accept "<test> passes" --kind bug
   --label gate`); never make completed work its parent or reopen it merely to
   file the finding.
@@ -337,8 +349,9 @@ requires. Only a problem that already existed and is unrelated to that scope
 may be left for later.
 
 - Fix an in-scope finding in this slice. Record the fix with a note on the
-  reviewed item, or file it as a required child when a separate item helps track
-  it: `engram work add "<finding>" --kind bug --label review --priority
+  reviewed item. Create a required child only when separate ownership,
+  independently scoped work or a real dependency warrants it:
+  `engram work add "<finding>" --kind bug --label review --priority
   <0 for Critical … 3 for Low> --under <item under review>`. While another
   session holds the reviewed item, only that holder can add the required child,
   so a parent that does not hold it notes the finding on the item for the holder

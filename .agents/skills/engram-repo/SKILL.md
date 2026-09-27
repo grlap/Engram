@@ -490,8 +490,12 @@ When injected, the same fourteen words are MCP tools (`next`, `ls`, `show`,
 ## Verification
 
 Use `node scripts/test-launcher.mjs focused -- COMMAND ARGS...` for the
-smallest focused test while iterating, then `node scripts/test-launcher.mjs full`
-for the following gates. Full logs stay on disk; see
+smallest focused test while iterating. For landing, a changeset touching only
+`.md` files runs the link and identity checks with the exact focused-launcher
+commands in
+[review-changes](../../../.claude/commands/review-changes.md#documentation-only-changesets).
+Any other path requires `node scripts/test-launcher.mjs full` for the following
+gates. Full logs stay on disk; see
 [launcher usage](../../../docs/development.md#test-launcher) for completion delivery.
 
 ```bash
@@ -512,14 +516,24 @@ On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
 Use `/review-changes`, which runs the gates and the two-agent read-only review
 in parallel on one frozen input; a changeset touching only `.md` files runs
 the link and identity checks instead of the gates.
+Choose by file type: `.md` prose, agent instructions, skills and review
+commands use those two checks; executable tooling or examples, test-only
+changes, runtime code, CLI implementation and schemas use the full gate.
+A Markdown code block or quoted command is prose and does not trigger the
+full gate by itself. Even a comment-only change in a `.rs` test uses the full
+gate. Mixed or uncertain changes use the stronger applicable checks; focused
+correction checks never replace landing validation.
 After consolidating review findings, deduplicate them in Engram. This is the
 standing rule for review findings: every justified finding about the scope a
 change modifies, Low included, is fixed before that change closes; it is not
 parked as a new low-priority follow-up. Record such a fix with a note on the
-reviewed item, or as a required child of its open item when a separate item
-helps track it. While another session holds the reviewed item, only that holder
-can add the required child, so a session that does not hold it notes the finding
-on the item for the holder to fix. Never file an in-scope finding as an optional
+reviewed item. Create a required child of its open item only when separate
+ownership, independently scoped work or a real dependency warrants it.
+A small in-scope correction stays on the reviewed item, with the finding,
+correction and verification recorded there. While another session holds the
+reviewed item, only that holder can add the required child, so a session that
+does not hold it notes the finding on the item for the holder to fix. Never
+file an in-scope finding as an optional
 child, even when a refused required child suggests one, because optional
 children do not block completion; an optional child is only for work
 intentionally finished within the parent's execution window that is not a

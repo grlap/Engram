@@ -68,14 +68,24 @@ user profile:
     the AGENTS/CLAUDE identity check on that tree, each with its input
     fingerprint checked at completion;
   - the latest review round from both Codex and Claude, read-only on a
-    verified freeze of that same tree, is clean, and every finding from
-    earlier rounds, Low and Note included, was fixed and reviewed again;
-    a finding left unfixed, even one rejected on evidence, goes to Greg;
+    verified freeze of that same tree, is clean (no outstanding in-scope
+    findings), and every in-scope finding from earlier rounds, Low and Note
+    included, was fixed and reviewed again; any out-of-scope finding was
+    filed as an independent root with provenance. An in-scope finding left
+    unfixed, even one rejected on evidence, goes to Greg;
   - the changeset delivers its items' acceptance criteria, and a
     criterion bound to host-observed evidence has that evidence;
   - before committing, the changeset was judged as the next rule
     describes, and `readiness` with the new build reported every live
     store ready.
+
+  Greg confirmed on 2026-09-27 that the same standing approval applies to
+  Engram and TermAl: required checks pass on the reviewed input, review has
+  no outstanding findings on the changeset (Low and Note included), and
+  evidence satisfies its acceptance criteria. A pre-existing problem outside
+  its scope, filed as an independent root with provenance, does not block.
+  The readiness, install and exact-input conditions above and below remain
+  unchanged.
 
   Otherwise stop and ask Greg before committing: when a store needs
   projection repair or migration, a criterion cannot be met or is
@@ -197,7 +207,7 @@ user profile:
 
 ### Documentation and Skills
 
-- The installed capability inventory is [docs/shipped.md](docs/shipped.md);
+- The source-tree capability inventory is [docs/shipped.md](docs/shipped.md);
   keep shipped facts separate from roadmap and target prose.
 
 - Architecture and behavior live under `docs/`; feature briefs live under
@@ -242,15 +252,15 @@ protocol). Ceremony is the enemy; speed of change is the point.
 
 ## Required Quality Gates
 
-Run these before handing off code changes:
+Run the applicable checks below before handing off changes:
 
 The launcher has two modes, for two different jobs:
 
 - **Full landing validation:** `node scripts/test-launcher.mjs full` runs
   this whole sequence, with full logs on disk and compact failures and
   warnings in context. It runs on the frozen tree that is to be committed,
-  beside that tree's reviews; for a code change, only its pass counts
-  toward landing.
+  beside that tree's reviews; for any changeset with a non-`.md` path,
+  only its pass counts toward landing.
 - **Fast correction check:** `node scripts/test-launcher.mjs focused --
   COMMAND ARGS...` runs one command, typically the tests that cover what a
   fix touched, such as `focused -- cargo test --lib planning::detach`. Run
@@ -284,6 +294,20 @@ reads Markdown except the link checker. Run each through
 is checked at completion; `/review-changes` gives the commands. Both
 reviewers still review it.
 
+Choose landing validation by changed file type:
+
+| Changed surface | Required landing validation |
+| --- | --- |
+| Only `.md` prose, agent instructions, skills or review commands | Link and AGENTS/CLAUDE identity checks through the focused launcher |
+| Executable tooling or examples, such as `.mjs`, `.ps1` or `.sh` | Full gate |
+| Tests only, including a comment in a `.rs` test | Full gate |
+| Runtime code, CLI implementation or schema | Full gate |
+| Any other path, including configuration, lockfiles and fixtures | Full gate |
+
+A Markdown code block or quoted command is prose and does not trigger the
+full gate by itself. Mixed or uncertain changes use the stronger applicable
+checks. Focused correction checks do not replace landing validation.
+
 After any gate failure, investigate the failing path and classify/fix or track
 the actual defect. Do not normalize retries or call an intermittent failure an
 acceptable flaky test. Intermittence is a symptom to diagnose, not a reason to
@@ -301,13 +325,17 @@ session:
 - **Test or environment defect** (wrong assertion, stale fixture, host
   contention, missing prerequisite): fix it in the current changeset and
   rerun the gates.
-- **Product defect**: for open work, file one Engram child per defect with the
-  failing test named as the acceptance criterion (`engram work add "…"
-  --accept "<test> passes" --kind bug --label gate --under <current item>`),
-  mark the current item blocked on it if landing depends on it, and fix it now
-  when it is in scope. For a late failed gate on completed work, record the
-  gate against that item and file an independent root follow-up (`engram work
-  add "Follow up the late gate failure" --accept "<test> passes" --kind bug
+- **Product defect**: for an in-scope defect on open work, record the failed
+  check, diagnosis, correction and verification on the held item. Create a
+  required child when separate ownership, independently scoped work or a real
+  dependency warrants it, with the failing test as its acceptance criterion;
+  block landing on that child when necessary. A small correction stays on the
+  held item. Every in-scope defect must still be fixed before completion.
+  Track a pre-existing defect outside the changed scope as an independent
+  root, with its evidence and provenance. For a late failed gate on completed
+  work, record the gate against that item and file an independent root
+  follow-up (`engram work add "Follow up the late gate failure"
+  --accept "<test> passes" --kind bug
   --label gate`); never make completed work its parent or reopen it merely to
   file the finding. Never delete, skip, or loosen the test to pass.
 
@@ -490,7 +518,7 @@ engram work forget KEY
   into `note` on the item they concern.
 - Never place work refs in source comments, identifiers, or docs prose.
 
-At session end: run the quality gates if code changed, update your Engram
-items (`note`, `done`), and report changed files and validation. Commit or
+At session end: run the checks applicable to the changed files, update your
+Engram items (`note`, `done`), and report changed files and validation. Commit or
 push only on Greg's explicit word or under the standing approval in
 Authority and Git.

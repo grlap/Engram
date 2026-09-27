@@ -8,7 +8,7 @@
 > [development](../development.md).
 >
 > Status: save, load, `--dry-run`, and restored-record recreation are shipped.
-> The installed inventory is
+> The source-tree inventory is
 > [shipped today](../shipped.md).
 
 A work-graph snapshot is one deterministic, human-readable file that holds

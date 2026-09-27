@@ -52,7 +52,12 @@ lifecycle signal or autonomous model scheduler.
 
 ## Control assurance
 
-Every session records the strongest control assurance actually provided by
+The project `required_assurance` floor constrains turn decisions for bound
+control sessions. The host is responsible for enforcing its declared mediation.
+Ordinary CLI/MCP work words do not require a control grant, so the policy value
+alone does not establish that all access to the store is gated.
+
+Every control session records the strongest control assurance declared by
 its host adapter:
 
 | Level | Meaning | Permitted claim |
@@ -974,7 +979,8 @@ connection generation so a still-running predecessor is fenced. Begun grants
 stay open until reported and are discoverable through session status; no
 payload is redelivered.
 `doctor` verifies canonical intent/result bytes plus their redundant row
-bindings.
+bindings. It audits recorded state and reports the configured assurance
+requirement; it does not verify that every caller is mediated by a host.
 
 The alpha grants `observe`, `communicate`, and turn-gated `mutate_local`.
 It checks declared mediation, assurance floors, and any exact work-claim binding.

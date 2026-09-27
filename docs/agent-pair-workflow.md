@@ -58,7 +58,7 @@ Status of the remainder: proposal for discussion and a pilot on an existing
 project. It does not change standing instructions or grant Git or publication
 authority. The adopted section above takes precedence over this proposal. Its
 proposals are not claims of shipped behavior; [Shipped Today](shipped.md) remains
-the inventory of installed behavior.
+the inventory of behavior implemented in this source tree.
 
 The proposed default is a persistent pair: Fable coordinates the work and
 evaluates its acceptance; Codex implements and validates it. Either can request
@@ -295,12 +295,15 @@ rules.
 
 Use the current durable mailbox protocol: read from the participant's cursor
 by omitting `afterSequence`, save the receipt, process the whole page including
-own sends, then acknowledge that unchanged receipt. Reading never acknowledges;
-listing mailboxes is discovery only. Follow page continuations without skipping
-unprocessed messages. Reply only when another action or answer is needed; retry
-an uncertain send with the same intent and idempotency key. A receipt proves
-issuance, not comprehension or task execution. Any resulting unfinished work
-must have its own durable obligation.
+own sends, then acknowledge that unchanged receipt, even after sending a reply.
+Reading never acknowledges; listing mailboxes is discovery only. Follow page
+continuations without skipping unprocessed messages. If acknowledgement reports
+a gap or conflict, read again from the current durable cursor and process that
+page before acknowledging it.
+Reply only when another action or answer is needed; retry an uncertain send
+with the same intent and idempotency key. A receipt proves issuance, not
+comprehension or task execution. Any resulting unfinished work must have its
+own durable obligation.
 
 Project `remember` entries can preserve attributed observations and references
 to decisions. They do not create new binding rules or replace the instruction

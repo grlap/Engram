@@ -7,6 +7,12 @@
 //! instead (for example the binary crate root `src/main`, whose children live
 //! under `src/bin_support`). Add a family here when a file is brought under
 //! the limit.
+//!
+//! This guard prevents regressions in the explicitly listed families; it is
+//! not a census of every large source file. Files outside those families stay
+//! excluded until deliberately admitted after being brought under the limit.
+//! Admission does not require splitting: `split: false` also guards an unsplit
+//! file.
 
 #[path = "../src/test_support.rs"]
 mod test_support;

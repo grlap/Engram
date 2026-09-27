@@ -1338,14 +1338,14 @@ therefore preserves all three observations. That is all it does:
 no extra completion barrier, no children, no obligation, no waiver. Before
 completion the entry rides the ordinary evidence, contribution, and seal
 binding; afterward it rides the evidence feeds after the frozen seal cut and
-does not modify contributions or completion semantics. The
-workflow
-rule stays where it belongs, in the instruction files: the agent classifies
-every failure, and a product defect gets a required child through the ordinary
-`add` command with kind `bug`, label
-`gate`, and the failing test as acceptance — existing required-child
-machinery enforces that work; test and environment classifications go into
-the durable note with their evidence. A structural typed field on
+does not modify contributions or completion semantics. The workflow rule
+stays in [Required Quality Gates](../../AGENTS.md#required-quality-gates):
+classify every failure and record a small in-scope correction's diagnosis,
+fix and verification on the held item. A required child is for separate
+ownership, independently scoped work or a real dependency; pre-existing
+defects outside the changed scope get independent roots with provenance.
+Test and environment classifications go into the durable note with their
+evidence. A structural typed field on
 `WorkEvidence` keeps test boundaries exact and prevents generic note prose
 from acquiring gate semantics; agent-facing projections retain a typed gate
 discriminator beside bounded rendered words. The receipt echoes the gate name, result, failure count,

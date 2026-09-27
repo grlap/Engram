@@ -790,9 +790,15 @@ Rules that matter:
   focus, use `gate NAME --work-ref REF`; no last-completed item is inferred.
   Gate names follow the repository's
   [quality gates](../development.md#quality-gates).
-  Classification stays your judgment: a product defect gets a required
-  child through the ordinary `add … --accept "<test> passes" --kind bug
-  --label gate`, and test or environment findings go into the durable note.
+  Classification stays your judgment. Record a small in-scope correction's
+  diagnosis, fix and verification on the held item. Create a required child
+  for separate ownership, independently scoped work or a real dependency,
+  with the failing test as its acceptance criterion; block landing on it when
+  necessary. Test or environment findings go into the durable note too.
+  In-scope defects must be fixed before completion. A pre-existing defect
+  outside the changed scope, or a late failure on completed work, gets an
+  independent root follow-up with its evidence and provenance. Never delete,
+  skip or loosen the test to pass.
   `gate NAME` alone always records a pass. Every failure supplies at least one
   bounded `--failed` label; when no test id exists, use the check command or
   check name. A consecutive identical result replays;
@@ -1145,6 +1151,8 @@ envelope, and live
 issued/begun turns, and visibly warns that action gating, organizational
 authority mediation, and action-outcome reconciliation are unavailable. V1's
 development no-op redactor provides no secret or PII protection.
+Doctor audits recorded state and reports the configured assurance requirement;
+it does not verify that every caller is mediated by a host.
 `engram doctor --json` performs the same checks and keeps those warnings on
 stderr while emitting a machine-readable report on stdout. Its `project_id`
 and canonical absolute `database` path give a host the stable pair used to key
@@ -1808,6 +1816,11 @@ new action.
 This control operation is deliberately named `turn_checkpoint`; the local-work
 lifecycle operation `checkpoint_work` remains the separate run-progress and
 evidence checkpoint.
+
+The project `required_assurance` floor constrains turn decisions for bound
+control sessions. The host is responsible for enforcing its declared mediation.
+Ordinary CLI/MCP work words do not require a control grant, so the policy value
+alone does not establish that all access to the store is gated.
 
 The built-in policy grants `observe`, `communicate`, and turn-gated
 `mutate_local`. A session must meet the project and effect assurance floors,

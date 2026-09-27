@@ -6,8 +6,10 @@
 > [security & trust](features/security-and-trust.md), and
 > [external adapters](features/tracker-adapter.md).
 >
-> Engram capabilities below are installed unless marked as planned; see
-> [shipped today](shipped.md). Host setup requirements are not a claim that a
+> Engram capabilities below are implemented in this source tree unless marked
+> as planned; see [shipped today](shipped.md). Verify the deployed executable's
+> build and supported commands separately: it may lag this source revision.
+> Host setup requirements are not a claim that a
 > particular launcher implements them. MADE is the external planner and
 > coordinator host used for the integration pilot. Its recipe still needs
 > runtime acceptance in that host.

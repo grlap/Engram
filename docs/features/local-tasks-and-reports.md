@@ -25,7 +25,7 @@ private.
 Report assembly and publication below are target design, not shipped APIs.
 The current local-work completion seal is implemented; the obsolete standalone
 barrier/report types and dummy publication adapter have been removed. Consult
-[the installed inventory](../shipped.md) for implemented capabilities.
+[the source-tree inventory](../shipped.md) for implemented capabilities.
 
 ## Multi-session coordination
 

@@ -332,9 +332,12 @@ fresh observation even when the result is unchanged; the same result after a
 different state is also fresh — nothing else. The gate payload is a structural
 field on `WorkEvidence`, not a
 classification inferred from generic evidence prose. It adds no canonical kind,
-no obligation, no completion barrier, and no waiver. Before completion, a
-product defect becomes a required child through the ordinary propose path,
-which existing completion machinery already enforces. After completion, the
+no obligation, no completion barrier, and no waiver. Before completion,
+[Required Quality Gates](../AGENTS.md#required-quality-gates) governs failure
+classification: small in-scope corrections stay on the held item with diagnosis,
+fix and verification; required children are for separate ownership,
+independently scoped work or real dependencies. Pre-existing defects outside
+the changed scope get independent roots with provenance. After completion, the
 agent records the failed gate on the closed item and files a separate follow-up
 with `engram work add "Follow up the late gate failure" --kind bug`; a completed
 item is never reopened merely to attach the evidence or made the parent of new
