@@ -34,6 +34,16 @@ tempfile = "3.20"
 lto = "thin"
 strip = "symbols"
 
+# Debug test time depends on two dependencies: sha2, which every process that
+# reports a build hash runs over its whole executable, and the bundled SQLite
+# C library. Build both optimized in the dev/test profile; Engram's own code
+# keeps full debug info. docs/development.md gives the measurements.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3
+
 [lints.rust]
 unsafe_code = "forbid"
 

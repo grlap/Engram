@@ -77,6 +77,39 @@ bounded test concurrency, then separate ignored claim-mutation and
 file-descriptor soft limit when the host permits it; that step is not
 applicable on Windows.
 
+The default is eight test threads, or the number of available processors on a
+host with fewer, or four on a host that reports no usable count. It comes from
+one measurement, of the unit-test binary on a
+quiet 24-core Windows host: 68 s at four threads, 42 s at eight, 59 s at
+twelve and 119 s at twenty-four, while total processor time rose from 242 s to
+2210 s. Rebuilding the bundled SQLite without memory-status tracking, which
+was tried and not adopted, removed that rise in processor time and part of the
+extra wall time (38 s at eight threads, 66 s at twenty-four), but wall time
+still rose past eight threads, so the cause is only partly known. Other hosts
+and the other test binaries were not measured. Set `ENGRAM_TEST_THREADS` or
+`RUST_TEST_THREADS` to use another count.
+
+The shell entry point tries to raise the file-descriptor soft limit to 16384,
+or to the hard limit when that is lower. When the host refuses, it asks for
+smaller limits, largest first: the per-process maximum the host reports and
+4096, the previous target. It stops at the first of them that the host accepts
+or that the inherited limit already reaches, so an inherited limit that is
+already higher is kept. Only when neither holds for any of them does it warn
+and run with the inherited limit. The target itself was not measured. Set
+`ENGRAM_TEST_FD_LIMIT` to use another.
+
+The gate's Node tests run the thread default and this step-down against
+stubbed hosts, so they need a POSIX `sh` on every host: on Windows the one
+installed with Git or, without one, one on `PATH`.
+
+The dev profile builds two dependencies optimized, `sha2` and
+`libsqlite3-sys`; Engram's own code stays unoptimized, with full debug
+information. Every process that reports a build hash digests its own
+executable: with `sha2` optimized that took 0.05 s in place of 0.5 s for each
+process, and the `diagnostics_cli` test binary 14 s in place of 101 s. With
+SQLite optimized the unit tests, run on one thread with `sha2` optimized in
+both builds, used about 15% less processor time: 231 s in place of 273 s.
+
 The root-delta phase includes 1,000-step history fixtures and can take several
 minutes. Recent Windows debug runs took about 6–9 minutes for that phase;
 this is an observation, not a timeout or a performance limit. The test harness

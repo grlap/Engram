@@ -7,8 +7,10 @@ set -eu
 repo_root=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 cd "$repo_root"
 
-target_fd_limit=${ENGRAM_TEST_FD_LIMIT:-4096}
-test_threads=${ENGRAM_TEST_THREADS:-${RUST_TEST_THREADS:-4}}
+. "$repo_root/scripts/test-rust-host.sh"
+
+target_fd_limit=${ENGRAM_TEST_FD_LIMIT:-16384}
+test_threads=${ENGRAM_TEST_THREADS:-${RUST_TEST_THREADS:-$(default_test_threads)}}
 
 require_positive_integer() {
     variable_name=$1
@@ -41,8 +43,8 @@ case "$current_soft_limit" in
     ''|*[!0-9]*) ;;
     *)
         if [ "$current_soft_limit" -lt "$desired_soft_limit" ]; then
-            if ! ulimit -S -n "$desired_soft_limit" 2>/dev/null; then
-                echo "Warning: could not raise the file-descriptor soft limit from $current_soft_limit to $desired_soft_limit." >&2
+            if ! raise_fd_soft_limit; then
+                echo "Warning: could not raise the file-descriptor soft limit from $current_soft_limit towards $desired_soft_limit." >&2
             fi
         fi
         ;;

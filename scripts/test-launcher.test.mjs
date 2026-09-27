@@ -1240,3 +1240,171 @@ test("git in a fixture without its own repository cannot climb into this checkou
   assert.notEqual(result.status, 0, `git found a repository above the fixture: ${result.stdout}`);
   assert.match(result.stderr, /not a git repository/u);
 });
+
+// The Rust gate's Unix entry point takes its thread count and its
+// file-descriptor limit from the host through scripts/test-rust-host.sh. No
+// gate host is a small, refusing or misreporting one, so the tests below run
+// those functions in a POSIX shell against stubbed hosts.
+
+// A shell counts only when it runs a command successfully. On Windows the one
+// installed beside Git comes first: a PATH there often holds Git's cmd
+// directory without its usr/bin, and a bare name is looked up in the current
+// directory before PATH.
+function posixShell({ platform = process.platform, run = spawnSync, exists = existsSync } = {}) {
+  const candidates = [];
+  if (platform === "win32") {
+    const execPath = run("git", ["--exec-path"], { encoding: "utf8" });
+    if (!execPath.error && execPath.status === 0) {
+      const beside = join(execPath.stdout.trim(), "..", "..", "..", "usr", "bin", "sh.exe");
+      if (exists(beside)) candidates.push(beside);
+    }
+  }
+  candidates.push("sh");
+  const shell = candidates.find((candidate) => {
+    const probe = run(candidate, ["-c", ":"]);
+    return !probe.error && probe.status === 0;
+  });
+  assert.ok(shell, "these tests need a POSIX sh: the one installed with Git on Windows, or one on PATH");
+  return shell;
+}
+
+function runHostFunction(harness, variables, name, { replaceEnvironment = false } = {}) {
+  const result = spawnSync(posixShell(), ["-c", harness], { encoding: "utf8", env: { ...(replaceEnvironment ? {} : process.env),
+    HOST_FUNCTIONS: fileURLToPath(new URL("./test-rust-host.sh", import.meta.url)), ...variables } });
+  assert.equal(result.error, undefined, name);
+  assert.equal(result.stderr, "", name);
+  assert.equal(result.status, 0, name);
+  return result.stdout.trim();
+}
+
+test("a shell is chosen only when it runs, and Git's own comes first on Windows", () => {
+  // Git for Windows keeps its programs in <root>/mingw64/libexec/git-core and its shell in <root>/usr/bin.
+  const execPath = "C:/Git/mingw64/libexec/git-core\n";
+  const beside = join("C:/Git", "usr", "bin", "sh.exe");
+  const host = ({ git = { status: 0, stdout: execPath }, installed = true, working = [] }) => ({
+    run: (command, args) => {
+      if (args[0] === "--exec-path") return command === "git" ? git : { status: 1, stdout: "" };
+      assert.deepEqual(args, ["-c", ":"], `unexpected probe of ${command}`);
+      return working.includes(command) ? { status: 0 } : { status: 1 };
+    },
+    exists: (path) => installed && path === beside,
+  });
+  assert.equal(posixShell({ platform: "win32", ...host({ working: [beside, "sh"] }) }), beside);
+  assert.equal(posixShell({ platform: "win32", ...host({ working: ["sh"] }) }), "sh", "a failing Git shell is passed over");
+  assert.equal(posixShell({ platform: "win32", ...host({ installed: false, working: [beside, "sh"] }) }), "sh");
+  assert.equal(posixShell({ platform: "win32", ...host({ git: { status: 1, stdout: "" }, working: [beside, "sh"] }) }), "sh");
+  assert.equal(posixShell({ platform: "win32", ...host({ git: { status: 1, stdout: execPath }, working: [beside, "sh"] }) }), "sh",
+    "a failed Git answer is not used, whatever it printed");
+  assert.equal(posixShell({ platform: "win32", ...host({ git: { error: new Error("ENOENT") }, working: ["sh"] }) }), "sh");
+  assert.equal(posixShell({ platform: "linux", ...host({ working: [beside, "sh"] }) }), "sh", "Git's shell is a Windows fallback only");
+  assert.throws(() => posixShell({ platform: "win32", ...host({ working: [] }) }), /need a POSIX sh/u, "a shell that starts and fails is not a shell");
+  assert.throws(() => posixShell({ platform: "linux", run: () => ({ error: new Error("ENOENT") }), exists: () => false }), /need a POSIX sh/u);
+});
+
+// Stubs refuse any call but the ones the functions may make, and report it on
+// descriptor 3, the test's stderr: the functions discard the stderr and status
+// of what they call. Like real hosts, the stubs complain on stderr when they
+// fail, so an empty stderr also shows that the functions keep a host's
+// complaints to themselves.
+test("fd soft-limit step-down asks for smaller limits largest first and never leaves a host below the previous target", () => {
+  const harness = `set -eu
+exec 3>&2
+. "$HOST_FUNCTIONS"
+requested=
+sysctl() {
+  if [ "$#" -ne 2 ] || [ "$1" != -n ] || [ "$2" != kern.maxfilesperproc ]; then
+    echo "unexpected call: sysctl $*" >&3
+    return 1
+  fi
+  if [ -n "$REPORTED" ]; then echo "$REPORTED"; return 0; fi
+  echo "sysctl: cannot stat /proc/sys/kern/maxfilesperproc: No such file or directory" >&2
+  return 1
+}
+ulimit() {
+  if [ "$#" -ne 3 ] || [ "$1" != -S ] || [ "$2" != -n ]; then
+    echo "unexpected call: ulimit $*" >&3
+    exit 98
+  fi
+  requested="$requested $3"
+  if [ "$3" -le "$ACCEPTED" ]; then current_soft_limit=$3; return 0; fi
+  echo "ulimit: open files: cannot modify limit: Invalid argument" >&2
+  return 1
+}
+current_soft_limit=$INHERITED
+desired_soft_limit=$DESIRED
+if raise_fd_soft_limit; then outcome=kept; else outcome=refused; fi
+echo "$outcome final=$current_soft_limit requested=$requested"`;
+  // [inherited limit, desired limit, maximum the host reports, largest limit the host accepts]
+  const cases = [
+    ["the host accepts the target", [1024, 16384, "", 1048576], "kept final=16384 requested= 16384"],
+    ["a reported maximum below the target is asked for second", [256, 16384, "10240", 10240], "kept final=10240 requested= 16384 10240"],
+    ["a reported maximum above the target is never requested", [256, 16384, "61440", 10000], "kept final=4096 requested= 16384 4096"],
+    ["a reported maximum equal to the target is asked for once", [256, 10240, "10240", 100], "refused final=256 requested= 10240 4096"],
+    ["no reported maximum falls back to the previous target", [256, 16384, "", 4096], "kept final=4096 requested= 16384 4096"],
+    ["a reported maximum below the previous target is asked for after it", [256, 16384, "2048", 4096], "kept final=4096 requested= 16384 4096"],
+    ["the smallest candidate is the last resort", [256, 16384, "2048", 2048], "kept final=2048 requested= 16384 4096 2048"],
+    ["a reported maximum equal to the previous target is asked for once", [256, 16384, "4096", 100], "refused final=256 requested= 16384 4096"],
+    ["a host that accepts nothing keeps the inherited limit and reports failure", [256, 16384, "", 100], "refused final=256 requested= 16384 4096"],
+    ["a target equal to the previous one is asked for once", [256, 4096, "", 100], "refused final=256 requested= 4096"],
+    ["a target below the previous one is never exceeded", [256, 1024, "", 512], "refused final=256 requested= 1024"],
+    ["a target and reported maximum below the previous one are asked for once", [256, 2048, "2048", 100], "refused final=256 requested= 2048"],
+    ["an inherited limit above the previous target is kept", [5000, 16384, "", 4096], "kept final=5000 requested= 16384"],
+    ["a non-numeric reported maximum is left out", [256, 16384, "n/a", 100], "refused final=256 requested= 16384 4096"],
+    ["a zero reported maximum is left out", [256, 16384, "0", 100], "refused final=256 requested= 16384 4096"],
+  ];
+  for (const [name, [inherited, desired, reported, accepted], expected] of cases) {
+    assert.equal(runHostFunction(harness, { INHERITED: String(inherited), DESIRED: String(desired), REPORTED: reported,
+      ACCEPTED: String(accepted) }, name), expected, name);
+  }
+});
+
+test("default test threads are the available processors, at most eight, whatever OpenMP is told", () => {
+  // Each source prints its value, or is absent when the value is empty. The
+  // nproc stub honours both OpenMP variables as the real one does: the thread
+  // count replaces the processor count and the thread limit caps it.
+  const harness = `set -eu
+exec 3>&2
+. "$HOST_FUNCTIONS"
+absent() { echo "$1: command not found" >&2; return 127; }
+nproc() {
+  if [ "$#" -ne 0 ]; then echo "unexpected call: nproc $*" >&3; return 1; fi
+  if [ -z "$NPROC" ]; then absent nproc; return 127; fi
+  count=\${OMP_NUM_THREADS:-$NPROC}
+  if [ -n "\${OMP_THREAD_LIMIT:-}" ] && [ "$OMP_THREAD_LIMIT" -lt "$count" ]; then count=$OMP_THREAD_LIMIT; fi
+  echo "$count"
+}
+getconf() {
+  if [ "$#" -ne 1 ] || [ "$1" != _NPROCESSORS_ONLN ]; then echo "unexpected call: getconf $*" >&3; return 1; fi
+  if [ -z "$GETCONF" ]; then absent getconf; return 127; fi
+  echo "$GETCONF"
+}
+sysctl() {
+  if [ "$#" -ne 2 ] || [ "$1" != -n ] || [ "$2" != hw.ncpu ]; then echo "unexpected call: sysctl $*" >&3; return 1; fi
+  if [ -z "$SYSCTL" ]; then absent sysctl; return 127; fi
+  echo "$SYSCTL"
+}
+default_test_threads`;
+  // [nproc, getconf, sysctl, OMP_NUM_THREADS, OMP_THREAD_LIMIT]
+  const cases = [
+    ["a large host is capped at eight", ["24", "24", "", "", ""], "8"],
+    ["exactly eight processors", ["8", "", "", "", ""], "8"],
+    ["a small host uses what it has", ["4", "16", "", "", ""], "4"],
+    ["affinity to one processor", ["1", "16", "", "", ""], "1"],
+    ["getconf answers where nproc is absent", ["", "2", "", "", ""], "2"],
+    ["sysctl answers where both are absent", ["", "", "6", "", ""], "6"],
+    ["four where nothing answers", ["", "", "", "", ""], "4"],
+    ["four where the answer is not a number", ["many", "16", "", "", ""], "4"],
+    ["four where the answer is zero", ["0", "16", "", "", ""], "4"],
+    ["an OpenMP thread count does not lower the gate's", ["24", "", "", "1", ""], "8"],
+    ["an OpenMP thread limit does not lower the gate's", ["24", "", "", "", "1"], "8"],
+    ["an OpenMP thread count does not raise a small host's", ["2", "", "", "16", ""], "2"],
+  ];
+  for (const [name, [nproc, getconf, sysctl, threadCount, threadLimit], expected] of cases) {
+    // The gate host's own OpenMP settings must not decide a case.
+    const { OMP_NUM_THREADS: _count, OMP_THREAD_LIMIT: _limit, ...inherited } = process.env;
+    const variables = { ...inherited, NPROC: nproc, GETCONF: getconf, SYSCTL: sysctl };
+    if (threadCount) variables.OMP_NUM_THREADS = threadCount;
+    if (threadLimit) variables.OMP_THREAD_LIMIT = threadLimit;
+    assert.equal(runHostFunction(harness, variables, name, { replaceEnvironment: true }), expected, name);
+  }
+});

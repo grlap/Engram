@@ -8,12 +8,14 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $cargoArgs = @($args)
 $previousTestThreads = $env:RUST_TEST_THREADS
 
+# Eight threads measured fastest of 4, 8, 12 and 24 on a 24-core host; see
+# docs/development.md. Use fewer where fewer processors are available.
 $testThreads = if ($env:ENGRAM_TEST_THREADS) {
     $env:ENGRAM_TEST_THREADS
 } elseif ($env:RUST_TEST_THREADS) {
     $env:RUST_TEST_THREADS
 } else {
-    "4"
+    [string][Math]::Min(8, [Environment]::ProcessorCount)
 }
 
 $parsedTestThreads = 0
