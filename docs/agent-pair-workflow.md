@@ -1,5 +1,9 @@
 # Agent review and coordination workflow
 
+For observations about what works well and poorly in practice, and the effects
+of subsequent improvements, see the [collaboration retrospective](collaboration-log.md).
+The pilot below remains an unadopted proposal.
+
 ## Adopted coordination rules (2026-09-13, revision 1)
 
 Greg approved these rules for Engram and TermAl on 2026-09-13 and asked Advisor
