@@ -514,16 +514,18 @@ pub struct VerificationEvidence {
 /// Exact verification property required by one immutable work obligation.
 ///
 /// Builtin V1 rules require the verification kind while deliberately leaving
-/// the command fingerprint and environment open. Future immutable rules may
-/// pin an exact fingerprint and environment without allowing candidate
-/// evidence to define its own requirement.
+/// the command fingerprint open; a binding or rule may pin the fingerprint of
+/// one exact check. A requirement cannot name an environment: the environment
+/// evidence a verification links to belongs to one run and one source
+/// revision, so a pin to it could not be satisfied anywhere else. Decoding is
+/// strict, so a requirement that names any other member, such as an
+/// environment, is refused by name rather than read without it.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerificationRequirement {
     pub check_kind: VerificationKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check_fingerprint: Option<ObjectId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub required_environment: Option<ObjectId>,
 }
 
 /// Immutable identity of one builtin obligation rule version.
@@ -596,7 +598,6 @@ pub enum VerificationEvidenceMismatch {
     WrongRun,
     StaleSourceRevision,
     CheckFingerprintMismatch,
-    EnvironmentMismatch,
     ResultNotPassed,
     InvalidTime,
     InvalidProducer,

@@ -82,7 +82,7 @@ fn append_mints_a_record_per_call_and_round_trips_content() {
             invalid_objects: Vec::new(),
             checked_graph_snapshot_audits: 0,
             invalid_graph_snapshot_audits: Vec::new(),
-            checked_control_records: 2,
+            checked_control_records: 3,
             invalid_control_records: Vec::new(),
             checked_work_records: 1,
             invalid_work_records: Vec::new(),

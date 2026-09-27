@@ -435,9 +435,8 @@ distinct set of environment-evidence ids visible at the same dense cut.
 The set is capped at 64 and contains ids only: canonical toolchain,
 sandbox/image, workspace, and capability-map components remain in their own
 evidence objects. Every accepted seal carries the current environment-schema
-binding. Environment identity is currently audit
-evidence; the built-in test obligation does not yet require a particular
-environment id.
+binding. Environment identity is audit evidence: an environment record
+belongs to one run and one source revision, so no requirement can name one.
 
 Optional report assembly therefore uses a distinct post-completion authority:
 
@@ -1166,10 +1165,9 @@ field appears on `work_focus`, nested `work_next.focus`, and both completion
 outcomes. Its item count and canonical byte size are bounded independently,
 with an explicit `omitted_count`. Open obligations sort ahead of terminal
 history under both count and byte trimming.
-The sibling focus-evidence selection retains environments required by visible
-open obligations and keeps each visible verification's referenced environment
-before that verification, so bounded summaries do not expose dangling typed
-evidence links.
+The sibling focus-evidence selection keeps each visible verification's
+referenced environment before that verification, so bounded summaries do not
+expose dangling typed evidence links.
 
 `work_complete` accepts either previously recorded evidence and checkpoint
 state or an optional `capture { summary, refs }`. The capture form records one
@@ -1514,10 +1512,7 @@ Admission requires an Open child below a Completed, Cancelled, or Superseded
 ancestor and no open/proposed descendants, live claim, or live handoff.
 Independent active blockers, incomplete prerequisites, or a future deferral
 refuse detach with `work_detach_refused` and a remedy naming what to resolve
-first. So does a criterion bound to an environment recorded on the child's
-run, which the new root's run cannot record; the remedy is the `update --bind`
-that binds every criterion again without its environment. It never bypasses
-those constraints or reopens the parent. `show`,
+first. It never bypasses those constraints or reopens the parent. `show`,
 `next` with that child focused, and `ls --blocked` name `parent completed` (or
 the actual terminal lifecycle) and offer the exact detach command only when
 currently admitted.

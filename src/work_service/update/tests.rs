@@ -20,6 +20,74 @@ fn work_update_does_not_admit_obligation_waivers() {
     assert!(serde_json::from_value::<WorkUpdateInput>(attempted).is_err());
 }
 
+/// Core root, decomposition and revision JSON read a binding without an
+/// environment and refuse one that names an environment, with a value or as
+/// null, naming the member rather than reading past it.
+#[test]
+fn core_work_json_refuses_an_environment_pin_by_name() {
+    let bindings = |environment: Option<serde_json::Value>| {
+        let mut requirement = serde_json::json!({ "check_kind": "test" });
+        if let Some(environment) = environment {
+            requirement["required_environment"] = environment;
+        }
+        serde_json::json!([{ "criterion": 1, "requirement": requirement }])
+    };
+    let root = |bindings: serde_json::Value| {
+        serde_json::json!({
+            "kind": "root",
+            "title": "Run the tests",
+            "outcome": "The tests pass",
+            "acceptance": ["run tests"],
+            "acceptance_bindings": bindings,
+        })
+    };
+    let decompose = |bindings: serde_json::Value| {
+        serde_json::json!({
+            "kind": "decompose",
+            "children": [{
+                "key": "child",
+                "title": "Run the tests",
+                "outcome": "The tests pass",
+                "acceptance": ["run tests"],
+                "acceptance_bindings": bindings,
+            }],
+        })
+    };
+    let revise = |bindings: serde_json::Value| {
+        let patch = serde_json::json!({ "acceptance_bindings": bindings });
+        serde_json::json!({ "kind": "revise", "patch": patch })
+    };
+    let environment = serde_json::json!(ObjectId::from_canonical_bytes(b"environment"));
+    let refusal = |decoded: Result<(), serde_json::Error>, entry: &str| {
+        let error = decoded.expect_err(entry).to_string();
+        assert!(
+            error.contains("unknown field `required_environment`"),
+            "{entry}: {error}"
+        );
+    };
+    let proposals: [(&str, &dyn Fn(serde_json::Value) -> serde_json::Value); 2] =
+        [("root", &root), ("decompose", &decompose)];
+    for (entry, propose) in proposals {
+        serde_json::from_value::<WorkProposeInput>(propose(bindings(None)))
+            .unwrap_or_else(|error| panic!("{entry} without an environment: {error}"));
+        for member in [environment.clone(), serde_json::Value::Null] {
+            refusal(
+                serde_json::from_value::<WorkProposeInput>(propose(bindings(Some(member))))
+                    .map(|_| ()),
+                entry,
+            );
+        }
+    }
+    serde_json::from_value::<WorkUpdateInput>(revise(bindings(None)))
+        .expect("revise without an environment");
+    for member in [environment, serde_json::Value::Null] {
+        refusal(
+            serde_json::from_value::<WorkUpdateInput>(revise(bindings(Some(member)))).map(|_| ()),
+            "revise",
+        );
+    }
+}
+
 /// An update or note result carries the item's obligation page. An item
 /// restored from a graph snapshot has no run until it is claimed, and its
 /// open count is known to be zero, so the page says 0; only a page stored

@@ -751,7 +751,6 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
             requirement: crate::domain::VerificationRequirement {
                 check_kind: VerificationKind::Test,
                 check_fingerprint: None,
-                required_environment: None,
             },
         }];
         let work = store

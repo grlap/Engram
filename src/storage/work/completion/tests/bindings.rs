@@ -9,7 +9,6 @@ fn bound(criterion: usize, kind: VerificationKind) -> AcceptanceBinding {
         requirement: VerificationRequirement {
             check_kind: kind,
             check_fingerprint: None,
-            required_environment: None,
         },
     }
 }
@@ -44,10 +43,6 @@ fn create_bound(
                 .expect("create bound work")
         }
         Creation::Plan => {
-            // A plan binding names a kind and an optional pin, never an
-            // environment, so both paths build the same binding only
-            // without one.
-            assert_eq!(binding.requirement.required_environment, None);
             let base = root_request(project, "plan-bound-work", 1);
             let receipt = store
                 .propose_work_plan(
@@ -1144,4 +1139,164 @@ fn a_binding_follows_its_criterion_into_the_stored_order() {
         matches!(&refused, StoreError::InvalidWork(reason) if reason.contains("names criterion 3")),
         "{refused:?}"
     );
+}
+
+/// A stored obligation whose requirement names an environment, with a value
+/// or as null, is refused where it is read, naming the member; it is never
+/// read as the same obligation without its pin.
+#[test]
+fn a_stored_obligation_that_names_an_environment_is_refused_by_name() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-stored-environment");
+    let run_id = work.active_run_id.expect("active run");
+    assert_eq!(
+        store
+            .work_run_obligations(run_id)
+            .expect("the obligation loads")
+            .len(),
+        1
+    );
+    let (object_id, stored): (String, Vec<u8>) = store
+        .connection
+        .query_row(
+            "SELECT object_id, canonical_json FROM objects WHERE object_kind = 'work_obligation'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the stored obligation");
+    for environment in [
+        serde_json::json!(ObjectId::from_canonical_bytes(b"environment")),
+        serde_json::Value::Null,
+    ] {
+        let mut obligation: serde_json::Value =
+            serde_json::from_slice(&stored).expect("obligation json");
+        obligation["requirement"]["required_environment"] = environment;
+        store
+            .connection
+            .execute(
+                "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+                rusqlite::params![
+                    serde_json::to_vec(&obligation).expect("obligation bytes"),
+                    object_id
+                ],
+            )
+            .expect("store an obligation that names an environment");
+        let error = store
+            .work_run_obligations(run_id)
+            .expect_err("an obligation naming an environment is refused")
+            .to_string();
+        assert!(
+            error.contains("unknown field `required_environment`"),
+            "{error}"
+        );
+    }
+}
+
+/// Reopening mints a new run and keeps the item's bindings. A pinned check
+/// names a check's command, which any run can observe, so the new run owes
+/// it again and the pinned check, not another one, satisfies it there.
+#[test]
+fn a_reopened_item_owes_its_pinned_check_again_on_the_new_run() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let pin = check_fingerprint("pinned-check");
+    let mut binding = bound(1, VerificationKind::Test);
+    binding.requirement.check_fingerprint = Some(pin.clone());
+    let work = create_bound(
+        &mut store,
+        "project-reopen-pin",
+        &["run tests", "write docs"],
+        binding,
+        Creation::Add,
+    );
+    let first_run = work.active_run_id.expect("first run");
+    let first = claim(&mut store, &work, "runner", "claim-first", 2, 300);
+    let verification = host_verification(
+        &mut store,
+        &work,
+        &first,
+        "runner",
+        "pinned-check",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        3,
+    );
+    let generic = evidence(&mut store, &work, &first, "runner", "generic-first", 4);
+    let all = store
+        .work_run_evidence(first_run)
+        .expect("first run evidence");
+    checkpoint(
+        &mut store,
+        &work,
+        &first,
+        "runner",
+        "checkpoint-first",
+        5,
+        &all,
+    );
+    let mut request = completion_request(&work, &first, "runner", &generic, "complete-first", 6);
+    request.evidence.push(verification);
+    store
+        .complete_work(&request, &DevelopmentNoopRedactor)
+        .expect("the first run completes on the pinned check");
+    let completed = store.get_work_item(work.work_id).expect("completed item");
+
+    store
+        .reopen_work(
+            &crate::domain::ReopenWorkRequest {
+                work_id: work.work_id,
+                expected_work_revision: completed.revision,
+                reason: "a regression was found after completion".into(),
+                actor: actor("runner"),
+                idempotency_key: "reopen".into(),
+                reopened_at: at(10),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("reopen");
+    let reopened = store.get_work_item(work.work_id).expect("reopened item");
+    assert_eq!(reopened.acceptance_bindings, work.acceptance_bindings);
+    let second_run = reopened.active_run_id.expect("new run");
+    assert_ne!(second_run, first_run);
+
+    // Claiming the new run opens the binding's obligation there, pin and all.
+    let second = claim(&mut store, &reopened, "runner", "claim-second", 11, 300);
+    let opened = store.work_run_obligations(second_run).expect("obligations");
+    assert_eq!(opened.len(), 1);
+    assert_eq!(opened[0].state, WorkObligationState::Open);
+    assert_eq!(
+        opened[0].obligation.requirement.check_fingerprint,
+        Some(pin)
+    );
+    host_verification(
+        &mut store,
+        &reopened,
+        &second,
+        "runner",
+        "other-check",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        12,
+    );
+    assert_eq!(
+        store.work_run_obligations(second_run).expect("obligations")[0].state,
+        WorkObligationState::Open
+    );
+    let again = host_verification(
+        &mut store,
+        &reopened,
+        &second,
+        "runner",
+        "pinned-check",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        13,
+    );
+    let satisfied = store.work_run_obligations(second_run).expect("obligations");
+    assert_eq!(satisfied[0].state, WorkObligationState::Satisfied);
+    assert!(matches!(
+        satisfied[0].resolution.as_ref().map(|event| &event.resolution),
+        Some(WorkObligationResolution::Satisfied { evidence, .. }) if evidence == &again
+    ));
 }

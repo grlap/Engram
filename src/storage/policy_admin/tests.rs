@@ -803,6 +803,71 @@ fn returning_to_an_earlier_rule_set_names_the_same_record() {
     assert!(store.verify_all().expect("doctor").is_healthy());
 }
 
+/// A stored rule set whose requirement names an environment, with a value
+/// or as null, is refused where it is read, naming the member; it is never
+/// read as the same rule without its pin.
+#[test]
+fn a_stored_rule_set_that_names_an_environment_is_refused_by_name() {
+    let store = SqliteStore::open_in_memory().expect("store");
+    let hash = store
+        .control_diagnostics()
+        .expect("initial diagnostics")
+        .obligation_rule_set;
+    SqliteStore::load_obligation_rule_set_on(&store.connection, &hash)
+        .expect("the stock rule set loads");
+    let stored: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [hash.as_str()],
+            |row| row.get(0),
+        )
+        .expect("stock rule set bytes");
+    for environment in [
+        serde_json::json!(ObjectId::from_canonical_bytes(b"environment")),
+        serde_json::Value::Null,
+    ] {
+        let mut rule_set: serde_json::Value =
+            serde_json::from_slice(&stored).expect("rule-set json");
+        rule_set["rules"][0]["requirement"]["required_environment"] = environment;
+        store
+            .connection
+            .execute(
+                "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+                rusqlite::params![
+                    serde_json::to_vec(&rule_set).expect("rule-set bytes"),
+                    hash.as_str()
+                ],
+            )
+            .expect("store a rule set that names an environment");
+        let error = SqliteStore::load_obligation_rule_set_on(&store.connection, &hash)
+            .expect_err("a rule set naming an environment is refused")
+            .to_string();
+        assert!(
+            error.contains("unknown field `required_environment`"),
+            "{error}"
+        );
+        // The doctor names the rule set and the member once, beside the
+        // policy records that select it, and counts the rule set it checked.
+        let report = store.verify_all().expect("doctor");
+        let rule_set_label =
+            format!("obligation_rule_set:{hash}:unknown field `required_environment`");
+        assert_eq!(
+            report
+                .invalid_control_records
+                .iter()
+                .filter(|label| label.starts_with(&rule_set_label))
+                .count(),
+            1,
+            "{report:?}"
+        );
+        assert!(
+            report.invalid_control_records.len() <= report.checked_control_records,
+            "{report:?}"
+        );
+    }
+}
+
 #[test]
 fn established_store_missing_policy_state_refuses_without_bootstrap() {
     let directory = crate::test_support::temp_home().expect("temporary store directory");

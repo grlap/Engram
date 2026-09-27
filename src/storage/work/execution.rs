@@ -1763,23 +1763,9 @@ fn persist_post_completion_work_evidence_on(
 pub(super) fn work_run_evidence_projection_on(
     connection: &Connection,
     run_id: WorkRunId,
-    required_environments: &[ObjectId],
     limit: usize,
 ) -> Result<Vec<WorkEvidenceProjectionSummary>, StoreError> {
-    let mut selected =
-        load_work_evidence_selection_rows_on(connection, run_id, required_environments, limit)?;
-    for required in required_environments {
-        if let Some(candidate) = selected
-            .iter()
-            .find(|candidate| candidate.hash == *required)
-            && candidate.kind != WorkEvidenceKind::Environment
-        {
-            return Err(StoreError::InvalidWorkProjection(format!(
-                "required focus environment {required} is not typed environment evidence for run {}",
-                run_id.0
-            )));
-        }
-    }
+    let mut selected = load_work_evidence_selection_rows_on(connection, run_id, &[], limit)?;
     let selected_hashes = selected
         .iter()
         .map(|candidate| candidate.hash.clone())
@@ -1811,6 +1797,10 @@ pub(super) fn work_run_evidence_projection_on(
     Ok(selected)
 }
 
+/// Up to `limit` evidence rows of the run, taken in descending evidence-id
+/// order, plus the rows named in `required`: the environment evidence the
+/// selected verifications link to. Evidence ids are random, so the bounded
+/// part is a stable selection, not the newest rows.
 fn load_work_evidence_selection_rows_on(
     connection: &Connection,
     run_id: WorkRunId,
@@ -1823,13 +1813,13 @@ fn load_work_evidence_selection_rows_on(
         StoreError::InvalidWorkProjection("focus evidence limit does not fit SQLite".into())
     })?;
     let mut statement = connection.prepare(
-        "WITH recent(evidence_id) AS (
+        "WITH bounded(evidence_id) AS (
              SELECT evidence_id FROM work_run_evidence
              WHERE run_id = ?1 ORDER BY evidence_id DESC LIMIT ?2
          ), requested(evidence_id) AS (
              SELECT value FROM json_each(?3)
          ), candidates(evidence_id) AS (
-             SELECT evidence_id FROM recent
+             SELECT evidence_id FROM bounded
              UNION
              SELECT evidence_id FROM requested
          )

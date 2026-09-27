@@ -423,8 +423,6 @@ struct CliVerificationRequirement {
     check_kind: VerificationKind,
     #[serde(default)]
     check_fingerprint: Option<ObjectId>,
-    #[serde(default)]
-    required_environment: Option<ObjectId>,
 }
 
 impl From<CliObligationRuleSet> for ObligationRuleSet {
@@ -447,7 +445,6 @@ impl From<CliObligationRuleDefinition> for ObligationRuleDefinition {
             requirement: VerificationRequirement {
                 check_kind: value.requirement.check_kind,
                 check_fingerprint: value.requirement.check_fingerprint,
-                required_environment: value.requirement.required_environment,
             },
         }
     }

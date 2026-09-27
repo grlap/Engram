@@ -1357,6 +1357,47 @@ impl IntegrityReport {
     }
 }
 
+/// What an integrity label may say about a record that did not decode: the
+/// shape of the problem and where it is, never a value from the record, since
+/// labels reach the operator's terminal. A member the record's format has no
+/// place for, or one it lacks, is named; any other decoding error is reduced
+/// to its category and position. `None` for a failure other than decoding.
+pub(crate) fn undecodable_record_reason(error: &StoreError) -> Option<String> {
+    let StoreError::Json(error) = error else {
+        return None;
+    };
+    let message = error.to_string();
+    let named_member = ["unknown field `", "missing field `"]
+        .into_iter()
+        .find_map(|prefix| {
+            let member = message.strip_prefix(prefix)?.split_once('`')?.0;
+            Some(format!("{prefix}{member}`"))
+        });
+    let shape = named_member.unwrap_or_else(|| {
+        match error.classify() {
+            serde_json::error::Category::Syntax => "malformed JSON",
+            serde_json::error::Category::Eof => "truncated JSON",
+            serde_json::error::Category::Data => "a field of the wrong type or value",
+            serde_json::error::Category::Io => "unreadable JSON",
+        }
+        .to_owned()
+    });
+    Some(format!(
+        "{shape} at line {} column {}",
+        error.line(),
+        error.column()
+    ))
+}
+
+/// `label` for a record that failed to load, with the decoding reason when
+/// that is why; see [`undecodable_record_reason`].
+pub(crate) fn decode_failure_label(label: String, error: &StoreError) -> String {
+    match undecodable_record_reason(error) {
+        Some(reason) => format!("{label}:{reason}"),
+        None => label,
+    }
+}
+
 impl ControlPolicyRecoveryReport {
     /// Whether the active selector and every reachable policy record verify.
     #[must_use]

@@ -352,7 +352,6 @@ impl AcceptanceBinding {
             requirement: VerificationRequirement {
                 check_kind,
                 check_fingerprint,
-                required_environment: None,
             },
         })
     }

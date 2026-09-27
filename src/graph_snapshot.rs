@@ -868,6 +868,24 @@ mod tests {
         );
     }
 
+    /// A snapshot carries no verification requirement: items travel without
+    /// their acceptance bindings, and no obligation or rule set is exported.
+    /// So no requirement member, such as the removed environment pin, can
+    /// change the snapshot format or reach snapshot load.
+    #[test]
+    fn the_snapshot_format_names_no_verification_requirement() {
+        let format =
+            serde_json::to_string(&compiled_work_graph_snapshot_format().unwrap()).unwrap();
+        for member in [
+            "check_kind",
+            "check_fingerprint",
+            "required_environment",
+            "acceptance_bindings",
+        ] {
+            assert!(!format.contains(member), "{member}");
+        }
+    }
+
     #[test]
     fn format_definition_carries_the_restored_record_schema() {
         let format = compiled_work_graph_snapshot_format().unwrap();

@@ -157,10 +157,9 @@ impl SqliteStore {
     pub(crate) fn work_run_evidence_projection(
         &self,
         run_id: WorkRunId,
-        required_environments: &[ObjectId],
         limit: usize,
     ) -> Result<Vec<WorkEvidenceProjectionSummary>, StoreError> {
-        work_run_evidence_projection_on(&self.connection, run_id, required_environments, limit)
+        work_run_evidence_projection_on(&self.connection, run_id, limit)
     }
 
     pub(crate) fn work_run_evidence_count(&self, run_id: WorkRunId) -> Result<usize, StoreError> {

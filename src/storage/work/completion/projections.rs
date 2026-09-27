@@ -117,9 +117,12 @@ impl SqliteStore {
                     object.decode::<serde_json::Value>()?,
                 ))
             });
-            let Ok((event, mut event_json)) = event else {
-                invalid.push(label);
-                continue;
+            let (event, mut event_json) = match event {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    invalid.push(crate::storage::decode_failure_label(label, &error));
+                    continue;
+                }
             };
             let internally_bound = event.schema_version == SCHEMA_VERSION
                 && event.project_id.0 == feed_id

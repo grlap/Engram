@@ -340,19 +340,13 @@ fn obligation_page_keeps_every_open_item_that_fits_under_byte_trimming() {
 }
 
 #[test]
-fn focus_evidence_keeps_required_environment_and_verification_closure() {
+fn focus_evidence_keeps_each_verification_after_its_environment() {
     for prefix in ["fixture-a", "fixture-b"] {
         let hash =
             |label: &str| ObjectId::from_canonical_bytes(format!("{prefix}:{label}").as_bytes());
-        let required = hash("required-environment");
         let environment_a = hash("environment-a");
         let environment_b = hash("environment-b");
         let mut candidates = vec![
-            WorkEvidenceProjectionSummary {
-                hash: required.clone(),
-                kind: WorkEvidenceKind::Environment,
-                environment: None,
-            },
             WorkEvidenceProjectionSummary {
                 hash: environment_a.clone(),
                 kind: WorkEvidenceKind::Environment,
@@ -384,15 +378,12 @@ fn focus_evidence_keeps_required_environment_and_verification_closure() {
             kind: WorkEvidenceKind::Generic,
             environment: None,
         }));
-        let expected =
-            prioritized_focus_evidence_hashes(candidates.clone(), vec![required.clone()]);
+        let expected = prioritized_focus_evidence(candidates.clone());
         candidates.reverse();
-        let reversed =
-            prioritized_focus_evidence_hashes(candidates.clone(), vec![required.clone()]);
+        let reversed = prioritized_focus_evidence(candidates.clone());
 
         assert_eq!(expected, reversed);
         assert_eq!(expected.len(), MAX_FOCUS_RELATIONS);
-        assert_eq!(expected.first(), Some(&required));
         for candidate in candidates
             .iter()
             .filter(|candidate| candidate.kind == WorkEvidenceKind::Verification)
@@ -413,35 +404,26 @@ fn focus_evidence_keeps_required_environment_and_verification_closure() {
 }
 
 #[test]
-fn focus_evidence_prioritizes_environments_from_the_visible_obligation_page() {
-    let environment_hash = |identity: i64| {
-        let value = if identity <= 8 {
-            100 + identity
-        } else {
-            identity - 8
-        };
-        ObjectId::from_stored(format!("{value:064x}")).expect("valid environment hash")
-    };
+fn focus_obligation_pages_trimmed_by_count_or_bytes_keep_the_open_total() {
     let count_records = (1..=10_i64)
         .rev()
         .map(|identity| obligation_record(identity, WorkObligationState::Open, identity, None, 0))
         .collect::<Vec<_>>();
-    let mut count_page = count_bounded_work_obligation_page(count_records);
+    let count_page = count_bounded_work_obligation_page(count_records);
     assert_eq!(count_page.items.len(), MAX_FOCUS_RELATIONS);
     assert_eq!(count_page.omitted_count, 2);
     // Counted before truncation: two open obligations are left out.
     assert_eq!(count_page.open_total, Some(10));
-    for item in &mut count_page.items {
-        item.requirement.required_environment = Some(environment_hash(
-            i64::try_from(item.obligation_id.0.as_u128()).expect("small fixture identity"),
-        ));
-    }
 
+    // A pinned check on every requirement makes the records large enough
+    // that the byte bound, not the count, trims the page.
     let mut byte_records = (1..=10_i64)
         .map(|identity| {
             let mut record =
                 obligation_record(identity, WorkObligationState::Open, identity, None, 0);
-            record.obligation.requirement.required_environment = Some(environment_hash(identity));
+            record.obligation.requirement.check_fingerprint = Some(
+                ObjectId::from_stored(format!("{identity:064x}")).expect("valid check fingerprint"),
+            );
             record
         })
         .collect::<Vec<_>>();
@@ -451,36 +433,6 @@ fn focus_evidence_prioritizes_environments_from_the_visible_obligation_page() {
     assert_eq!(byte_page.omitted_count, 10 - byte_page.items.len());
     // Byte trimming drops items but keeps the count of every open one.
     assert_eq!(byte_page.open_total, Some(10));
-
-    let candidates = (1..=10_i64)
-        .rev()
-        .map(|identity| WorkEvidenceProjectionSummary {
-            hash: environment_hash(identity),
-            kind: WorkEvidenceKind::Environment,
-            environment: None,
-        })
-        .collect::<Vec<_>>();
-    let selected = prioritized_focus_evidence(candidates.clone(), &count_page);
-    for visible in &count_page.items {
-        let required = visible
-            .requirement
-            .required_environment
-            .as_ref()
-            .expect("visible obligation requires an environment");
-        assert!(selected.contains(required));
-    }
-    assert!(!selected.contains(&environment_hash(9)));
-    assert!(!selected.contains(&environment_hash(10)));
-
-    let selected_after_byte_trim = prioritized_focus_evidence(candidates, &byte_page);
-    for visible in &byte_page.items {
-        let required = visible
-            .requirement
-            .required_environment
-            .as_ref()
-            .expect("visible obligation requires an environment");
-        assert!(selected_after_byte_trim.contains(required));
-    }
 }
 
 #[test]

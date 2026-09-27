@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use super::super::StoreError;
+use super::super::{StoreError, decode_failure_label};
 use super::EvidenceProjectionRow;
 use super::completion::{
     load_work_obligation_by_id_on, obligation_rule_set_for_observation_on,
@@ -620,13 +620,18 @@ pub(super) fn verify_obligation_rows(
     checked: &mut usize,
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
-    let obligation_ids = connection
-        .prepare("SELECT obligation_id FROM work_run_obligations ORDER BY obligation_id")?
-        .query_map([], |row| row.get::<_, String>(0))?
+    let obligation_rows = connection
+        .prepare(
+            "SELECT obligation_id, definition_id FROM work_run_obligations
+             ORDER BY obligation_id",
+        )?
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut projected_definitions = HashSet::new();
     let mut projected_resolutions = HashSet::new();
-    for stored_id in obligation_ids {
+    for (stored_id, stored_definition) in obligation_rows {
         *checked += 1;
         let id = uuid::Uuid::parse_str(&stored_id)
             .map(WorkObligationId)
@@ -635,14 +640,25 @@ pub(super) fn verify_obligation_rows(
                     "obligation projection id {stored_id:?} is invalid: {error}"
                 ))
             });
-        match id.and_then(|id| load_work_obligation_by_id_on(connection, id)) {
-            Ok(record) => {
-                projected_definitions.insert(record.definition_id);
-                if let Some(resolution) = record.resolution_id {
-                    projected_resolutions.insert(resolution);
-                }
+        if let Ok(record) = id.and_then(|id| load_work_obligation_by_id_on(connection, id)) {
+            projected_definitions.insert(record.definition_id);
+            if let Some(resolution) = record.resolution_id {
+                projected_resolutions.insert(resolution);
             }
-            Err(_) => invalid.push(format!("work_obligation:{stored_id}")),
+        } else {
+            // The run's obligations load together, so one unreadable record
+            // fails its siblings too. Only a record whose own definition
+            // cannot be decoded carries the reason, such as a member the
+            // current format has no place for.
+            let label = format!("work_obligation:{stored_id}");
+            let own_definition = ObjectId::from_stored(stored_definition).map(|definition| {
+                load_typed_work_object::<WorkObligation>(connection, &definition, "work_obligation")
+            });
+            invalid.push(if let Some(Err(error)) = own_definition {
+                decode_failure_label(label, &error)
+            } else {
+                label
+            });
         }
     }
     for (kind, projected) in [
@@ -1322,9 +1338,15 @@ pub(super) fn verify_work_catalog_projections(
     for row in rows {
         let (work_id, item_json, assigned_to_key, search_text_key) = row?;
         *checked += 1;
-        let Ok(item) = serde_json::from_slice::<WorkItem>(&item_json) else {
-            invalid.push(format!("work_catalog:{work_id}:item_decode"));
-            continue;
+        let item = match serde_json::from_slice::<WorkItem>(&item_json) {
+            Ok(item) => item,
+            Err(error) => {
+                invalid.push(decode_failure_label(
+                    format!("work_catalog:{work_id}:item_decode"),
+                    &error.into(),
+                ));
+                continue;
+            }
         };
         let expected_assigned = item.assigned_to.as_deref().map(normalize_work_catalog_key);
         let expected_search = work_catalog_search_text(connection, &item)?;

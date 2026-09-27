@@ -1605,9 +1605,9 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ).decision,
       "begin",
     );
-    const pinnedEnvironmentComponents = {
+    const reboundEnvironmentComponents = {
       ...boundEnvironmentComponents,
-      sandbox: "control-dogfood-pinned-sandbox",
+      sandbox: "control-dogfood-rebound-sandbox",
     };
     const reboundCheckpoint = ok(
       await client.request({
@@ -1622,9 +1622,9 @@ test("work-bound control records observations and rebinds after a stale fence", 
               source_revision: "revision-2",
             },
             environment_fingerprint: canonicalFingerprint(
-              pinnedEnvironmentComponents,
+              reboundEnvironmentComponents,
             ),
-            components: pinnedEnvironmentComponents,
+            components: reboundEnvironmentComponents,
             observed_at: "2026-08-28T20:00:30Z",
           },
         ],
@@ -1632,20 +1632,51 @@ test("work-bound control records observations and rebinds after a stale fence", 
       }),
     );
     assert.equal(reboundCheckpoint.decision, "checkpointed");
-    const pinnedEnvironment =
+    const reboundEnvironment =
       reboundCheckpoint.receipt.environment_evidence[0];
-    const pinnedEnvironmentFocus = cliWorkFocus(
+    const reboundEnvironmentFocus = cliWorkFocus(
       engramHome,
       actor,
       proposed.work.short_ref,
     );
     assert.deepEqual(
-      pinnedEnvironmentFocus.evidence_items.find(
-        (item) => item.evidence === pinnedEnvironment,
+      reboundEnvironmentFocus.evidence_items.find(
+        (item) => item.evidence === reboundEnvironment,
       ).environment_components,
-      pinnedEnvironmentComponents,
+      reboundEnvironmentComponents,
     );
     const pinnedCheckFingerprint = fingerprint("bound-final-verification");
+    // A requirement cannot name an environment: environment evidence belongs
+    // to one run and one source revision. The rule-set input refuses the
+    // member by name, with a value or as null, and nothing is activated.
+    for (const [index, environment] of [reboundEnvironment, null].entries()) {
+      const environmentPinned = setObligationRuleSet(
+        engramHome,
+        JSON.stringify({
+          schema_version: 1,
+          rules: [
+            {
+              rule: {
+                rule_id: "source_mutation_requires_pinned_environment",
+                rule_version: 1,
+              },
+              trigger: "source_changed",
+              requirement: {
+                check_kind: "test",
+                required_environment: environment,
+              },
+            },
+          ],
+        }),
+        `dogfood-environment-pinned-rule-set-${index}`,
+        boundInitialPolicy[1],
+      );
+      assert.notEqual(environmentPinned.status, 0);
+      assert.match(
+        environmentPinned.stderr,
+        /unknown field `required_environment`/,
+      );
+    }
     const pinnedRuleSet = {
       schema_version: 1,
       rules: [
@@ -1658,7 +1689,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
           requirement: {
             check_kind: "test",
             check_fingerprint: pinnedCheckFingerprint,
-            required_environment: pinnedEnvironment,
           },
         },
       ],
@@ -1976,47 +2006,40 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(staleRefusal.code, "open_work_obligations");
     assert.equal(staleRefusal.obligation_page.items[0].state, "open");
 
-    const mismatchedPinnedTurn = ok(
+    // A passed test of a different check leaves the pinned obligation open.
+    const otherCheckTurn = ok(
       await client.request({
         operation: "turn_evaluate",
         routing_token: rebound.routing_token,
-        idempotency_key: "bound-mismatched-pinned-verification-turn",
-        intent_fingerprint: fingerprint(
-          "bound-mismatched-pinned-verification-turn",
-        ),
+        idempotency_key: "bound-other-check-verification-turn",
+        intent_fingerprint: fingerprint("bound-other-check-verification-turn"),
         purpose: "ordinary",
         requested_effects: ["observe"],
       }),
     );
-    assert.equal(mismatchedPinnedTurn.decision, "grant");
+    assert.equal(otherCheckTurn.decision, "grant");
     assert.equal(
       ok(
         await client.request({
           operation: "turn_begin",
           routing_token: rebound.routing_token,
-          grant_id: mismatchedPinnedTurn.grant.grant_id,
+          grant_id: otherCheckTurn.grant.grant_id,
           delivery_tokens: [],
-          idempotency_key: "begin-bound-mismatched-pinned-verification-turn",
+          idempotency_key: "begin-bound-other-check-verification-turn",
         }),
       ).decision,
       "begin",
     );
-    const mismatchedPinnedComponents = {
-      ...pinnedEnvironmentComponents,
-      sandbox: "control-dogfood-mismatched-pinned-sandbox",
-    };
-    const mismatchedPinnedCheckpoint = ok(
+    const otherCheckCheckpoint = ok(
       await client.request({
         operation: "turn_checkpoint",
         routing_token: rebound.routing_token,
-        grant_id: mismatchedPinnedTurn.grant.grant_id,
+        grant_id: otherCheckTurn.grant.grant_id,
         next_intent: "continue",
         observations: [
           {
-            observation_id: "bound-mismatched-pinned-verification",
-            action_fingerprint: fingerprint(
-              "bound-mismatched-pinned-verification",
-            ),
+            observation_id: "bound-other-check-verification",
+            action_fingerprint: fingerprint("bound-other-check-verification"),
             effect: "observe",
             outcome: "succeeded",
             source_changed: false,
@@ -2031,31 +2054,17 @@ test("work-bound control records observations and rebinds after a stale fence", 
           {
             producer_observation: {
               kind: "observation_id",
-              observation_id: "bound-mismatched-pinned-verification",
+              observation_id: "bound-other-check-verification",
             },
             check_kind: "test",
-            environment: { kind: "index", index: 0 },
-            summary: "mismatched pins must leave the obligation open",
-            refs: ["command:control-dogfood-mismatched-pins"],
+            summary: "a different check must leave the obligation open",
+            refs: ["command:control-dogfood-other-check"],
           },
         ],
-        environment_evidence: [
-          {
-            source_basis: {
-              workspace_id: "control-dogfood-workspace",
-              source_revision: "revision-2",
-            },
-            environment_fingerprint: canonicalFingerprint(
-              mismatchedPinnedComponents,
-            ),
-            components: mismatchedPinnedComponents,
-            observed_at: "2026-08-28T20:01:45Z",
-          },
-        ],
-        idempotency_key: "checkpoint-bound-mismatched-pinned-verification",
+        idempotency_key: "checkpoint-bound-other-check-verification",
       }),
     );
-    assert.equal(mismatchedPinnedCheckpoint.decision, "checkpointed");
+    assert.equal(otherCheckCheckpoint.decision, "checkpointed");
     const pinnedOpenFocus = cliWorkFocus(
       engramHome,
       actor,
@@ -2070,10 +2079,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       pinnedOpenItem.requirement.check_fingerprint,
       pinnedCheckFingerprint,
     );
-    assert.equal(
-      pinnedOpenItem.requirement.required_environment,
-      pinnedEnvironment,
-    );
+    assert.equal(pinnedOpenItem.requirement.required_environment, undefined);
 
     const verificationTurn = ok(
       await client.request({
@@ -2127,7 +2133,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
             check_kind: "test",
             environment: {
               kind: "object_id",
-              object_id: pinnedEnvironment,
+              object_id: reboundEnvironment,
             },
             summary: "host observed the final source verification",
             refs: ["command:control-dogfood-final-check"],
@@ -2246,7 +2252,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     assert.equal(
       historicalPinnedItem.requirement.required_environment,
-      pinnedEnvironment,
+      undefined,
     );
 
     const removedWaiver = await client.request({

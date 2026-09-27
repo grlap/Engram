@@ -23,7 +23,6 @@ fn an_evaluated_bound_criterion_seals_with_exactly_the_citations_it_was_judged_o
                 requirement: crate::domain::VerificationRequirement {
                     check_kind: VerificationKind::Test,
                     check_fingerprint: None,
-                    required_environment: None,
                 },
             }]),
             ..empty_patch()
@@ -128,7 +127,6 @@ fn a_pinned_bound_criterion_passes_only_on_the_check_it_pins() {
                 requirement: crate::domain::VerificationRequirement {
                     check_kind: VerificationKind::Test,
                     check_fingerprint: Some(check_fingerprint("pinned-check")),
-                    required_environment: None,
                 },
             }]),
             ..empty_patch()
@@ -244,7 +242,6 @@ fn a_bound_criterion_passes_only_on_observed_verification_of_its_kind() {
                 requirement: crate::domain::VerificationRequirement {
                     check_kind: VerificationKind::Test,
                     check_fingerprint: None,
-                    required_environment: None,
                 },
             }]),
             ..empty_patch()

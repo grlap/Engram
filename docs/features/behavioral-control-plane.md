@@ -449,9 +449,11 @@ diagnostics, and hosts must not place credentials or secrets in them.
 
 Only a typed, passed verification for the required check, exact run, and
 latest source revision may satisfy a verification obligation. The built-in rule
-leaves `check_fingerprint` and `required_environment` empty, so it accepts any
-passed test and treats an environment link as audit provenance. An
-operator-selected typed V1 set may instead pin both exact hashes. The matcher
+leaves `check_fingerprint` empty, so it accepts any passed test. An
+operator-selected typed V1 set may instead pin the exact check. A requirement
+never names an environment: environment evidence belongs to one run and one
+source revision, so it stays audit provenance linked from each verification,
+and a requirement that names `required_environment` is refused by name. The matcher
 still requires the evidence to follow the latest mutation at the evaluated
 run-feed cut, so a later source mutation reopens the requirement. Generic
 agent-recorded `work_evidence` remains useful context but never verifies a
@@ -505,7 +507,7 @@ definition behaves this way: the stock id at version 1, triggered by a source
 change, requiring an unpinned test. Obligations from an acceptance binding
 (`--bind`) keep blocking completion, and so do obligations from any other
 operator-selected rule, including one that reuses the stock id with another
-version or a pinned check or environment. Each needs a matching verification
+version or a pinned check. Each needs a matching verification
 or an operator waiver.
 
 Definitions and resolutions are canonical feed objects; the mutable obligation

@@ -1046,8 +1046,7 @@ engram control-policy set-required-assurance turn_gated \
   --idempotency-key enable-host-turn-mediation \
   --expected-policy-hash <active-policy-id>
 
-# Select a bounded typed obligation set. The required environment must already
-# be a canonical EnvironmentEvidence record id returned by a host checkpoint.
+# Select a bounded typed obligation set.
 engram control-policy set-obligation-rule-set \
   --input @obligation-rules.json \
   --authorized-by host-operator \
@@ -1225,10 +1224,10 @@ host turn-protocol operation. Its `--input <JSON|@file>` is limited to 64 KiB
 of raw input, including any UTF-8 BOM. For files, one leading BOM is removed
 after the limit check. The input must be UTF-8. Unknown fields are rejected
 at every nested V1 object. The input passes through the same typed validator
-that storage uses. `check_fingerprint` compares a canonical check description;
-`required_environment` names an exact canonical environment-evidence record.
-Neither accepts a shell command or an environment description in place of that
-fingerprint or id. Re-supplying the active set under a fresh key
+that storage uses. `check_fingerprint` compares a canonical check description
+and does not accept a shell command in its place. A requirement cannot name an
+environment: `required_environment` is refused by name, like any other unknown
+field. Re-supplying the active set under a fresh key
 records an exactly replayable `changed=false` receipt. Rollback likewise
 re-supplies the desired prior JSON; a rule-set id alone is never accepted as
 activation authority. Reapplying the active assurance under a fresh key also
@@ -1567,10 +1566,9 @@ resolution/evidence when present, and deterministic typed guidance. An open
 verification requirement directs the caller to record matching host
 verification, checkpoint it, then complete, or request a host/operator waiver.
 Trimming retains open obligations before satisfied or waived history and keeps
-deterministic trigger/resolution ordering within those state groups. Focus
-evidence uses the same actionable-first rule: environments required by visible
-open obligations are retained first, and a visible verification summary keeps
-its referenced environment summary ahead of it. Count and byte trimming remove
+deterministic trigger/resolution ordering within those state groups. In focus
+evidence, a visible verification summary keeps its referenced environment
+summary ahead of it. Count and byte trimming remove
 unrelated or dependent evidence before breaking that visible typed closure.
 Generic readiness strings remain a separate compatibility field. A successful
 completion result is durably replayable under the same idempotency key;

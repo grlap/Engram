@@ -1895,8 +1895,8 @@ fn binding_freshness_mismatch(
 }
 
 /// The newest host-minted verification `requirement` recognizes (its kind,
-/// its pinned check and its required environment, when it names them) on the
-/// run at or before `cut`, with its run-feed position.
+/// and its pinned check when it names one) on the run at or before `cut`,
+/// with its run-feed position.
 fn newest_verification_of_kind_on(
     connection: &Connection,
     run_id: WorkRunId,
@@ -1925,10 +1925,6 @@ fn newest_verification_of_kind_on(
                 .check_fingerprint
                 .as_ref()
                 .is_some_and(|required| required != &evidence.check_fingerprint)
-            || requirement
-                .required_environment
-                .as_ref()
-                .is_some_and(|required| evidence.environment.as_ref() != Some(required))
         {
             continue;
         }

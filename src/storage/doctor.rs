@@ -261,12 +261,18 @@ impl SqliteStore {
         report: &mut IntegrityReport,
     ) -> Result<(), StoreError> {
         report.checked_control_records += 1;
+        let mut rule_sets = std::collections::HashMap::new();
         match Self::verify_control_policy_history(connection) {
             Ok(policy) => {
                 let active_rules_are_valid = policy.state_schema_version
                     == CONTROL_POLICY_STATE_SCHEMA_VERSION
-                    && Self::load_obligation_rule_set_on(connection, &policy.obligation_rule_set)
-                        .is_ok();
+                    && Self::verify_selected_rule_set_on(
+                        connection,
+                        &policy.obligation_rule_set,
+                        report,
+                        &mut rule_sets,
+                    )
+                    .unwrap_or(false);
                 if !active_rules_are_valid {
                     report
                         .invalid_control_records
@@ -300,15 +306,16 @@ impl SqliteStore {
             report.checked_control_records += 1;
             let valid = ObjectId::from_stored(stored_hash.clone())
                 .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.clone()))
-                .and_then(|hash| Self::load_control_policy_version(connection, &hash))
-                .and_then(|(policy, authority)| {
-                    Self::load_obligation_rule_set_on(connection, &policy.obligation_rule_set)?;
-                    Ok((policy, authority))
-                });
+                .and_then(|hash| Self::load_control_policy_version(connection, &hash));
             let is_orphaned_successor =
                 active_policy_epoch.is_none_or(|active_epoch| projected_epoch > active_epoch);
             let is_invalid = match valid {
-                Ok(_) => false,
+                Ok((policy, _)) => !Self::verify_selected_rule_set_on(
+                    connection,
+                    &policy.obligation_rule_set,
+                    report,
+                    &mut rule_sets,
+                )?,
                 Err(error @ StoreError::Sqlite(_)) => return Err(error),
                 Err(_) => true,
             };
@@ -319,6 +326,38 @@ impl SqliteStore {
             }
         }
         Ok(())
+    }
+
+    /// Whether the obligation rule set a policy record selects can be read.
+    /// Each distinct rule set is checked, and counted as a checked control
+    /// record, once. One that cannot be read is reported as its own record
+    /// beside the policy records that select it, with the decoding reason
+    /// when that is why, such as a member the current format has no place for.
+    fn verify_selected_rule_set_on(
+        connection: &Connection,
+        hash: &ObjectId,
+        report: &mut IntegrityReport,
+        checked: &mut std::collections::HashMap<ObjectId, bool>,
+    ) -> Result<bool, StoreError> {
+        if let Some(valid) = checked.get(hash) {
+            return Ok(*valid);
+        }
+        report.checked_control_records += 1;
+        let valid = match Self::load_obligation_rule_set_on(connection, hash) {
+            Ok(_) => true,
+            Err(error @ StoreError::Sqlite(_)) => return Err(error),
+            Err(error) => {
+                report
+                    .invalid_control_records
+                    .push(super::decode_failure_label(
+                        format!("obligation_rule_set:{hash}"),
+                        &error,
+                    ));
+                false
+            }
+        };
+        checked.insert(hash.clone(), valid);
+        Ok(valid)
     }
 
     #[allow(

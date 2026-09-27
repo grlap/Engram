@@ -136,7 +136,6 @@ fn show_drops_whole_criteria_from_the_end_with_exact_omission_counts() {
         requirement: crate::domain::VerificationRequirement {
             check_kind,
             check_fingerprint: None,
-            required_environment: None,
         },
     })
     .collect();

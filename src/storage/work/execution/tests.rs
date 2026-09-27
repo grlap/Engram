@@ -447,24 +447,6 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             .expect("verification projection kind"),
         WorkEvidenceKind::Verification
     );
-    let not_yet_recorded_environment =
-        ObjectId::from_canonical_bytes(b"required environment not yet produced");
-    let focus_candidates = store
-        .work_run_evidence_projection(
-            run.run_id,
-            std::slice::from_ref(&not_yet_recorded_environment),
-            8,
-        )
-        .expect("an unmet required environment is not projection corruption");
-    assert!(
-        focus_candidates
-            .iter()
-            .all(|candidate| candidate.hash != not_yet_recorded_environment)
-    );
-    assert!(matches!(
-        store.work_run_evidence_projection(run.run_id, std::slice::from_ref(verification_hash), 8,),
-        Err(StoreError::InvalidWorkProjection(_))
-    ));
     store
         .connection
         .execute(
@@ -474,7 +456,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         )
         .expect("corrupt selection-driving evidence kind");
     assert!(matches!(
-        store.work_run_evidence_projection(run.run_id, &[], 8),
+        store.work_run_evidence_projection(run.run_id, 8),
         Err(StoreError::InvalidWorkProjection(_))
     ));
     store
@@ -615,32 +597,19 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         requirement: &crate::domain::VerificationRequirement {
             check_kind: crate::domain::VerificationKind::Test,
             check_fingerprint: Some(producer.action_fingerprint.clone()),
-            required_environment: None,
         },
     };
     assert_eq!(match_verification_evidence(&verification_match), Ok(()));
-    let exact_environment_requirement = crate::domain::VerificationRequirement {
+    let other_check_requirement = crate::domain::VerificationRequirement {
         check_kind: crate::domain::VerificationKind::Test,
-        check_fingerprint: Some(producer.action_fingerprint.clone()),
-        required_environment: Some(environment_hash.clone()),
+        check_fingerprint: Some(ObjectId::from_canonical_bytes(b"other check")),
     };
     assert_eq!(
         match_verification_evidence(&VerificationEvidenceMatchInput {
-            requirement: &exact_environment_requirement,
+            requirement: &other_check_requirement,
             ..verification_match
         }),
-        Ok(())
-    );
-    let wrong_environment_requirement = crate::domain::VerificationRequirement {
-        required_environment: Some(ObjectId::from_canonical_bytes(b"other environment")),
-        ..exact_environment_requirement
-    };
-    assert_eq!(
-        match_verification_evidence(&VerificationEvidenceMatchInput {
-            requirement: &wrong_environment_requirement,
-            ..verification_match
-        }),
-        Err(VerificationEvidenceMismatch::EnvironmentMismatch)
+        Err(VerificationEvidenceMismatch::CheckFingerprintMismatch)
     );
     let obligations = store
         .work_run_obligations(run.run_id)

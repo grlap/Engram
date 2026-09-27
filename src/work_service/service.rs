@@ -9,12 +9,12 @@ use super::{
     WorkBlockerSummary, WorkChange, WorkChangeProjection, WorkClaim, WorkClaimState,
     WorkCoreOperationKey, WorkDerivedKey, WorkFocusView, WorkGraphSnapshotDestinationKind,
     WorkGraphSnapshotExport, WorkGraphSnapshotLoadResult, WorkGuidance, WorkHistoryView, WorkId,
-    WorkItem, WorkNextSection, WorkObligationState, WorkPlanningAuthority, WorkProtocolBasis,
-    WorkProtocolIntent, WorkSectionOmission, WorkSectionOmissionReason, agent_work_session,
-    allowed_next, bindable_control_work_binding, bounded_prerequisite_summaries,
-    child_lifecycle_is_unfinished, child_lifecycle_priority, compact_text, count_omission,
-    disclosed_work_obligation_page, ensure_agent_response_budget, fit_focus_response,
-    normalize_actor_context, prioritized_focus_evidence, project_work_event, ready_work_summary,
+    WorkItem, WorkNextSection, WorkPlanningAuthority, WorkProtocolBasis, WorkProtocolIntent,
+    WorkSectionOmission, WorkSectionOmissionReason, agent_work_session, allowed_next,
+    bindable_control_work_binding, bounded_prerequisite_summaries, child_lifecycle_is_unfinished,
+    child_lifecycle_priority, compact_text, count_omission, disclosed_work_obligation_page,
+    ensure_agent_response_budget, fit_focus_response, normalize_actor_context,
+    prioritized_focus_evidence, project_work_event, ready_work_summary,
     required_child_waiver_candidate, restored_work_evidence_summary,
     validate_process_default_work_session, work_evidence_kind_word, work_evidence_summary,
     work_handoff_summary, work_item_summary, work_lifecycle_word, work_memory_index,
@@ -586,12 +586,6 @@ impl LocalWorkService {
             .transpose()?
             .unwrap_or_default();
         let obligation_page = disclosed_work_obligation_page(store, obligation_records)?;
-        let required_environments = obligation_page
-            .items
-            .iter()
-            .filter(|obligation| obligation.state == WorkObligationState::Open)
-            .filter_map(|obligation| obligation.requirement.required_environment.clone())
-            .collect::<Vec<_>>();
         let mut evidence_count = run
             .as_ref()
             .map(|run| store.work_run_evidence_count(run.run_id))
@@ -599,16 +593,10 @@ impl LocalWorkService {
             .unwrap_or_default();
         let evidence_candidates = run
             .as_ref()
-            .map(|run| {
-                store.work_run_evidence_projection(
-                    run.run_id,
-                    &required_environments,
-                    MAX_FOCUS_RELATIONS,
-                )
-            })
+            .map(|run| store.work_run_evidence_projection(run.run_id, MAX_FOCUS_RELATIONS))
             .transpose()?
             .unwrap_or_default();
-        let evidence = prioritized_focus_evidence(evidence_candidates, &obligation_page);
+        let evidence = prioritized_focus_evidence(evidence_candidates);
         let native_evidence_items = run
             .as_ref()
             .map(|run| {

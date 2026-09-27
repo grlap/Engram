@@ -109,14 +109,6 @@ pub fn match_verification_evidence(
     {
         return Err(VerificationEvidenceMismatch::CheckFingerprintMismatch);
     }
-    if input
-        .requirement
-        .required_environment
-        .as_ref()
-        .is_some_and(|required| evidence.environment.as_ref() != Some(required))
-    {
-        return Err(VerificationEvidenceMismatch::EnvironmentMismatch);
-    }
     if evidence.result != VerificationResult::Passed {
         return Err(VerificationEvidenceMismatch::ResultNotPassed);
     }
@@ -150,7 +142,7 @@ pub const SOURCE_CHANGE_RULE_ID: &str = "source_mutation_requires_test";
 /// source-change rule's, whose open obligations completion records as
 /// untested instead of refusing. It matches the stock definition exactly, so
 /// an operator-selected rule that reuses the id with another version or a
-/// pinned check or environment still blocks.
+/// pinned check still blocks.
 #[must_use]
 pub fn is_stock_source_change_obligation(
     rule: &BuiltinObligationRuleRef,
@@ -180,7 +172,6 @@ pub fn builtin_obligation_rule_set() -> ObligationRuleSet {
             requirement: VerificationRequirement {
                 check_kind: crate::domain::VerificationKind::Test,
                 check_fingerprint: None,
-                required_environment: None,
             },
         }],
     }
@@ -1359,7 +1350,6 @@ mod tests {
         let requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
             check_fingerprint: Some(evidence.check_fingerprint.clone()),
-            required_environment: None,
         };
         let exact = VerificationEvidenceMatchInput {
             candidate_kind: WorkEvidenceKind::Verification,
@@ -1373,7 +1363,6 @@ mod tests {
         let kind_only_requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
             check_fingerprint: None,
-            required_environment: None,
         };
         assert_eq!(
             match_verification_evidence(&VerificationEvidenceMatchInput {
@@ -1385,7 +1374,6 @@ mod tests {
         let wrong_check_requirement = VerificationRequirement {
             check_kind: VerificationKind::Build,
             check_fingerprint: None,
-            required_environment: None,
         };
         assert_eq!(
             match_verification_evidence(&VerificationEvidenceMatchInput {
@@ -1425,88 +1413,35 @@ mod tests {
     }
 
     #[test]
-    fn fixed_clock_environment_evidence_has_a_stable_rule_pin_hash() {
-        use crate::{
-            CanonicalObject,
-            domain::{
-                ActorContext, AssuranceLevel, ControlWorkBinding, EnvironmentComponents,
-                EnvironmentEvidence, ExecutionSourceBasis, RootExecutionId, VerificationKind,
-                VerificationRequirement, WorkClaimId, WorkId, WorkRunId,
-            },
-        };
+    fn a_verification_requirement_names_no_environment() {
+        use crate::domain::{VerificationKind, VerificationRequirement};
 
-        let fixed_time = Utc
-            .with_ymd_and_hms(2026, 8, 28, 20, 0, 30)
-            .single()
-            .expect("fixed environment time");
-        let components = EnvironmentComponents {
-            toolchain: "rustc-1.89.0".into(),
-            sandbox: Some("windows-host-sandbox-v1".into()),
-            workspace_id: "workspace-a".into(),
-            capability_map_revision: 7,
-        };
-        let environment_fingerprint = CanonicalObject::freeze(&components)
-            .expect("freeze fixed environment components")
-            .key()
-            .clone();
-        let run_id = WorkRunId(
-            uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405060").expect("fixed run id"),
-        );
-        let session_id = SessionId("fixed-environment-host".into());
-        let evidence = EnvironmentEvidence {
-            schema_version: crate::domain::SCHEMA_VERSION,
-            project_id: ProjectId("fixed-environment-project".into()),
-            binding: ControlWorkBinding {
-                root_execution_id: RootExecutionId(
-                    uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405061")
-                        .expect("fixed root execution id"),
-                ),
-                work_id: WorkId(
-                    uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405062")
-                        .expect("fixed work id"),
-                ),
-                run_id,
-                work_revision: 4,
-                claim_id: WorkClaimId(
-                    uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405063")
-                        .expect("fixed claim id"),
-                ),
-                claim_fence: 9,
-            },
-            session_id: session_id.clone(),
-            source_basis: ExecutionSourceBasis {
-                workspace_id: "workspace-a".into(),
-                source_revision: "sha256:fixed-source-revision".into(),
-            },
-            environment_fingerprint,
-            components: Some(components),
-            observed_at: fixed_time,
-            actor: ActorContext {
-                actor_id: "fixed-host".into(),
-                actor_kind: "host".into(),
-                assurance: AssuranceLevel::Asserted,
-                run_id: Some(run_id.0.to_string()),
-                session_id: Some(session_id),
-                source_tool: Some("host-control:turn_checkpoint".into()),
-                source_skill: None,
-                provenance_chain: Vec::new(),
-                reason: "record fixed environment evidence".into(),
-            },
-            recorded_at: fixed_time,
-        };
-        let evidence_id = CanonicalObject::freeze(&evidence)
-            .expect("freeze fixed environment evidence")
-            .key()
-            .clone();
-
-        let requirement = VerificationRequirement {
-            check_kind: VerificationKind::Test,
-            check_fingerprint: Some(hash("cargo test --workspace")),
-            required_environment: Some(evidence_id.clone()),
-        };
+        let pinned: VerificationRequirement = serde_json::from_value(serde_json::json!({
+            "check_kind": "test",
+            "check_fingerprint": hash("cargo test --workspace"),
+        }))
+        .expect("a kind with a pinned check decodes");
+        assert_eq!(pinned.check_kind, VerificationKind::Test);
         assert_eq!(
-            requirement.required_environment.as_ref(),
-            Some(&evidence_id)
+            pinned.check_fingerprint,
+            Some(hash("cargo test --workspace"))
         );
+        // An environment is refused by name, whether it carries a value or
+        // is null; a member the requirement lacks is never read past.
+        for environment in [
+            serde_json::json!(hash("environment")),
+            serde_json::Value::Null,
+        ] {
+            let error = serde_json::from_value::<VerificationRequirement>(serde_json::json!({
+                "check_kind": "test",
+                "required_environment": environment,
+            }))
+            .expect_err("an environment pin is refused")
+            .to_string();
+            assert!(
+                error.contains("unknown field `required_environment`"),
+                "{error}"
+            );
+        }
     }
 }

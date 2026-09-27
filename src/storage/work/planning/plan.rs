@@ -265,7 +265,6 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
                                 .map_err(|reason| invalid(&format!("task {}: {reason}", task.key)))
                             })
                             .transpose()?,
-                        required_environment: None,
                     },
                 })
             })

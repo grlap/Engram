@@ -94,7 +94,6 @@ fn page(kind: VerificationKind, state: WorkObligationState) -> WorkObligationPag
     let requirement = VerificationRequirement {
         check_kind: kind,
         check_fingerprint: None,
-        required_environment: None,
     };
     WorkObligationPage {
         items: vec![crate::WorkObligationSummary {

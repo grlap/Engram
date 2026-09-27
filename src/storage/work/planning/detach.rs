@@ -298,48 +298,5 @@ fn validate_detach_on(
             show(),
         ));
     }
-    // An environment pin names environment evidence recorded on this item's
-    // run. The successor works on a new run, where no verification can carry
-    // that record, so a copied pin would leave a criterion nothing satisfies.
-    if let Some(binding) = item
-        .acceptance_bindings
-        .iter()
-        .find(|binding| binding.requirement.required_environment.is_some())
-    {
-        return Err(refuse(
-            &format!(
-                "criterion {} requires an environment recorded on this item's run, which a detached successor cannot record; bind it again without that environment before detaching",
-                binding.criterion
-            ),
-            rebind_without_environments(item),
-        ));
-    }
     Ok(())
-}
-
-/// The update that binds every criterion again as it is bound now, each
-/// with its kind and pinned check but no environment.
-fn rebind_without_environments(item: &WorkItem) -> String {
-    let bindings = item
-        .acceptance_bindings
-        .iter()
-        .map(|binding| {
-            let kind = match binding.requirement.check_kind {
-                crate::domain::VerificationKind::Test => "test",
-                crate::domain::VerificationKind::Build => "build",
-                crate::domain::VerificationKind::Lint => "lint",
-                crate::domain::VerificationKind::Review => "review",
-                crate::domain::VerificationKind::Acceptance => "acceptance",
-            };
-            match &binding.requirement.check_fingerprint {
-                Some(pin) => format!("--bind {}={kind}:{pin}", binding.criterion),
-                None => format!("--bind {}={kind}", binding.criterion),
-            }
-        })
-        .collect::<Vec<_>>();
-    format!(
-        "engram work update {} {}",
-        item.short_ref,
-        bindings.join(" ")
-    )
 }

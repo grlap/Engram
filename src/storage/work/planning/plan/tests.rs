@@ -162,7 +162,6 @@ fn a_bound_plan_root_keeps_its_normalized_binding_through_admission_and_replay()
             requirement: crate::domain::VerificationRequirement {
                 check_kind: crate::domain::VerificationKind::Test,
                 check_fingerprint: None,
-                required_environment: None,
             },
         }]
     );

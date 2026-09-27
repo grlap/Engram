@@ -1135,10 +1135,11 @@ observation and obligation definition carries its exact rule-set id.
 Obligation definitions
 and terminal satisfaction/waiver events are direct project, root-work, and
 run-execution feed objects; query rows are verified projections.
-A typed V1 requirement may leave the verification command and environment
-open, as the stock set does, or pin an exact `check_fingerprint` and previously
-recorded `EnvironmentEvidence` object id. A mismatched command, environment,
-or source basis leaves the obligation open; only exact passed evidence at the
+A typed V1 requirement may leave the verification command open, as the stock
+set does, or pin an exact `check_fingerprint`. It never names an environment:
+environment evidence belongs to one run and one source revision, so it stays
+audit provenance linked from each verification. A mismatched command or source
+basis leaves the obligation open; only exact passed evidence at the
 post-mutation cut satisfies it.
 A passed test satisfies open definitions only against the latest mutation at
 the evaluated run-feed cut. A latest basisless mutation therefore leaves the
@@ -1164,7 +1165,7 @@ declares obligation schema V1 and binds every applicable definition to its
 satisfied/waived resolution; success and fresh-session focus reconstruct their
 pages from canonical history, and the final checkpoint acknowledges the
 matching typed verification evidence.
-The current built-in requirement does not pin an environment id. New seals
+A requirement never names an environment id. New seals
 nevertheless declare environment schema V1 and bind the sorted, distinct
 environment-evidence ids at or before the exact dense cut, with a maximum
 of 64 and without copying component bytes. Required child seals are decoded

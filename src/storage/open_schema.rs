@@ -259,7 +259,9 @@ impl SqliteStore {
         work::preflight_schema(&connection, false)?;
         Self::require_task_local_cursor_schema(&connection)?;
         Self::preflight_host_path_policy(&connection, None)?;
-        Self::preflight_control_policy_schema(&connection)?;
+        Self::preflight_control_policy_schema(&connection).map_err(|error| {
+            Self::unreadable_active_rule_set_refusal(&connection).unwrap_or(error)
+        })?;
 
         let work_schema_version = work::schema_version(&connection)?;
         // Keep repair and exhaustive verification in one writer transaction.
@@ -294,6 +296,22 @@ impl SqliteStore {
         }
         store.connection.execute_batch("COMMIT;")?;
         Ok(after)
+    }
+
+    /// The refusal for an obligation rule set the active policy selects but
+    /// that does not decode, named with its reason as the doctor names it.
+    /// Repair reads that rule set before the doctor runs, so without this the
+    /// refusal would not name the record. `None` when the rule set reads, the
+    /// policy itself cannot be read, or the failure is not a decoding one.
+    fn unreadable_active_rule_set_refusal(connection: &Connection) -> Option<StoreError> {
+        let policy = Self::verify_control_policy_history(connection).ok()?;
+        let error =
+            Self::load_obligation_rule_set_on(connection, &policy.obligation_rule_set).err()?;
+        let reason = super::undecodable_record_reason(&error)?;
+        Some(StoreError::InvalidControlProjection(format!(
+            "projection repair refused because the active policy's obligation rule set does not decode; invalid labels: obligation_rule_set:{}:{reason}",
+            policy.obligation_rule_set
+        )))
     }
 
     /// Writes a consistent copy of this store to `path` through SQLite's own

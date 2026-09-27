@@ -518,40 +518,18 @@ pub(super) fn count_omission(
     }
 }
 
+/// The focus evidence to show, in a stable order: verifications first, each
+/// preceded by the environment evidence it links to, then everything else.
 pub(super) fn prioritized_focus_evidence(
-    candidates: Vec<WorkEvidenceProjectionSummary>,
-    obligation_page: &WorkObligationPage,
-) -> Vec<ObjectId> {
-    let required_environments = obligation_page
-        .items
-        .iter()
-        .filter(|obligation| obligation.state == WorkObligationState::Open)
-        .filter_map(|obligation| obligation.requirement.required_environment.clone())
-        .collect();
-    prioritized_focus_evidence_hashes(candidates, required_environments)
-}
-
-pub(super) fn prioritized_focus_evidence_hashes(
     mut candidates: Vec<WorkEvidenceProjectionSummary>,
-    mut required_environments: Vec<ObjectId>,
 ) -> Vec<ObjectId> {
     candidates.sort_by(|left, right| left.hash.as_str().cmp(right.hash.as_str()));
-    required_environments.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-    required_environments.dedup();
     let environment_hashes = candidates
         .iter()
         .filter(|candidate| candidate.kind == WorkEvidenceKind::Environment)
         .map(|candidate| candidate.hash.clone())
         .collect::<std::collections::HashSet<_>>();
     let mut selected = Vec::new();
-    for environment in required_environments {
-        if environment_hashes.contains(&environment) {
-            push_focus_evidence(&mut selected, &environment);
-        }
-        if selected.len() == MAX_FOCUS_RELATIONS {
-            return selected;
-        }
-    }
     for candidate in candidates
         .iter()
         .filter(|candidate| candidate.kind == WorkEvidenceKind::Verification)

@@ -57,7 +57,6 @@ pub(super) fn obligation_record(
             requirement: crate::VerificationRequirement {
                 check_kind: VerificationKind::Test,
                 check_fingerprint: None,
-                required_environment: None,
             },
             opened_at: at(trigger_position),
         },

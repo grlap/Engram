@@ -378,6 +378,302 @@ fn import_refuses_without_publishing_anything() {
     );
 }
 
+/// The obligation rule sets a store with requirements in every record that
+/// can carry one selected: the stock set of the first policy, then the
+/// operator's set the active policy selects.
+struct RequirementRuleSets {
+    earlier: crate::ObjectId,
+    active: crate::ObjectId,
+}
+
+/// A policy-bootstrapped store (unlike `populated`, so bindings open their
+/// obligations) where an operator replaced the stock rule set with one that
+/// pins a check, and one work item binds two criteria, opening two
+/// obligations on one run.
+fn requirement_store(path: &Path) -> RequirementRuleSets {
+    let mut store = SqliteStore::open(path).expect("store");
+    let initial = store.control_diagnostics().expect("initial policy");
+    let mut pinned = crate::control::builtin_obligation_rule_set();
+    pinned.rules[0].rule.rule_id = "source_mutation_requires_pinned_test".into();
+    pinned.rules[0].requirement.check_fingerprint =
+        Some(crate::ObjectId::from_canonical_bytes(b"pinned-check"));
+    store
+        .set_obligation_rule_set(
+            &pinned,
+            &actor("policy-admin"),
+            "pin-a-check",
+            Some(&initial.active_policy),
+            chrono::DateTime::parse_from_rfc3339("2026-09-27T09:00:00Z")
+                .expect("time")
+                .with_timezone(&Utc),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("select the pinned rule set");
+    let active = store
+        .control_diagnostics()
+        .expect("changed policy")
+        .obligation_rule_set;
+    let test_requirement = crate::domain::VerificationRequirement {
+        check_kind: crate::domain::VerificationKind::Test,
+        check_fingerprint: None,
+    };
+    store
+        .create_work(
+            &CreateWorkRequest {
+                acceptance_bindings: [1, 2]
+                    .map(|criterion| crate::domain::AcceptanceBinding {
+                        criterion,
+                        requirement: test_requirement.clone(),
+                    })
+                    .to_vec(),
+                evaluation_mode: None,
+                project_id: ProjectId("project-environment-pin".into()),
+                parent_id: None,
+                child_requirement: crate::domain::ChildRequirement::Required,
+                title: "Carry two bound criteria".into(),
+                outcome: "The obligations arrive".into(),
+                acceptance: vec!["tests pass".into(), "the other tests pass".into()],
+                kind: crate::domain::WorkItemKind::Task,
+                priority: 1,
+                labels: Vec::new(),
+                assigned_to: None,
+                deferred_until: None,
+                external_ref: None,
+                notes: Vec::new(),
+                origin: crate::domain::WorkOrigin::Local,
+                source_snapshot_id: None,
+                actor: actor("author"),
+                idempotency_key: "create-bound".into(),
+                created_at: chrono::DateTime::parse_from_rfc3339("2026-09-27T10:00:00Z")
+                    .expect("time")
+                    .with_timezone(&Utc),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("bound work");
+    RequirementRuleSets {
+        earlier: initial.obligation_rule_set,
+        active,
+    }
+}
+
+/// Where one kind of exported record carries a requirement.
+struct RequirementSite<'a> {
+    what: &'a str,
+    table: &'a str,
+    select: Box<dyn Fn(&Json) -> bool + 'a>,
+    column: &'a str,
+    requirement: &'a str,
+    /// What the refusal names for the record.
+    record: String,
+}
+
+/// Imports `original` with the first `site` record's requirement changed by
+/// `edit`, and returns the refusal.
+fn import_with_requirement(
+    file: &Path,
+    original: &str,
+    site: &RequirementSite<'_>,
+    edit: impl FnOnce(&mut Json),
+) -> String {
+    fs::write(file, original).expect("restore file");
+    let marker = format!("\"table\":\"{}\"", site.table);
+    let row = original
+        .lines()
+        .filter(|line| line.contains(&marker))
+        .filter_map(|line| serde_json::from_str::<Json>(line).ok())
+        .find(|row| (site.select)(&row["row"]["values"]))
+        .unwrap_or_else(|| panic!("{}: no exported record", site.what));
+    // A JSON column is exported as its value (`json`) or as its text (`text`).
+    let mut cell = row["row"]["values"][site.column].clone();
+    let text = cell["text"].as_str().map(str::to_owned);
+    let mut value = match &text {
+        Some(text) => serde_json::from_str(text).expect("json text"),
+        None => cell["json"].take(),
+    };
+    assert!(
+        value.pointer(site.requirement).is_some(),
+        "{}: no requirement at {} in {value}",
+        site.what,
+        site.requirement
+    );
+    edit(value.pointer_mut(site.requirement).expect("requirement"));
+    if text.is_some() {
+        cell["text"] = Json::String(value.to_string());
+    } else {
+        cell["json"] = value;
+    }
+    with_row_cell(file, site.table, &site.select, site.column, cell);
+    let target = file.with_file_name("target.db");
+    let error = import_json(file, &target).expect_err(site.what).to_string();
+    assert!(!target.exists(), "{}: a store was published", site.what);
+    error
+}
+
+fn environments() -> [Json; 2] {
+    [
+        serde_json::json!(crate::ObjectId::from_canonical_bytes(b"environment")),
+        Json::Null,
+    ]
+}
+
+/// A stored requirement cannot name an environment. An exported obligation
+/// whose requirement names one, with a value or as null, is refused where
+/// the import reads it back, naming the record and the member, and nothing
+/// is published. Its sibling on the same run, which fails with it, is not
+/// blamed for the member.
+#[test]
+fn an_obligation_that_names_an_environment_is_refused_by_name() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    requirement_store(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let original = fs::read_to_string(&file).expect("file");
+    let obligations = original
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Json>(line).ok())
+        .filter(|row| {
+            row["row"]["table"] == "objects"
+                && row["row"]["values"]["object_kind"] == "work_obligation"
+        })
+        .map(|row| row["row"]["values"]["canonical_json"]["json"]["obligation_id"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(obligations.len(), 2, "two obligations on one run");
+    let site = RequirementSite {
+        what: "an obligation",
+        table: "objects",
+        select: Box::new(|values: &Json| values["object_kind"] == "work_obligation"),
+        column: "canonical_json",
+        requirement: "/requirement",
+        record: format!(
+            "work_obligation:{}:",
+            obligations[0].as_str().expect("obligation id")
+        ),
+    };
+    for environment in environments() {
+        let error = import_with_requirement(&file, &original, &site, |requirement| {
+            requirement["required_environment"] = environment;
+        });
+        assert!(error.contains("invalid work record"), "{error}");
+        let blamed = blamed_records(&error);
+        assert_eq!(
+            blamed.len(),
+            1,
+            "only the obligation that names the member is blamed: {error}"
+        );
+        assert!(blamed[0].contains(&site.record), "{error}");
+    }
+}
+
+/// The parts of a refusal that name the removed member: each is one record's
+/// label with its reason.
+fn blamed_records(error: &str) -> Vec<&str> {
+    error
+        .split(", ")
+        .filter(|label| label.contains("unknown field `required_environment`"))
+        .collect()
+}
+
+/// Every exported record other than an obligation that carries a
+/// requirement: the work event that recorded a work item's bindings, the
+/// work item itself, and the rule sets the active and the earlier policy
+/// selected.
+fn other_requirement_sites(rule_sets: RequirementRuleSets) -> Vec<RequirementSite<'static>> {
+    let rule_set = |what, hash: crate::ObjectId| RequirementSite {
+        what,
+        table: "objects",
+        record: format!("obligation_rule_set:{hash}:"),
+        select: Box::new(move |values: &Json| values["object_id"] == hash.as_str()),
+        column: "canonical_json",
+        requirement: "/rules/0/requirement",
+    };
+    vec![
+        RequirementSite {
+            what: "a work event",
+            table: "objects",
+            select: Box::new(|values: &Json| {
+                values["object_kind"] == "work_event"
+                    && values["canonical_json"]["json"]["work"]["acceptance_bindings"]
+                        .as_array()
+                        .is_some_and(|bindings| !bindings.is_empty())
+            }),
+            column: "canonical_json",
+            requirement: "/work/acceptance_bindings/0/requirement",
+            record: "work_event:".into(),
+        },
+        RequirementSite {
+            what: "a work item",
+            table: "work_items",
+            select: Box::new(|_: &Json| true),
+            column: "item_json",
+            requirement: "/acceptance_bindings/0/requirement",
+            record: "work_catalog:".into(),
+        },
+        rule_set("the active rule set", rule_sets.active),
+        rule_set("an earlier rule set", rule_sets.earlier),
+    ]
+}
+
+/// Every other exported record that carries a requirement is refused the
+/// same way when it names an environment. Each refusal names the record and
+/// the member.
+#[test]
+fn every_record_that_carries_a_requirement_is_refused_by_name() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    let rule_sets = requirement_store(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let original = fs::read_to_string(&file).expect("file");
+    for site in &other_requirement_sites(rule_sets) {
+        for environment in environments() {
+            let error = import_with_requirement(&file, &original, site, |requirement| {
+                requirement["required_environment"] = environment;
+            });
+            assert!(
+                blamed_records(&error)
+                    .iter()
+                    .any(|label| label.contains(&site.record)),
+                "{}: {error}",
+                site.what
+            );
+        }
+    }
+}
+
+/// A refusal reaches the operator's terminal, so the reason it gives for a
+/// record that does not decode names the record and the shape it met, never
+/// a value from the record: here a check kind no build knows.
+#[test]
+fn a_refused_requirement_never_repeats_its_values() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    let rule_sets = requirement_store(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let original = fs::read_to_string(&file).expect("file");
+    let mut sites = other_requirement_sites(rule_sets);
+    sites.push(RequirementSite {
+        what: "an obligation",
+        table: "objects",
+        select: Box::new(|values: &Json| values["object_kind"] == "work_obligation"),
+        column: "canonical_json",
+        requirement: "/requirement",
+        record: "work_obligation:".into(),
+    });
+    for site in &sites {
+        let error = import_with_requirement(&file, &original, site, |requirement| {
+            requirement["check_kind"] = Json::String("private-check-kind".into());
+        });
+        assert!(
+            error.contains(&site.record) && !error.contains("private-check-kind"),
+            "{}: {error}",
+            site.what
+        );
+    }
+}
+
 #[test]
 fn a_broken_reference_between_rows_is_refused() {
     let directory = crate::test_support::temp_home().expect("directory");

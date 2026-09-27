@@ -36,7 +36,9 @@ fn integrity_scanner_covers_enforced_control_records() {
     };
     let healthy = store.verify_all().unwrap();
     assert!(healthy.is_healthy());
-    assert_eq!(healthy.checked_control_records, 5);
+    // The policy state, its version, the rule set they select, the session,
+    // the turn result and the grant.
+    assert_eq!(healthy.checked_control_records, 6);
 
     store
         .connection
@@ -60,7 +62,7 @@ fn integrity_scanner_covers_enforced_control_records() {
         )
         .unwrap();
     let corrupted = store.verify_all().unwrap();
-    assert_eq!(corrupted.checked_control_records, 5);
+    assert_eq!(corrupted.checked_control_records, 6);
     assert_eq!(corrupted.invalid_control_records.len(), 3);
     assert!(
         corrupted
