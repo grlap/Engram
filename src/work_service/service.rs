@@ -245,6 +245,11 @@ impl LocalWorkService {
         })
     }
 
+    /// The core idempotency key of every service operation except a plan:
+    /// proposals of a root or a decomposition, updates, completion and
+    /// handoff. Plans never use it: storage derives a plan's key itself, from
+    /// a different tuple with no `work:` prefix (see `plan_operation_key`),
+    /// and the two must stay apart or stored plans stop replaying.
     pub(super) fn core_operation_key(
         &self,
         protocol_operation: &str,

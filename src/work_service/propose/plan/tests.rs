@@ -40,6 +40,105 @@ fn service(database: std::path::PathBuf) -> LocalWorkService {
 }
 
 #[test]
+fn a_plan_receipt_is_keyed_by_the_plan_tuple_and_scoped_to_its_session() {
+    // The key contract, derived here independently of storage's helper: a
+    // plan's receipt is stored as "propose_work_plan" under the canonical key
+    // of exactly ("work_propose:plan", project, session, idempotency key).
+    // Stored plans replay only while that holds, so changing the tuple's
+    // shape, order or values, or moving plans onto the generic core key, must
+    // fail here.
+    let temp = crate::test_support::temp_home().expect("temp");
+    let db = temp.path().join("plan.db");
+    let service = service(db.clone());
+    let input = plan(3);
+    let WorkProposeResult::Plan(first) = service
+        .work_propose(
+            WorkProposeInput::Plan {
+                plan: input.clone(),
+            },
+            at(1),
+        )
+        .expect("plan")
+    else {
+        panic!("plan");
+    };
+    let plan_key = |session: &SessionId| {
+        crate::CanonicalObject::freeze(&(
+            "work_propose:plan",
+            &service.project_id,
+            session,
+            input.idempotency_key.as_str(),
+        ))
+        .expect("plan key")
+        .key()
+        .as_str()
+        .to_owned()
+    };
+    {
+        let store = service.store().expect("store");
+        let stored = store
+            .work_operation_result_value("propose_work_plan", &plan_key(&service.session_id))
+            .expect("lookup")
+            .expect("the receipt lies under the plan key");
+        assert_eq!(
+            serde_json::from_value::<WorkPlanReceipt>(stored).expect("receipt"),
+            first
+        );
+        // The generic core key of the other operations never holds a plan.
+        let generic = service
+            .core_operation_key(
+                "work_propose:plan",
+                &input.idempotency_key,
+                "propose_work_plan",
+            )
+            .expect("generic key");
+        assert!(
+            store
+                .work_operation_result_value("propose_work_plan", &generic)
+                .expect("lookup")
+                .is_none()
+        );
+    }
+
+    // The session is part of the key: the same plan and key from another
+    // session is a new admission, not a replay of the first.
+    let other = LocalWorkService::new(
+        db,
+        ProjectId("plan-service".into()),
+        "planner".into(),
+        SessionId("other planner".into()),
+        None,
+    );
+    let WorkProposeResult::Plan(second) = other
+        .work_propose(
+            WorkProposeInput::Plan {
+                plan: input.clone(),
+            },
+            at(2),
+        )
+        .expect("other session")
+    else {
+        panic!("plan");
+    };
+    assert_eq!(second.tasks.len(), first.tasks.len());
+    assert!(
+        second
+            .tasks
+            .iter()
+            .zip(&first.tasks)
+            .all(|(new, old)| new.key == old.key && new.work_id != old.work_id)
+    );
+    assert!(
+        other
+            .store()
+            .expect("store")
+            .work_operation_result_value("propose_work_plan", &plan_key(&other.session_id))
+            .expect("lookup")
+            .is_some()
+    );
+}
+
+#[test]
 fn atomic_plan_explicit_target_refuses_without_changing_ambient_state() {
     let temp = crate::test_support::temp_home().expect("temp");
     let service = service(temp.path().join("plan.db"));

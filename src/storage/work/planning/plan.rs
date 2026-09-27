@@ -71,7 +71,7 @@ impl SqliteStore {
         let transaction = self.begin_work_mutation()?;
         if let Some(receipt) = replay_operation::<WorkPlanReceipt>(
             &transaction,
-            "propose_work_plan",
+            crate::storage::PLAN_CORE_OPERATION,
             &scoped_key,
             intent.key(),
         )? {
@@ -98,7 +98,7 @@ impl SqliteStore {
         admit(&receipt)?;
         persist_operation_result(
             &transaction,
-            "propose_work_plan",
+            crate::storage::PLAN_CORE_OPERATION,
             &scoped_key,
             intent.key(),
             &receipt,
@@ -123,17 +123,26 @@ fn validate_plan_root_budget(
     Ok(())
 }
 
+/// The key a plan's receipt is stored under. Plans derive it here, not
+/// through the service's generic core key (a `work:`-prefixed hash of a
+/// different structure) that roots and decompositions use: a plan is
+/// admitted by storage directly, with no service-side core key. Every stored
+/// plan replays only while this tuple keeps its shape, order and values, so
+/// never switch plans to the generic key.
 fn plan_operation_key(
     project: &ProjectId,
     session: &SessionId,
     key: &str,
 ) -> Result<String, StoreError> {
-    Ok(
-        CanonicalObject::freeze(&("work_propose:plan", project, session, key))?
-            .key()
-            .as_str()
-            .to_owned(),
-    )
+    Ok(CanonicalObject::freeze(&(
+        crate::storage::PLAN_PROTOCOL_OPERATION,
+        project,
+        session,
+        key,
+    ))?
+    .key()
+    .as_str()
+    .to_owned())
 }
 
 pub(crate) fn validate_work_plan(input: &WorkPlanInput) -> Result<(), StoreError> {

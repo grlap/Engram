@@ -635,7 +635,7 @@ pub(super) fn validate_work_protocol_result_binding(
 ) -> Result<(), StoreError> {
     let mut bound_items = Vec::new();
     match operation {
-        "work_propose:plan" => {
+        crate::storage::PLAN_PROTOCOL_OPERATION => {
             let receipt: crate::domain::WorkPlanReceipt = serde_json::from_value(result.clone())?;
             if result.get("kind").and_then(serde_json::Value::as_str) != Some("plan")
                 || receipt.tasks.is_empty()

@@ -36,9 +36,22 @@ impl LocalWorkService {
         input: WorkProposeInput,
         now: DateTime<Utc>,
     ) -> Result<WorkProposeResult, StoreError> {
-        if let WorkProposeInput::Plan { plan } = input {
-            return self.work_propose_plan(work_ref, &plan, now);
-        }
+        // The one place a plan is dispatched. A plan binds no ambient focus, so
+        // it leaves before the target binding below; everything after this
+        // match handles only a root or a decomposition.
+        let (protocol_operation, core_operation, raw_key) = match &input {
+            WorkProposeInput::Plan { plan } => return self.work_propose_plan(work_ref, plan, now),
+            WorkProposeInput::Root {
+                idempotency_key, ..
+            } => ("work_propose:root", "create_work", idempotency_key.as_str()),
+            WorkProposeInput::Decompose {
+                idempotency_key, ..
+            } => (
+                crate::storage::DECOMPOSE_PROTOCOL_OPERATION,
+                "decompose_work",
+                idempotency_key.as_str(),
+            ),
+        };
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(
@@ -49,7 +62,6 @@ impl LocalWorkService {
             now,
         )?;
         let intent = self.protocol_intent(&input);
-        let (protocol_operation, core_operation, raw_key) = propose_metadata(&input);
         let auto_decomposition = protocol_operation == crate::storage::DECOMPOSE_PROTOCOL_OPERATION
             && raw_key.trim().is_empty();
         let raw_key =
@@ -125,7 +137,13 @@ impl LocalWorkService {
             });
         }
         let result = match input {
-            WorkProposeInput::Plan { plan } => return self.work_propose_plan(work_ref, &plan, now),
+            // Dispatched by the opening match, so this cannot happen; should a
+            // later edit break that, refuse rather than panic the server.
+            WorkProposeInput::Plan { .. } => {
+                return Err(StoreError::InvalidWorkProjection(
+                    "a plan reached root or decomposition translation; plans are dispatched before ambient binding".into(),
+                ));
+            }
             WorkProposeInput::Root {
                 external_ref,
                 notes,

@@ -599,26 +599,6 @@ fn ignore_project_memory_advertisement_acknowledgement(
     let _ = acknowledge();
 }
 
-fn propose_metadata(input: &WorkProposeInput) -> (&'static str, &'static str, &str) {
-    match input {
-        WorkProposeInput::Plan { plan } => (
-            "work_propose:plan",
-            "propose_work_plan",
-            &plan.idempotency_key,
-        ),
-        WorkProposeInput::Root {
-            idempotency_key, ..
-        } => ("work_propose:root", "create_work", idempotency_key),
-        WorkProposeInput::Decompose {
-            idempotency_key, ..
-        } => (
-            crate::storage::DECOMPOSE_PROTOCOL_OPERATION,
-            "decompose_work",
-            idempotency_key,
-        ),
-    }
-}
-
 fn update_metadata(input: &WorkUpdateInput) -> (&'static str, &'static str, &str) {
     match input {
         WorkUpdateInput::Claim {

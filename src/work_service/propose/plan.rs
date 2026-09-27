@@ -56,7 +56,7 @@ impl LocalWorkService {
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
-            operation: "work_propose:plan",
+            operation: crate::storage::PLAN_PROTOCOL_OPERATION,
             idempotency_key: &plan.idempotency_key,
             intent: &self.protocol_intent(&input),
             basis: &basis,
@@ -83,7 +83,7 @@ impl LocalWorkService {
         store.finish_work_protocol_attempt(
             &self.project_id,
             &self.session_id,
-            "work_propose:plan",
+            crate::storage::PLAN_PROTOCOL_OPERATION,
             &plan.idempotency_key,
             &result,
         )?;

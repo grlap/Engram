@@ -23,6 +23,15 @@ pub(crate) use project_memory::validate_context_generation;
 
 pub(crate) const DECOMPOSE_PROTOCOL_OPERATION: &str = "work_propose:decompose";
 
+/// The protocol operation of a complete atomic plan. Stored as the operation
+/// of its protocol attempts and hashed into every plan's receipt key, so its
+/// value can never change while a store holds plans.
+pub(crate) const PLAN_PROTOCOL_OPERATION: &str = "work_propose:plan";
+
+/// The core operation a plan's receipt is stored under. Stored values; never
+/// change it.
+pub(crate) const PLAN_CORE_OPERATION: &str = "propose_work_plan";
+
 pub(crate) const DECOMPOSITION_RETRY_REMEDY: &str = "inspect the parent and its existing children; reuse the already-created child when present; add new work only for a genuinely different child intent";
 
 pub use control_inspection::ControlSessionInspection;
