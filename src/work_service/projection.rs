@@ -432,6 +432,7 @@ pub(super) fn compact_mutation_receipt(
                 "run_id",
                 "state",
                 "superseded_by",
+                "waiver_recorded",
                 "work_revision",
             ];
             let selected = object

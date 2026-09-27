@@ -5,6 +5,7 @@ use crate::domain::GATE_EVIDENCE_SUMMARY;
 mod observations;
 mod read_snapshots;
 mod reject_retry;
+mod release;
 mod renewal;
 
 #[test]

@@ -936,6 +936,11 @@ pub enum StoreError {
         work: crate::domain::WorkId,
         expired_at: DateTime<Utc>,
     },
+    /// A holder with no recorded contribution released without a reason.
+    #[error(
+        "release of work {work:?} needs a reason: this session recorded no contribution, and the reason is recorded as the attributed waiver of its missing contribution"
+    )]
+    WorkReleaseWaiverRequired { work: crate::domain::WorkId },
     #[error("completion for work {work:?} was refused: {reason}")]
     WorkCompletionRefused {
         work: crate::domain::WorkId,

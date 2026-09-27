@@ -222,7 +222,10 @@ struct UpdateArgs {
     /// For the evaluation-mode action: same-session, sub-agent, or
     /// independent-session; omit to return the task to any allowed mode.
     evaluation_mode: Option<String>,
-    /// Reason for release (optional), cancel, waive, reject, supersede, or detach (required).
+    /// Reason for release, cancel, waive, reject, supersede, or detach. Required
+    /// for all but release; a release by a session with neither a contribution
+    /// nor a waiver under the item's root needs it too, as the attributed
+    /// waiver of that missing contribution.
     reason: Option<String>,
     /// Why the item is blocked.
     text: Option<String>,
@@ -999,6 +1002,10 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "expired_at": expired_at.to_rfc3339(),
             "remedy": "run claim REF before mutating",
         }),
+        StoreError::WorkReleaseWaiverRequired { work } => json!({
+            "work_id": work,
+            "remedy": "repeat the release with a nonblank reason; it is recorded as the attributed waiver of this session's missing contribution",
+        }),
         StoreError::WorkCompletionRefused { work, reason } => json!({
             "work_id": work,
             "reason": reason,
@@ -1087,6 +1094,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
+        StoreError::WorkReleaseWaiverRequired { .. } => "work_release_waiver_required",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
         StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {

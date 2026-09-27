@@ -173,7 +173,7 @@ engram work show REF --note ID[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work claim --under PARENT [--ttl SECONDS] [--recover "why"]   # hold the parent's next ready child, chosen in ls --ready order and claimed in one transaction
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release [--reason "why"] | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
@@ -733,6 +733,16 @@ Rules that matter:
   After completion, any project-bound session may use
   `note` or `gate` for a late finding without claiming or reopening the item;
   the existing seal stays frozen.
+- `update REF --release` (MCP `action: "release"`) gives up your claim. If
+  this session has neither a note, gate, or checkpoint nor a waiver under the
+  item's root execution, add `--reason "why"` (MCP `reason`): it is recorded
+  as the attributed waiver of that missing contribution, the receipt says so
+  (`waiver_recorded: true` in JSON), and the next holder claims without
+  `--recover`. Without a nonblank reason that release is refused with
+  `work_release_waiver_required`, whose remedy and `next` command name
+  `--release --reason`; nothing changes. After a contribution or an earlier
+  waiver the reason is optional and no new waiver is recorded. See
+  [work claims](local-work-system.md#work-claims).
 - `update --kind`, repeatable `--label`, and repeatable `--unlabel` revise
   indexed planning metadata through the existing audited planning path;
   unclaimed planning updates remain allowed.

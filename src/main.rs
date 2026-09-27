@@ -1683,7 +1683,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, --evaluation-mode MODE, --clear-evaluation-mode, or field changes (--title, --outcome, --accept, --bind, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release [--reason WHY], --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, --evaluation-mode MODE, --clear-evaluation-mode, or field changes (--title, --outcome, --accept, --bind, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -2221,7 +2221,10 @@ struct WorkUpdateArgs {
     /// Release your claim.
     #[arg(long)]
     release: bool,
-    /// Reason recorded with --release or required by --waive and --supersede-with.
+    /// Reason recorded with --release, or required by --waive and
+    /// --supersede-with. A release by a session with neither a contribution
+    /// nor a waiver under the item's root needs it: it is recorded as the
+    /// attributed waiver of that missing contribution.
     #[arg(long)]
     reason: Option<String>,
     /// Mark the item blocked and say why.

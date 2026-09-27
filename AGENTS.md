@@ -449,7 +449,7 @@ engram work next                  # explicitly advance ordinary delivery
 engram work ls | show REF
 engram work add "Title" [--accept "criterion"]... [--bind POSITION=KIND]... [--under REF [--optional]] [--kind KIND] [--label L] [--evaluation-mode MODE]
 engram work claim REF | --under PARENT
-engram work update REF [--after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --accept "criterion"... | --bind POSITION=KIND... | --evaluation-mode MODE | --clear-evaluation-mode]
+engram work update REF [--release [--reason "why"] | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --accept "criterion"... | --bind POSITION=KIND... | --evaluation-mode MODE | --clear-evaluation-mode]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION]
 engram work note "what you found or decided"

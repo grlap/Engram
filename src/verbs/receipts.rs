@@ -407,6 +407,12 @@ impl VerbError {
                 vec!["this operation needs current claim authority; show the item before retrying".into()],
                 vec![format!("engram work show {target}")],
             ),
+            StoreError::WorkReleaseWaiverRequired { .. } => (
+                vec![
+                    "this session recorded no contribution here, so its release needs a reason; the reason is recorded as the attributed waiver of that missing contribution".into(),
+                ],
+                vec![format!("engram work update {target} --release --reason \"…\"")],
+            ),
             StoreError::WorkClaimLapsed { expired_at, .. } => (
                 vec![format!(
                     "claim lapsed at {}",

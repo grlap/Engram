@@ -262,6 +262,20 @@ pub struct ReleaseWorkRequest {
     pub released_at: DateTime<Utc>,
 }
 
+/// A released claim and whether that release recorded its holder's
+/// participant waiver. It is stored as the release's operation result, so a
+/// replay or a recovered receipt reports the same decision.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WorkRelease {
+    #[serde(flatten)]
+    pub claim: WorkClaim,
+    /// Whether this release recorded the holder's attributed participant
+    /// waiver. A stored release result that carries only the claim has no
+    /// recorded decision and reads as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiver_recorded: Option<bool>,
+}
+
 /// Request to capture execution progress under an exact claim fence.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CheckpointWorkRequest {

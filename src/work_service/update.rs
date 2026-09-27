@@ -741,6 +741,8 @@ impl LocalWorkService {
                 idempotency_key: _,
             } => {
                 let claim = self.live_protocol_claim(&basis, &work, now)?;
+                // The release decides and stores `waiver_recorded` in its own
+                // transaction, so a recovered receipt reports the same flag.
                 let released = store.release_work(
                     &ReleaseWorkRequest {
                         work_id: work.work_id,

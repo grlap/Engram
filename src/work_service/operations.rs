@@ -143,8 +143,9 @@ pub enum WorkUpdateInput {
     Release {
         reason: String,
         /// Attributed audit reason for waiving a missing contribution. It is
-        /// not permission-bearing. Omit when the current holder has already
-        /// contributed.
+        /// required when the holder has neither a contribution nor a waiver
+        /// under the root execution, and ignored otherwise. It is not
+        /// permission-bearing.
         waiver_reason: Option<String>,
         #[serde(default)]
         idempotency_key: String,

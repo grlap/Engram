@@ -1068,7 +1068,8 @@ fn release_requires_nonempty_waiver_reason_and_persists_audit_reasons() {
             &DevelopmentNoopRedactor,
         )
         .expect("release with attributed waiver");
-    assert_eq!(released.state, WorkClaimState::Released);
+    assert_eq!(released.claim.state, WorkClaimState::Released);
+    assert_eq!(released.waiver_recorded, Some(true));
     let entry = store
         .work_event_tail(root.work_id, 1)
         .expect("release event")
@@ -1115,4 +1116,341 @@ fn release_requires_nonempty_waiver_reason_and_persists_audit_reasons() {
         .expect("an accounted prior holder needs no second recovery waiver");
     assert_eq!(successor.holder, SessionId("next-holder".into()));
     assert!(store.verify_all().expect("integrity").is_healthy());
+}
+
+/// The root execution recorded by the newest event on `work`.
+fn latest_root_execution(store: &SqliteStore, work: WorkId) -> crate::domain::RootExecution {
+    let entry = store
+        .work_event_tail(work, 1)
+        .expect("event tail")
+        .pop()
+        .expect("latest event");
+    let event: WorkEvent =
+        load_typed_work_object(&store.connection, &entry.object_id, "work_event")
+            .expect("canonical event");
+    crate::storage::work::root_state::resolve(
+        &store.connection,
+        event.root_execution.as_ref().expect("root head"),
+    )
+    .expect("root execution")
+}
+
+/// Whether `holder` has a contribution or a waiver in the newest root
+/// execution recorded on `work`.
+fn holder_accounted(store: &SqliteStore, work: WorkId, holder: &SessionId) -> bool {
+    let execution = latest_root_execution(store, work);
+    execution
+        .contributions
+        .iter()
+        .any(|contribution| &contribution.participant == holder)
+        || execution
+            .waivers
+            .iter()
+            .any(|waiver| &waiver.participant == holder)
+}
+
+#[test]
+fn release_without_contribution_or_reason_is_a_typed_refusal_that_changes_nothing() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("project-release-waiver-required", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let claim = claim(&mut store, &root, "holder", "claim", 1, 100);
+    let last_event = |store: &SqliteStore| {
+        store
+            .work_event_tail(root.work_id, 1)
+            .expect("event tail")
+            .pop()
+            .expect("latest event")
+            .object_id
+    };
+    let event_before = last_event(&store);
+    assert!(!holder_accounted(&store, root.work_id, &claim.holder));
+    let request = ReleaseWorkRequest {
+        work_id: root.work_id,
+        run_id: claim.run_id,
+        expected_work_revision: root.revision,
+        holder: claim.holder.clone(),
+        claim_id: claim.claim_id,
+        claim_fence: claim.fence,
+        reason: "planned pause".into(),
+        waiver_reason: None,
+        actor: actor("holder"),
+        idempotency_key: "release-without-waiver".into(),
+        released_at: at(2),
+    };
+    assert!(matches!(
+        store.release_work(&request, &DevelopmentNoopRedactor),
+        Err(StoreError::WorkReleaseWaiverRequired { work }) if work == root.work_id
+    ));
+    // The claim, the root and the event history are all as they were.
+    assert_eq!(
+        store.current_work_claim(root.work_id).unwrap(),
+        Some(claim.clone())
+    );
+    assert_eq!(last_event(&store), event_before);
+    assert!(!holder_accounted(&store, root.work_id, &claim.holder));
+
+    let released = store
+        .release_work(
+            &ReleaseWorkRequest {
+                waiver_reason: Some("  redirected before any work  ".into()),
+                idempotency_key: "release-with-waiver".into(),
+                ..request
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("release with an attributed waiver");
+    assert_eq!(released.claim.state, WorkClaimState::Released);
+    assert_eq!(released.waiver_recorded, Some(true));
+    assert!(holder_accounted(&store, root.work_id, &claim.holder));
+    let execution = latest_root_execution(&store, root.work_id);
+    assert_eq!(execution.waivers.len(), 1);
+    assert_eq!(execution.waivers[0].participant, claim.holder);
+    assert_eq!(execution.waivers[0].waived_by, "holder");
+    assert_eq!(execution.waivers[0].reason, "redirected before any work");
+    assert!(store.verify_all().expect("integrity").is_healthy());
+}
+
+#[test]
+fn a_waived_holder_may_claim_again_and_contribute() {
+    // The waiver was true when written and records are immutable, so a later
+    // contribution by the same session stands beside it.
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("project-waiver-then-contribution", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let first = claim(&mut store, &root, "holder", "claim", 1, 100);
+    store
+        .release_work(
+            &ReleaseWorkRequest {
+                work_id: root.work_id,
+                run_id: first.run_id,
+                expected_work_revision: root.revision,
+                holder: first.holder.clone(),
+                claim_id: first.claim_id,
+                claim_fence: first.fence,
+                reason: "redirected".into(),
+                waiver_reason: Some("redirected before any work".into()),
+                actor: actor("holder"),
+                idempotency_key: "release-with-waiver".into(),
+                released_at: at(2),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("release with waiver");
+    let root = store.get_work_item(root.work_id).unwrap();
+    let again = claim(&mut store, &root, "holder", "claim-again", 3, 100);
+    checkpoint(&mut store, &root, &again, "holder", "contribute", 4, &[]);
+    let execution = latest_root_execution(&store, root.work_id);
+    assert!(
+        execution
+            .waivers
+            .iter()
+            .any(|waiver| waiver.participant == first.holder)
+    );
+    assert!(
+        execution
+            .contributions
+            .iter()
+            .any(|contribution| contribution.participant == first.holder)
+    );
+    assert!(store.verify_all().expect("integrity").is_healthy());
+}
+
+#[test]
+fn a_release_waives_only_the_releasing_participant_of_a_shared_root() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("project-shared-root-waiver", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let root_claim = claim(&mut store, &root, "root-holder", "root-claim", 1, 300);
+    checkpoint(
+        &mut store,
+        &root,
+        &root_claim,
+        "root-holder",
+        "root-checkpoint",
+        2,
+        &[],
+    );
+    let root = store.get_work_item(root.work_id).unwrap();
+    let live = store
+        .current_work_claim(root.work_id)
+        .unwrap()
+        .expect("root claim");
+    let decomposition = store
+        .decompose_work(
+            &DecomposeWorkRequest {
+                parent_id: root.work_id,
+                expected_parent_revision: root.revision,
+                children: vec![child("first", ChildRequirement::Required, "First")],
+                prerequisites: Vec::new(),
+                authority: WorkPlanningAuthority::Claim {
+                    run_id: live.run_id,
+                    holder: live.holder.clone(),
+                    claim_id: live.claim_id,
+                    claim_fence: live.fence,
+                },
+                actor: actor("root-holder"),
+                idempotency_key: "root-plan".into(),
+                created_at: at(3),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("decompose");
+    let first = decomposition.children[0].clone();
+    let child_claim = claim(&mut store, &first, "child-holder", "child-claim", 4, 300);
+    store
+        .release_work(
+            &ReleaseWorkRequest {
+                work_id: first.work_id,
+                run_id: child_claim.run_id,
+                expected_work_revision: first.revision,
+                holder: child_claim.holder.clone(),
+                claim_id: child_claim.claim_id,
+                claim_fence: child_claim.fence,
+                reason: "handed back".into(),
+                waiver_reason: Some("handed back before any work".into()),
+                actor: actor("child-holder"),
+                idempotency_key: "child-release".into(),
+                released_at: at(5),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("child release with waiver");
+    let execution = latest_root_execution(&store, first.work_id);
+    let child_holder = SessionId("child-holder".into());
+    let root_holder = SessionId("root-holder".into());
+    assert_eq!(execution.waivers.len(), 1);
+    assert_eq!(execution.waivers[0].participant, child_holder);
+    assert!(
+        execution
+            .contributions
+            .iter()
+            .any(|contribution| contribution.participant == root_holder)
+    );
+    assert!(
+        execution
+            .contributions
+            .iter()
+            .all(|contribution| contribution.participant != child_holder)
+    );
+    assert!(store.verify_all().expect("integrity").is_healthy());
+}
+
+#[test]
+fn a_release_stores_whether_it_recorded_the_waiver_and_replays_it() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("project-release-waiver-flag", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let holder = SessionId("holder".into());
+    let first = claim(&mut store, &root, "holder", "claim", 1, 100);
+    let release =
+        |claim: &WorkClaim, waiver: Option<&str>, key: &str, second: i64| ReleaseWorkRequest {
+            work_id: root.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: root.revision,
+            holder: claim.holder.clone(),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            reason: "released".into(),
+            waiver_reason: waiver.map(str::to_owned),
+            actor: actor(claim.holder.0.as_str()),
+            idempotency_key: key.into(),
+            released_at: at(second),
+        };
+
+    // The first release writes the waiver and says so; replaying its key
+    // returns the stored decision and appends nothing.
+    let waived = release(&first, Some("redirected before any work"), "waive", 2);
+    let released = store
+        .release_work(&waived, &DevelopmentNoopRedactor)
+        .expect("release with a waiver");
+    assert_eq!(released.waiver_recorded, Some(true));
+    let events = store.work_event_tail(root.work_id, 1).expect("tail");
+    let replayed = store
+        .release_work(&waived, &DevelopmentNoopRedactor)
+        .expect("replay");
+    assert_eq!(replayed, released);
+    assert_eq!(
+        store.work_event_tail(root.work_id, 1).expect("tail"),
+        events
+    );
+
+    // Waived, the same session may claim again and release without a reason:
+    // it is accounted, so no new waiver is written.
+    let again = claim(&mut store, &root, "holder", "claim-again", 3, 100);
+    let released = store
+        .release_work(
+            &release(&again, None, "release-again", 4),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("an accounted holder releases without a reason");
+    assert_eq!(released.waiver_recorded, Some(false));
+    let execution = latest_root_execution(&store, root.work_id);
+    assert_eq!(execution.waivers.len(), 1);
+    assert!(holder_accounted(&store, root.work_id, &holder));
+
+    // A holder that contributed is not waived even when it gives a reason.
+    let other = claim(&mut store, &root, "other", "claim-other", 5, 100);
+    checkpoint(&mut store, &root, &other, "other", "contribute", 6, &[]);
+    let root = store.get_work_item(root.work_id).unwrap();
+    let released = store
+        .release_work(
+            &ReleaseWorkRequest {
+                expected_work_revision: root.revision,
+                ..release(&other, Some("pausing"), "release-other", 7)
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("release after a contribution");
+    assert_eq!(released.waiver_recorded, Some(false));
+    let execution = latest_root_execution(&store, root.work_id);
+    assert!(
+        execution
+            .waivers
+            .iter()
+            .all(|waiver| waiver.participant == holder)
+    );
+    assert!(store.verify_all().expect("integrity").is_healthy());
+}
+
+#[test]
+fn a_stored_release_result_without_the_flag_reads_as_no_recorded_decision() {
+    let claim = WorkClaim {
+        claim_id: WorkClaimId(uuid::Uuid::nil()),
+        work_id: WorkId(uuid::Uuid::nil()),
+        run_id: WorkRunId(uuid::Uuid::nil()),
+        accepted_work_revision: 1,
+        holder: SessionId("holder".into()),
+        expires_at: at(1),
+        revision: 2,
+        fence: 2,
+        state: WorkClaimState::Released,
+    };
+    let stored = serde_json::to_value(&claim).expect("claim json");
+    let read: WorkRelease = serde_json::from_value(stored).expect("read as stored");
+    assert_eq!(read.claim, claim);
+    assert_eq!(read.waiver_recorded, None);
+    let written = serde_json::to_value(WorkRelease {
+        claim,
+        waiver_recorded: Some(false),
+    })
+    .expect("release json");
+    assert_eq!(written["waiver_recorded"], serde_json::json!(false));
+    assert_eq!(written["state"], serde_json::json!("released"));
 }

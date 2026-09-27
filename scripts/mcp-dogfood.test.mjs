@@ -1068,6 +1068,57 @@ test("hygiene correction pending rejection gives conditional recovery on CLI and
   }
 });
 
+test("a holder that did no work releases with a reason recorded as its waiver on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-release-waiver-", t);
+  const session = "release-waiver-holder";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const tools = await client.tools();
+    assert.match(tools.find(({ name }) => name === "update").inputSchema.properties.reason.description.replace(/\s+/gu, " "), /attributed waiver/u);
+    const help = cliWord(engramHome, session, "update", "--help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout.replace(/\s+/gu, " "), /recorded as the attributed waiver/u);
+    for (const surface of ["mcp", "cli"]) {
+      const work = receipt(await client.call("add", { title: `Redirected on ${surface}` })).work.short_ref;
+      receipt(await client.call("claim", { work_ref: work }));
+      // Without a reason the release names the missing input and the command
+      // that supplies it; the claim stays held.
+      let error;
+      if (surface === "cli") {
+        const text = cliWord(engramHome, session, "update", work, "--release");
+        assert.notEqual(text.status, 0);
+        assert.ok(text.stderr.includes(`engram work update ${work} --release --reason`), text.stderr);
+        const json = cliWord(engramHome, session, "update", work, "--release", "--json");
+        assert.notEqual(json.status, 0);
+        error = JSON.parse(json.stderr).error;
+      } else {
+        error = structuredError(await client.call("update", { work_ref: work, action: "release" }), "work_release_waiver_required");
+      }
+      assert.equal(error.code, "work_release_waiver_required");
+      assert.match(error.details.remedy, /nonblank reason/u);
+      assert.ok(error.reminders[0].includes("attributed waiver"), JSON.stringify(error));
+      assert.deepEqual(error.next, [`engram work update ${work} --release --reason "…"`]);
+      const held = receipt(await client.call("show", { work_ref: work }));
+      assert.equal(held.status.work.short_ref, work);
+      // With a reason the release succeeds and says the waiver was recorded.
+      const reason = "redirected before any work";
+      const released = surface === "cli"
+        ? cliJson(engramHome, session, "update", work, "--release", "--reason", reason)
+        : receipt(await client.call("update", { work_ref: work, action: "release", reason }));
+      assert.equal(released.receipt.result.waiver_recorded, true, JSON.stringify(released));
+    }
+  } finally {
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
+  }
+});
+
 test("attribution labels distinguish shared-actor peers on CLI MCP and expose the verbose contract", async (t) => {
   const engramHome = fixtureHome("engram-attribution-", t);
   const actor = "shared-private-principal";

@@ -70,9 +70,9 @@ pub use domain::{
     WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkItemKind, WorkLifecycle,
     WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
     WorkObligationState, WorkOrigin, WorkPlanningAuthority, WorkPrerequisiteState,
-    WorkReadinessReason, WorkReferenceCandidate, WorkRevisionPatch, WorkRun, WorkRunId,
-    WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot, WorkTransition,
-    validate_session_id_length,
+    WorkReadinessReason, WorkReferenceCandidate, WorkRelease, WorkRevisionPatch, WorkRun,
+    WorkRunId, WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot,
+    WorkTransition, validate_session_id_length,
 };
 pub use graph_snapshot::{
     RestoredRecord, RestoredRelationBasis, RestoredWorkEvidence,

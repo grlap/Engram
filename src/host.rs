@@ -542,6 +542,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkRejectRefused { .. }
         | StoreError::WorkPeerDecompositionRefused { .. }
         | StoreError::WorkClaimHeld { .. }
+        | StoreError::WorkReleaseWaiverRequired { .. }
         | StoreError::WorkCompletionRefused { .. }
         | StoreError::GraphDestinationNotEmpty
         | StoreError::GraphProjectMismatch { .. }

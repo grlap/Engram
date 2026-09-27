@@ -74,6 +74,14 @@ impl AgentVerbs {
                     )
                 })?;
             format!("{line}; cancelled child and recorded required-child waiver on {parent}")
+        } else if result.operation == "release"
+            && result.receipt.result["waiver_recorded"].as_bool() == Some(true)
+        {
+            // A second, permanent statement on the root: say it was made.
+            format!(
+                "{line}; your reason is recorded as the waiver of this session's missing contribution{}",
+                held_suffix(self.holder(&after, now), now)
+            )
         } else {
             format!("{line}{}", held_suffix(self.holder(&after, now), now))
         };
@@ -99,17 +107,21 @@ impl AgentVerbs {
         has_bindings: bool,
     ) -> Result<(WorkUpdateInput, String), VerbError> {
         Ok(match action {
-            UpdateAction::Release { reason } => (
-                WorkUpdateInput::Release {
-                    reason: reason
-                        .map(|value| value.trim().to_owned())
-                        .filter(|value| !value.is_empty())
-                        .unwrap_or_else(|| "released".into()),
-                    waiver_reason: None,
-                    idempotency_key: String::new(),
-                },
-                format!("released {work_ref} \"{title}\""),
-            ),
+            UpdateAction::Release { reason } => {
+                // An explicit reason also waives a missing contribution. The
+                // default never does: a waiver is text its holder wrote.
+                let explicit = reason
+                    .map(|value| value.trim().to_owned())
+                    .filter(|value| !value.is_empty());
+                (
+                    WorkUpdateInput::Release {
+                        reason: explicit.clone().unwrap_or_else(|| "released".into()),
+                        waiver_reason: explicit,
+                        idempotency_key: String::new(),
+                    },
+                    format!("released {work_ref} \"{title}\""),
+                )
+            }
             UpdateAction::Reject { reason } => {
                 let reason = reason.trim().to_owned();
                 if reason.is_empty() {

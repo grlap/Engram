@@ -44,7 +44,7 @@ use crate::{
         RootExecutionId, RootExecutionState, SCHEMA_VERSION, VerificationEvidence,
         WorkAvailability, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState, WorkEvent,
         WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
-        WorkItem, WorkLifecycle, WorkRun, WorkRunId, WorkRunState, WorkTransition,
+        WorkItem, WorkLifecycle, WorkRelease, WorkRun, WorkRunId, WorkRunState, WorkTransition,
         normalize_gate_evidence_input, validate_gate_evidence_payload,
     },
     memory::Redactor,
@@ -843,6 +843,9 @@ impl SqliteStore {
     }
 
     /// Releases a live claim and advances its fence without reviving old authority.
+    /// A holder with neither a contribution nor a waiver under the root
+    /// execution needs `waiver_reason`, recorded as its participant waiver;
+    /// the result says whether this release recorded one.
     ///
     /// # Errors
     ///
@@ -852,20 +855,20 @@ impl SqliteStore {
         &mut self,
         request: &ReleaseWorkRequest,
         redactor: &R,
-    ) -> Result<WorkClaim, StoreError> {
+    ) -> Result<WorkRelease, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let reason = normalize_text(&request.reason, "release reason")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
-        if let Some(claim) = replay_operation::<WorkClaim>(
+        if let Some(release) = replay_operation::<WorkRelease>(
             &transaction,
             "release_work",
             &request.idempotency_key,
             request_object.key(),
         )? {
             transaction.commit()?;
-            return Ok(claim);
+            return Ok(release);
         }
         expire_handoff_offers(
             &transaction,
@@ -885,12 +888,15 @@ impl SqliteStore {
             false,
         )?;
         let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
+        let mut waiver_recorded = false;
         if !root_participant_is_accounted(&root_execution, &claim.holder) {
-            let reason = request.waiver_reason.as_deref().ok_or_else(|| {
-                StoreError::InvalidWork(
-                    "completion waiver requires an explicit attributed reason".into(),
-                )
-            })?;
+            let reason =
+                request
+                    .waiver_reason
+                    .as_deref()
+                    .ok_or(StoreError::WorkReleaseWaiverRequired {
+                        work: request.work_id,
+                    })?;
             let reason = normalize_text(reason, "completion waiver reason")?;
             if waive_root_contributor(
                 &mut root_execution,
@@ -898,6 +904,7 @@ impl SqliteStore {
                 &request.actor.actor_id,
                 &reason,
             ) {
+                waiver_recorded = true;
                 root_execution.revision += 1;
                 root_execution.updated_at = request.released_at;
                 persist_root_execution(&transaction, &root_execution)?;
@@ -935,15 +942,19 @@ impl SqliteStore {
             created_at: request.released_at,
         };
         append_work_event(&transaction, &event)?;
+        let release = WorkRelease {
+            claim,
+            waiver_recorded: Some(waiver_recorded),
+        };
         persist_operation_result(
             &transaction,
             "release_work",
             &request.idempotency_key,
             request_object.key(),
-            &claim,
+            &release,
         )?;
         transaction.commit()?;
-        Ok(claim)
+        Ok(release)
     }
 
     /// Captures a checkpoint under the exact work, run, claim, and fence basis.

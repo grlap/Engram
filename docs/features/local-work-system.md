@@ -349,6 +349,23 @@ with no later mutation has no expiry event even though readers already treat
 the offer as expired. Taking over from a different, unaccounted holder still
 requires attributed recovery.
 
+A holder gives up its claim with `update REF --release [--reason "why"]` (MCP
+`update` with `action: "release"`). A holder with neither a contribution (a
+note, gate, or checkpoint made while holding a claim) nor a participant waiver
+under the item's root execution must give a nonblank reason: the release
+records it as the attributed participant waiver of that missing contribution,
+and its receipt says so. The holder is then accounted, so the next holder
+claims without `--recover`. A release without that reason is refused with
+`work_release_waiver_required`, changes nothing, and names the `--release
+--reason` command. An accounted holder, one that already contributed or was
+waived by an earlier release, may omit the reason (the release then records
+`released`), and no new waiver is written. Whether a release recorded the
+waiver is stored with its result, so a replay or a receipt recovered after an
+interruption reports the same decision. A waived session may claim again and
+contribute; the waiver and the contribution are both kept. A claim that
+expires without a contribution is not waived by its former holder afterwards:
+its successor still takes over with `--recover`.
+
 A work-bound execution turn must carry the live work claim. Shared analysis
 may use an independent child claim; resource leases are not required. Root-level observation and
 communication may instead use `RootExecution` membership; membership never
