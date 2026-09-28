@@ -559,6 +559,30 @@ fn completion_recovery_reminder_names_each_disposed_child_lifecycle() {
     }
 }
 
+// A bound pass on a check of another source is stale at `done`; the reminder
+// names the cause and the two ways out: a rerun, and a declaration in the
+// form the host reports.
+#[test]
+fn completion_recovery_reminder_names_the_verification_source_remedy() {
+    let work = WorkId(uuid::Uuid::from_u128(3));
+    let recovery = crate::WorkCompletionRecovery {
+        cause: crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+            reason: crate::AcceptanceStaleReason::VerificationSource,
+        },
+        item: crate::WorkReferenceCandidate {
+            work_id: work,
+            short_ref: "w-000000000003".into(),
+            title: "Bound item".into(),
+            lifecycle: WorkLifecycle::Open,
+        },
+        command: "engram work show w-000000000003 --notes --gates".into(),
+    };
+    assert_eq!(
+        completion_recovery_reminder(&recovery, false),
+        "w-000000000003 acceptance evaluation is stale (verification_source): a pass on a bound criterion cites a check that ran on another source than the one evaluated, or before a later change to it; run the check on the current source, then evaluate again citing it, declaring the source revision the host reports"
+    );
+}
+
 #[test]
 fn readiness_reasons_become_words() {
     let session = SessionId("peer".into());

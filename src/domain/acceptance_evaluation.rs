@@ -379,6 +379,10 @@ pub enum AcceptanceStaleReason {
     /// An `independent_session` evaluator has since held or executed the
     /// run, so the record no longer describes an independent judgment.
     Identity,
+    /// A pass on a criterion bound to a typed check cites a check that ran
+    /// on another source than the one the evaluation judged, or one the
+    /// source had moved away from by the evaluated cut.
+    VerificationSource,
 }
 
 impl AcceptanceStaleReason {
@@ -393,6 +397,7 @@ impl AcceptanceStaleReason {
             Self::Policy => "policy",
             Self::Evidence => "evidence",
             Self::Identity => "identity",
+            Self::VerificationSource => "verification_source",
         }
     }
 }

@@ -139,7 +139,15 @@ seal binds the obligation, and an asserted criterion cites the verification
 that carried it when the completion cites it. Under an evaluated policy a
 bound criterion passes only on an `observed` basis citing that evidence —
 never judgment or an asserted gate — and seals with exactly the citations it
-was judged on. A revision that drops a binding waives its obligation in the
+was judged on. Each of those checks must have run on the source the evaluation
+judged (its declared source, or else the run's newest sighting at the
+evaluated cut), and the source must not have moved away by that cut: the
+newest sighting after the check shows its revision, and no change without a
+revision was reported after it. `evaluate` refuses any other citation, and
+`done` treats a record holding one as stale
+(`verification_source`), whether the binding's obligation was satisfied or
+waived ([acceptance evaluation](acceptance-evaluation.md#record-time-validation),
+R5 and F8). A revision that drops a binding waives its obligation in the
 revising actor's name. A binding the preceding revision did not carry
 unchanged — a new one, one added back after being dropped, or one whose
 sentence was rewritten — owes its verification from that revision, because

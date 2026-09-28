@@ -3,6 +3,7 @@
 
 mod basis_moves;
 mod bound_criteria;
+mod citation_sources;
 mod corrections;
 mod review;
 mod snapshots;

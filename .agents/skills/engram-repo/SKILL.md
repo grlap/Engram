@@ -361,8 +361,12 @@ Rules that matter:
   that does not verify the run's latest observed source change no longer
   carries it (both enforced at `done`, not at evaluation), and an evaluated
   pass needs an `observed` basis citing that evidence, never judgment or a
-  gate. `--accept` without `--bind` drops the bindings and the receipt says
-  so; a binding that is new, added back, or whose sentence was rewritten owes
+  gate, from checks that ran on the source the evaluation judged, which the
+  source had not moved away from by the evaluated cut:
+  `evaluate` refuses any other check, and `done` treats a record holding one
+  as stale (`verification_source`). `--accept` without `--bind` drops the
+  bindings and the receipt says so; a binding that is new, added back, or
+  whose sentence was rewritten owes
   its verification from that revision.
 - `update REF --accept "criterion"...` replaces the whole acceptance list;
   omitting it preserves the list. Empty or blank criteria are refused, and

@@ -171,7 +171,28 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   typed verification requirement (`--bind`) passes only on `observed`, and
   every citation must be verification evidence of the bound kind (and pinned
   check) with a passed result; `asserted` and `judgment` are refused for it
-  by name.
+  by name. Each of those checks must also have run on the source the
+  evaluation judged: its source basis carries the judged revision, and the
+  declared workspace when the evaluation declared one. The judged source is
+  the declared `source_basis` when there is one, or else the revision of the
+  newest execution observation at or before the cut that carries one, as in
+  F3; a cited check's own observation is such a sighting. A declaration
+  always decides, so an older sighting never stands in for a declared tree.
+  Nor may the source have moved away after the check, read as F3 reads it
+  after a cut: between the observation that ran the check and the cut, the
+  newest execution observation that carries a revision must show the
+  check's revision, and none may report a change without one. The revision
+  fingerprints the full content, so a move and its revert leave the check
+  standing, while a later sighting of the same revision, from any
+  workspace, changes nothing. A passed check at R_d says nothing about an
+  edit to R_e that the source still holds, even one a declaration of R_d
+  leaves out. So a citation of a check of another revision is refused,
+  naming the citation and both revisions, and so is a check the run has
+  since moved away from, naming the later revision. The holder reruns the check,
+  and a new evaluation cites the rerun; a declaration in another form than
+  the host's source revision, such as a Git commit id, matches no check and
+  is corrected instead, which the refusal names only when the evaluation
+  declared a source. Completion applies the same rule again (F8).
 - **R6 non-pass citations.** `fail`, `insufficient_evidence`, and `needs_human`
   carry a rationale; citations are optional but must belong to this run, and a
   failed check may be cited (a failed build supports a `fail`).
@@ -273,8 +294,10 @@ stale reason named.
   evidence, which there only errs toward keeping a reported change.
   Verification and environment records describe a check and carry the content
   basis that check ran on, its producer's, which may predate the cut. So
-  neither is ever compared, and either one recorded after the cut, including
-  the check that resolves that obligation, asks for a resubmission. The
+  neither counts here as a sighting, and either one recorded after the cut,
+  including the check that resolves that obligation, asks for a resubmission.
+  A check that a pass on a bound criterion cites is held to the judged
+  revision separately (R5, F8). The
   declared revision is the evaluator's assertion, recorded like its verdicts;
   Engram cannot attest what the evaluator read, so this exception carries the
   evaluation's own asserted assurance. It must be the host's source revision
@@ -315,6 +338,17 @@ stale reason named.
   Holding a different run does not taint independence. `same_session` and
   `sub_agent` records make no independence claim and survive a later holder
   change.
+- **F8 bound check source.** Every citation of a `pass` on a bound criterion
+  is a passed check that ran on the source the evaluation judged, and the
+  source had not moved away from it by the cut (R5). The rule is applied
+  again when `done` consumes the record, whether the binding's obligation
+  was satisfied or waived. A record that fails it is
+  stale with reason `verification_source`: run the check on the current
+  source, then evaluate again citing it. This covers a record admitted before
+  the rule existed. It also covers a binding whose obligation was waived,
+  which no obligation rule matches to the run's latest source change. F4
+  does not stand in for it: the fingerprint ties the evaluated content to
+  the content at completion, not to the check a pass cites.
 
 What does **not** invalidate an evaluation: holder notes and their checkpoints,
 gate records for checks the passing verdicts did not cite, non-holder
@@ -368,7 +402,7 @@ Refusals extend the typed recovery causes; each carries one recovery command:
 | Cause | Meaning | Recovery |
 | --- | --- | --- |
 | `MissingAcceptanceEvaluation { criterion }` | no evaluation for this run | record one: `engram work evaluate REF …` (or the host's evaluator) |
-| `AcceptanceEvaluationStale { reason }` | F1–F7 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`) | re-evaluate against the current state; `source` names `done --source-fingerprint F` as the alternative; `identity` needs a session that never held the run |
+| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`) | re-evaluate against the current state; `source` names `done --source-fingerprint F` as the alternative; `identity` needs a session that never held the run; `verification_source` needs the cited check run again on the current source |
 | `AcceptanceFailed { criterion }` | newest fresh evaluation has a `fail` | corrective work, then evaluate again |
 | `AcceptanceInsufficientEvidence { criterion }` | newest fresh evaluation has `insufficient_evidence` | record the missing evidence, then evaluate again |
 | `AcceptanceNeedsHuman { criterion }` | a criterion needs a human decision | obtain that decision; only a separately authorized revision (`update REF --accept …`) or cancellation changes the requirement, and a new evaluation follows the decision. No agent override exists. |
@@ -403,12 +437,12 @@ the other policy operations.
 ## State transitions
 
 Per open work item and its active run under an evaluated policy. `E` is the
-newest evaluation on the run feed; "fresh" means F1–F7 hold.
+newest evaluation on the run feed; "fresh" means F1–F8 hold.
 
 | State | Condition | `done` | Leaves the state by |
 | --- | --- | --- | --- |
 | S0 unevaluated | no `E` for this run, or `E` not fresh | refuse `MissingAcceptanceEvaluation` / `AcceptanceEvaluationStale` | `evaluate` records a fresh `E` |
-| S1 passing | `E` fresh, all verdicts `pass` | seal; binds `E` | any F1–F7 change → S0; a newer non-passing `E` → S2/S3/S4 |
+| S1 passing | `E` fresh, all verdicts `pass` | seal; binds `E` | any F1–F8 change → S0; a newer non-passing `E` → S2/S3/S4 |
 | S2 failed | `E` fresh, some verdict `fail` | refuse `AcceptanceFailed` | corrective work → new `evaluate` → S1/S2/S3/S4; a revision → S0 |
 | S3 insufficient | `E` fresh, some `insufficient_evidence`, none `fail` | refuse `AcceptanceInsufficientEvidence` | record evidence → new `evaluate` |
 | S4 needs human | `E` fresh, some `needs_human`, none `fail`/`insufficient` | refuse `AcceptanceNeedsHuman` | a human decision, expressed as a separately authorized `update --accept` (revision → S0) or cancellation |
@@ -474,6 +508,8 @@ tests cite the row identifier in a nearby comment.
 | B47 | direct core completion under an evaluated policy whose evidence set omits a cited object / carries it; the service `done` with a narrower explicit evidence set while the fresh pass cites a note and host-minted verification evidence | refused ("cites evidence outside the completion evidence set"), item stays open / seals with the citation in `seal.evidence`; the service unions the citations, so the seal names them and the completion checkpoint acknowledges them |
 | B48 | seal re-frozen to bind an older pass while a newer `fail` or `needs_human` evaluation sits before the completion cut; the unforged seal; the bounded newest read with a cut before the newest record | doctor reports `completion_seal:<id>:acceptance_evaluation_binding`, the shared check refuses ("is not the newest evaluation … at the completion cut"), `show` reads with `provenance: unavailable` / healthy / returns the older record, excluding anything after the cut |
 | B49 | MCP `update` with action `revise` and a supplied `evaluation_mode` (valid or blank); action `evaluation_mode` with a word, then omitted | `invalid_argument` on `evaluation_mode` before any effect, item, feed, and focus unchanged / pinned, then cleared, both named in history |
+| B50 | criterion bound to a test; a passed check at R_d, a source edit to R_e with no check after it; a pass citing the R_d check, undeclared or declaring R_e, with source freshness off and on; the same record as an earlier build admitted it, with the binding's obligation satisfied or waived, and on the waived path also declaring R_d; its exact resend; the check rerun at R_e and cited | refuse at write naming the citation and both revisions, nothing appended / `done` refuses `AcceptanceEvaluationStale { verification_source }` on every path, even with the matching completion fingerprint / the resend replays the admitted record, and a changed resend is refused / records and seals |
+| B51 | the same binding; a declared source ahead of the newest sighting at the cut; a declared workspace other than the check's; a declaration that matches the check exactly; after an edit to R_e, a declaration of R_d behind it; a quiet sighting at R_e before the cut, then one back at R_d; a reported change without a revision after the check; an R_d citation beside a fresh R_e check, cited or not; after the check, sightings of its own revision (the turn's closing one, one from another workspace); after the check, reported changes to R_e and back to R_d, both kept as changes; a check recorded in a later turn citing its earlier producer, with a sighting of its revision in between | refused naming both revisions, and the remedy names correcting the declaration, which an undeclared refusal does not / refused naming both workspaces / records / refused naming the later revision / refused as judged at R_e, then records / refused naming the change without a revision / refused naming the R_d check; the fresh check alone records / records and seals / records and stays fresh, while `done` asks for a check after the latest change under the satisfied binding's own rule / records |
 
 ## Agent surface
 
@@ -494,7 +530,9 @@ evaluator read through, and `LOCATOR` a note/gate locator from `show --notes
 --gates` or the full id of host-minted verification or environment evidence
 (R7). `--source-fingerprint F` declares the host's source revision the
 evaluator judged (F3); a value in another form, such as a Git commit id,
-voids the evaluation at the host's next sighting of the source. Open items in
+voids the evaluation at the host's next sighting of the source, and a pass
+on a bound criterion declared that way is refused at once, since no check
+ran at that revision (R5). Open items in
 self-asserted projects keep their unchanged `show` shape. MCP `evaluate` takes
 the same data as `mode`, `acceptance_basis`, `evidence_basis`, `verdicts:
 [{criterion, verdict, basis, rationale, evidence: [locator]}]`, and the

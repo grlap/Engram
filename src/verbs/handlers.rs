@@ -1979,6 +1979,9 @@ pub(super) fn completion_recovery_reminder(
             crate::AcceptanceStaleReason::Identity => format!(
                 "{label} acceptance evaluation is stale (identity): its independent evaluator has since held this run; a session that never held the run must evaluate again"
             ),
+            crate::AcceptanceStaleReason::VerificationSource => format!(
+                "{label} acceptance evaluation is stale (verification_source): a pass on a bound criterion cites a check that ran on another source than the one evaluated, or before a later change to it; run the check on the current source, then evaluate again citing it, declaring the source revision the host reports"
+            ),
             reason => format!(
                 "{label} acceptance evaluation is stale ({}); evaluate again",
                 reason.word()

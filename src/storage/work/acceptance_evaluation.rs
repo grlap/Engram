@@ -5,7 +5,7 @@
 //! run, evaluated cut, and run evidence, and completion later consults the
 //! newest record. No projection table exists: the run feed is the index.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 
 use super::completion::feed_head;
@@ -22,7 +22,7 @@ use super::{
 use crate::domain::{
     AcceptanceBasis, AcceptanceEvaluation, AcceptanceEvaluationMode, AcceptanceEvaluationPolicy,
     AcceptanceResult, AcceptanceStaleReason, AcceptanceVerdict, AssuranceLevel, CompletionSeal,
-    CriterionVerdict, CriterionVerdictInput, ExecutionObservation, FeedId,
+    CriterionVerdict, CriterionVerdictInput, ExecutionObservation, ExecutionSourceBasis, FeedId,
     MAX_ACCEPTANCE_EVALUATION_BYTES, MAX_ACCEPTANCE_SOURCE_BASIS_BYTES,
     MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis, ProjectId,
     RecordAcceptanceEvaluationRequest, VerificationEvidence, VerificationResult, WorkEvent,
@@ -134,6 +134,10 @@ enum Citation {
     VerificationPassed {
         kind: crate::domain::VerificationKind,
         check_fingerprint: ObjectId,
+        /// The source the check ran on.
+        source_basis: ExecutionSourceBasis,
+        /// The execution observation that ran the check.
+        producer: ObjectId,
     },
     VerificationOther,
     Environment,
@@ -257,67 +261,21 @@ impl SqliteStore {
             });
         }
         let verdicts = bind_verdicts(&transaction, &item, run_id, &policy, cut, &request.verdicts)?;
-        let evaluated_cut = FeedPosition {
-            feed: FeedId::RunExecution(run_id),
-            position: cut,
-        };
-        let evidence_basis = run_evidence_through(&transaction, run_id, cut)?;
-        let work_revision_hash = CanonicalObject::freeze(&item)?.key().clone();
-        let record = AcceptanceEvaluation {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id: item.work_id,
+        let judged = judged_source(&transaction, run_id, cut, request.source_basis.as_ref())?;
+        if let Some(stale) = stale_bound_citation(
+            &transaction,
+            &item,
             run_id,
-            work_revision: item.revision,
-            work_revision_hash,
-            criteria: item.acceptance.clone(),
-            evaluated_cut,
-            evidence_basis,
-            source_basis: request.source_basis.clone(),
-            mode: request.mode,
-            evaluator: request.evaluator.clone(),
-            execution_identity: request.execution_identity.clone(),
-            parent_session: request.parent_session.clone(),
-            evaluator_model: request.evaluator_model.clone(),
-            verdicts,
-            attempt_key: attempt.key.clone(),
-            created_at: request.recorded_at,
-        };
-        let object = CanonicalObject::mint(&record)?;
-        // The explicit cap is checked on the frozen bytes before any write:
-        // a refused record leaves the feed and the newest record untouched.
-        if object.bytes().len() > MAX_ACCEPTANCE_EVALUATION_BYTES {
+            judged.as_ref(),
+            cut,
+            passing_citations(&verdicts),
+        )? {
             return Err(refused(
                 item.work_id,
-                format!(
-                    "the evaluation would be {} canonical bytes, over the {MAX_ACCEPTANCE_EVALUATION_BYTES} byte cap; shorten the rationales",
-                    object.bytes().len()
-                ),
+                stale.refusal(&item, judged.as_ref(), cut)?,
             ));
         }
-        SqliteStore::insert_object(&transaction, KIND, &object)?;
-        append_to_work_feeds(
-            &transaction,
-            &item.project_id,
-            item.root_id,
-            Some(run_id),
-            None,
-            KIND,
-            &object,
-        )?;
-        let receipt = AcceptanceEvaluationReceipt {
-            evaluation: object.key().clone(),
-            replayed: false,
-            record,
-        };
-        persist_operation_result(
-            &transaction,
-            OPERATION,
-            &attempt.key,
-            &attempt.fingerprint,
-            &receipt,
-        )?;
+        let receipt = append_evaluation(&transaction, &item, run_id, request, &attempt, verdicts)?;
         transaction.commit()?;
         Ok(receipt)
     }
@@ -537,6 +495,79 @@ pub(crate) fn attempt_identity(
         key,
         fingerprint: fingerprint.key().clone(),
     })
+}
+
+/// Freezes and appends one admitted evaluation of `item` on `run_id`, with
+/// `verdicts` bound at `request.evaluated_through`, and persists the receipt
+/// an exact resend replays. Every admission check has already passed; only
+/// the byte cap is checked here, on the frozen bytes before any write, so a
+/// refused record leaves the feed and the newest record untouched.
+fn append_evaluation(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    request: &RecordAcceptanceEvaluationRequest,
+    attempt: &AttemptIdentity,
+    verdicts: Vec<CriterionVerdict>,
+) -> Result<AcceptanceEvaluationReceipt, StoreError> {
+    let cut = request.evaluated_through;
+    let record = AcceptanceEvaluation {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id: item.work_id,
+        run_id,
+        work_revision: item.revision,
+        work_revision_hash: CanonicalObject::freeze(item)?.key().clone(),
+        criteria: item.acceptance.clone(),
+        evaluated_cut: FeedPosition {
+            feed: FeedId::RunExecution(run_id),
+            position: cut,
+        },
+        evidence_basis: run_evidence_through(transaction, run_id, cut)?,
+        source_basis: request.source_basis.clone(),
+        mode: request.mode,
+        evaluator: request.evaluator.clone(),
+        execution_identity: request.execution_identity.clone(),
+        parent_session: request.parent_session.clone(),
+        evaluator_model: request.evaluator_model.clone(),
+        verdicts,
+        attempt_key: attempt.key.clone(),
+        created_at: request.recorded_at,
+    };
+    let object = CanonicalObject::mint(&record)?;
+    if object.bytes().len() > MAX_ACCEPTANCE_EVALUATION_BYTES {
+        return Err(refused(
+            item.work_id,
+            format!(
+                "the evaluation would be {} canonical bytes, over the {MAX_ACCEPTANCE_EVALUATION_BYTES} byte cap; shorten the rationales",
+                object.bytes().len()
+            ),
+        ));
+    }
+    SqliteStore::insert_object(transaction, KIND, &object)?;
+    append_to_work_feeds(
+        transaction,
+        &item.project_id,
+        item.root_id,
+        Some(run_id),
+        None,
+        KIND,
+        &object,
+    )?;
+    let receipt = AcceptanceEvaluationReceipt {
+        evaluation: object.key().clone(),
+        replayed: false,
+        record,
+    };
+    persist_operation_result(
+        transaction,
+        OPERATION,
+        &attempt.key,
+        &attempt.fingerprint,
+        &receipt,
+    )?;
+    Ok(receipt)
 }
 
 /// The latest run of an item by generation, when any exists.
@@ -938,7 +969,7 @@ fn bind_verdicts(
             if input.verdict == AcceptanceVerdict::Pass {
                 admit_pass_citation(item.work_id, index + 1, input.basis, policy, &citation)?;
                 if let Some(binding) = binding {
-                    let matches = matches!(&citation, Citation::VerificationPassed { kind, check_fingerprint }
+                    let matches = matches!(&citation, Citation::VerificationPassed { kind, check_fingerprint, .. }
                         if *kind == binding.requirement.check_kind
                             && binding
                                 .requirement
@@ -1046,6 +1077,8 @@ fn classify_citation(
                 Citation::VerificationPassed {
                     kind: evidence.check_kind,
                     check_fingerprint: evidence.check_fingerprint,
+                    source_basis: evidence.source_basis,
+                    producer: evidence.producer_observation,
                 }
             } else {
                 Citation::VerificationOther
@@ -1242,8 +1275,9 @@ pub(super) fn newest_evaluation_through(
 /// of the judged revision, or a reported change to the declared revision,
 /// puts the source back where it was judged. Verification and environment
 /// records describe a check and carry the content basis that check ran on,
-/// which is its producer's and may predate the cut, so neither is ever
-/// compared.
+/// which is its producer's and may predate the cut, so neither counts here
+/// as a sighting; a check that a bound pass cites is held to the judged
+/// source separately.
 ///
 /// Any other host check (a verification, an environment record, an
 /// obligation opened or resolved) asks for a re-read and resubmission. A
@@ -1254,10 +1288,8 @@ fn basis_moved_after(
     position: i64,
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
 ) -> Result<Option<EvaluationBasisMove>, StoreError> {
-    let judged = match declared {
-        Some(declared) => Some(declared.fingerprint.clone()),
-        None => revision_seen_through(connection, run_id, position)?,
-    };
+    let judged =
+        judged_source(connection, run_id, position, declared)?.map(|judged| judged.revision);
     let mut statement = connection.prepare(
         "SELECT object_kind, object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position > ?2
@@ -1341,6 +1373,275 @@ fn revision_seen_through(
         .optional()?)
 }
 
+/// The source an evaluation judged: the revision it declared, in the
+/// workspace it declared when it named one, or else the revision the run was
+/// last seen at through its cut.
+struct JudgedSource {
+    revision: String,
+    workspace: Option<String>,
+    /// Whether the evaluation declared this source rather than taking the
+    /// run's newest sighting.
+    declared: bool,
+}
+
+impl JudgedSource {
+    /// Whether a check that ran on `basis` checked this source.
+    fn checked_by(&self, basis: &ExecutionSourceBasis) -> bool {
+        basis.source_revision == self.revision
+            && self
+                .workspace
+                .as_ref()
+                .is_none_or(|workspace| *workspace == basis.workspace_id)
+    }
+}
+
+/// The source the evaluation cut at `through` judged, or `None` when it
+/// declared none and the run carries no revision through the cut. A
+/// declaration always wins: an older sighting never stands in for the tree
+/// the evaluator says it judged.
+fn judged_source(
+    connection: &Connection,
+    run_id: WorkRunId,
+    through: i64,
+    declared: Option<&crate::domain::AcceptanceSourceBasis>,
+) -> Result<Option<JudgedSource>, StoreError> {
+    Ok(match declared {
+        Some(declared) => Some(JudgedSource {
+            revision: declared.fingerprint.clone(),
+            workspace: declared.workspace_id.clone(),
+            declared: true,
+        }),
+        None => revision_seen_through(connection, run_id, through)?.map(|revision| JudgedSource {
+            revision,
+            workspace: None,
+            declared: false,
+        }),
+    })
+}
+
+/// Each passing verdict's one-based criterion position and citations.
+fn passing_citations(
+    verdicts: &[CriterionVerdict],
+) -> impl Iterator<Item = (usize, &[ObjectId])> + '_ {
+    verdicts
+        .iter()
+        .enumerate()
+        .filter(|(_, verdict)| verdict.verdict == AcceptanceVerdict::Pass)
+        .map(|(index, verdict)| (index + 1, verdict.evidence.as_slice()))
+}
+
+/// A citation of a pass on a bound criterion that does not show its check
+/// ran on the source the evaluation judged, and why.
+struct StaleCitation {
+    criterion: usize,
+    citation: ObjectId,
+    cause: StaleCause,
+}
+
+enum StaleCause {
+    /// The check ran on another source than the judged one.
+    OtherSource(ExecutionSourceBasis),
+    /// The check ran on the judged revision, but by the cut the run had moved
+    /// away from it.
+    MovedAfter { checked: String, moved: Moved },
+    /// The citation is not a passed check, or no judged source exists to
+    /// match. A pass admitted here never reaches this: `bind_verdicts` admits
+    /// only passed checks for a bound criterion, and each check's producer is
+    /// a sighting on the run, with a revision, before the check. Only a record
+    /// written some other way can.
+    Unverifiable,
+}
+
+/// How the run left the revision a check ran on.
+enum Moved {
+    /// Its newest sighting after the check is at this other revision.
+    To(String),
+    /// It reported a change that carries no revision, which may have moved
+    /// the source anywhere.
+    Unrevised,
+}
+
+impl StaleCitation {
+    /// Why record admission refuses the evaluation.
+    fn refusal(
+        &self,
+        item: &WorkItem,
+        judged: Option<&JudgedSource>,
+        cut: i64,
+    ) -> Result<String, StoreError> {
+        let kind = item
+            .acceptance_bindings
+            .iter()
+            .find(|binding| binding.criterion == self.criterion)
+            .map(|binding| super::planning::encode_state(binding.requirement.check_kind))
+            .transpose()?
+            .unwrap_or_default();
+        let (criterion, citation) = (self.criterion, &self.citation);
+        Ok(match (&self.cause, judged) {
+            (StaleCause::OtherSource(checked), Some(judged)) => {
+                let (ran, evaluated) = if checked.source_revision == judged.revision {
+                    (
+                        format!("in workspace {}", checked.workspace_id),
+                        format!(
+                            "workspace {}",
+                            judged.workspace.as_deref().unwrap_or_default()
+                        ),
+                    )
+                } else {
+                    (
+                        format!("on source revision {}", checked.source_revision),
+                        format!("revision {}", judged.revision),
+                    )
+                };
+                let declaration = if judged.declared {
+                    ", or, when the declared fingerprint is not the source revision the host reports, declare that revision"
+                } else {
+                    ""
+                };
+                format!(
+                    "criterion {criterion} is bound to {kind} verification, and {citation} ran {ran}, not the {evaluated} this evaluation judged; run the check on the current source, then evaluate again citing it{declaration}"
+                )
+            }
+            (StaleCause::MovedAfter { checked, moved }, _) => {
+                let moved = match moved {
+                    Moved::To(seen) => format!("was last seen at revision {seen}"),
+                    Moved::Unrevised => "reported a source change without a revision".to_owned(),
+                };
+                format!(
+                    "criterion {criterion} is bound to {kind} verification, and {citation} ran on source revision {checked}, but the run {moved} after it, before evidence basis {cut}; run the check on the current source, then evaluate again citing it"
+                )
+            }
+            _ => format!(
+                "criterion {criterion} is bound to {kind} verification, and {citation} cannot be shown to be a passed check of the source this evaluation judged; run the check on the current source, then evaluate again citing it"
+            ),
+        })
+    }
+}
+
+/// The first citation of a pass on a bound criterion that does not show its
+/// check ran on the source the evaluation judged, or `None` when every one
+/// does.
+///
+/// A bound criterion rests on a typed check of the work as it was judged, so
+/// the check must have run on that source, and the source must still be there
+/// at the cut `through`: a passed check of an earlier revision says nothing
+/// about a later edit the source still holds, even one an older declaration
+/// leaves out. The obligation path does not
+/// always catch such a check at completion (a binding whose obligation was
+/// waived is never matched to the run's latest change), so record admission
+/// (R5) applies this rule, and completion applies it again to the record it
+/// consumes, which covers a record admitted before the rule existed.
+fn stale_bound_citation<'a>(
+    connection: &Connection,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    judged: Option<&JudgedSource>,
+    through: i64,
+    passes: impl IntoIterator<Item = (usize, &'a [ObjectId])>,
+) -> Result<Option<StaleCitation>, StoreError> {
+    for (criterion, citations) in passes {
+        if !item
+            .acceptance_bindings
+            .iter()
+            .any(|binding| binding.criterion == criterion)
+        {
+            continue;
+        }
+        for citation in citations {
+            let cause = match classify_citation(connection, run_id, citation)? {
+                Some(Citation::VerificationPassed {
+                    source_basis,
+                    producer,
+                    ..
+                }) => match judged {
+                    Some(judged) if judged.checked_by(&source_basis) => {
+                        match moved_after_check(
+                            connection,
+                            run_id,
+                            citation,
+                            &producer,
+                            &source_basis.source_revision,
+                            through,
+                        )? {
+                            None => continue,
+                            Some(moved) => StaleCause::MovedAfter {
+                                checked: source_basis.source_revision,
+                                moved,
+                            },
+                        }
+                    }
+                    Some(_) => StaleCause::OtherSource(source_basis),
+                    None => StaleCause::Unverifiable,
+                },
+                _ => StaleCause::Unverifiable,
+            };
+            return Ok(Some(StaleCitation {
+                criterion,
+                citation: citation.clone(),
+                cause,
+            }));
+        }
+    }
+    Ok(None)
+}
+
+/// Whether the run left `checked`, the revision `producer` ran the check
+/// `citation` on, between that check and `through`, inclusive, read as F3
+/// reads the source after a cut. The newest execution observation there
+/// that carries a revision decides where the source is, whatever change it
+/// reports: the revision fingerprints the full content, so a move and its
+/// revert leave the check standing. A reported change that carries no
+/// revision may have moved the source anywhere, and no later sighting
+/// clears it. `None` when the source is still where the check ran.
+fn moved_after_check(
+    connection: &Connection,
+    run_id: WorkRunId,
+    citation: &ObjectId,
+    producer: &ObjectId,
+    checked: &str,
+    through: i64,
+) -> Result<Option<Moved>, StoreError> {
+    // The checkpoint admits a check only with a producer on the same run.
+    let ran = citation_position(connection, run_id, producer)?.ok_or_else(|| {
+        StoreError::InvalidWorkProjection(format!(
+            "verification evidence {citation} names producer observation {producer}, which is not on its run feed"
+        ))
+    })?;
+    let run = run_id.0.to_string();
+    let unrevised: bool = connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.position > ?2 AND entry.position <= ?3
+               AND entry.object_kind = 'execution_observation'
+               AND json_extract(object.canonical_json, '$.source_basis.source_revision') IS NULL
+               AND json_extract(object.canonical_json, '$.source_changed') = 1
+         )",
+        params![run, ran, through],
+        |row| row.get(0),
+    )?;
+    if unrevised {
+        return Ok(Some(Moved::Unrevised));
+    }
+    let newest: Option<String> = connection
+        .query_row(
+            "SELECT json_extract(object.canonical_json, '$.source_basis.source_revision')
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.position > ?2 AND entry.position <= ?3
+               AND entry.object_kind = 'execution_observation'
+               AND json_extract(object.canonical_json, '$.source_basis.source_revision')
+                   IS NOT NULL
+             ORDER BY entry.position DESC LIMIT 1",
+            params![run, ran, through],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(newest.filter(|revision| revision != checked).map(Moved::To))
+}
+
 /// Whether a source change left the source at the revision the evaluation
 /// declared it judged, in the declared workspace when one was named.
 fn judged_revision(
@@ -1414,6 +1715,24 @@ fn staleness(
     .is_some()
     {
         return Ok(Some(AcceptanceStaleReason::Mutation));
+    }
+    let judged = judged_source(
+        connection,
+        run_id,
+        record.evaluated_cut.position,
+        record.source_basis.as_ref(),
+    )?;
+    if stale_bound_citation(
+        connection,
+        item,
+        run_id,
+        judged.as_ref(),
+        record.evaluated_cut.position,
+        passing_citations(&record.verdicts),
+    )?
+    .is_some()
+    {
+        return Ok(Some(AcceptanceStaleReason::VerificationSource));
     }
     let relied_on = cited_gate_names(connection, run_id, record)?;
     if gate_superseded_after(
