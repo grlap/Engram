@@ -637,7 +637,7 @@ fn fifo_destination_and_fifo_swap_after_inspection_are_refused_without_a_writer(
                 &output,
                 nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
             )
-            .unwrap()
+            .unwrap();
         };
         let error = if swap_after_inspection {
             fs::write(&output, SNAPSHOT).unwrap();

@@ -166,6 +166,7 @@ impl Destination {
                 });
             }
         };
+        #[cfg(windows)]
         reject_reparse_file(&file, &self.path)?;
         let opened = file.metadata().with_context(|| {
             format!(
@@ -323,6 +324,7 @@ fn destination_components(path: &Path) -> Result<(PathBuf, Vec<OsString>)> {
 }
 
 fn validate_directory(directory: &Dir, protected: &same_file::Handle, path: &Path) -> Result<()> {
+    #[cfg(windows)]
     reject_reparse_directory(directory, path)?;
     let identity = directory
         .try_clone()
@@ -334,56 +336,48 @@ fn validate_directory(directory: &Dir, protected: &same_file::Handle, path: &Pat
     Ok(())
 }
 
+#[cfg(windows)]
 fn reject_reparse_directory(directory: &Dir, path: &Path) -> Result<()> {
-    #[cfg(windows)]
+    use std::os::windows::fs::MetadataExt;
+    let file = directory
+        .try_clone()
+        .with_context(|| {
+            format!(
+                "cannot retain snapshot ancestor {} for inspection",
+                path.display()
+            )
+        })?
+        .into_std_file();
+    if file
+        .metadata()
+        .with_context(|| format!("cannot inspect snapshot ancestor {}", path.display()))?
+        .file_attributes()
+        & 0x400
+        != 0
     {
-        use std::os::windows::fs::MetadataExt;
-        let file = directory
-            .try_clone()
-            .with_context(|| {
-                format!(
-                    "cannot retain snapshot ancestor {} for inspection",
-                    path.display()
-                )
-            })?
-            .into_std_file();
-        if file
-            .metadata()
-            .with_context(|| format!("cannot inspect snapshot ancestor {}", path.display()))?
-            .file_attributes()
-            & 0x400
-            != 0
-        {
-            bail!("{}", ancestor_refusal(path));
-        }
+        bail!("{}", ancestor_refusal(path));
     }
-    #[cfg(not(windows))]
-    let _ = (directory, path);
     Ok(())
 }
 
+#[cfg(windows)]
 fn reject_reparse_file(file: &cap_std::fs::File, path: &Path) -> Result<()> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        let metadata = file
-            .try_clone()
-            .and_then(|copy| copy.into_std().metadata())
-            .with_context(|| {
-                format!(
-                    "cannot inspect snapshot destination {} for reparse attributes",
-                    path.display()
-                )
-            })?;
-        if metadata.file_attributes() & 0x400 != 0 {
-            bail!(
-                "snapshot destination {} is a Windows reparse point",
+    use std::os::windows::fs::MetadataExt;
+    let metadata = file
+        .try_clone()
+        .and_then(|copy| copy.into_std().metadata())
+        .with_context(|| {
+            format!(
+                "cannot inspect snapshot destination {} for reparse attributes",
                 path.display()
-            );
-        }
+            )
+        })?;
+    if metadata.file_attributes() & 0x400 != 0 {
+        bail!(
+            "snapshot destination {} is a Windows reparse point",
+            path.display()
+        );
     }
-    #[cfg(not(windows))]
-    let _ = (file, path);
     Ok(())
 }
 
