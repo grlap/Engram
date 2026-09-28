@@ -332,7 +332,10 @@ Rules that matter:
   window. Add `--gates` (MCP `gates: true`, with `notes: true`) to include gates.
   `notes_window.families` reports item-wide totals counted before filtering,
   plus shown and omitted counts for this window. `notes[].summary` is the
-  complete body. Follow the printed `--after` command for older windows; it
+  complete body. Text rows place `[note]`, `[observation]`, `[gate]`, or
+  `[history]` after the locator; JSON retains plural family values. These
+  markers come from stored kind, gate structure, and observation provenance,
+  not body prose. Follow the printed `--after` command for older windows; it
   preserves `--gates` when selected. Exact counts distinguish older and newer
   omitted rows. Start a fresh window to change gate mode. `--history` uses the
   same continuation shape. Pages state the active byte budget and reflected
@@ -340,7 +343,8 @@ Rules that matter:
   navigation; follow `full_detail` for outcome, acceptance and item context.
   A too-large body stays as an explicit locator/size/detail placeholder and
   does not prevent traversal. Use `show REF --note LOCATOR` for complete detail
-  beyond 12 KiB, independently of the gate filter. Native locators are unique
+  beyond 12 KiB, independently of the gate filter; it keeps the row's marker.
+  Native locators are unique
   prefixes of a record's id, at least eight hex digits of an id of 32 or 64;
   inherited locators are `RECORD_ID:INDEX`, where INDEX is an
   immutable one-based member position, never a display ordinal. Locators are

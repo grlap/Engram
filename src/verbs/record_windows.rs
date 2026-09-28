@@ -77,7 +77,7 @@ impl AgentVerbs {
                 "note {}: {} UTF-8 body bytes (complete detail)",
                 row.locator, row.body_bytes
             )];
-            append_row_lines(&mut lines, &value);
+            append_row_lines(&mut lines, &value, row.family);
             return Ok(Receipt::assemble(
                 lines,
                 Guidance {
@@ -492,8 +492,8 @@ fn append_window(
             ));
         }
     }
-    for row in &rows {
-        append_row_lines(&mut receipt.lines, row);
+    for (row, source) in rows.iter().zip(page.rows[..visible].iter().rev()) {
+        append_row_lines(&mut receipt.lines, row, source.family);
     }
     Ok(receipt)
 }
@@ -535,9 +535,15 @@ fn row_value(
     value
 }
 
-fn append_row_lines(lines: &mut Vec<String>, row: &Value) {
+fn append_row_lines(lines: &mut Vec<String>, row: &Value, family: WorkRecordFamily) {
+    let marker = match family {
+        WorkRecordFamily::Notes => "note",
+        WorkRecordFamily::Observations => "observation",
+        WorkRecordFamily::Gates => "gate",
+        WorkRecordFamily::History => "history",
+    };
     lines.push(format!(
-        "  - {} {} by {} at {} ({} UTF-8 body bytes){}:",
+        "  - {} [{marker}] {} by {} at {} ({} UTF-8 body bytes){}:",
         row["locator"].as_str().unwrap_or_default(),
         super::terminal_safe_line(row["kind"].as_str().unwrap_or_default()),
         super::terminal_safe_line(row["by"].as_str().unwrap_or("another actor")),

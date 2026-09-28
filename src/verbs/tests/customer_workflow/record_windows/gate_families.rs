@@ -182,15 +182,61 @@ fn assert_families(receipt: &Receipt, notes: usize, observations: usize, gates: 
             json!({"total":total,"shown":shown,"omitted":total-shown})
         );
     }
+    assert_window_markers(receipt, rows, families);
     assert_eq!(receipt.text().matches("gate evidence:").count(), 1);
     assert!(emitted_receipt_bytes(receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
+}
+
+fn assert_window_markers(
+    receipt: &Receipt,
+    rows: &[serde_json::Value],
+    families: &serde_json::Value,
+) {
+    let text = receipt.text();
+    let headers = text
+        .lines()
+        .filter(|line| line.starts_with("  - ") && line.contains(" UTF-8 body bytes)"))
+        .collect::<Vec<_>>();
+    assert_eq!(headers.len(), rows.len());
+    for (family, marker) in [
+        ("notes", "note"),
+        ("observations", "observation"),
+        ("gates", "gate"),
+        ("history", "history"),
+    ] {
+        let marked = headers
+            .iter()
+            .filter(|line| line.contains(&format!(" [{marker}] ")))
+            .count();
+        let shown = rows.iter().filter(|row| row["family"] == family).count();
+        assert_eq!(marked, shown, "text marker and JSON family disagree");
+        if !families[family].is_null() {
+            assert_eq!(families[family]["shown"], shown);
+        }
+    }
+    for row in rows {
+        let locator = row["locator"].as_str().unwrap();
+        let family = row["family"].as_str().unwrap();
+        let marker = match family {
+            "notes" => "note",
+            "observations" => "observation",
+            "gates" => "gate",
+            "history" => "history",
+            other => panic!("unexpected family {other}"),
+        };
+        assert!(
+            headers
+                .iter()
+                .any(|line| line.starts_with(&format!("  - {locator} [{marker}] ")))
+        );
+    }
 }
 
 #[test]
 fn note_windows_keep_verdict_after_nine_gates_and_page_gate_evidence_explicitly() {
     let (_directory, verbs, path, project) = fixture();
     let work = add(&verbs, "Verdict before gates", None, false, 0);
-    note(&verbs, &work, "Peer observation", 1);
+    note(&verbs, &work, "Peer observation [gate] [history]", 1);
     verbs
         .claim(
             ClaimInput {
@@ -204,7 +250,7 @@ fn note_windows_keep_verdict_after_nine_gates_and_page_gate_evidence_explicitly(
     note(
         &verbs,
         &work,
-        "Final verdict: approved; gate-like prose is not a gate",
+        "Final verdict: approved; gate-like prose [observation] is not a gate",
         3,
     );
     gates(&verbs, &work, 9, 4);
@@ -213,7 +259,7 @@ fn note_windows_keep_verdict_after_nine_gates_and_page_gate_evidence_explicitly(
     assert_eq!(first.value["notes_omitted"], 0);
     assert_eq!(
         first.value["notes"][1]["summary"],
-        "Final verdict: approved; gate-like prose is not a gate"
+        "Final verdict: approved; gate-like prose [observation] is not a gate"
     );
     assert_eq!(first.value["notes_window"]["includes_gates"], false);
     assert!(
@@ -247,6 +293,7 @@ fn note_windows_keep_verdict_after_nine_gates_and_page_gate_evidence_explicitly(
                 .unwrap();
             assert_eq!(detail.value["note"]["family"], row["family"]);
             assert_eq!(detail.value["note"]["locator"], row["locator"]);
+            assert_window_markers(&detail, &[detail.value["note"].clone()], &json!({}));
             assert!(row.get("actor_session_id").is_none());
             assert_eq!(row["by"], "you");
             assert!(row["feed_position"].as_i64().unwrap() > 0);
@@ -377,6 +424,46 @@ fn note_window_gate_families_survive_restore_and_late_restored_gates() {
             .iter()
             .any(|row| row["family"] == "gates")
     );
+    let mut after = None;
+    let mut seen = Vec::new();
+    loop {
+        let history = restored
+            .show_records(
+                &work,
+                &ShowInput {
+                    history: true,
+                    after,
+                    ..ShowInput::default()
+                },
+                at(110),
+            )
+            .unwrap();
+        let rows = history.value["history"]["items"].as_array().unwrap();
+        assert_window_markers(
+            &history,
+            rows,
+            &history.value["history"]["window"]["families"],
+        );
+        for row in rows {
+            let locator = row["locator"].as_str().unwrap().to_owned();
+            assert!(!seen.contains(&locator));
+            seen.push(locator);
+        }
+        after = history.value["history"]["window"]["after"]
+            .as_str()
+            .map(str::to_owned);
+        if after.is_none() {
+            let families = &history.value["history"]["window"]["families"];
+            for family in ["notes", "observations", "gates", "history"] {
+                assert!(families[family]["total"].as_u64().unwrap() > 0);
+            }
+            assert_eq!(
+                seen.len(),
+                usize::try_from(history.value["history"]["total"].as_u64().unwrap()).unwrap()
+            );
+            break;
+        }
+    }
     assert!(store.verify_all().unwrap().is_healthy());
 }
 

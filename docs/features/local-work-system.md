@@ -1086,6 +1086,11 @@ only the selected stream. `includes_gates` records the cursor-bound mode and
 all continuation/refusal commands preserve it. Canonical detail locators are
 independent of the filter. Inherited generations retain member order, followed by
 every native note family in dense project-feed order across run generations.
+Each emitted text row places `[note]`, `[observation]`, or `[gate]` after its
+locator, matching the row's JSON family and the family's shown count; history
+rows also use `[history]`. Single-row detail keeps the marker and complete body.
+Classification uses stored kind, gate structure, and observation provenance,
+not words in the note body.
 Explicit target resolution, advisory item projection, count, members and
 continuation basis share one read snapshot without selecting focus.
 `notes[].summary` is a full body. Explicit note rows in window/detail JSON

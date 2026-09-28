@@ -2203,9 +2203,16 @@ test("notes keep a verdict visible after nine gates with explicit CLI and MCP ga
       assert.ok(Buffer.byteLength(shell.stdout) <= 12288);
       assert.ok(Buffer.byteLength(text.stdout) < 12288);
       assert.equal(text.stdout.match(/gate evidence:/gu).length, 1);
+      const headers = text.stdout.split("\n").filter((line) => line.startsWith("  - ") && line.includes(" UTF-8 body bytes)"));
+      assert.equal(headers.length, value.notes.length);
+      const markers = { notes: "note", observations: "observation", gates: "gate" };
+      for (const row of value.notes) {
+        assert.equal(headers.filter((line) => line.startsWith(`  - ${row.locator} [${markers[row.family]}] `)).length, 1);
+      }
       for (const [family, total] of Object.entries({ notes: 1, observations: 1, gates: 9 })) {
         const shown = value.notes.filter((row) => row.family === family).length;
         assert.deepEqual(value.notes_window.families[family], { total, shown, omitted: total - shown });
+        assert.equal(headers.filter((line) => line.includes(` [${markers[family]}] `)).length, shown);
       }
       return value;
     };

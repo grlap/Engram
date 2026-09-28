@@ -459,9 +459,15 @@ fn status_correction_exact_identity_and_non_holder_disclosure() {
         let line = shown
             .text()
             .split('\n')
-            .find(|line| line.contains(row["locator"].as_str().unwrap()))
+            .find(|line| {
+                line.starts_with(&format!(
+                    "  - {} [observation] ",
+                    row["locator"].as_str().unwrap()
+                ))
+            })
             .unwrap()
             .to_owned();
+        assert_eq!(row["family"], "observations");
         if row["status_owner"] == true {
             assert!(line.contains("(non-holder)"));
         } else {

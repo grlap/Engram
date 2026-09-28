@@ -239,12 +239,18 @@ fn record_windows_oversized_body_has_a_complete_detail_and_does_not_hide_older_n
     let rows = shown.value["notes"].as_array().unwrap();
     let last = rows.last().unwrap();
     assert_eq!(last["body_omitted"], true);
+    let locator = last["locator"].as_str().unwrap();
+    assert!(
+        shown
+            .text()
+            .lines()
+            .any(|line| line.starts_with(&format!("  - {locator} [observation] ")))
+    );
     assert!(last.get("summary").is_none());
     assert_eq!(last["body_bytes"], body.len());
     let all = traverse(&verbs, &work, false, 3);
     assert_eq!(all.len(), 2);
     assert_eq!(all[0]["summary"], "Older verdict");
-    let locator = last["locator"].as_str().unwrap();
     for selector in [locator, &locator[..8]] {
         let full = verbs
             .show_records(
@@ -257,6 +263,11 @@ fn record_windows_oversized_body_has_a_complete_detail_and_does_not_hide_older_n
             )
             .unwrap();
         assert_eq!(full.value["note"]["summary"], body);
+        assert!(
+            full.text()
+                .lines()
+                .any(|line| line.starts_with(&format!("  - {locator} [observation] ")))
+        );
         assert_eq!(full.value["note"]["body_bytes"], body.len());
         assert!(full.text().len() > MAX_AGENT_WORK_RESPONSE_BYTES);
         assert_eq!(

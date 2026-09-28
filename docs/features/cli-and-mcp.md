@@ -475,7 +475,12 @@ Rules that matter:
   These counts describe the selected stream. `notes_window.families` gives
   item-wide `notes`, `observations`, and `gates` totals, each with exact `shown`
   and `omitted` counts; excluded gates count as omitted in their family, not
-  as omitted notes in the default stream. Each row names its `family`.
+  as omitted notes in the default stream. JSON rows keep the plural `family`
+  values `notes`, `observations`, and `gates`. Text rows mark the same families
+  as `[note]`, `[observation]`, and `[gate]` immediately after their locator;
+  the marker comes from stored kind, gate structure, and observation provenance,
+  never from body prose. The complete `--note LOCATOR` detail uses that marker
+  without changing the body.
   `includes_gates` records the mode. This choice is bound into the existing
   cursor and preserved in continuation and fresh-window guidance. Switching
   it requires starting a fresh window. Gate detail locators work in either mode.
@@ -497,7 +502,9 @@ Rules that matter:
   Its row `family` is `history` for events/completion, or `notes`,
   `observations`, or `gates` for inherited note members; no `notes_window`
   is emitted for this mode. `history.window.families` counts those four
-  families over the combined stream, with total/shown/omitted for each.
+  families over the combined stream, with total/shown/omitted for each. Text
+  marks history-family rows as `[history]` and uses the same note-family markers
+  for inherited members; JSON family values remain plural.
   This explicit mode replaces ordinary show's native-change `history` and
   separate `restored_history` with one stream: inherited notes, events and
   completion members, then native work events. Its `history.total` counts
