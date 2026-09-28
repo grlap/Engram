@@ -115,6 +115,33 @@ user profile:
   Repair and migration interrupt sessions, so say so when presenting the
   changeset. Rebase, force-push and history rewrites still need their own
   word.
+- Changes to this section, or to any repository instruction or command
+  file that grants or limits commit, push, tracker or approval authority,
+  land under the standing approval only after (a) both projects'
+  coordinators (as of 2026-09-28: Engram::Fable and Termal::Fable2) have
+  recorded their concurrence on the exact wording in the item's notes, and
+  (b) Greg has been sent the exact wording and its consequence before the
+  landing; an objection from Greg, by any route, stops it. An edit that
+  widens agent authority — a new act granted, or a condition of this rule
+  loosened — also needs Greg's recorded word on that widening, verbatim
+  with its source, by any route; recording his words, narrowing, or
+  clarifying needs only (a) and (b). No other approval is asked.
+- Outside the standing approval's conditions above, a commit or push needs
+  Greg's own word in the acting session. Outside the standing approval, a
+  word relayed by another session never carries a commit or push. The
+  standing approval grants no restart, deploy or global-configuration
+  authority; those actions need Greg's explicit word. A landing under it
+  also installs the binary built from the exact gated tree (Greg,
+  2026-09-23, recorded in Engram's instructions and extended to TermAl on
+  2026-09-27: his word "commit" for a presented changeset also authorizes
+  pushing it and installing its build; and 2026-09-28, on the
+  install/restart split: 'Fable ma racje to dobra regula. W sumie mamy
+  system kontroli. Agenci moga podejnowac takie decyzje.'): the lander
+  puts it at C:\Users\grzeg\.cargo\bin\engram.exe, renaming the installed
+  binary aside as a backup under C:\Users\grzeg\.engram\backups\, and
+  records its hash. Installing is not deploying: running processes keep
+  their build until they restart, and restarting them is Greg's, on the
+  restart signal (build hash and reason).
 - Implementers claim their own Engram items and complete them with the
   words; never place work refs in source comments, identifiers,
   documentation prose, or user-facing output.
