@@ -475,12 +475,17 @@ into one status field.
 The shipped alpha lifecycle is:
 
 ```text
-proposed -> open -> completed
-              |\-> cancelled
-              \--> superseded
+open -> completed
+  |\-> cancelled
+  \--> superseded
 
 completed --reopen--> open with a new WorkRun generation
 ```
+
+`proposed` is a declared lifecycle word: ordinary creation, decomposition and
+plan admission persist `open`, and executable operations refuse a proposed
+item; a graph-snapshot restore may persist it and a planning revision admits
+it, so it can exist without a shipped operation that admits it into `open`.
 
 The target controlled-completion lifecycle inserts `completion_pending`
 between `open` and `completed` only when Engram must drain mediated actions. That state is not emitted by the shipped zero-linked-
@@ -496,8 +501,9 @@ Availability is a derived projection over the open item:
   work item, a required human decision, missing external input, policy, or a
   manually recorded condition.
 - `deferred`: a future wake time or explicit wake condition is active.
-- `waiting`: work is intentionally waiting for a named event while retaining
-  responsibility; unlike `blocked`, it is not advertised for reassignment.
+- `waiting`: a declared word for work that intentionally waits for a named
+  event while retaining responsibility; unlike `blocked`, it would not be
+  advertised for reassignment. No shipped derivation reports it.
 
 Operational indexes cover open/closed/proposed work, assignments, labels,
 blocked/stale/orphaned items, statistics, and preflight integrity. The ambient
@@ -508,6 +514,180 @@ full Unicode case folding; trigram FTS covers title, outcome, labels, short
 reference, and active-blocker detail. Deferral has an explicit time or event
 wake condition; reaching it only recomputes readiness and does not auto-claim
 or start a process.
+
+### State diagrams
+
+The diagrams below use the state words of `src/domain/work.rs` and
+`src/domain/acceptance_evaluation.rs` and draw only transitions a shipped
+write or derivation performs. Each layer is a separate projection; none of
+them is folded into another.
+
+The durable planning lifecycle (`WorkLifecycle`). `add`, decomposition, plan
+admission and detach's successor root persist an item as `open` directly;
+`proposed` has no edge here because no shipped operation admits it (see the
+note above the availability list):
+
+```mermaid
+stateDiagram-v2
+    [*] --> open: add, decomposition, plan admission, detach's successor root
+    open --> completed: done seals the run
+    open --> cancelled: update cancels with a reason
+    open --> superseded: update supersedes with a successor, or detach supersedes the child with a new root
+    completed --> open: reopen starts a new WorkRun generation
+    completed --> [*]
+    cancelled --> [*]
+    superseded --> [*]
+```
+
+Availability (`WorkAvailability`) is not a state machine: every read derives
+it from the item, its edges and its claim, in this precedence, and reports the
+matching readiness reasons (`WorkReadinessReason`). A held item that gains a
+blocker reports `blocked` and returns to `claimed` or `active` when the blocker
+clears; an item created with an open prerequisite starts `blocked`; `done`
+closes a `claimed` item as well as an `active` one, because completion
+checkpoints before it seals; cancel and supersede close from any availability.
+`waiting` is a declared word that no shipped derivation reports. Agents see
+`claimed` as the word `held`.
+
+```mermaid
+flowchart TD
+    L{"lifecycle open?"} -->|"no"| CLOSED["closed<br/>lifecycle_closed"]
+    L -->|"yes"| P{"ancestors admit execution, and the item is restored without a run or its run belongs to the active root execution?"}
+    P -->|"no"| BP["blocked<br/>parent_disallows_execution; detach_available only when the parent is completed, cancelled or superseded and detach is admitted: no independent blocker or prerequisite, no future deferral, no open or proposed descendant, no live claim or handoff offer"]
+    P -->|"yes"| D{"deferred_until in the future?"}
+    D -->|"yes"| DEF["deferred<br/>deferred_until"]
+    D -->|"no"| B{"unsatisfied required prerequisite (pending, including one superseded by an open successor, or dead) or typed blocker?"}
+    B -->|"yes"| BL["blocked<br/>prerequisite_incomplete, typed_blocker_active"]
+    B -->|"no"| C{"live claim?"}
+    C -->|"no claim row"| R["ready<br/>ready_unclaimed"]
+    C -->|"expired or released"| RR["ready<br/>prior_claim_recoverable, ready_unclaimed"]
+    C -->|"live, run has no checkpoint"| CL["claimed<br/>live_claim_without_checkpoint"]
+    C -->|"live, run has a checkpoint"| AC["active<br/>live_claim_with_checkpoint"]
+```
+
+Execution: one `WorkRun` per generation, one fenced `WorkClaim` per run, and a
+checkpoint-coupled handoff offer (`WorkRunState`, `WorkClaimState`,
+`WorkHandoffState`). Expiry changes neither object: an expired claim stays
+`active` with its `expires_at` in the past and availability derives
+`prior_claim_recoverable`; the next claim reuses the same claim id with the
+fence advanced, whether the prior claim expired or was released. Cancel and
+supersede cancel the run from any state and release an active claim, live or
+expired. Detach is admitted only without a live claim or handoff offer; it
+cancels the run and leaves the claim as it stands.
+
+```mermaid
+stateDiagram-v2
+    state "WorkRun" as run {
+        state "open" as run_open
+        state "claimed" as run_claimed
+        state "active" as run_active
+        state "completed" as run_completed
+        state "cancelled" as run_cancelled
+        [*] --> run_open
+        run_open --> run_claimed: claim
+        run_claimed --> run_active: first checkpoint
+        run_claimed --> run_claimed: recovery claim of an expired claim, any holder
+        run_active --> run_claimed: recovery claim by a different holder
+        run_active --> run_active: recovery claim by the same holder, handoff accepted
+        run_claimed --> run_open: update --release
+        run_active --> run_open: update --release
+        run_claimed --> run_completed: done checkpoints, then seals
+        run_active --> run_completed: done seals
+        run_open --> run_cancelled: cancel, supersede, detach
+        run_claimed --> run_cancelled: cancel, supersede, detach
+        run_active --> run_cancelled: cancel, supersede, detach
+    }
+    state "WorkClaim" as claim {
+        state "active" as claim_active
+        state "released" as claim_released
+        state "completed" as claim_completed
+        [*] --> claim_active: claim mints the claim id and fence
+        claim_active --> claim_active: claim --ttl renews, same id and fence
+        claim_active --> claim_active: handoff accepted, new holder, fence advanced
+        claim_active --> claim_active: recovery claim of an expired claim, same id, fence advanced
+        claim_active --> claim_released: update --release, or cancel, supersede
+        claim_released --> claim_active: recovery claim, same id, fence advanced
+        claim_active --> claim_completed: done
+    }
+    state "Handoff offer" as handoff {
+        [*] --> offered: handoff records a checkpoint and offers the claim
+        offered --> accepted: the named session accepts
+        offered --> cancelled: the holder cancels
+        offered --> expired: the offer expires
+    }
+```
+
+Obligations (`WorkObligationState`) open in two ways: a criterion bound with
+`--bind` opens its obligation at creation, decomposition, a revision that adds
+or rewrites the binding, or a claim on a run that does not yet hold it (a
+reopened generation); and an obligation rule opens one when it matches a host
+observation. An obligation is satisfied by host verification of the required
+kind that verifies the run's latest observed source change; it is waived by an
+attributed operator waiver or a revision of the binding. A stock source-change
+obligation with no matching passing check is waived by `done` itself in the
+completing actor's name and disclosed in the seal as an untested change; a
+binding obligation is never waived that way. The verdict an acceptance
+evaluation records per criterion is `AcceptanceVerdict`.
+
+```mermaid
+stateDiagram-v2
+    state "WorkObligation" as obligation {
+        state "open" as obligation_open
+        [*] --> obligation_open: bound criterion at add, decomposition, binding revision, or a claim on a run that does not yet hold it
+        [*] --> obligation_open: rule matches a host observation
+        obligation_open --> satisfied: host verification of the required kind verifying the run's latest observed source change
+        obligation_open --> waived: attributed operator waiver, or binding revision
+        obligation_open --> waived: done waives a stock source-change obligation, disclosed as untested
+    }
+    state "Verdict per criterion" as verdict {
+        [*] --> pass
+        [*] --> fail
+        [*] --> insufficient_evidence
+        [*] --> needs_human
+    }
+```
+
+The word-level flow from creation to seal, with the completion refusal each
+gate answers. The refusal names are the typed recovery causes of
+`WorkCompletionRecoveryCause` and the `acceptance_criteria_required` error of
+[acceptance evaluation](acceptance-evaluation.md); the refusal at `evaluate`
+is that document's recording rule R5 (a pass on a bound criterion may cite only
+checks of the judged source), which `done` applies again as freshness rule F8.
+The evaluator modes are `same_session`, `sub_agent` and `independent_session`.
+
+```mermaid
+flowchart TD
+    ADD["add: title, acceptance criteria, --bind POSITION=KIND"] --> CLAIM["claim: holder, TTL, fence; a recovery reason when taking over"]
+    CLAIM --> WORK["work: note checkpoints, gate records<br/>host execution observations with source revision, verification records"]
+    WORK --> UPDATE{"update?"}
+    UPDATE -->|"--after, --waive, --accept"| WORK
+    UPDATE -->|"--release"| CLAIM
+    WORK --> EVAL["evaluate in an admitted mode<br/>verdict per criterion with cited evidence"]
+    EVAL -->|"R5: a bound pass cites a check of another revision, refused at write"| WORK
+    EVAL --> DONE{"done"}
+    DONE -->|"RequiredChildUnsealed"| CHILD["seal or waive the required child"] --> DONE
+    DONE -->|"MissingContribution"| ROOT["account for the participant in the root execution"] --> DONE
+    DONE -->|"OpenObligation"| WORK
+    DONE -->|"MissingAcceptance, self-asserted policy"| DONE
+    DONE -->|"MissingAcceptanceEvaluation"| EVAL
+    DONE -->|"acceptance_criteria_required"| ACCEPT["update --accept criterion"] --> EVAL
+    DONE -->|"AcceptanceInsufficientEvidence, AcceptanceFailed"| WORK
+    DONE -->|"AcceptanceNeedsHuman"| HUMAN{"human decision"}
+    HUMAN -->|"separately authorized update --accept"| EVAL
+    HUMAN -->|"cancellation"| CANCELLED["cancelled: the item ends"]
+    DONE -->|"AcceptanceEvaluationStale: verification_source"| WORK
+    DONE -->|"AcceptanceEvaluationStale: source"| EVAL
+    DONE -->|"AcceptanceEvaluationStale: source, fingerprint was missing"| FP["done --source-fingerprint F"] --> DONE
+    DONE -->|"AcceptanceEvaluationStale: other reasons"| EVAL
+    DONE -->|"all criteria pass, obligations resolved"| SEAL["CompletionSeal: run-feed cut, evidence,<br/>acceptance, waivers, disclosures"]
+    SEAL --> REOPEN["reopen: new WorkRun generation"]
+    CLAIM -.->|"handoff offer with checkpoint"| OTHER["another session accepts the claim"]
+```
+
+Under a self-asserted policy the `evaluate` step is absent and `done` records
+the holder's own acceptance, refusing `MissingAcceptance` when a criterion is
+left unaddressed. Under an evaluated policy the host runs the evaluator and the
+core enforces the verdicts; Engram never calls a model.
 
 The flat `ls` word reads its filtered count, bounded page, and displayed
 holders in one read transaction. Only this counted listing pays for a total;
