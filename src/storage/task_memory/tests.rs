@@ -668,3 +668,27 @@ fn capture_note_preserves_an_exact_64_byte_utf8_actor_session() {
         Some(session.as_str())
     );
 }
+
+#[test]
+fn a_fragment_without_a_letter_or_digit_adds_no_search_term() {
+    for text in ["_", "___", "--", "::", r"_ . - : \ /"] {
+        assert_eq!(fts_tokens(text).count(), 0, "{text:?}");
+        assert_eq!(fts_query(text), None, "{text:?}");
+    }
+    assert_eq!(
+        fts_tokens("alpha _ beta").collect::<Vec<_>>(),
+        ["alpha", "beta"]
+    );
+    assert_eq!(
+        fts_query("alpha _ beta").as_deref(),
+        Some("\"alpha\"* AND \"beta\"*")
+    );
+    assert_eq!(
+        fts_tokens("engram_check __init__ _private").collect::<Vec<_>>(),
+        ["engram_check", "__init__", "_private"]
+    );
+    assert_eq!(
+        fts_query("engram_check").as_deref(),
+        Some("\"engram_check\"*")
+    );
+}

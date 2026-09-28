@@ -534,6 +534,109 @@ fn project_memory_search_uses_unicode_case_folding() {
     assert!(unicode.exhausted);
 }
 
+/// A lone underscore is a separator to the full-text tokenizer, so it indexes
+/// nothing; a search term made of it alone must not decide whether a memory
+/// verifies or is found.
+#[test]
+fn a_memory_holding_a_lone_underscore_verifies_and_stays_searchable() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("project-memory-lone-underscore".into());
+    let session = SessionId("lone-underscore-session".into());
+    store
+        .remember_project_memory(
+            &project_memory_request(
+                &project.0,
+                &session.0,
+                Some("separator-rule"),
+                "Keys allow letters, digits, space and `_ . - : \\ /`; engram_check names the probe",
+                1_700_000_000_000,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("remember a memory holding a lone underscore");
+    // A query with nothing to search for once matched this phrase instead.
+    store
+        .remember_project_memory(
+            &project_memory_request(
+                &project.0,
+                &session.0,
+                Some("decoy"),
+                "engram no match",
+                1_700_000_000_001,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("remember a decoy memory");
+    let report = store.verify_all().expect("doctor");
+    assert!(report.is_healthy(), "{report:?}");
+
+    let found = |query: &str| {
+        store
+            .project_memories(&project, &session, &actor(&session.0), Some(query), None)
+            .expect("search")
+            .memories
+            .into_iter()
+            .map(|row| row.key)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(found("space _ digits"), ["separator-rule"]);
+    assert_eq!(found("engram_check"), ["separator-rule"]);
+    // An underscore inside a fragment still keeps its words together, in order.
+    assert!(found("check_engram").is_empty());
+    for query in ["_", "___", "--", "::"] {
+        assert!(
+            found(query).is_empty(),
+            "{query:?} has nothing to search for"
+        );
+    }
+
+    let sixteen = (0..MAX_PROJECT_MEMORY_QUERY_TOKENS)
+        .map(|index| format!("t{index}"))
+        .collect::<Vec<_>>()
+        .join(" _ ");
+    assert!(
+        store
+            .project_memories(&project, &session, &actor(&session.0), Some(&sixteen), None)
+            .is_ok(),
+        "lone underscores must not count toward the search-token limit"
+    );
+    assert!(matches!(
+        store.project_memories(
+            &project,
+            &session,
+            &actor(&session.0),
+            Some(&format!("{sixteen} _ overflow")),
+            None,
+        ),
+        Err(StoreError::InvalidProjectMemory(message)) if message.contains("search tokens")
+    ));
+
+    let version: String = store
+        .connection
+        .query_row(
+            "SELECT head.version_id FROM memory_heads AS head
+             JOIN objects AS object ON object.object_id = head.version_id
+             WHERE json_extract(object.canonical_json, '$.project_key') = 'separator-rule'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the memory's version");
+    // Removes the index's structure record and segments but keeps each
+    // memory's stored text, so the content binding still holds and only the
+    // index probe, whose query now fails, can report the damage.
+    store
+        .connection
+        .execute("DELETE FROM object_fts_data WHERE id > 1", [])
+        .expect("corrupt the full-text index, keeping the stored text");
+    let damaged = store.verify_all().expect("doctor after damage");
+    assert!(
+        damaged
+            .invalid_objects
+            .contains(&format!("object_fts:{version}:fts_index")),
+        "the index probe must still catch damage to this memory: {damaged:?}"
+    );
+}
+
 #[test]
 fn project_memory_search_query_is_bounded_before_fts() {
     let store = SqliteStore::open_in_memory().expect("store");

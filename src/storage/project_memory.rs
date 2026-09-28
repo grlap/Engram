@@ -991,7 +991,10 @@ fn project_memory_rows_on(
             .replace('\\', "\\\\")
             .replace('%', "\\%")
             .replace('_', "\\_");
-        let fts_query = fts_query(query);
+        // A query with no searchable fragment finds nothing.
+        let Some(fts_query) = fts_query(query) else {
+            return Ok((Vec::new(), Some(0)));
+        };
         let mut statement = connection.prepare(
             "SELECT json_extract(object.canonical_json, '$.project_key'),
                     COUNT(*) OVER()

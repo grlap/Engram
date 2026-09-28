@@ -835,3 +835,59 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         Err(StoreError::InvalidWork(_))
     ));
 }
+
+#[test]
+fn a_work_memory_search_with_nothing_to_search_for_finds_nothing() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("project-memory-no-fragment", "root-no-fragment", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create root");
+    let session = SessionId("planner".into());
+    let _claim = claim(&mut store, &root, "planner", "no-fragment-claim", 1, 300);
+    store
+        .focus_work_session(&root.project_id, &session, root.work_id, at(1))
+        .expect("focus work before capture");
+    // A query with nothing to search for once matched this phrase instead.
+    store
+        .capture_note(
+            &NoteRequest {
+                project_id: root.project_id.clone(),
+                task_id: None,
+                work_id: Some(root.work_id),
+                prose: "engram no match".into(),
+                visibility: NoteVisibility::Shared,
+                kind: None,
+                authority: None,
+                sensitivity: Some(Sensitivity::Internal),
+                title: None,
+                tags: Vec::new(),
+                evidence: Vec::new(),
+                refs: Vec::new(),
+                actor: actor("planner"),
+                idempotency_key: "decoy-work-memory".into(),
+                created_at: at(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("capture a decoy work memory");
+    let found = |query: &str| {
+        store
+            .search_work_memories(
+                &root.project_id,
+                root.work_id,
+                &session,
+                "planner",
+                Some(query),
+                Some(20),
+            )
+            .expect("work memory search")
+            .len()
+    };
+    assert_eq!(found("engram"), 1);
+    for query in ["_", "___", "--", "::"] {
+        assert_eq!(found(query), 0, "{query:?} has nothing to search for");
+    }
+}

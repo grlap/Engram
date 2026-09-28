@@ -1641,6 +1641,11 @@ either representation can exceed it. The filtered path uses the Unicode-aware
 memory full-text index for keys/titles
 and bodies rather than SQLite's ASCII-only `lower()` matching. Search input is
 bounded before FTS expansion to 256 raw UTF-8 bytes and 16 normalized tokens.
+A token is a run of letters, digits and underscores that holds at least one
+letter or digit; a lone underscore is ignored, because the index tokenizer
+treats `_` as a separator and would never match it. A search with no such
+token finds nothing. The doctor's probe of the memory index builds its query
+the same way, and checks only the stored text of a memory that has none.
 Neither returns bodies; `memories KEY --full` resolves exactly one key —
 typed `memory_not_found`, `memory_binding_invalid`, or `memory_retired` for
 a tombstoned key — and returns the full body as a dedicated response, at most

@@ -285,10 +285,15 @@ impl SqliteStore {
              )";
         let visibility = format!("(({visibility}) OR ({root_visibility}))");
         let limit = limit.map_or(i64::MAX, |limit| i64::from(limit.clamp(1, 1_000)));
-        let rows = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
-            let fts_query = fts_query(query);
-            let sql = format!(
-                "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
+        let search = query
+            .filter(|value| !value.trim().is_empty())
+            .map(fts_query);
+        let rows = match search {
+            // A query with no searchable fragment finds nothing.
+            Some(None) => Vec::new(),
+            Some(Some(fts_query)) => {
+                let sql = format!(
+                    "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
                         h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
                         h.created_at_ms
@@ -296,41 +301,43 @@ impl SqliteStore {
                    ON h.version_id = f.object_id
                  WHERE {visibility} AND object_fts MATCH ?5
                  ORDER BY bm25(object_fts), h.created_at_ms DESC LIMIT ?6"
-            );
-            let mut statement = transaction.prepare(&sql)?;
-            let mapped = statement.query_map(
-                params![
-                    project_id.0,
-                    work_id.0.to_string(),
-                    agent_id,
-                    work_root_id.0.to_string(),
-                    fts_query,
-                    limit
-                ],
-                Self::decode_memory_summary,
-            )?;
-            mapped.collect::<Result<Vec<_>, _>>()?
-        } else {
-            let sql = format!(
-                "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
+                );
+                let mut statement = transaction.prepare(&sql)?;
+                let mapped = statement.query_map(
+                    params![
+                        project_id.0,
+                        work_id.0.to_string(),
+                        agent_id,
+                        work_root_id.0.to_string(),
+                        fts_query,
+                        limit
+                    ],
+                    Self::decode_memory_summary,
+                )?;
+                mapped.collect::<Result<Vec<_>, _>>()?
+            }
+            None => {
+                let sql = format!(
+                    "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
                         h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
                         h.created_at_ms
                  FROM memory_heads h WHERE {visibility}
                  ORDER BY h.created_at_ms DESC, h.memory_id LIMIT ?5"
-            );
-            let mut statement = transaction.prepare(&sql)?;
-            let mapped = statement.query_map(
-                params![
-                    project_id.0,
-                    work_id.0.to_string(),
-                    agent_id,
-                    work_root_id.0.to_string(),
-                    limit
-                ],
-                Self::decode_memory_summary,
-            )?;
-            mapped.collect::<Result<Vec<_>, _>>()?
+                );
+                let mut statement = transaction.prepare(&sql)?;
+                let mapped = statement.query_map(
+                    params![
+                        project_id.0,
+                        work_id.0.to_string(),
+                        agent_id,
+                        work_root_id.0.to_string(),
+                        limit
+                    ],
+                    Self::decode_memory_summary,
+                )?;
+                mapped.collect::<Result<Vec<_>, _>>()?
+            }
         };
         let memories = rows
             .into_iter()
@@ -376,7 +383,10 @@ impl SqliteStore {
                (h.work_id IS NULL OR h.work_id = ?3)))";
         let limit = limit.map_or(i64::MAX, |limit| i64::from(limit.clamp(1, 1_000)));
         let rows = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
-            let fts_query = fts_query(query);
+            // A query with no searchable fragment finds nothing.
+            let Some(fts_query) = fts_query(query) else {
+                return Ok(Vec::new());
+            };
             let sql = format!(
                 "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
@@ -821,21 +831,25 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
     })
 }
 
-pub(super) fn fts_query(query: &str) -> String {
+/// The full-text query for `query`: every search fragment as a quoted prefix
+/// term, all of them required. `None` when `query` holds no fragment at all,
+/// so the caller finds nothing rather than matching some stand-in phrase.
+pub(super) fn fts_query(query: &str) -> Option<String> {
     let tokens: Vec<_> = fts_tokens(query)
         .map(|token| format!("\"{token}\"*"))
         .collect();
-    if tokens.is_empty() {
-        "\"__engram_no_match__\"".into()
-    } else {
-        tokens.join(" AND ")
-    }
+    (!tokens.is_empty()).then(|| tokens.join(" AND "))
 }
 
+/// Search fragments of `query`. An underscore stays inside a fragment, so
+/// `engram_check` remains one quoted phrase. A fragment with no letter or
+/// digit, such as a lone `_`, is dropped: the full-text tokenizer treats `_`
+/// as a separator, so such a fragment indexes nothing and a query term made
+/// of it could never match.
 fn fts_tokens(query: &str) -> impl Iterator<Item = &str> {
     query
         .split(|character: char| !character.is_alphanumeric() && character != '_')
-        .filter(|token| !token.is_empty())
+        .filter(|token| token.chars().any(char::is_alphanumeric))
 }
 
 pub(super) fn normalize_project_memory_query(

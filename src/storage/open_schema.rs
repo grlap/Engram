@@ -1772,8 +1772,9 @@ impl SqliteStore {
                 invalid.push(format!("object_fts:{version_id}:projection_binding"));
                 continue;
             }
-            let query = fts_query(&format!("{title} {body}"));
-            if query != "\"__engram_no_match__\""
+            // Text with no searchable fragment indexes no term, so only the
+            // content binding above can be checked for it.
+            if let Some(query) = fts_query(&format!("{title} {body}"))
                 && !connection
                     .query_row(
                         "SELECT EXISTS(
