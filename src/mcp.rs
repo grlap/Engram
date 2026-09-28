@@ -1015,6 +1015,11 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "work_id": work,
             "cause": cause,
         }),
+        StoreError::AcceptanceCriteriaRequired { work } => json!({
+            "work_id": work,
+            "reason": "the item has no acceptance criteria; an acceptance evaluation needs at least one, and the host refuses to evaluate an item without criteria",
+            "remedy": "add at least one criterion with `engram work update REF --accept \"criterion\"`, then have the host evaluate it, then run `engram work done REF` again",
+        }),
         StoreError::AcceptanceEvaluationBasisMoved {
             work,
             moved,
@@ -1096,6 +1101,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
         StoreError::WorkReleaseWaiverRequired { .. } => "work_release_waiver_required",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
+        StoreError::AcceptanceCriteriaRequired { .. } => "acceptance_criteria_required",
         StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
         StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
             crate::host::evaluation_basis_move_code(*moved)

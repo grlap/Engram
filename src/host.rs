@@ -544,6 +544,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkClaimHeld { .. }
         | StoreError::WorkReleaseWaiverRequired { .. }
         | StoreError::WorkCompletionRefused { .. }
+        | StoreError::AcceptanceCriteriaRequired { .. }
         | StoreError::GraphDestinationNotEmpty
         | StoreError::GraphProjectMismatch { .. }
         | StoreError::GraphDifferentBuild

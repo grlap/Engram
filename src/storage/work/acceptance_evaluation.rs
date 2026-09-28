@@ -1763,7 +1763,9 @@ fn staleness(
     Ok(None)
 }
 
-/// Completion-side assessment of the newest evaluation on `run_id`.
+/// Completion-side assessment of the newest evaluation on `run_id`, under an
+/// evaluated policy. An item with no acceptance criteria is refused first:
+/// no evaluation of it can exist, so no recovery cause could name one.
 pub(super) fn assess_on(
     connection: &Connection,
     item: &WorkItem,
@@ -1771,6 +1773,9 @@ pub(super) fn assess_on(
     policy: &AcceptanceEvaluationPolicy,
     source_fingerprint: Option<&str>,
 ) -> Result<AcceptanceEvaluationAssessment, StoreError> {
+    if item.acceptance.is_empty() {
+        return Err(StoreError::AcceptanceCriteriaRequired { work: item.work_id });
+    }
     let Some((hash, record)) = latest_on(connection, run_id)? else {
         return Ok(AcceptanceEvaluationAssessment::Absent);
     };

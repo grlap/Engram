@@ -444,6 +444,15 @@ impl VerbError {
                 vec![format!("completion recovery is required: {cause:?}")],
                 vec![format!("engram work show {target}")],
             ),
+            StoreError::AcceptanceCriteriaRequired { .. } => (
+                vec![
+                    "this item has no acceptance criteria; the project requires an acceptance evaluation, which needs at least one criterion, and the host refuses to evaluate without one: add criteria, have the host evaluate them, then run done again".into(),
+                ],
+                vec![
+                    format!("engram work update {target} --accept \"…\""),
+                    format!("engram work done {target}"),
+                ],
+            ),
             StoreError::WorkNotOpen(_) => (
                 vec!["this item is not open".into()],
                 vec![format!("engram work show {target}")],

@@ -842,7 +842,11 @@ Rules that matter:
   evaluation instead of the author's self-assertion, presenting the
   host-measured fingerprint when the policy requires source freshness. An
   independent evaluator that later takes the run cannot consume its own
-  pass. `done` and the completed item's `show` say where the sealed
+  pass. Under that policy `done` on an item with no acceptance criteria
+  answers the error code `acceptance_criteria_required`: add a criterion
+  with `update REF --accept "criterion"`, have the host evaluate it (the
+  host refuses to evaluate an item without criteria), then run `done` again.
+  `done` and the completed item's `show` say where the sealed
   acceptance came from (`evaluated (<mode>, <assurance>) by <evaluator>` or
   `self-asserted`); `add --evaluation-mode MODE` pins a task's mode
   from creation, `update REF --evaluation-mode MODE` pins it later, and

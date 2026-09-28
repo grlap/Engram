@@ -1,5 +1,6 @@
 //! The `evaluate` word and its `show`, `update`, and `done` disclosures.
 
+mod criteria_required;
 mod review;
 
 use super::*;

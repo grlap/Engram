@@ -5,6 +5,7 @@ mod basis_moves;
 mod bound_criteria;
 mod citation_sources;
 mod corrections;
+mod criteria_required;
 mod review;
 mod snapshots;
 

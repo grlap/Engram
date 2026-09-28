@@ -407,6 +407,16 @@ Refusals extend the typed recovery causes; each carries one recovery command:
 | `AcceptanceInsufficientEvidence { criterion }` | newest fresh evaluation has `insufficient_evidence` | record the missing evidence, then evaluate again |
 | `AcceptanceNeedsHuman { criterion }` | a criterion needs a human decision | obtain that decision; only a separately authorized revision (`update REF --accept …`) or cancellation changes the requirement, and a new evaluation follows the decision. No agent override exists. |
 
+An item with no acceptance criteria has nothing an evaluation could judge, and
+the host refuses to evaluate it. So under an evaluated policy `done` refuses
+such an item before any recovery cause is built, with the error code
+`acceptance_criteria_required`. The reason says the policy needs at least one
+criterion and that the host will not evaluate without one. The remedy names,
+in order, `engram work update REF --accept "criterion"`, the host evaluation,
+and `engram work done REF`. The refusal captures nothing beyond the existing
+pending attempt, and a retry meets the same refusal. Under a self-asserted
+policy such an item completes as before.
+
 The recovery command for the first two causes is runnable navigation,
 `engram work show REF --notes --gates`: the criteria, notes, and gate
 locators an evaluator reads before recording (`--full` stays a separate,
@@ -510,6 +520,7 @@ tests cite the row identifier in a nearby comment.
 | B49 | MCP `update` with action `revise` and a supplied `evaluation_mode` (valid or blank); action `evaluation_mode` with a word, then omitted | `invalid_argument` on `evaluation_mode` before any effect, item, feed, and focus unchanged / pinned, then cleared, both named in history |
 | B50 | criterion bound to a test; a passed check at R_d, a source edit to R_e with no check after it; a pass citing the R_d check, undeclared or declaring R_e, with source freshness off and on; the same record as an earlier build admitted it, with the binding's obligation satisfied or waived, and on the waived path also declaring R_d; its exact resend; the check rerun at R_e and cited | refuse at write naming the citation and both revisions, nothing appended / `done` refuses `AcceptanceEvaluationStale { verification_source }` on every path, even with the matching completion fingerprint / the resend replays the admitted record, and a changed resend is refused / records and seals |
 | B51 | the same binding; a declared source ahead of the newest sighting at the cut; a declared workspace other than the check's; a declaration that matches the check exactly; after an edit to R_e, a declaration of R_d behind it; a quiet sighting at R_e before the cut, then one back at R_d; a reported change without a revision after the check; an R_d citation beside a fresh R_e check, cited or not; after the check, sightings of its own revision (the turn's closing one, one from another workspace); after the check, reported changes to R_e and back to R_d, both kept as changes; a check recorded in a later turn citing its earlier producer, with a sighting of its revision in between | refused naming both revisions, and the remedy names correcting the declaration, which an undeclared refusal does not / refused naming both workspaces / records / refused naming the later revision / refused as judged at R_e, then records / refused naming the change without a revision / refused naming the R_d check; the fresh check alone records / records and seals / records and stays fresh, while `done` asks for a check after the latest change under the satisfied binding's own rule / records |
+| B52 | evaluated policy; an item with no acceptance criteria, as a migration imports one; `done`, then the same `done` again; then a criterion added, `done`, an evaluation, `done`; the same item under a self-asserted policy | refuse `acceptance_criteria_required` naming the missing criteria, the host's refusal to evaluate without them, and the remedy in order, with nothing captured beyond the pending attempt, never `work_projection_invalid` / the retry is refused the same way / `MissingAcceptanceEvaluation`, then seals / seals as before |
 
 ## Agent surface
 

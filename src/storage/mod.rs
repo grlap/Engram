@@ -946,6 +946,12 @@ pub enum StoreError {
         work: crate::domain::WorkId,
         reason: String,
     },
+    /// Completion under an evaluated acceptance policy on an item that has no
+    /// acceptance criteria: there is nothing an evaluation could judge.
+    #[error(
+        "completion for work {work:?} was refused: the item has no acceptance criteria, and the project policy requires an acceptance evaluation, which needs at least one criterion; the host also refuses to evaluate an item without criteria, so add criteria first"
+    )]
+    AcceptanceCriteriaRequired { work: crate::domain::WorkId },
     #[error("evidence link refused: {reason}")]
     WorkCriterionLinkInvalid {
         criterion: Option<usize>,
