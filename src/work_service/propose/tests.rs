@@ -317,3 +317,87 @@ fn oversized_default_outcome_does_not_refuse_after_create() {
     );
     assert_eq!(count_roots(&database), 7);
 }
+
+/// A replayed protocol result whose proposed item names an environment on a
+/// binding, with a value or as null, is refused when the same proposal is
+/// retried, naming the member; it is never replayed as the same item without
+/// its pin. The untouched result replays as recorded. Replay checks the
+/// attempt's result bytes against the stored result object, so both carry
+/// the same rewritten bytes.
+#[test]
+fn a_replayed_protocol_result_that_names_an_environment_is_refused_by_name() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("work.sqlite3");
+    let service = LocalWorkService::new(
+        database.clone(),
+        ProjectId("replayed-protocol-environment".into()),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let mut input = root_input("Bound work", "bound-root");
+    let WorkProposeInput::Root {
+        acceptance,
+        acceptance_bindings,
+        ..
+    } = &mut input
+    else {
+        unreachable!()
+    };
+    *acceptance = vec!["run tests".into(), "write docs".into()];
+    *acceptance_bindings = vec![crate::domain::AcceptanceBinding {
+        criterion: 1,
+        requirement: crate::domain::VerificationRequirement {
+            check_kind: crate::domain::VerificationKind::Test,
+            check_fingerprint: None,
+        },
+    }];
+    let proposed = service
+        .work_propose(input.clone(), at(0))
+        .expect("propose a bound root");
+    let replayed = service
+        .work_propose(input.clone(), at(1))
+        .expect("an exact retry replays the result");
+    assert_eq!(
+        serde_json::to_value(&replayed).expect("replay JSON"),
+        serde_json::to_value(&proposed).expect("first JSON")
+    );
+    let connection = rusqlite::Connection::open(&database).expect("store connection");
+    let (result_id, stored): (String, Vec<u8>) = connection
+        .query_row(
+            "SELECT result_id, result_json FROM work_protocol_attempts
+             WHERE operation = 'work_propose:root'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the stored protocol result");
+    for environment in [
+        serde_json::json!(ObjectId::from_canonical_bytes(b"environment")),
+        serde_json::Value::Null,
+    ] {
+        let mut result: serde_json::Value = serde_json::from_slice(&stored).expect("result json");
+        result["work"]["acceptance_bindings"][0]["requirement"]["required_environment"] =
+            environment;
+        let bytes = serde_json_canonicalizer::to_vec(&result).expect("canonical result");
+        connection
+            .execute(
+                "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+                rusqlite::params![bytes, result_id],
+            )
+            .expect("store a result object that names an environment");
+        connection
+            .execute(
+                "UPDATE work_protocol_attempts SET result_json = ?1 WHERE result_id = ?2",
+                rusqlite::params![bytes, result_id],
+            )
+            .expect("store the attempt's matching result bytes");
+        let error = service
+            .work_propose(input.clone(), at(2))
+            .expect_err("a result naming an environment is refused when it is replayed")
+            .to_string();
+        assert!(
+            error.contains("unknown field `required_environment`"),
+            "{error}"
+        );
+    }
+}

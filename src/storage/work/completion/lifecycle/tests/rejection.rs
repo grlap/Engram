@@ -199,3 +199,114 @@ fn rejection_storage_retains_revision_and_live_child_authority_checks() {
     assert_eq!(receipt.child.lifecycle, WorkLifecycle::Cancelled);
     assert!(store.verify_all().unwrap().is_healthy());
 }
+
+/// Stored decomposition and rejection receipts carry the child's bindings,
+/// and an exact resend replays each one. Once the stored child names an
+/// environment on its binding, with a value or as null, the same resend is
+/// refused, naming the member; the untouched receipts replay as recorded.
+#[test]
+fn replayed_decomposition_and_rejection_receipts_that_name_an_environment_are_refused() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let root = store
+        .create_work(
+            &root_request("replayed-child-environment", "bound-parent", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let mut draft = child("required", ChildRequirement::Required, "Bound finding");
+    draft.acceptance_bindings = vec![crate::domain::AcceptanceBinding {
+        criterion: 1,
+        requirement: crate::domain::VerificationRequirement {
+            check_kind: crate::domain::VerificationKind::Test,
+            check_fingerprint: None,
+        },
+    }];
+    let decompose = DecomposeWorkRequest {
+        parent_id: root.work_id,
+        expected_parent_revision: root.revision,
+        children: vec![draft],
+        prerequisites: vec![],
+        authority: delegated("replayed-child-environment", "planner"),
+        actor: actor("planner"),
+        idempotency_key: "bound-children".into(),
+        created_at: at(1),
+    };
+    let decomposition = store
+        .decompose_work(&decompose, &DevelopmentNoopRedactor)
+        .unwrap();
+    assert_eq!(decomposition.children[0].acceptance_bindings.len(), 1);
+    assert_eq!(
+        serde_json::to_value(
+            store
+                .decompose_work(&decompose, &DevelopmentNoopRedactor)
+                .unwrap()
+        )
+        .unwrap(),
+        serde_json::to_value(&decomposition).unwrap()
+    );
+    let reject = request(&decomposition.parent, &decomposition.children[0]);
+    let receipt = store
+        .reject_required_child(&reject, &DevelopmentNoopRedactor)
+        .unwrap();
+    assert_eq!(receipt.child.acceptance_bindings.len(), 1);
+    assert_eq!(
+        store
+            .reject_required_child(&reject, &DevelopmentNoopRedactor)
+            .unwrap(),
+        receipt
+    );
+    for (operation, key, requirement) in [
+        (
+            "decompose_work",
+            "bound-children",
+            "/children/0/acceptance_bindings/0/requirement",
+        ),
+        (
+            "reject_required_child",
+            "reject-once",
+            "/child/acceptance_bindings/0/requirement",
+        ),
+    ] {
+        let stored: Vec<u8> = store
+            .connection
+            .query_row(
+                "SELECT result_json FROM work_operation_results
+                 WHERE operation = ?1 AND idempotency_key = ?2",
+                [operation, key],
+                |row| row.get(0),
+            )
+            .unwrap();
+        for environment in [
+            serde_json::json!(ObjectId::from_canonical_bytes(b"environment")),
+            serde_json::Value::Null,
+        ] {
+            let mut result: serde_json::Value = serde_json::from_slice(&stored).unwrap();
+            result
+                .pointer_mut(requirement)
+                .unwrap_or_else(|| panic!("{operation} stores the child's requirement"))["required_environment"] =
+                environment;
+            store
+                .connection
+                .execute(
+                    "UPDATE work_operation_results SET result_json = ?1
+                     WHERE operation = ?2 AND idempotency_key = ?3",
+                    rusqlite::params![serde_json::to_vec(&result).unwrap(), operation, key],
+                )
+                .unwrap();
+            let error = if operation == "decompose_work" {
+                store
+                    .decompose_work(&decompose, &DevelopmentNoopRedactor)
+                    .unwrap_err()
+            } else {
+                store
+                    .reject_required_child(&reject, &DevelopmentNoopRedactor)
+                    .unwrap_err()
+            }
+            .to_string();
+            assert!(
+                error.contains("unknown field `required_environment`"),
+                "{operation}: {error}"
+            );
+        }
+    }
+}

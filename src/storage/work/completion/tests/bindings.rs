@@ -1193,6 +1193,63 @@ fn a_stored_obligation_that_names_an_environment_is_refused_by_name() {
     }
 }
 
+/// A replay receipt whose stored work item names an environment on a
+/// binding, with a value or as null, is refused when an exact resend replays
+/// it, naming the member; it is never replayed as the same item without its
+/// pin. The untouched receipt replays as the item it recorded.
+#[test]
+fn a_replayed_receipt_that_names_an_environment_is_refused_by_name() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let mut request = root_request("project-replayed-environment", "create-replayed-work", 1);
+    request.acceptance = vec!["run tests".into(), "write docs".into()];
+    request.acceptance_bindings = vec![bound(1, VerificationKind::Test)];
+    let work = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("create bound work");
+    assert_eq!(
+        store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect("an exact resend replays the receipt"),
+        work
+    );
+    let stored: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT result_json FROM work_operation_results
+             WHERE operation = 'create_work' AND idempotency_key = ?1",
+            [request.idempotency_key.as_str()],
+            |row| row.get(0),
+        )
+        .expect("the stored receipt");
+    for environment in [
+        serde_json::json!(ObjectId::from_canonical_bytes(b"environment")),
+        serde_json::Value::Null,
+    ] {
+        let mut receipt: serde_json::Value = serde_json::from_slice(&stored).expect("receipt json");
+        receipt["acceptance_bindings"][0]["requirement"]["required_environment"] = environment;
+        store
+            .connection
+            .execute(
+                "UPDATE work_operation_results SET result_json = ?1
+                 WHERE operation = 'create_work' AND idempotency_key = ?2",
+                rusqlite::params![
+                    serde_json::to_vec(&receipt).expect("receipt bytes"),
+                    request.idempotency_key
+                ],
+            )
+            .expect("store a receipt that names an environment");
+        let error = store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect_err("a receipt naming an environment is refused when it is replayed")
+            .to_string();
+        assert!(
+            error.contains("unknown field `required_environment`"),
+            "{error}"
+        );
+    }
+}
+
 /// Reopening mints a new run and keeps the item's bindings. A pinned check
 /// names a check's command, which any run can observe, so the new run owes
 /// it again and the pinned check, not another one, satisfies it there.

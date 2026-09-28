@@ -7,6 +7,7 @@ mod read_snapshots;
 mod reject_retry;
 mod release;
 mod renewal;
+mod replayed_pins;
 
 #[test]
 fn work_update_does_not_admit_obligation_waivers() {
