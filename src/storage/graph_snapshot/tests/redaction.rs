@@ -203,6 +203,8 @@ fn saved_snapshot_redacts_restricted_memory_and_carries_secret_reference_verbati
         } if value == "restricted planning detail"
     ));
     for snapshot in [&default, &widened] {
+        assert_eq!(snapshot.document.body.summary.secret_ref_bodies, 1);
+        assert_eq!(snapshot.document.manifest.summary.secret_ref_bodies, 1);
         assert!(matches!(
             &snapshot.document.body.memories[1].state,
             WorkGraphSnapshotMemoryState::Active {
@@ -217,6 +219,119 @@ fn saved_snapshot_redacts_restricted_memory_and_carries_secret_reference_verbati
         .expect("sensitive snapshot audits");
     assert_eq!(audits[0].redacted.memories, 1);
     assert_eq!(audits[1].redacted.memories, 0);
+    assert!(
+        audits
+            .iter()
+            .all(|audit| audit.secret_ref_bodies == Some(1))
+    );
+}
+
+#[test]
+fn secret_ref_count_includes_live_history_and_excludes_retired_bodies() {
+    let project = ProjectId("secret-ref-history".into());
+    let mut source = SqliteStore::open_in_memory().unwrap();
+    for revision in 1..=3 {
+        source
+            .remember_project_memory(
+                &RememberProjectMemoryRequest {
+                    project_id: project.clone(),
+                    session_id: actor("author").session_id.unwrap(),
+                    key: Some("reference".into()),
+                    body: format!("opaque body {revision}"),
+                    actor: actor("author"),
+                    created_at: at(revision),
+                    revise: revision > 1,
+                    expected_revision: None,
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .unwrap();
+    }
+    let mut document = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("save"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(4),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap()
+        .document;
+    let memory = &mut document.body.memories[0];
+    memory.history[0].sensitivity = Sensitivity::SecretRef;
+    let WorkGraphSnapshotMemoryState::Active { sensitivity, .. } = &mut memory.state else {
+        panic!("live fixture");
+    };
+    *sensitivity = Sensitivity::SecretRef;
+    document.body.summary.secret_ref_bodies = 2;
+    rebind_snapshot_body(&mut document);
+    let mut restored = SqliteStore::open_in_memory().unwrap();
+    // Rebinding the digest and both summaries cannot disguise a wrong count.
+    let mut wrong = document.clone();
+    wrong.body.summary.secret_ref_bodies = 1;
+    rebind_snapshot_body(&mut wrong);
+    assert!(matches!(restored.load_work_graph_snapshot(
+        &project, &actor("load"), &snapshot_bytes(&wrong), false, at(5), &DevelopmentNoopRedactor,
+    ), Err(StoreError::InvalidGraphSnapshot(message)) if message.contains("secret-ref body count")));
+    restored
+        .load_work_graph_snapshot(
+            &project,
+            &actor("load"),
+            &snapshot_bytes(&document),
+            false,
+            at(5),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let exported = restored
+        .save_work_graph_snapshot(
+            &project,
+            &actor("save"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(6),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    assert_eq!(exported.document.body.summary.secret_ref_bodies, 2);
+    assert_eq!(exported.document.body.memories[0].history.len(), 2);
+    assert_eq!(
+        exported.document.body.memories[0].state,
+        document.body.memories[0].state
+    );
+    assert_eq!(
+        restored.work_graph_snapshot_save_audits(&project).unwrap()[0].secret_ref_bodies,
+        Some(2)
+    );
+    restored
+        .forget_project_memory(
+            &crate::ForgetProjectMemoryRequest {
+                project_id: project.clone(),
+                session_id: actor("retire").session_id.unwrap(),
+                key: "reference".into(),
+                actor: actor("retire"),
+                created_at: at(7),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let retired = restored
+        .save_work_graph_snapshot(
+            &project,
+            &actor("save"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(8),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    assert_eq!(retired.document.body.summary.secret_ref_bodies, 0);
+    assert!(retired.document.body.memories[0].history.is_empty());
+    assert_eq!(
+        restored.work_graph_snapshot_save_audits(&project).unwrap()[1].secret_ref_bodies,
+        Some(0)
+    );
 }
 
 #[test]

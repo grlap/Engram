@@ -238,6 +238,13 @@ fn validate_summary(document: &WorkGraphSnapshotDocument) -> Result<(), StoreErr
             "snapshot redacted counts differ from the typed placeholders",
         ));
     }
+    if document.body.summary.secret_ref_bodies
+        != super::secret_ref_body_count(&document.body.memories)
+    {
+        return Err(corrupt(
+            "snapshot secret-ref body count differs from the carried bodies",
+        ));
+    }
     Ok(())
 }
 

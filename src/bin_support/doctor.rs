@@ -173,7 +173,7 @@ fn print_graph_snapshot_audits(store: &SqliteStore, project_id: &ProjectId) -> R
     }
     for audit in audits {
         println!(
-            "Graph snapshot disclosure attempted at {}: cut work={} memory={}, widened={}, widening reason={}, redacted={}, body={}, destination={:?}, actor={}",
+            "Graph snapshot disclosure attempted at {}: cut work={} memory={}, widened={}, widening reason={}, redacted={}, secret-ref bodies={}, body={}, destination={:?}, actor={}",
             audit.attempted_at,
             audit.as_of.work_feed,
             audit.as_of.project_memory,
@@ -184,6 +184,9 @@ fn print_graph_snapshot_audits(store: &SqliteStore, project_id: &ProjectId) -> R
                 + audit.redacted.sources
                 + audit.redacted.records
                 + audit.redacted.memories,
+            audit
+                .secret_ref_bodies
+                .map_or_else(|| "not recorded".into(), |count| count.to_string()),
             audit.body_sha256,
             audit.destination_kind,
             bounded_doctor_snapshot_actor(&audit.actor.actor_id),

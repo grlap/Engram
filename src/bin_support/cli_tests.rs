@@ -188,6 +188,11 @@ fn policy_administration_has_no_reason_argument_or_help() {
 
 #[test]
 fn graph_save_is_operator_only_and_has_exclusive_destinations() {
+    let help = Cli::try_parse_from(["engram", "graph", "save", "--help"])
+        .unwrap_err()
+        .to_string();
+    assert!(help.contains("Secret-ref bodies are always carried verbatim"));
+    assert!(help.contains("never dereferenced or validated as references"));
     let parsed = Cli::try_parse_from([
         "engram",
         "graph",

@@ -1,5 +1,6 @@
 use chrono::{Duration, TimeZone};
 
+mod audit_validation;
 mod input_validation;
 mod memory_revisions;
 mod redaction;
@@ -808,7 +809,7 @@ fn load_uses_body_semantics_and_exact_typed_source_bytes() {
     let project = ProjectId("snapshot-source-validation".into());
     let mut source =
         SqliteStore::open(directory.path().join("source-validation.db")).expect("source store");
-    create_imported_root(&mut source, &project);
+    let (imported, original_source) = create_imported_root(&mut source, &project);
     let saved = source
         .save_work_graph_snapshot(
             &project,
@@ -819,6 +820,15 @@ fn load_uses_body_semantics_and_exact_typed_source_bytes() {
             &DevelopmentNoopRedactor,
         )
         .expect("save imported work");
+    assert_eq!(saved.document.body.sources.len(), 1);
+    assert_eq!(
+        saved.document.body.sources[0].hash,
+        imported.source_snapshot_id.unwrap()
+    );
+    assert_eq!(
+        saved.document.body.sources[0].canonical_json,
+        serde_json::to_value(original_source).unwrap()
+    );
 
     let mut manifest_retimestamped = saved.document.clone();
     manifest_retimestamped.manifest.exported_at = at(0);
@@ -1070,6 +1080,30 @@ fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
             &DevelopmentNoopRedactor,
         )
         .expect("save source graph");
+    let exported_root = saved
+        .document
+        .body
+        .items
+        .iter()
+        .find(|item| item.work_id == root.work_id)
+        .unwrap();
+    assert_eq!(exported_root.prerequisites, [prerequisite.work_id]);
+    let note_record = saved
+        .document
+        .body
+        .records
+        .iter()
+        .find(|record| record.work_id == prerequisite.work_id)
+        .unwrap();
+    let crate::WorkGraphSnapshotRecordPayload::Native { history } = &note_record.payload else {
+        panic!("source evidence is native history");
+    };
+    assert_eq!(history.notes.len(), 1);
+    assert_eq!(
+        history.notes[0].summary,
+        "the open prerequisite carries its note"
+    );
+    assert_eq!(history.notes[0].refs, ["review:open-item"]);
     let bytes = serde_json::to_vec_pretty(&saved.document).expect("serialize snapshot");
 
     let mut restored =
@@ -1443,6 +1477,19 @@ fn runless_restored_work_supports_blocked_planning_and_disposal() {
             &DevelopmentNoopRedactor,
         )
         .expect("save blocked roots");
+    assert_eq!(saved.document.body.blockers.len(), 3);
+    for (index, work) in [&cancel, &supersede, &decompose].into_iter().enumerate() {
+        let blocker = saved
+            .document
+            .body
+            .blockers
+            .iter()
+            .find(|entry| entry.work_id == work.work_id)
+            .unwrap();
+        assert_eq!(blocker.kind, WorkBlockerKind::Manual);
+        assert_eq!(blocker.detail, format!("restored blocker {index}"));
+        assert_eq!(blocker.created_by, actor("planner-session"));
+    }
     let bytes = snapshot_bytes(&saved.document);
 
     let mut cancelled =
@@ -1702,6 +1749,37 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
             &DevelopmentNoopRedactor,
         )
         .expect("save terminal fanout");
+    let exported_children: Vec<_> = saved
+        .document
+        .body
+        .items
+        .iter()
+        .filter(|item| item.parent_id == Some(root.work_id))
+        .collect();
+    assert_eq!(exported_children.len(), child_count);
+    for child in exported_children {
+        assert!(matches!(
+            child.lifecycle,
+            WorkLifecycle::Cancelled | WorkLifecycle::Superseded
+        ));
+        assert_eq!(
+            child.disposal_reason.as_deref(),
+            Some("retained terminal history")
+        );
+        let record = saved
+            .document
+            .body
+            .records
+            .iter()
+            .find(|record| record.work_id == child.work_id)
+            .unwrap();
+        let crate::WorkGraphSnapshotRecordPayload::Native { history } = &record.payload else {
+            panic!("terminal source history is native");
+        };
+        let final_event = history.events.last().unwrap();
+        assert_eq!(final_event.lifecycle, Some(child.lifecycle));
+        assert_eq!(final_event.reason, child.disposal_reason);
+    }
     let bytes = snapshot_bytes(&saved.document);
     let mut destination = SqliteStore::open(directory.path().join("terminal-destination.db"))
         .expect("destination store");

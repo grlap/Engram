@@ -62,6 +62,8 @@ pub struct WorkGraphSnapshotSummary {
     pub widened: bool,
     pub widening_reason: Option<String>,
     pub redacted: WorkGraphSnapshotRedactedCounts,
+    /// Present secret-ref bodies, including live keys' historical versions.
+    pub secret_ref_bodies: usize,
     pub redactor_status: String,
     pub section_counts: WorkGraphSnapshotSectionCounts,
 }
@@ -391,6 +393,9 @@ pub struct WorkGraphSnapshotSavedEvent {
     pub widened: bool,
     pub widening_reason: Option<String>,
     pub redacted: WorkGraphSnapshotRedactedCounts,
+    /// Older attempts did not record this measurement; absence is not zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_ref_bodies: Option<usize>,
     pub body_sha256: ObjectId,
     pub destination_kind: WorkGraphSnapshotDestinationKind,
     pub actor: ActorContext,
@@ -538,6 +543,7 @@ struct StrictBody {
     widened: bool,
     widening_reason: Option<String>,
     redacted: WorkGraphSnapshotRedactedCounts,
+    secret_ref_bodies: usize,
     redactor_status: String,
     section_counts: WorkGraphSnapshotSectionCounts,
     items: Vec<WorkGraphSnapshotItem>,
@@ -560,6 +566,7 @@ struct StrictManifest {
     widened: bool,
     widening_reason: Option<String>,
     redacted: WorkGraphSnapshotRedactedCounts,
+    secret_ref_bodies: usize,
     redactor_status: String,
     section_counts: WorkGraphSnapshotSectionCounts,
 }
@@ -609,6 +616,7 @@ impl StrictBody {
             widened: self.widened,
             widening_reason: self.widening_reason.clone(),
             redacted: self.redacted.clone(),
+            secret_ref_bodies: self.secret_ref_bodies,
             redactor_status: self.redactor_status.clone(),
             section_counts: self.section_counts.clone(),
         }
@@ -625,6 +633,7 @@ impl StrictManifest {
             widened: self.widened,
             widening_reason: self.widening_reason.clone(),
             redacted: self.redacted.clone(),
+            secret_ref_bodies: self.secret_ref_bodies,
             redactor_status: self.redactor_status.clone(),
             section_counts: self.section_counts.clone(),
         }

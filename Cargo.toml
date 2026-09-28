@@ -9,6 +9,9 @@ repository = "https://github.com/grlap/Engram"
 
 [dependencies]
 anyhow = "1.0"
+cap-std = "4.0"
+cap-fs-ext = "4.0"
+same-file = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6", features = ["derive", "env"] }
 rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
@@ -29,6 +32,12 @@ uuid = { version = "1.18", features = ["serde", "v4", "v7"] }
 [dev-dependencies]
 rusqlite = { version = "0.40", default-features = false, features = ["trace"] }
 tempfile = "3.20"
+
+[target.'cfg(windows)'.dev-dependencies]
+junction = "2.1"
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.31", default-features = false, features = ["fs"] }
 
 [profile.release]
 lto = "thin"

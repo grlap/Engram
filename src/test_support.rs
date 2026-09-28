@@ -106,6 +106,14 @@ fn is_refusal(error: &io::Error) -> bool {
 /// `target/tmp/engram`) reached without any link from `target/` down.
 /// A directory that is gone or still holds entries is left as it is.
 fn remove_empty_run_dir_in(anchor: &Path, run_root: &Path) -> io::Result<()> {
+    remove_empty_run_dir_with(anchor, run_root, |path| fs::remove_dir(path))
+}
+
+fn remove_empty_run_dir_with(
+    anchor: &Path,
+    run_root: &Path,
+    remove: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<()> {
     let refuse = |reason: &str| {
         refusal(format!(
             "refusing to delete {}: {reason} (anchor {})",
@@ -143,7 +151,32 @@ fn remove_empty_run_dir_in(anchor: &Path, run_root: &Path) -> io::Result<()> {
     if resolved_parent != Some(fs::canonicalize(anchor)?) {
         return Err(refuse("it resolves outside the anchor"));
     }
-    match fs::remove_dir(run_root) {
+    // Parallel fixtures may pin this shared ancestor without delete sharing.
+    // Leave a populated run alone before attempting removal: on Windows an
+    // open handle can otherwise mask DirectoryNotEmpty with SharingViolation.
+    let populated = match fs::read_dir(run_root) {
+        Ok(mut entries) => entries.next().transpose()?.is_some(),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if populated {
+        return Ok(());
+    }
+    match remove(run_root) {
+        // Another fixture can populate and pin the run after our first read.
+        // Only a confirmed populated directory makes this race benign;
+        // an empty locked run still reports the original teardown failure.
+        #[cfg(windows)]
+        Err(error) if error.raw_os_error() == Some(32) => match fs::read_dir(run_root) {
+            Ok(mut entries) => {
+                if entries.next().is_some_and(|entry| entry.is_ok()) {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            }
+            _ => Err(error),
+        },
         Err(error)
             if matches!(
                 error.kind(),
@@ -622,6 +655,55 @@ fn fixture_teardown_removes_only_its_own_empty_run_directory() {
     assert!(!fixture.exists() && !run.exists() && anchor.exists());
     // A run directory that is already gone is not an error.
     remove_empty_run_dir_in(&anchor, &run).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn populated_run_with_pinned_ancestor_is_left_alone_but_empty_lock_is_reported() {
+    let home = temp_home().unwrap();
+    let anchor = home.path().join("target/tmp/engram");
+    let run = anchor.join("run-pinned");
+    let fixture = run.join("other-fixture");
+    fs::create_dir_all(&fixture).unwrap();
+    let pinned = cap_std::fs::Dir::open_ambient_dir(&run, cap_std::ambient_authority()).unwrap();
+    assert_eq!(fs::remove_dir(&run).unwrap_err().raw_os_error(), Some(32));
+    remove_empty_run_dir_in(&anchor, &run).unwrap();
+    assert!(fixture.exists());
+    fs::remove_dir(&fixture).unwrap();
+    assert_eq!(
+        remove_empty_run_dir_in(&anchor, &run)
+            .unwrap_err()
+            .raw_os_error(),
+        Some(32)
+    );
+    drop(pinned);
+    remove_empty_run_dir_in(&anchor, &run).unwrap();
+    assert!(!run.exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn run_populated_and_pinned_between_empty_check_and_removal_is_left_alone() {
+    let home = temp_home().unwrap();
+    let anchor = home.path().join("target/tmp/engram");
+    let run = anchor.join("run-raced");
+    fs::create_dir_all(&run).unwrap();
+    let fixture = run.join("other-fixture");
+    let mut pinned = None;
+    remove_empty_run_dir_with(&anchor, &run, |path| {
+        fs::create_dir(&fixture).unwrap();
+        pinned =
+            Some(cap_std::fs::Dir::open_ambient_dir(path, cap_std::ambient_authority()).unwrap());
+        let result = fs::remove_dir(path);
+        assert_eq!(result.as_ref().unwrap_err().raw_os_error(), Some(32));
+        result
+    })
+    .unwrap();
+    assert!(fixture.exists());
+    drop(pinned);
+    fs::remove_dir(fixture).unwrap();
+    remove_empty_run_dir_in(&anchor, &run).unwrap();
+    assert!(!run.exists());
 }
 
 /// A guard refusal, not an ordinary I/O failure, with its message intact.

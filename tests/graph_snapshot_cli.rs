@@ -74,6 +74,124 @@ fn save_mixed_precision_audits(
 }
 
 #[test]
+fn doctor_distinguishes_recorded_secret_ref_bodies_from_old_unmeasured_audits() {
+    let directory = test_support::temp_home().unwrap();
+    let home = directory.path();
+    assert!(engram(home).arg("init").output().unwrap().status.success());
+    let initial = doctor_json(home);
+    let project = ProjectId(initial["project_id"].as_str().unwrap().into());
+    let database = initial["database"].as_str().unwrap();
+    let mut seed = SqliteStore::open_in_memory().unwrap();
+    let actor = ActorContext {
+        actor_id: "disclosure-fixture".into(),
+        actor_kind: "test_agent".into(),
+        assurance: AssuranceLevel::Asserted,
+        run_id: None,
+        session_id: Some(engram::SessionId("disclosure-fixture".into())),
+        source_tool: None,
+        source_skill: None,
+        provenance_chain: Vec::new(),
+        reason: "test opaque secret-ref disclosure counts".into(),
+    };
+    let now = Utc::now();
+    let mut document = seed
+        .save_work_graph_snapshot(
+            &project,
+            &actor,
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            now,
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap()
+        .document;
+    document
+        .body
+        .memories
+        .push(engram::WorkGraphSnapshotMemory {
+            key: "opaque-reference".into(),
+            history: Vec::new(),
+            state: engram::WorkGraphSnapshotMemoryState::Active {
+                body: engram::WorkGraphSnapshotText::Present {
+                    value: "not-validated-as-a-reference".into(),
+                },
+                sensitivity: engram::Sensitivity::SecretRef,
+                remembered_at: now,
+                actor: actor.clone(),
+            },
+        });
+    document.body.summary.section_counts.memories = 1;
+    document.body.summary.as_of.project_memory = 1;
+    document.body.summary.secret_ref_bodies = 1;
+    document.manifest.summary = document.body.summary.clone();
+    document.manifest.body_sha256 = engram::CanonicalObject::freeze(&document.body)
+        .unwrap()
+        .key()
+        .clone();
+    let mut store = SqliteStore::open_unresolved(database).unwrap();
+    store
+        .load_work_graph_snapshot(
+            &project,
+            &actor,
+            &serde_json::to_vec(&document).unwrap(),
+            false,
+            now,
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    store
+        .save_work_graph_snapshot(
+            &project,
+            &actor,
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            now,
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    drop(store);
+    let report = doctor_json(home);
+    assert_eq!(
+        report["graph_snapshot_disclosure_attempts"]["items"][0]["secret_ref_bodies"],
+        1
+    );
+    let text = engram(home).arg("doctor").output().unwrap();
+    assert!(text.status.success());
+    assert!(output_text(&text.stdout).contains("secret-ref bodies=1"));
+
+    // Model an audit written before this optional measurement existed,
+    // retaining its identity and every other field.
+    let connection = rusqlite::Connection::open(database).unwrap();
+    let (id, bytes): (String, Vec<u8>) = connection.query_row(
+        "SELECT object_id, canonical_json FROM objects WHERE object_kind = 'work_graph_snapshot_saved'",
+        [], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).unwrap();
+    let mut historical: Value = serde_json::from_slice(&bytes).unwrap();
+    historical
+        .as_object_mut()
+        .unwrap()
+        .remove("secret_ref_bodies");
+    let historical =
+        engram::CanonicalObject::identified(&id.parse().unwrap(), &historical).unwrap();
+    connection
+        .execute(
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+            rusqlite::params![historical.bytes(), id],
+        )
+        .unwrap();
+    drop(connection);
+    let old = doctor_json(home);
+    assert!(
+        old["graph_snapshot_disclosure_attempts"]["items"][0]
+            .get("secret_ref_bodies")
+            .is_none()
+    );
+    let text = engram(home).arg("doctor").output().unwrap();
+    assert!(text.status.success());
+    assert!(output_text(&text.stdout).contains("secret-ref bodies=not recorded"));
+}
+
+#[test]
 fn doctor_save_audit_page_orders_mixed_timestamp_precision_by_attempt() {
     let directory = test_support::temp_home().expect("temporary Engram home");
     let home = directory.path();
@@ -385,6 +503,16 @@ fn graph_save_cli_uses_digest_paths_and_never_replaces() {
         .expect("run sidecar save");
     assert!(!sidecar_save.status.success());
     assert!(output_text(&sidecar_save.stderr).contains("outside Engram's project stores"));
+    assert!(output_text(&sidecar_save.stderr).contains(&sidecar));
+    let refused_disclosure = doctor_json(home);
+    assert_eq!(
+        refused_disclosure["graph_snapshot_disclosure_attempts"]["total"],
+        5
+    );
+    assert_eq!(
+        refused_disclosure["graph_snapshot_disclosure_attempts"]["items"][4]["destination_kind"],
+        "file"
+    );
 
     let changed = engram(home)
         .args([
@@ -402,9 +530,19 @@ fn graph_save_cli_uses_digest_paths_and_never_replaces() {
     let replacement = save_explicit();
     assert!(!replacement.status.success());
     assert!(output_text(&replacement.stderr).contains("already exists with different bytes"));
+    assert!(output_text(&replacement.stderr).contains(&explicit_path.display().to_string()));
     assert_eq!(
         fs::read(&explicit_path).expect("explicit snapshot preserved"),
         explicit_original
+    );
+    let replacement_disclosure = doctor_json(home);
+    assert_eq!(
+        replacement_disclosure["graph_snapshot_disclosure_attempts"]["total"],
+        6
+    );
+    assert_eq!(
+        replacement_disclosure["graph_snapshot_disclosure_attempts"]["items"][5]["destination_kind"],
+        "file"
     );
 
     #[cfg(unix)]

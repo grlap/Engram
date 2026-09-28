@@ -77,6 +77,14 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
             )
             .unwrap();
     }
+    let memory_state = |store: &SqliteStore| -> (i64, i64) {
+        store.connection.query_row(
+            "SELECT active_count, change_position FROM project_memory_state WHERE project_id = ?1",
+            [&project.0], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap()
+    };
+    let before_save = memory_state(&source);
+    assert_eq!(before_save.0, 1);
     let saved = source
         .save_work_graph_snapshot(
             &project,
@@ -88,6 +96,7 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
         )
         .unwrap();
     let memory = &saved.document.body.memories[0];
+    assert_eq!(memory_state(&source), before_save);
     assert_eq!(memory.history.len(), 2);
     assert_eq!(memory.history[0].revision, 1);
     assert_eq!(memory.history[1].revision, 2);
@@ -169,6 +178,9 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
             &DevelopmentNoopRedactor,
         )
         .unwrap();
+    let after_forget = memory_state(&source);
+    assert_eq!(after_forget.0, 0);
+    assert!(after_forget.1 > before_save.1);
     let forgotten = source
         .save_work_graph_snapshot(
             &project,
@@ -180,6 +192,8 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
         )
         .unwrap();
     assert!(forgotten.document.body.memories[0].history.is_empty());
+    assert_eq!(memory_state(&source), after_forget);
+    assert_eq!(forgotten.document.body.summary.secret_ref_bodies, 0);
     assert!(matches!(
         forgotten.document.body.memories[0].state,
         WorkGraphSnapshotMemoryState::Tombstone { .. }

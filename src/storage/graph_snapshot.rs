@@ -85,6 +85,7 @@ impl SqliteStore {
             widened,
             widening_reason,
             redacted: document.body.summary.redacted.clone(),
+            secret_ref_bodies: Some(document.body.summary.secret_ref_bodies),
             body_sha256: body_sha256.clone(),
             destination_kind,
             actor: actor.clone(),
@@ -547,6 +548,7 @@ fn build_snapshot_body_on<R: Redactor>(
         widened,
         widening_reason: widening_reason.map(str::to_owned),
         redacted,
+        secret_ref_bodies: secret_ref_body_count(&memories),
         redactor_status: redactor.description().into(),
         section_counts,
     };
@@ -558,6 +560,31 @@ fn build_snapshot_body_on<R: Redactor>(
         records: sections.records,
         memories,
     })
+}
+
+fn secret_ref_body_count(memories: &[WorkGraphSnapshotMemory]) -> usize {
+    memories
+        .iter()
+        .map(|memory| {
+            let WorkGraphSnapshotMemoryState::Active {
+                body, sensitivity, ..
+            } = &memory.state
+            else {
+                return 0;
+            };
+            usize::from(
+                *sensitivity == Sensitivity::SecretRef
+                    && matches!(body, WorkGraphSnapshotText::Present { .. }),
+            ) + memory
+                .history
+                .iter()
+                .filter(|entry| {
+                    entry.sensitivity == Sensitivity::SecretRef
+                        && matches!(entry.body, WorkGraphSnapshotText::Present { .. })
+                })
+                .count()
+        })
+        .sum()
 }
 
 fn validate_widening_reason(reason: Option<&str>) -> Result<Option<String>, StoreError> {

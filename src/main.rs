@@ -460,7 +460,7 @@ enum GraphCommand {
         /// Write the disclosure artifact to stdout.
         #[arg(long, conflicts_with = "out")]
         stdout: bool,
-        /// Include restricted memory bodies; secret references never widen.
+        /// Include restricted memory bodies. Secret-ref bodies are always carried verbatim, never dereferenced or validated as references.
         #[arg(long, requires = "reason")]
         include_restricted: bool,
         /// Audit reason required when restricted memory bodies are included.

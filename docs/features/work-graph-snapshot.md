@@ -58,8 +58,8 @@ only repeats the body's own summary for adapters and readers.
 
 | Member | Fields | Role |
 | --- | --- | --- |
-| `body` | `schema_version: 1`, snapshot format fingerprint, project id, as-of cut, `widened` with its reason, redacted count per section, redactor status at save, and the five ordered sections below | Canonical bytes; identical store state at the same cut and the same widening yields identical bytes and the same SHA-256 on every build that shares the format fingerprint, so the digest is a content identity, not a build identity |
-| `manifest` | exported-at, exporting build, body SHA-256, and a verbatim copy of the body's summary fields (format fingerprint, project id, as-of cut, widening and its reason, redacted counts, redactor status, per-section counts) | Backup metadata and human preflight; the loader re-derives the body's RFC 8785 bytes, recomputes the digest and every summary field, and refuses a manifest that disagrees |
+| `body` | `schema_version: 1`, snapshot format fingerprint, project id, as-of cut, `widened` with its reason, redacted count per section, `secret_ref_bodies` count, redactor status at save, and the five ordered sections below | Canonical bytes; identical store state at the same cut and the same widening yields identical bytes and the same SHA-256 on every build that shares the format fingerprint, so the digest is a content identity, not a build identity |
+| `manifest` | exported-at, exporting build, body SHA-256, and a verbatim copy of the body's summary fields (format fingerprint, project id, as-of cut, widening and its reason, redacted counts, `secret_ref_bodies`, redactor status, per-section counts) | Backup metadata and human preflight; the loader re-derives the body's RFC 8785 bytes, recomputes the digest and every summary field, and refuses a manifest that disagrees |
 
 The **as-of cut** is a vector, not one number: the project work-feed head
 plus the project-memory change position, because memories advance their own
@@ -158,8 +158,12 @@ save audit event, because widening is a disclosure decision like every other
 attributed authority in the system; `secret-ref` is an asserted label — the
 writer asserts that the body is a vault reference, Engram defines and
 validates no reference syntax in V1 — and save carries that body verbatim
-under its label, never widened and never dereferenced or inspected for
-shape. An excluded text lands in the file as a
+under its label, independently of `--include-restricted`, and never
+dereferences it or validates reference syntax. `secret_ref_bodies` counts
+present bodies labelled `secret-ref` in current and historical revisions of
+live memories. Tombstones carry no bodies and contribute zero. The required
+count appears in both body and manifest; load recomputes it and refuses a
+mismatch. An excluded text lands in the file as a
 typed placeholder that keeps the entry present with its key and relations,
 never as silent absence, and the body counts every placeholder per section
 as `redacted`. A placeholder is inert: it is never a claimable item and never
@@ -178,7 +182,8 @@ stays its own decision. A configured off-host copy is `BackupAdapter` work and
 stays under the security brief's authorized-destination rule — a destination
 not authorized for placeholder metadata receives the marked-truncated export
 that brief defines, never this file. Save commits one audit event on the
-source store — as-of cut, `widened` and its reason, redacted counts, body
+source store — as-of cut, `widened` and its reason, redacted counts,
+`secret_ref_bodies`, body
 hash, destination kind, and the saving actor — before any byte reaches the
 destination. Audit attribution is retained verbatim only after each text
 field passes the 4,096-byte control-and-format-free bound, the provenance chain
@@ -190,6 +195,19 @@ durable fact is that a disclosure was attempted, which is the conservative
 fact `doctor` should show, and a destination failure after it is `save`'s
 own reported failure with the attempt on record. If the event cannot be
 written, nothing is written or printed.
+
+Every new save audit records the secret-reference count, including zero.
+Audits written before that measurement retain their original bytes and omit
+the field; `doctor` text reports **not recorded**, and its JSON leaves the
+field absent. Absence never means zero. This additive audit read does not
+require converting existing durable rows. Older binaries with strict audit
+decoders cannot read a newly written audit containing the field: that is a
+one-way audit-read boundary, independent of schema readiness. Do not run a
+new save on a live store still consumed by those binaries.
+
+The required snapshot summary count changes the runtime-derived format
+fingerprint. Files from the preceding format are refused as
+`graph_different_build`; there is no guessed compatibility conversion.
 
 ## Load
 
@@ -366,10 +384,59 @@ position>-<first twelve hex digits of the body digest>.json` under
 paths use: no project id ever enters a path, a redacted and a widened save
 at one cut differ in digest and therefore in path, and two recreation
 generations that both sit at position zero cannot collide on different
-bytes. `save` never replaces an existing file — it stages and publishes
-exactly as `backup` does, and an existing path holding the same bytes is
-reported as already saved; it prints the path. `--out` chooses another file
-under the same no-replace rule, and `--stdout` is the explicit pipe form,
+bytes. File publication writes and syncs a private stage, then uses a hard
+link to publish atomically without replacement. It requires filesystem
+hard-link support; refusal names that requirement and preserves the OS
+error, including permission failures. There is no partial-file fallback.
+An existing equivalent snapshot is reported as already saved without being
+rewritten. Equality ignores only manifest `exported_at` and `exporting_build`;
+malformed JSON, duplicate members, or different content are refused.
+Existing destinations must be regular files, not links, directories, or
+special files. Inspection checks both the directory entry and opened handle;
+Unix opens are nonblocking so a raced FIFO cannot stall publication. Comparison
+reads are bounded to the 128 MiB load limit, including when a file grows during
+inspection. An oversized existing file is refused by its named comparison limit;
+it is never truncated or silently classified as different content.
+Successful publication prints the path. If stage removal then fails, save
+warns on stderr with the full staging path and still succeeds, including an
+equivalent competing publication. A failed stage write or publication also
+warns if cleanup fails: the remaining stage may contain disclosure data.
+Directory sync is still attempted on Unix; its failure reports a separate
+durability error and the published path even though publication occurred.
+
+The writer retains every ancestor directory handle through staging,
+publication and cleanup, refuses linked ancestors, and compares directory
+identity with the protected project-store directory independently of path
+case. Unix operations use directory-relative capabilities. Windows handles
+deny delete sharing so ancestors cannot be replaced while library operations
+reconstruct paths; observed reparse-point attributes are refused. This is
+not a claim to classify every possible filesystem reparse implementation.
+The refusal covers the entire path from the filesystem root, including
+system or operator-created links: macOS `/tmp` and `/var`, symlinked homes
+(including `ENGRAM_HOME` for the default save), and Windows cloud placeholder
+directories such as OneDrive. Pass a resolved real directory path without
+such ancestors instead. The diagnostic names the ancestor that could not be
+bound. The writer deliberately does not canonicalize and then reopen a path.
+On macOS and BSD, opening retained directory handles requires read permission
+on every ancestor in addition to search permission. A search-only ancestor is
+therefore refused with a cannot-open-ancestor diagnostic.
+Destination spellings ending in a directory separator are refused before
+normalization; on Unix a final `/.` is also refused. Supply a file name.
+On Unix, parent-directory (`..`) components are refused rather than resolved
+lexically across possible links.
+Windows file publication requires a real volume root; drive aliases such as
+SUBST that start in a subdirectory are refused before staging. Pass the real
+volume path instead. The opened root is checked by comparing its directory
+identity with its parent's identity.
+Windows file publication supports local drive paths, normalizing a simple
+verbatim drive prefix; UNC/device paths, alternate-stream components, reserved
+DOS device names, separators embedded in verbatim components, and components
+ending in a dot or space are refused before ordinary Win32 normalization.
+Diagnostics use the walked path after resolving accepted Windows `.` and `..`
+components. The writer does not promise full verbatim-path semantics.
+
+`--out` chooses another file under the same rules. `--stdout` bypasses file
+publication and emits the artifact JSON directly; it is the explicit pipe form,
 because stdout is a
 disclosure boundary and the default must not cross one. Both words use the
 ordinary `ENGRAM_HOME` / project-file resolution and the same asserted

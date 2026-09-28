@@ -10,12 +10,16 @@ use std::{
 use anyhow::{Context, Result, bail};
 use engram::{
     LocalWorkService, ProjectId, SessionId, WorkGraphSnapshotCut, WorkGraphSnapshotDestinationKind,
-    graph_snapshot_files_are_equivalent,
 };
 
 use crate::{GraphCommand, WorkContext};
 
+mod publication;
+use publication::{GraphSnapshotWriteOutcome, write_graph_snapshot_file};
+
 use super::attribution::{ShellWorkAttribution, resolve_shell_work_attribution};
+
+const MAX_GRAPH_SNAPSHOT_BYTES: u64 = 128 * 1024 * 1024;
 
 pub(crate) fn run_graph_from_cli(
     database: PathBuf,
@@ -128,7 +132,14 @@ fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
                         &export.body_sha256,
                     )?,
                 };
-                match write_graph_snapshot_file(&database, &out, &bytes)? {
+                let outcome =
+                    write_graph_snapshot_file(&database, &out, &bytes).with_context(|| {
+                        format!(
+                            "failed to save snapshot to requested destination {}",
+                            out.display()
+                        )
+                    })?;
+                match outcome {
                     GraphSnapshotWriteOutcome::Saved => println!("{}", out.display()),
                     GraphSnapshotWriteOutcome::AlreadySaved => {
                         println!("already saved: {}", out.display());
@@ -137,7 +148,6 @@ fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
             }
         }
         GraphCommand::Load { file, dry_run } => {
-            const MAX_GRAPH_SNAPSHOT_BYTES: u64 = 128 * 1024 * 1024;
             let metadata = fs::metadata(&file)
                 .with_context(|| format!("failed to inspect snapshot {}", file.display()))?;
             if metadata.len() > MAX_GRAPH_SNAPSHOT_BYTES {
@@ -190,97 +200,6 @@ fn graph_snapshot_default_path(
     )))
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum GraphSnapshotWriteOutcome {
-    Saved,
-    AlreadySaved,
-}
-
-fn write_graph_snapshot_file(
-    database: &Path,
-    out: &Path,
-    bytes: &[u8],
-) -> Result<GraphSnapshotWriteOutcome> {
-    validate_graph_snapshot_destination(database, out)?;
-    if out.try_exists()? {
-        let existing = fs::read(out)
-            .with_context(|| format!("failed to inspect existing snapshot {}", out.display()))?;
-        if graph_snapshot_files_are_equivalent(&existing, bytes) {
-            return Ok(GraphSnapshotWriteOutcome::AlreadySaved);
-        }
-        bail!(
-            "snapshot destination {} already exists with different bytes",
-            out.display()
-        );
-    }
-    let parent = out
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
-    validate_graph_snapshot_destination(database, out)?;
-
-    let temp = out.with_file_name(format!(
-        ".{}.graph-save-{}.tmp",
-        out.file_name()
-            .unwrap_or_else(|| std::ffi::OsStr::new("snapshot"))
-            .to_string_lossy(),
-        uuid::Uuid::now_v7()
-    ));
-    let mut options = fs::OpenOptions::new();
-    options.create_new(true).write(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(&temp)
-        .with_context(|| format!("failed to create snapshot stage {}", temp.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(fs::Permissions::from_mode(0o600))?;
-    }
-    let staged = (|| -> Result<()> {
-        file.write_all(bytes)
-            .with_context(|| format!("failed to write snapshot stage {}", temp.display()))?;
-        file.sync_all()
-            .with_context(|| format!("failed to sync snapshot stage {}", temp.display()))?;
-        Ok(())
-    })();
-    drop(file);
-    if let Err(error) = staged {
-        let _ = fs::remove_file(&temp);
-        return Err(error);
-    }
-    if let Err(error) = fs::hard_link(&temp, out) {
-        let result = if error.kind() == io::ErrorKind::AlreadyExists
-            && fs::read(out)
-                .is_ok_and(|existing| graph_snapshot_files_are_equivalent(&existing, bytes))
-        {
-            Ok(())
-        } else {
-            Err(error).with_context(|| {
-                format!(
-                    "failed to publish snapshot {} without replacing it",
-                    out.display()
-                )
-            })
-        };
-        let _ = fs::remove_file(&temp);
-        result?;
-        return Ok(GraphSnapshotWriteOutcome::AlreadySaved);
-    }
-    fs::remove_file(&temp)
-        .with_context(|| format!("failed to remove staged snapshot {}", temp.display()))?;
-    #[cfg(unix)]
-    fs::File::open(parent)
-        .and_then(|directory| directory.sync_all())
-        .with_context(|| format!("failed to sync snapshot directory {}", parent.display()))?;
-    Ok(GraphSnapshotWriteOutcome::Saved)
-}
-
 pub(crate) fn engram_home_and_project_digest(database: &Path) -> Result<(&Path, &std::ffi::OsStr)> {
     let project_dir = database
         .parent()
@@ -295,31 +214,10 @@ pub(crate) fn engram_home_and_project_digest(database: &Path) -> Result<(&Path, 
     Ok((home, digest))
 }
 
-fn validate_graph_snapshot_destination(database: &Path, out: &Path) -> Result<()> {
-    let (home, _) = engram_home_and_project_digest(database)?;
-    let projects = std::path::absolute(home.join("projects"))?;
-    let destination = std::path::absolute(out)?;
-    if destination.starts_with(&projects) {
-        bail!("snapshot destination must be outside Engram's project stores");
-    }
-    let canonical_projects = fs::canonicalize(&projects).unwrap_or(projects);
-    let mut ancestor = destination.parent();
-    while let Some(candidate) = ancestor {
-        if candidate.try_exists()? {
-            let canonical = fs::canonicalize(candidate)?;
-            if canonical.starts_with(&canonical_projects) {
-                bail!("snapshot destination must be outside Engram's project stores");
-            }
-            break;
-        }
-        ancestor = candidate.parent();
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use engram::graph_snapshot_files_are_equivalent;
 
     #[test]
     fn graph_default_path_uses_the_project_digest_and_cut() {
@@ -352,6 +250,7 @@ mod tests {
     fn graph_snapshot_writer_refuses_duplicate_member_destinations() {
         let directory = crate::test_support::temp_home().expect("tempdir");
         let database = directory.path().join("projects/digest/engram.db");
+        fs::create_dir_all(database.parent().expect("database parent")).expect("project directory");
         let output = directory.path().join("snapshots/graph.json");
         fs::create_dir_all(output.parent().expect("snapshot parent")).expect("directory");
         let bytes = br#"{"body":{"items":[]},"manifest":{"exported_at":"first","exporting_build":"build"}}"#;
