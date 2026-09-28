@@ -648,12 +648,17 @@ stateDiagram-v2
 ```
 
 The word-level flow from creation to seal, with the completion refusal each
-gate answers. The refusal names are the typed recovery causes of
-`WorkCompletionRecoveryCause` and the `acceptance_criteria_required` error of
-[acceptance evaluation](acceptance-evaluation.md); the refusal at `evaluate`
-is that document's recording rule R5 (a pass on a bound criterion may cite only
-checks of the judged source), which `done` applies again as freshness rule F8.
-The evaluator modes are `same_session`, `sub_agent` and `independent_session`.
+gate answers. The refusal labels are the words a receipt carries: the `kind`
+of a typed recovery cause of `WorkCompletionRecoveryCause` (its Rust name in
+parentheses) and the `acceptance_criteria_required` error of
+[acceptance evaluation](acceptance-evaluation.md). A completion refusal's
+top-level `code` equals its cause `kind`, except `open_obligation`, whose code
+is `open_work_obligations`. The refusal at `evaluate`
+is `acceptance_evaluation_refused`, applying that document's recording rule R5
+(a pass on a bound criterion may cite only checks of the judged source), which
+`done` applies again as freshness rule F8 under the stale reason
+`verification_source`. The evaluator modes are `same_session`, `sub_agent`
+and `independent_session`.
 
 ```mermaid
 flowchart TD
@@ -663,30 +668,30 @@ flowchart TD
     UPDATE -->|"--after, --waive, --accept"| WORK
     UPDATE -->|"--release"| CLAIM
     WORK --> EVAL["evaluate in an admitted mode<br/>verdict per criterion with cited evidence"]
-    EVAL -->|"R5: a bound pass cites a check of another revision, refused at write"| WORK
+    EVAL -->|"acceptance_evaluation_refused: R5, a bound pass cites a check of another revision"| WORK
     EVAL --> DONE{"done"}
-    DONE -->|"RequiredChildUnsealed"| CHILD["seal or waive the required child"] --> DONE
-    DONE -->|"MissingContribution"| ROOT["account for the participant in the root execution"] --> DONE
-    DONE -->|"OpenObligation"| WORK
-    DONE -->|"MissingAcceptance, self-asserted policy"| DONE
-    DONE -->|"MissingAcceptanceEvaluation"| EVAL
+    DONE -->|"required_child_unsealed (RequiredChildUnsealed)"| CHILD["seal or waive the required child"] --> DONE
+    DONE -->|"missing_contribution (MissingContribution)"| ROOT["account for the participant in the root execution"] --> DONE
+    DONE -->|"open_obligation (OpenObligation)"| WORK
+    DONE -->|"missing_acceptance (MissingAcceptance), self-asserted policy"| DONE
+    DONE -->|"missing_acceptance_evaluation (MissingAcceptanceEvaluation)"| EVAL
     DONE -->|"acceptance_criteria_required"| ACCEPT["update --accept criterion"] --> EVAL
-    DONE -->|"AcceptanceInsufficientEvidence, AcceptanceFailed"| WORK
-    DONE -->|"AcceptanceNeedsHuman"| HUMAN{"human decision"}
+    DONE -->|"acceptance_insufficient_evidence, acceptance_failed (AcceptanceInsufficientEvidence, AcceptanceFailed)"| WORK
+    DONE -->|"acceptance_needs_human (AcceptanceNeedsHuman)"| HUMAN{"human decision"}
     HUMAN -->|"separately authorized update --accept"| EVAL
     HUMAN -->|"cancellation"| CANCELLED["cancelled: the item ends"]
-    DONE -->|"AcceptanceEvaluationStale: verification_source"| WORK
-    DONE -->|"AcceptanceEvaluationStale: source"| EVAL
-    DONE -->|"AcceptanceEvaluationStale: source, fingerprint was missing"| FP["done --source-fingerprint F"] --> DONE
-    DONE -->|"AcceptanceEvaluationStale: other reasons"| EVAL
+    DONE -->|"acceptance_evaluation_stale (AcceptanceEvaluationStale): verification_source"| WORK
+    DONE -->|"acceptance_evaluation_stale: source"| EVAL
+    DONE -->|"acceptance_evaluation_stale: source, fingerprint was missing"| FP["done --source-fingerprint F"] --> DONE
+    DONE -->|"acceptance_evaluation_stale: other reasons"| EVAL
     DONE -->|"all criteria pass, obligations resolved"| SEAL["CompletionSeal: run-feed cut, evidence,<br/>acceptance, waivers, disclosures"]
     SEAL --> REOPEN["reopen: new WorkRun generation"]
     CLAIM -.->|"handoff offer with checkpoint"| OTHER["another session accepts the claim"]
 ```
 
 Under a self-asserted policy the `evaluate` step is absent and `done` records
-the holder's own acceptance, refusing `MissingAcceptance` when a criterion is
-left unaddressed. Under an evaluated policy the host runs the evaluator and the
+the holder's own acceptance, refusing `missing_acceptance` (`MissingAcceptance`)
+when a criterion is left unaddressed. Under an evaluated policy the host runs the evaluator and the
 core enforces the verdicts; Engram never calls a model.
 
 The flat `ls` word reads its filtered count, bounded page, and displayed
