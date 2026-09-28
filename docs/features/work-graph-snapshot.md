@@ -51,14 +51,14 @@ and not canonical-object interchange.
 
 ## File layout
 
-The file is one JSON document with two top-level members. The `body` is the
-canonical RFC 8785 encoding and the sole subject of determinism and identity.
+The file is one JSON document with two top-level members. The `body` is
+canonical RFC 8785 JSON; its bytes determine the snapshot's content fingerprint.
 Every field a loader or auditor decides on lives in the body; the `manifest`
 only repeats the body's own summary for adapters and readers.
 
 | Member | Fields | Role |
 | --- | --- | --- |
-| `body` | `schema_version: 1`, snapshot format fingerprint, project id, as-of cut, `widened` with its reason, redacted count per section, `secret_ref_bodies` count, redactor status at save, and the five ordered sections below | Canonical bytes; identical store state at the same cut and the same widening yields identical bytes and the same SHA-256 on every build that shares the format fingerprint, so the digest is a content identity, not a build identity |
+| `body` | `schema_version: 1`, snapshot format fingerprint, project id, as-of cut, `widened` with its reason, redacted count per section, `secret_ref_bodies` count, redactor status at save, and the five ordered sections below | Canonical bytes; identical store state at the same cut and the same widening yields identical bytes and the same SHA-256 on every build that shares the format fingerprint, so the digest fingerprints content, not the build |
 | `manifest` | exported-at, exporting build, body SHA-256, and a verbatim copy of the body's summary fields (format fingerprint, project id, as-of cut, widening and its reason, redacted counts, `secret_ref_bodies`, redactor status, per-section counts) | Backup metadata and human preflight; the loader re-derives the body's RFC 8785 bytes, recomputes the digest and every summary field, and refuses a manifest that disagrees |
 
 The **as-of cut** is a vector, not one number: the project work-feed head
@@ -115,12 +115,13 @@ chain. None of these steps authorizes a live store swap or concurrent consumers.
 | `blockers` | per item, every active `WorkBlocker`: blocker id, kind, detail, creator, time | cleared blockers (they remain in records) |
 | `sources` | every `WorkSourceSnapshot` cited by an item or its retained source notices, verbatim canonical JSON | nothing; no source bears a label today, and the build that first labels sources defines their exclusion |
 | `records` | per item, an ordered list of history layers, oldest first, each restored layer binding its project, full planning-item cut, relations, and generation index: every `RestoredRecord` the item already carries, verbatim, then the store's own **native layer** — notes (evidence kind, summary, gate name / failures / opaque ref, recorded-at), compact events (transition kind, time, reason, including waivers with the child's exact disposed revision), and for a completed item its completion summary and time — each entry carrying the original `ActorContext` verbatim (actor id, kind, assurance, session, context), so asserted and stronger attribution stay distinguishable | evidence object ids as authority (they may appear as provenance strings), verification and environment evidence bodies, delivery cursors, session focus, handoff offers |
-| `memories` | every permanent project-memory key, body, sensitivity label, remembered-at, and the original `ActorContext` verbatim; retired keys as tombstones with their retiring `ActorContext` and time | unkeyed typed project-scope observations and agent-private scratch; `restricted` bodies unless widened; the store-side `restored` link, which is write-only |
+| `memories` | every permanent project-memory key, body, sensitivity label, remembered-at, and the original `ActorContext` verbatim; retired keys as tombstones with their retiring `ActorContext` and time | unkeyed typed project-scope observations and agent-private scratch; `restricted` bodies unless widened; the restored-source provenance marker in each version's source snapshot, which is never exported |
 
 Items are ordered by short ref, blockers by item then blocker id, sources by
-hash, records by item then generation index, memories by key. Work ids,
-short refs, blocker ids, and source snapshot ids are Engram's own and are
-preserved; nothing in the file is a foreign identifier.
+source snapshot id, records by item then generation index, memories by key.
+The source entry's `hash` member holds that record id, not a content
+fingerprint. Work ids, short refs, blocker ids, and source snapshot ids are
+Engram's own and are preserved; nothing in the file is a foreign identifier.
 
 Each live memory also carries `history`: its superseded attributed versions
 in dense revision order, oldest first, with each body's sensitivity label,
@@ -222,9 +223,10 @@ loaded state. A nonempty destination is refused with the typed
 destination's is refused with `graph_project_mismatch` (there is no
 cross-project opt-in in V1); a format-fingerprint mismatch is the generic
 different-build refusal. Before any write the loader re-derives the parsed
-body's RFC 8785 bytes — the container's whitespace and member order carry no
-identity — and refuses as a corrupt file a manifest whose digest or summary
-fields disagree with them. Validation runs before the write: a dangling
+body's RFC 8785 bytes — the container's whitespace and member order do not
+change those bytes or their content fingerprint — and refuses as a corrupt
+file a manifest whose digest or summary fields disagree with them. Validation
+runs before the write: a dangling
 parent, prerequisite, supersession, blocker, source, or record target, or a
 duplicate work id, short ref, blocker id, or memory key is a typed refusal;
 duplicate JSON object members at any depth (including carried canonical JSON)
@@ -278,19 +280,17 @@ lands, or nothing does.
   parent whose earlier generation waived a required child sees that waiver
   in its restored history only; sealing the restored generation needs a
   fresh `update --waive CHILD --reason "…"`, exactly as after a reopen.
-- **History lands as inert `RestoredRecord`s**, minted only by load. The
-  file's own native layer becomes a record with a newly minted id at each load,
-  while each inherited layer is re-inserted verbatim under the id the file gives
-  it, so its identity
-  is unchanged across generations, and the file's native layer becomes one
-  new record binding the project id, full planning-item snapshot, relation
+- **History lands as inert `RestoredRecord`s**. Each item's native layer in the
+  file, if present, becomes one record with a freshly minted id at each load;
+  each inherited layer is re-inserted verbatim under its file-given id. The
+  native record binds the project id, full planning-item snapshot, relation
   basis, generation index, and history payload — not the file, cut, or load
   operation. The newest record is therefore the immutable source against
   which restored planning projections are checked, while older generations
   keep their historical planning cut. The same bound planning/history
-  generation yields the same record whichever save carried it and however
-  many times it is loaded; the load audit event alone carries the body hash,
-  loading actor, session, and time. Nothing inside the inherited record
+  generation has the same canonical bytes whichever save carried it. No
+  `RestoredRecord` carries load details; the load audit event records the body
+  hash, loading actor, session, and time. Nothing inside the inherited record
   becomes native `WorkEvidence`, a `WorkEvent`, a run, or a feed entry, so it
   can never enter a completion cut or seal. A late `note` or `gate` on a
   completed-by-record item is separate canonical restored evidence bound to
@@ -335,15 +335,19 @@ lands, or nothing does.
   that recomputation.
 - Memories land as project memories with their original label and asserted
   `ActorContext` carried as-is — a session id that exists in no destination
-  table included, because attribution is asserted everywhere — plus one
-  store-side `restored` link naming the snapshot they came from; that link
-  is never exported, so a memory's provenance chain lives in the save and
-  load audit events, not in the file. A redacted body lands as the typed
-  placeholder under its `redacted` marker, and the project-memory shape admits
+  table included, because attribution is asserted everywhere. Each restored
+  version, including history and tombstones, carries a store-side `restored`
+  provenance marker with the snapshot body's content fingerprint. That marker
+  is never exported. The save and load audit events record the transfer; the
+  file does not carry the destination memory's
+  provenance. The current loader also derives each restored memory's `MemoryId`
+  from that fingerprint and its key, a known exception to the minted-id rule.
+  A redacted body lands as the typed placeholder under its `redacted` marker,
+  and the project-memory shape admits
   both. Load always replaces restricted bodies with this placeholder, even
   from a widened file; only that file retains the human-readable plaintext,
   and the load preview and audit count the resulting placeholders.
-  The restored provenance keeps that marker on every later save,
+  A redacted memory keeps its redacted marker on every later save,
   including a widened save that cannot recover missing source text. Tombstones
   land as tombstones, so a retired key stays permanently reserved.
   Live memory history recreates one linear same-key chain in saved revision
@@ -364,10 +368,12 @@ writing.
 
 A store that was loaded and then worked on saves both histories: the
 inherited `RestoredRecord`s verbatim and its own native layer, so the chain
-build A → B → C keeps A's restoration provenance, B's work, and nothing
-twice — a load of the same file, or of a later save carrying the same
-layers, into another fresh store re-inserts the same records under the ids
-the file gives them rather than minting new ones.
+build A → B → C keeps A's restoration provenance and B's work without
+duplicating a history layer. Loading one file into two fresh stores gives each
+inherited record the same id and bytes in both; each item's native layer gets
+a different minted id in each store with identical canonical bytes. A later
+save from either loaded store carries that minted record as an inherited layer
+under its minted id, alongside a native layer for any work done there.
 
 ## Words
 
@@ -453,11 +459,13 @@ a nonempty destination where `engram restore --replace` overwrites one.
   divergence refusal. When `portable` ships it reuses this file's section
   encoding and canonicalization, not the file as its head payload, because a
   portable head must also carry the executable shared state this file omits.
-- Not canonical-object interchange for work: canonical bytes and hashes are
-  passed as provenance strings where useful but never re-minted or verified
-  on load; only source snapshots and restored records are carried verbatim
-  because their identity is their content. Identity in the new store is
-  otherwise new identity.
+- Not canonical-object interchange for work: canonical bytes and content
+  fingerprints are passed as provenance strings where useful; work record ids
+  are not derived from them. Source snapshots and inherited `RestoredRecord`s
+  keep their supplied record ids and canonical bytes; each native history layer
+  gets a newly minted id. Content fingerprints compare work-record content,
+  not record identity. The current restored-memory `MemoryId` exception is
+  described under Load.
 - Not execution recovery: claims, runs, root executions, waivers,
   checkpoints, seals, and evidence are never rebuilt from a file. A loaded
   store starts every item's execution from scratch with its history beside
@@ -476,9 +484,9 @@ a nonempty destination where `engram restore --replace` overwrites one.
 
 - Save then load on a fresh store reproduces every open item with ids and
   refs preserved, its blockers and re-derived availability, its restored
-  history with each entry's original `ActorContext`, its source snapshots at
-  the same hashes, and the project memories with their labels and
-  `ActorContext`; completed items load completed with a `RestoredRecord`,
+  history with each entry's original `ActorContext`, its source snapshots under
+  the same ids with the same canonical bytes, and the project memories with
+  their labels and `ActorContext`; completed items load completed with a `RestoredRecord`,
   not a seal, and a previously claimed item loads unclaimed with the same
   availability a never-claimed item would have.
 - A child of a restored, never-claimed parent can be claimed first, and that
@@ -525,12 +533,16 @@ a nonempty destination where `engram restore --replace` overwrites one.
   destination is under the project-digest directory in `ENGRAM_HOME` with
   owner-only permission, whatever characters the project id contains.
 - Save → load → work → save → load carries every inherited `RestoredRecord`
-  verbatim and mints exactly one new record for the native layer; two loads
-  of the same file into two fresh stores, or of two saves carrying the same
-  layers, mint byte-identical records.
+  verbatim under its file-given id. Each item with a native history layer gets
+  one newly minted record at load; loading one file into two fresh stores keeps
+  inherited ids and bytes equal while native ids differ and their canonical
+  bytes match.
 - A CLI integration test covers the operator words; storage tests cover
   transaction boundaries, digest and summary checks, and representative
-  validation refusals;
-  a redaction test covers the typed placeholder, the vault-reference rule,
+  validation refusals. Existing storage tests compare inherited ids and bytes
+  through sequential save and fresh-load recovery, but do not compare two
+  independent fresh loads of one file or their native records' minted ids and
+  canonical bytes.
+  A redaction test covers the typed placeholder, the vault-reference rule,
   and the body's redactor status and widening flag. The parity suite stays
   scoped to the fourteen agent words.
