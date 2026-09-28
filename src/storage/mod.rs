@@ -1372,6 +1372,11 @@ pub(crate) fn undecodable_record_reason(error: &StoreError) -> Option<String> {
     let StoreError::Json(error) = error else {
         return None;
     };
+    Some(undecodable_json_reason(error))
+}
+
+/// [`undecodable_record_reason`] for a decoding error itself.
+pub(crate) fn undecodable_json_reason(error: &serde_json::Error) -> String {
     let message = error.to_string();
     let named_member = ["unknown field `", "missing field `"]
         .into_iter()
@@ -1388,11 +1393,7 @@ pub(crate) fn undecodable_record_reason(error: &StoreError) -> Option<String> {
         }
         .to_owned()
     });
-    Some(format!(
-        "{shape} at line {} column {}",
-        error.line(),
-        error.column()
-    ))
+    format!("{shape} at line {} column {}", error.line(), error.column())
 }
 
 /// `label` for a record that failed to load, with the decoding reason when

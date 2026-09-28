@@ -295,21 +295,25 @@ history, while unrelated project history does not make every mutation slower.
 The exhaustive reconstruction remains an operator `doctor` and recovery check.
 
 Completed `work_protocol_attempts` retain their request fingerprint and exact bounded
-caller-visible response, but discard the inferred basis. The 12 KiB protocol
-ceiling keeps exact lost-response replay bounded without retaining unbounded
-history or memory bodies. The `local-process-` prefix is reserved for generated
-process-default work sessions; a `local-process-v1-*` id may be reused for
-seven days, after which the caller must omit `--session-id` to receive a fresh
-process default. Live caller, planning-actor, handoff-recipient, and control
-session-bind participant and actor session ids are at most 64 UTF-8 bytes;
-longer values refuse before store effects. The same live length-only admit
-applies to generic note capture, graph-snapshot save or load operator actors,
-control-policy administrator actor sessions, and project-memory remember,
-forget, full, or list callers. A caller-supplied catalog `held_by` filter is
-length-admitted the same way: that is live filter admission, not validation
-of a persisted claim holder. Control session bind admits both live identities
-before its transaction. A persisted claim holder used only for comparison is
-not length-admitted.
+caller-visible response, but discard the inferred basis. The doctor decodes
+each retained response other than a completion result, and each
+`work_operation_results` receipt of an operation this build runs, as its
+operation's type; see [full store migration](full-store-migration.md#import).
+The 12 KiB protocol ceiling keeps exact lost-response replay bounded without
+retaining unbounded history or memory bodies. The `local-process-` prefix is
+reserved for generated process-default work sessions; a `local-process-v1-*`
+id may be reused for seven days, after which the caller must omit
+`--session-id` to receive a fresh process default. Live caller,
+planning-actor, handoff-recipient, and control session-bind participant and
+actor session ids are at most 64 UTF-8 bytes; longer values refuse before
+store effects. The same live length-only admit applies to generic note
+capture, graph-snapshot save or load operator actors, control-policy
+administrator actor sessions, and project-memory remember, forget, full, or
+list callers. A caller-supplied catalog `held_by` filter is length-admitted
+the same way: that is live filter admission, not validation of a persisted
+claim holder. Control session bind admits both live identities before its
+transaction. A persisted claim holder used only for comparison is not
+length-admitted.
 Historical stored ids are not rewritten. Creating a new process-default session atomically removes at
 most 64 index-selected inactive session rows and their attempt rows. The
 retention indexes are declared rebuildable projections repaired by

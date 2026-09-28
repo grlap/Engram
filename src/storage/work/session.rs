@@ -157,6 +157,7 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
     let project_id = request.project_id;
     let session_id = request.session_id;
     let operation = request.operation;
+    super::receipts::admit_protocol_result(operation)?;
     let idempotency_key = normalize_text(request.idempotency_key, "work idempotency key")?;
     let request_object = CanonicalObject::freeze(request.intent)?;
     let basis_object = CanonicalObject::freeze(request.basis)?;
@@ -602,6 +603,7 @@ impl SqliteStore {
         idempotency_key: &str,
         result: &T,
     ) -> Result<(), StoreError> {
+        super::receipts::admit_protocol_result(operation)?;
         let compact_result = require_work_protocol_result_object(serde_json::to_value(result)?)?;
         let transaction = self.begin_work_mutation()?;
         validate_work_protocol_result_binding(
@@ -611,6 +613,8 @@ impl SqliteStore {
             &compact_result,
         )?;
         let result_object = CanonicalObject::mint(&compact_result)?;
+        #[cfg(test)]
+        super::receipts::assert_protocol_result_decodes(operation, result_object.bytes());
         Self::insert_object(&transaction, "work_protocol_result", &result_object)?;
         let changed = transaction.execute(
             "UPDATE work_protocol_attempts

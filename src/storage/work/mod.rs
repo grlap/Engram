@@ -26,6 +26,7 @@ mod observation;
 mod planning;
 pub(crate) use planning::validate_work_plan;
 mod query;
+mod receipts;
 mod record_windows;
 mod root_state;
 mod schema;

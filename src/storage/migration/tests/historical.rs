@@ -220,3 +220,35 @@ fn historical_lease_refusal_imports_and_replays_without_lease_authority() {
     assert_eq!(serde_json::to_value(replay).unwrap(), decision);
     assert_eq!(rows(&target)["control_turn_results"], before);
 }
+
+/// A replay receipt of a work operation this build no longer runs is read as
+/// stored: it is never decoded, so a shape no current type reads imports
+/// unchanged, and the published store is healthy.
+#[test]
+fn a_retired_work_operation_receipt_imports_unchanged() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let target = directory.path().join("target.db");
+    let file = directory.path().join("store.jsonl");
+    populated(&source);
+    let connection = Connection::open(&source).unwrap();
+    connection
+        .execute(
+            "INSERT INTO work_operation_results (
+                 operation, idempotency_key, request_hash, result_json
+             ) VALUES ('complete_work_recovery', 'historical-recovery', ?1, ?2)",
+            rusqlite::params![
+                crate::ObjectId::from_canonical_bytes(b"historical recovery").as_str(),
+                br#"{"recovered":"in a shape no current type reads"}"#.as_slice()
+            ],
+        )
+        .unwrap();
+    drop(connection);
+    let before = rows(&source)["work_operation_results"].clone();
+    assert!(before.len() > 1, "the fixture holds current receipts too");
+    export_json(&source, &file).unwrap();
+    import_json(&file, &target).unwrap();
+    assert_eq!(rows(&target)["work_operation_results"], before);
+    let imported = SqliteStore::open(&target).unwrap();
+    assert!(imported.verify_all().unwrap().is_healthy());
+}

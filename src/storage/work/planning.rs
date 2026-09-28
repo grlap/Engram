@@ -1300,16 +1300,15 @@ pub(super) fn persist_operation_result<T: Serialize>(
     request_hash: &ObjectId,
     result: &T,
 ) -> Result<(), StoreError> {
+    super::receipts::admit_core_receipt(operation)?;
+    let receipt = serde_json::to_vec(result)?;
+    #[cfg(test)]
+    super::receipts::assert_core_receipt_decodes(operation, &receipt);
     transaction.execute(
         "INSERT INTO work_operation_results (
              operation, idempotency_key, request_hash, result_json
          ) VALUES (?1, ?2, ?3, ?4)",
-        params![
-            operation,
-            key,
-            request_hash.as_str(),
-            serde_json::to_vec(result)?
-        ],
+        params![operation, key, request_hash.as_str(), receipt],
     )?;
     Ok(())
 }

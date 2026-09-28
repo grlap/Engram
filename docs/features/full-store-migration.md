@@ -111,6 +111,19 @@ refusal decisions replay unchanged, and `control_operation_results` receipts for
 `lease_acquire`, `lease_release` and `obligation_waive` are retained and checked
 by doctor. Keeping them restores neither those operations nor any authority.
 
+The doctor reads back every result a work operation stored for replay. Each
+receipt in `work_operation_results`, and each result an ambient protocol
+attempt holds, must decode as the type its operation stores, and every
+operation name must be one this build registers. Otherwise the doctor reports
+the row, and import refuses the file before publishing. The report names a
+receipt by operation and key, and a protocol result by project, session,
+operation and key. It gives the shape it met, never a value. A new receipt or
+protocol attempt under a name the build does not register is refused before
+it is written. Receipts of `complete_work_recovery`, an operation this build
+no longer runs, are kept and read as stored, never decoded. Completion
+results (`work_complete`) are not decoded, because older ones lack the
+asserted criterion count that the current result requires.
+
 The work schema marker is not imported; the new store keeps its own.
 `control_policy_state.schema_version` is checked explicitly and a mismatch
 refuses by its named format-marker field, before publishing a destination.

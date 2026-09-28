@@ -126,7 +126,7 @@ fn completed_gate_attempt_mismatch_refuses_before_appending() {
             &session_id,
             "work_update:gate",
             &idempotency_key,
-            &serde_json::json!({"receipt": {"work_id": work.work_id}}),
+            &gate_result(work.work_id),
         )
         .expect("complete synthetic attempt without evidence");
 

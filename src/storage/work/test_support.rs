@@ -416,6 +416,24 @@ pub(super) fn host_verification_of(
     verification
 }
 
+/// The smallest update result a gate stores for `work_id`, for a fixture
+/// that completes a protocol attempt without running the gate.
+pub(super) fn gate_result(work_id: WorkId) -> crate::work_service::WorkUpdateResult {
+    crate::work_service::WorkUpdateResult {
+        operation: "evidence".into(),
+        receipt: crate::work_service::WorkMutationReceipt {
+            work_id,
+            work_ref: "w-fixture".into(),
+            revision: 1,
+            control_binding: None,
+            result: serde_json::json!({}),
+        },
+        obligations: Vec::new(),
+        obligation_page: crate::work_service::WorkObligationPage::default(),
+        allowed_next: Vec::new(),
+    }
+}
+
 /// The command fingerprint `host_verification` records for the check `key`.
 pub(super) fn check_fingerprint(key: &str) -> ObjectId {
     ObjectId::from_canonical_bytes(format!("check {key}").as_bytes())

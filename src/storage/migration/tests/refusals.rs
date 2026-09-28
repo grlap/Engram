@@ -575,10 +575,48 @@ fn blamed_records(error: &str) -> Vec<&str> {
         .collect()
 }
 
+/// The replay receipt the bound work item's creation stored, which holds
+/// the item as it was created.
+fn receipt_site() -> RequirementSite<'static> {
+    RequirementSite {
+        what: "a creation receipt",
+        table: "work_operation_results",
+        select: Box::new(|values: &Json| values["operation"] == "create_work"),
+        column: "result_json",
+        requirement: "/acceptance_bindings/0/requirement",
+        record: "work_operation_result:create_work:create-bound:".into(),
+    }
+}
+
+/// A replay receipt is read back as its operation's type before import
+/// publishes anything. A creation receipt whose stored item names an
+/// environment in a requirement, with a value or as null, is refused by the
+/// receipt's operation and key and the member, while the work event and the
+/// item that recorded the same creation, left unchanged, are not blamed.
+#[test]
+fn a_receipt_whose_work_item_names_an_environment_is_refused_by_name() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    requirement_store(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let original = fs::read_to_string(&file).expect("file");
+    let site = receipt_site();
+    for environment in environments() {
+        let error = import_with_requirement(&file, &original, &site, |requirement| {
+            requirement["required_environment"] = environment;
+        });
+        assert!(error.contains("invalid work record"), "{error}");
+        let blamed = blamed_records(&error);
+        assert_eq!(blamed.len(), 1, "only the receipt is blamed: {error}");
+        assert!(blamed[0].contains(&site.record), "{error}");
+    }
+}
+
 /// Every exported record other than an obligation that carries a
 /// requirement: the work event that recorded a work item's bindings, the
-/// work item itself, and the rule sets the active and the earlier policy
-/// selected.
+/// work item itself, the replay receipt of its creation, and the rule sets
+/// the active and the earlier policy selected.
 fn other_requirement_sites(rule_sets: RequirementRuleSets) -> Vec<RequirementSite<'static>> {
     let rule_set = |what, hash: crate::ObjectId| RequirementSite {
         what,
@@ -610,6 +648,7 @@ fn other_requirement_sites(rule_sets: RequirementRuleSets) -> Vec<RequirementSit
             requirement: "/acceptance_bindings/0/requirement",
             record: "work_catalog:".into(),
         },
+        receipt_site(),
         rule_set("the active rule set", rule_sets.active),
         rule_set("an earlier rule set", rule_sets.earlier),
     ]

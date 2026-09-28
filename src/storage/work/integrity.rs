@@ -1796,7 +1796,7 @@ pub(super) fn verify_work_protocol_attempts(
                 .is_none_or(|hash| ObjectId::from_stored(hash.clone()).is_some()),
             _ => false,
         };
-        let result_valid = match (result_id, result_json) {
+        let result_valid = match (result_id, &result_json) {
             (None, None) => true,
             (Some(stored_hash), Some(bytes)) => ObjectId::from_stored(stored_hash)
                 .and_then(|hash| {
@@ -1810,7 +1810,7 @@ pub(super) fn verify_work_protocol_attempts(
                 })
                 .is_some_and(|(_, value)| {
                     serde_json_canonicalizer::to_vec(&value).is_ok_and(|canonical| {
-                        canonical == bytes
+                        &canonical == bytes
                             && validate_work_protocol_result_binding(
                                 connection,
                                 &project_id,
@@ -1822,8 +1822,12 @@ pub(super) fn verify_work_protocol_attempts(
                 }),
             _ => false,
         };
-        if !request_valid || !basis_valid || !result_valid {
-            invalid.push(label);
+        // The decoder's reason is kept even when an earlier check also
+        // fails: a result without its receipt fails the binding check too.
+        match super::receipts::protocol_result_problem(&operation, result_json.as_deref()) {
+            Some(reason) => invalid.push(format!("{label}:{reason}")),
+            None if !request_valid || !basis_valid || !result_valid => invalid.push(label),
+            None => {}
         }
     }
     Ok(())

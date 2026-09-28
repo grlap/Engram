@@ -322,7 +322,7 @@ fn doctor_rejects_an_unreadable_pending_protocol_basis() {
         .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &project,
             session_id: &session,
-            operation: "work_next",
+            operation: "work_update:revise",
             idempotency_key: "pending-attempt",
             intent: &serde_json::json!({"query":"ready"}),
             basis: &serde_json::json!({"cursor":0}),
@@ -334,7 +334,7 @@ fn doctor_rejects_an_unreadable_pending_protocol_basis() {
         .execute(
             "UPDATE work_protocol_attempts SET basis_json = ?1
              WHERE project_id = ?2 AND session_id = ?3
-               AND operation = 'work_next' AND idempotency_key = 'pending-attempt'",
+               AND operation = 'work_update:revise' AND idempotency_key = 'pending-attempt'",
             params![b"{".as_slice(), project.0, session.0],
         )
         .expect("damage pending basis");

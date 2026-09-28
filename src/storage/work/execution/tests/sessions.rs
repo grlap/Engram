@@ -111,7 +111,7 @@ fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_autho
                     session,
                     "work_update:gate",
                     &format!("attempt-{index}"),
-                    &serde_json::json!({"receipt": {"work_id": root.work_id}}),
+                    &gate_result(root.work_id),
                 )
                 .expect("completed protocol attempt");
         }
