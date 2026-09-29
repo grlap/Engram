@@ -596,7 +596,7 @@ next commands, then wait.
 
 Changes are reviewed through the delegated review workflow (two independent
 review passes from different vendors, Codex and Claude, with Kimi standing in
-for an unavailable vendor, over staged, unstaged, and untracked changes)
+for an unavailable Codex, over staged, unstaged, and untracked changes)
 before any commit is proposed. Review findings that warrant follow-up work
 become Engram items, not inline TODOs.
 

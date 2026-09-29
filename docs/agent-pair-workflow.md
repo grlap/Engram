@@ -12,7 +12,7 @@ adopted guidance; the pilot proposal below remains a proposal. Current user
 instructions and each project's applicable quality requirements govern execution.
 This decision does not grant commit, push, installation, or restart authority.
 Rule 2's reviewer pair was amended on 2026-09-29, on Greg's word of that date,
-to let Kimi stand in for an unavailable vendor.
+to let Kimi stand in for an unavailable Codex.
 
 1. **The host owns validation of its safeguards.** TermAl owns tests proving
    denied writes, interpreter restrictions, and other host security behavior.
@@ -25,7 +25,7 @@ to let Kimi stand in for an unavailable vendor.
 2. **One parent owns each review input.** For Engram: implement corrections,
    run required project tests, freeze the current input, obtain exactly two
    independent read-only reviews from different vendors — Codex and Claude,
-   with Kimi standing in for an unavailable vendor as the
+   with Kimi standing in for an unavailable Codex as the
    [standing approval](../AGENTS.md#authority-and-git) describes — then
    consolidate findings. The parent
    owns gates, reviewer lifecycle, and acceptance; leaves inspect and report.
@@ -221,15 +221,16 @@ actually defines and verifies that boundary.
 
 For Engram, the parent follows the existing `/review-changes` contract: the
 gates and exactly two `/review-code` children from different vendors, one
-Codex and one Claude, with Kimi standing in for an unavailable vendor,
-through TermAl with `writePolicy: readOnly` run in parallel on one frozen
-input (Greg, 2026-09-26), then freeze verification and consolidated results
-once the gate has passed.
-Only `/review-code` is delegated as review. The parent owns `/review-changes`;
-a separate bounded execution worker may run its logged gate batch once without
-becoming a reviewer or validation owner. Follow the command's completion-driven
-execution rules: retain input-bound results outside review input, attribute
-worker execution, and recover existing runs without polling or duplicate batches.
+Codex and one Claude, with Kimi standing in for an unavailable Codex, plus the
+optional third review when the parent commissions it, through TermAl with
+`writePolicy: readOnly` run in parallel on one frozen input (Greg,
+2026-09-26), then freeze verification and consolidated results once the gate
+has passed. Only `/review-code` is delegated as review. The parent owns
+`/review-changes`; a separate bounded execution worker may run its logged gate
+batch once without becoming a reviewer or validation owner. Follow the
+command's completion-driven execution rules: retain input-bound results
+outside review input, attribute worker execution, and recover existing runs
+without polling or duplicate batches.
 
 Both children receive the same packet and acceptance. They inspect independently
 before seeing each other's conclusions. Their job is to test the change against

@@ -1,6 +1,6 @@
 ---
 name: review-changes
-description: Run Engram quality gates, freeze the worktree, and obtain two independent reviews from different vendors (Codex and Claude, or Kimi for an unavailable one).
+description: Run Engram quality gates, freeze the worktree, and obtain two independent reviews from different vendors (Codex and Claude, with Kimi standing in for an unavailable Codex).
 metadata:
   termal:
     title:
@@ -12,7 +12,8 @@ parent session.
 
 **Do not delegate `/review-changes` itself.** The parent owns build artifacts,
 quality gates, the worktree freeze, fan-in, and recording findings in
-Engram. Delegate review only to the two `/review-code` children, both with
+Engram. Delegate review only to `/review-code` children: the pair and, when
+the parent commissions it, the optional third review below, each with
 `writePolicy: readOnly`. A bounded test worker may execute the parent's gate
 runner as described below; it does not become a reviewer or validation owner.
 
@@ -20,21 +21,47 @@ runner as described below; it does not become a reviewer or validation owner.
 authority.** That is Greg's word or, for commit, push and install only, the
 standing approval in AGENTS.md "Authority and Git".
 
-This workflow requires TermAl MCP delegation tools. Obtain exactly two
-reviewers from different vendors: spawn one Codex and one Claude; when one
-vendor is unavailable (a usage limit or outage met in this round, with its
-refusal text recorded on the item), spawn Kimi in its place with the title
-`Kimi /review-code`. The stand-in replaces the unavailable vendor's reviewer,
-whether its spawn was refused or its result was lost to that vendor's usage
-limit or outage, so a round never has more than two reviews that count. Do not
-substitute platform subagents, shell processes, raw HTTP, or nested TermAl
-review sessions for those reviewers.
+This workflow requires TermAl MCP delegation tools. Obtain the review pair —
+at most two reviews that count, from different vendors: spawn one Codex and
+one Claude; when Codex is unavailable (a usage limit or outage met in this
+round, with its refusal text recorded on the item), spawn Kimi in its place
+with the title `Kimi /review-code`. The stand-in replaces the Codex reviewer,
+whether its spawn was refused or its result was lost to Codex's usage limit or
+outage, so a round never has more than two reviews that count. An unavailable
+Claude reviewer is reported as unavailable; no stand-in replaces it. A round
+that ends with fewer than two reviews that count reports the missing reviewer
+as unavailable, spawns no further reviewer, and does not satisfy the standing
+approval's review condition. Do not substitute platform subagents, shell
+processes, raw HTTP, or nested TermAl review sessions for those reviewers.
+
+Kimi may give an optional third read-only review (Greg, 2026-09-29, 'mozemy
+trzymac Kimi jako 3 reviewer'a, decyzja dla rady obu projektow, moze byc
+niezalezna'; Engram's council chose optional on that date). The parent may
+commission it beside the pair on a round's frozen input; it is recommended for
+the first round of a changeset touching authority text, acceptance-evaluation
+enforcement, storage or migration, or a new subprocess or external surface,
+and decided case by case for a security-sensitive changeset, because the host
+cannot gate Kimi's network tools. It is spawned with the title
+`Kimi /review-code (optional third review)` and waited for through its own
+fan-in, apart from the pair's. It never counts toward the two reviews the
+standing approval requires, its absence or failure never blocks a landing, and
+none is commissioned on an input whose round has finished. Before landing it
+has returned, failed or been cancelled; the parent may cancel it to land. A
+justified in-scope finding from it is fixed and reviewed again by the pair
+like any other finding. A finding the parent refutes on evidence is an
+in-scope finding rejected on evidence: it is recorded on the item with that
+evidence and goes to Greg, as the standing approval's review condition
+requires; showing it to the pair first is optional.
 
 Greg's 2026-09-26 decisions also cover the work around each review:
 
 - Before coding an item, run a design review with Engram::Fable and a
   read-only Codex explorer, covering edge cases and real host (TermAl)
-  behavior. Run it during the previous item's gate or review.
+  behavior. Run it during the previous item's gate or review. (coordinators'
+  decision of 2026-09-29, advisory) When Codex is unavailable (a usage limit
+  or outage met at that time, recorded on the item with the refusal text), a
+  read-only Kimi explorer stands in for it, decided case by case for a
+  security-sensitive item, because the host cannot gate Kimi's network tools.
 - During an item's gate or review, do only non-mutating work on the next
   one: no worktree or index edits, and no claim or other change of this
   session's focus. Reading, planning and a read-only design review stay
@@ -169,8 +196,8 @@ a completion message with the result/log paths. This worker is not a reviewer.
 Specify the input and command, and prohibit source/index changes, duplicate
 runs, automatic retries, and tracker writes. The parent remains responsible
 for inspecting results, classifying failures, recording each gate once, and
-freezing the reviewed input. The two read-only `/review-code` leaves never run
-tests or gates.
+freezing the reviewed input. The read-only `/review-code` leaves, the optional
+third review included, never run tests or gates.
 Record worker execution as attributed evidence, naming the worker and result
 file in a parent note and referencing its logs when recording the gates. Reading
 those results does not turn them into parent-executed or host-attested checks.
@@ -225,9 +252,10 @@ node scripts/review-freeze-fingerprint.mjs --write .git/engram-review-freeze.jso
 
 Keep the fingerprint printed by this successful `--write` in the parent's
 review record, independently of the manifest file. Pass that exact value and
-the manifest's absolute path to both reviewers as review context. Retain the
-value until fan-in: a later run or another session can overwrite the manifest.
-Do not replace this saved value with a fingerprint read back from that file.
+the manifest's absolute path to both reviewers, and to the optional third
+review when commissioned, as review context. Retain the value until fan-in: a
+later run or another session can overwrite the manifest. Do not replace this
+saved value with a fingerprint read back from that file.
 
 The snapshot records the canonical Git worktree root and covers HEAD, the
 index, Git-normalized tracked worktree changes, and untracked file contents.
@@ -262,9 +290,10 @@ with mode `reviewer` and `writePolicy: readOnly`:
 1. Codex, title `Codex /review-code`.
 2. Claude, title `Claude /review-code`.
 
-When one vendor is unavailable (a usage limit or outage met in this round,
-with its refusal text recorded on the item), spawn Kimi in its place with the
-title `Kimi /review-code`.
+When Codex is unavailable (a usage limit or outage met in this round, with
+its refusal text recorded on the item), spawn Kimi in its place with the
+title `Kimi /review-code`. The optional third review, when commissioned, is
+spawned the same way, with its own title, and gets the same prompt.
 
 Give each a multi-line prompt. Its first line tells the reviewer to read
 `.claude/commands/review-code.md` in the worktree and follow it. The rest
@@ -279,19 +308,21 @@ into a High). The brief may point at the change since the previous freeze,
 but both reviewers review the whole input.
 
 If one spawn fails after the other succeeds, continue waiting for the created
-reviewer. When the failure is that vendor's unavailability (a usage limit or
+reviewer. When the failure is Codex's unavailability (a usage limit or
 outage), record the refusal text on the item and spawn Kimi in its place on
-the same freeze. For any other failure, or when the stand-in fails too, report
-the missing reviewer as unavailable.
+the same freeze. For any other failure, Claude's included, or when the
+stand-in fails too, report the missing reviewer as unavailable.
 
 ## 5. Wait through TermAl fan-in
 
-Call `termal_resume_after_delegations` with the created delegation ids and
-`mode: "all"`. Report the wait id and child session ids, then end the turn.
+Call `termal_resume_after_delegations` with the pair's delegation ids and
+`mode: "all"`. A commissioned optional third review gets its own wait; its
+fan-in never leads to section 6 by itself. Report the wait id and child
+session ids, then end the turn.
 The gate's completion may resume the parent first; handle it under section
 2. On a gate failure the reviews of that input no longer count: cancel the
 running reviewers or discard their results. Do not continue to section 6
-until TermAl resumes the parent with the fan-in prompt.
+until TermAl resumes the parent with the pair's fan-in prompt.
 
 ## 6. Verify the freeze and collect results
 
@@ -322,15 +353,16 @@ reports content drift, restart from the gates too: the reviewers did not
 inspect the current input. Do not overwrite a failed check's manifest merely
 to accept an earlier review.
 
-Fetch both structured result packets using `termal_get_session_result`.
-Validated structured submissions are authoritative. If a submission is
-missing or failed, report that reviewer as unavailable; when the cause is
-that vendor's unavailability, record the refusal text on the item and spawn
-Kimi in its place on the same freeze, as section 4 describes, then wait for
-it through section 5 and fetch its result before presenting. When the
-stand-in's own submission is missing or failed, report that reviewer as
-unavailable instead of spawning again. Never infer a clean review from prose
-output.
+Fetch both structured result packets using `termal_get_session_result`, and
+the optional third review's once it has returned. Validated structured
+submissions are authoritative. If a submission is missing or failed, report
+that reviewer as unavailable; when the cause is Codex's unavailability met in
+this round, record the refusal text on the item and, if no stand-in has been
+spawned this round, spawn Kimi in its place on the same freeze, as section 4
+describes, then wait for it through section 5 and fetch its result before
+presenting; otherwise report the reviewer as unavailable. When the stand-in's
+own submission is missing or failed, report that reviewer as unavailable
+instead of spawning again. Never infer a clean review from prose output.
 
 Present:
 
@@ -354,6 +386,10 @@ Present:
 - Medium/Low:
 - Notes:
 ```
+
+When the optional third review was commissioned, add a section
+`## Kimi /review-code (optional third review)` marked as not counting toward
+the pair, and consolidate its findings with the pair's.
 
 Deduplicate overlapping findings and tracker suggestions.
 
@@ -417,4 +453,4 @@ parent hands the findings to the implementer instead of assuming write authority
 After clean acceptance, the implementer records the delivered outcome and uses
 `done` on owned implementation items when their acceptance and obligations are
 satisfied. Review completion does not authorize Git or external actions. The
-two `/review-code` children remain read-only, non-nesting leaves throughout.
+`/review-code` children remain read-only, non-nesting leaves throughout.
