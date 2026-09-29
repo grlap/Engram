@@ -43,6 +43,7 @@ mod child_obligations;
 mod evaluation_guidance;
 mod handlers;
 mod listing;
+mod memory_retirement;
 mod mutation;
 mod next_context;
 mod receipts;

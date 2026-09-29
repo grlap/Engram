@@ -28,6 +28,7 @@ mod observation;
 mod planning;
 pub(crate) use planning::validate_work_plan;
 mod query;
+pub(in crate::storage) use query::resolve_work_ref_on;
 mod receipts;
 mod record_windows;
 mod root_state;

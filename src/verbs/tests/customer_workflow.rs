@@ -11,6 +11,7 @@ mod detach;
 mod discovery;
 mod landing;
 mod listing;
+mod memory_retirement;
 mod mutation_titles;
 mod orientation;
 mod output_economy;

@@ -427,6 +427,8 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
                 key: Some("orientation-context".into()),
                 revise: false,
                 expected_revision: None,
+                retires_with: None,
+                clear_retires_with: false,
             },
             at(43),
         )

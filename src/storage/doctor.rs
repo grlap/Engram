@@ -78,6 +78,11 @@ impl SqliteStore {
             &mut report.checked_objects,
             &mut report.invalid_objects,
         )?;
+        Self::verify_project_memory_retiring_targets_on(
+            &self.connection,
+            &mut report.checked_objects,
+            &mut report.invalid_objects,
+        )?;
 
         Self::verify_control_policy_records_on(&self.connection, &mut report)?;
 

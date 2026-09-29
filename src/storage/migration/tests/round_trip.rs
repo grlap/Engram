@@ -26,6 +26,7 @@ fn with_derived_projections(path: &Path) -> BTreeMap<String, u64> {
                     key: Some("transfer-note".into()),
                     revise: false,
                     expected_revision: None,
+                    retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
                     body: "a project note that travels".into(),
                     actor: actor("author"),
                     created_at: at(1),

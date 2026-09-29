@@ -740,6 +740,15 @@ enum WorkCommand {
         /// Refuse unless this revision is still current; omit to revise the current head.
         #[arg(long, requires = "revise")]
         expected_revision: Option<u64>,
+        /// Review this memory when the named item retires: local:REF (an item in this
+        /// project) or external:PROJECT#REFERENCE (asserted text of ASCII letters, digits
+        /// and . _ - / : @ +). A revise without it keeps the current target.
+        #[arg(long, conflicts_with = "clear_retires_with")]
+        retires_with: Option<String>,
+        /// With --revise, remove the retirement target, or acknowledge one a revision
+        /// dropped, and record the clear; refused when there is neither.
+        #[arg(long, requires = "revise")]
+        clear_retires_with: bool,
     },
     /// List/search project memories, or read one key in full.
     Memories {
@@ -1830,6 +1839,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             key,
             revise,
             expected_revision,
+            retires_with,
+            clear_retires_with,
         } => verbs.remember(
             RememberInput {
                 text: text
@@ -1838,6 +1849,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 key,
                 revise,
                 expected_revision,
+                retires_with,
+                clear_retires_with,
             },
             now,
         ),

@@ -766,7 +766,7 @@ impl SqliteStore {
 
 const MAX_AMBIGUOUS_WORK_CANDIDATES: usize = 8;
 
-pub(super) fn resolve_work_ref_on(
+pub(in crate::storage) fn resolve_work_ref_on(
     connection: &Connection,
     project_id: &crate::domain::ProjectId,
     work_ref: &str,

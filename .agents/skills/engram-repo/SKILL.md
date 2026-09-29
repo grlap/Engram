@@ -226,7 +226,7 @@ engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --v
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N] [--source-fingerprint F]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
-engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N]]]
+engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N] [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
 engram work forget KEY
 ```

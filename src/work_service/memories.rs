@@ -6,6 +6,26 @@ use super::{
 };
 
 impl LocalWorkService {
+    /// Active project memories whose current version names `work_id` as its
+    /// local retiring target: bounded keys, the exact total and omitted count.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed storage refusal when authorization fails or a stored
+    /// memory key is invalid.
+    pub fn project_memory_retirement_candidates(
+        &self,
+        work_id: crate::domain::WorkId,
+        now: DateTime<Utc>,
+    ) -> Result<crate::domain::ProjectMemoryRetirementCandidates, StoreError> {
+        self.read_store_at(now)?
+            .project_memory_retirement_candidates(
+                &self.project_id,
+                &self.session_id,
+                &self.actor("memories", "read retirement candidates"),
+                work_id,
+            )
+    }
     /// Creates one attributed project memory without changing work focus or
     /// renewing a work claim.
     ///
@@ -21,6 +41,32 @@ impl LocalWorkService {
         expected_revision: Option<u64>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        self.remember_project_memory_with_target(
+            body,
+            key,
+            revise,
+            expected_revision,
+            crate::domain::ProjectMemoryRetiringTargetChange::Keep,
+            now,
+        )
+    }
+
+    /// Creates or revises one attributed project memory, keeping, setting or
+    /// clearing its retiring target.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed storage refusal as [`Self::remember_project_memory`]
+    /// does, or when the target does not resolve or a clear is not admitted.
+    pub fn remember_project_memory_with_target(
+        &self,
+        body: String,
+        key: Option<String>,
+        revise: bool,
+        expected_revision: Option<u64>,
+        retiring_target: crate::domain::ProjectMemoryRetiringTargetChange,
+        now: DateTime<Utc>,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
         self.store_at(now)?.remember_project_memory_with_admission(
             &RememberProjectMemoryRequest {
                 project_id: self.project_id.clone(),
@@ -29,6 +75,7 @@ impl LocalWorkService {
                 revise,
                 expected_revision,
                 body,
+                retiring_target,
                 actor: self.actor("remember", "record attributed project memory"),
                 created_at: now,
             },

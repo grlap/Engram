@@ -178,7 +178,7 @@ engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-refer
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N] [--landed COMMIT --remote R --branch B --pushed-at RFC3339 [--installed-build FINGERPRINT]]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
-engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N]]]
+engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N] [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
 engram work forget KEY
 ```
@@ -886,6 +886,15 @@ Rules that matter:
   reads of the key, retaining local canonical history. Snapshots transfer live
   histories, but only the tombstone for forgotten keys. MCP uses `revise`,
   `expected_revision`, and `revision` with the same meanings.
+  `--retires-with local:REF` or `--retires-with external:PROJECT#REFERENCE`
+  (MCP `retires_with`) names the item whose resolution makes a workaround
+  memory worth reviewing; a revise keeps the current target, and
+  `--revise --clear-retires-with` (MCP `revise` with `clear_retires_with`)
+  removes it and records the clear. `done`, and a supersede, detach, cancel or
+  reject through `update`, list the memories that name the item as bounded
+  candidates, never changing them. See
+  [project memories](local-work-system.md#gates-prerequisites-supersession-and-project-memories)
+  for target resolution, the clear and a target dropped without one.
 
 The same fourteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
 `update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`, and

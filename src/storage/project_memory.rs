@@ -74,6 +74,24 @@ impl SqliteStore {
         redactor
             .inspect(&request.body)
             .map_err(StoreError::RedactionRefused)?;
+        // Target text is stored and shown like the body, so it is inspected
+        // like the body before anything is resolved or written.
+        if let crate::domain::ProjectMemoryRetiringTargetChange::Set { target } =
+            &request.retiring_target
+        {
+            match target {
+                crate::domain::ProjectMemoryRetiringTargetInput::Local { work_ref } => {
+                    redactor.inspect(work_ref)
+                }
+                crate::domain::ProjectMemoryRetiringTargetInput::External {
+                    project,
+                    reference,
+                } => redactor
+                    .inspect(project)
+                    .and_then(|()| redactor.inspect(reference)),
+            }
+            .map_err(StoreError::RedactionRefused)?;
+        }
         let key = match request.key.as_deref() {
             Some(key) => validate_project_memory_key(key)?,
             None => slug_project_memory_key(&request.body)?,
@@ -96,6 +114,37 @@ impl SqliteStore {
         let history = lookup_project_memory_history_on(&transaction, &request.project_id, &key)?;
         let existing = history.last();
         let current = history_revision(&history)?;
+        // The version a revise builds on: the supplied basis, or the head.
+        let basis_version = if request.revise {
+            request
+                .expected_revision
+                .and_then(|basis| {
+                    usize::try_from(basis.saturating_sub(1))
+                        .ok()
+                        .and_then(|index| history.get(index))
+                })
+                .or(existing)
+        } else {
+            None
+        };
+        let clears_target = matches!(
+            request.retiring_target,
+            crate::domain::ProjectMemoryRetiringTargetChange::Clear
+        );
+        if clears_target && !request.revise {
+            return Err(StoreError::InvalidProjectMemory(
+                "clearing a retirement target requires --revise".into(),
+            ));
+        }
+        let retiring_target = match &request.retiring_target {
+            crate::domain::ProjectMemoryRetiringTargetChange::Keep => {
+                basis_version.and_then(|entry| entry.version.retiring_target.clone())
+            }
+            crate::domain::ProjectMemoryRetiringTargetChange::Clear => None,
+            crate::domain::ProjectMemoryRetiringTargetChange::Set { target } => Some(
+                resolve_retiring_target_on(&transaction, &request.project_id, target)?,
+            ),
+        };
         if let Some(existing) = &existing {
             if existing.assertion.status == MemoryStatus::Tombstoned {
                 return Err(StoreError::ProjectMemoryRetired(key));
@@ -116,10 +165,20 @@ impl SqliteStore {
                     .and_then(|index| history.get(index))
                 && (request.revise == (replay_revision > 1))
                 && replay.version.body == request.body
+                && replay.version.retiring_target == retiring_target
+                && replay.version.retiring_target_cleared == clears_target
                 && replay.version.actor.actor_id == request.actor.actor_id
                 && replay.version.actor.session_id == request.actor.session_id
             {
-                admit_full_response(&memory_full(&key, replay, replay_revision, current))?;
+                let replay_index = usize::try_from(replay_revision - 1).map_err(|_| {
+                    StoreError::InvalidProjectMemory("memory revision exceeds its range".into())
+                })?;
+                admit_full_response(&with_read_time_reserve(memory_full(
+                    &key,
+                    &history,
+                    replay_index,
+                    current,
+                )))?;
                 return Ok(ProjectMemoryMutationReceipt {
                     key,
                     revision: replay_revision,
@@ -146,6 +205,14 @@ impl SqliteStore {
                     "revision timestamp precedes the current memory".into(),
                 ));
             }
+            // A clear marker must always mean that a target was removed on
+            // purpose: the current one, or one a revision dropped, which the
+            // clear then acknowledges. With neither, the clear is refused.
+            if clears_target && !history::has_clearable_retiring_target(&history) {
+                return Err(StoreError::InvalidProjectMemory(format!(
+                    "project memory {key} has no retirement target to clear"
+                )));
+            }
         } else if request.revise {
             return Err(StoreError::ProjectMemoryNotFound(key));
         }
@@ -162,13 +229,24 @@ impl SqliteStore {
             actor_id: request.actor.actor_id.clone(),
             actor_context: request.actor.attribution_context().map(str::to_owned),
             session_id: request.actor.session_id.clone(),
+            retiring_target: retiring_target.clone(),
+            retiring_state: None,
+            retiring_target_dropped: if retiring_target.is_none() && !clears_target {
+                history::retiring_target_dropped_before(&history)
+            } else {
+                None
+            },
+            workaround: retiring_target.as_ref().map(|_| true),
         };
-        for (index, prior) in history.iter().enumerate() {
-            admit_full_response(&memory_full(&key, prior, index as u64 + 1, revision))?;
+        for index in 0..history.len() {
+            admit_full_response(&with_read_time_reserve(memory_full(
+                &key, &history, index, revision,
+            )))?;
         }
-        admit_full_response(&full)?;
+        admit_full_response(&with_read_time_reserve(full))?;
 
-        let prepared = prepare_project_memory(&request, &key, existing)?;
+        let prepared =
+            prepare_project_memory(&request, &key, existing, retiring_target, clears_target)?;
         Self::insert_project_memory_version_object(
             &transaction,
             &prepared.version_object,
@@ -320,16 +398,19 @@ impl SqliteStore {
         }
         let current = history_revision(&history)?;
         let revision = revision.unwrap_or(current);
-        let entry = revision
+        let index = revision
             .checked_sub(1)
             .and_then(|n| usize::try_from(n).ok())
-            .and_then(|index| history.get(index))
+            .filter(|index| *index < history.len())
             .ok_or_else(|| StoreError::ProjectMemoryRevisionNotFound {
                 key: key.clone(),
                 revision,
                 current,
             })?;
-        Ok(memory_full(&key, entry, revision, current))
+        let mut full = memory_full(&key, &history, index, current);
+        full.retiring_state =
+            retiring_state_on(&self.connection, project_id, full.retiring_target.as_ref())?;
+        Ok(full)
     }
 
     /// Lists live project memories without returning their bodies.
@@ -655,16 +736,273 @@ fn project_memory_context_generation_digest(value: &str) -> String {
     format!("{digest:x}")
 }
 
+fn resolve_retiring_target_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    input: &crate::domain::ProjectMemoryRetiringTargetInput,
+) -> Result<crate::domain::ProjectMemoryRetiringTarget, StoreError> {
+    use crate::domain::{
+        ProjectMemoryRetiringTarget as Target, ProjectMemoryRetiringTargetInput as Input,
+    };
+    let target = match input {
+        Input::Local { work_ref } => {
+            if work_ref.is_empty() || work_ref.len() > 128 || work_ref.trim() != work_ref {
+                return Err(StoreError::InvalidProjectMemory(
+                    "local retirement reference is invalid".into(),
+                ));
+            }
+            let work = super::work::resolve_work_ref_on(connection, project_id, work_ref)?;
+            Target::Local {
+                work_id: work.work_id,
+                work_ref: work.short_ref,
+            }
+        }
+        Input::External { project, reference } => {
+            for (value, label) in [(project, "project"), (reference, "reference")] {
+                if value.is_empty() || value.len() > 256 || !is_shell_safe_target_text(value) {
+                    return Err(StoreError::InvalidProjectMemory(format!(
+                        "external retirement {label} must be 1-256 bytes of {SHELL_SAFE_TARGET_TEXT}"
+                    )));
+                }
+            }
+            Target::External {
+                project: project.clone(),
+                reference: reference.clone(),
+            }
+        }
+    };
+    validate_retiring_target_shape(&target)?;
+    Ok(target)
+}
+
+/// What target text may hold, in words for refusals and documentation.
+const SHELL_SAFE_TARGET_TEXT: &str = "ASCII letters, digits and . _ - / : @ +";
+
+/// Target text is echoed back inside suggested commands, such as the restore
+/// argument after a dropped target. Holding it to characters that no common
+/// shell splits or interprets keeps every printed form safe to copy as one
+/// argument.
+fn is_shell_safe_target_text(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || b"._-/:@+".contains(&byte))
+}
+
+pub(in crate::storage) fn validate_retiring_target_shape(
+    target: &crate::domain::ProjectMemoryRetiringTarget,
+) -> Result<(), StoreError> {
+    use crate::domain::ProjectMemoryRetiringTarget as Target;
+    let fields: Vec<(&str, &str, usize)> = match target {
+        Target::Local { work_ref, .. } => vec![("local work reference", work_ref, 128)],
+        Target::External { project, reference } => vec![
+            ("external project", project, 256),
+            ("external reference", reference, 256),
+        ],
+    };
+    for (label, value, max) in fields {
+        if value.is_empty() || value.len() > max || !is_shell_safe_target_text(value) {
+            return Err(StoreError::InvalidProjectMemory(format!(
+                "{label} must be 1-{max} bytes of {SHELL_SAFE_TARGET_TEXT}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn retiring_state_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    target: Option<&crate::domain::ProjectMemoryRetiringTarget>,
+) -> Result<Option<crate::domain::ProjectMemoryRetiringState>, StoreError> {
+    let Some(crate::domain::ProjectMemoryRetiringTarget::Local { work_id, work_ref }) = target
+    else {
+        return Ok(None);
+    };
+    let item = local_target_item_on(connection, project_id, *work_id)?.ok_or_else(|| {
+        StoreError::InvalidMemoryProjection("local retirement target is missing".into())
+    })?;
+    if item.work_id != *work_id || item.short_ref != *work_ref {
+        return Err(StoreError::InvalidMemoryProjection(
+            "local retirement target changed identity".into(),
+        ));
+    }
+    Ok(Some(crate::domain::ProjectMemoryRetiringState {
+        lifecycle: item.lifecycle,
+        updated_at: item.updated_at,
+    }))
+}
+
+/// The item a local target names, or `None` when the project holds no item
+/// with that work id. Other failures, such as a busy or failing read, are
+/// returned as they are rather than read as a missing target.
+fn local_target_item_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    work_id: crate::domain::WorkId,
+) -> Result<Option<crate::domain::WorkItem>, StoreError> {
+    let exists = connection
+        .query_row(
+            "SELECT 1 FROM work_items WHERE project_id = ?1 AND work_id = ?2",
+            params![project_id.0, work_id.0.to_string()],
+            |_| Ok(()),
+        )
+        .optional()?;
+    if exists.is_none() {
+        return Ok(None);
+    }
+    super::work::resolve_work_ref_on(connection, project_id, &work_id.0.to_string()).map(Some)
+}
+
+impl SqliteStore {
+    /// Doctor check: every stored local retiring target, current or
+    /// historical, names an item of its memory's own project by that item's
+    /// work id and short ref. Reads rely on this, so a row that fails it (from
+    /// an import file, for example) is reported here instead of failing later
+    /// reads of that memory.
+    pub(super) fn verify_project_memory_retiring_targets_on(
+        connection: &Connection,
+        checked: &mut usize,
+        invalid: &mut Vec<String>,
+    ) -> Result<(), StoreError> {
+        let mut statement = connection.prepare(
+            "SELECT object_id,
+                    json_extract(canonical_json, '$.scope.project'),
+                    json_extract(canonical_json, '$.retiring_target.work_id'),
+                    json_extract(canonical_json, '$.retiring_target.work_ref')
+             FROM objects
+             WHERE object_kind = 'memory_version'
+               AND json_type(canonical_json, '$.project_key') = 'text'
+               AND json_extract(canonical_json, '$.retiring_target.kind') = 'local'
+             ORDER BY object_id",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (version_id, project, work_id, work_ref) in rows {
+            *checked += 1;
+            let bound = match (project, work_id, work_ref) {
+                (Some(project), Some(work_id), Some(work_ref)) => connection
+                    .query_row(
+                        "SELECT short_ref FROM work_items WHERE project_id = ?1 AND work_id = ?2",
+                        params![project, work_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?
+                    .is_some_and(|short_ref| short_ref == work_ref),
+                _ => false,
+            };
+            if !bound {
+                invalid.push(format!("project_memory:{version_id}:retiring_target"));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Admission sees a full read as it will be read later: a local target's item
+/// state is computed at read time, so admission fills it with its largest
+/// form. That is a completed item, whose read adds the forget-candidate
+/// reminder and command, with a timestamp carrying nanoseconds.
+fn with_read_time_reserve(mut full: ProjectMemoryFull) -> ProjectMemoryFull {
+    if matches!(
+        full.retiring_target,
+        Some(crate::domain::ProjectMemoryRetiringTarget::Local { .. })
+    ) {
+        full.retiring_state = Some(crate::domain::ProjectMemoryRetiringState {
+            lifecycle: crate::domain::WorkLifecycle::Completed,
+            // 9999-12-31T23:59:59.999999999Z, the longest four-digit-year form.
+            updated_at: chrono::DateTime::from_timestamp(253_402_300_799, 999_999_999)
+                .unwrap_or(chrono::DateTime::<chrono::Utc>::MAX_UTC),
+        });
+    }
+    full
+}
+
+/// Candidate keys a lifecycle advisory lists before the exact omitted count.
+const RETIREMENT_CANDIDATE_LIMIT: i64 = 16;
+
+impl SqliteStore {
+    /// Active project memories whose current version names `work_id` as its
+    /// local retiring target, in key order: at most 16 keys, the exact total
+    /// and the omitted count. One statement reads one consistent snapshot of
+    /// the current heads; historical versions never match.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed refusal when authorization fails, or an invalid
+    /// projection error when a stored key or the counted total is invalid.
+    pub fn project_memory_retirement_candidates(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        actor: &ActorContext,
+        work_id: crate::domain::WorkId,
+    ) -> Result<crate::domain::ProjectMemoryRetirementCandidates, StoreError> {
+        admit_live_project_memory_sessions(session_id, actor)?;
+        validate_project_memory_authorization(session_id, actor)?;
+        let mut statement = self.connection.prepare(
+            "SELECT json_extract(object.canonical_json, '$.project_key'), COUNT(*) OVER()
+             FROM memory_heads AS head
+             JOIN objects AS object ON object.object_id = head.version_id
+             WHERE head.status = 'active'
+               AND object.object_kind = 'memory_version'
+               AND json_extract(object.canonical_json, '$.scope.kind') = 'project'
+               AND json_extract(object.canonical_json, '$.scope.project') = ?1
+               AND json_type(object.canonical_json, '$.project_key') = 'text'
+               AND json_extract(object.canonical_json, '$.retiring_target.kind') = 'local'
+               AND json_extract(object.canonical_json, '$.retiring_target.work_id') = ?2
+             ORDER BY json_extract(object.canonical_json, '$.project_key')
+             LIMIT ?3",
+        )?;
+        let rows = statement
+            .query_map(
+                params![
+                    project_id.0,
+                    work_id.0.to_string(),
+                    RETIREMENT_CANDIDATE_LIMIT
+                ],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        let total = rows
+            .first()
+            .map_or(Ok(0), |(_, count)| usize::try_from(*count))
+            .map_err(|_| {
+                StoreError::InvalidMemoryProjection("retirement candidate count is invalid".into())
+            })?;
+        let keys = rows
+            .into_iter()
+            .map(|(key, _)| validate_stored_project_memory_key(&key))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(crate::domain::ProjectMemoryRetirementCandidates {
+            total,
+            omitted: total.saturating_sub(keys.len()),
+            keys,
+        })
+    }
+}
+
 fn prepare_project_memory(
     request: &RememberProjectMemoryRequest,
     key: &str,
     previous: Option<&StoredProjectMemory>,
+    retiring_target: Option<crate::domain::ProjectMemoryRetiringTarget>,
+    retiring_target_cleared: bool,
 ) -> Result<PreparedProjectMemory, StoreError> {
     let memory_id = previous.map_or_else(MemoryId::new, |entry| entry.version.memory_id);
     let version = MemoryVersion {
         schema_version: SCHEMA_VERSION,
         memory_id,
         project_key: Some(key.to_owned()),
+        retiring_target,
+        retiring_target_cleared,
         parents: previous
             .map(|entry| entry.version_id.clone())
             .into_iter()
@@ -761,6 +1099,12 @@ pub(super) fn validate_keyed_project_memory_shape(
     assertion: &MemoryAssertionEvent,
 ) -> Result<(), StoreError> {
     let Some(key) = version.project_key.as_deref() else {
+        // Retiring targets and clears belong to keyed project memories only.
+        if version.retiring_target.is_some() || version.retiring_target_cleared {
+            return Err(StoreError::InvalidMemoryProjection(
+                "a memory without a project key carries a retirement target or clear".into(),
+            ));
+        }
         return Ok(());
     };
     let invalid = |detail: &str| {
@@ -777,6 +1121,18 @@ pub(super) fn validate_keyed_project_memory_shape(
             || source.source_ref == super::graph_snapshot::RESTORED_REDACTED_MEMORY_SOURCE)
             && ObjectId::from_stored(source.fingerprint.clone()).is_some()
     });
+    if let Some(target) = version.retiring_target.as_ref() {
+        validate_retiring_target_shape(target).map_err(|error| invalid(&error.to_string()))?;
+    }
+    // A clear removes the previous version's target, so it never carries one
+    // and never starts a chain.
+    if version.retiring_target_cleared
+        && (version.retiring_target.is_some() || version.parents.is_empty())
+    {
+        return Err(invalid(
+            "a retirement-target clear must follow a version and carry no target",
+        ));
+    }
     if version.parents.len() <= 1
         && version.kind == MemoryKind::Episode
         && version.authority == Authority::Soft
@@ -1079,7 +1435,12 @@ fn project_memory_rows_on(
                 ));
             }
             let revision = history_revision(&history)?;
-            Ok(project_memory_list_row(key, stored, revision))
+            let mut row = project_memory_list_row(key, stored, revision);
+            row.retiring_state =
+                retiring_state_on(connection, project_id, row.retiring_target.as_ref())?;
+            row.retiring_target_dropped =
+                history::retiring_target_dropped(&history, history.len() - 1);
+            Ok(row)
         })
         .collect::<Result<Vec<_>, StoreError>>()?;
     Ok((rows, total_matches))
@@ -1101,6 +1462,10 @@ fn project_memory_list_row(
             .actor
             .attribution_context()
             .map(str::to_owned),
+        retiring_target: stored.version.retiring_target.clone(),
+        retiring_state: None,
+        retiring_target_dropped: None,
+        workaround: stored.version.retiring_target.as_ref().map(|_| true),
     }
 }
 

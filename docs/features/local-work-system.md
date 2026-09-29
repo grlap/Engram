@@ -1887,6 +1887,54 @@ key still refuses `memory_exists` with revision guidance, except an identical
 creation retry. `forget` permanently retires the key, including all history
 reads; it is a tombstone, never erasure or recreation.
 
+A memory that records a temporary workaround may name the item expected to
+retire it with `--retires-with local:REF` for an item in the bound project, or
+`--retires-with external:PROJECT#REFERENCE` for an item in another tracker.
+The local form resolves to that item's stable work id within the memory write
+transaction; the external form is asserted text and is never looked up in
+another store. Its project and reference are each 1–256 bytes of ASCII
+letters, digits and `. _ - / : @ +`, so the form printed back in a suggested
+command is always one safe argument. Both are stored with that immutable
+memory version. An
+ordinary `--revise` keeps the current target, even when only the body changes;
+`--revise --clear-retires-with` removes it, and a new `--retires-with` replaces
+it. A clear is recorded on the new version as a clear, so a deliberate removal
+is never confused with a lost target; a clear needs `--revise` and a target to
+remove, the current one or one a revision dropped (below), and is refused
+otherwise. The target and the clear are part of retry
+identity. The list row and full read label a version with a target as a
+workaround and show the target. For a local target, they also show its current
+lifecycle and update time at read time. A completed local target marks the
+current memory as a **forget candidate**, including on a later recovery read;
+historical versions show their own stored targets.
+
+A revision can also lose a target without a clear: a build that predates
+retiring targets reads a targeted memory without its target, and its revise
+writes a version with neither. The list row and full read then say that the
+target was dropped and by which revision, naming the earlier target, and the
+full read reminds the reader to restore it on a revise with `--retires-with`
+or to acknowledge the drop with `--revise --clear-retires-with`. Reads walk
+back over every version with neither a target nor a clear, so several such
+revisions still show the drop. Until every
+session that writes memories runs a build with retiring targets, targeted
+memories are written and revised only from sessions on the new build.
+
+On successful `done`, the acting caller receives a bounded list of active
+memory keys whose current versions cite that local item, with the exact total,
+omitted count, and commands to read each memory in full before an optional
+`forget KEY`. An exact completion replay gets a current candidate advisory.
+Failure to read the advisory is disclosed and never changes the completed
+item or its seal. Supersede, detach, cancel and reject likewise show bounded
+informational candidate keys in their `update` receipts. A supersede or a
+detach names its replacement, the new root for a detach, as the target to
+revise to; after a cancel or a reject, clear the target, revise it to another
+item, or forget the memory after checking. No transition changes a memory
+automatically. External targets remain visible for explicit follow-up;
+Engram does not observe another project's completion or infer identity from
+a coincidentally matching short ref. Anyone bound to the project can see the
+memory's current state; the completion and update advisories go only to the
+caller of those words.
+
 The existing `MemoryVersion.parents` links form one verified linear same-key,
 same-memory chain. Its root reserves the key uniquely per project; canonical
 edges determine revision order, never timestamps or hashes. Rebuild and doctor
@@ -1898,9 +1946,18 @@ damaged key; lower-level object, shape, and head failures retain their own
 diagnostics. Inspect the store with `doctor` before relying on a refused result.
 Revisions advance the memory change position without increasing the live-key
 count. No new canonical object kind or per-key delivery state exists. Full-read
-admission reserves space for history navigation before accepting a body.
-Graph snapshots carry every attributed version of a live key in order, but a
-forgotten key exports only its tombstone, with none of its version bodies.
+admission reserves space for history navigation before accepting a body, and
+for a local target's read-time state in its largest form, a completed item.
+Graph snapshots carry every attributed version of a live key in order, each
+with its optional retiring target and clear. Load refuses a clear that
+carries a target or that follows no target still in force, as the live store
+does. Doctor checks that every stored local target names an item of its
+memory's project by that item's work id and short ref. No table or column is
+added; older memory versions without the target
+retain their stored shape. The snapshot format fingerprint follows the
+document schema, so snapshot files saved by a build without retiring targets
+are refused by a build with them, and the other way round.
+A forgotten key exports only its tombstone, with none of its version bodies.
 The origin retains canonical history locally. See
 [snapshot retention](work-graph-snapshot.md#load).
 

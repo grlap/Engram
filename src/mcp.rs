@@ -313,6 +313,13 @@ struct RememberArgs {
     revise: Option<bool>,
     /// Optional current revision check; stale values refuse. Omit to revise the current head.
     expected_revision: Option<u64>,
+    /// Review this memory when the named item retires: local:REF (an item in this
+    /// project) or external:PROJECT#REFERENCE (asserted text of ASCII letters, digits
+    /// and . _ - / : @ +). Omitted on revise, the current target is kept.
+    retires_with: Option<String>,
+    /// With revise, remove the retirement target, or acknowledge one a revision
+    /// dropped, and record the clear; refused without revise or when there is neither.
+    clear_retires_with: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -676,6 +683,8 @@ impl McpServer {
                 key: args.key,
                 revise: args.revise.unwrap_or(false),
                 expected_revision: args.expected_revision,
+                retires_with: args.retires_with,
+                clear_retires_with: args.clear_retires_with.unwrap_or(false),
             },
             Utc::now(),
         ))

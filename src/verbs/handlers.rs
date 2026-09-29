@@ -308,6 +308,9 @@ pub struct RememberInput {
     #[serde(default)]
     pub revise: bool,
     pub expected_revision: Option<u64>,
+    pub retires_with: Option<String>,
+    #[serde(default)]
+    pub clear_retires_with: bool,
 }
 
 /// `memories`: compact list/search or one dedicated full read.
@@ -324,6 +327,50 @@ pub struct MemoriesInput {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ForgetInput {
     pub key: String,
+}
+
+/// Reads `--retires-with local:REF|external:PROJECT#REFERENCE` and
+/// `--clear-retires-with` into one target change. The MCP arguments carry the
+/// same strings, so both routes refuse the same combinations here.
+fn parse_retiring_target(
+    value: Option<&str>,
+    clear: bool,
+) -> Result<crate::domain::ProjectMemoryRetiringTargetChange, VerbError> {
+    use crate::domain::{ProjectMemoryRetiringTargetChange, ProjectMemoryRetiringTargetInput};
+    if clear {
+        return if value.is_none() {
+            Ok(ProjectMemoryRetiringTargetChange::Clear)
+        } else {
+            Err(StoreError::InvalidProjectMemory(
+                "--retires-with and --clear-retires-with cannot be combined".into(),
+            )
+            .into())
+        };
+    }
+    let Some(value) = value else {
+        return Ok(ProjectMemoryRetiringTargetChange::Keep);
+    };
+    let target = if let Some(work_ref) = value.strip_prefix("local:") {
+        ProjectMemoryRetiringTargetInput::Local {
+            work_ref: work_ref.to_owned(),
+        }
+    } else if let Some(external) = value.strip_prefix("external:") {
+        let (project, reference) = external.split_once('#').ok_or_else(|| {
+            StoreError::InvalidProjectMemory(
+                "external retirement target needs external:PROJECT#REFERENCE".into(),
+            )
+        })?;
+        ProjectMemoryRetiringTargetInput::External {
+            project: project.to_owned(),
+            reference: reference.to_owned(),
+        }
+    } else {
+        return Err(StoreError::InvalidProjectMemory(
+            "retirement target needs local:REF or external:PROJECT#REFERENCE".into(),
+        )
+        .into());
+    };
+    Ok(ProjectMemoryRetiringTargetChange::Set { target })
 }
 
 /// `note`: one finding on held open work or late evidence on completed work.
@@ -1339,11 +1386,14 @@ impl AgentVerbs {
     /// Returns [`VerbError`] when authorization, key, size, redaction, or
     /// revision-basis or terminal lifecycle admission fails.
     pub fn remember(&self, input: RememberInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let receipt = self.service.remember_project_memory(
+        let retiring_target =
+            parse_retiring_target(input.retires_with.as_deref(), input.clear_retires_with)?;
+        let receipt = self.service.remember_project_memory_with_target(
             input.text,
             input.key,
             input.revise,
             input.expected_revision,
+            retiring_target,
             now,
         )?;
         let guidance = Guidance {
@@ -1548,6 +1598,10 @@ impl AgentVerbs {
                 now,
             )
             .map_err(|error| VerbError::at(error, &work_ref))?;
+        let retirement_candidates = matches!(result, WorkCompleteResult::Completed(_)).then(|| {
+            self.service
+                .project_memory_retirement_candidates(view.status.work.work_id, now)
+        });
         let after = self.refreshed(&view, now)?;
         let child_resolution = match &result {
             WorkCompleteResult::Refused(refusal) => {
@@ -1700,14 +1754,27 @@ impl AgentVerbs {
                 }
                 WorkCompleteResult::Refused(_) => None,
             };
-            return super::child_obligations::done_with_acceptance(
+            let action = super::memory_retirement::RetirementAction::Completed;
+            let reserve = retirement_candidates.as_ref().map_or(Ok(0), |candidates| {
+                super::memory_retirement::reserve(&receipt, candidates, &action)
+            })?;
+            let composed = super::child_obligations::done_with_acceptance(
                 &receipt,
                 facts,
                 error_class,
                 &children,
                 &work_ref,
-                MAX_AGENT_WORK_RESPONSE_BYTES,
-            );
+                MAX_AGENT_WORK_RESPONSE_BYTES.saturating_sub(reserve),
+            )?;
+            return match retirement_candidates.as_ref() {
+                Some(candidates) => super::memory_retirement::append(
+                    &composed,
+                    candidates,
+                    &action,
+                    MAX_AGENT_WORK_RESPONSE_BYTES,
+                ),
+                None => Ok(composed),
+            };
         }
         Ok(receipt)
     }
@@ -2370,6 +2437,17 @@ fn project_memory_list_receipt(
             terminal_safe_actor_label(&row.actor_id, row.actor_context.as_deref()),
             row.remembered_at.format("%Y-%m-%d %H:%M UTC")
         ));
+        for line in crate::work_service::retiring_target_lines(
+            row.retiring_target.as_ref(),
+            row.retiring_state.as_ref(),
+            row.retiring_target_dropped.as_ref(),
+            true,
+        ) {
+            // Whole, not shortened: the display form of the target, with a
+            // local item's short ref; the full read's reminder gives the
+            // restore command by work id. The listing is byte-fitted.
+            lines.push(format!("    {line}"));
+        }
     }
     if result.exhausted {
         lines.push("  (end of project memories)".into());

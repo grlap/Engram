@@ -12,6 +12,7 @@ use crate::storage::{
 use crate::*;
 use crate::{ProjectId, domain::ProvenanceLink};
 
+mod retiring;
 mod revisions;
 
 fn admit_project_memory_full(full: &ProjectMemoryFull) -> Result<(), StoreError> {
@@ -42,6 +43,7 @@ fn project_memory_request(
     RememberProjectMemoryRequest {
         revise: false,
         expected_revision: None,
+        retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
         project_id: ProjectId(project.into()),
         session_id: SessionId(session.into()),
         key: key.map(str::to_owned),
@@ -705,7 +707,8 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
         "terminal rebuild observation",
         created_at.timestamp_millis(),
     );
-    let prepared = prepare_project_memory(&request, key, None).expect("prepare memory");
+    let prepared =
+        prepare_project_memory(&request, key, None, None, false).expect("prepare memory");
     let tombstone = MemoryAssertionEvent {
         schema_version: SCHEMA_VERSION,
         memory_id: prepared.version.memory_id,
@@ -1091,6 +1094,10 @@ fn project_memory_context_only_retry_uses_the_stored_delivery_envelope() {
         actor_id: retry.actor.actor_id.clone(),
         actor_context: retry.actor.attribution_context().map(str::to_owned),
         session_id: retry.actor.session_id.clone(),
+        retiring_target: None,
+        retiring_state: None,
+        retiring_target_dropped: None,
+        workaround: None,
     };
     assert!(
         admit_project_memory_full(&incoming).is_err(),
@@ -1202,7 +1209,8 @@ fn keyed_project_memory_shape_is_rechecked_from_canonical_bytes() {
         "valid body",
         1_700_000_000_000,
     );
-    let prepared = prepare_project_memory(&request, "valid-key", None).expect("prepare fixture");
+    let prepared =
+        prepare_project_memory(&request, "valid-key", None, None, false).expect("prepare fixture");
     let mut invalid_versions = Vec::new();
     let mut invalid_key = prepared.version.clone();
     invalid_key.project_key = Some("Unsafe Key".into());
@@ -1239,7 +1247,8 @@ fn project_memory_rebuild_refuses_a_hash_consistent_unsafe_key() {
         "valid body",
         1_700_000_000_000,
     );
-    let prepared = prepare_project_memory(&request, "valid-key", None).expect("prepare fixture");
+    let prepared =
+        prepare_project_memory(&request, "valid-key", None, None, false).expect("prepare fixture");
     let mut version = prepared.version;
     version.project_key = Some("Unsafe Key".into());
     let version_object = CanonicalObject::freeze(&version).expect("freeze malformed version");
@@ -1676,8 +1685,10 @@ fn project_memory_unique_index_collision_fails_closed_as_a_typed_refusal() {
         "second body",
         1_700_000_001_000,
     );
-    let first = prepare_project_memory(&first_request, key, None).expect("prepare first memory");
-    let second = prepare_project_memory(&second_request, key, None).expect("prepare second memory");
+    let first = prepare_project_memory(&first_request, key, None, None, false)
+        .expect("prepare first memory");
+    let second = prepare_project_memory(&second_request, key, None, None, false)
+        .expect("prepare second memory");
     let transaction = store
         .connection
         .transaction()
@@ -1979,7 +1990,8 @@ fn insert_historical_project_memory(store: &mut SqliteStore, session: &str, key:
         "historical oversized actor body",
         1_700_000_000_000,
     );
-    let prepared = prepare_project_memory(&request, key, None).expect("prepare historical");
+    let prepared =
+        prepare_project_memory(&request, key, None, None, false).expect("prepare historical");
     let transaction = store.connection.transaction().expect("historical tx");
     project_memory_state_on(&transaction, &request.project_id).expect("state");
     SqliteStore::insert_project_memory_version_object(

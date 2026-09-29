@@ -329,7 +329,7 @@ fn invalid_memory_revision_parent_refuses_reads_and_doctor_does_not_accept_the_h
     let wrong_parent = lookup_project_memory_on(&store.connection, &first.project_id, "other")
         .unwrap()
         .unwrap();
-    let bad = prepare_project_memory(&first, "rule", Some(&wrong_parent)).unwrap();
+    let bad = prepare_project_memory(&first, "rule", Some(&wrong_parent), None, false).unwrap();
     SqliteStore::insert_object(&store.connection, "memory_version", &bad.version_object).unwrap();
     SqliteStore::insert_object(
         &store.connection,

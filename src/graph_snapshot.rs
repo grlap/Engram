@@ -310,6 +310,10 @@ pub enum WorkGraphSnapshotText {
 pub enum WorkGraphSnapshotMemoryState {
     Active {
         body: WorkGraphSnapshotText,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retiring_target: Option<crate::domain::ProjectMemoryRetiringTarget>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        retiring_target_cleared: bool,
         sensitivity: Sensitivity,
         remembered_at: DateTime<Utc>,
         actor: ActorContext,
@@ -326,6 +330,10 @@ pub enum WorkGraphSnapshotMemoryState {
 pub struct WorkGraphSnapshotMemoryRevision {
     pub revision: u64,
     pub body: WorkGraphSnapshotText,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retiring_target: Option<crate::domain::ProjectMemoryRetiringTarget>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retiring_target_cleared: bool,
     pub sensitivity: Sensitivity,
     pub remembered_at: DateTime<Utc>,
     pub actor: ActorContext,
@@ -594,6 +602,10 @@ enum StrictMemory {
         key: String,
         history: Vec<WorkGraphSnapshotMemoryRevision>,
         body: WorkGraphSnapshotText,
+        #[serde(default)]
+        retiring_target: Option<crate::domain::ProjectMemoryRetiringTarget>,
+        #[serde(default)]
+        retiring_target_cleared: bool,
         sensitivity: Sensitivity,
         remembered_at: DateTime<Utc>,
         actor: ActorContext,
@@ -676,6 +688,8 @@ impl From<StrictMemory> for WorkGraphSnapshotMemory {
                 key,
                 history,
                 body,
+                retiring_target,
+                retiring_target_cleared,
                 sensitivity,
                 remembered_at,
                 actor,
@@ -684,6 +698,8 @@ impl From<StrictMemory> for WorkGraphSnapshotMemory {
                 history,
                 state: WorkGraphSnapshotMemoryState::Active {
                     body,
+                    retiring_target,
+                    retiring_target_cleared,
                     sensitivity,
                     remembered_at,
                     actor,

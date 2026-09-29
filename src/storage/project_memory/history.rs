@@ -121,7 +121,9 @@ pub(in crate::storage) fn project_memory_history_on(
         if let Some(previous) = history.last()
             && (entry.version.memory_id != previous.version.memory_id
                 || entry.version.created_at < previous.version.created_at
-                || previous.assertion.status == MemoryStatus::Tombstoned)
+                || previous.assertion.status == MemoryStatus::Tombstoned
+                || (entry.version.retiring_target_cleared
+                    && !has_clearable_retiring_target(&history)))
         {
             return Err(invalid());
         }
@@ -134,20 +136,68 @@ pub(in crate::storage) fn project_memory_history_on(
     Ok(history)
 }
 
+/// The full-read envelope of `history[index]`, whose revision is `index + 1`.
+/// The item state of a local target is read separately, when the memory is.
+///
+/// # Panics
+///
+/// Never in practice: callers pass an index inside `history`.
 pub(super) fn memory_full(
     key: &str,
-    entry: &StoredProjectMemory,
-    revision: u64,
+    history: &[StoredProjectMemory],
+    index: usize,
     current_revision: u64,
 ) -> ProjectMemoryFull {
+    let entry = &history[index];
     ProjectMemoryFull {
         key: key.into(),
-        revision,
+        revision: index as u64 + 1,
         current_revision,
         body: entry.version.body.clone(),
         remembered_at: entry.version.created_at,
         actor_id: entry.version.actor.actor_id.clone(),
         actor_context: entry.version.actor.attribution_context().map(str::to_owned),
         session_id: entry.version.actor.session_id.clone(),
+        retiring_target: entry.version.retiring_target.clone(),
+        retiring_state: None,
+        retiring_target_dropped: retiring_target_dropped(history, index),
+        workaround: entry.version.retiring_target.as_ref().map(|_| true),
     }
+}
+
+/// The target `history[index]` lost without an explicit clear: when that
+/// version has neither a target nor a clear, the nearest earlier version that
+/// has either decides. A target there was dropped by the revision after it;
+/// a clear there, or no such version, means nothing was dropped.
+pub(super) fn retiring_target_dropped(
+    history: &[StoredProjectMemory],
+    index: usize,
+) -> Option<crate::domain::ProjectMemoryRetiringTargetDropped> {
+    let version = &history.get(index)?.version;
+    if version.retiring_target.is_some() || version.retiring_target_cleared {
+        return None;
+    }
+    retiring_target_dropped_before(&history[..index])
+}
+
+/// What a new version with neither a target nor a clear would drop, given the
+/// versions before it.
+pub(super) fn retiring_target_dropped_before(
+    prior: &[StoredProjectMemory],
+) -> Option<crate::domain::ProjectMemoryRetiringTargetDropped> {
+    let (position, entry) = prior.iter().enumerate().rev().find(|(_, entry)| {
+        entry.version.retiring_target.is_some() || entry.version.retiring_target_cleared
+    })?;
+    let target = entry.version.retiring_target.clone()?;
+    Some(crate::domain::ProjectMemoryRetiringTargetDropped {
+        revision: position as u64 + 2,
+        target,
+    })
+}
+
+/// Whether a clear written after `prior` has a target to remove: the
+/// newest version's own target, or one that later revisions dropped without
+/// a clear. The nearest earlier version with a target or a clear decides.
+pub(super) fn has_clearable_retiring_target(prior: &[StoredProjectMemory]) -> bool {
+    retiring_target_dropped_before(prior).is_some()
 }

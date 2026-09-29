@@ -86,12 +86,66 @@ impl AgentVerbs {
             format!("{line}{}", held_suffix(self.holder(&after, now), now))
         };
         let guidance = self.guidance(&after, "update", now);
-        Ok(self.finish_mutation(Receipt::assemble(
+        let receipt = self.finish_mutation(Receipt::assemble(
             vec![line],
             guidance,
             serde_json::to_value(&result)?,
             false,
-        )))
+        ));
+        // Memories naming this item as their retiring target are surfaced
+        // when it leaves open work other than by completion: a cancel or a
+        // rejection cancels it, a supersede or a detach replaces it.
+        // The replacement is read from the recorded result, never from the
+        // caller's input: a supersede records it as `superseded_by`, and a
+        // detach's receipt names the new root.
+        let action = match result.operation.as_str() {
+            "cancel" | "reject" => {
+                Some(super::super::memory_retirement::RetirementAction::Cancelled)
+            }
+            "supersede" => result
+                .receipt
+                .result
+                .get("superseded_by")
+                .cloned()
+                .and_then(|value| serde_json::from_value::<crate::domain::WorkId>(value).ok())
+                .map(
+                    |replacement| super::super::memory_retirement::RetirementAction::Superseded {
+                        replacement: self.command_work_ref(replacement, now),
+                    },
+                ),
+            "detach" => Some(
+                super::super::memory_retirement::RetirementAction::Superseded {
+                    replacement: self.command_work_ref(result.receipt.work_id, now),
+                },
+            ),
+            _ => None,
+        };
+        let Some(action) = action else {
+            return Ok(receipt);
+        };
+        let candidates = self
+            .service
+            .project_memory_retirement_candidates(view.status.work.work_id, now);
+        super::super::memory_retirement::append(
+            &receipt,
+            &candidates,
+            &action,
+            super::super::MAX_AGENT_WORK_RESPONSE_BYTES,
+        )
+    }
+
+    /// The ref a suggested command should use for `work_id`: its short ref
+    /// while that still names exactly this item, and otherwise the work id,
+    /// which a short ref shared by several items would make ambiguous.
+    fn command_work_ref(&self, work_id: crate::domain::WorkId, now: DateTime<Utc>) -> String {
+        let full = work_id.0.to_string();
+        let Ok(item) = self.service.resolve_work_reference(&full, now) else {
+            return full;
+        };
+        match self.service.resolve_work_reference(&item.short_ref, now) {
+            Ok(resolved) if resolved.work_id == work_id => item.short_ref,
+            _ => full,
+        }
     }
 
     /// Maps one flat `update` action onto the typed core update and the

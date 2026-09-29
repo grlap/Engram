@@ -146,6 +146,7 @@ impl ProjectMemoryFullResponse {
     #[must_use]
     pub(crate) fn new(memory: ProjectMemoryFull) -> Self {
         let mut next = Vec::new();
+        let mut reminders = Vec::new();
         if memory.revision > 1 {
             next.push(format!(
                 "engram work memories {} --full --revision {}",
@@ -156,17 +157,37 @@ impl ProjectMemoryFullResponse {
         if memory.revision != memory.current_revision {
             next.push(format!("engram work memories {} --full", memory.key));
         }
+        if memory.revision == memory.current_revision
+            && memory
+                .retiring_state
+                .as_ref()
+                .is_some_and(|state| state.lifecycle == WorkLifecycle::Completed)
+        {
+            reminders.push(
+                "retirement item completed; this memory is a forget candidate after review".into(),
+            );
+            next.push(format!("engram work forget {}", memory.key));
+        }
+        if memory.revision == memory.current_revision
+            && let Some(dropped) = &memory.retiring_target_dropped
+        {
+            reminders.push(format!(
+                "revision {} dropped the retirement target without a clear; to keep it, revise with --retires-with {}, or to let it go, revise with --clear-retires-with",
+                dropped.revision,
+                retiring_target_command_form(&dropped.target)
+            ));
+        }
         next.push("engram work memories".into());
         Self {
             memory,
-            reminders: Vec::new(),
+            reminders,
             next,
         }
     }
 
     #[must_use]
     pub(crate) fn terminal_lines(&self) -> Vec<String> {
-        vec![
+        let mut lines = vec![
             format!(
                 "memory {} (revision {}; current {}):",
                 self.memory.key, self.memory.revision, self.memory.current_revision
@@ -179,8 +200,89 @@ impl ProjectMemoryFullResponse {
                 )
             ),
             terminal_safe_data_block(&self.memory.body),
-        ]
+        ];
+        lines.extend(retiring_target_lines(
+            self.memory.retiring_target.as_ref(),
+            self.memory.retiring_state.as_ref(),
+            self.memory.retiring_target_dropped.as_ref(),
+            self.memory.revision == self.memory.current_revision,
+        ));
+        lines
     }
+}
+
+/// The `--retires-with` form of a stored target as shown to a reader,
+/// terminal-safe, with a local item's short ref.
+pub(crate) fn retiring_target_form(target: &crate::domain::ProjectMemoryRetiringTarget) -> String {
+    match target {
+        crate::domain::ProjectMemoryRetiringTarget::Local { work_ref, .. } => {
+            format!("local:{}", terminal_safe_multiline(work_ref))
+        }
+        crate::domain::ProjectMemoryRetiringTarget::External { project, reference } => format!(
+            "external:{}#{}",
+            terminal_safe_multiline(project),
+            terminal_safe_multiline(reference)
+        ),
+    }
+}
+
+/// The `--retires-with` argument that restores a stored target. A local item
+/// is named by its work id, which never becomes ambiguous the way a short ref
+/// can once more items share its prefix.
+pub(crate) fn retiring_target_command_form(
+    target: &crate::domain::ProjectMemoryRetiringTarget,
+) -> String {
+    match target {
+        crate::domain::ProjectMemoryRetiringTarget::Local { work_id, .. } => {
+            format!("local:{}", work_id.0)
+        }
+        external @ crate::domain::ProjectMemoryRetiringTarget::External { .. } => {
+            retiring_target_form(external)
+        }
+    }
+}
+
+/// The text lines that list rows and full reads show for a memory's retiring
+/// target: the target with its item state read now, or a target a revision
+/// dropped without a clear. Only a read of the current version calls a
+/// completed target a forget candidate: an older version's target may since
+/// have been replaced or cleared.
+pub(crate) fn retiring_target_lines(
+    target: Option<&crate::domain::ProjectMemoryRetiringTarget>,
+    state: Option<&crate::domain::ProjectMemoryRetiringState>,
+    dropped: Option<&crate::domain::ProjectMemoryRetiringTargetDropped>,
+    current: bool,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(target) = target {
+        let status = state.map_or_else(
+            || "status in the other tracker is not observed".to_owned(),
+            |state| {
+                format!(
+                    "item {} since {}{}",
+                    work_lifecycle_word(state.lifecycle),
+                    state.updated_at.format("%Y-%m-%d %H:%M UTC"),
+                    if current && state.lifecycle == WorkLifecycle::Completed {
+                        " — forget candidate after review"
+                    } else {
+                        ""
+                    }
+                )
+            },
+        );
+        lines.push(format!(
+            "workaround retires with {}: {status}",
+            retiring_target_form(target)
+        ));
+    }
+    if let Some(dropped) = dropped {
+        lines.push(format!(
+            "retirement target {} dropped by revision {} without a clear",
+            retiring_target_form(&dropped.target),
+            dropped.revision
+        ));
+    }
+    lines
 }
 
 pub(crate) fn project_memory_full_response(

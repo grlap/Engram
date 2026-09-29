@@ -987,6 +987,9 @@ fn validate_memories(document: &WorkGraphSnapshotDocument) -> Result<(), StoreEr
         super::super::validate_stored_project_memory_key(&memory.key)
             .map_err(|_| corrupt("project-memory key is invalid"))?;
         let mut prior_at = None;
+        // Whether a target is in force before this revision: set by a
+        // target, ended by a clear, kept by a revision with neither (a drop).
+        let mut prior_target = false;
         for (index, prior) in memory.history.iter().enumerate() {
             if prior.revision != index as u64 + 1
                 || prior_at.is_some_and(|at| prior.remembered_at < at)
@@ -1001,11 +1004,24 @@ fn validate_memories(document: &WorkGraphSnapshotDocument) -> Result<(), StoreEr
                 &prior.actor,
                 document.body.summary.widened,
             )?;
+            validate_memory_retiring_target(prior.retiring_target.as_ref(), document)?;
+            validate_memory_retiring_clear(
+                prior.retiring_target_cleared,
+                prior.retiring_target.as_ref(),
+                prior_target,
+            )?;
             prior_at = Some(prior.remembered_at);
+            if prior.retiring_target.is_some() {
+                prior_target = true;
+            } else if prior.retiring_target_cleared {
+                prior_target = false;
+            }
         }
         match &memory.state {
             WorkGraphSnapshotMemoryState::Active {
                 body,
+                retiring_target,
+                retiring_target_cleared,
                 sensitivity,
                 actor,
                 remembered_at,
@@ -1014,6 +1030,12 @@ fn validate_memories(document: &WorkGraphSnapshotDocument) -> Result<(), StoreEr
                     return Err(corrupt("current project memory precedes its history"));
                 }
                 validate_memory_body(body, *sensitivity, actor, document.body.summary.widened)?;
+                validate_memory_retiring_target(retiring_target.as_ref(), document)?;
+                validate_memory_retiring_clear(
+                    *retiring_target_cleared,
+                    retiring_target.as_ref(),
+                    prior_target,
+                )?;
             }
             WorkGraphSnapshotMemoryState::Tombstone { actor, .. } => {
                 if !memory.history.is_empty() {
@@ -1024,6 +1046,43 @@ fn validate_memories(document: &WorkGraphSnapshotDocument) -> Result<(), StoreEr
                 validate_actor(actor)?;
             }
         }
+    }
+    Ok(())
+}
+
+/// A clear marker records the removal of a target in force, as the live store
+/// admits it: the previous revision's own, or one a revision dropped. It
+/// carries no target, and a first revision cannot carry it.
+fn validate_memory_retiring_clear(
+    cleared: bool,
+    target: Option<&crate::domain::ProjectMemoryRetiringTarget>,
+    prior_target: bool,
+) -> Result<(), StoreError> {
+    if cleared && (target.is_some() || !prior_target) {
+        return Err(corrupt(
+            "project-memory retirement-target clear does not follow a targeted revision",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_memory_retiring_target(
+    target: Option<&crate::domain::ProjectMemoryRetiringTarget>,
+    document: &WorkGraphSnapshotDocument,
+) -> Result<(), StoreError> {
+    let Some(target) = target else { return Ok(()) };
+    super::super::project_memory::validate_retiring_target_shape(target)
+        .map_err(|_| corrupt("project-memory retirement target is invalid"))?;
+    if let crate::domain::ProjectMemoryRetiringTarget::Local { work_id, work_ref } = target
+        && !document
+            .body
+            .items
+            .iter()
+            .any(|item| item.work_id == *work_id && item.short_ref == *work_ref)
+    {
+        return Err(corrupt(
+            "project-memory local retirement target is absent from the snapshot",
+        ));
     }
     Ok(())
 }
@@ -1297,6 +1356,8 @@ fn insert_memory_on(
             history: Vec::new(),
             state: WorkGraphSnapshotMemoryState::Active {
                 body: revision.body.clone(),
+                retiring_target: revision.retiring_target.clone(),
+                retiring_target_cleared: revision.retiring_target_cleared,
                 sensitivity: revision.sensitivity,
                 remembered_at: revision.remembered_at,
                 actor: revision.actor.clone(),
@@ -1333,40 +1394,54 @@ fn insert_memory_version_on(
     previous: Option<&ObjectId>,
     project_head: bool,
 ) -> Result<ObjectId, StoreError> {
-    let (body, sensitivity, remembered_at, actor, status, assertion_at, source_ref) =
-        match &memory.state {
-            WorkGraphSnapshotMemoryState::Active {
+    let (
+        body,
+        (retiring_target, retiring_target_cleared),
+        sensitivity,
+        remembered_at,
+        actor,
+        status,
+        assertion_at,
+        source_ref,
+    ) = match &memory.state {
+        WorkGraphSnapshotMemoryState::Active {
+            body,
+            retiring_target,
+            retiring_target_cleared,
+            sensitivity,
+            remembered_at,
+            actor,
+        } => {
+            let (body, source_ref) = restored_memory_body(body, *sensitivity);
+            (
                 body,
-                sensitivity,
-                remembered_at,
-                actor,
-            } => {
-                let (body, source_ref) = restored_memory_body(body, *sensitivity);
-                (
-                    body,
-                    *sensitivity,
-                    *remembered_at,
-                    actor.clone(),
-                    MemoryStatus::Active,
-                    *remembered_at,
-                    source_ref,
-                )
-            }
-            WorkGraphSnapshotMemoryState::Tombstone { retired_at, actor } => (
-                REDACTED_MEMORY_PLACEHOLDER.into(),
-                Sensitivity::Internal,
-                *retired_at,
+                (retiring_target.clone(), *retiring_target_cleared),
+                *sensitivity,
+                *remembered_at,
                 actor.clone(),
-                MemoryStatus::Tombstoned,
-                *retired_at,
-                RESTORED_MEMORY_SOURCE,
-            ),
-        };
+                MemoryStatus::Active,
+                *remembered_at,
+                source_ref,
+            )
+        }
+        WorkGraphSnapshotMemoryState::Tombstone { retired_at, actor } => (
+            REDACTED_MEMORY_PLACEHOLDER.into(),
+            (None, false),
+            Sensitivity::Internal,
+            *retired_at,
+            actor.clone(),
+            MemoryStatus::Tombstoned,
+            *retired_at,
+            RESTORED_MEMORY_SOURCE,
+        ),
+    };
     let memory_id = restored_memory_id(body_hash, &memory.key);
     let version = MemoryVersion {
         schema_version: crate::schema::SCHEMA_VERSION,
         memory_id,
         project_key: Some(memory.key.clone()),
+        retiring_target,
+        retiring_target_cleared,
         parents: previous.cloned().into_iter().collect(),
         kind: MemoryKind::Episode,
         authority: Authority::Soft,

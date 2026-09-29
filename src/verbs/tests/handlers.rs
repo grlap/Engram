@@ -305,6 +305,8 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
             RememberInput {
                 revise: false,
                 expected_revision: None,
+                retires_with: None,
+                clear_retires_with: false,
                 text: "x".repeat(crate::domain::MAX_PROJECT_MEMORY_BODY_BYTES),
                 key: Some("plain-boundary".into()),
             },
@@ -337,6 +339,8 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
             RememberInput {
                 revise: false,
                 expected_revision: None,
+                retires_with: None,
+                clear_retires_with: false,
                 text: format_heavy_body,
                 key: Some("format-heavy-boundary".into()),
             },
@@ -355,6 +359,8 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
             RememberInput {
                 revise: false,
                 expected_revision: None,
+                retires_with: None,
+                clear_retires_with: false,
                 text: raw_control_body.into(),
                 key: Some("terminal-safe".into()),
             },
@@ -426,6 +432,8 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
             RememberInput {
                 revise: false,
                 expected_revision: None,
+                retires_with: None,
+                clear_retires_with: false,
                 text: "Actor labels are escaped at the receipt boundary.".into(),
                 key: Some("unsafe-actor-label".into()),
             },
@@ -468,6 +476,8 @@ fn project_memory_listing_sheds_escape_heavy_rows_without_skipping_a_blank_query
                 RememberInput {
                     revise: false,
                     expected_revision: None,
+                    retires_with: None,
+                    clear_retires_with: false,
                     text: "\u{7}".repeat(160),
                     key: Some(format!("escape-heavy-{index:02}")),
                 },

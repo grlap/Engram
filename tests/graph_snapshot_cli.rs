@@ -115,6 +115,8 @@ fn doctor_distinguishes_recorded_secret_ref_bodies_from_old_unmeasured_audits() 
                 body: engram::WorkGraphSnapshotText::Present {
                     value: "not-validated-as-a-reference".into(),
                 },
+                retiring_target: None,
+                retiring_target_cleared: false,
                 sensitivity: engram::Sensitivity::SecretRef,
                 remembered_at: now,
                 actor: actor.clone(),

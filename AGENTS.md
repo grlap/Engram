@@ -556,7 +556,7 @@ engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-refer
 engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION] [--supersedes RECORD_ID]
 engram work note "what you found or decided"
 engram work done ["what was delivered"] [--source-fingerprint F] [--landed COMMIT --remote R --branch B --pushed-at T [--installed-build F]]
-engram work remember "project note" [--key KEY]
+engram work remember "project note" [--key KEY [--revise [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
 engram work forget KEY
 ```

@@ -1697,6 +1697,51 @@ test("project memory revisions agree on CLI MCP history conflicts and terminal r
   }
 });
 
+test("retiring memory targets survive revision and produce explicit completion candidates", async (t) => {
+  const engramHome = fixtureHome("engram-memory-retirement-", t);
+  const session = "memory-retirement-owner";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const work = receipt(await client.call("add", { title: "Deliver the local fix" })).work.short_ref;
+    const first = receipt(await client.call("remember", { key: "temporary-guidance", text: "Initial workaround", retires_with: `local:${work}` }));
+    assert.equal(first.revision, 1);
+    const revised = receipt(await client.call("remember", { key: "temporary-guidance", text: "Corrected workaround", revise: true, expected_revision: 1 }));
+    assert.equal(revised.revision, 2);
+    receipt(await client.call("remember", { key: "other-guidance", text: "Unrelated guidance" }));
+    receipt(await client.call("remember", { key: "external-guidance", text: "External workaround", retires_with: "external:other-project#issue-7" }));
+    const before = receipt(await client.call("memories", { query: "temporary-guidance", full: true }));
+    assert.equal(before.retiring_target.kind, "local");
+    assert.equal(before.retiring_target.work_ref, work);
+    assert.equal(before.retiring_state.lifecycle, "open");
+    assert.equal(before.workaround, true);
+    const cliBefore = cliJson(engramHome, session, "memories", "temporary-guidance", "--full");
+    assert.deepEqual(cliBefore.retiring_target, before.retiring_target);
+    receipt(await client.call("claim", { work_ref: work }));
+    receipt(await client.call("note", { work_ref: work, text: "The fix is delivered" }));
+    const completed = receipt(await client.call("done", { work_ref: work, summary: "Delivered" }));
+    assert.equal(completed.work.lifecycle, "completed");
+    assert.equal(completed.memory_retirement.total, 1);
+    assert.equal(completed.memory_retirement.omitted, 0);
+    assert.equal(completed.memory_retirement.items[0].key, "temporary-guidance");
+    assert.equal(completed.memory_retirement.items[0].forget_command, "engram work forget temporary-guidance");
+    const after = receipt(await client.call("memories", { query: "temporary-guidance", full: true }));
+    assert.equal(after.retiring_state.lifecycle, "completed");
+    assert.ok(after.next.includes("engram work forget temporary-guidance"));
+    const listed = receipt(await client.call("memories", {}));
+    assert.equal(listed.memories.length, 3);
+    assert.equal(listed.memories.find(({ key }) => key === "external-guidance").retiring_target.kind, "external");
+    receipt(await client.call("forget", { key: "temporary-guidance" }));
+    const remaining = receipt(await client.call("memories", {}));
+    assert.equal(remaining.memories.length, 2);
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("missing-focus gate offers discovery on CLI and MCP", async (t) => {
   const engramHome = fixtureHome("engram-gate-discovery-", t);
   let client;

@@ -16,6 +16,7 @@ fn snapshot_memory_history_import_decodes_linearly() {
                     created_at: at(revision),
                     revise: revision > 1,
                     expected_revision: None,
+                    retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
                 },
                 &DevelopmentNoopRedactor,
             )
@@ -54,6 +55,7 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
     let directory = crate::test_support::temp_home().unwrap();
     let project = ProjectId("revision-snapshot".into());
     let mut source = SqliteStore::open(directory.path().join("source.db")).unwrap();
+    let retiring_work = create_root(&mut source, &project, "Retiring fix", "retiring-fix");
     let bodies = [
         "first attributed belief",
         "second corrected belief",
@@ -72,6 +74,15 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
                     created_at: at(i64::try_from(index).unwrap()),
                     revise: index > 0,
                     expected_revision: None,
+                    retiring_target: match index {
+                        0 => crate::domain::ProjectMemoryRetiringTargetChange::Set {
+                            target: crate::domain::ProjectMemoryRetiringTargetInput::Local {
+                                work_ref: retiring_work.short_ref.clone(),
+                            },
+                        },
+                        2 => crate::domain::ProjectMemoryRetiringTargetChange::Clear,
+                        _ => crate::domain::ProjectMemoryRetiringTargetChange::Keep,
+                    },
                 },
                 &DevelopmentNoopRedactor,
             )
@@ -100,6 +111,26 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
     assert_eq!(memory.history.len(), 2);
     assert_eq!(memory.history[0].revision, 1);
     assert_eq!(memory.history[1].revision, 2);
+    assert!(
+        memory
+            .history
+            .iter()
+            .all(|revision| revision.retiring_target.is_some())
+    );
+    assert!(
+        memory
+            .history
+            .iter()
+            .all(|revision| !revision.retiring_target_cleared)
+    );
+    assert!(matches!(
+        &memory.state,
+        WorkGraphSnapshotMemoryState::Active {
+            retiring_target: None,
+            retiring_target_cleared: true,
+            ..
+        }
+    ));
     let mut destination = SqliteStore::open(directory.path().join("destination.db")).unwrap();
     destination
         .load_work_graph_snapshot(
@@ -126,6 +157,11 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
         assert_eq!(full.session_id, authors[index].session_id);
         assert_eq!(full.revision, index as u64 + 1);
         assert_eq!(full.current_revision, 3);
+        assert_eq!(full.retiring_target.is_some(), index < 2);
+        assert!(
+            full.retiring_target_dropped.is_none(),
+            "the loaded clear is still a clear, not a drop"
+        );
     }
     let resaved = destination
         .save_work_graph_snapshot(
@@ -141,12 +177,22 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
     assert!(destination.verify_all().unwrap().invalid_objects.is_empty());
     let mut corrupt_store = SqliteStore::open(directory.path().join("corrupt.db")).unwrap();
     let before = crate::storage::test_database_shape_snapshot(&corrupt_store.connection);
-    for mutate in 0..3 {
+    for mutate in 0..6 {
         let mut document = saved.document.clone();
+        let memory = &mut document.body.memories[0];
         match mutate {
-            0 => document.body.memories[0].history.swap(0, 1),
-            1 => document.body.memories[0].history[1].revision = 4,
-            2 => document.body.memories[0].history[0].remembered_at = at(20),
+            0 => memory.history.swap(0, 1),
+            1 => memory.history[1].revision = 4,
+            2 => memory.history[0].remembered_at = at(20),
+            // A clear on the first revision follows nothing.
+            3 => memory.history[0].retiring_target_cleared = true,
+            // A clear never carries a target.
+            4 => memory.history[1].retiring_target_cleared = true,
+            // A clear must follow a target still in force; here none ever was.
+            5 => {
+                memory.history[0].retiring_target = None;
+                memory.history[1].retiring_target = None;
+            }
             _ => unreachable!(),
         }
         rebind_snapshot_body(&mut document);

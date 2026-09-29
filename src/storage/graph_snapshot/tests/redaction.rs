@@ -242,6 +242,7 @@ fn secret_ref_count_includes_live_history_and_excludes_retired_bodies() {
                     created_at: at(revision),
                     revise: revision > 1,
                     expected_revision: None,
+                    retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
                 },
                 &DevelopmentNoopRedactor,
             )

@@ -126,6 +126,11 @@ Engram's own and are preserved; nothing in the file is a foreign identifier.
 Each live memory also carries `history`: its superseded attributed versions
 in dense revision order, oldest first, with each body's sensitivity label,
 timestamp and original actor. The top-level memory body remains current.
+Every version, historical or current, also carries its optional
+`retiring_target` and a `retiring_target_cleared` flag when it recorded an
+explicit clear; a local target must name an item in the file, and a clear
+must carry no target and follow a target still in force, one an earlier
+version named that no clear has ended since.
 Retired keys carry an empty history and only their tombstone: no current or
 superseded body crosses the host boundary. Native canonical history remains
 on the origin host, inaccessible through retired-key reads. Redaction applies

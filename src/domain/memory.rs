@@ -10,7 +10,7 @@ use crate::ObjectId;
 
 use super::{
     ActorContext, ChangeCursor, FeedPosition, MemoryId, ProjectId, SessionId, SourceSnapshot,
-    TaskId, WorkId,
+    TaskId, WorkId, WorkLifecycle,
 };
 
 /// What a memory means independently of how it is delivered.
@@ -147,6 +147,14 @@ pub struct MemoryVersion {
     /// their canonical bytes; project episodes reserve it permanently.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_key: Option<String>,
+    /// The item whose resolution makes this project memory worth reviewing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retiring_target: Option<ProjectMemoryRetiringTarget>,
+    /// Set only by an explicit clear of the previous version's target, so a
+    /// deliberate removal is never confused with a target a revision dropped
+    /// without knowing about it (such as one written by an older build).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retiring_target_cleared: bool,
     pub parents: Vec<ObjectId>,
     pub kind: MemoryKind,
     pub authority: Authority,
@@ -193,6 +201,62 @@ pub const MAX_PROJECT_MEMORY_QUERY_BYTES: usize = 256;
 /// Maximum normalized full-text tokens accepted in one project-memory query.
 pub const MAX_PROJECT_MEMORY_QUERY_TOKENS: usize = 16;
 
+/// A work item whose resolution makes a project memory worth reviewing.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProjectMemoryRetiringTarget {
+    Local { work_id: WorkId, work_ref: String },
+    External { project: String, reference: String },
+}
+
+/// Asserted input; local references are resolved within the bound project on write.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProjectMemoryRetiringTargetInput {
+    Local { work_ref: String },
+    External { project: String, reference: String },
+}
+
+/// What a `remember` does to the retiring target of the version it writes.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "change", rename_all = "snake_case")]
+pub enum ProjectMemoryRetiringTargetChange {
+    /// Keep the target of the version a revise builds on; a new key has none.
+    #[default]
+    Keep,
+    /// Name this target, replacing any current one.
+    Set {
+        target: ProjectMemoryRetiringTargetInput,
+    },
+    /// Remove the current target and record the clear on the new version.
+    Clear,
+}
+
+/// A local retiring target's lifecycle, read when the memory is read.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryRetiringState {
+    pub lifecycle: WorkLifecycle,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A retiring target that a later revision left out without an explicit
+/// clear: `revision` is the first version without it, and `target` is the
+/// one it had, which a revise can restore.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryRetiringTargetDropped {
+    pub revision: u64,
+    pub target: ProjectMemoryRetiringTarget,
+}
+
+/// Active memory keys whose current version names one local item as its
+/// retiring target, bounded, with the exact total.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryRetirementCandidates {
+    pub total: usize,
+    pub omitted: usize,
+    pub keys: Vec<String>,
+}
+
 /// Create request for one immutable project episode.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RememberProjectMemoryRequest {
@@ -203,6 +267,8 @@ pub struct RememberProjectMemoryRequest {
     pub revise: bool,
     pub expected_revision: Option<u64>,
     pub body: String,
+    #[serde(default)]
+    pub retiring_target: ProjectMemoryRetiringTargetChange,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
 }
@@ -241,6 +307,14 @@ pub struct ProjectMemoryListRow {
     pub actor_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actor_context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retiring_target: Option<ProjectMemoryRetiringTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retiring_state: Option<ProjectMemoryRetiringState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retiring_target_dropped: Option<ProjectMemoryRetiringTargetDropped>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workaround: Option<bool>,
 }
 
 /// Bounded listing result. Filtered queries omit continuation and report how
@@ -270,6 +344,14 @@ pub struct ProjectMemoryFull {
     pub actor_context: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<SessionId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retiring_target: Option<ProjectMemoryRetiringTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retiring_state: Option<ProjectMemoryRetiringState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retiring_target_dropped: Option<ProjectMemoryRetiringTargetDropped>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workaround: Option<bool>,
 }
 
 /// Visibility override for low-friction prose capture.

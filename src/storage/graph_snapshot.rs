@@ -1440,6 +1440,8 @@ fn memories_on(
                 memory_redacted |= hidden;
                 if let WorkGraphSnapshotMemoryState::Active {
                     body,
+                    retiring_target,
+                    retiring_target_cleared,
                     sensitivity,
                     remembered_at,
                     actor,
@@ -1448,6 +1450,8 @@ fn memories_on(
                     history.push(crate::graph_snapshot::WorkGraphSnapshotMemoryRevision {
                         revision: index as u64 + 1,
                         body,
+                        retiring_target,
+                        retiring_target_cleared,
                         sensitivity,
                         remembered_at,
                         actor,
@@ -1513,6 +1517,8 @@ fn snapshot_active_memory(
     (
         WorkGraphSnapshotMemoryState::Active {
             body,
+            retiring_target: version.retiring_target,
+            retiring_target_cleared: version.retiring_target_cleared,
             sensitivity: version.sensitivity,
             remembered_at: version.created_at,
             actor: version.actor,

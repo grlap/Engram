@@ -789,6 +789,8 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
         schema_version: SCHEMA_VERSION,
         memory_id,
         project_key: None,
+        retiring_target: None,
+        retiring_target_cleared: false,
         parents: Vec::new(),
         kind: classification.kind,
         authority: classification.authority,

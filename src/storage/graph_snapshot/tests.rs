@@ -238,6 +238,8 @@ fn classified_project_memory(
         schema_version: crate::schema::SCHEMA_VERSION,
         memory_id,
         project_key: Some(key.into()),
+        retiring_target: None,
+        retiring_target_cleared: false,
         parents: Vec::new(),
         kind: MemoryKind::Episode,
         authority: Authority::Soft,
@@ -377,6 +379,7 @@ fn consecutive_idle_saves_keep_body_cut_digest_and_order() {
             &RememberProjectMemoryRequest {
                 revise: false,
                 expected_revision: None,
+                retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -588,6 +591,7 @@ fn save_refuses_project_memory_state_position_drift() {
             &RememberProjectMemoryRequest {
                 revise: false,
                 expected_revision: None,
+                retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -637,6 +641,7 @@ fn save_refuses_project_memory_head_projection_drift() {
             &RememberProjectMemoryRequest {
                 revise: false,
                 expected_revision: None,
+                retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -936,6 +941,7 @@ fn widened_save_records_reason_even_when_current_project_memories_are_internal()
             &RememberProjectMemoryRequest {
                 revise: false,
                 expected_revision: None,
+                retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -1060,6 +1066,7 @@ fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
             &RememberProjectMemoryRequest {
                 revise: false,
                 expected_revision: None,
+                retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
