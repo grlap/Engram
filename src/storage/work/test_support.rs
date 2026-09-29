@@ -355,10 +355,91 @@ pub(super) fn host_verification_from_basis(
     second: i64,
     source_basis: crate::domain::ExecutionSourceBasis,
 ) -> ObjectId {
+    host_verification_with_outcome(
+        store,
+        work,
+        claim,
+        holder,
+        HostCheck {
+            key,
+            kind,
+            outcome: crate::domain::ExecutionOutcome::Succeeded,
+            result,
+            summary: &format!("host observed {key}"),
+        },
+        second,
+        source_basis,
+    )
+}
+
+/// One host check as its verification records it: the producer outcome the
+/// host observed and the typed result, which the fixture sets independently,
+/// and the summary prose.
+#[derive(Clone, Copy)]
+pub(crate) struct HostCheck<'a> {
+    pub key: &'a str,
+    pub kind: crate::domain::VerificationKind,
+    pub outcome: crate::domain::ExecutionOutcome,
+    pub result: crate::domain::VerificationResult,
+    pub summary: &'a str,
+}
+
+/// A file store at `database` holding one item claimed by `holder`, with one
+/// host verification recorded as `check` on workspace-A at revision A3.
+/// Returns the item's short ref, the verification's record id and the raw
+/// claim id, which host views keep to themselves.
+pub(crate) fn verification_note_fixture(
+    database: &std::path::Path,
+    project: &str,
+    holder: &str,
+    check: HostCheck<'_>,
+) -> (String, ObjectId, String) {
+    let mut store = SqliteStore::open(database).expect("store");
+    let work = store
+        .create_work(
+            &root_request(project, "verification-note", 1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("work");
+    let claim = claim(&mut store, &work, holder, "verification-claim", 2, 36_000);
+    let verification = host_verification_with_outcome(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        check,
+        3,
+        crate::domain::ExecutionSourceBasis {
+            workspace_id: "workspace-A".into(),
+            source_revision: "A3".into(),
+            source_root_generation: None,
+            source_root_state: None,
+        },
+    );
+    (work.short_ref, verification, claim.claim_id.0.to_string())
+}
+
+/// Records a host check, its environment and its verification at `second`.
+pub(super) fn host_verification_with_outcome(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    check: HostCheck<'_>,
+    second: i64,
+    source_basis: crate::domain::ExecutionSourceBasis,
+) -> ObjectId {
     use crate::domain::{
         ControlWorkBinding, EffectClass, EnvironmentComponents, EnvironmentEvidence,
-        ExecutionObservation, ExecutionOutcome, VerificationEvidence,
+        ExecutionObservation, VerificationEvidence,
     };
+    let HostCheck {
+        key,
+        kind,
+        outcome,
+        result,
+        summary,
+    } = check;
     let run = super::query::load_work_run(&store.connection, claim.run_id).expect("claimed run");
     let binding = ControlWorkBinding {
         root_execution_id: run.root_execution_id,
@@ -379,7 +460,7 @@ pub(super) fn host_verification_from_basis(
         observation_id: format!("check-{key}"),
         action_fingerprint: check_fingerprint(key),
         effect: EffectClass::Observe,
-        outcome: ExecutionOutcome::Succeeded,
+        outcome,
         source_changed: false,
         reported_source_change: None,
         obligation_rule_set: active_rule_set_id(&store.connection),
@@ -435,7 +516,7 @@ pub(super) fn host_verification_from_basis(
             check_fingerprint: observation.action_fingerprint.clone(),
             result,
             completed_at: at(second),
-            summary: format!("host observed {key}"),
+            summary: summary.to_owned(),
             refs: vec![format!("command:{key}")],
             actor: run_actor,
             recorded_at: at(second),

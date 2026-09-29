@@ -47,6 +47,8 @@ pub(crate) struct WorkRecordRow {
     pub recorded_at: DateTime<Utc>,
     pub body_omitted: bool,
     pub summary_truncated: bool,
+    /// The typed facts of a native verification record.
+    pub verification: Option<crate::storage::VerificationFacts>,
     address: WorkRecordAddress,
     order: WorkRecordOrder,
 }
@@ -262,11 +264,13 @@ fn project_record(
 ) -> Result<WorkRecordRow, StoreError> {
     let mut note_body_bytes = None;
     let mut summary_truncated = false;
+    let mut verification = None;
     let (label, summary, refs, actor, recorded_at) =
         match store.work_record_content(project, work, entry)? {
             WorkRecordContent::Note(mut note) => {
                 super::projection::project_full_note(&mut note)?;
                 note_body_bytes = Some(note.summary.len());
+                verification = note.verification.take();
                 let label = if crate::domain::status_note_role(&note.actor).is_some() {
                     "status".into()
                 } else {
@@ -317,6 +321,7 @@ fn project_record(
         recorded_at,
         body_omitted: false,
         summary_truncated,
+        verification,
         address: entry.address.clone(),
         order: entry.order.clone(),
     })

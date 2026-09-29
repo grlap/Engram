@@ -1188,6 +1188,73 @@ fn invalid_argument(field: &str, message: &str) -> CallToolResult {
 mod tests {
     use super::*;
 
+    /// The MCP `show` tool gives a native verification record's typed facts,
+    /// in the notes window and in the record's detail, beside its summary.
+    #[test]
+    fn show_gives_a_verification_records_typed_facts_over_mcp() {
+        use crate::domain::{ExecutionOutcome, VerificationKind, VerificationResult};
+        let directory = crate::test_support::temp_home().expect("temp home");
+        let database = directory.path().join("work.sqlite3");
+        let (work_ref, record, _) = crate::storage::verification_note_fixture(
+            &database,
+            "mcp-verification",
+            "runner",
+            crate::storage::HostCheck {
+                key: "mcp-unknown-outcome",
+                kind: VerificationKind::Test,
+                outcome: ExecutionOutcome::Unknown,
+                result: VerificationResult::Indeterminate,
+                summary: "all tests passed",
+            },
+        );
+        let server = McpServer::new_with_actor_context(
+            database,
+            ProjectId("mcp-verification".into()),
+            "runner".into(),
+            SessionId("runner".into()),
+            None,
+            None,
+        );
+        let args = |notes: Option<bool>, note: Option<String>| ShowArgs {
+            work_ref: work_ref.clone(),
+            notes,
+            gates: None,
+            history: None,
+            after: None,
+            note,
+            full: None,
+            evaluations: None,
+            evaluation: None,
+        };
+        let window = server
+            .show(Parameters(args(Some(true), None)))
+            .structured_content
+            .expect("structured window");
+        let row = window["notes"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .find(|row| row["locator"].as_str() == Some(record.as_str()))
+            .expect("the verification row")
+            .clone();
+        assert_eq!(row["verification"]["result"], "indeterminate");
+        assert_eq!(row["verification"]["check_kind"], "test");
+        assert_eq!(row["verification"]["source_revision"], "A3");
+        assert_eq!(row["verification"]["producer_outcome"], "unknown");
+        assert!(
+            row["verification"]["meaning"]
+                .as_str()
+                .expect("plain words")
+                .contains("cannot satisfy a passing-check requirement")
+        );
+        assert_eq!(row["summary"], "all tests passed");
+        let detail = server
+            .show(Parameters(args(None, Some(record.as_str().to_owned()))))
+            .structured_content
+            .expect("structured detail");
+        assert_eq!(detail["note"]["verification"], row["verification"]);
+    }
+
     #[test]
     fn record_id_descriptions_preserve_mcp_argument_names() {
         let show = serde_json::to_value(schemars::schema_for!(ShowArgs)).unwrap();

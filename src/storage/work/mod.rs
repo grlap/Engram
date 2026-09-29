@@ -81,7 +81,7 @@ use crate::{
     memory::Redactor,
 };
 
-pub(crate) use notes::WorkNoteRecord;
+pub(crate) use notes::{VerificationFacts, WorkNoteRecord};
 pub(in crate::storage) use observation::observations_on;
 pub(crate) use record_windows::*;
 

@@ -306,6 +306,7 @@ impl SqliteStore {
             &index.address.hash,
             &index.family,
             &index.object_kind,
+            true,
         )?))
     }
 }
@@ -329,6 +330,7 @@ fn inherited_content(
             WorkRecordContent::Note(WorkNoteRecord {
                 kind: note.evidence_kind,
                 summary: note.summary,
+                verification: None,
                 refs: note.refs,
                 gate: note.gate.map(|gate| crate::GateEvidenceRecord {
                     schema_version: crate::domain::SCHEMA_VERSION,

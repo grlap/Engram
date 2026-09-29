@@ -7,8 +7,9 @@ use super::super::StoreError;
 use super::execution::work_evidence_kind_on;
 use super::feeds::load_typed_work_object;
 use crate::domain::{
-    ActorContext, EnvironmentEvidence, GateEvidenceRecord, VerificationEvidence, WorkEvidence,
-    WorkEvidenceKind, WorkId, WorkObservation,
+    ActorContext, EnvironmentEvidence, ExecutionObservation, ExecutionOutcome, GateEvidenceRecord,
+    VerificationEvidence, VerificationKind, VerificationResult, WorkEvidence, WorkEvidenceKind,
+    WorkId, WorkObservation,
 };
 use crate::{ObjectId, RestoredWorkEvidence};
 
@@ -16,9 +17,24 @@ pub(crate) struct WorkNoteRecord {
     pub kind: WorkEvidenceKind,
     pub summary: String,
     pub gate: Option<GateEvidenceRecord>,
+    /// The typed facts of a native verification record; `None` for every
+    /// other note.
+    pub verification: Option<VerificationFacts>,
     pub refs: Vec<String>,
     pub actor: ActorContext,
     pub recorded_at: DateTime<Utc>,
+}
+
+/// What the host recorded for one verification: its typed result and check
+/// kind, the source revision it ran on, and its producer observation's
+/// outcome. Read from the immutable records, never inferred from the summary,
+/// which stays the host's attributed prose.
+#[derive(Clone, Debug)]
+pub(crate) struct VerificationFacts {
+    pub result: VerificationResult,
+    pub check_kind: VerificationKind,
+    pub source_revision: String,
+    pub producer_outcome: ExecutionOutcome,
 }
 
 pub(super) const NOTE_OBJECTS: &str = "
@@ -38,12 +54,16 @@ fn validate_gate(gate: Option<&GateEvidenceRecord>, refs: &[String]) -> Result<(
     })
 }
 
+/// Loads one native note. With `verification_facts`, a verification note also
+/// reads its producer observation for the typed facts the record reads
+/// print; other readers skip that read and get `None`.
 pub(super) fn load_note(
     connection: &Connection,
     work_id: WorkId,
     hash: &ObjectId,
     family: &str,
     kind: &str,
+    verification_facts: bool,
 ) -> Result<WorkNoteRecord, StoreError> {
     let (subject, note) = match (family, kind) {
         ("run", "work_evidence") => {
@@ -57,6 +77,7 @@ pub(super) fn load_note(
                     kind: evidence_kind,
                     summary: evidence.summary,
                     gate: evidence.gate,
+                    verification: None,
                     refs: evidence.refs,
                     actor: evidence.actor,
                     recorded_at: evidence.created_at,
@@ -66,12 +87,28 @@ pub(super) fn load_note(
         ("run", "verification_evidence") => {
             let evidence: VerificationEvidence = load_typed_work_object(connection, hash, kind)?;
             work_evidence_kind_on(connection, evidence.binding.run_id, hash)?;
+            let verification = if verification_facts {
+                let producer: ExecutionObservation = load_typed_work_object(
+                    connection,
+                    &evidence.producer_observation,
+                    "execution_observation",
+                )?;
+                Some(VerificationFacts {
+                    result: evidence.result,
+                    check_kind: evidence.check_kind,
+                    source_revision: evidence.source_basis.source_revision.clone(),
+                    producer_outcome: producer.outcome,
+                })
+            } else {
+                None
+            };
             (
                 evidence.binding.work_id,
                 WorkNoteRecord {
                     kind: WorkEvidenceKind::Verification,
                     summary: evidence.summary,
                     gate: None,
+                    verification,
                     refs: evidence.refs,
                     actor: evidence.actor,
                     recorded_at: evidence.recorded_at,
@@ -87,6 +124,7 @@ pub(super) fn load_note(
                     kind: WorkEvidenceKind::Environment,
                     summary: String::new(),
                     gate: None,
+                    verification: None,
                     refs: Vec::new(),
                     actor: evidence.actor,
                     recorded_at: evidence.recorded_at,
@@ -119,6 +157,7 @@ pub(super) fn load_note(
                     kind: WorkEvidenceKind::Generic,
                     summary: evidence.summary,
                     gate: evidence.gate,
+                    verification: None,
                     refs: evidence.refs,
                     actor: evidence.actor,
                     recorded_at: evidence.created_at,
@@ -134,6 +173,7 @@ pub(super) fn load_note(
                     kind: WorkEvidenceKind::Generic,
                     summary: observation.summary,
                     gate: None,
+                    verification: None,
                     refs: observation.refs,
                     actor: observation.actor,
                     recorded_at: observation.created_at,
@@ -270,7 +310,7 @@ impl super::super::SqliteStore {
         let Some((family, kind)) = selected else {
             return Ok(None);
         };
-        let note = load_note(&self.connection, work, hash, &family, &kind)?;
+        let note = load_note(&self.connection, work, hash, &family, &kind, false)?;
         Ok(Some(note.gate.map_or(note.summary, |gate| {
             format!(
                 "gate {}: {}",

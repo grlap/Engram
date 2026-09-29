@@ -25,6 +25,7 @@ mod response_budget;
 mod review;
 mod status_resume;
 mod terminal_safety;
+mod verification_rows;
 
 fn fixture() -> (
     crate::test_support::TempHome,

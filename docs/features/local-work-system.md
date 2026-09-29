@@ -1361,8 +1361,17 @@ continuation basis share one read snapshot without selecting focus.
 use the same display `by` label, not a raw `actor_session_id`, and expose
 native project `feed_position` for every actor.
 Inherited rows omit `feed_position`: their member order is not a position in
-this host's project feed. These diagnostic detail fields do not change note
-text or confer execution authority. The complete text and compact
+this host's project feed. A native verification row in a window or its detail
+adds a `verification` object: the typed result (`passed`, `failed` or
+`indeterminate`), the check kind, the source revision the check ran on, and the
+outcome of the producer observation. The text prints the same facts on a
+`verification:` line. For an indeterminate result, `verification.meaning` and
+the text say in plain words that the host recorded the outcome as, for
+example, unknown, so the record cannot satisfy a passing-check requirement.
+The stored summary stays the host's attributed prose and never decides the
+result. Ordinary `show` adds `verification_result` to a verification note and
+names it on the latest-note line. These diagnostic detail fields do not change
+note text or confer execution authority. The complete text and compact
 application-receipt JSON window stays strictly under 12 KiB, with exact
 `notes_omitted` and `notes_window` (`shown`, `total`, `newer`, `older`,
 `after`).

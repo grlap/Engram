@@ -314,7 +314,7 @@ fn own_summary(
         }
         return Ok(None);
     }
-    let note = load_note(connection, work_id, &hash, family, kind)?;
+    let note = load_note(connection, work_id, &hash, family, kind, false)?;
     if note.actor.session_id.as_ref() != Some(session) {
         return Err(invalid("participation note differs from its session"));
     }

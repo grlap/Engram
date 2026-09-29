@@ -298,6 +298,9 @@ pub(super) struct ShowNote {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) by: Option<String>,
     pub(super) created_at: DateTime<Utc>,
+    /// A native verification record's typed result, beside its summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) verification_result: Option<crate::domain::VerificationResult>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1229,8 +1232,20 @@ pub(super) fn show_lines(
                     last.actor_context.as_deref(),
                 ))
             });
+        let result = last
+            .verification_result
+            .map(|result| {
+                format!(
+                    " ({})",
+                    serde_json::to_value(result)
+                        .ok()
+                        .and_then(|value| value.as_str().map(str::to_owned))
+                        .unwrap_or_default()
+                )
+            })
+            .unwrap_or_default();
         lines.push(format!(
-            "notes: {} recorded; latest {}{}{}: \"{}\"",
+            "notes: {} recorded; latest {}{result}{}{}: \"{}\"",
             view.evidence_count,
             evidence_kind_word(last.evidence_kind),
             if last.non_holder { " (non-holder)" } else { "" },
@@ -1521,6 +1536,7 @@ pub(super) fn show_notes(view: &WorkFocusView, identity: DisplayIdentity<'_>) ->
                     )
                 }),
             created_at: note.created_at,
+            verification_result: note.verification_result,
         })
         .collect()
 }

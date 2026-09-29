@@ -59,6 +59,7 @@ impl SqliteStore {
                             kind: note.evidence_kind,
                             summary: note.summary.clone(),
                             gate: None,
+                            verification: None,
                             refs: note.refs.clone(),
                             actor: note.actor.clone(),
                             recorded_at: note.recorded_at,
@@ -161,7 +162,14 @@ impl SqliteStore {
             .optional()?;
         if let Some((record_id, family, kind)) = selected {
             let record_id = parse_record_id(record_id)?;
-            let note = load_note(&self.connection, item.work_id, &record_id, &family, &kind)?;
+            let note = load_note(
+                &self.connection,
+                item.work_id,
+                &record_id,
+                &family,
+                &kind,
+                false,
+            )?;
             validate_selection(&note, owner)?;
             return Ok(Some(SelectedStatusNote {
                 locator: record_id.as_str().into(),

@@ -675,6 +675,29 @@ fn row_value(
             row.locator
         ));
     }
+    if let Some(facts) = &row.verification {
+        value["verification"] = verification_value(facts);
+    }
+    value
+}
+
+/// The typed facts of a native verification record, beside its summary: the
+/// summary is the host's attributed prose and never decides the result.
+fn verification_value(facts: &crate::storage::VerificationFacts) -> Value {
+    let word = |value: Value| value.as_str().unwrap_or_default().to_owned();
+    let mut value = json!({
+        "result": word(json!(facts.result)),
+        "check_kind": word(json!(facts.check_kind)),
+        "source_revision": facts.source_revision,
+        "producer_outcome": word(json!(facts.producer_outcome)),
+    });
+    // Why an indeterminate verification does not count, in plain words.
+    if facts.result == crate::domain::VerificationResult::Indeterminate {
+        value["meaning"] = json!(format!(
+            "the host recorded the outcome as {}, so this record cannot satisfy a passing-check requirement",
+            value["producer_outcome"].as_str().unwrap_or_default()
+        ));
+    }
     value
 }
 
@@ -700,6 +723,21 @@ fn append_row_lines(lines: &mut Vec<String>, row: &Value, family: WorkRecordFami
             ""
         }
     ));
+    if let Some(facts) = row["verification"].as_object() {
+        let field = |key: &str| {
+            super::terminal_safe_line(facts.get(key).and_then(Value::as_str).unwrap_or_default())
+        };
+        lines.push(format!(
+            "    verification: {} {} on source revision {}; producer outcome {}",
+            field("result"),
+            field("check_kind"),
+            field("source_revision"),
+            field("producer_outcome")
+        ));
+        if facts.contains_key("meaning") {
+            lines.push(format!("    {}", field("meaning")));
+        }
+    }
     if let Some(body) = row["summary"].as_str() {
         lines.push(
             super::terminal_data_block(body)
