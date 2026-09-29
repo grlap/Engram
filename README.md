@@ -11,15 +11,21 @@ Engram is written in Rust. It provides a CLI and a Model Context Protocol
 (MCP) server. Data stays in SQLite on your machine. No external tracker or
 cloud service is required.
 
-This is prerelease software. We use it to track development of Engram itself.
+This is prerelease software. We use it as the only writable tracker for two
+projects: Engram itself and the TermAl agent host.
 
 ## What you can do
 
 - Create tasks with acceptance criteria, dependencies, and child tasks.
-- Assign work and claim it for one executing session at a time.
+- Assign work and claim it for one executing session at a time; hand a live
+  claim to another session with an explicit handoff.
 - Record progress, decisions, test results, and handoffs.
 - Resume work without marking unread changes as delivered.
-- Complete work with a permanent record of its criteria and evidence.
+- Bind acceptance criteria to host-verified checks, so completion refuses
+  while a required check is missing or stale.
+- Complete work with a permanent record of its criteria and evidence. Under
+  an operator-set acceptance policy, a recorded, attributed per-criterion
+  evaluation replaces self-assertion.
 - Keep project notes with revision history.
 - Check database integrity, make local backups, and export planning history.
 
@@ -130,6 +136,27 @@ omitted content. Note/history pages provide commands to read more. Follow
 a note's detail command when its full text is needed, especially for approval
 or stop instructions.
 
+### Hand work to another session
+
+To give a live claim to another session, use an explicit handoff. The holder
+offers it to the recipient's real session ID, which the host or coordinator
+supplies, and the recipient accepts:
+
+```sh
+engram work handoff REF --to OTHER-SESSION-ID \
+  --summary "Parser fixed; the regression tests remain."
+# In the receiving session:
+engram work handoff REF --accept
+```
+
+Until the offer is accepted, the offering session still holds the claim.
+`--cancel "why"` withdraws the offer, and an offer never outlives its claim.
+Each step is recorded as an audited event on the run.
+
+A claim that is not renewed lapses when its time runs out. Another session
+can then recover it with `engram work claim REF --recover "why"`. The
+recovery keeps the same run, and the item's history records it.
+
 ### Link evidence to a criterion
 
 Completion does not silently change acceptance criteria. It also reports
@@ -149,6 +176,84 @@ changes before completion, read it again before linking.
 
 A link is the author's evidence citation, not independent verification.
 “No evidence linked to this criterion” does not mean “no evidence exists.”
+
+### Bind a criterion to a host check
+
+A criterion can be bound to a host-verified check with
+`add`/`update --bind POSITION=KIND`, where `KIND` is `test`, `build`, `lint`,
+`review` or `acceptance`. This works with or without an acceptance policy.
+The binding opens an obligation on the run, and completion refuses until a
+passing host check of that kind covers the run's latest source change, or
+while a newer check of that kind has failed. Only a control-plane host records
+such checks; on an advisory host a bound criterion can only be revised or
+waived.
+
+### Complete under an acceptance policy
+
+By default completion is self-asserted: the completing actor's record seals
+every criterion. An operator can instead activate an acceptance-evaluation
+policy for the project:
+
+```sh
+engram control-policy set-acceptance-evaluation \
+  --modes independent_session \
+  --authorized-by alice --idempotency-key enable-acceptance-evaluation
+```
+
+Under that policy `done` refuses self-assertion. The newest `evaluate` record
+on the run must be fresh and pass every criterion; an earlier pass never
+stands in for a later failing record. A record holds one immutable, attributed
+verdict per criterion, bound to the exact criteria revision, the run, and its
+evidence. The `evaluate` step runs in the evaluator session, which must never
+have held the run; `done` runs back in the claiming session:
+
+```sh
+# In the evaluator session (never held REF):
+engram work evaluate REF --mode independent_session \
+  --acceptance-basis N --evidence-basis M \
+  --verdict 1=pass:judgment --rationale 1="..." --evidence 1=LOCATOR
+
+# Back in the claiming session:
+engram work done REF "Added validation and regression tests."
+```
+
+Read `N`, the acceptance basis, and `M`, the evidence basis on the line after
+it, from `show REF`, and each `LOCATOR` from `show REF --notes --gates`.
+Under the policy, evidence is cited in `evaluate`, and `done` refuses author
+`--link`s.
+
+With a control-plane host such as TermAl, which records host checks and
+measures the source, the policy can require more:
+
+- With `--mechanical-basis observed`, no pass may rest on the `asserted`
+  basis, a gate the agent recorded. A check-backed pass is `observed` and
+  cites the record id of a passed host-minted check:
+  `--verdict 1=pass:observed --evidence 1=RECORD-ID`. A bound criterion
+  passes only this way, whatever the mechanical basis.
+- With `--require-source-freshness`, the evaluator declares the source it
+  judged with `--source-fingerprint F` on `evaluate`, and `done` must present
+  the same `F`, measured by the host at completion. A record without one
+  never matches. `F` is the host's own source revision; another form, such as
+  a Git commit id, voids the evaluation at the host's next sighting.
+
+Revising the criteria or bindings a failing evaluation judged does not clear
+the failure. After the executor's own revision, the next evaluation must name
+the failed record with `--supersedes RECORD_ID`, which `show` prints, and come
+from an evaluator that never held the run.
+
+The host evaluates; Engram enforces. Engram never calls a model, a build, or
+a command. Independent verification is a matter of host configuration: the
+policy names the allowed evaluator modes (`same_session`, `sub_agent`,
+`independent_session`), and the host produces the evaluation — for
+`independent_session`, in a separate session that never held the run, which a
+host such as TermAl can spawn as a read-only evaluator that records verdicts
+under its own identity. Evaluator identity stays asserted host context unless
+the host channel mediates it. Engram validates that citations are what the
+verdict claims; their relevance is the evaluator's judgment, recorded as
+such.
+
+See [acceptance evaluation](docs/features/acceptance-evaluation.md) for the
+policy contract and the evaluation record.
 
 ### Keep project notes
 
@@ -224,6 +329,7 @@ See the [roadmap](docs/roadmap.md) for planned work.
 - [CLI and MCP guide](docs/features/cli-and-mcp.md): commands and configuration.
 - [Available features](docs/shipped.md): current implementation.
 - [Local work model](docs/features/local-work-system.md): tasks and completion.
+- [Acceptance evaluation](docs/features/acceptance-evaluation.md): evidence-based completion policy.
 - [Memory model](docs/features/typed-memory-model.md): types, scope, and history.
 - [Security and trust](docs/features/security-and-trust.md): guarantees and limits.
 - [Architecture](docs/architecture.md): internal components and data flow.
