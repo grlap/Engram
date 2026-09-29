@@ -2,6 +2,23 @@ use super::super::test_support::*;
 use super::super::*;
 
 #[test]
+fn fts_integrity_failure_label_bounds_and_sanitizes_sqlite_detail() {
+    let diagnostic = format!("malformed\n\u{1b}[31m\u{e9}{}", "x".repeat(300));
+    let label = super::fts_integrity_failure_label(&diagnostic);
+    let detail = label
+        .strip_prefix("work_catalog:fts_index:")
+        .expect("catalog integrity family");
+    assert_eq!(detail.chars().count(), 160);
+    assert!(detail.starts_with("malformed  [31m "));
+    assert!(detail.is_ascii());
+    assert!(!detail.chars().any(char::is_control));
+    assert_eq!(
+        super::fts_integrity_failure_label("\r\n"),
+        "work_catalog:fts_index:unknown"
+    );
+}
+
+#[test]
 fn scoped_mutation_ignores_unrelated_corruption_but_refuses_its_target() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let healthy = store

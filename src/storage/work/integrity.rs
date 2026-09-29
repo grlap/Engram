@@ -13,7 +13,7 @@ use super::completion::{
 };
 use super::feeds::{load_typed_work_object, validate_work_protocol_result_binding};
 use super::planning::{encode_state, normalize_work_catalog_key, work_catalog_search_text};
-use super::query::{catalog_literal_fts_query, parse_work_id};
+use super::query::parse_work_id;
 use crate::{
     CanonicalObject, ObjectId, RestoredWorkEvidence,
     domain::{
@@ -1426,19 +1426,6 @@ pub(super) fn verify_work_catalog_projections(
         let fts_rows = fts_statement
             .query_map([work_id.as_str()], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
-        let fts_index_valid = connection
-            .query_row(
-                "SELECT EXISTS(
-                     SELECT 1 FROM work_catalog_fts
-                     WHERE work_id = ?1 AND work_catalog_fts MATCH ?2
-                 )",
-                params![
-                    work_id.as_str(),
-                    catalog_literal_fts_query(&expected_search)
-                ],
-                |row| row.get::<_, bool>(0),
-            )
-            .unwrap_or(false);
         if item.work_id.0.to_string() != work_id
             || assigned_to_key != expected_assigned
             || search_text_key != expected_search
@@ -1448,11 +1435,29 @@ pub(super) fn verify_work_catalog_projections(
         {
             invalid.push(format!("work_catalog:{work_id}:projection_binding"));
         }
-        if !fts_index_valid {
-            invalid.push(format!("work_catalog:{work_id}:fts_index"));
-        }
     }
     drop(statement);
+    // SQLite's FTS5 xIntegrity checks every posting against the table content.
+    // A single read-only pass also covers malformed segments and rows with no
+    // searchable trigram, which a per-item MATCH query cannot exercise.
+    let fts_integrity = connection.query_row(
+        "PRAGMA main.integrity_check('work_catalog_fts')",
+        [],
+        |row| row.get::<_, String>(0),
+    );
+    match fts_integrity {
+        Ok(result) if result == "ok" => {}
+        Ok(result) => invalid.push(fts_integrity_failure_label(&result)),
+        Err(error)
+            if matches!(
+                error.sqlite_error_code(),
+                Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
+            ) =>
+        {
+            invalid.push(fts_integrity_failure_label(&error.to_string()));
+        }
+        Err(error) => return Err(error.into()),
+    }
     let orphaned_fts = connection.query_row(
         "SELECT COUNT(*) FROM work_catalog_fts catalog
          WHERE NOT EXISTS (
@@ -1465,6 +1470,29 @@ pub(super) fn verify_work_catalog_projections(
         invalid.push("work_catalog:orphaned_fts_rows".into());
     }
     Ok(())
+}
+
+fn fts_integrity_failure_label(detail: &str) -> String {
+    let bounded = detail
+        .chars()
+        .take(160)
+        .map(|ch| {
+            if ch.is_ascii_graphic() || ch == ' ' {
+                ch
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>();
+    let bounded = bounded.trim();
+    format!(
+        "work_catalog:fts_index:{}",
+        if bounded.is_empty() {
+            "unknown"
+        } else {
+            bounded
+        }
+    )
 }
 
 pub(super) fn verify_work_scalar_bindings(

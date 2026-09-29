@@ -281,7 +281,7 @@ fn push_catalog_parameter(parameters: &mut Vec<Value>, value: Value) -> String {
     format!("?{}", parameters.len())
 }
 
-pub(in crate::storage::work) fn catalog_literal_fts_query(value: &str) -> String {
+fn catalog_literal_fts_query(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 

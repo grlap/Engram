@@ -168,6 +168,28 @@ Running the file without `--exact` runs every test, so each family's lines
 print again from its own test, and parallel test threads interleave those
 lines; add `--test-threads=1` when reading that combined output.
 
+### Doctor performance measurements
+
+Compare `doctor --json` on two stores using one binary for both stores in each
+measurement round. Make consistent SQLite online backups from read-only
+connections into separate homes under this checkout's `target/`; never copy
+an open database file directly or modify a live store for a benchmark. Keep
+the same backup files for the before and after builds. Point `--home` at each
+backup home and `--project-file` at that store's real project-id file, using
+absolute paths. Time the complete command, record its exit code and health,
+and repeat it to expose host-load variation. Record each binary's build
+identity, SQLite version, backup time, and relevant row counts beside the
+elapsed times. This makes differences between the two stores comparable
+within each build and differences between builds comparable on fixed data.
+
+The catalog FTS integrity regression test runs `verify_all` with SQLite
+`query_only=ON` on a healthy index and after removing its structure and
+segment records without changing the content row. It verifies that this
+query-only connection still reports corruption; the timing procedure above
+measures the real doctor path on realistic stores.
+Another regression changes FTS content without rebuilding its intact index
+and confirms that the read-only check detects the posting mismatch.
+
 ### Test launcher
 
 One entrypoint handles full validation and focused checks:

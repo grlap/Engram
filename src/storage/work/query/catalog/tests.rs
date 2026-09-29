@@ -557,9 +557,45 @@ fn ready_catalog_without_priority_flag_stays_work_id_order() {
 #[test]
 fn doctor_exercises_work_catalog_fts_index() {
     let mut store = SqliteStore::open_in_memory().expect("store");
-    let item = store
+    store
         .create_work(
             &root_request("project-catalog-fts-integrity", "fts-root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("indexed root");
+    store
+        .connection
+        .pragma_update(None, "query_only", true)
+        .expect("read-only doctor connection");
+    assert!(store.verify_all().expect("healthy catalog").is_healthy());
+    store
+        .connection
+        .pragma_update(None, "query_only", false)
+        .expect("allow fixture corruption");
+
+    store
+        .connection
+        .execute("DELETE FROM work_catalog_fts_data WHERE id > 1", [])
+        .expect("remove the FTS structure and segment records");
+    store
+        .connection
+        .pragma_update(None, "query_only", true)
+        .expect("read-only doctor connection");
+    let report = store.verify_all().expect("catalog corruption report");
+    assert!(
+        report
+            .invalid_work_records
+            .iter()
+            .any(|record| record.starts_with("work_catalog:fts_index:"))
+    );
+}
+
+#[test]
+fn doctor_detects_work_catalog_fts_content_posting_mismatch() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    store
+        .create_work(
+            &root_request("project-catalog-fts-content", "fts-root", 0),
             &DevelopmentNoopRedactor,
         )
         .expect("indexed root");
@@ -567,14 +603,20 @@ fn doctor_exercises_work_catalog_fts_index() {
 
     store
         .connection
-        .execute("DELETE FROM work_catalog_fts_data WHERE id > 1", [])
-        .expect("corrupt only the FTS segment data");
-    let report = store.verify_all().expect("catalog corruption report");
+        .execute("UPDATE work_catalog_fts_content SET c1 = c1 || 'zzz'", [])
+        .expect("change FTS content without rebuilding its intact index");
+    store
+        .connection
+        .pragma_update(None, "query_only", true)
+        .expect("read-only doctor connection");
+    let report = store.verify_all().expect("catalog content mismatch report");
     assert!(
         report
             .invalid_work_records
             .iter()
-            .any(|record| { record == &format!("work_catalog:{}:fts_index", item.work_id.0) })
+            .any(|record| record.starts_with("work_catalog:fts_index:")),
+        "intact FTS index must be compared with its content: {:?}",
+        report.invalid_work_records
     );
 }
 
