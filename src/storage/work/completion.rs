@@ -68,6 +68,7 @@ mod landings;
 pub use landings::RecordedLanding;
 mod lifecycle;
 mod named_root;
+mod obligation_guidance;
 mod projections;
 mod root_binding;
 

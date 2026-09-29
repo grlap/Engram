@@ -114,11 +114,13 @@ fn page(kind: VerificationKind, state: WorkObligationState) -> WorkObligationPag
             displaced_change: None,
             reported_source_change: None,
             guidance: WorkObligationGuidance::RecordVerificationThenCheckpoint { requirement },
+            completion_action: None,
         }],
         omitted_count: 0,
         untested_total: 0,
         displaced_total: 0,
         open_total: Some(usize::from(state == WorkObligationState::Open)),
+        action_required_total: None,
     }
 }
 

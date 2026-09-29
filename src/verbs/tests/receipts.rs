@@ -48,6 +48,67 @@ fn test_next_cut() -> crate::work_service::WorkNextReadCut {
 }
 
 #[test]
+fn compact_next_keeps_obligation_timing_and_exact_omissions_when_rows_shed() {
+    use crate::verbs::evaluation_guidance::{EvaluationObligation, EvaluationObligations};
+    use crate::work_service::WorkDiscoveryView;
+
+    let advisory = EvaluationObligations {
+        read_cut: Some(17),
+        open_total: 6,
+        omitted_open: 0,
+        action_required_total: Some(6),
+        items: (1..=6)
+            .map(|position| EvaluationObligation {
+                label: format!("open obligation {position} ({})", "long-rule".repeat(12)),
+                check_kind: crate::VerificationKind::Test,
+                remedy: "run the credited check or obtain an authorized waiver before evaluation",
+                action_required_before_evaluation: true,
+            })
+            .collect(),
+        timing: "A waiver after the evaluation basis makes the evaluation stale.",
+    };
+    let compact = CompactNextReceipt {
+        ready_navigation: None,
+        peek: None,
+        read_cut: test_next_cut(),
+        context_generation: None,
+        discovery: WorkDiscoveryView::default(),
+        focus: None,
+        focus_evaluation: None,
+        evaluation_obligations: Some(advisory),
+        held: Vec::new(),
+        ready: Vec::new(),
+        changes: Vec::new(),
+        memories: None,
+        omissions: Vec::new(),
+        guidance: Guidance::default(),
+    };
+    let mut pressured = compact.clone();
+    pressured.focus = Some(compact_test_row(0));
+    let dropped = fit_compact_next_to(pressured, 1).expect("shed focus");
+    assert!(dropped.focus.is_none());
+    assert!(dropped.evaluation_obligations.is_none());
+
+    let original_bytes = serde_json::to_vec(&compact_next_value(&compact))
+        .expect("serialize")
+        .len();
+    let fitted = fit_compact_next_to(compact, original_bytes - 100).expect("fit");
+    let advisory = fitted
+        .evaluation_obligations
+        .as_ref()
+        .expect("timing preserved");
+    assert!(advisory.omitted_open > 0);
+    assert_eq!(
+        advisory.items.len() + advisory.omitted_open,
+        advisory.open_total
+    );
+    let rendered = compact_next_lines(&fitted).join("\n");
+    assert!(rendered.contains("waiver after the evaluation basis"));
+    assert!(rendered.contains(&format!("{} not shown", advisory.omitted_open)));
+    assert!(rendered.contains("authorized waiver") || advisory.items.is_empty());
+}
+
+#[test]
 fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt() {
     use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
     let controls = "\u{9b}".repeat(96);
@@ -64,6 +125,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
     };
     let compact = CompactNextReceipt {
         focus_evaluation: None,
+        evaluation_obligations: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -163,6 +225,7 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
     use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
     let mut receipt = CompactNextReceipt {
         focus_evaluation: None,
+        evaluation_obligations: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -218,6 +281,7 @@ fn compact_next_trims_every_advisory_section_instead_of_failing() {
     let row = compact_test_row(0);
     let receipt = CompactNextReceipt {
         focus_evaluation: None,
+        evaluation_obligations: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -297,6 +361,7 @@ fn compact_next_sheds_labels_in_navigation_priority_order() {
     let last_ready_title = last_ready.title.clone();
     let receipt = CompactNextReceipt {
         focus_evaluation: None,
+        evaluation_obligations: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -339,6 +404,7 @@ fn compact_label_shed_restores_and_continues_to_a_reducing_row() {
     last_ready.labels = vec!["x".into()];
     let receipt = CompactNextReceipt {
         focus_evaluation: None,
+        evaluation_obligations: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -378,6 +444,7 @@ fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
     record_compact_omission(&mut omissions, "changes", 3);
     let receipt = CompactNextReceipt {
         focus_evaluation: None,
+        evaluation_obligations: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -414,6 +481,7 @@ fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
 
     let byte_budget_only = CompactNextReceipt {
         focus_evaluation: None,
+        evaluation_obligations: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),

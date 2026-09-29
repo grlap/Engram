@@ -689,7 +689,7 @@ pub(super) fn source_mutation_detected(
     clippy::too_many_arguments,
     reason = "test fixture mirrors the host observation surface"
 )]
-pub(super) fn source_mutation_from_basis(
+pub(crate) fn source_mutation_from_basis(
     store: &mut SqliteStore,
     work: &WorkItem,
     claim: &WorkClaim,

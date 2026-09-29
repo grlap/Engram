@@ -717,6 +717,31 @@ evaluation verdict rationales are a separate contract and remain required.
 
 ## Host integration
 
+Before requesting an evaluation, read the held item's `next` or `show` and
+settle open obligations that require a credited check or an authorized
+waiver. The agent-safe `show --json` field `evaluation_obligations` carries the
+run-feed `read_cut`, exact `open_total`, exact `omitted_open`, exact
+`action_required_total` computed over every open obligation, and a bounded
+list of distinguishing labels, check kinds, actual remedies, and whether each
+visible obligation requires action before evaluation. The host reads that
+field from the same `show --notes --gates --json` request it uses for the
+evaluator brief. Compact `next` carries the same typed advisory and adjusts
+`omitted_open` when byte fitting removes visible rows. The post-write
+`evaluate` receipt omits `read_cut` because its advisory is read after the
+evaluation record is appended; its counts and warning describe that page.
+Full obligation identities and waiver authority stay on the
+host-only work view. A stock source-change obligation that `done` can waive
+itself says that no action is needed before evaluation; its waiver inside
+completion does not void the evaluation. An independently recorded check or
+waiver after the evaluator's evidence basis does void it (F3). Therefore the
+order is: settle required obligations, gather credited checks and evidence,
+evaluate against a fresh read cut, then complete. `evaluate` still records
+while obligations remain open; its receipt repeats the warning and counts,
+even in the minimal response. A bounded page that omits open obligations
+names their exact count and never implies the visible list is complete.
+When a fresh pass exists and the remaining obligations need no earlier action,
+the guidance directs the holder to `done` without requesting another evaluation.
+
 The host (TermAl) owns everything that involves a model, a workspace, or a
 process:
 

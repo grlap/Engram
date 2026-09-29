@@ -613,6 +613,25 @@ impl AgentVerbs {
         let (lines, value, guidance) = if input.verbose {
             let mut peek_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             let mut agent_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
+            let mut evaluation_obligations = view.focus.as_ref().and_then(|focus| {
+                focus
+                    .evaluated_policy
+                    .then(|| {
+                        super::evaluation_guidance::EvaluationObligations::from_page(
+                            &focus.obligation_page,
+                            focus.evidence_basis,
+                            focus.evaluation_obligation_rows_visible,
+                        )
+                    })
+                    .flatten()
+            });
+            if evaluation_obligations.is_some() {
+                guidance.reminders.retain(|reminder| {
+                    !reminder.starts_with("open obligations: ")
+                        && !reminder.starts_with("open obligation ")
+                        && !reminder.starts_with("resolve obligations needing action, ")
+                });
+            }
             loop {
                 let changes = compact_changes
                     .iter()
@@ -642,6 +661,12 @@ impl AgentVerbs {
                         lines.push("focus: omitted (byte budget)".into());
                     }
                     None => lines.push("focus: none".into()),
+                }
+                if let Some(advisory) = &evaluation_obligations {
+                    lines.extend(advisory.reminder_lines());
+                    if advisory.requires_action() {
+                        lines.push("resolve obligations needing action, then request a fresh acceptance evaluation before done".into());
+                    }
                 }
                 lines.push(format!("held by you ({}):", held.len()));
                 for (item, expires_at) in &held {
@@ -683,6 +708,9 @@ impl AgentVerbs {
                     ));
                 }
                 let mut value = serde_json::to_value(&view)?;
+                if let Some(advisory) = &evaluation_obligations {
+                    value["evaluation_obligations"] = json!(advisory);
+                }
                 if input.peek {
                     value["memories_detail"] = json!("engram work memories");
                     value["preview_omissions"] = json!(peek_omissions);
@@ -732,6 +760,9 @@ impl AgentVerbs {
                     })
                     || crate::work_service::shed_work_next_focus(&mut view)
                 {
+                    if view.focus.is_none() {
+                        evaluation_obligations = None;
+                    }
                     continue;
                 }
                 // Non-peek verbose delivery keeps the exact staged page. Peek
@@ -759,12 +790,18 @@ impl AgentVerbs {
                     "ready"
                 } else if held.pop().is_some() {
                     "held"
+                } else if evaluation_obligations
+                    .as_mut()
+                    .is_some_and(super::evaluation_guidance::EvaluationObligations::omit_one)
+                {
+                    continue;
                 } else if guidance.reminders.pop().is_some() {
                     "reminders"
                 } else if guidance.next.len() > 1 {
                     guidance.next.pop();
                     "next"
                 } else if view.focus.take().is_some() {
+                    evaluation_obligations = None;
                     "focus"
                 } else {
                     break (lines, value, guidance.clone());
@@ -1871,6 +1908,32 @@ impl AgentVerbs {
 
     fn guidance(&self, view: &WorkFocusView, word: &str, now: DateTime<Utc>) -> Guidance {
         let holder = self.holder(view, now);
+        let evaluation_obligations =
+            if word != "evaluate" && view.evaluated_policy && matches!(holder, Holder::You(_)) {
+                super::evaluation_guidance::EvaluationObligations::from_page(
+                    &view.obligation_page,
+                    view.evidence_basis,
+                    view.evaluation_obligation_rows_visible,
+                )
+            } else {
+                None
+            };
+        let action_required = evaluation_obligations.as_ref().is_some_and(|_| {
+            super::evaluation_guidance::EvaluationObligations::from_page(
+                &view.obligation_page,
+                view.evidence_basis,
+                usize::MAX,
+            )
+            .is_some_and(|advisory| advisory.requires_action())
+        });
+        let fresh_pass = view.acceptance_evaluation.as_ref().is_some_and(|status| {
+            status.stale.is_none()
+                && status
+                    .record
+                    .verdicts
+                    .iter()
+                    .all(|verdict| verdict.verdict == crate::AcceptanceVerdict::Pass)
+        });
         let claim_recovery_required = view
             .allowed_next
             .iter()
@@ -1881,6 +1944,22 @@ impl AgentVerbs {
             .map(|blocker| short(&blocker.detail))
             .collect::<Vec<_>>();
         let mut reminders = Vec::new();
+        if let Some(advisory) = &evaluation_obligations
+            && word != "show"
+        {
+            reminders.extend(advisory.reminder_lines());
+            if action_required {
+                reminders.push("resolve obligations needing action, then request a fresh acceptance evaluation before done".into());
+            } else if fresh_pass {
+                reminders.push(
+                    "fresh passing evaluation recorded; done may handle the no-action obligations"
+                        .into(),
+                );
+            } else {
+                reminders
+                    .push("request acceptance evaluation, then complete on a fresh pass".into());
+            }
+        }
         let parent_reminder = view
             .status
             .blocking_parent
@@ -1899,9 +1978,11 @@ impl AgentVerbs {
                 reminders.push(words);
             }
         }
-        for words in obligation_reminders(&view.obligation_page) {
-            if !reminders.contains(&words) {
-                reminders.push(words);
+        if evaluation_obligations.is_none() && !(word == "evaluate" && view.evaluated_policy) {
+            for words in obligation_reminders(&view.obligation_page) {
+                if !reminders.contains(&words) {
+                    reminders.push(words);
+                }
             }
         }
         let mut next = next_commands(
@@ -1912,6 +1993,24 @@ impl AgentVerbs {
             view.status.work.lifecycle == WorkLifecycle::Open,
             &view.prerequisites,
         );
+        if evaluation_obligations.is_some() {
+            if action_required {
+                next.retain(|command| !command.starts_with("engram work done "));
+            }
+            if action_required || !fresh_pass {
+                let evidence_read = format!(
+                    "engram work show {} --notes --gates",
+                    view.status.work.short_ref
+                );
+                if !next.contains(&evidence_read) {
+                    let before_done = next
+                        .iter()
+                        .position(|command| command.starts_with("engram work done "))
+                        .unwrap_or(next.len());
+                    next.insert(before_done, evidence_read);
+                }
+            }
+        }
         if word == "show"
             && let Some(origin) = &view.detached_from
         {
@@ -1934,34 +2033,46 @@ pub(super) fn minimal_evaluate_receipt(
     projection: &crate::work_service::WorkEvaluationProjection,
     evaluation: &crate::ObjectId,
     replayed: bool,
+    advisory: Option<&super::evaluation_guidance::EvaluationObligations>,
 ) -> Receipt {
     let detail = super::mutation::full_contract(work_ref);
+    let mut value = json!({
+        "operation": "evaluate",
+        "work": { "short_ref": work_ref, "revision": revision },
+        "evaluation": {
+            "hash": evaluation.as_str(),
+            "replayed": replayed,
+            "mode": projection.mode.word(),
+            "verdicts_total": projection.verdicts_total,
+            "verdicts_omitted": projection.verdicts_total,
+            "passed": projection.passed,
+            "full_detail": detail,
+        },
+        "full_detail": detail,
+    });
+    if let Some(advisory) = advisory {
+        value["evaluation_obligations"] = json!(advisory.minimal());
+    }
+    let mut lines = vec![format!(
+        "recorded {} evaluation on {work_ref}: {}/{} pass{}",
+        projection.mode.word(),
+        projection.passed,
+        projection.verdicts_total,
+        if replayed { " (replayed)" } else { "" }
+    )];
+    if let Some(advisory) = advisory {
+        lines.push(format!(
+            "{} open obligation(s), {} not shown; {}",
+            advisory.open_total, advisory.open_total, advisory.timing
+        ));
+    }
     Receipt::assemble(
-        vec![format!(
-            "recorded {} evaluation on {work_ref}: {}/{} pass{}",
-            projection.mode.word(),
-            projection.passed,
-            projection.verdicts_total,
-            if replayed { " (replayed)" } else { "" }
-        )],
+        lines,
         Guidance {
             reminders: Vec::new(),
             next: vec![detail.clone()],
         },
-        json!({
-            "operation": "evaluate",
-            "work": { "short_ref": work_ref, "revision": revision },
-            "evaluation": {
-                "hash": evaluation.as_str(),
-                "replayed": replayed,
-                "mode": projection.mode.word(),
-                "verdicts_total": projection.verdicts_total,
-                "verdicts_omitted": projection.verdicts_total,
-                "passed": projection.passed,
-                "full_detail": detail,
-            },
-            "full_detail": detail,
-        }),
+        value,
         false,
     )
 }

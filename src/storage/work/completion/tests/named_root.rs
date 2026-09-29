@@ -115,6 +115,30 @@ fn obligation(
     (matching[0].state, satisfying)
 }
 
+fn stock_completion_action(
+    store: &SqliteStore,
+    claim: &WorkClaim,
+    change: &ObjectId,
+) -> WorkObligationCompletionAction {
+    let records = store
+        .work_run_obligations(claim.run_id)
+        .expect("obligations");
+    let stock = records
+        .iter()
+        .find(|record| {
+            record.state == WorkObligationState::Open
+                && &record.obligation.triggering_observation == change
+                && crate::control::is_stock_source_change_obligation(
+                    &record.obligation.rule,
+                    &record.obligation.requirement,
+                )
+        })
+        .expect("open stock source-change obligation");
+    store
+        .work_obligation_completion_actions(&[&stock.obligation])
+        .expect("completion guidance")[0]
+}
+
 /// A write transaction standing for one host checkpoint.
 fn begin(store: &mut SqliteStore) -> rusqlite::Transaction<'_> {
     store
@@ -1099,6 +1123,12 @@ fn a_later_name_displaces_a_change_made_in_the_earlier_root() {
     );
     name_root_in(&mut store, &work, &claim, "workspace-C", 10, 6);
     assert_eq!(active_generation(&store, &claim), Some(10));
+    for change in [&earlier, &in_b] {
+        assert_eq!(
+            stock_completion_action(&store, &claim, change),
+            WorkObligationCompletionAction::DoneDisplaces
+        );
+    }
     let checked = host_verification_from_basis(
         &mut store,
         &work,
@@ -1156,6 +1186,10 @@ fn a_later_name_keeps_a_foreign_change_under_the_earlier_root_open() {
         None,
     );
     name_root(&mut store, &work, &claim, 10, 6);
+    assert_eq!(
+        stock_completion_action(&store, &claim, &foreign),
+        WorkObligationCompletionAction::WaiverOnly
+    );
     let checked = host_verification_from_basis(
         &mut store,
         &work,
@@ -1842,6 +1876,15 @@ fn an_unknown_root_change_outlives_its_binding() {
             (WorkObligationState::Open, None),
             "{context}"
         );
+        assert_eq!(
+            stock_completion_action(&store, &claim, &unknown),
+            if unbind.is_some() {
+                WorkObligationCompletionAction::NameRootCheckOrWaiver
+            } else {
+                WorkObligationCompletionAction::CheckOrWaiver
+            },
+            "{context}"
+        );
         checkpoint(
             &mut store,
             &work,
@@ -1961,6 +2004,8 @@ fn pinned_store(suite: &str) -> SqliteStore {
     select_rules(&mut store, vec![pinned_rule(suite)]);
     store
 }
+
+mod operator_guidance;
 
 /// When the stock rule and an operator rule both open an obligation for one
 /// change, both are displaced, and the seal and the obligation page count
@@ -2208,6 +2253,12 @@ fn an_operator_rule_keeps_a_foreign_change_under_a_bound_name_open() {
     );
     let open = operator_obligation(&store, &claim, &foreign);
     assert_eq!(open.state, WorkObligationState::Open);
+    assert_eq!(
+        store
+            .work_obligation_completion_actions(&[&open.obligation])
+            .expect("operator guidance")[0],
+        WorkObligationCompletionAction::WaiverOnly
+    );
     checkpoint(
         &mut store,
         &work,
@@ -2356,6 +2407,10 @@ fn done_waives_untested_changes_the_root_gives_no_other_disposition() {
         assert_eq!(
             obligation(&store, &claim, &Pick::TriggeredBy(change)),
             (WorkObligationState::Open, None)
+        );
+        assert_eq!(
+            stock_completion_action(&store, &claim, change),
+            WorkObligationCompletionAction::DoneWaives
         );
     }
     checkpoint(

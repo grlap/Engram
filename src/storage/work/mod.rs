@@ -39,7 +39,7 @@ pub(crate) use status::SelectedStatusNote;
 pub(crate) use discovery::WorkDiscoveryRow;
 
 #[cfg(test)]
-mod test_support;
+pub(super) mod test_support;
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -285,6 +285,18 @@ pub(crate) struct WorkObligationRecord {
     pub resolution_id: Option<ObjectId>,
     pub resolution: Option<WorkObligationResolutionEvent>,
     pub resolution_position: Option<FeedPosition>,
+}
+
+/// What completion would do with an open obligation at the current claim's
+/// named-root cut. This is read guidance, never authority to waive it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkObligationCompletionAction {
+    DoneWaives,
+    DoneDisplaces,
+    CheckOrWaiver,
+    NameRootCheckOrWaiver,
+    WaiverOnly,
 }
 
 /// Evidence selection basis used to choose a bounded focus page. The loader

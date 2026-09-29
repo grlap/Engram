@@ -22,6 +22,27 @@ fn without_history(view: &mut WorkFocusView) {
 }
 
 #[test]
+fn self_asserted_show_budget_does_not_count_hidden_evaluation_obligations() {
+    let (_directory, verbs, service, root) = rich_focus(0);
+    note(&verbs, &root, "A visible note to shed", 100);
+    let mut view = service.work_focus_for_agent(&root, at(101)).unwrap();
+    without_history(&mut view);
+    view.children.clear();
+    view.child_obligations = None;
+    view.evaluation_obligation_rows_visible = 1;
+    assert!(!view.evaluated_policy);
+    let original = verbs.render_show(&view, at(101)).unwrap();
+    let fitted = crate::verbs::show::fit_show_receipt(
+        view,
+        |view| verbs.render_show(view, at(101)),
+        receipt_size(&original),
+    )
+    .unwrap();
+    assert_eq!(focus_byte_omitted(&fitted), 1);
+    assert_eq!(fitted.value["notes_omitted"], 1);
+}
+
+#[test]
 fn show_pressure_preserves_blockers_and_counts_only_removed_rows() {
     let (_directory, verbs, service, root) = rich_focus(0);
     let mut view = service.work_focus_for_agent(&root, at(100)).unwrap();

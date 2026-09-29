@@ -23,6 +23,7 @@ fn context_receipt() -> CompactNextReceipt {
     };
     CompactNextReceipt {
         focus_evaluation: None,
+        evaluation_obligations: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),

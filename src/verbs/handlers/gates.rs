@@ -114,6 +114,12 @@ impl AgentVerbs {
         let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "evaluate", now);
         let mut projection = result.projection;
+        let mut evaluation_obligations =
+            super::super::evaluation_guidance::EvaluationObligations::from_page(
+                &result.obligation_page,
+                None,
+                usize::MAX,
+            );
         let outcome = match &projection.blocking {
             None => "all criteria pass".to_owned(),
             Some(blocking) => format!(
@@ -143,18 +149,41 @@ impl AgentVerbs {
         // its own envelope with the word's reserve left free, so the row-free
         // form fits by construction; shedding guidance below is defensive.
         let mut guidance = guidance;
+        if evaluation_obligations
+            .as_ref()
+            .is_some_and(super::super::evaluation_guidance::EvaluationObligations::requires_action)
+            && matches!(self.holder(&after, now), super::super::Holder::You(_))
+        {
+            guidance
+                .next
+                .retain(|command| !command.starts_with("engram work done "));
+            guidance.reminders.insert(
+                0,
+                "resolve obligations needing action, then request a fresh acceptance evaluation before done".into(),
+            );
+        }
         loop {
+            let mut receipt_guidance = guidance.clone();
+            if let Some(advisory) = &evaluation_obligations {
+                receipt_guidance
+                    .reminders
+                    .splice(0..0, advisory.reminder_lines());
+            }
             let mut evaluation = serde_json::to_value(&projection).map_err(StoreError::from)?;
             if let Some(object) = evaluation.as_object_mut() {
                 object.insert("hash".into(), json!(result.evaluation.as_str()));
                 object.insert("replayed".into(), json!(result.replayed));
             }
+            let mut payload = json!({ "evaluation": evaluation });
+            if let Some(advisory) = &evaluation_obligations {
+                payload["evaluation_obligations"] = json!(advisory);
+            }
             let receipt = self.finish_mutation(super::super::mutation::receipt(
                 &after,
                 "evaluate",
-                json!({ "evaluation": evaluation }),
+                payload,
                 lines.clone(),
-                guidance.clone(),
+                receipt_guidance,
                 self.holder(&after, now),
                 false,
             )?);
@@ -164,7 +193,11 @@ impl AgentVerbs {
             }
             if projection.verdicts.pop().is_some() {
                 projection.verdicts_omitted += 1;
-            } else if guidance.reminders.pop().is_some() {
+            } else if evaluation_obligations
+                .as_mut()
+                .is_some_and(super::super::evaluation_guidance::EvaluationObligations::omit_one)
+                || guidance.reminders.pop().is_some()
+            {
             } else if guidance.next.len() > 1 {
                 guidance.next.pop();
             } else {
@@ -179,6 +212,7 @@ impl AgentVerbs {
                     &projection,
                     &result.evaluation,
                     result.replayed,
+                    evaluation_obligations.as_ref(),
                 ));
                 debug_assert!(super::super::receipts::agent_receipt_fits(
                     &minimal,

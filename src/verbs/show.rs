@@ -179,6 +179,10 @@ fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
         view.evaluation_rows_visible -= 1;
         return true;
     }
+    if view.evaluated_policy && view.evaluation_obligation_rows_visible > 0 {
+        view.evaluation_obligation_rows_visible -= 1;
+        return true;
+    }
     // Blockers and prerequisites are already count/field bounded. Preserve
     // their blocking context; every successful shed must remove a real row.
     if view.children.pop().is_some() {
@@ -674,6 +678,9 @@ pub(super) struct ShowReceiptValue {
     pub(super) evidence_basis: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_evaluation: Option<ShowEvaluation>,
+    /// Agent-safe obligation guidance for the host's evaluation request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) evaluation_obligations: Option<super::evaluation_guidance::EvaluationObligations>,
     /// Where a completed item's sealed acceptance came from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance: Option<serde_json::Value>,
@@ -1121,6 +1128,15 @@ pub(super) fn show_lines(
     if let Some(facts) = &view.acceptance_evidence {
         lines.extend(super::acceptance::AcceptanceEvidence::new(facts).lines());
     }
+    if view.evaluated_policy
+        && let Some(advisory) = super::evaluation_guidance::EvaluationObligations::from_page(
+            &view.obligation_page,
+            view.evidence_basis,
+            view.evaluation_obligation_rows_visible,
+        )
+    {
+        lines.extend(advisory.reminder_lines());
+    }
     if let Some(evaluation) = &view.acceptance_evaluation {
         lines.extend(evaluation_lines(
             evaluation,
@@ -1337,6 +1353,16 @@ pub(super) fn show_receipt_value(
                 identity,
             )
         }),
+        evaluation_obligations: view
+            .evaluated_policy
+            .then(|| {
+                super::evaluation_guidance::EvaluationObligations::from_page(
+                    &view.obligation_page,
+                    view.evidence_basis,
+                    view.evaluation_obligation_rows_visible,
+                )
+            })
+            .flatten(),
         // Completed items use one provenance shape. Missing or unreadable
         // completion evidence is unavailable, never inferred self-assertion.
         acceptance: match (

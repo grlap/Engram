@@ -17,7 +17,7 @@ pub(crate) use work::acceptance_attempt_identity;
 pub(crate) use work::validate_work_plan;
 pub use work::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
-    RecordedLanding,
+    RecordedLanding, WorkObligationCompletionAction,
 };
 
 pub(crate) use project_memory::validate_context_generation;
@@ -59,6 +59,9 @@ pub(crate) fn parent_not_open_remedy(lifecycle: crate::domain::WorkLifecycle) ->
 
 #[cfg(test)]
 mod test_support;
+
+#[cfg(test)]
+pub(crate) use work::test_support::source_mutation_from_basis;
 
 #[cfg(test)]
 pub(crate) mod concurrent_commit;

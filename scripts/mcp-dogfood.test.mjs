@@ -3203,6 +3203,208 @@ test("evaluated acceptance policy over the real transports: locators, source fre
   }
 });
 
+test("open obligations guide evaluation timing across MCP, host observations, and completion", async (t) => {
+  const engramHome = fixtureHome("engram-evaluation-obligations-", t);
+  const projectId = readFileSync(join(root, ".engram-project"), "utf8").trim();
+  const libraryFile = { kind: "path", project_id: projectId, segments: ["src", "lib.rs"], coverage: "exact" };
+  const fingerprint = (value) => createHash("sha256").update(value).digest("hex");
+  const isGate = (row) => String(row.family).toLowerCase() === "gates";
+  const clients = [];
+  const controlClients = [];
+  const run = (args) => {
+    const result = spawnSync(binary, ["--home", engramHome, ...args], { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const core = (session, operation, input) => run([
+    "work", "--actor-id", session, "--session-id", session,
+    "core", operation, "--input", JSON.stringify(input),
+  ]);
+  const focus = (session, ref) => run([
+    "work", "--actor-id", session, "--session-id", session, "core", "focus", ref,
+  ]);
+  class ControlClient {
+    constructor(session) {
+      this.pending = [];
+      this.buffer = "";
+      this.stderr = "";
+      this.child = spawn(binary, [
+        "--home", engramHome, "control", "--actor-id", session,
+        "--session-id", session, "--source-skill", "engram-dogfood",
+      ], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
+      this.child.stdout.on("data", (chunk) => {
+        this.buffer += chunk.toString("utf8");
+        for (;;) {
+          const newline = this.buffer.indexOf("\n");
+          if (newline < 0) break;
+          const line = this.buffer.slice(0, newline).trim();
+          this.buffer = this.buffer.slice(newline + 1);
+          if (line) this.pending.shift()?.(JSON.parse(line));
+        }
+      });
+      this.child.stderr.on("data", (chunk) => { this.stderr += chunk.toString("utf8"); });
+    }
+    request(payload) {
+      return new Promise((resolvePromise) => {
+        this.pending.push(resolvePromise);
+        this.child.stdin.write(`${JSON.stringify(payload)}\n`);
+      }).then((response) => {
+        assert.equal(response.status, "ok", `${JSON.stringify(response)} ${this.stderr}`);
+        return response.result;
+      });
+    }
+    close() {
+      return new Promise((resolvePromise) => {
+        this.child.once("close", resolvePromise);
+        this.child.stdin.end();
+      });
+    }
+  }
+  try {
+    buildAndInit(engramHome);
+    run([
+      "control-policy", "set-acceptance-evaluation", "--modes", "same-session",
+      "--mechanical-basis", "asserted", "--authorized-by", "dogfood-operator",
+      "--idempotency-key", "evaluation-obligation-policy",
+    ]);
+    const selectRule = (ruleId, key) => run([
+      "control-policy", "set-obligation-rule-set", "--input", JSON.stringify({
+        schema_version: 1,
+        rules: [{
+          rule: { rule_id: ruleId, rule_version: 1 },
+          trigger: "source_changed",
+          requirement: { check_kind: "test" },
+        }],
+      }), "--authorized-by", "dogfood-operator", "--idempotency-key", key,
+    ]);
+    const createChangedItem = async (suffix, sourceChanges = 1) => {
+      const session = `obligations-${suffix}`;
+      const proposed = core(session, "propose", {
+        kind: "root", title: `Evaluate ${suffix}`, outcome: "The evidence is judged",
+        acceptance: ["A test gate passes"], work_kind: "task", idempotency_key: `add-${suffix}`,
+      });
+      const ref = proposed.work.short_ref;
+      const claimed = core(session, "update", { kind: "claim", ttl_seconds: 300, idempotency_key: `claim-${suffix}` });
+      assert.ok(claimed.receipt.control_binding);
+      const control = new ControlClient(session);
+      controlClients.push(control);
+      const bound = await control.request({
+        operation: "session_bind", external_ref: `local-work:${suffix}`,
+        title: suffix, assurance: "turn_gated", mediated_effects: ["observe", "mutate_local"],
+        work_binding: claimed.receipt.control_binding, capability_map_revision: 1,
+        idempotency_key: `bind-${suffix}`,
+      });
+      for (let index = 0; index < sourceChanges; index += 1) {
+        const turn = await control.request({
+          operation: "turn_evaluate", routing_token: bound.routing_token,
+          idempotency_key: `turn-${suffix}-${index}`,
+          intent_fingerprint: fingerprint(`turn-${suffix}-${index}`),
+          purpose: "ordinary", requested_effects: ["mutate_local"], resource_intents: [libraryFile],
+        });
+        assert.equal(turn.decision, "grant", JSON.stringify(turn));
+        const grant = turn.grant.grant_id;
+        assert.equal((await control.request({
+          operation: "turn_begin", routing_token: bound.routing_token, grant_id: grant,
+          delivery_tokens: [], idempotency_key: `begin-${suffix}-${index}`,
+        })).decision, "begin");
+        const checkpoint = await control.request({
+          operation: "turn_checkpoint", routing_token: bound.routing_token, grant_id: grant,
+          next_intent: "continue", observations: [{
+            observation_id: `change-${suffix}-${index}`,
+            action_fingerprint: fingerprint(`change-${suffix}-${index}`),
+            effect: "mutate_local", outcome: "succeeded", source_changed: true,
+            source_basis: {
+              workspace_id: `workspace-${suffix}`,
+              source_revision: `revision-${suffix}-${index}`,
+            },
+            observed_at: "2026-09-29T14:00:00Z",
+          }], idempotency_key: `checkpoint-${suffix}-${index}`,
+        });
+        assert.equal(checkpoint.decision, "checkpointed", JSON.stringify(checkpoint));
+      }
+      cliJson(engramHome, session, "gate", "cargo-test", "--work-ref", ref);
+      const mcp = new McpClient(engramHome, session);
+      clients.push(mcp);
+      await mcp.initialize();
+      const shown = receipt(await mcp.call("show", { work_ref: ref }));
+      assertTerseShow(shown);
+      assert.equal(shown.evaluation_obligations.open_total, sourceChanges);
+      assert.equal(shown.evaluation_obligations.omitted_open,
+        sourceChanges - shown.evaluation_obligations.items.length);
+      assert.equal(shown.evaluation_obligations.read_cut, shown.evidence_basis);
+      const next = receipt(await mcp.call("next", { peek: true }));
+      assert.match(JSON.stringify(next.evaluation_obligations), /before evaluation/u);
+      const notes = receipt(await mcp.call("show", { work_ref: ref, notes: true, gates: true }));
+      const gate = notes.notes.find(isGate);
+      assert.ok(gate);
+      const verdicts = [{ criterion: 1, verdict: "pass", basis: "asserted", rationale: "the test gate passed", evidence: [gate.locator] }];
+      const evaluate = async () => {
+        const current = receipt(await mcp.call("show", { work_ref: ref }));
+        return receipt(await mcp.call("evaluate", {
+          work_ref: ref, mode: "same_session", acceptance_basis: current.acceptance_basis,
+          evidence_basis: current.evidence_basis, verdicts,
+        }));
+      };
+      return { session, ref, mcp, shown, next, evaluate };
+    };
+    const waive = (item, key) => {
+      const open = focus(item.session, item.ref).obligation_page.items.find((row) => row.state === "open");
+      assert.ok(open);
+      return run([
+        "authority", "waive-obligation", "--obligation-id", open.obligation_id,
+        "--expected-definition", open.definition, "--waived-by", "dogfood-human",
+        "--reason", "reviewed this exact test obligation", "--idempotency-key", key,
+      ]);
+    };
+
+    selectRule("source_mutation_requires_operator_test", "operator-test-rule");
+    const late = await createChangedItem("late-waiver");
+    assert.equal(late.shown.evaluation_obligations.items[0].action_required_before_evaluation, true);
+    assert.equal(late.next.next.some((command) => command.startsWith("engram work done ")), false);
+    const first = await late.evaluate();
+    assert.equal(first.evaluation_obligations.open_total, 1);
+    assert.equal(first.evaluation_obligations.items.length, 1);
+    assert.equal(first.evaluation_obligations.read_cut, undefined);
+    assert.match(JSON.stringify(first.reminders), /open obligations: 1 total, 0 not shown/u);
+    assert.equal(first.next.some((command) => command.startsWith("engram work done ")), false);
+    assert.match(JSON.stringify(first.reminders), /resolve obligations needing action/u);
+    assert.equal(first.evaluation.passed, 1);
+    waive(late, "waive-after-evaluation");
+    const stale = receipt(await late.mcp.call("done", { work_ref: late.ref, summary: "Delivered" }));
+    assert.equal(stale.code, "acceptance_evaluation_stale");
+    await late.evaluate();
+    assert.equal(receipt(await late.mcp.call("done", { work_ref: late.ref, summary: "Delivered" })).work.lifecycle, "completed");
+
+    const early = await createChangedItem("early-waiver");
+    waive(early, "waive-before-evaluation");
+    assert.equal((await early.evaluate()).evaluation.passed, 1);
+    assert.equal(receipt(await early.mcp.call("done", { work_ref: early.ref, summary: "Delivered" })).work.lifecycle, "completed");
+
+    selectRule("source_mutation_requires_test", "stock-test-rule");
+    const stock = await createChangedItem("stock-waiver", 12);
+    assert.ok(stock.shown.evaluation_obligations.omitted_open > 0);
+    assert.equal(stock.shown.evaluation_obligations.action_required_total, 0);
+    const verboseStock = receipt(await stock.mcp.call("next", { peek: true, verbose: true }));
+    assert.equal(verboseStock.evaluation_obligations.open_total, 12);
+    assert.equal(verboseStock.evaluation_obligations.action_required_total, 0);
+    assert.equal(verboseStock.evaluation_obligations.omitted_open,
+      12 - verboseStock.evaluation_obligations.items.length);
+    assert.equal(stock.shown.evaluation_obligations.items[0].action_required_before_evaluation, false);
+    assert.match(stock.shown.evaluation_obligations.items[0].remedy, /no action before evaluation/u);
+    await stock.evaluate();
+    const candidate = cliJson(engramHome, "ready-candidate-author", "add", "Ready candidate", "--accept", "A criterion");
+    const stockNext = receipt(await stock.mcp.call("next", { peek: true }));
+    assert.ok(stockNext.ready.some((item) => item.ref === candidate.work.short_ref));
+    assert.ok(stockNext.next.some((command) => command.startsWith(`engram work done ${stock.ref} `)));
+    assert.doesNotMatch(JSON.stringify(stockNext.reminders), /request acceptance evaluation/u);
+    assert.equal(receipt(await stock.mcp.call("done", { work_ref: stock.ref, summary: "Delivered" })).work.lifecycle, "completed");
+  } finally {
+    await Promise.all(clients.map((client) => client.close()));
+    await Promise.all(controlClients.map((client) => client.close()));
+    removeFixtureHomes(engramHome);
+  }
+});
+
 test("a carried failure over the real transports: shown, refused until another evaluator names it, then recorded", async (t) => {
   const engramHome = fixtureHome("engram-carried-failure-", t);
   const holder = "carried-holder";

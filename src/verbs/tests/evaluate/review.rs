@@ -4,6 +4,121 @@ use super::*;
 use crate::domain::FeedId;
 use crate::{NextInput, NoteInput};
 
+#[test]
+fn hundreds_of_open_changes_keep_guidance_exact_and_bounded() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("work.sqlite3");
+    let project = ProjectId("obligation-guidance-scale".into());
+    enable(&database, &[AcceptanceEvaluationMode::SameSession], 0);
+    let verbs = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "runner".into(),
+        SessionId("runner".into()),
+        None,
+    );
+    let item = prepare(&verbs, &database, &project, "Many source changes", 1);
+    let mut store = SqliteStore::open(&database).expect("store");
+    let work = store.get_work_item(item.work_id).expect("work");
+    let claim = store
+        .work_claims_held_in_project(&project, &SessionId("runner".into()), at(20))
+        .expect("claim list")[0]
+        .0
+        .clone();
+    for index in 0..128 {
+        crate::storage::source_mutation_from_basis(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            &format!("source-{index}"),
+            20 + index,
+            None,
+            None,
+        );
+    }
+    drop(store);
+    let shown = verbs.show(&item.work_ref, at(200)).expect("bounded show");
+    let advisory = &shown.value["evaluation_obligations"];
+    assert_eq!(advisory["open_total"], 128);
+    assert_eq!(advisory["action_required_total"], 0);
+    assert!(advisory["omitted_open"].as_u64().expect("omitted") > 0);
+    assert_eq!(
+        advisory["items"].as_array().expect("bounded rows").len()
+            + usize::try_from(advisory["omitted_open"].as_u64().expect("omitted")).unwrap(),
+        128
+    );
+}
+
+#[test]
+fn verbose_next_recounts_open_obligations_when_its_budget_sheds_rows() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("work.sqlite3");
+    let project = ProjectId("verbose-obligation-budget".into());
+    enable(&database, &[AcceptanceEvaluationMode::SameSession], 0);
+    let verbs = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "runner".into(),
+        SessionId("runner".into()),
+        None,
+    );
+    let item = prepare(&verbs, &database, &project, "Many source changes", 1);
+    let mut store = SqliteStore::open(&database).expect("store");
+    let work = store.get_work_item(item.work_id).expect("work");
+    let claim = store
+        .work_claims_held_in_project(&project, &SessionId("runner".into()), at(20))
+        .expect("claim list")[0]
+        .0
+        .clone();
+    for index in 0..12 {
+        crate::storage::source_mutation_from_basis(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            &format!("source-{index}"),
+            20 + index,
+            None,
+            None,
+        );
+    }
+    drop(store);
+    let input = NextInput {
+        verbose: true,
+        peek: true,
+        ..NextInput::default()
+    };
+    let full = verbs
+        .next_with_verbose_budget(&input, at(100), MAX_AGENT_WORK_RESPONSE_BYTES)
+        .expect("full verbose next");
+    let full_advisory = &full.value["evaluation_obligations"];
+    assert_eq!(full_advisory["open_total"], 12);
+    let initial_omitted = full_advisory["omitted_open"]
+        .as_u64()
+        .expect("omission count");
+    let pressured = (2_500..MAX_AGENT_WORK_RESPONSE_BYTES)
+        .rev()
+        .step_by(256)
+        .filter_map(|budget| verbs.next_with_verbose_budget(&input, at(100), budget).ok())
+        .find(|receipt| {
+            !receipt.value["focus"].is_null()
+                && receipt.value["evaluation_obligations"]["omitted_open"]
+                    .as_u64()
+                    .is_some_and(|count| count > initial_omitted)
+        })
+        .expect("a tighter verbose budget sheds an advisory row while retaining focus");
+    let advisory = &pressured.value["evaluation_obligations"];
+    let omitted = advisory["omitted_open"].as_u64().expect("omitted");
+    let visible = advisory["items"].as_array().expect("items").len();
+    assert_eq!(u64::try_from(visible).expect("visible") + omitted, 12);
+    assert!(
+        pressured
+            .text()
+            .contains(&format!("open obligations: 12 total, {omitted} not shown"))
+    );
+}
+
 struct Item {
     work_ref: String,
     work_id: crate::domain::WorkId,
@@ -887,6 +1002,7 @@ fn the_minimal_evaluate_receipt_is_bounded() {
         &projection,
         &crate::ObjectId::from_canonical_bytes(b"minimal"),
         true,
+        None,
     )
     .with_effective_session_id(&SessionId("\u{0001}".repeat(crate::MAX_SESSION_ID_BYTES)));
     let json_bytes =
@@ -902,6 +1018,30 @@ fn the_minimal_evaluate_receipt_is_bounded() {
     );
     assert_eq!(receipt.value["evaluation"]["replayed"], true);
     assert_eq!(receipt.value["evaluation"]["mode"], "independent_session");
+
+    let advisory = crate::verbs::evaluation_guidance::EvaluationObligations {
+        read_cut: None,
+        open_total: 3,
+        omitted_open: 3,
+        action_required_total: Some(2),
+        items: Vec::new(),
+        timing: "A check or waiver recorded after an evaluation's evidence basis makes it stale. Resolve obligations marked action required before evaluation; done handles those marked no action before evaluation.",
+    };
+    let warned = crate::verbs::handlers::minimal_evaluate_receipt(
+        "w-000000000000",
+        i64::MAX,
+        &projection,
+        &crate::ObjectId::from_canonical_bytes(b"minimal-with-obligations"),
+        false,
+        Some(&advisory),
+    );
+    assert_eq!(warned.value["evaluation_obligations"]["open_total"], 3);
+    assert_eq!(warned.value["evaluation_obligations"]["omitted_open"], 3);
+    assert!(warned.text().contains("3 open obligation(s)"));
+    assert!(
+        crate::verbs::receipts::agent_receipt_fits(&warned, MAX_AGENT_WORK_RESPONSE_BYTES)
+            .expect("warned minimal receipt fits")
+    );
 }
 
 // Round 4 (Low): the reserve is derived from admitted limits, pinned by

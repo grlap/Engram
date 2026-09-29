@@ -585,7 +585,12 @@ impl LocalWorkService {
             .map(|run| store.work_run_obligations(run.run_id))
             .transpose()?
             .unwrap_or_default();
-        let obligation_page = disclosed_work_obligation_page(store, obligation_records)?;
+        let obligation_page = disclosed_work_obligation_page(store, &obligation_records)?;
+        let evaluation_obligation_rows_visible = obligation_page
+            .items
+            .iter()
+            .filter(|item| item.state == crate::WorkObligationState::Open)
+            .count();
         let mut evidence_count = run
             .as_ref()
             .map(|run| store.work_run_evidence_count(run.run_id))
@@ -921,10 +926,9 @@ impl LocalWorkService {
         // evidence basis an evaluator passes back, and the newest record with
         // the freshness completion would apply now. Self-asserted projects keep their
         // unchanged show shape.
-        let (acceptance_evaluation, evidence_basis) = if status.work.lifecycle
-            == crate::domain::WorkLifecycle::Open
-            && store.acceptance_evaluation_policy()?.is_evaluated()
-        {
+        let evaluated_policy = status.work.lifecycle == crate::domain::WorkLifecycle::Open
+            && store.acceptance_evaluation_policy()?.is_evaluated();
+        let (acceptance_evaluation, evidence_basis) = if evaluated_policy {
             let evidence_basis = status
                 .work
                 .active_run_id
@@ -960,6 +964,8 @@ impl LocalWorkService {
                 .as_ref()
                 .map_or(0, |status| status.record.verdicts.len()),
             acceptance_evaluation,
+            evaluated_policy,
+            evaluation_obligation_rows_visible,
             evidence_basis,
             acceptance_provenance,
             landing,

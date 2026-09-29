@@ -594,6 +594,12 @@ pub struct WorkFocusView {
     /// completion would apply now; agent detail only.
     #[serde(skip)]
     pub(crate) acceptance_evaluation: Option<crate::storage::AcceptanceEvaluationStatus>,
+    /// Whether this open item needs an evaluation before completion.
+    #[serde(skip)]
+    pub(crate) evaluated_policy: bool,
+    /// How many open-obligation advisory rows the safe show renderer retains.
+    #[serde(skip)]
+    pub(crate) evaluation_obligation_rows_visible: usize,
     /// How many verdict rows of the newest evaluation `show` still prints;
     /// the fitter sheds trailing rows with an exact omitted count.
     #[serde(skip)]
@@ -791,6 +797,9 @@ pub struct WorkObligationSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reported_source_change: Option<crate::SourceChangeDetection>,
     pub guidance: WorkObligationGuidance,
+    /// Advisory classification at the read cut, recomputed by completion.
+    #[serde(skip)]
+    pub completion_action: Option<crate::storage::WorkObligationCompletionAction>,
 }
 
 /// A source change a named root displaced, disclosed on each displaced
@@ -841,6 +850,9 @@ pub struct WorkObligationPage {
     /// stored: any omission may then hide an open obligation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open_total: Option<usize>,
+    /// Exact pre-evaluation action count, computed over open rows before page fitting.
+    #[serde(skip)]
+    pub(crate) action_required_total: Option<usize>,
 }
 
 /// Deterministic next action derived from immutable obligation state and its

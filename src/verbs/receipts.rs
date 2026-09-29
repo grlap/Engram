@@ -134,6 +134,8 @@ pub(super) struct CompactNextReceipt {
     /// Newest evaluation on the focused open item under an evaluated policy;
     /// shed together with the focus.
     pub(super) focus_evaluation: Option<CompactEvaluation>,
+    /// Typed timing guidance retains exact counts while the compact fitter sheds rows.
+    pub(super) evaluation_obligations: Option<super::evaluation_guidance::EvaluationObligations>,
     pub(super) held: Vec<CompactWorkRow>,
     pub(super) ready: Vec<CompactWorkRow>,
     pub(super) changes: Vec<super::next_context::CompactChange>,
@@ -805,6 +807,18 @@ pub(super) fn compact_next_receipt(
             .as_ref()
             .and_then(|focus| focus.acceptance_evaluation.as_ref())
             .map(CompactEvaluation::from_status),
+        evaluation_obligations: view.focus.as_ref().and_then(|focus| {
+            focus
+                .evaluated_policy
+                .then(|| {
+                    super::evaluation_guidance::EvaluationObligations::from_page(
+                        &focus.obligation_page,
+                        focus.evidence_basis,
+                        focus.evaluation_obligation_rows_visible,
+                    )
+                })
+                .flatten()
+        }),
         held: held
             .iter()
             .map(|(item, _)| compact_row(item, claims))
@@ -825,6 +839,8 @@ pub(super) fn compact_next_receipt(
             reminders: guidance
                 .reminders
                 .iter()
+                .filter(|reminder| !reminder.starts_with("open obligations: "))
+                .filter(|reminder| !reminder.starts_with("open obligation "))
                 .map(|reminder| short(reminder))
                 .collect(),
             next: guidance.next.clone(),
@@ -925,6 +941,13 @@ pub(super) fn fit_compact_next_to(
             record_compact_omission(&mut compact.omissions, "reminders", 1);
             continue;
         }
+        if compact
+            .evaluation_obligations
+            .as_mut()
+            .is_some_and(super::evaluation_guidance::EvaluationObligations::omit_one)
+        {
+            continue;
+        }
         if compact.guidance.next.len() > 1 {
             compact.guidance.next.pop();
             record_compact_omission(&mut compact.omissions, "next", 1);
@@ -932,6 +955,7 @@ pub(super) fn fit_compact_next_to(
         }
         compact.focus_evaluation = None;
         if compact.focus.take().is_some() {
+            compact.evaluation_obligations = None;
             record_compact_omission(&mut compact.omissions, "focus", 1);
             continue;
         }
@@ -1016,6 +1040,9 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
     if let (Some(evaluation), true) = (&compact.focus_evaluation, compact.focus.is_some()) {
         value["focus"]["evaluation"] = evaluation.value.clone();
     }
+    if let Some(advisory) = &compact.evaluation_obligations {
+        value["evaluation_obligations"] = json!(advisory);
+    }
     if let Some(navigation) = &compact.ready_navigation {
         let command = navigation
             .after_prefix(compact.ready.len())
@@ -1093,6 +1120,9 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
             lines.push("focus: omitted (byte budget)".into());
         }
         None => lines.push("focus: none".into()),
+    }
+    if let Some(advisory) = &compact.evaluation_obligations {
+        lines.extend(advisory.reminder_lines());
     }
     lines.push(format!("held by you ({} shown):", compact.held.len()));
     for held in &context.held {

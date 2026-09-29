@@ -40,6 +40,7 @@ use crate::{
 mod acceptance;
 mod attribution;
 mod child_obligations;
+mod evaluation_guidance;
 mod handlers;
 mod listing;
 mod mutation;

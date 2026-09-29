@@ -826,6 +826,7 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
         displaced_change: None,
         reported_source_change: None,
         guidance,
+        completion_action: None,
     }
 }
 
@@ -841,7 +842,7 @@ pub(super) fn work_obligation_page(
             ..WorkObligationPage::default()
         });
     };
-    disclosed_work_obligation_page(store, store.work_run_obligations(run.run_id)?)
+    disclosed_work_obligation_page(store, &store.work_run_obligations(run.run_id)?)
 }
 
 /// The obligations a refused completion answers with, read from the state
@@ -855,13 +856,13 @@ pub(super) fn work_completion_recovery_page(
         WorkCompletionRecoveryCause::OpenObligation { .. }
     )
     .then_some(WorkObligationState::Open);
-    let records = snapshot
+    let records: Vec<_> = snapshot
         .obligations
         .iter()
         .filter(|record| state.is_none_or(|expected| record.state == expected))
         .cloned()
         .collect();
-    disclosed_work_obligation_page(store, records)
+    disclosed_work_obligation_page(store, &records)
 }
 
 pub(super) fn sealed_work_obligation_page(
@@ -898,7 +899,7 @@ pub(super) fn sealed_work_obligation_page(
             seal.run_id
         )));
     }
-    disclosed_work_obligation_page(store, records)
+    disclosed_work_obligation_page(store, &records)
 }
 
 /// The bounded page of `records` alone, for tests of the bounds.
@@ -942,7 +943,7 @@ fn records_displaced_change(
 /// the page whatever the obligation's state.
 pub(super) fn disclosed_work_obligation_page(
     store: &SqliteStore,
-    records: Vec<crate::storage::WorkObligationRecord>,
+    records: &[crate::storage::WorkObligationRecord],
 ) -> Result<WorkObligationPage, StoreError> {
     let untested_total = records
         .iter()
@@ -961,10 +962,50 @@ pub(super) fn disclosed_work_obligation_page(
         .map(|record| &record.obligation.triggering_observation)
         .collect::<std::collections::HashSet<_>>()
         .len();
-    let mut page = count_bounded_work_obligation_page(records);
+    let mut page = count_bounded_work_obligation_page(records.to_vec());
     page.untested_total = untested_total;
     page.displaced_total = displaced_total;
+    let open_records = records
+        .iter()
+        .filter(|record| record.state == WorkObligationState::Open)
+        .collect::<Vec<_>>();
+    let actions = if open_records.is_empty() {
+        page.action_required_total = Some(0);
+        Vec::new()
+    } else if store.acceptance_evaluation_policy()?.is_evaluated() {
+        let obligations = open_records
+            .iter()
+            .map(|record| &record.obligation)
+            .collect::<Vec<_>>();
+        let actions = store.work_obligation_completion_actions(&obligations)?;
+        page.action_required_total = Some(
+            actions
+                .iter()
+                .filter(|action| {
+                    !matches!(
+                        action,
+                        crate::storage::WorkObligationCompletionAction::DoneWaives
+                            | crate::storage::WorkObligationCompletionAction::DoneDisplaces
+                    )
+                })
+                .count(),
+        );
+        actions
+    } else {
+        Vec::new()
+    };
     for item in &mut page.items {
+        if item.state == WorkObligationState::Open && page.action_required_total.is_some() {
+            let index = open_records
+                .iter()
+                .position(|record| record.obligation.obligation_id == item.obligation_id)
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "bounded obligation is absent from its source records".into(),
+                    )
+                })?;
+            item.completion_action = Some(actions[index]);
+        }
         let stock =
             crate::control::is_stock_source_change_obligation(&item.rule, &item.requirement);
         let displaced = records_displaced_change(item.state, &item.rule);
@@ -1068,6 +1109,7 @@ pub(super) fn count_bounded_work_obligation_page(
         untested_total: 0,
         displaced_total: 0,
         open_total: Some(open_total),
+        action_required_total: None,
     }
 }
 
