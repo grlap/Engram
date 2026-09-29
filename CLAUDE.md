@@ -126,13 +126,15 @@ user profile:
   file that grants or limits commit, push, tracker or approval authority,
   land under the standing approval only after (a) both projects'
   coordinators (as of 2026-09-28: Engram::Fable and Termal::Fable2) have
-  recorded their concurrence on the exact wording in the item's notes, and
+  recorded their concurrence on the exact wording in the item's notes,
   (b) Greg has been sent the exact wording and its consequence before the
-  landing; an objection from Greg, by any route, stops it. An edit that
-  widens agent authority — a new act granted, or a condition of this rule
-  loosened — also needs Greg's recorded word on that widening, verbatim
-  with its source, by any route; recording his words, narrowing, or
-  clarifying needs only (a) and (b). No other approval is asked.
+  landing, and (c) the coordinator's final-diff audit under
+  `/review-changes` is recorded on the item before the landing; an objection
+  from Greg, by any route, stops it. An edit that widens agent authority —
+  a new act granted, or a condition of this rule loosened — also needs
+  Greg's recorded word on that widening, verbatim with its source, by any
+  route; recording his words, narrowing, or clarifying needs only (a), (b)
+  and (c). No other approval is asked.
 - Outside the standing approval's conditions above, a commit or push needs
   Greg's own word in the acting session. Outside the standing approval, a
   word relayed by another session never carries a commit or push. The

@@ -393,6 +393,15 @@ the pair, and consolidate its findings with the pair's.
 
 Deduplicate overlapping findings and tracker suggestions.
 
+Before a landing of authority text (AGENTS.md, CLAUDE.md, or any instruction
+or command file that grants or limits commit, push, tracker or approval
+authority), the project's coordinator reads the final frozen diff line by
+line against the sentences whose concurrence is recorded on the item and
+notes on the item which recorded message governs each changed passage; a
+passage no recorded concurrence quotes whole is concurred before the freeze
+or taken out. Where the coordinator wrote the change, the other project's
+coordinator reads the final frozen diff in its place.
+
 ## 7. Record findings in Engram from the parent
 
 Only after consolidation, search Engram for each actionable finding
