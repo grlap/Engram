@@ -869,7 +869,7 @@ session that holds several claims.
 
 Fixture coverage of the matrix is not live proof. The end-to-end acceptance —
 a real port-PR task with a real evaluator and an observed build — stays open
-until the host integration exists.
+until it is exercised on a real task.
 
 ## Storage and schema
 
@@ -898,8 +898,8 @@ selection, the freshness rules, completion enforcement with the recovery
 causes above, the `evaluate` word on the CLI and MCP, and the `show` and
 `next` disclosures. Storage tests cover the boundary matrix rows with fixtures,
 including host-minted observed evidence through the control checkpoint
-protocol. The bootstrap policy stays self-asserted; no project has the feature
-enabled.
+protocol. The bootstrap policy stays self-asserted. See the
+[shipped inventory](../shipped.md) for Engram's delivered behavior.
 
 The first read-only review pair (2026-09-17) produced twelve corrections,
 each landed tests-first: independence rechecked at consumption (F7,
@@ -914,7 +914,4 @@ verification classification (R10), and doctor's decoding of
 `set_acceptance_evaluation` receipts, which the fixtures' positive controls
 exposed as a gap in the first delivery.
 
-Not delivered: the host integration (TermAl mode selection, evaluator
-spawning, source fingerprints, observed build evidence) and the end-to-end
-acceptance on a real task. Those stay open as separate required items; the
-host item has no owner yet, and fixture coverage is not live proof.
+TermAl is the host that evaluates Engram acceptance.
