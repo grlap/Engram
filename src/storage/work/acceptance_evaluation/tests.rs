@@ -13,8 +13,8 @@ mod snapshots;
 use super::super::test_support::*;
 use super::*;
 use crate::domain::{
-    AcceptanceEvaluationMode as Mode, AcceptanceSourceBasis, CompletionSeal, ControlWorkBinding,
-    IssuedTurnGrant, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
+    AcceptanceEvaluationMode as Mode, AcceptanceSourceBasis, CompletionSeal, ControlSessionBinding,
+    ControlWorkBinding, IssuedTurnGrant, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
     RecordGateEvidenceRequest, ResourceCoverage, ResourceSubject, ReviseWorkRequest, WorkClaim,
 };
 
@@ -290,39 +290,59 @@ struct HostSession {
     turns: usize,
 }
 
+/// Binds the claim holder's host control session to the claim under `key`.
+/// Repeating an earlier bind's key with the same claim replays that bind.
+fn bind_host_control(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    connection_token: &str,
+    key: &str,
+    second: i64,
+) -> ControlSessionBinding {
+    let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
+    let binding = ControlWorkBinding {
+        root_execution_id: run.root_execution_id,
+        work_id: work.work_id,
+        run_id: run.run_id,
+        work_revision: claim.accepted_work_revision,
+        claim_id: claim.claim_id,
+        claim_fence: claim.fence,
+    };
+    let mut host_actor = actor(&claim.holder.0);
+    host_actor.run_id = Some(run.run_id.0.to_string());
+    store
+        .bind_control_session_with_work(
+            &work.project_id,
+            "local-work:acceptance-evaluation",
+            "Mint observed evidence for acceptance evaluation",
+            &claim.holder,
+            connection_token,
+            &host_actor,
+            Some(&binding),
+            ControlAssurance::TurnGated,
+            &[EffectClass::Observe, EffectClass::MutateLocal],
+            1,
+            key,
+            at(second),
+        )
+        .expect("bind control session to the claim")
+}
+
 impl HostSession {
     fn bind(store: &mut SqliteStore, work: &WorkItem, claim: &WorkClaim, second: i64) -> Self {
-        let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
-        let binding = ControlWorkBinding {
-            root_execution_id: run.root_execution_id,
-            work_id: work.work_id,
-            run_id: run.run_id,
-            work_revision: claim.accepted_work_revision,
-            claim_id: claim.claim_id,
-            claim_fence: claim.fence,
-        };
         let session_id = claim.holder.clone();
         let connection_token = store
             .resume_control_connection(&session_id, at(second))
             .expect("resume host control connection");
-        let mut host_actor = actor(&session_id.0);
-        host_actor.run_id = Some(run.run_id.0.to_string());
-        let control = store
-            .bind_control_session_with_work(
-                &work.project_id,
-                "local-work:acceptance-evaluation",
-                "Mint observed evidence for acceptance evaluation",
-                &session_id,
-                &connection_token,
-                &host_actor,
-                Some(&binding),
-                ControlAssurance::TurnGated,
-                &[EffectClass::Observe, EffectClass::MutateLocal],
-                1,
-                "bind-host-session",
-                at(second),
-            )
-            .expect("bind control session to live claim");
+        let control = bind_host_control(
+            store,
+            work,
+            claim,
+            &connection_token,
+            "bind-host-session",
+            second,
+        );
         let mut host = Self {
             project_id: work.project_id.clone(),
             session_id,

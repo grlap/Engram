@@ -636,6 +636,18 @@ impl SqliteStore {
             .transpose()?
             .flatten();
         let open_grant_state = open_grant.as_ref().map(|stored| stored.state);
+        let named_root = session
+            .work_binding
+            .as_ref()
+            .map(|binding| {
+                super::work::named_root_state_on(
+                    connection,
+                    binding.run_id,
+                    binding.claim_id,
+                    i64::MAX,
+                )
+            })
+            .transpose()?;
         Ok(ControlSessionStatus {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             project_id: session.project_id.clone(),
@@ -650,6 +662,7 @@ impl SqliteStore {
             revision: session.revision,
             open_grant_id: session.open_grant_id.clone(),
             open_grant_state,
+            named_root,
         })
     }
 

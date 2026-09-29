@@ -1683,11 +1683,16 @@ principal. The shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
-| `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `ready`. Binding creates no task or join event. |
-| `session_status` | Read current phase, epochs, mediation declaration, optional work binding, revision, and `open_grant_id` plus `open_grant_state` |
+| `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `ready`. Binding creates no task or join event. Its result carries the session status. |
+| `session_status` | Read current phase, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and, for a work-bound session, the claim's `named_root` state |
 | `turn_evaluate` | Derive membership, phase, policy and work binding from SQLite and persist a decision plus optional grant |
-| `turn_begin` | Recheck the grant's basis, then consume the issued grant |
+| `turn_begin` | Recheck the grant's basis, then consume the issued grant; for a work-bound session the receipt carries the claim's `named_root` state |
 | `turn_checkpoint` | Atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
+| `named_root_bind` | Append a claim's named source-root event, `bound` or `ended`, to the project, root and run feeds |
+
+The `named_root` state, `none`, `bound` or `unbound_by_release`, is the
+authoritative read a host uses to decide when to name a root again; see
+[Bind a named source root](behavioral-control-plane.md#5a-bind-a-named-source-root).
 
 The bind response supplies the `routing_token` used on later calls. A grant
 carries no delivery page, and there are no recovery turns: the work context an

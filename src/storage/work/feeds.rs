@@ -534,6 +534,104 @@ pub(super) fn latest_claim_release_on(
     )?)
 }
 
+/// The claim's newest `named_root_binding` event at or before `through`, bound
+/// or ended, whether or not a release came after it, with its run-feed
+/// position.
+pub(in crate::storage) fn latest_named_root_event_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    claim_id: WorkClaimId,
+    through: i64,
+) -> Result<Option<(i64, NamedRootBindingEvent)>, StoreError> {
+    connection
+        .query_row(
+            "SELECT entry.position, entry.object_id, object.canonical_json
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.position <= ?2
+               AND entry.object_kind = 'named_root_binding'
+               AND json_extract(object.canonical_json, '$.claim_id') = ?3
+             ORDER BY entry.position DESC LIMIT 1",
+            params![run_id.0.to_string(), through, claim_id.0.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            },
+        )
+        .optional()?
+        .map(|(position, stored_id, bytes)| {
+            let id = ObjectId::from_stored(stored_id.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_id))?;
+            Ok((position, CanonicalObject::stored(&id, bytes)?.decode()?))
+        })
+        .transpose()
+}
+
+/// The run-feed position of the run's newest terminal transition, its
+/// completion or disposal, at or before `through`. The run's claim ends there.
+fn latest_run_end_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    through: i64,
+) -> Result<Option<i64>, StoreError> {
+    Ok(connection.query_row(
+        "SELECT MAX(entry.position)
+         FROM work_feed_entries entry
+         JOIN objects object ON object.object_id = entry.object_id
+         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+           AND entry.position <= ?2 AND entry.object_kind = 'work_event'
+           AND json_extract(object.canonical_json, '$.transition.kind')
+               IN ('completed', 'disposed')",
+        params![run_id.0.to_string(), through],
+        |row| row.get(0),
+    )?)
+}
+
+/// The claim's named-root state at `through`, derived from its recorded
+/// `named_root_bind` events and its own lifecycle, never from path text or
+/// fence changes. An ended root is `none`, even when a release follows it, and
+/// so is a run that completed or was disposed after the name. Otherwise, of
+/// the newest name and the claim's newest release, the later one decides: a
+/// release after the name leaves the claim unbound until a later name. A
+/// handoff or a recovery records no release, so the binding stays.
+pub(in crate::storage) fn named_root_state_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    claim_id: WorkClaimId,
+    through: i64,
+) -> Result<crate::domain::NamedRootState, StoreError> {
+    use crate::domain::NamedRootState;
+    let Some((position, event)) =
+        latest_named_root_event_on(connection, run_id, claim_id, through)?
+    else {
+        return Ok(NamedRootState::NoRoot);
+    };
+    if event.kind == crate::domain::NamedRootBindingKind::Ended
+        || latest_run_end_on(connection, run_id, through)?.is_some_and(|end| end > position)
+    {
+        return Ok(NamedRootState::NoRoot);
+    }
+    Ok(
+        match latest_claim_release_on(connection, run_id, claim_id, through)?
+            .filter(|released| *released > position)
+        {
+            Some(released_at_position) => NamedRootState::UnboundByRelease {
+                last_generation: event.generation,
+                released_at_position,
+            },
+            None => NamedRootState::Bound {
+                workspace_id: event.workspace_id,
+                generation: event.generation,
+                named_at: event.named_at,
+            },
+        },
+    )
+}
+
 /// The run-feed position and workspace of the claim's first recorded `kind`
 /// event for `generation` at or before `through`, if there is one.
 pub(super) fn named_root_event_on(

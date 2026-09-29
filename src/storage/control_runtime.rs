@@ -168,26 +168,8 @@ impl SqliteStore {
             }
             (item.work_id, run_id, run.root_execution_id)
         };
-        let previous: Option<(String, Vec<u8>)> = transaction
-            .query_row(
-                "SELECT entry.object_id, object.canonical_json
-                 FROM work_feed_entries entry
-                 JOIN objects object ON object.object_id = entry.object_id
-                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-                   AND entry.object_kind = 'named_root_binding'
-                   AND json_extract(object.canonical_json, '$.claim_id') = ?2
-                 ORDER BY entry.position DESC LIMIT 1",
-                params![run_id.0.to_string(), claim_id.0.to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let previous = previous
-            .map(|(stored_id, bytes)| {
-                let id = ObjectId::from_stored(stored_id.clone())
-                    .ok_or(StoreError::InvalidStoredKey(stored_id))?;
-                CanonicalObject::stored(&id, bytes)?.decode::<NamedRootBindingEvent>()
-            })
-            .transpose()?;
+        let previous = work::latest_named_root_event_on(&transaction, run_id, claim_id, i64::MAX)?
+            .map(|(_, event)| event);
         let sequence_valid = match (kind, previous.as_ref()) {
             (super::NamedRootBindingKind::Bound, None) => true,
             (super::NamedRootBindingKind::Bound, Some(previous)) => {
@@ -989,6 +971,18 @@ impl SqliteStore {
                     params![session_id.0, now.timestamp_millis()],
                     |row| row.get::<_, i64>(0),
                 )?;
+                let named_root = session
+                    .work_binding
+                    .as_ref()
+                    .map(|binding| {
+                        work::named_root_state_on(
+                            &transaction,
+                            binding.run_id,
+                            binding.claim_id,
+                            i64::MAX,
+                        )
+                    })
+                    .transpose()?;
                 ControlTurnBeginDecision::Begin {
                     receipt: TurnBeginReceipt {
                         grant_id: grant_id.into(),
@@ -998,6 +992,7 @@ impl SqliteStore {
                         tentative_cursor: None,
                         session_revision: revision,
                         begun_at: now,
+                        named_root,
                     },
                 }
             }

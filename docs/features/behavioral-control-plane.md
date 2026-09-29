@@ -180,6 +180,10 @@ only when `session_bind` would accept it, because it runs the same
 validation, so a claim with a pending handoff offer shows none. That
 holds when the answer is built; a replayed claim receipt returns its stored
 original, so a host reads the current binding with `work core inspect`.
+When the session is bound to work, the status that `session_bind` and
+`session_status` return also carries `named_root`: the bound claim's
+named-root state, derived when the status is read, including on a replayed
+bind (see [5a](#5a-bind-a-named-source-root)).
 `work core held` lists the claims the session holds, newest first and at most
 16 with an exact omitted count, each with the same bindable tuple or `null`, so
 a host can choose which claim to bind without moving focus. The
@@ -246,7 +250,10 @@ expiry, the session's phase, the task's control anchor and the session's
 membership, the project-policy and
 work-admission epochs, the capability map, the work revision and the claim
 fence, then activates the grant. Without that transition the host must not
-deliver the prompt.
+deliver the prompt. The begin receipt carries the bound claim's `named_root`
+state, read in the same transaction (see
+[5a](#5a-bind-a-named-source-root)); a receipt stored before this field
+existed replays as stored, without it.
 
 Restart invalidates an unbegun grant and returns the session to `ready`; an
 uncertain begun grant remains `turn_open` until the host reports it. Nothing is
@@ -480,6 +487,32 @@ reason; ordinary missing or wrong routing credentials retain their existing
 `control_session_not_bound`, `control_session_token_mismatch`, and
 `control_connection_superseded` codes. The host is the identity and policy
 enforcement point; the routing token alone is not cryptographic authentication.
+
+The host reads the binding back from Engram. Whenever a session is bound to
+work, the status that `session_bind` and `session_status` return, and each
+`turn_begin` receipt, carry `named_root`: the bound claim's state, derived in
+that read from the recorded `named_root_bind` events and the claim's own
+lifecycle, never from path text or a fence change. It is the authoritative
+read a host uses to decide when to name a root again. It has three states:
+
+- `state: none`: no root is bound. None was named on the claim, its latest
+  root was ended, or the run completed or was cancelled, superseded or
+  detached after the name.
+- `state: bound`, with `workspace_id`, `generation` and `named_at`: the
+  claim's latest name, still bound.
+- `state: unbound_by_release`, with `last_generation` and
+  `released_at_position`: the claim was released after its latest name, at
+  that run-feed position. A re-claim of the same claim id keeps this state
+  until the host names a fresh generation.
+
+When the claim's newest named-root event names a root and the run has not
+finished since, of that name and the claim's newest release the later one
+decides. An ended root reads `none`, even when a release follows it. A
+handoff or a recovery records no release, so the state stays `bound`; the
+claim's `revision` and fence advance on those too, so neither tells a host
+when to name again. The variant set is closed. A replayed `session_bind`
+reports the state at the replay, and a replayed `turn_begin` returns its
+receipt as stored.
 
 A sighting's generation, not its time or feed position, places it against a
 binding at generation g. The sighting is before that binding when its
@@ -1036,7 +1069,8 @@ fail-mode result; a hung hook is not an acceptable control mechanism.
 ## Planned interfaces
 
 The shipped host channel is `session_bind`, `session_status`,
-`turn_evaluate`, `turn_begin` and `turn_checkpoint`. The design named seven
+`turn_evaluate`, `turn_begin`, `turn_checkpoint` and `named_root_bind`. The
+design named seven
 more. None is built, and no host calls them:
 
 - **`action_authorize`, `action_begin` and `action_complete` (not built).**
@@ -1075,8 +1109,8 @@ durable control sessions, optional exact `WorkRun` claim bindings,
 persisted turn decisions and short-lived grants that carry no delivery page,
 begin-time rechecks, canonical execution observations, and canonical checkpoint
 events. A separate `engram control` JSON-lines process
-implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`, and
-`turn_checkpoint`; none is
+implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
+`turn_checkpoint` and `named_root_bind`; none is
 exposed through agent-facing MCP. Exact retry
 evidence survives process restart, while unbegun authority is invalidated and
 the session returns to `ready`. Each open rotates an internal

@@ -5,6 +5,8 @@ use crate::domain::{
 };
 use crate::storage::test_support::bind_control_for;
 
+mod state;
+
 fn source(workspace: &str, generation: i64) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
         workspace_id: workspace.into(),

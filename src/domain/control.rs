@@ -351,6 +351,32 @@ pub struct NamedRootBindingReceipt {
     pub kind: NamedRootBindingKind,
 }
 
+/// A claim's named-root binding as Engram derives it at a cut from the
+/// recorded `named_root_bind` events and the claim's own lifecycle: the
+/// host's authoritative read for when to name a root again. The variant set
+/// is closed.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum NamedRootState {
+    /// No root is bound: none was named, the latest one was ended, or the
+    /// claim's run has completed or been disposed since.
+    #[serde(rename = "none")]
+    NoRoot,
+    /// The claim's latest named root, still bound.
+    Bound {
+        workspace_id: String,
+        generation: i64,
+        named_at: DateTime<Utc>,
+    },
+    /// The claim was released after its latest name; a sighting stating that
+    /// generation is unbound until a later name mints a fresh one.
+    UnboundByRelease {
+        last_generation: i64,
+        /// Run-feed position of the release.
+        released_at_position: i64,
+    },
+}
+
 /// Host-observed outcome for one material action performed during a begun
 /// turn. This is asserted execution evidence, never execution authority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -809,6 +835,10 @@ pub struct ControlSessionStatus {
     /// Durable state of `open_grant_id`, when one is present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open_grant_state: Option<TurnGrantState>,
+    /// The bound claim's named-root state at this read, when the session is
+    /// bound to work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub named_root: Option<NamedRootState>,
 }
 
 /// Result of binding or safely rebinding a host-private control session.
@@ -935,6 +965,10 @@ pub struct TurnBeginReceipt {
     pub tentative_cursor: Option<ChangeCursor>,
     pub session_revision: i64,
     pub begun_at: DateTime<Utc>,
+    /// The bound claim's named-root state when the turn began. Receipts
+    /// recorded before this field existed replay without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub named_root: Option<NamedRootState>,
 }
 
 /// Host decision after a begin-time state and delivery recheck.
@@ -1211,6 +1245,48 @@ fn windows_path_segment_is_unambiguous(segment: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The named-root state's wire shape, which a host parses: an internally
+    /// tagged `state` and fields in snake case.
+    #[test]
+    fn the_named_root_state_has_its_wire_shape() {
+        let named_at = DateTime::parse_from_rfc3339("2026-09-29T01:00:00Z")
+            .expect("time")
+            .with_timezone(&Utc);
+        for (state, json) in [
+            (NamedRootState::NoRoot, serde_json::json!({"state": "none"})),
+            (
+                NamedRootState::Bound {
+                    workspace_id: "workspace-B".into(),
+                    generation: 9,
+                    named_at,
+                },
+                serde_json::json!({
+                    "state": "bound",
+                    "workspace_id": "workspace-B",
+                    "generation": 9,
+                    "named_at": "2026-09-29T01:00:00Z",
+                }),
+            ),
+            (
+                NamedRootState::UnboundByRelease {
+                    last_generation: 9,
+                    released_at_position: 42,
+                },
+                serde_json::json!({
+                    "state": "unbound_by_release",
+                    "last_generation": 9,
+                    "released_at_position": 42,
+                }),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(&state).expect("serialize"), json);
+            assert_eq!(
+                serde_json::from_value::<NamedRootState>(json).expect("deserialize"),
+                state
+            );
+        }
+    }
 
     #[test]
     fn resource_subject_shape_rejects_ambiguous_paths() {
