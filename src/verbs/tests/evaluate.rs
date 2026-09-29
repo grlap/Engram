@@ -2,6 +2,7 @@
 
 mod carried_failure;
 mod criteria_required;
+mod history;
 mod review;
 
 use super::*;

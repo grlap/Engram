@@ -64,6 +64,7 @@ mod catalog;
 mod completion;
 mod continuation;
 mod evaluate;
+mod evaluation_windows;
 mod focus;
 pub(crate) use focus::WorkAuthoredContract;
 mod handoff;
@@ -92,6 +93,11 @@ pub(crate) use catalog::WorkListingPage;
 #[cfg(test)]
 pub(crate) use catalog::{encode_listing_cursor_json, listing_cursor_json};
 pub use evaluate::EVALUATE_WORD_RESERVE;
+#[cfg(test)]
+pub(crate) use evaluation_windows::MAX_ROW_VERDICTS;
+pub(crate) use evaluation_windows::{
+    WorkEvaluationDetail, WorkEvaluationRow, WorkEvaluationWindow,
+};
 pub use operations::*;
 pub(crate) use projection::*;
 pub(crate) use record_windows::{WorkRecordRow, WorkRecordWindow};

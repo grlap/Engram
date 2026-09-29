@@ -566,7 +566,7 @@ enum WorkCommand {
         /// Newest history window, rendered chronologically.
         #[arg(long, conflicts_with = "note")]
         history: bool,
-        /// Item-bound continuation from the same note/history window.
+        /// Item-bound continuation from the same note, history or evaluations window.
         #[arg(long, conflicts_with = "note")]
         after: Option<String>,
         /// Complete note body: record-id prefix (8+ hex), or `RECORD_ID:INDEX`.
@@ -575,6 +575,12 @@ enum WorkCommand {
         /// Complete stored title, outcome, and acceptance; reading changes neither focus nor claims.
         #[arg(long, conflicts_with_all = ["notes", "gates", "history", "after", "note"])]
         full: bool,
+        /// The evaluation records of the item's run in a bounded window, oldest to newest.
+        #[arg(long, conflicts_with_all = ["notes", "gates", "history", "note", "full"])]
+        evaluations: bool,
+        /// One evaluation record complete, by its full record id.
+        #[arg(long, value_name = "RECORD_ID", conflicts_with_all = ["notes", "gates", "history", "after", "note", "full", "evaluations"])]
+        evaluation: Option<String>,
     },
     /// Create work from a title; outcome and acceptance criteria are welcome.
     Add {
@@ -1596,6 +1602,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             after,
             note,
             full,
+            evaluations,
+            evaluation,
         } => verbs.show_records(
             &work_ref,
             &engram::verbs::ShowInput {
@@ -1605,6 +1613,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 after,
                 note,
                 full,
+                evaluations,
+                evaluation,
             },
             now,
         ),

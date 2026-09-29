@@ -676,7 +676,50 @@ policy requires freshness); `next` prints one `evaluation: <mode> P/N pass,
 fresh|stale: R` line under the focused evaluated item (`focus.evaluation` in
 JSON); `show REF --full`, the authored-contract read that may exceed 12 KiB,
 returns the complete newest evaluation with every verdict's full rationale and
-citations plus its freshness. `done [--source-fingerprint F]` presents the
+citations plus its freshness.
+
+Two explicit reads cover older records; nothing else about admission,
+staleness or sealing changes.
+- **The history window.** `show REF --evaluations [--after CURSOR]` (MCP
+  `evaluations: true`, `after`) lists every evaluation record of the item's
+  active run, or of its latest run once none is active, as for a completed
+  item. Records are selected newest first and shown in run-feed order, within
+  the 12 KiB agent budget. Each row gives:
+  - the record id and run position;
+  - the mode, and the evaluator's session as the display label `show` uses
+    for holders and note authors, so two records from one session, and the
+    holder, compare equal (absent when the record names no session);
+  - the attempt key, created time and work revision;
+  - verdict words by criterion position, up to a bound, with the exact count
+    of omitted verdicts;
+  - the record's stale reason at the read cut when it has one, the record it
+    supersedes when it names one, and whether it is the newest.
+
+  The window gives exact total, shown, omitted, older and newer counts and a
+  continuation. The cursor is bound to the item, run, read cut and
+  acceptance policy; a cursor from another cut, run, policy or window kind is
+  refused. The title is compacted as `show` does, with its stored length and
+  `--full` offered when it is longer.
+
+  While the run is the item's active run, a record's stale reason is judged as
+  the newest record's is, under the current policy with the source
+  unmeasured. An older record is therefore not called stale merely because a
+  later one exists. Once the run has ended (completion, cancellation or
+  supersession), its records are listed but not judged (`stale_judged:
+  false`). Ending the run revised the item, so judging against it would call
+  every record stale, including the one a seal consumed.
+- **One record complete.** `show REF --evaluation RECORD_ID` (MCP
+  `evaluation`) returns one record of the item, from any of its runs, with
+  every verdict's criterion, full rationale and citations. It also gives its
+  whole attempt key, and its evaluator model, execution identity,
+  parent-session label and judged source fingerprint when recorded. While the
+  item has an active run, the record is judged against it, so a record of an
+  earlier run is stale for that reason. Like `--full`, it may exceed 12 KiB.
+
+The newest whole record still decides completion. `show` and `show --full`
+keep their newest-only reads.
+
+`done [--source-fingerprint F]` presents the
 host-measured fingerprint (F4); its refusals carry the causes above, and its
 success line and the completed item's `show` carry the provenance (completion
 enforcement, step 5). `add --evaluation-mode MODE` pins the mode from creation

@@ -6,6 +6,7 @@
 )]
 
 mod acceptance_evaluation;
+pub(crate) use acceptance_evaluation::AssessedAcceptanceEvaluation;
 pub(crate) use acceptance_evaluation::attempt_identity as acceptance_attempt_identity;
 pub use acceptance_evaluation::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,

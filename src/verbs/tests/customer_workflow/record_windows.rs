@@ -22,6 +22,7 @@ fn window(
                 after,
                 note: None,
                 full: false,
+                ..ShowInput::default()
             },
             at(time),
         )
@@ -312,6 +313,7 @@ fn record_windows_refuse_wrong_kind_item_anchor_read_cut_and_note_locator() {
                     after: Some(cursor),
                     note: None,
                     full: false,
+                    ..ShowInput::default()
                 },
                 at(time),
             )

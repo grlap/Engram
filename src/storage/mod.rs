@@ -13,6 +13,7 @@ mod project_memory;
 mod schema_diagnostics;
 mod task_memory;
 mod work;
+pub(crate) use work::AssessedAcceptanceEvaluation;
 pub(crate) use work::acceptance_attempt_identity;
 pub(crate) use work::validate_work_plan;
 pub use work::{

@@ -2394,5 +2394,8 @@ pub(super) fn blocking_cause(
     })
 }
 
+mod history;
+pub(crate) use history::AssessedAcceptanceEvaluation;
+
 #[cfg(test)]
 mod tests;

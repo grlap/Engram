@@ -27,6 +27,12 @@ pub struct ShowInput {
     /// Complete stored title, outcome, and acceptance; exclusive of windows.
     #[serde(default)]
     pub full: bool,
+    /// The evaluation records of the item's run, oldest to newest within a
+    /// bounded window; `after` continues it.
+    #[serde(default)]
+    pub evaluations: bool,
+    /// One evaluation record complete, by its full record id.
+    pub evaluation: Option<String>,
 }
 
 impl AgentVerbs {
@@ -40,6 +46,25 @@ impl AgentVerbs {
         input: &ShowInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
+        let other_modes =
+            input.notes || input.history || input.gates || input.note.is_some() || input.full;
+        if (input.evaluations && (other_modes || input.evaluation.is_some()))
+            || (input.evaluation.is_some() && (other_modes || input.after.is_some()))
+        {
+            return Err(VerbError::at(
+                StoreError::InvalidWork(
+                    "choose --evaluations with optional --after, or --evaluation RECORD_ID alone"
+                        .into(),
+                ),
+                work_ref,
+            ));
+        }
+        if input.evaluations {
+            return self.show_evaluations(work_ref, input.after.as_deref(), now);
+        }
+        if let Some(record) = &input.evaluation {
+            return self.show_evaluation(work_ref, record, now);
+        }
         if (input.notes && input.history)
             || (input.gates && !input.notes)
             || (input.note.is_some()

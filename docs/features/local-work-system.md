@@ -1378,6 +1378,17 @@ The stateless cursor binds item,
 project, kind, member locator, order and the shared listing read cut. Changed
 feeds, reversed clocks and time-boundary expiry refuse with fresh navigation.
 The encoded context is readable, not confidential or authoritative.
+`show REF --evaluations [--after CURSOR]` is the same kind of window over the
+acceptance-evaluation records of the item's active run, or of its latest run
+once none is active. It uses the same selection, order, exact counts and read
+cut, with its own cursor also bound to the run and the acceptance policy,
+which a new run, record or policy invalidates. Its rows carry each record's
+id, run position, mode, evaluator session label, attempt key, created time,
+work revision and bounded verdict words. They also carry the record's own
+stale reason at the read, what it supersedes, and whether it is the newest.
+`show REF --evaluation RECORD_ID` reads one record complete. [Acceptance
+evaluation](acceptance-evaluation.md) describes both reads; completion still
+reads only the newest record.
 
 Explicit note locators are scoped record-id exposures alongside sealed
 evidence links and acceptance evaluation ids. Native notes use a unique

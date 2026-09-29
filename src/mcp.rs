@@ -140,6 +140,10 @@ struct ShowArgs {
     note: Option<String>,
     /// Complete stored title, outcome, and acceptance; exclusive of windows.
     full: Option<bool>,
+    /// The evaluation records of the item's run in a bounded window, oldest to newest; after continues it.
+    evaluations: Option<bool>,
+    /// One evaluation record complete, by its full record id from the evaluations window.
+    evaluation: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -470,6 +474,8 @@ impl McpServer {
                 after: args.after,
                 note: args.note,
                 full: args.full.unwrap_or(false),
+                evaluations: args.evaluations.unwrap_or(false),
+                evaluation: args.evaluation,
             },
             Utc::now(),
         ))

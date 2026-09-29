@@ -4514,3 +4514,85 @@ test("MCP actor context stays attribution-only across words and handoff", async 
     }
   }
 });
+
+test("evaluation history over MCP: a failing record then a passing one from one session", async (t) => {
+  const engramHome = fixtureHome("engram-evaluation-history-", t);
+  const holder = "history-holder";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const policy = spawnSync(binary, [
+      "--home", engramHome, "control-policy", "set-acceptance-evaluation",
+      "--modes", "same-session", "--mechanical-basis", "asserted",
+      "--authorized-by", "dogfood-operator",
+      "--idempotency-key", "dogfood-history-evaluation",
+    ], { cwd: root, encoding: "utf8" });
+    assert.equal(policy.status, 0, policy.stderr);
+    client = new McpClient(engramHome, holder);
+    await client.initialize();
+    const ref = cliJson(engramHome, holder, "add", "Evaluated twice", "--accept", "the build passes").work.short_ref;
+    cliJson(engramHome, holder, "claim", ref);
+    cliJson(engramHome, holder, "gate", "cargo-test", "--work-ref", ref);
+    const records = receipt(await client.call("show", { work_ref: ref, notes: true, gates: true }));
+    const gate = records.notes.find((row) => String(row.family).toLowerCase() === "gates");
+    assert.ok(gate, JSON.stringify(records.notes));
+    const evaluate = async (verdict) => {
+      const shown = receipt(await client.call("show", { work_ref: ref }));
+      const evaluated = receipt(await client.call("evaluate", {
+        work_ref: ref,
+        mode: "same_session",
+        acceptance_basis: shown.acceptance_basis,
+        evidence_basis: shown.evidence_basis,
+        verdicts: [{ criterion: 1, verdict, basis: "asserted", rationale: `the gate says ${verdict}`, evidence: [gate.locator] }],
+      }));
+      return evaluated.evaluation.hash;
+    };
+    const failed = await evaluate("fail");
+    const passed = await evaluate("pass");
+
+    // The window lists both records of the run in run-feed order, from the
+    // same evaluator session; only the newer one is the newest.
+    const window = receipt(await client.call("show", { work_ref: ref, evaluations: true }));
+    assert.equal(window.evaluations_window.total, 2);
+    assert.equal(window.evaluations_window.shown, 2);
+    assert.equal(window.evaluations_window.omitted, 0);
+    assert.equal(window.evaluations_window.after, null);
+    const [older, newer] = window.evaluations;
+    assert.deepEqual([older.evaluation, newer.evaluation], [failed, passed]);
+    assert.ok(older.run_position < newer.run_position, JSON.stringify(window.evaluations));
+    assert.equal(older.evaluator_session, "you");
+    assert.equal(newer.evaluator_session, older.evaluator_session);
+    assert.equal(older.verdicts[0].verdict, "fail");
+    assert.equal(newer.verdicts[0].verdict, "pass");
+    assert.equal(older.newest, false);
+    assert.equal(newer.newest, true);
+    assert.equal(older.stale, null, "an older record is not stale merely because a newer one exists");
+    assert.equal(newer.stale, null);
+
+    // The CLI gives the same rows; the detail reads the older record complete.
+    const viaCli = cliJson(engramHome, holder, "show", ref, "--evaluations");
+    assert.deepEqual(viaCli.evaluations.map((row) => row.evaluation), [failed, passed]);
+    const detail = receipt(await client.call("show", { work_ref: ref, evaluation: failed }));
+    assert.equal(detail.evaluation.evaluation, failed);
+    assert.equal(detail.evaluation.verdicts[0].verdict, "fail");
+    assert.equal(detail.evaluation.verdicts[0].rationale, "the gate says fail");
+    assert.deepEqual(detail.evaluation.verdicts[0].citations, [gate.locator]);
+
+    // Ordinary show and done keep reading only the newest record.
+    const sealed = receipt(await client.call("done", { work_ref: ref, summary: "Delivered" }));
+    assert.equal(sealed.work.lifecycle, "completed");
+    assert.equal(sealed.acceptance.evaluation, passed);
+    const afterDone = receipt(await client.call("show", { work_ref: ref, evaluations: true }));
+    assert.deepEqual(afterDone.evaluations.map((row) => row.evaluation), [failed, passed]);
+    // Completion revised the item: the ended run's records are listed but not
+    // judged, so the record the seal consumed is never shown as stale.
+    assert.equal(afterDone.evaluations_window.stale_judged, false);
+    for (const row of afterDone.evaluations) {
+      assert.equal(row.stale, null, JSON.stringify(row));
+      assert.equal(row.stale_judged, false);
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
