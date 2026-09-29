@@ -4,6 +4,7 @@ mod audit_validation;
 mod input_validation;
 mod memory_revisions;
 mod redaction;
+mod restored_identity;
 
 use super::*;
 use crate::storage::test_support::{
