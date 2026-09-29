@@ -605,6 +605,14 @@ pub struct WorkFocusView {
     /// Where a completed item's sealed acceptance came from; agent detail only.
     #[serde(skip)]
     pub(crate) acceptance_provenance: Option<super::WorkAcceptanceProvenance>,
+    /// Where a completed item's work landed, read from its frozen seal; agent
+    /// detail only. `None` when the seal records no landing.
+    #[serde(skip)]
+    pub(crate) landing: Option<crate::domain::CompletionLanding>,
+    /// Why a completed item's landing could not be read: the seal read
+    /// failed, or restored history completed it; agent detail only.
+    #[serde(skip)]
+    pub(crate) landing_unavailable: Option<&'static str>,
     pub session: AgentWorkSession,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detached_from: Option<WorkDetachedFrom>,

@@ -364,6 +364,8 @@ struct DoneArgs {
     note: Option<String>,
     /// Host-measured source fingerprint at completion time; checked against the evaluated one when the policy requires source freshness.
     source_fingerprint: Option<String>,
+    /// Where the work landed, recorded in the seal as asserted provenance: `commit`, `remote`, `branch`, `pushed_at`, and `installed_build` when a binary was installed.
+    landing: Option<crate::domain::CompletionLanding>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -736,6 +738,7 @@ impl McpServer {
                 summary: args.summary,
                 note: args.note,
                 source_fingerprint: args.source_fingerprint,
+                landing: args.landing,
             },
             Utc::now(),
         ))

@@ -202,6 +202,7 @@ fn criterion_links_shape_refusals_precede_any_protocol_write() {
                 Some(&reference),
                 crate::work_service::WorkCompleteInput {
                     source_fingerprint: None,
+                    landing: None,
                     capture: None,
                     evidence: Vec::new(),
                     acceptance,

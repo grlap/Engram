@@ -253,6 +253,7 @@ pub(super) fn completion_request(
             released_resource_leases: Vec::new(),
         },
         source_fingerprint: None,
+        landing: None,
         actor: actor(holder),
         idempotency_key: key.into(),
         completed_at: at(second),

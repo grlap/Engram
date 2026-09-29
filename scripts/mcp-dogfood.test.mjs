@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 
 import { fixtureHome as ownedFixtureHome, removeFixtureHomes as cleanupFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
-import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import nodeTest, { after } from "node:test";
@@ -1234,7 +1234,7 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
     assert.match(doneTool.description, /no evidence linked to this criterion/);
     assert.match(doneTool.description, /what is still owed and the command that resolves it/);
     assert.match(doneTool.inputSchema.properties.note.description, /does not link evidence/);
-    assert.deepEqual(Object.keys(doneTool.inputSchema.properties).sort(), ["link_basis", "links", "note", "source_fingerprint", "summary", "work_ref"]);
+    assert.deepEqual(Object.keys(doneTool.inputSchema.properties).sort(), ["landing", "link_basis", "links", "note", "source_fingerprint", "summary", "work_ref"]);
     assert.match(doneTool.inputSchema.properties.link_basis.description, /Required with links/);
     const help = cliWord(engramHome, session, "done", "--help");
     assert.equal(help.status, 0, help.stderr);
@@ -1275,6 +1275,144 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
   } finally {
     try { if (client) await client.close(); }
     finally { removeFixtureHomes(engramHome); }
+  }
+});
+
+test("done records a typed landing on CLI and MCP, and show reads it back", async (t) => {
+  const engramHome = fixtureHome("engram-landing-", t);
+  const session = "landing-author";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const doneTool = (await client.tools()).find(({ name }) => name === "done");
+    assert.match(doneTool.inputSchema.properties.landing.description, /asserted provenance/);
+    const build = createHash("sha256").update("installed build").digest("hex");
+    for (const surface of ["cli", "mcp"]) {
+      const ref = cliJson(engramHome, session, "add", `Landing ${surface}`).work.short_ref;
+      cliJson(engramHome, session, "claim", ref);
+      const commit = createHash("sha1").update(`landed ${surface}`).digest("hex");
+      const landing = { commit, remote: "origin", branch: "master", pushed_at: "2026-09-29T05:00:00Z", installed_build: build };
+      const done = surface === "cli"
+        ? cliJson(engramHome, session, "done", ref, "Landed", "--landed", commit, "--remote", "origin",
+          "--branch", "master", "--pushed-at", landing.pushed_at, "--installed-build", build)
+        : receipt(await client.call("done", { work_ref: ref, summary: "Landed", landing }));
+      assert.equal(done.work.lifecycle, "completed");
+      assert.equal(done.landing.commit, commit);
+      for (const shown of [cliJson(engramHome, session, "show", ref), receipt(await client.call("show", { work_ref: ref }))]) {
+        assert.equal(shown.landing.commit, commit);
+        assert.equal(shown.landing.remote, "origin");
+        assert.equal(shown.landing.branch, "master");
+        assert.equal(shown.landing.installed_build, build);
+        assertTerseShow(shown);
+      }
+      const text = cliWord(engramHome, session, "show", ref);
+      assert.equal(text.status, 0, text.stderr);
+      assert.match(text.stdout, new RegExp(`landing: ${commit} on origin/master, pushed `));
+    }
+    // A partial landing is refused before anything is recorded, and an item
+    // completed without a landing says none was recorded.
+    const ref = cliJson(engramHome, session, "add", "No landing").work.short_ref;
+    cliJson(engramHome, session, "claim", ref);
+    const partial = cliWord(engramHome, session, "done", ref, "--landed", "0".repeat(40), "--json");
+    assert.notEqual(partial.status, 0);
+    assert.equal(cliJson(engramHome, session, "show", ref).status.work.lifecycle, "open");
+    const done = cliJson(engramHome, session, "done", ref, "Delivered without landing");
+    assert.equal(done.landing, undefined);
+    const shown = cliJson(engramHome, session, "show", ref);
+    assert.equal(shown.landing, "no landing recorded");
+    assertTerseShow(shown);
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
+test("doctor checks recorded landings against a local repository only on request", (t) => {
+  const engramHome = fixtureHome("engram-landing-doctor-", t);
+  const session = "landing-doctor";
+  try {
+    buildAndInit(engramHome);
+    const repository = join(engramHome, "landed");
+    mkdirSync(repository);
+    const emptyConfig = join(engramHome, "empty.gitconfig");
+    writeFileSync(emptyConfig, "");
+    // The scratch repository ignores the developer's git configuration.
+    const git = (...args) => {
+      const run = spawnSync("git", ["-c", "user.email=landing@test", "-c", "user.name=landing",
+        "-c", "commit.gpgsign=false", "-c", "core.hooksPath=", "-c", "init.defaultBranch=master", ...args], {
+        cwd: repository,
+        encoding: "utf8",
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: emptyConfig },
+      });
+      assert.equal(run.status, 0, run.stderr);
+      return run.stdout.trim();
+    };
+    git("init", "-q", ".");
+    git("commit", "-q", "--allow-empty", "-m", "landed");
+    const landed = git("rev-parse", "HEAD");
+    git("update-ref", "refs/remotes/origin/master", landed);
+    const land = (title, commit) => {
+      const ref = cliJson(engramHome, session, "add", title).work.short_ref;
+      cliJson(engramHome, session, "claim", ref);
+      cliJson(engramHome, session, "done", ref, "Landed", "--landed", commit, "--remote", "origin",
+        "--branch", "master", "--pushed-at", "2026-09-29T05:00:00Z");
+      return ref;
+    };
+    const doctor = (...args) => spawnSync(binary, ["--home", engramHome, ...args], { cwd: root, encoding: "utf8" });
+    const statuses = (report) => report.landings.map(({ work_ref, status }) => [work_ref, status]);
+    const verifiedRef = land("Verified landing", landed);
+
+    // The project file's directory is the default repository.
+    const projectFile = join(repository, ".engram-project");
+    writeFileSync(projectFile, readFileSync(join(root, ".engram-project")));
+    const byDefault = doctor("--project-file", projectFile, "doctor", "--check-landings", "--json");
+    assert.equal(byDefault.status, 0, byDefault.stderr);
+    const report = JSON.parse(byDefault.stdout);
+    assert.equal(report.mode, "landing_check");
+    assert.equal(report.repository_problem, null);
+    assert.equal(report.recorded, 1);
+    assert.deepEqual(statuses(report), [[verifiedRef, "verified"]]);
+
+    // A git.exe in the directory the doctor runs from, here the repository
+    // under check, is never run in place of git: this one is no program, so
+    // running it would fail every git call and leave nothing verified.
+    const planted = join(repository, "git.exe");
+    writeFileSync(planted, "not a program\n");
+    const fromInside = spawnSync(binary, ["--home", engramHome, "--project-file", projectFile, "doctor",
+      "--check-landings", "--json"], { cwd: repository, encoding: "utf8" });
+    rmSync(planted);
+    assert.equal(fromInside.status, 0, fromInside.stderr);
+    assert.deepEqual(statuses(JSON.parse(fromInside.stdout)), [[verifiedRef, "verified"]]);
+
+    // An absent commit is named, and the check fails.
+    const absentRef = land("Absent landing", "f".repeat(40));
+    const checked = doctor("doctor", "--check-landings", "--repo", repository, "--json");
+    assert.notEqual(checked.status, 0);
+    const found = JSON.parse(checked.stdout);
+    assert.deepEqual(statuses(found), [[verifiedRef, "verified"], [absentRef, "commit_absent"]]);
+    assert.match(found.landings[1].finding, /absent from this repository/);
+    const text = doctor("doctor", "--check-landings", "--repo", repository);
+    assert.notEqual(text.status, 0);
+    assert.match(text.stdout, new RegExp(`landing ${absentRef}: commit f{40} absent from this repository`));
+
+    // A directory that is not a repository is refused, with git's exit code.
+    const plain = join(engramHome, "plain");
+    mkdirSync(plain);
+    const refused = doctor("doctor", "--check-landings", "--repo", plain, "--json");
+    assert.notEqual(refused.status, 0);
+    assert.match(
+      JSON.parse(refused.stdout).repository_problem,
+      /^git could not open .+ as a repository \(git exited with 128\)$/,
+    );
+
+    // Without the flag, the doctor's audit is unchanged and runs no check.
+    const audit = doctor("doctor", "--json");
+    assert.equal(audit.status, 0, audit.stderr);
+    assert.equal(JSON.parse(audit.stdout).mode, undefined);
+  } finally {
+    removeFixtureHomes(engramHome);
   }
 });
 

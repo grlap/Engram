@@ -13,6 +13,7 @@ pub use acceptance_evaluation::{
 mod child_resolution;
 pub(crate) use child_resolution::RequiredChildSuccessor;
 mod completion;
+pub use completion::RecordedLanding;
 mod discovery;
 mod execution;
 mod feeds;

@@ -11,6 +11,7 @@ use crate::{control_assurance_name, warn_if_action_gated};
 const MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS: usize = 32;
 const MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES: usize = 256;
 
+pub(crate) mod landings;
 pub(crate) mod refusals;
 use refusals::{Phase, report_error, with_build};
 
@@ -21,7 +22,11 @@ pub(crate) fn doctor(
     json: bool,
     recover_policy: bool,
     repair_projections: bool,
+    landing_repository: Option<&Path>,
 ) -> Result<()> {
+    if let Some(repository) = landing_repository {
+        return landings::check_landings(database, identity, project_id, repository, json);
+    }
     if recover_policy {
         return diagnose_policy_recovery(database, project_id, json);
     }

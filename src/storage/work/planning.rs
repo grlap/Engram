@@ -1434,7 +1434,7 @@ fn refuse_record_id_pins_on(
     Ok(())
 }
 
-fn short_ref(work_id: WorkId) -> String {
+pub(in crate::storage) fn short_ref(work_id: WorkId) -> String {
     let simple = work_id.0.simple().to_string();
     format!("w-{}", simple.get(20..).unwrap_or(&simple))
 }

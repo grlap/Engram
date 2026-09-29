@@ -86,6 +86,7 @@ fn finish(verbs: &AgentVerbs, work: &str, now: i64) {
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(work.into()),

@@ -254,6 +254,7 @@ fn process_default_session_is_fitted_before_mutation_emission() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(owed_parent),
@@ -320,6 +321,7 @@ fn process_default_session_is_reserved_inside_mutation_fitting() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(parent.clone()),

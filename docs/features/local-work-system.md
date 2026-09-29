@@ -453,6 +453,29 @@ whose completion transitively rests on one. Sealing terminalizes
 the run's `WorkClaim`; completed execution authority is never kept alive for
 report work. Resource leases have been removed.
 
+A seal may also record a landing: where the completed work landed, as the
+completing agent states it at `done`. It holds the commit (40 or 64 lowercase
+hex), the remote and branch it was pushed to, the push time, and the build
+fingerprint of the binary installed from it when one was installed. It is
+asserted provenance only; the host-measured content fingerprint stays the
+freshness identity. `show` prints it on a completed item, and the completed
+item's JSON carries it as one `landing` field; a seal without one reads "no
+landing recorded", and a seal that could not be read, or a completion restored
+from history, reads "unavailable" with the reason. Seals written before the
+field existed carry none: they are read as stored, with no backfill, and their
+landings stay in the prose landing notes (commit, gate run and freeze
+fingerprint), a practice that remains valid beside the typed record. A landing
+made after `done` is recorded the same prose way, because the seal is frozen:
+`done` naming a landing its seal does not already record is refused as a late
+finding. On request only, `engram doctor
+--check-landings [--repo PATH]` asks a local repository whether each recorded
+commit exists under exactly its recorded id and lies on the named remote
+branch's remote-tracking ref. It never fetches, and names an absent commit, a
+commit off the branch, or a remote-tracking ref not present locally; a git call
+that fails, as in a damaged repository, leaves the landing unverifiable, as does
+a commit not found on the branch of a shallow repository, whose cut history may
+hold it.
+
 Every new seal also declares completion-obligation schema V1 and records the
 exact `(definition, terminal resolution)` pairs applicable at its pre-seal
 dense run-feed cut. First, each still-open obligation of the stock

@@ -279,6 +279,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(work_ref.clone()),
@@ -349,6 +350,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(work_ref.clone()),

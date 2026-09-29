@@ -717,7 +717,7 @@ fn assert_refused(error: &io::Error) {
 }
 
 #[cfg(windows)]
-fn make_dir_link(target: &Path, link: &Path) {
+pub(crate) fn make_dir_link(target: &Path, link: &Path) {
     // A junction needs no symlink privilege on Windows. Node creates it
     // directly from its arguments; no shell parses the paths, so `&`, `%` or
     // `^` in a checkout path stay literal.
@@ -771,17 +771,17 @@ fn test_links_keep_shell_characters_in_paths_literal() {
 }
 
 #[cfg(not(windows))]
-fn make_dir_link(target: &Path, link: &Path) {
+pub(crate) fn make_dir_link(target: &Path, link: &Path) {
     std::os::unix::fs::symlink(target, link).unwrap();
 }
 
 #[cfg(windows)]
-fn remove_dir_link(link: &Path) {
+pub(crate) fn remove_dir_link(link: &Path) {
     fs::remove_dir(link).unwrap();
 }
 
 #[cfg(not(windows))]
-fn remove_dir_link(link: &Path) {
+pub(crate) fn remove_dir_link(link: &Path) {
     fs::remove_file(link).unwrap();
 }
 

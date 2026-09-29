@@ -15,6 +15,7 @@ pub(crate) enum Phase {
     ControlDiagnostics,
     ControlPolicyRecovery,
     ProjectionRepair,
+    LandingCheck,
 }
 
 pub(crate) fn with_build(mut value: Value) -> Value {
@@ -325,6 +326,7 @@ mod tests {
             (Phase::ControlDiagnostics, "control_diagnostics"),
             (Phase::ControlPolicyRecovery, "control_policy_recovery"),
             (Phase::ProjectionRepair, "projection_repair"),
+            (Phase::LandingCheck, "landing_check"),
         ] {
             let value = refusal(
                 Path::new("diagnostic.db"),

@@ -99,6 +99,7 @@ pub(super) fn proposed_root(result: WorkProposeResult) -> WorkItemSummary {
 pub(super) fn completion_input(summary: &str, key: &str) -> WorkCompleteInput {
     WorkCompleteInput {
         source_fingerprint: None,
+        landing: None,
         links: Vec::new(),
         link_basis: None,
         capture: Some(WorkCompletionCaptureInput {
@@ -192,6 +193,7 @@ pub(super) fn commit_completion_core_without_finishing(
                     released_resource_leases: Vec::new(),
                 },
                 source_fingerprint: None,
+                landing: None,
                 actor,
                 idempotency_key: scoped_key,
                 completed_at: now,

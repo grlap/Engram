@@ -64,6 +64,8 @@ use crate::{
 
 mod child_barriers;
 mod child_resolutions;
+mod landings;
+pub use landings::RecordedLanding;
 mod lifecycle;
 mod named_root;
 mod projections;
@@ -127,6 +129,9 @@ impl SqliteStore {
     ) -> Result<CompleteWorkStorageResult, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
+        if let Some(landing) = &request.landing {
+            landing.validate().map_err(StoreError::InvalidWork)?;
+        }
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(seal) = replay_operation::<CompletionSeal>(
@@ -570,6 +575,7 @@ impl SqliteStore {
             drain,
             actor: request.actor.clone(),
             completed_at: request.completed_at,
+            landing: request.landing.clone(),
         };
         validate_completion_seal_obligation_basis_on(&transaction, &seal)?;
         validate_completion_seal_environment_basis_on(&transaction, &seal)?;

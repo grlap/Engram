@@ -9,6 +9,7 @@ mod creation;
 mod criterion_links;
 mod detach;
 mod discovery;
+mod landing;
 mod listing;
 mod mutation_titles;
 mod orientation;
@@ -297,6 +298,7 @@ fn terminalize(verbs: &AgentVerbs, parent: &str, lifecycle: WorkLifecycle) {
             .done(
                 DoneInput {
                     source_fingerprint: None,
+                    landing: None,
                     links: Vec::new(),
                     link_basis: None,
                     work_ref: Some(parent.into()),
@@ -460,6 +462,7 @@ fn phoenix_full_notes_include_inherited_late_restored_and_reopened_native_genera
             .done(
                 DoneInput {
                     source_fingerprint: None,
+                    landing: None,
                     links: Vec::new(),
                     link_basis: None,
                     work_ref: Some(work.clone()),

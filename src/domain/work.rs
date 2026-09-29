@@ -1018,6 +1018,98 @@ pub struct CompletionSeal {
     pub drain: CompletionDrainAttestation,
     pub actor: ActorContext,
     pub completed_at: DateTime<Utc>,
+    /// Where the completed work landed, as the completing agent asserted it.
+    /// Seals written before this field existed, and completions that named no
+    /// landing, carry none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing: Option<CompletionLanding>,
+}
+
+/// Most bytes a landing's remote or branch name may take.
+pub const MAX_LANDING_NAME_BYTES: usize = 256;
+
+/// Where completed work landed: the commit, the remote and branch it was
+/// pushed to, when, and the build installed from it when a binary was
+/// installed. It is asserted provenance, recorded as the completing agent
+/// states it; the host-measured content fingerprint stays the freshness
+/// identity.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompletionLanding {
+    /// The landed commit: 40 or 64 lowercase hex characters.
+    pub commit: String,
+    /// The remote it was pushed to, such as `origin`.
+    pub remote: String,
+    /// The branch on that remote, such as `master`.
+    pub branch: String,
+    /// When it was pushed, as the completing agent states it.
+    pub pushed_at: DateTime<Utc>,
+    /// The build fingerprint of the binary installed from this landing: the
+    /// `build_fingerprint` that `engram readiness --json` reports for it, in
+    /// lowercase hex. Absent when nothing was installed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_build: Option<String>,
+}
+
+impl CompletionLanding {
+    /// Checks the landing's shape before anything is recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason when the commit is not 40 or 64 lowercase hex, a
+    /// remote or branch name is empty, too long, or not a plain ref name, or
+    /// the installed build is not a build fingerprint.
+    pub fn validate(&self) -> Result<(), String> {
+        let lowercase_hex = |value: &str| {
+            value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        };
+        if !matches!(self.commit.len(), 40 | 64) || !lowercase_hex(&self.commit) {
+            return Err("landing commit must be 40 or 64 lowercase hex characters".into());
+        }
+        for (name, value) in [("remote", &self.remote), ("branch", &self.branch)] {
+            if value.len() > MAX_LANDING_NAME_BYTES || !plain_ref_name(value) {
+                return Err(format!(
+                    "landing {name} must be a plain git ref name of at most {MAX_LANDING_NAME_BYTES} bytes, not a revision expression: no whitespace, control characters, '..', '@{{', '//' or any of ~^:?*[\\, no part starting with '.' or ending with '.' or '.lock', and not starting with '-' or starting or ending with '/'"
+                ));
+            }
+        }
+        if let Some(build) = &self.installed_build {
+            // A build fingerprint has the shape of every content fingerprint;
+            // the reference is derived from the fingerprint code itself.
+            let fingerprint = ObjectId::from_canonical_bytes(&[]);
+            if build.len() != fingerprint.as_str().len() || !lowercase_hex(build) {
+                return Err(format!(
+                    "landing installed build must be Engram's build fingerprint, {} lowercase hex characters: the `build_fingerprint` that `engram readiness --json` or `engram doctor --json` reports for the installed binary, not a hash of the executable file",
+                    fingerprint.as_str().len()
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Whether `value` is a plain git ref name under git's check-ref-format rules,
+/// so no part of it reads as a revision expression such as `master~5` or
+/// `master@{1}`.
+fn plain_ref_name(value: &str) -> bool {
+    !value.is_empty()
+        && value != "@"
+        && !value.starts_with('-')
+        && !value.contains("..")
+        && !value.contains("@{")
+        && !value
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || "~^:?*[\\".contains(c))
+        && value.split('/').all(|part| {
+            !part.is_empty()
+                && !part.starts_with('.')
+                && !part.ends_with('.')
+                && !part
+                    .rsplit_once('.')
+                    .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("lock"))
+        })
 }
 
 /// Compact candidate returned by readiness queries.

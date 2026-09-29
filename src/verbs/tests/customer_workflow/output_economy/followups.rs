@@ -107,6 +107,7 @@ fn mutation_and_continuation_first_lines_escape_titles_without_changing_json() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(work),

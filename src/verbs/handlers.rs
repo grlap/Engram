@@ -349,6 +349,9 @@ pub struct DoneInput {
     /// the evaluated one when the policy requires source freshness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
+    /// Where the work landed, recorded in the seal as asserted provenance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing: Option<crate::domain::CompletionLanding>,
 }
 
 /// `handoff`: offer, accept, or cancel a transfer of the held item.
@@ -1490,6 +1493,7 @@ impl AgentVerbs {
                 Some(&target),
                 WorkCompleteInput {
                     source_fingerprint: nonempty(input.source_fingerprint),
+                    landing: input.landing,
                     links: input.links,
                     link_basis: input.link_basis,
                     capture: nonempty(input.summary).map(|summary| WorkCompletionCaptureInput {
@@ -1551,6 +1555,12 @@ impl AgentVerbs {
                         self.service.display_identity(),
                     ),
                 ];
+                if completed.landing.is_some() || completed.landing_unavailable.is_some() {
+                    lines.push(super::show::landing_line(
+                        completed.landing.as_ref(),
+                        completed.landing_unavailable,
+                    ));
+                }
                 lines.extend(super::show::untested_change_lines(
                     &completed.obligation_page,
                 ));
@@ -1600,6 +1610,12 @@ impl AgentVerbs {
                         self.service.display_identity(),
                     ),
                 });
+                if receipt.landing.is_some() || receipt.landing_unavailable.is_some() {
+                    value["landing"] = super::show::landing_value(
+                        receipt.landing.as_ref(),
+                        receipt.landing_unavailable,
+                    );
+                }
                 let untested = super::show::untested_changes(&receipt.obligation_page);
                 if !untested.is_empty() {
                     value["untested_changes"] = serde_json::to_value(untested)?;

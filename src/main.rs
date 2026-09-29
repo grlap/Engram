@@ -154,6 +154,12 @@ enum Command {
         /// Explicitly rebuild indexes, triggers, and full-text projections.
         #[arg(long, conflicts_with = "recover_policy")]
         repair_projections: bool,
+        /// Check every landing the seals record against a local git repository; never fetches.
+        #[arg(long, conflicts_with_all = ["recover_policy", "repair_projections"])]
+        check_landings: bool,
+        /// Repository for --check-landings; defaults to the project file's directory.
+        #[arg(long, value_name = "PATH", requires = "check_landings")]
+        repo: Option<PathBuf>,
     },
     /// Write a verified copy of the store into the host-local backup directory.
     ///
@@ -781,6 +787,21 @@ enum WorkCommand {
         /// Host-measured source fingerprint at completion time; checked against the evaluated one when the policy requires source freshness.
         #[arg(long, value_name = "FINGERPRINT")]
         source_fingerprint: Option<String>,
+        /// Record where the work landed: the pushed commit (with --remote, --branch and --pushed-at).
+        #[arg(long, value_name = "COMMIT", requires_all = ["remote", "branch", "pushed_at"])]
+        landed: Option<String>,
+        /// The remote the landed commit was pushed to, such as origin.
+        #[arg(long, requires = "landed")]
+        remote: Option<String>,
+        /// The branch on that remote, such as master.
+        #[arg(long, requires = "landed")]
+        branch: Option<String>,
+        /// When the landed commit was pushed (RFC 3339).
+        #[arg(long, value_name = "RFC3339", requires = "landed")]
+        pushed_at: Option<chrono::DateTime<chrono::Utc>>,
+        /// Build fingerprint of the binary installed from the landing, when one was installed: the `build_fingerprint` that `engram readiness --json` reports for it.
+        #[arg(long, value_name = "FINGERPRINT", requires = "landed")]
+        installed_build: Option<String>,
     },
     /// Offer the item you hold to another session, accept an offer, or cancel yours.
     Handoff {
@@ -1106,14 +1127,29 @@ async fn run_cli() -> Result<ExitCode> {
             json,
             recover_policy,
             repair_projections,
-        } => doctor(
-            &database,
-            identity,
-            &project_id,
-            json,
-            recover_policy,
-            repair_projections,
-        )?,
+            check_landings,
+            repo,
+        } => {
+            // The project root holds the project file; it is the default repository.
+            let repository = match (check_landings, repo) {
+                (false, _) => None,
+                (true, Some(repo)) => Some(repo),
+                (true, None) => Some(
+                    std::path::absolute(&cli.project_file)?
+                        .parent()
+                        .map_or_else(PathBuf::new, Path::to_path_buf),
+                ),
+            };
+            doctor(
+                &database,
+                identity,
+                &project_id,
+                json,
+                recover_policy,
+                repair_projections,
+                repository.as_deref(),
+            )?;
+        }
         Command::Backup { out } => backup(&database, out)?,
         Command::Restore { from, replace } => restore(&database, &from, replace)?,
         Command::Graph {
@@ -1846,7 +1882,25 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             links,
             link_basis,
             source_fingerprint,
+            landed,
+            remote,
+            branch,
+            pushed_at,
+            installed_build,
         } => {
+            // Clap requires the whole landing together, so it is one record.
+            let landing = match (landed, remote, branch, pushed_at) {
+                (Some(commit), Some(remote), Some(branch), Some(pushed_at)) => {
+                    Some(engram::domain::CompletionLanding {
+                        commit,
+                        remote,
+                        branch,
+                        pushed_at,
+                        installed_build,
+                    })
+                }
+                _ => None,
+            };
             let (work_ref, summary) = match args.len() {
                 0 => (None, None),
                 1 => {
@@ -1880,6 +1934,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                         summary,
                         note,
                         source_fingerprint,
+                        landing,
                     },
                     now,
                 ),

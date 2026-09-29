@@ -326,6 +326,9 @@ pub struct WorkCompleteInput {
     /// project policy requires acceptance-evaluation source freshness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
+    /// Where the work landed, recorded in the seal as asserted provenance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing: Option<crate::domain::CompletionLanding>,
     #[serde(default)]
     pub idempotency_key: String,
 }
@@ -518,6 +521,12 @@ pub struct WorkCompletedReceipt {
     /// seal and its bound evaluation; `None` when that read failed.
     #[serde(skip)]
     pub(crate) acceptance_provenance: Option<WorkAcceptanceProvenance>,
+    /// Where the work landed, read from the frozen seal like the provenance.
+    #[serde(skip)]
+    pub(crate) landing: Option<crate::domain::CompletionLanding>,
+    /// Why a replay could not read the landing back from its seal.
+    #[serde(skip)]
+    pub(crate) landing_unavailable: Option<&'static str>,
     pub obligation_page: WorkObligationPage,
 }
 

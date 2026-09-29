@@ -81,6 +81,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
                 .work_complete(
                     WorkCompleteInput {
                         source_fingerprint: None,
+                        landing: None,
                         links: Vec::new(),
                         link_basis: None,
                         capture: Some(WorkCompletionCaptureInput {
@@ -621,6 +622,7 @@ fn show_emits_every_page_row_in_dense_feed_order() {
             .work_complete(
                 WorkCompleteInput {
                     source_fingerprint: None,
+                    landing: None,
                     links: Vec::new(),
                     link_basis: None,
                     capture: Some(WorkCompletionCaptureInput {

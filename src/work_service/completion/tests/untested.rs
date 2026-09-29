@@ -85,6 +85,7 @@ fn commit_linked_completion_without_finishing(
                     released_resource_leases: Vec::new(),
                 },
                 source_fingerprint: None,
+                landing: None,
                 actor,
                 idempotency_key: scoped_key,
                 completed_at: now,

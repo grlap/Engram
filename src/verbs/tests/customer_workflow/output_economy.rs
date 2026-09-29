@@ -172,6 +172,7 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(work_ref.clone()),
@@ -187,6 +188,7 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
             Some(&work_ref),
             WorkCompleteInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: Some(WorkCompletionCaptureInput {

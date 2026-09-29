@@ -17,6 +17,7 @@ pub(crate) use work::acceptance_attempt_identity;
 pub(crate) use work::validate_work_plan;
 pub use work::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
+    RecordedLanding,
 };
 
 pub(crate) use project_memory::validate_context_generation;

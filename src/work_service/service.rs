@@ -888,30 +888,35 @@ impl LocalWorkService {
         // disclosed by class rather than swallowed, so a broken evaluated
         // binding never reads like self-assertion. Missing provenance is
         // reported as unavailable; the evidence read supplies diagnostics.
-        let (acceptance_provenance, acceptance_provenance_error_class) =
-            if matches!(text, FocusText::Full)
-                && status.work.lifecycle == crate::WorkLifecycle::Completed
-                && !completed_by_record
-            {
-                match run.as_ref().and_then(|run| {
+        // The landing the seal records is read from the same bound seal.
+        let (mut acceptance_provenance, mut acceptance_provenance_error_class) = (None, None);
+        let (mut landing, mut landing_unavailable) = (None, None);
+        if matches!(text, FocusText::Full)
+            && status.work.lifecycle == crate::WorkLifecycle::Completed
+        {
+            let sealed = run
+                .as_ref()
+                .and_then(|run| {
                     run.completion_seal
                         .as_ref()
                         .map(|seal_id| (run.run_id, seal_id))
-                }) {
-                    Some((run_id, seal_id)) => {
-                        match super::acceptance::bound_seal(store, seal_id, work_id, run_id) {
-                            Ok(seal) => match super::acceptance::provenance(store, &seal) {
-                                Ok(provenance) => (Some(provenance), None),
-                                Err(error) => (None, Some(super::advisory_error_class(&error))),
-                            },
-                            Err(_) => (None, None),
-                        }
+                })
+                .filter(|_| !completed_by_record)
+                .map(|(run_id, seal_id)| {
+                    super::acceptance::bound_seal(store, seal_id, work_id, run_id)
+                });
+            if let Some(Ok(seal)) = &sealed {
+                match super::acceptance::provenance(store, seal) {
+                    Ok(provenance) => acceptance_provenance = Some(provenance),
+                    Err(error) => {
+                        acceptance_provenance_error_class =
+                            Some(super::advisory_error_class(&error));
                     }
-                    None => (None, None),
                 }
-            } else {
-                (None, None)
-            };
+            }
+            (landing, landing_unavailable) =
+                completed_landing(completed_by_record, sealed.as_ref());
+        }
         // Agent detail for an open item under an evaluated policy: the
         // evidence basis an evaluator passes back, and the newest record with
         // the freshness completion would apply now. Self-asserted projects keep their
@@ -957,6 +962,8 @@ impl LocalWorkService {
             acceptance_evaluation,
             evidence_basis,
             acceptance_provenance,
+            landing,
+            landing_unavailable,
             session: agent_work_session(&session),
             detached_from,
             status,
@@ -1154,6 +1161,26 @@ fn restored_history_view(records: Vec<crate::RestoredRecord>) -> RestoredHistory
         total,
         items: entries,
         omitted,
+    }
+}
+
+/// The landing a completed item's `show` discloses: the record its native
+/// seal holds, or why none can be read. A completion restored from history,
+/// or a run without a seal, has no native seal to read, and a seal that
+/// cannot be read is named by class; either way the landing is unavailable,
+/// never "no landing recorded".
+pub(super) fn completed_landing(
+    completed_by_record: bool,
+    sealed: Option<&Result<crate::CompletionSeal, StoreError>>,
+) -> (
+    Option<crate::domain::CompletionLanding>,
+    Option<&'static str>,
+) {
+    match (completed_by_record, sealed) {
+        (true, _) => (None, Some("restored completion")),
+        (false, None) => (None, Some("no completion seal")),
+        (false, Some(Ok(seal))) => (seal.landing.clone(), None),
+        (false, Some(Err(error))) => (None, Some(super::advisory_error_class(error))),
     }
 }
 

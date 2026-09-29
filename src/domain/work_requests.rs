@@ -450,6 +450,9 @@ pub struct CompleteWorkRequest {
     /// project policy requires source freshness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
+    /// Where the work landed, recorded in the seal as asserted provenance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing: Option<super::CompletionLanding>,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub completed_at: DateTime<Utc>,

@@ -95,6 +95,7 @@ fn note_window_family_index_avoids_observation_and_restored_body_probes() {
             .done(
                 DoneInput {
                     source_fingerprint: None,
+                    landing: None,
                     links: Vec::new(),
                     link_basis: None,
                     work_ref: Some(work.clone()),
@@ -376,6 +377,7 @@ fn note_window_gate_families_survive_restore_and_late_restored_gates() {
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(work.clone()),

@@ -176,7 +176,7 @@ engram work claim --under PARENT [--ttl SECONDS] [--recover "why"]   # hold the 
 engram work update REF [--release [--reason "why"] | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
-engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
+engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N] [--landed COMMIT --remote R --branch B --pushed-at RFC3339 [--installed-build FINGERPRINT]]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
 engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N]]]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
@@ -1057,6 +1057,11 @@ engram doctor --recover-policy [--json]
 # Explicitly rebuild only declared indexes, triggers, and FTS projections.
 # Ordinary open never performs this repair implicitly.
 engram doctor --repair-projections [--json]
+
+# On request only: check each landing the seals record against a local git
+# repository (default: the project file's directory). Reads local objects and
+# remote-tracking refs only; never fetches.
+engram doctor --check-landings [--repo PATH] [--json]
 
 # Host/operator boundary: activate a new immutable policy version. The
 # optional expected policy id is the `id=` reported by doctor and prevents a stale

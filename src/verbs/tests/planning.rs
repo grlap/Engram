@@ -284,6 +284,7 @@ fn phoenix_acceptance_replacement_is_presence_aware_audited_and_terminal_safe() 
         .done(
             DoneInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(work_ref.clone()),

@@ -4,6 +4,32 @@ use super::super::*;
 mod held;
 
 #[test]
+fn a_completed_landing_without_a_readable_native_seal_is_unavailable() {
+    use super::completed_landing;
+    // An intact store holds no native completion without a seal, so this
+    // exercises the defensive branch directly; the restored and unreadable
+    // cases also run end to end through `show`.
+    assert_eq!(
+        completed_landing(false, None),
+        (None, Some("no completion seal"))
+    );
+    let unreadable = || StoreError::InvalidWorkProjection("unreadable seal".into());
+    let failed: Result<crate::domain::CompletionSeal, StoreError> = Err(unreadable());
+    assert_eq!(
+        completed_landing(true, None),
+        (None, Some("restored completion"))
+    );
+    assert_eq!(
+        completed_landing(true, Some(&failed)),
+        (None, Some("restored completion"))
+    );
+    assert_eq!(
+        completed_landing(false, Some(&failed)),
+        (None, Some(advisory_error_class(&unreadable())))
+    );
+}
+
+#[test]
 fn process_default_work_session_reuse_expires_before_protocol_mutation() {
     let retained = process_default_session_at(10, at(0));
     validate_process_default_work_session(
@@ -686,6 +712,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         .work_complete(
             WorkCompleteInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: None,

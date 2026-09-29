@@ -2,6 +2,18 @@ use super::*;
 
 mod links;
 
+/// A sealed completion's landing is frozen with it: naming a landing its seal
+/// does not already record is a late finding, refused like any other change
+/// to completed work, so a later push is recorded in a note.
+fn landing_frozen(input: &WorkCompleteInput, seal: &CompletionSeal) -> Result<(), StoreError> {
+    match &input.landing {
+        Some(landing) if seal.landing.as_ref() != Some(landing) => Err(StoreError::InvalidWork(
+            COMPLETED_WORK_LATE_FINDING_REFUSAL.into(),
+        )),
+        _ => Ok(()),
+    }
+}
+
 impl LocalWorkService {
     /// Completes ambient focused work under inferred run/claim/fence state.
     ///
@@ -36,6 +48,10 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkCompleteResult, StoreError> {
         links::validate_shape(&input)?;
+        // A malformed landing is refused before anything is recorded.
+        if let Some(landing) = &input.landing {
+            landing.validate().map_err(StoreError::InvalidWork)?;
+        }
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         // The work and retained claim jointly identify the run, including
@@ -100,6 +116,19 @@ impl LocalWorkService {
                         receipt.run_id,
                     )
                     .ok();
+                    // A landing that cannot be read back is disclosed as
+                    // unavailable, never silently dropped from the receipt.
+                    match acceptance::bound_seal(
+                        &store,
+                        &receipt.seal,
+                        receipt.work_id,
+                        receipt.run_id,
+                    ) {
+                        Ok(seal) => receipt.landing = seal.landing,
+                        Err(error) => {
+                            receipt.landing_unavailable = Some(advisory_error_class(&error));
+                        }
+                    }
                     return Ok(result);
                 }
                 WorkCompleteResult::Refused(_) => {
@@ -153,6 +182,7 @@ impl LocalWorkService {
                                 .into(),
                         ));
                     }
+                    landing_frozen(&input, &seal)?;
                     if !input.links.is_empty() {
                         // Mirror prepare_completion_evidence: capture keys its
                         // pre-checkpoint cut; no capture keys the head it read,
@@ -260,6 +290,7 @@ impl LocalWorkService {
                     "completed work has no canonical completion seal".into(),
                 )
             })?;
+            landing_frozen(&input, &seal)?;
             let result = completion_result(&store, &seal)?;
             store.finish_work_protocol_attempt(
                 &self.project_id,
@@ -371,6 +402,7 @@ impl LocalWorkService {
                     released_resource_leases: Vec::new(),
                 },
                 source_fingerprint: input.source_fingerprint.clone(),
+                landing: input.landing.clone(),
                 actor,
                 idempotency_key: scoped_key,
                 completed_at: now,

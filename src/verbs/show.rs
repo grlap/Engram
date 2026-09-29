@@ -434,6 +434,53 @@ pub(super) fn acceptance_provenance_value(
     }
 }
 
+/// What a completed item's landing is called when its seal records none.
+pub(super) const NO_LANDING_RECORDED: &str = "no landing recorded";
+
+/// Where a completed item's work landed, as one `done`/`show` line. An
+/// `unavailable` reason means the seal was not read, which says nothing about
+/// whether it records a landing.
+pub(super) fn landing_line(
+    landing: Option<&crate::domain::CompletionLanding>,
+    unavailable: Option<&str>,
+) -> String {
+    if let Some(reason) = unavailable {
+        return format!("landing: unavailable ({reason})");
+    }
+    let Some(landing) = landing else {
+        return format!("landing: {NO_LANDING_RECORDED}");
+    };
+    // Every stored text passes the terminal text policy: a seal written
+    // around validation must not reach the terminal raw.
+    let installed = landing
+        .installed_build
+        .as_deref()
+        .map(|build| format!(", installed build {}", super::terminal_safe_line(build)))
+        .unwrap_or_default();
+    format!(
+        "landing: {} on {}/{}, pushed {}{installed}",
+        super::terminal_safe_line(&landing.commit),
+        super::terminal_safe_line(&landing.remote),
+        super::terminal_safe_line(&landing.branch),
+        landing.pushed_at.to_rfc3339(),
+    )
+}
+
+/// The same landing as structured receipt data: the record, the words that
+/// say none was recorded, or why it could not be read.
+pub(super) fn landing_value(
+    landing: Option<&crate::domain::CompletionLanding>,
+    unavailable: Option<&str>,
+) -> serde_json::Value {
+    if let Some(reason) = unavailable {
+        return serde_json::Value::String(format!("unavailable ({reason})"));
+    }
+    landing.map_or_else(
+        || serde_json::Value::String(NO_LANDING_RECORDED.into()),
+        |landing| serde_json::json!(landing),
+    )
+}
+
 fn assurance_word(assurance: crate::domain::AssuranceLevel) -> String {
     serde_json::to_value(assurance)
         .ok()
@@ -572,6 +619,9 @@ pub(super) struct ShowReceiptValue {
     /// Where a completed item's sealed acceptance came from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance: Option<serde_json::Value>,
+    /// Where a completed item's work landed, or that none was recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) landing: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_evidence: Option<super::acceptance::AcceptanceEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -951,6 +1001,10 @@ pub(super) fn show_lines(
         if let Some(class) = view.acceptance_provenance_error_class {
             lines.push(format!("  diagnostic class: {class}"));
         }
+        lines.push(landing_line(
+            view.landing.as_ref(),
+            view.landing_unavailable,
+        ));
     } else {
         lines.push("acceptance:".into());
     }
@@ -1241,6 +1295,8 @@ pub(super) fn show_receipt_value(
             }
             _ => None,
         },
+        landing: (work.lifecycle == WorkLifecycle::Completed)
+            .then(|| landing_value(view.landing.as_ref(), view.landing_unavailable)),
         acceptance_evidence: view
             .acceptance_evidence
             .as_ref()

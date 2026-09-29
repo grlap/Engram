@@ -699,6 +699,8 @@ fn completion_result(
         acceptance_evidence: Some(WorkAcceptanceEvidence::from_seal(seal).with_previews(store)),
         acceptance_evidence_error_class: None,
         acceptance_provenance: acceptance::provenance(store, seal).ok(),
+        landing: seal.landing.clone(),
+        landing_unavailable: None,
         obligation_page: sealed_work_obligation_page(store, seal)?,
     }))
 }

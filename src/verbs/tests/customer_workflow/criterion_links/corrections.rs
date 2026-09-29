@@ -51,6 +51,7 @@ fn criterion_links_pending_basis_refusal_never_discloses_derived_key() {
     ));
     let mut explicit = crate::work_service::WorkCompleteInput {
         source_fingerprint: None,
+        landing: None,
         links: vec![WorkCriterionLinkInput {
             criterion: 1,
             locator: "not-a-note".into(),

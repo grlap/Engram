@@ -1259,6 +1259,7 @@ fn evaluated_completion_unions_verdict_citations_into_the_seal_evidence_and_chec
             Some(&work.work_id.0.to_string()),
             crate::work_service::WorkCompleteInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: Some(crate::work_service::WorkCompletionCaptureInput {

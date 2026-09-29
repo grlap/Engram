@@ -71,6 +71,7 @@ fn assert_service_citation_refusal(malformed: bool) {
             Some(&reference),
             WorkCompleteInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: None,
@@ -246,6 +247,7 @@ fn criterion_disclosure_words_keep_work_evidence_separate_and_frozen() {
         .unwrap();
     let input = DoneInput {
         source_fingerprint: None,
+        landing: None,
         links: Vec::new(),
         link_basis: None,
         work_ref: Some(reference.clone()),
@@ -329,6 +331,7 @@ fn criterion_disclosure_explicit_and_mixed_core_inputs_use_seal_positions() {
             .unwrap();
         let input = WorkCompleteInput {
             source_fingerprint: None,
+            landing: None,
             links: Vec::new(),
             link_basis: None,
             capture: None,
@@ -679,6 +682,7 @@ fn criterion_disclosure_absent_transient_facts_still_render_optional_children() 
             Some(&reference),
             WorkCompleteInput {
                 source_fingerprint: None,
+                landing: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: Some(crate::work_service::WorkCompletionCaptureInput {
@@ -913,6 +917,7 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
         let reference = claimed(&verbs, vec!["delivered".into()]);
         let core_input = WorkCompleteInput {
             source_fingerprint: None,
+            landing: None,
             links: Vec::new(),
             link_basis: None,
             capture: Some(crate::work_service::WorkCompletionCaptureInput {
@@ -1061,14 +1066,24 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
             assert!(text.contains("audit trail remains readable"));
             assert!(!text.contains("criteria unlinked"));
             assert!(emitted_receipt_bytes(&readable) < MAX_AGENT_WORK_RESPONSE_BYTES);
+            // The landing is read from the same seal: unavailable, with the
+            // read's class, never "no landing recorded".
+            assert_eq!(healthy.value["landing"], "no landing recorded");
+            assert_eq!(
+                readable.value["landing"],
+                format!("unavailable ({error_class})")
+            );
+            assert!(text.contains(&format!("landing: unavailable ({error_class})")));
             // All item, note/history rows, navigation and read-cut data survive;
-            // only acceptance provenance and its failed advisory disclosure change.
+            // only the seal's disclosures (acceptance provenance, its failed
+            // advisory disclosure, and the landing) change.
             let without_disclosure = |mut value: serde_json::Value| {
                 let fields = value.as_object_mut().unwrap();
                 fields.remove("acceptance");
                 fields.remove("acceptance_evidence");
                 fields.remove("acceptance_evidence_unavailable");
                 fields.remove("acceptance_evidence_error_class");
+                fields.remove("landing");
                 value
             };
             assert_eq!(
