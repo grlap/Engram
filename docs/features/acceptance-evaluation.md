@@ -786,6 +786,58 @@ process:
   assurance, so this needs the host channel for the pilot project; lowering the
   assurance to dodge that prerequisite is not the plan.
 
+### Evaluation unit and re-evaluation
+
+The evaluation unit is **one item's run at one work revision and its judged
+source revision, if known**. When the newest evaluation remains non-pass or
+stale under [Freshness](#freshness) and a new acceptance judgment is needed,
+the host obtains a whole new record; it never patches individual verdicts.
+Every verdict in the new record is a fresh judgment of all evidence up to
+its cut. Earlier rationale may be quoted, but never replaces that judgment;
+the core never stitches per-criterion verdicts across records.
+
+The host may ask for that judgment in the **same independent evaluator
+session**, including when only evidence has changed, while current policy and
+task pin permit `independent_session`, the session has never held or executed
+the item's run (R1/R4/F5/F7), and it has received no requester follow-up.
+This is reuse within `independent_session`, not Engram's `same_session` mode.
+The previous attempt is settled before a fresh `--attempt` key is minted
+(R8 and the pending-attempt rule above). For each new judgment, the host
+re-reads the inputs above, including current criteria, bases, source revision,
+policy, task pin, carried failure and open obligations, then gives the
+evaluator a refreshed host-authored brief.
+
+When the source moves from the judged revision, the evaluator judges every
+criterion afresh against the whole new revision. The holder reruns bound checks
+there; a pass on a bound criterion cites its rerun (R5/F8). An R3b
+`acceptance_evaluation_resubmit` refusal leads to a fresh judgment after
+re-reading the evidence, under a new key and without silently advancing the
+cut; `acceptance_evaluation_void` from a source
+move likewise requires a whole new inspection. A carried failure is
+acknowledged with `--supersedes` (R11).
+
+One evaluator may serve several items delivered together, but each keeps its
+own eligibility, attempt key, bases, source, task pin and receipt; one item's
+result never satisfies another.
+
+The first and refreshed briefs are host-authored from Engram's durable records,
+not the requesting session's summary. The initial requester's text may appear
+in the first brief as attributed context, never criterion evidence. Requester
+follow-up text, if received, is likewise attributed context and ends that
+session's reuse eligibility; a re-evaluation request carries no requester free
+text. How a host settles attempts, builds the brief, bounds attempts per
+session and pages evidence is the host's to specify.
+
+**Rationale.** The 2026-09-29 evaluation reuse design review, recorded in
+Engram's work feed, examined 38 repeated evaluator runs: 13 had changed input,
+five had no evaluation recorded, and 20 had insufficient evidence. In 11 of
+those 20, later evidence did not yet exist; in nine it existed but was missed,
+truncated, or indirect in the brief or judgment. In four of the nine, the
+missed evidence was written shortly before the run and was already in the
+brief; this does not establish a brief-construction race. The counts support
+fewer **new sessions** through reuse and better evidence presentation, not
+fewer **judgments** or an automatic pass after a correction.
+
 ### Turns, focus and evaluation timing
 
 A host reports each turn's execution observations, a source change among them,
