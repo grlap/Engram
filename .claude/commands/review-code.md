@@ -29,7 +29,10 @@ git ls-files --others --exclude-standard
 
 Run each of these as its own standalone command from the working directory,
 one command per call. A Claude reviewer uses the Bash tool; the read-only
-policy refuses its PowerShell tool. A Codex reviewer uses the default shell
+policy refuses its PowerShell tool. A Kimi reviewer runs shell commands only
+through the Bash tool, which is bash, approved by the host gate for read-only
+commands.
+A Codex reviewer uses the default shell
 of its `exec_command` tool (PowerShell on Windows) and does not ask for shell
 `bash` or a Git Bash path: on Windows those can resolve to WSL, which may be
 missing, and then every command fails before it runs. A read-only reviewer
@@ -37,8 +40,9 @@ delegated by TermAl runs under a read-only command policy. It governs which
 commands run, not a Codex reviewer's shell:
 
 - Do not add helpers the policy does not list, such as `cmp`, to a command or
-  chain. A Claude reviewer reads files with the Read, Grep and Glob tools; a
-  Codex reviewer reads them with `Get-Content` or `rg` in its default shell.
+  chain. A Claude or Kimi reviewer reads files with the Read, Grep and Glob
+  tools; a Codex reviewer reads them with `Get-Content` or `rg` in its default
+  shell.
 - Do not retarget Git with `git -C`, `--git-dir`, `--work-tree` or
   `--namespace`. These are refused by design, because a repository chosen
   that way can carry configuration that runs programs.
@@ -57,7 +61,7 @@ does not show you what changed, so it never replaces reading the diff.
 ## 2. Load reviewer lenses
 
 List every `.md` file under `.claude/reviewers/` and read each one. A Claude
-reviewer lists them with the Glob tool; a Codex reviewer runs
+or Kimi reviewer lists them with the Glob tool; a Codex reviewer runs
 `rg --files .claude/reviewers -g '*.md'`, which works in any shell. Apply each
 lens inline in this session. Do not create one child per lens.
 

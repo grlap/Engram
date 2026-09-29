@@ -572,10 +572,11 @@ next commands, then wait.
 
 ## Review cadence
 
-Changes are reviewed through the delegated review workflow (one Codex and one
-Claude review pass over staged, unstaged, and untracked changes) before any
-commit is proposed. Review findings that warrant follow-up work become Engram
-items, not inline TODOs.
+Changes are reviewed through the delegated review workflow (two independent
+review passes from different vendors, Codex and Claude, with Kimi standing in
+for an unavailable vendor, over staged, unstaged, and untracked changes)
+before any commit is proposed. Review findings that warrant follow-up work
+become Engram items, not inline TODOs.
 
 ## Documentation conventions
 

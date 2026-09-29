@@ -1,6 +1,6 @@
 ---
 name: review-changes
-description: Run Engram quality gates, freeze the worktree, and obtain independent Codex and Claude reviews.
+description: Run Engram quality gates, freeze the worktree, and obtain two independent reviews from different vendors (Codex and Claude, or Kimi for an unavailable one).
 metadata:
   termal:
     title:
@@ -20,9 +20,15 @@ runner as described below; it does not become a reviewer or validation owner.
 authority.** That is Greg's word or, for commit, push and install only, the
 standing approval in AGENTS.md "Authority and Git".
 
-This workflow requires TermAl MCP delegation tools. Attempt exactly two review
-child spawns: one Codex and one Claude. Do not substitute platform subagents,
-shell processes, raw HTTP, or nested TermAl review sessions for those reviewers.
+This workflow requires TermAl MCP delegation tools. Obtain exactly two
+reviewers from different vendors: spawn one Codex and one Claude; when one
+vendor is unavailable (a usage limit or outage met in this round, with its
+refusal text recorded on the item), spawn Kimi in its place with the title
+`Kimi /review-code`. The stand-in replaces the unavailable vendor's reviewer,
+whether its spawn was refused or its result was lost to that vendor's usage
+limit or outage, so a round never has more than two reviews that count. Do not
+substitute platform subagents, shell processes, raw HTTP, or nested TermAl
+review sessions for those reviewers.
 
 Greg's 2026-09-26 decisions also cover the work around each review:
 
@@ -248,13 +254,17 @@ pass that absolute path to both `--write` and `--check`. Use an absolute path
 to this script too when invoking it from a subdirectory. The invocation's
 working directory still selects which worktree is checked.
 
-## 4. Spawn exactly two reviewers
+## 4. Spawn the two reviewers
 
-Use `termal_spawn_session` twice from the current parent, both with mode
-`reviewer` and `writePolicy: readOnly`:
+Use `termal_spawn_session` once per reviewer from the current parent, each
+with mode `reviewer` and `writePolicy: readOnly`:
 
 1. Codex, title `Codex /review-code`.
 2. Claude, title `Claude /review-code`.
+
+When one vendor is unavailable (a usage limit or outage met in this round,
+with its refusal text recorded on the item), spawn Kimi in its place with the
+title `Kimi /review-code`.
 
 Give each a multi-line prompt. Its first line tells the reviewer to read
 `.claude/commands/review-code.md` in the worktree and follow it. The rest
@@ -269,7 +279,10 @@ into a High). The brief may point at the change since the previous freeze,
 but both reviewers review the whole input.
 
 If one spawn fails after the other succeeds, continue waiting for the created
-reviewer and report the missing one as unavailable.
+reviewer. When the failure is that vendor's unavailability (a usage limit or
+outage), record the refusal text on the item and spawn Kimi in its place on
+the same freeze. For any other failure, or when the stand-in fails too, report
+the missing reviewer as unavailable.
 
 ## 5. Wait through TermAl fan-in
 
@@ -311,21 +324,26 @@ to accept an earlier review.
 
 Fetch both structured result packets using `termal_get_session_result`.
 Validated structured submissions are authoritative. If a submission is
-missing or failed, report that reviewer as unavailable; never infer a clean
-review from prose output.
+missing or failed, report that reviewer as unavailable; when the cause is
+that vendor's unavailability, record the refusal text on the item and spawn
+Kimi in its place on the same freeze, as section 4 describes, then wait for
+it through section 5 and fetch its result before presenting. When the
+stand-in's own submission is missing or failed, report that reviewer as
+unavailable instead of spawning again. Never infer a clean review from prose
+output.
 
 Present:
 
 ```markdown
 # Delegated Review
 
-## Codex /review-code
+## <vendor> /review-code
 - Status:
 - Findings:
 - Changed files:
 - Commands run:
 
-## Claude /review-code
+## <vendor> /review-code
 - Status:
 - Findings:
 - Changed files:

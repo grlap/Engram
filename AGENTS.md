@@ -67,10 +67,15 @@ user profile:
     changeset touching only `.md` files instead passes the link check and
     the AGENTS/CLAUDE identity check on that tree, each with its input
     fingerprint checked at completion;
-  - the latest review round from both Codex and Claude, read-only on a
-    verified freeze of that same tree, is clean (no outstanding in-scope
-    findings), and every in-scope finding from earlier rounds, Low and Note
-    included, was fixed and reviewed again; any out-of-scope finding was
+  - the latest review round from two independent read-only reviewers of
+    different vendors, Codex and Claude, on a verified freeze of that same
+    tree, is clean (no outstanding in-scope findings), and every
+    in-scope finding from earlier rounds, Low and Note included, was fixed
+    and reviewed again; while one of the two is unavailable (a usage limit
+    or outage, recorded on the item with the refusal text), Kimi stands in
+    for the unavailable vendor under Greg's word of 2026-09-29 ('if clean
+    you have a go', 'you should just check-in, that should be the rule'),
+    and every other condition is unchanged; any out-of-scope finding was
     filed as an independent root with provenance. An in-scope finding left
     unfixed, even one rejected on evidence, goes to Greg;
   - the changeset delivers its items' acceptance criteria, and a
@@ -91,7 +96,8 @@ user profile:
   projection repair or migration, a criterion cannot be met or is
   disputed, the changeset goes beyond its items' scope, a rebase,
   force-push or history rewrite is needed, or a reviewer is unavailable
-  (an unavailable review is not a clean review).
+  and no stand-in under the review condition above has reviewed the same
+  frozen tree (an unavailable review is not a clean review).
 - Greg's word "commit" for a presented changeset also authorizes pushing
   it and installing its build (2026-09-23). `readiness` checks only schema
   and policy admission, so first judge the changeset itself. When it
@@ -376,6 +382,8 @@ here for independent runtime recovery. The [workflow document](docs/agent-pair-w
 provides the source; its remaining pilot proposal is not adopted. Current user
 instructions and applicable project quality requirements govern execution.
 These rules do not grant commit, push, installation, or restart authority.
+Rule 2's reviewer pair was amended on 2026-09-29, on Greg's word of that date,
+to let Kimi stand in for an unavailable vendor.
 
 1. **The host owns validation of its safeguards.** TermAl owns tests proving
    denied writes, interpreter restrictions, and other host security behavior.
@@ -386,8 +394,10 @@ These rules do not grant commit, push, installation, or restart authority.
    belong to the review; a parent's result cannot replace a missing reviewer
    check.
 2. **One parent owns each review input.** For Engram: implement corrections,
-   run required project tests, freeze the current input, obtain exactly one
-   Codex and one Claude read-only review, then consolidate findings. The parent
+   run required project tests, freeze the current input, obtain exactly two
+   independent read-only reviews from different vendors — Codex and Claude,
+   with Kimi standing in for an unavailable vendor as the standing approval
+   describes — then consolidate findings. The parent
    owns gates, reviewer lifecycle, and acceptance; leaves inspect and report.
    Use supported host tools for required checks. Keep host-security acceptance
    separate from product review, with no competing owners or duplicate proof
@@ -422,8 +432,9 @@ new input covered by subsequent review. The user's decision applies immediately;
 waiting to integrate its documentation does not postpone it.
 
 - `/review-changes` runs parent-owned quality gates, freezes the worktree, and
-  delegates exactly one Codex and one Claude `/review-code` reviewer through
-  TermAl with `writePolicy: readOnly`.
+  delegates exactly two `/review-code` reviewers from different vendors, one
+  Codex and one Claude, through TermAl with `writePolicy: readOnly`; Kimi
+  stands in for an unavailable vendor as the standing approval describes.
 - A bounded execution worker may run the parent's logged gate batch once;
   it is not a third reviewer. The parent retains validation ownership,
   inspects and attributes results, and records gates. The worker must not

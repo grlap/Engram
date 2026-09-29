@@ -11,6 +11,8 @@ to document, distribute, and confirm their durable recovery. This section is
 adopted guidance; the pilot proposal below remains a proposal. Current user
 instructions and each project's applicable quality requirements govern execution.
 This decision does not grant commit, push, installation, or restart authority.
+Rule 2's reviewer pair was amended on 2026-09-29, on Greg's word of that date,
+to let Kimi stand in for an unavailable vendor.
 
 1. **The host owns validation of its safeguards.** TermAl owns tests proving
    denied writes, interpreter restrictions, and other host security behavior.
@@ -21,8 +23,11 @@ This decision does not grant commit, push, installation, or restart authority.
    belong to the review; a parent's result cannot replace a missing reviewer
    check.
 2. **One parent owns each review input.** For Engram: implement corrections,
-   run required project tests, freeze the current input, obtain exactly one
-   Codex and one Claude read-only review, then consolidate findings. The parent
+   run required project tests, freeze the current input, obtain exactly two
+   independent read-only reviews from different vendors — Codex and Claude,
+   with Kimi standing in for an unavailable vendor as the
+   [standing approval](../AGENTS.md#authority-and-git) describes — then
+   consolidate findings. The parent
    owns gates, reviewer lifecycle, and acceptance; leaves inspect and report.
    Use supported host tools for required checks. Keep host-security acceptance
    separate from product review, with no competing owners or duplicate proof
@@ -215,10 +220,11 @@ actually defines and verifies that boundary.
 ### 5. Obtain independent review
 
 For Engram, the parent follows the existing `/review-changes` contract: the
-gates and exactly one Codex and one Claude `/review-code` child through TermAl
-with `writePolicy: readOnly` run in parallel on one frozen input (Greg,
-2026-09-26), then freeze verification and consolidated results once the gate
-has passed.
+gates and exactly two `/review-code` children from different vendors, one
+Codex and one Claude, with Kimi standing in for an unavailable vendor,
+through TermAl with `writePolicy: readOnly` run in parallel on one frozen
+input (Greg, 2026-09-26), then freeze verification and consolidated results
+once the gate has passed.
 Only `/review-code` is delegated as review. The parent owns `/review-changes`;
 a separate bounded execution worker may run its logged gate batch once without
 becoming a reviewer or validation owner. Follow the command's completion-driven
@@ -234,9 +240,10 @@ spawn more reviewers. Either persistent partner may request additional bounded
 investigation when needed, but the named parent coordinates the formal round.
 
 The parent retrieves the authoritative results and verifies the freeze before
-using them. A missing or failed reviewer is reported as unavailable. A changed
-packet requires renewed validation and review under the repository's policy;
-previous approval applies only to the reviewed input.
+using them. A missing or failed reviewer is reported as unavailable once no
+stand-in under the `/review-changes` contract can replace it. A changed packet
+requires renewed validation and review under the repository's policy; previous
+approval applies only to the reviewed input.
 
 ### 6. Resolve findings and record acceptance
 
