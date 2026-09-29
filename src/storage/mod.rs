@@ -741,6 +741,10 @@ pub enum CarriedFailureRefusal {
     /// evaluation does not name that failing evaluation; or it names another
     /// record than the failure carried.
     Unacknowledged,
+    /// The evaluation names the failure the run's executor revised, but an
+    /// executor of the run submits it: a `same_session` evaluation, or one
+    /// whose session holds, held or executes the run.
+    SelfAcknowledged,
     /// The evaluation names a failure to supersede, but no failing
     /// evaluation's criteria were revised on this run.
     NothingToSupersede,
@@ -752,6 +756,7 @@ impl CarriedFailureRefusal {
     pub const fn word(self) -> &'static str {
         match self {
             Self::Unacknowledged => "carried_failure_unacknowledged",
+            Self::SelfAcknowledged => "carried_failure_self_acknowledged",
             Self::NothingToSupersede => "nothing_to_supersede",
         }
     }
@@ -762,7 +767,10 @@ impl CarriedFailureRefusal {
     pub const fn remedy(self) -> &'static str {
         match self {
             Self::Unacknowledged => {
-                "show the evaluator the failed verdicts and the criteria and their bindings before and after the revision, have it judge whether the revised criteria still deliver the requested outcome, and submit with --supersedes RECORD_ID naming the failed evaluation"
+                "show the evaluator the failed verdicts and the criteria and their bindings before and after the revision, have it judge whether the revised criteria still deliver the requested outcome, and submit with --supersedes RECORD_ID naming the failed evaluation; after a revision by the run's executor, that evaluator must be one that never held the run"
+            }
+            Self::SelfAcknowledged => {
+                "have an evaluator that never held this run name the failure: an independent_session evaluation, or a sub_agent under its own host-issued session, widening the acceptance-evaluation policy, or changing or clearing the task's evaluation mode, if they allow neither; or, while no later failing evaluation has named the failure, revise the criteria and their bindings back to the ones it judged"
             }
             Self::NothingToSupersede => {
                 "submit without --supersedes: no failing evaluation's criteria were revised on this run"

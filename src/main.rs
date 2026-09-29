@@ -718,7 +718,7 @@ enum WorkCommand {
         /// Sub-agent mode only: the host-attested parent session.
         #[arg(long, value_name = "SESSION", requires = "execution_identity")]
         parent_session: Option<String>,
-        /// Record id of the carried failing evaluation this one acknowledges, as show prints it; required after the run's executor revised the criteria that evaluation failed
+        /// Record id of the carried failing evaluation this one acknowledges, as show prints it; required after the run's executor revised the criteria that evaluation failed, and then only from an evaluator that never held the run (never same-session)
         #[arg(long, value_name = "RECORD_ID")]
         supersedes: Option<String>,
     },

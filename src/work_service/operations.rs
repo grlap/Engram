@@ -387,7 +387,8 @@ pub struct WorkEvaluateInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session: Option<String>,
     /// Record id of the carried failing evaluation this one acknowledges;
-    /// required after the run's executor revised its criteria.
+    /// required after the run's executor revised its criteria, and then only
+    /// from an evaluator that never held the run (never `same_session`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supersedes: Option<String>,
 }

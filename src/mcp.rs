@@ -296,7 +296,7 @@ struct EvaluateArgs {
     execution_identity: Option<String>,
     /// Sub-agent mode only: the host-attested parent session.
     parent_session: Option<String>,
-    /// Record id of the carried failing evaluation this one acknowledges, as `show` prints it in `carried_failure`. Required after the run's executor revised the criteria that evaluation failed; refused when no failure is carried.
+    /// Record id of the carried failing evaluation this one acknowledges, as `show` prints it in `carried_failure`. Required after the run's executor revised the criteria that evaluation failed, and then only from an evaluator that never held the run (never `same_session`); a failing evaluation that names it keeps it carried; refused when no failure is carried.
     supersedes: Option<String>,
 }
 

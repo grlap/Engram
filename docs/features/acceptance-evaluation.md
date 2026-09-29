@@ -260,38 +260,75 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
 - **R11 carried failure.** A revision retires the newest evaluation (F1), so
   without this rule an executor could reword the criteria an evaluation failed
   and complete on a fresh pass of the new wording, with the failure gone from
-  every surface. A failure is **carried** while the newest evaluation on the
-  run does not pass everywhere, a revision after it changed the criteria it
-  judged or their verification bindings (dropping or changing a binding
-  weakens a criterion as surely as rewording it), and the current criteria or
-  bindings still differ from them. Its other staleness reasons do not end the
-  carry, since a check or source change after a failure is the ordinary next
-  step, and a revision of other fields carries nothing. The revision counts as
-  the **executor's** when it was made under the run's claim, or by its
-  executor or a session that holds or held the run; any other session revised
-  it as a **planner**. The classification is read at each evaluation over
-  every such revision since the failure, so it only ever tightens: one
-  executor's revision among them is enough, even after a later rewording back
-  to the judged criteria and a planner's new revision, and a planner that
-  revised and later holds the run counts as the executor. Sessions are
-  asserted identities: an executor that releases the claim and revises from a
-  session that never held the run is classified as a planner, and its revision
-  is still disclosed. `show` discloses a carried failure either way, so the
-  next evaluation sees the failed verdicts and the criteria and their bindings
-  before and after, and judges whether the revised criteria still deliver the
-  requested outcome. After an executor's revision the evaluation must name the
-  failed record with `supersedes` (`--supersedes RECORD_ID`); after a
-  planner's alone it may. The record keeps that record id, so a seal bound to
-  it names the failure it superseded. `supersedes` naming another record, or
-  any record when no failure is carried, is refused. A newer evaluation ends
-  the carry, and so does anything that ends the item's run (completion,
-  disposal or detachment), since the carry belongs to that run. A new run
-  cannot shed a failure either: only completed work reopens, and completing
-  needed a fresh passing evaluation, which names the failure after an
-  executor's revision. Every revision of an item with an active run lands on
-  that run's feed; revisions there that do not lead to the item's current
-  criteria and bindings are a damaged projection, refused as such, never read
-  as nothing carried.
+  every surface. When the newest evaluation on the run does not pass
+  everywhere, a failure is **carried** in one of two cases:
+  - **It names a failure it superseded.** That failure, the root of the
+    `supersedes` chain, stays carried whatever the criteria are now: naming a
+    failure with a verdict that does not pass accepts no revision. Only a
+    passing evaluation that names it ends the carry, except that a
+    planner-only carry also ends with a newer evaluation that does not name
+    it.
+  - **It names nothing.** It is itself carried when a revision after it
+    changed the criteria it judged or their verification bindings (dropping
+    or changing a binding weakens a criterion as surely as rewording it) and
+    the current criteria or bindings still differ from them. Rewording back
+    to the judged contract ends the carry, and a revision of other fields
+    carries nothing.
+
+  For example, F fails C1 and the executor rewrites it to C2, so F is
+  carried. A reviewer that names F but fails C2 keeps F carried. If the
+  executor then reverts to C1, F is still carried, and so it is after a second
+  failing review of C1; a planner's revision in between is kept the same way.
+  Only a reviewer's pass that names F ends the carry.
+
+  Its other staleness reasons do not end the carry, since a check or source
+  change after a failure is the ordinary next step. A revision counts as the
+  **executor's** when it was made under the run's claim, or by its executor or
+  a session that holds or held the run; any other session revised it as a
+  **planner**. The classification is read at each evaluation over every such
+  revision since the carried failure, so it only ever tightens: one
+  executor's revision among them is enough, and a planner that revised and
+  later holds the run counts as the executor. Sessions are asserted
+  identities: an executor that releases the claim and revises from a session
+  that never held the run is classified as a planner, and its revision is
+  still disclosed.
+
+  `show` discloses a carried failure either way, so the next evaluation sees
+  the failed verdicts and the criteria and their bindings before and after,
+  and judges whether the revised criteria still deliver the requested
+  outcome. After an executor's revision the evaluation must name the failed
+  record with `supersedes` (`--supersedes RECORD_ID`), and someone else must
+  submit it. Identity admission already refuses an independent_session
+  evaluation from a session that holds, held or executes the run, with its
+  own reason; any other evaluation from an executor of the run, a
+  same_session one or a sub_agent whose own session holds, held or executes
+  the run, is refused `carried_failure_self_acknowledged`, so a sub_agent
+  that shares an executor's session is that executor. An independent_session
+  evaluation qualifies, and so does a sub_agent under its own session; a
+  sub_agent is independent only where the host, not the executor, composes
+  its brief, and an independent_session evaluator is only as distinct as the
+  session id it asserts (a local CLI caller can start a fresh session).
+  Engram records the evaluator's session and claims nothing stronger. The
+  check runs when the evaluation is recorded; at `done` the existing identity
+  rule rechecks an independent_session record, while a sub_agent record is
+  not rechecked, so a distinct evaluator that later takes the run keeps the
+  acknowledgment it made. A project whose policy or task pin allows only
+  same_session cannot supersede such a failure until an authorized change
+  allows a distinct evaluator or, while no later failing evaluation has named
+  it, the criteria are revised back; nothing falls back to
+  self-acknowledgment. After a planner's revision alone the evaluation may
+  name the failure, from any evaluator, and one that does not name it ends
+  that planner-only carry. The record keeps the id it names, so a seal bound
+  to it names the failure it superseded. `supersedes` naming another record,
+  or any record when no failure is carried, is refused.
+
+  Anything that ends the item's run (completion, disposal or detachment) ends
+  the carry, since it belongs to that run. A new run cannot shed a failure
+  either: only completed work reopens, and completing needed a fresh passing
+  evaluation, which names the failure after an executor's revision. Every
+  revision of an item with an active run lands on that run's feed; revisions
+  there that do not lead to the item's current criteria and bindings are a
+  damaged projection, refused as such, never read as nothing carried.
 
 ## Freshness
 
@@ -545,7 +582,7 @@ tests cite the row identifier in a nearby comment.
 | B13 | non-build natural-language criterion; `pass` + `judgment` with rationale and a note citation | accepted; seal |
 | B14 | `pass` with empty citations, or empty rationale | refuse at write (no vacuous pass) |
 | B15 | `insufficient_evidence` | accepted; `done` refuses `AcceptanceInsufficientEvidence`; after evidence and a new evaluation, seal |
-| B16 | `needs_human` | accepted; `done` refuses `AcceptanceNeedsHuman`; `update --accept` revises → old evaluation stale (F1) and carried (R11); new evaluation seals, naming it with `--supersedes` when the run's executor revised |
+| B16 | `needs_human` | accepted; `done` refuses `AcceptanceNeedsHuman`; `update --accept` revises → old evaluation stale (F1) and carried (R11); new evaluation seals, naming it with `--supersedes` from an evaluator that never held the run when the run's executor revised |
 | B17 | citation from another run, another item, or a non-holder observation | refuse at write |
 | B18 | verdict list missing a criterion, duplicate position, or `acceptance_basis` behind the current revision | refuse at write with "re-read show" |
 | B19 | criteria revised after a passing evaluation | `done` refuses `AcceptanceEvaluationStale { revision }` |
@@ -582,10 +619,12 @@ tests cite the row identifier in a nearby comment.
 | B50 | criterion bound to a test; a passed check at R_d, a source edit to R_e with no check after it; a pass citing the R_d check, undeclared or declaring R_e, with source freshness off and on; the same record as an earlier build admitted it, with the binding's obligation satisfied or waived, and on the waived path also declaring R_d; its exact resend; the check rerun at R_e and cited | refuse at write naming the citation and both revisions, nothing appended / `done` refuses `AcceptanceEvaluationStale { verification_source }` on every path, even with the matching completion fingerprint / the resend replays the admitted record, and a changed resend is refused / records and seals |
 | B51 | the same binding; a declared source ahead of the newest sighting at the cut; a declared workspace other than the check's; a declaration that matches the check exactly; after an edit to R_e, a declaration of R_d behind it; a quiet sighting at R_e before the cut, then one back at R_d; a reported change without a revision after the check; an R_d citation beside a fresh R_e check, cited or not; after the check, sightings of its own revision (the turn's closing one, one from another workspace); after the check, reported changes to R_e and back to R_d, both kept as changes; a check recorded in a later turn citing its earlier producer, with a sighting of its revision in between | refused naming both revisions, and the remedy names correcting the declaration, which an undeclared refusal does not / refused naming both workspaces / records / refused naming the later revision / refused as judged at R_e, then records / refused naming the change without a revision / refused naming the R_d check; the fresh check alone records / records and seals / records and stays fresh, while `done` asks for a check after the latest change under the satisfied binding's own rule / records |
 | B52 | evaluated policy; an item with no acceptance criteria, as a migration imports one; `done`, then the same `done` again; then a criterion added, `done`, an evaluation, `done`; the same item under a self-asserted policy | refuse `acceptance_criteria_required` naming the missing criteria, the host's refusal to evaluate without them, and the remedy in order, with nothing captured beyond the pending attempt, never `work_projection_invalid` / the retry is refused the same way / `MissingAcceptanceEvaluation`, then seals / seals as before |
-| B53 | `fail`, then the run's executor revises the criteria it judged; `evaluate` without `--supersedes`, naming another record, then naming the failed record; `done` | `show` discloses `carried_failure` (`revised_by: executor`, `supersedes_required: true`); refuse at write `acceptance_evaluation_refused` with details `reason: carried_failure_unacknowledged`, `failed_evaluation`, and a remedy naming `--supersedes RECORD_ID`, nothing appended / the same / records with `supersedes`; `done` seals, and the bound evaluation names the failure |
+| B53 | `fail`, then the run's executor revises the criteria it judged; `evaluate` without `--supersedes`, naming another record, then naming the failed record from an evaluator that never held the run; `done` | `show` discloses `carried_failure` (`revised_by: executor`, `supersedes_required: true`); refuse at write `acceptance_evaluation_refused` with details `reason: carried_failure_unacknowledged`, `failed_evaluation`, and a remedy naming `--supersedes RECORD_ID`, nothing appended / the same / records with `supersedes`; `done` seals, and the bound evaluation names the failure |
 | B54 | `fail`, then a planner (a session that never held the run) revises its criteria while the claim is released; or the executor revises and a planner revises again | `carried_failure` shows `revised_by: planner` and `evaluate` records without `supersedes` / `revised_by: executor`, and `evaluate` without `supersedes` is refused |
 | B55 | `--supersedes` before any evaluation, after a passing one, after a failing one whose item was only retitled or blocked and unblocked, or after a rewording back to the judged criteria | refuse at write with `reason: nothing_to_supersede`; nothing is carried, so `evaluate` without `supersedes` records as before |
 | B56 | `fail` on a criterion bound to a test, then the executor drops the binding (or `update --accept` repeats the same wording without `--bind`) or binds another kind | the failure is carried although the criterion's text is unchanged; `evaluate` without `--supersedes` is refused `carried_failure_unacknowledged` |
+| B57 | `fail`, the run's executor revises its criteria; the failed record is named by a same_session evaluation, by a sub_agent that shares the executor's or a former holder's session, or by an independent_session evaluator or a sub_agent under its own session | refuse at write `acceptance_evaluation_refused` with `reason: carried_failure_self_acknowledged`, `failed_evaluation`, and a remedy naming an independent_session evaluator, a sub_agent under its own host-issued session, widening the policy, changing or clearing the task pin, or, while no later failing evaluation has named it, revising back; nothing appended / the same / the same / records with `supersedes` |
+| B58 | `fail`, the run's executor revises its criteria, and an evaluator that never held the run names the failure with `fail`; the executor revises again; another such evaluation names it with `needs_human`; or a planner revises in between and the executor rewords back to the original criteria | the failure is still carried as the original record (`carried_failure.evaluation` unchanged, `revised_by: executor`, `judged_criteria` the original ones, and `newest_judged_bindings` those the naming evaluation judged); a revert to the original criteria after a failing evaluation named it stays carried, and so does a second failing review of the reverted criteria; the executor's `same_session` pass without `--supersedes` is refused `carried_failure_unacknowledged`, and naming it `carried_failure_self_acknowledged`; only a passing evaluation from such an evaluator that names it ends the carry, and `done` seals |
 
 ## Agent surface
 
@@ -612,9 +651,12 @@ bound criterion declared that way is refused at once, since no check ran at
 that revision (R5). `--supersedes RECORD_ID` names the carried failing
 evaluation (R11), by the id `show` prints in
 `acceptance_evaluation.carried_failure` (`evaluation`, `revised_by`,
-`judged_revision`, `failing`, `supersedes_required`); `show --full` adds its
-non-passing verdicts as `blocking: [{criterion, verdict}]` and the bindings
-its criteria had as `judged_bindings`, gives the current ones as
+`judged_revision`, `failing`, `supersedes_required`); `show --full` adds the
+criteria it judged as `judged_criteria`, its non-passing verdicts as
+`blocking: [{criterion, verdict, rationale}]` and the bindings its criteria
+had as `judged_bindings`, prints those criteria with the failed verdicts and,
+when a later failing evaluation named it, the newest evaluation's criteria
+and, as `newest_judged_bindings`, its bindings, gives the current ones as
 `work.acceptance_bindings` (for any item under any policy, omitted when there
 are none), and prints a `judged bindings:` line; both reads give a record's
 own `supersedes`. Open items in self-asserted projects keep their unchanged
@@ -689,13 +731,22 @@ process:
 - handing over a carried failure (R11): when `show --json` carries
   `acceptance_evaluation.carried_failure`, giving the evaluator the failed
   verdicts and the criteria and their bindings before and after the revision
-  (`show --full`: the failed record's per-verdict `criterion` and
-  `carried_failure.judged_bindings` before, `work.acceptance` and
-  `work.acceptance_bindings` after), asking it whether the revised criteria
-  still deliver the requested outcome, and passing `supersedes` with the
-  failed record's id when `supersedes_required` is true, or when a planner
-  revised and the evaluator judged the failure; without it, an evaluation
-  after an executor's revision is refused `carried_failure_unacknowledged`;
+  (`show --full`: `carried_failure.judged_criteria`, its `blocking` verdicts
+  with their rationale and `carried_failure.judged_bindings` before, the
+  newest evaluation's per-verdict `criterion` and
+  `carried_failure.newest_judged_bindings` when a later failing evaluation
+  named it, and `work.acceptance` and `work.acceptance_bindings` after),
+  asking it whether the revised criteria still deliver the requested outcome,
+  and passing `supersedes` with the failed record's id when
+  `supersedes_required` is true, or when a planner revised and the evaluator
+  judged the failure; without it, an evaluation after an executor's revision
+  is refused `carried_failure_unacknowledged`. When `supersedes_required` is
+  true the host never selects same_session: an independent_session evaluator,
+  or a sub_agent under its own session with a brief the host composes, names
+  the failure, and a same_session-only pin or policy surfaces the
+  `carried_failure_self_acknowledged` remedy. A superseding evaluation that
+  does not pass leaves the failure carried, so the host keeps choosing a
+  distinct evaluator until one passes;
 - measuring the source fingerprint at evaluation time and again at completion
   time, binding it to the exact attempt rather than reusing the evaluator's
   earlier string;

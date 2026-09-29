@@ -837,11 +837,15 @@ Rules that matter:
   overtaken. When the criteria a failing evaluation judged, or their
   verification bindings, were revised after it, `show` discloses that
   carried failure (`acceptance_evaluation.carried_failure`; `show --full`
-  adds the bindings it judged as `judged_bindings`), and after a revision by
+  adds the criteria and bindings it judged as `judged_criteria` and
+  `judged_bindings`, and after a later failing evaluation named it, that
+  evaluation's bindings as `newest_judged_bindings`), and after a revision by
   the run's executor `evaluate` must name the failed record with
-  `--supersedes RECORD_ID` (MCP `supersedes`); a mismatch is refused with
-  `acceptance_evaluation_refused`, details `reason:
-  carried_failure_unacknowledged` or `nothing_to_supersede`. The receipt and
+  `--supersedes RECORD_ID` (MCP `supersedes`), from an evaluator that never
+  held the run, and only a passing one that names it ends the carry; a
+  mismatch is refused with `acceptance_evaluation_refused`,
+  details `reason: carried_failure_unacknowledged`,
+  `carried_failure_self_acknowledged` or `nothing_to_supersede`. The receipt and
   ordinary `show` carry a bounded prefix of verdict rows with an exact
   `verdicts_omitted` count and the decision facts (passed count, first
   blocking verdict, evaluator label, freshness, recorded source

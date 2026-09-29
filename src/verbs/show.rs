@@ -387,7 +387,7 @@ pub(super) fn show_carried_failure(carried: &crate::domain::CarriedFailure) -> S
 /// The text line that discloses a carried failure.
 pub(super) fn carried_failure_line(carried: &ShowCarriedFailure) -> String {
     let next = if carried.supersedes_required {
-        "the next evaluation must name it"
+        "the next evaluation must name it, from an evaluator that never held the run"
     } else {
         "the next evaluation sees it and may name it"
     };

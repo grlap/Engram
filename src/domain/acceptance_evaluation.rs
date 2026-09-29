@@ -366,6 +366,8 @@ impl CarriedFailureReviser {
 pub struct CarriedFailureVerdict {
     pub criterion: usize,
     pub verdict: AcceptanceVerdict,
+    /// Why the failing evaluation gave that verdict.
+    pub rationale: String,
 }
 
 /// A failing evaluation whose criteria were revised after it was recorded.
@@ -381,10 +383,17 @@ pub struct CarriedFailure {
     pub revised_by: CarriedFailureReviser,
     /// The work revision whose criteria the failing evaluation judged.
     pub judged_revision: i64,
+    /// The criteria it judged, as it copied them: the before side of the
+    /// revision, which the newest evaluation may no longer show.
+    pub judged_criteria: Vec<String>,
     /// The verification bindings its criteria had then. A binding-only
     /// revision leaves the criteria's text unchanged, so these are the only
     /// record of what the revision weakened.
     pub judged_bindings: Vec<super::AcceptanceBinding>,
+    /// When a later failing evaluation named it, the bindings that newest
+    /// evaluation's criteria had: the middle of the three contracts the next
+    /// evaluator compares. `None` when the newest evaluation is this one.
+    pub newest_judged_bindings: Option<Vec<super::AcceptanceBinding>>,
     /// Its non-passing verdicts.
     pub blocking: Vec<CarriedFailureVerdict>,
 }

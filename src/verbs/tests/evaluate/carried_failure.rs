@@ -54,7 +54,14 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
             at(2),
         )
         .expect("gate");
-    enable(&database, &[AcceptanceEvaluationMode::SameSession], 3);
+    enable(
+        &database,
+        &[
+            AcceptanceEvaluationMode::SameSession,
+            AcceptanceEvaluationMode::IndependentSession,
+        ],
+        3,
+    );
     let run_id = SqliteStore::open(&database)
         .expect("store")
         .resolve_work_ref(&project, &work_ref)
@@ -137,7 +144,9 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
     assert!(
         shown.text().contains(&format!(
             "carried failure: evaluation {failed_id} did not pass 1 of the criteria"
-        )) && shown.text().contains(&format!("--supersedes {failed_id}")),
+        )) && shown.text().contains(&format!(
+            "the next evaluation must name it, from an evaluator that never held the run: --supersedes {failed_id}"
+        )),
         "{}",
         shown.text()
     );
@@ -158,7 +167,15 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
     );
     assert_eq!(
         complete["carried_failure"]["blocking"],
-        serde_json::json!([{ "criterion": 1, "verdict": "fail" }])
+        serde_json::json!([{
+            "criterion": 1,
+            "verdict": "fail",
+            "rationale": "criterion 1: fail because the gate says so",
+        }])
+    );
+    assert_eq!(
+        complete["carried_failure"]["judged_criteria"],
+        serde_json::json!(["the report lists every store"])
     );
     // The judged criterion had no binding, and still has none.
     assert_eq!(
@@ -201,9 +218,44 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
         "{error}"
     );
 
-    let recorded = verbs
+    // The executor naming its own failure is refused, with every way out.
+    let self_named = verbs
         .evaluate(submission("pass", Some(&failed_id)), at(9))
-        .expect("the acknowledged pass is recorded");
+        .expect_err("the executor may not acknowledge its own failure");
+    let error = crate::mcp::store_error_value(&self_named.error);
+    assert_eq!(error["error"]["code"], "acceptance_evaluation_refused");
+    assert_eq!(
+        error["error"]["details"]["reason"],
+        "carried_failure_self_acknowledged"
+    );
+    assert_eq!(
+        error["error"]["details"]["failed_evaluation"],
+        failed_id.as_str()
+    );
+    assert!(
+        error["error"]["details"]["remedy"]
+            .as_str()
+            .is_some_and(|remedy| remedy.contains("independent_session")
+                && remedy.contains("sub_agent under its own host-issued session")),
+        "{error}"
+    );
+
+    let reviewer = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "reviewer".into(),
+        SessionId("reviewer".into()),
+        None,
+    );
+    let recorded = reviewer
+        .evaluate(
+            EvaluateInput {
+                mode: "independent_session".into(),
+                ..submission("pass", Some(&failed_id))
+            },
+            at(9),
+        )
+        .expect("the reviewer's acknowledged pass is recorded");
     assert_eq!(
         recorded.value["evaluation"]["supersedes"],
         failed_id.as_str()
@@ -355,5 +407,174 @@ fn a_binding_only_revision_shows_the_judged_bindings_beside_the_current_ones() {
                 .contains("1. the tests pass  [requires host review verification]"),
         "{}",
         full.text()
+    );
+}
+
+// B58: after a reviewer names the failure and fails the revised criteria,
+// `show --full` still gives the original failure's criteria and verdicts as
+// the before side, beside the newest evaluation's criteria and the current
+// ones.
+#[test]
+fn full_readback_keeps_the_original_failure_beside_a_failing_review() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("work.sqlite3");
+    let project = ProjectId("carried-readback".into());
+    let verbs = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let work_ref = verbs
+        .add(
+            AddInput {
+                title: "Readback item".into(),
+                acceptance: vec!["the report lists every store".into()],
+                ..AddInput::default()
+            },
+            at(0),
+        )
+        .expect("add")
+        .value["work"]["short_ref"]
+        .as_str()
+        .expect("work ref")
+        .to_owned();
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: work_ref.clone(),
+                ttl_seconds: Some(3_600),
+                recover: None,
+            },
+            at(1),
+        )
+        .expect("claim");
+    enable(
+        &database,
+        &[
+            AcceptanceEvaluationMode::SameSession,
+            AcceptanceEvaluationMode::IndependentSession,
+        ],
+        2,
+    );
+    let submission = |verdict_word: &str, mode: &str, supersedes: Option<&str>| {
+        let shown = verbs.show(&work_ref, at(3)).expect("show");
+        EvaluateInput {
+            mode: mode.into(),
+            acceptance_basis: shown.value["acceptance_basis"]
+                .as_i64()
+                .expect("acceptance basis"),
+            supersedes: supersedes.map(str::to_owned),
+            ..evaluate_input(
+                &work_ref,
+                shown.value["evidence_basis"]
+                    .as_i64()
+                    .expect("evidence basis"),
+                vec![verdict(1, verdict_word, "judgment", &[])],
+            )
+        }
+    };
+    let failed = verbs
+        .evaluate(submission("fail", "same_session", None), at(4))
+        .expect("failing evaluation");
+    let failed_id = failed.value["evaluation"]["hash"]
+        .as_str()
+        .expect("record id")
+        .to_owned();
+    verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(work_ref.clone()),
+                action: UpdateAction::Revise {
+                    external: None,
+                    clear_external: false,
+                    title: None,
+                    outcome: None,
+                    acceptance: Some(vec!["the report lists some stores".into()]),
+                    bindings: None,
+                    assignee: None,
+                    priority: None,
+                    defer: None,
+                    kind: None,
+                    labels: Vec::new(),
+                    unlabels: Vec::new(),
+                },
+            },
+            at(5),
+        )
+        .expect("the executor rewords the failed criterion");
+    let reviewer = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "reviewer".into(),
+        SessionId("reviewer".into()),
+        None,
+    );
+    let review = reviewer
+        .evaluate(
+            submission("fail", "independent_session", Some(&failed_id)),
+            at(6),
+        )
+        .expect("the reviewer names the failure and fails the revision");
+    let review_id = review.value["evaluation"]["hash"]
+        .as_str()
+        .expect("record id")
+        .to_owned();
+
+    let full = verbs
+        .show_records(
+            &work_ref,
+            &ShowInput {
+                full: true,
+                ..ShowInput::default()
+            },
+            at(7),
+        )
+        .expect("show --full");
+    let evaluation = &full.value["work"]["evaluation"];
+    // The newest evaluation is the review, on the reworded criterion.
+    assert_eq!(evaluation["hash"], review_id.as_str());
+    assert_eq!(
+        evaluation["verdicts"][0]["criterion"],
+        "the report lists some stores"
+    );
+    // The carried failure is still the original, with its own criteria and
+    // verdict as the before side.
+    let carried = &evaluation["carried_failure"];
+    assert_eq!(carried["evaluation"], failed_id.as_str());
+    assert_eq!(
+        carried["judged_criteria"],
+        serde_json::json!(["the report lists every store"])
+    );
+    assert_eq!(
+        carried["blocking"],
+        serde_json::json!([{
+            "criterion": 1,
+            "verdict": "fail",
+            "rationale": "criterion 1: fail because the gate says so",
+        }])
+    );
+    assert_eq!(
+        full.value["work"]["acceptance"],
+        serde_json::json!(["the report lists some stores"])
+    );
+    // The newest evaluation judged no binding; the original judged none.
+    assert_eq!(carried["newest_judged_bindings"], serde_json::json!([]));
+    assert_eq!(carried["judged_bindings"], serde_json::json!([]));
+    let text = full.text();
+    assert!(
+        text.contains("  bindings the newest evaluation judged: none"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("  criteria evaluation {failed_id} judged:"))
+            && text.contains("    1. the report lists every store")
+            && text.contains("       fail: criterion 1: fail because the gate says so")
+            && text.contains(&format!(
+                "  criteria the newest evaluation {review_id} judged:"
+            ))
+            && text.contains("    1. the report lists some stores"),
+        "{text}"
     );
 }

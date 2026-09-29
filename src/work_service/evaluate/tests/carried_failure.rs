@@ -64,7 +64,15 @@ fn scenario(name: &str) -> Scenario {
             .result,
     )
     .expect("evidence id");
-    enable(&database, &[AcceptanceEvaluationMode::SameSession], 3);
+    enable(
+        &database,
+        &[
+            AcceptanceEvaluationMode::SameSession,
+            AcceptanceEvaluationMode::SubAgent,
+            AcceptanceEvaluationMode::IndependentSession,
+        ],
+        3,
+    );
     Scenario {
         database,
         project,
@@ -117,6 +125,83 @@ impl Scenario {
                 )
             },
             at(second),
+        )
+    }
+
+    /// A session that never held the run: the evaluator that may name a
+    /// failure the executor's revision carried.
+    fn reviewer(&self) -> LocalWorkService {
+        LocalWorkService::new(
+            self.database.clone(),
+            self.project.clone(),
+            "reviewer".into(),
+            SessionId(format!("{}-reviewer", self.project.0)),
+            Some("protocol-test".into()),
+        )
+    }
+
+    /// The reviewer's `independent_session` evaluation.
+    fn review(
+        &self,
+        verdict_word: &str,
+        supersedes: Option<&ObjectId>,
+        second: i64,
+    ) -> Result<WorkEvaluateResult, StoreError> {
+        let reviewer = self.reviewer();
+        let evidence = if verdict_word == "pass" {
+            self.citation.clone()
+        } else {
+            Vec::new()
+        };
+        reviewer.work_evaluate_on(
+            &WorkEvaluateInput {
+                mode: "independent_session".into(),
+                supersedes: supersedes.map(|id| id.as_str().to_owned()),
+                ..evaluate_input(
+                    &self.root.short_ref,
+                    self.revision(),
+                    completion_run_feed_head(&reviewer, self.root.work_id),
+                    vec![verdict(1, verdict_word, "judgment", &evidence)],
+                )
+            },
+            at(second),
+        )
+    }
+
+    /// A `sub_agent` evaluation submitted from `service`'s session, under the
+    /// attested parent session `parent`, naming `supersedes`.
+    fn sub_agent_review(
+        &self,
+        service: &LocalWorkService,
+        parent: &str,
+        supersedes: &ObjectId,
+        second: i64,
+    ) -> Result<WorkEvaluateResult, StoreError> {
+        service.work_evaluate_on(
+            &WorkEvaluateInput {
+                mode: "sub_agent".into(),
+                execution_identity: Some("evaluator-agent".into()),
+                parent_session: Some(parent.into()),
+                supersedes: Some(supersedes.as_str().to_owned()),
+                ..evaluate_input(
+                    &self.root.short_ref,
+                    self.revision(),
+                    completion_run_feed_head(service, self.root.work_id),
+                    vec![verdict(1, "pass", "judgment", &self.citation)],
+                )
+            },
+            at(second),
+        )
+    }
+
+    /// Another session of the same project, which never held the run.
+    fn session(&self, name: &str) -> LocalWorkService {
+        LocalWorkService::new(
+            self.database.clone(),
+            self.project.clone(),
+            name.into(),
+            SessionId(format!("{}-{name}", self.project.0)),
+            Some("protocol-test".into()),
         )
     }
 
@@ -274,9 +359,36 @@ fn an_executor_revision_after_a_failure_is_completable_only_by_naming_it() {
         "{refused:?}"
     );
 
-    let acknowledged = scenario
+    // The executor naming its own failure is not someone else accepting the
+    // revision.
+    let self_named = scenario
         .evaluate("pass", Some(&failed_id), 8)
-        .expect("a pass that names the failure is recorded");
+        .expect_err("the executor may not acknowledge its own failure");
+    assert_eq!(
+        refusal(&self_named),
+        Some((
+            CarriedFailureRefusal::SelfAcknowledged,
+            Some(failed_id.clone())
+        )),
+        "{self_named:?}"
+    );
+    assert!(
+        self_named.to_string().contains("independent_session")
+            && self_named.to_string().contains("sub_agent under its own")
+            && self_named.to_string().contains(
+                "while no later failing evaluation has named the failure, revise the criteria and their bindings back"
+            ),
+        "the remedy names every way out: {self_named}"
+    );
+    assert_eq!(
+        completion_run_feed_head(&scenario.service, scenario.root.work_id),
+        head,
+        "a self-acknowledgment records nothing"
+    );
+
+    let acknowledged = scenario
+        .review("pass", Some(&failed_id), 8)
+        .expect("a reviewer's pass that names the failure is recorded");
     assert_eq!(
         acknowledged.projection.supersedes.as_ref(),
         Some(&failed_id)
@@ -346,30 +458,29 @@ fn a_resent_superseding_evaluation_replays_and_its_attempt_binds_the_name() {
         "{added:?}"
     );
 
+    let reviewer = scenario.reviewer();
     let named = WorkEvaluateInput {
+        mode: "independent_session".into(),
         attempt: Some("acknowledge-the-failure".into()),
         supersedes: Some(failed.evaluation.as_str().to_owned()),
         ..evaluate_input(
             &scenario.root.short_ref,
             scenario.revision(),
-            completion_run_feed_head(&scenario.service, scenario.root.work_id),
+            completion_run_feed_head(&reviewer, scenario.root.work_id),
             vec![verdict(1, "pass", "judgment", &scenario.citation)],
         )
     };
-    let recorded = scenario
-        .service
+    let recorded = reviewer
         .work_evaluate_on(&named, at(7))
         .expect("the evaluation naming the failure is recorded");
     assert!(!recorded.replayed);
     assert!(scenario.carried().is_none(), "it ends the carry");
-    let resent = scenario
-        .service
+    let resent = reviewer
         .work_evaluate_on(&named, at(8))
         .expect("an exact resend replays although nothing is carried now");
     assert!(resent.replayed);
     assert_eq!(resent.evaluation, recorded.evaluation);
-    let removed = scenario
-        .service
+    let removed = reviewer
         .work_evaluate_on(
             &WorkEvaluateInput {
                 supersedes: None,
@@ -539,6 +650,301 @@ fn a_former_holder_rewording_without_the_claim_is_still_the_executor() {
             Some(failed.evaluation.clone())
         ))
     );
+    // B57: nor may the former holder name it, even as a sub_agent under the
+    // successor: its session held the run.
+    let former = scenario
+        .sub_agent_review(
+            &scenario.service,
+            "carried-former-holder-planner",
+            &failed.evaluation,
+            9,
+        )
+        .expect_err("a former holder is an executor of the run");
+    assert_eq!(
+        refusal(&former),
+        Some((
+            CarriedFailureRefusal::SelfAcknowledged,
+            Some(failed.evaluation.clone())
+        )),
+        "{former:?}"
+    );
+}
+
+// B57: after the executor's revision the session decides who may name the
+// failure, not the mode label: a sub_agent sharing the executor's session is
+// the executor, and one under its own session is someone else.
+#[test]
+fn only_an_evaluator_that_never_held_the_run_may_name_an_executor_revised_failure() {
+    let scenario = scenario("distinct-evaluator");
+    let failed = scenario
+        .evaluate("fail", None, 4)
+        .expect("failing evaluation");
+    scenario.revise_by(&scenario.service, "An easier criterion", 5);
+    let executor = "distinct-evaluator-executor";
+    let shared = scenario
+        .sub_agent_review(&scenario.service, executor, &failed.evaluation, 6)
+        .expect_err("a sub_agent in the executor's own session is the executor");
+    assert_eq!(
+        refusal(&shared),
+        Some((
+            CarriedFailureRefusal::SelfAcknowledged,
+            Some(failed.evaluation.clone())
+        )),
+        "{shared:?}"
+    );
+    let recorded = scenario
+        .sub_agent_review(&scenario.session("helper"), executor, &failed.evaluation, 7)
+        .expect("a sub_agent under its own session names it");
+    assert_eq!(
+        recorded.projection.supersedes.as_ref(),
+        Some(&failed.evaluation)
+    );
+}
+
+// B58: rewording back to the original criteria does not undo a revision a
+// later failing evaluation judged: a planner's in between stays carried, so
+// the executor cannot revert it and pass itself.
+#[test]
+fn rewording_back_does_not_undo_a_revision_a_later_failure_judged() {
+    // A planner-only carry the executor names and fails, then reverts.
+    let planner_first = scenario("planner-then-revert");
+    let original = planner_first
+        .store()
+        .get_work_item(planner_first.root.work_id)
+        .expect("item")
+        .acceptance;
+    let failed = planner_first
+        .evaluate("fail", None, 4)
+        .expect("failing evaluation")
+        .evaluation;
+    planner_first.release(5);
+    planner_first.revise_by(&planner_first.planner(), "A stricter criterion", 6);
+    planner_first.reclaim(7);
+    planner_first
+        .evaluate("fail", Some(&failed), 8)
+        .expect("the executor may name a planner-only carry");
+    planner_first.revise_by(&planner_first.service, &original[0], 9);
+    let carried = planner_first
+        .carried()
+        .expect("the revert past the planner's criteria is carried");
+    assert_eq!(carried.evaluation, failed);
+    assert_eq!(carried.revised_by, CarriedFailureReviser::Executor);
+    let refused = planner_first
+        .evaluate("pass", None, 10)
+        .expect_err("the executor cannot revert the planner and pass itself");
+    assert_eq!(
+        refusal(&refused),
+        Some((CarriedFailureRefusal::Unacknowledged, Some(failed.clone())))
+    );
+
+    // An executor carry a reviewer fails, a planner revises, and the
+    // executor reverts to the original criteria.
+    let reviewed_first = scenario("review-planner-revert");
+    let failed = reviewed_first
+        .evaluate("fail", None, 4)
+        .expect("failing evaluation")
+        .evaluation;
+    reviewed_first.revise_by(&reviewed_first.service, "An easier criterion", 5);
+    reviewed_first
+        .review("fail", Some(&failed), 6)
+        .expect("a reviewer names and fails it");
+    reviewed_first.release(7);
+    reviewed_first.revise_by(&reviewed_first.planner(), "A planner's criterion", 8);
+    reviewed_first.reclaim(9);
+    reviewed_first.revise_by(&reviewed_first.service, &original[0], 10);
+    let carried = reviewed_first
+        .carried()
+        .expect("the revert is still carried");
+    assert_eq!(carried.evaluation, failed);
+    assert_eq!(carried.revised_by, CarriedFailureReviser::Executor);
+    let refused = reviewed_first
+        .evaluate("pass", None, 11)
+        .expect_err("the executor cannot pass itself");
+    assert_eq!(
+        refusal(&refused),
+        Some((CarriedFailureRefusal::Unacknowledged, Some(failed.clone())))
+    );
+
+    // Once a later failing evaluation has named it, the failure stays carried
+    // whatever the criteria are, so no revert ends it: only a passing
+    // evaluation from someone other than the executor that names it does.
+    let reverted = scenario("review-then-revert");
+    let failed = reverted
+        .evaluate("fail", None, 4)
+        .expect("failing evaluation")
+        .evaluation;
+    reverted.revise_by(&reverted.service, "An easier criterion", 5);
+    reverted
+        .review("fail", Some(&failed), 6)
+        .expect("a reviewer names and fails it");
+    reverted.revise_by(&reverted.service, &original[0], 7);
+    let carried = reverted
+        .carried()
+        .expect("the revert to the original criteria is still carried");
+    assert_eq!(carried.evaluation, failed);
+    assert_eq!(carried.revised_by, CarriedFailureReviser::Executor);
+    // Nor does another failing review of the reverted criteria end it, though
+    // it and the original judged the same contract as the item's now.
+    reverted
+        .review("fail", Some(&failed), 8)
+        .expect("a second reviewer names and fails it");
+    let carried = reverted.carried().expect("still carried");
+    assert_eq!(carried.evaluation, failed);
+    assert_eq!(carried.revised_by, CarriedFailureReviser::Executor);
+    let unnamed = reverted
+        .evaluate("pass", None, 9)
+        .expect_err("the executor cannot pass itself");
+    assert_eq!(
+        refusal(&unnamed),
+        Some((CarriedFailureRefusal::Unacknowledged, Some(failed.clone())))
+    );
+    let self_named = reverted
+        .evaluate("pass", Some(&failed), 9)
+        .expect_err("nor acknowledge its own failure");
+    assert_eq!(
+        refusal(&self_named),
+        Some((
+            CarriedFailureRefusal::SelfAcknowledged,
+            Some(failed.clone())
+        ))
+    );
+}
+
+// B58: after a later failing evaluation named the failure, `show --full`
+// needs the bindings that evaluation judged too: a binding-only revision
+// after it leaves the original and current contracts alike.
+#[test]
+fn a_binding_only_revision_after_a_named_failure_shows_the_bindings_it_undid() {
+    let scenario = scenario("newest-bindings");
+    let failed = scenario
+        .evaluate("fail", None, 4)
+        .expect("failing evaluation")
+        .evaluation;
+    let bound = AcceptanceBinding {
+        criterion: 1,
+        requirement: VerificationRequirement {
+            check_kind: VerificationKind::Test,
+            check_fingerprint: None,
+        },
+    };
+    let rebind =
+        |service: &LocalWorkService, bindings: Vec<AcceptanceBinding>, key: &str, second| {
+            service
+                .work_focus(&scenario.root.short_ref, at(second))
+                .expect("focus");
+            service
+                .work_update(
+                    WorkUpdateInput::Revise {
+                        patch: WorkRevisionPatch {
+                            acceptance_bindings: Some(bindings),
+                            ..WorkRevisionPatch::default()
+                        },
+                        idempotency_key: key.into(),
+                    },
+                    at(second),
+                )
+                .expect("rebind the criterion");
+        };
+    scenario.release(5);
+    rebind(&scenario.planner(), vec![bound.clone()], "planner-binds", 6);
+    scenario.reclaim(7);
+    scenario
+        .evaluate("fail", Some(&failed), 8)
+        .expect("the executor may name a planner-only carry");
+    rebind(&scenario.service, Vec::new(), "executor-unbinds", 9);
+    let carried = scenario
+        .carried()
+        .expect("dropping the binding the newest evaluation judged is carried");
+    assert_eq!(carried.evaluation, failed);
+    assert_eq!(carried.revised_by, CarriedFailureReviser::Executor);
+    assert!(
+        carried.judged_bindings.is_empty(),
+        "the original was unbound"
+    );
+    assert_eq!(
+        carried.newest_judged_bindings,
+        Some(vec![bound]),
+        "the newest evaluation judged the bound criterion"
+    );
+}
+
+// B58: naming the failure is not accepting the revision. A reviewer that
+// names it but fails the revised criteria keeps it carried, anchored at the
+// original record, through a later revision and a second failing review;
+// only a reviewer's pass that names it ends the carry.
+#[test]
+fn a_failing_evaluation_that_names_the_failure_keeps_it_carried() {
+    let scenario = scenario("named-but-failed");
+    let failed = scenario
+        .evaluate("fail", None, 4)
+        .expect("failing evaluation")
+        .evaluation;
+    scenario.revise_by(&scenario.service, "An easier criterion", 5);
+    let rejected = scenario
+        .review("fail", Some(&failed), 6)
+        .expect("a reviewer names the failure and fails the revised criteria");
+    assert_eq!(rejected.projection.supersedes.as_ref(), Some(&failed));
+    let carried = scenario.carried().expect("the failure is still carried");
+    assert_eq!(
+        carried.evaluation, failed,
+        "anchored at the original record"
+    );
+    assert_eq!(carried.revised_by, CarriedFailureReviser::Executor);
+    assert_eq!(
+        carried.judged_criteria,
+        vec!["Carried root accepted".to_owned()],
+        "the before side is the original criteria"
+    );
+
+    // The executor still cannot pass itself.
+    let unnamed = scenario
+        .evaluate("pass", None, 7)
+        .expect_err("the carry is still in force");
+    assert_eq!(
+        refusal(&unnamed),
+        Some((CarriedFailureRefusal::Unacknowledged, Some(failed.clone())))
+    );
+    let self_named = scenario
+        .evaluate("pass", Some(&failed), 7)
+        .expect_err("the executor may not acknowledge its own failure");
+    assert_eq!(
+        refusal(&self_named),
+        Some((
+            CarriedFailureRefusal::SelfAcknowledged,
+            Some(failed.clone())
+        ))
+    );
+
+    // A second revision after the review still anchors at the original.
+    scenario.revise_by(&scenario.service, "An even easier criterion", 8);
+    assert_eq!(
+        scenario.carried().expect("still carried").evaluation,
+        failed
+    );
+    // So does a second non-passing review that names it.
+    scenario
+        .review("needs_human", Some(&failed), 9)
+        .expect("a second, needs_human review names it");
+    let carried = scenario.carried().expect("still carried");
+    assert_eq!(carried.evaluation, failed);
+    assert_eq!(carried.revised_by, CarriedFailureReviser::Executor);
+
+    // Only a reviewer's pass that names it ends the carry, and done seals.
+    scenario
+        .review("pass", Some(&failed), 10)
+        .expect("a reviewer's pass names it");
+    assert!(scenario.carried().is_none(), "the passing review ends it");
+    let completed = scenario
+        .service
+        .work_complete(
+            completion_input("done after the review accepted it", "complete-accepted"),
+            at(11),
+        )
+        .expect("completion attempt");
+    assert!(
+        matches!(completed, WorkCompleteResult::Completed(_)),
+        "{completed:?}"
+    );
 }
 
 // B54: once the executor has revised, a later planner revision does not
@@ -566,8 +972,8 @@ fn an_executor_then_planner_revision_still_needs_the_failure_named() {
         ))
     );
     scenario
-        .evaluate("pass", Some(&failed.evaluation), 10)
-        .expect("naming it is recorded");
+        .review("pass", Some(&failed.evaluation), 10)
+        .expect("a reviewer naming it is recorded");
 }
 
 // B54: the classification is read at each evaluation over every revision

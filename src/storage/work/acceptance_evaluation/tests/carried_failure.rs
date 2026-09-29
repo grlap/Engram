@@ -83,7 +83,7 @@ fn a_host_check_after_the_revision_does_not_end_the_carry() {
     let store = &mut fixture.store;
     enable(
         store,
-        &[Mode::SameSession],
+        &[Mode::SameSession, Mode::IndependentSession],
         MechanicalBasis::Asserted,
         false,
         "enable-carried",
@@ -149,23 +149,25 @@ fn a_host_check_after_the_revision_does_not_end_the_carry() {
     );
 
     let current = cut(store, &revised);
-    let pass = |supersedes: Option<ObjectId>, second: i64| RecordAcceptanceEvaluationRequest {
-        supersedes,
-        ..request(
-            &revised,
-            current,
-            "runner",
-            Mode::SameSession,
-            vec![verdict(
-                1,
-                AcceptanceVerdict::Pass,
-                AcceptanceBasis::Judgment,
-                std::slice::from_ref(&note),
-            )],
-            second,
-        )
+    let pass = |session: &str, mode: Mode, supersedes: Option<ObjectId>, second: i64| {
+        RecordAcceptanceEvaluationRequest {
+            supersedes,
+            ..request(
+                &revised,
+                current,
+                session,
+                mode,
+                vec![verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&note),
+                )],
+                second,
+            )
+        }
     };
-    let unacknowledged = pass(None, 25);
+    let unacknowledged = pass("runner", Mode::SameSession, None, 25);
     assert!(
         matches!(
             record(store, &unacknowledged),
@@ -176,7 +178,70 @@ fn a_host_check_after_the_revision_does_not_end_the_carry() {
         ),
         "a pass that ignores the failure is refused"
     );
-    let acknowledged = pass(Some(failed.evaluation.clone()), 26);
-    let recorded = record(store, &acknowledged).expect("the acknowledged pass records");
+    let self_named = pass(
+        "runner",
+        Mode::SameSession,
+        Some(failed.evaluation.clone()),
+        26,
+    );
+    assert!(
+        matches!(
+            record(store, &self_named),
+            Err(StoreError::AcceptanceEvaluationCarriedFailure {
+                refusal: crate::CarriedFailureRefusal::SelfAcknowledged,
+                ..
+            })
+        ),
+        "the executor may not acknowledge its own failure"
+    );
+    let acknowledged = pass(
+        "reviewer",
+        Mode::IndependentSession,
+        Some(failed.evaluation.clone()),
+        27,
+    );
+    let recorded = record(store, &acknowledged).expect("the reviewer's acknowledged pass records");
     assert_eq!(recorded.record.supersedes, Some(failed.evaluation));
+}
+
+// Every arm of the executor standing counts on its own. In a store the
+// holder and the run's executor are always in the holder history too, so
+// only a direct check can tell the arms apart.
+#[test]
+fn each_arm_of_the_executor_standing_counts() {
+    let me = SessionId("me".into());
+    let other = SessionId("other".into());
+    let standing = |mode: Mode,
+                    holder: Option<&SessionId>,
+                    executor: Option<&SessionId>,
+                    history: &[SessionId]| {
+        super::super::EvaluatorStanding {
+            mode,
+            session: &me,
+            holder,
+            executor,
+            history,
+        }
+        .is_an_executor()
+    };
+    let others = [other.clone()];
+    assert!(!standing(
+        Mode::IndependentSession,
+        Some(&other),
+        Some(&other),
+        &others
+    ));
+    assert!(standing(Mode::SameSession, None, None, &[]), "the mode");
+    assert!(
+        standing(Mode::SubAgent, Some(&me), None, &[]),
+        "the current holder"
+    );
+    assert!(
+        standing(Mode::SubAgent, None, Some(&me), &[]),
+        "the run's executor"
+    );
+    assert!(
+        standing(Mode::SubAgent, None, None, std::slice::from_ref(&me)),
+        "a former holder"
+    );
 }

@@ -202,24 +202,68 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
             .map(super::show::show_carried_failure);
         if let (Some(carried), Some(full)) = (&carried, &evaluation.carried_failure) {
             lines.push(super::show::carried_failure_line(carried));
-            // A binding-only revision leaves the text unchanged, so the
-            // bindings it judged are the before side of the comparison.
-            let judged = if full.judged_bindings.is_empty() {
-                "none".to_owned()
-            } else {
-                full.judged_bindings
+            // The before side of the revision: the criteria the carried
+            // failure judged, with its non-passing verdicts. The newest
+            // evaluation below may have judged other criteria since.
+            lines.push(format!("  criteria evaluation {} judged:", full.evaluation));
+            for (index, criterion) in full.judged_criteria.iter().enumerate() {
+                let safe = super::terminal_data_block(criterion);
+                for (line_index, line) in safe.split('\n').enumerate() {
+                    let prefix = if line_index == 0 {
+                        format!("    {}. ", index + 1)
+                    } else {
+                        "       ".into()
+                    };
+                    lines.push(format!("{prefix}{line}"));
+                }
+                if let Some(blocking) = full
+                    .blocking
                     .iter()
-                    .map(|binding| {
-                        format!(
-                            "criterion {} {}",
-                            binding.criterion,
-                            super::show::binding_note(&binding.requirement).trim_start()
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            };
-            lines.push(format!("  judged bindings: {judged}"));
+                    .find(|blocking| blocking.criterion == index + 1)
+                {
+                    let safe = super::terminal_data_block(&blocking.rationale);
+                    for (line_index, line) in safe.split('\n').enumerate() {
+                        let prefix = if line_index == 0 {
+                            format!("       {}: ", blocking.verdict.word())
+                        } else {
+                            "       ".into()
+                        };
+                        lines.push(format!("{prefix}{line}"));
+                    }
+                }
+            }
+            // A newer failing evaluation that named it judged other criteria:
+            // the middle of the three contracts the next evaluator compares.
+            if full.evaluation.as_str() != evaluation.hash {
+                lines.push(format!(
+                    "  criteria the newest evaluation {} judged:",
+                    evaluation.hash
+                ));
+                for verdict in &evaluation.verdicts {
+                    let safe = super::terminal_data_block(&verdict.criterion);
+                    for (line_index, line) in safe.split('\n').enumerate() {
+                        let prefix = if line_index == 0 {
+                            format!("    {}. ", verdict.position)
+                        } else {
+                            "       ".into()
+                        };
+                        lines.push(format!("{prefix}{line}"));
+                    }
+                }
+            }
+            // A binding-only revision leaves the text unchanged, so the
+            // bindings it judged are the before side of the comparison, and
+            // the newest failing evaluation's are the middle one.
+            lines.push(format!(
+                "  judged bindings: {}",
+                bindings_summary(&full.judged_bindings)
+            ));
+            if let Some(newest) = &full.newest_judged_bindings {
+                lines.push(format!(
+                    "  bindings the newest evaluation judged: {}",
+                    bindings_summary(newest)
+                ));
+            }
         }
         for verdict in &evaluation.verdicts {
             lines.push(format!(
@@ -261,8 +305,12 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
             if let (Some(carried), Some(full)) = (&carried, &evaluation.carried_failure) {
                 let mut carried = json!(carried);
                 if let Some(fields) = carried.as_object_mut() {
+                    fields.insert("judged_criteria".into(), json!(full.judged_criteria));
                     fields.insert("blocking".into(), json!(full.blocking));
                     fields.insert("judged_bindings".into(), json!(full.judged_bindings));
+                    if let Some(newest) = &full.newest_judged_bindings {
+                        fields.insert("newest_judged_bindings".into(), json!(newest));
+                    }
                 }
                 object.insert("carried_failure".into(), carried);
             }
@@ -301,6 +349,24 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
         json!({ "work": work }),
         false,
     )
+}
+
+/// `none`, or each binding as `criterion N [requires host KIND verification]`.
+fn bindings_summary(bindings: &[crate::domain::AcceptanceBinding]) -> String {
+    if bindings.is_empty() {
+        return "none".to_owned();
+    }
+    bindings
+        .iter()
+        .map(|binding| {
+            format!(
+                "criterion {} {}",
+                binding.criterion,
+                super::show::binding_note(&binding.requirement).trim_start()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn append_labeled_block(lines: &mut Vec<String>, label: &str, text: &str) {

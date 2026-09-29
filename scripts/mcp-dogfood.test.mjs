@@ -3203,15 +3203,16 @@ test("evaluated acceptance policy over the real transports: locators, source fre
   }
 });
 
-test("a carried failure over the real transports: shown, refused until named, then recorded", async (t) => {
+test("a carried failure over the real transports: shown, refused until another evaluator names it, then recorded", async (t) => {
   const engramHome = fixtureHome("engram-carried-failure-", t);
   const holder = "carried-holder";
+  const reviewer = "carried-reviewer";
   let client;
   try {
     buildAndInit(engramHome);
     const policy = spawnSync(binary, [
       "--home", engramHome, "control-policy", "set-acceptance-evaluation",
-      "--modes", "same-session", "--mechanical-basis", "asserted",
+      "--modes", "same-session,independent-session", "--mechanical-basis", "asserted",
       "--authorized-by", "dogfood-operator", "--idempotency-key", "dogfood-carried-failure",
     ], { cwd: root, encoding: "utf8" });
     assert.equal(policy.status, 0, policy.stderr);
@@ -3248,7 +3249,16 @@ test("a carried failure over the real transports: shown, refused until named, th
     assert.equal(refused.details.reason, "carried_failure_unacknowledged");
     assert.equal(refused.details.failed_evaluation, failedId);
     assert.match(refused.details.remedy, /--supersedes RECORD_ID/u);
-    const recorded = receipt(await client.call("evaluate", { ...request, supersedes: failedId }));
+    // The executor naming its own failure is not someone else accepting
+    // the revision.
+    const selfNamed = structuredError(await client.call("evaluate", { ...request, supersedes: failedId }), "acceptance_evaluation_refused");
+    assert.equal(selfNamed.details.reason, "carried_failure_self_acknowledged");
+    assert.equal(selfNamed.details.failed_evaluation, failedId);
+    assert.match(selfNamed.details.remedy, /independent_session/u);
+    // A reviewer that never held the run names it over the CLI.
+    const recorded = cliJson(engramHome, reviewer, "evaluate", ref, "--mode", "independent-session", ...bases(carried),
+      "--verdict", "1=pass:asserted", "--rationale", "1=the gate passed", "--evidence", `1=${gate.locator}`,
+      "--supersedes", failedId);
     assert.equal(recorded.evaluation.supersedes, failedId);
 
     // Once a newer evaluation ends the carry, the CLI flag names nothing.
