@@ -386,6 +386,10 @@ pub struct WorkEvaluateInput {
     /// Sub-agent mode only: the host-attested parent session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session: Option<String>,
+    /// Record id of the carried failing evaluation this one acknowledges;
+    /// required after the run's executor revised its criteria.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<String>,
 }
 
 /// One verdict row of the bounded evaluation projection.
@@ -428,6 +432,9 @@ pub struct WorkEvaluationProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<String>,
     pub attempt_key: String,
+    /// Record id of the carried failing evaluation this one acknowledges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<ObjectId>,
     /// Command that reads the complete record.
     pub full_detail: String,
 }

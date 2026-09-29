@@ -296,6 +296,8 @@ struct EvaluateArgs {
     execution_identity: Option<String>,
     /// Sub-agent mode only: the host-attested parent session.
     parent_session: Option<String>,
+    /// Record id of the carried failing evaluation this one acknowledges, as `show` prints it in `carried_failure`. Required after the run's executor revised the criteria that evaluation failed; refused when no failure is carried.
+    supersedes: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -656,6 +658,7 @@ impl McpServer {
                 model: args.model,
                 execution_identity: args.execution_identity,
                 parent_session: args.parent_session,
+                supersedes: args.supersedes,
             },
             Utc::now(),
         ))
@@ -1023,6 +1026,17 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "reason": "the item has no acceptance criteria; an acceptance evaluation needs at least one, and the host refuses to evaluate an item without criteria",
             "remedy": "add at least one criterion with `engram work update REF --accept \"criterion\"`, then have the host evaluate it, then run `engram work done REF` again",
         }),
+        StoreError::AcceptanceEvaluationCarriedFailure {
+            work,
+            refusal,
+            failed,
+            ..
+        } => json!({
+            "work_id": work,
+            "reason": refusal.word(),
+            "failed_evaluation": failed,
+            "remedy": refusal.remedy(),
+        }),
         StoreError::AcceptanceEvaluationBasisMoved {
             work,
             moved,
@@ -1105,7 +1119,8 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkReleaseWaiverRequired { .. } => "work_release_waiver_required",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::AcceptanceCriteriaRequired { .. } => "acceptance_criteria_required",
-        StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
+        StoreError::AcceptanceEvaluationRefused { .. }
+        | StoreError::AcceptanceEvaluationCarriedFailure { .. } => "acceptance_evaluation_refused",
         StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
             crate::host::evaluation_basis_move_code(*moved)
         }

@@ -295,6 +295,9 @@ pub struct EvaluateInput {
     pub execution_identity: Option<String>,
     #[serde(default)]
     pub parent_session: Option<String>,
+    /// Record id of the carried failing evaluation this one acknowledges.
+    #[serde(default)]
+    pub supersedes: Option<String>,
 }
 
 /// `remember`: one attributed, immutable project episode.

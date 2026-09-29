@@ -160,6 +160,17 @@ impl LocalWorkService {
             .as_deref()
             .map(parse_evaluator_model)
             .transpose()?;
+        let supersedes = input
+            .supersedes
+            .as_deref()
+            .map(|value| {
+                value.trim().parse::<ObjectId>().map_err(|_| {
+                    StoreError::InvalidWork(format!(
+                        "supersedes {value:?} is not a record id; name the carried failing evaluation by the id show prints"
+                    ))
+                })
+            })
+            .transpose()?;
         let request = RecordAcceptanceEvaluationRequest {
             project_id: self.project_id.clone(),
             work_id: work.work_id,
@@ -181,6 +192,7 @@ impl LocalWorkService {
             evaluator: self.actor("work_evaluate", "record an acceptance evaluation"),
             attempt_key: input.attempt.clone(),
             recorded_at: now,
+            supersedes,
         };
         let full_detail = format!("engram work show {} --full", work.short_ref);
 
@@ -359,6 +371,7 @@ pub(super) fn preview_projection(
             .as_ref()
             .map(|basis| basis.fingerprint.clone()),
         attempt_key,
+        request.supersedes.clone(),
         full_detail,
     )
 }
@@ -390,6 +403,7 @@ fn project_record(record: &AcceptanceEvaluation, full_detail: String) -> WorkEva
             .as_ref()
             .map(|basis| basis.fingerprint.clone()),
         record.attempt_key.clone(),
+        record.supersedes.clone(),
         full_detail,
     )
 }
@@ -406,6 +420,7 @@ fn projection_from_rows(
     rows: &[(usize, AcceptanceVerdict, AcceptanceBasis, usize, &str)],
     source_fingerprint: Option<String>,
     attempt_key: String,
+    supersedes: Option<ObjectId>,
     full_detail: String,
 ) -> WorkEvaluationProjection {
     let blocking = [
@@ -450,6 +465,7 @@ fn projection_from_rows(
         blocking,
         source_fingerprint,
         attempt_key,
+        supersedes,
         full_detail,
     }
 }

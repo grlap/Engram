@@ -257,6 +257,41 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   completion refuses likewise, so the evaluation classification adds no read
   path softer or stricter than that contract. `doctor` names the row for
   repair, and restoring the column restores the read and the observed pass.
+- **R11 carried failure.** A revision retires the newest evaluation (F1), so
+  without this rule an executor could reword the criteria an evaluation failed
+  and complete on a fresh pass of the new wording, with the failure gone from
+  every surface. A failure is **carried** while the newest evaluation on the
+  run does not pass everywhere, a revision after it changed the criteria it
+  judged or their verification bindings (dropping or changing a binding
+  weakens a criterion as surely as rewording it), and the current criteria or
+  bindings still differ from them. Its other staleness reasons do not end the
+  carry, since a check or source change after a failure is the ordinary next
+  step, and a revision of other fields carries nothing. The revision counts as
+  the **executor's** when it was made under the run's claim, or by its
+  executor or a session that holds or held the run; any other session revised
+  it as a **planner**. The classification is read at each evaluation over
+  every such revision since the failure, so it only ever tightens: one
+  executor's revision among them is enough, even after a later rewording back
+  to the judged criteria and a planner's new revision, and a planner that
+  revised and later holds the run counts as the executor. Sessions are
+  asserted identities: an executor that releases the claim and revises from a
+  session that never held the run is classified as a planner, and its revision
+  is still disclosed. `show` discloses a carried failure either way, so the
+  next evaluation sees the failed verdicts and the criteria and their bindings
+  before and after, and judges whether the revised criteria still deliver the
+  requested outcome. After an executor's revision the evaluation must name the
+  failed record with `supersedes` (`--supersedes RECORD_ID`); after a
+  planner's alone it may. The record keeps that record id, so a seal bound to
+  it names the failure it superseded. `supersedes` naming another record, or
+  any record when no failure is carried, is refused. A newer evaluation ends
+  the carry, and so does anything that ends the item's run (completion,
+  disposal or detachment), since the carry belongs to that run. A new run
+  cannot shed a failure either: only completed work reopens, and completing
+  needed a fresh passing evaluation, which names the failure after an
+  executor's revision. Every revision of an item with an active run lands on
+  that run's feed; revisions there that do not lead to the item's current
+  criteria and bindings are a damaged projection, refused as such, never read
+  as nothing carried.
 
 ## Freshness
 
@@ -479,12 +514,12 @@ newest evaluation on the run feed; "fresh" means F1–F8 hold.
 | --- | --- | --- | --- |
 | S0 unevaluated | no `E` for this run, or `E` not fresh | refuse `MissingAcceptanceEvaluation` / `AcceptanceEvaluationStale` | `evaluate` records a fresh `E` |
 | S1 passing | `E` fresh, all verdicts `pass` | seal; binds `E` | any F1–F8 change → S0; a newer non-passing `E` → S2/S3/S4 |
-| S2 failed | `E` fresh, some verdict `fail` | refuse `AcceptanceFailed` | corrective work → new `evaluate` → S1/S2/S3/S4; a revision → S0 |
-| S3 insufficient | `E` fresh, some `insufficient_evidence`, none `fail` | refuse `AcceptanceInsufficientEvidence` | record evidence → new `evaluate` |
-| S4 needs human | `E` fresh, some `needs_human`, none `fail`/`insufficient` | refuse `AcceptanceNeedsHuman` | a human decision, expressed as a separately authorized `update --accept` (revision → S0) or cancellation |
+| S2 failed | `E` fresh, some verdict `fail` | refuse `AcceptanceFailed` | corrective work → new `evaluate` → S1/S2/S3/S4; a revision → S0, carrying the failure (R11) when it changed the criteria `E` judged or their bindings |
+| S3 insufficient | `E` fresh, some `insufficient_evidence`, none `fail` | refuse `AcceptanceInsufficientEvidence` | record evidence → new `evaluate`; a revision → S0, carrying the failure (R11) when it changed the criteria `E` judged or their bindings |
+| S4 needs human | `E` fresh, some `needs_human`, none `fail`/`insufficient` | refuse `AcceptanceNeedsHuman` | a human decision, expressed as a separately authorized `update --accept` (revision → S0, carrying the failure, R11) or cancellation |
 | L self-asserted | policy has no allowed modes | existing path; receipt says self-asserted | policy update |
 
-`evaluate` itself refuses under R1–R9 without changing state. Precedence when a
+`evaluate` itself refuses under R1–R11 without changing state. Precedence when a
 mixed evaluation exists: `fail` before `insufficient_evidence` before
 `needs_human`; the refusal names the first criterion in list order.
 
@@ -510,7 +545,7 @@ tests cite the row identifier in a nearby comment.
 | B13 | non-build natural-language criterion; `pass` + `judgment` with rationale and a note citation | accepted; seal |
 | B14 | `pass` with empty citations, or empty rationale | refuse at write (no vacuous pass) |
 | B15 | `insufficient_evidence` | accepted; `done` refuses `AcceptanceInsufficientEvidence`; after evidence and a new evaluation, seal |
-| B16 | `needs_human` | accepted; `done` refuses `AcceptanceNeedsHuman`; `update --accept` revises → old evaluation stale (F1); new evaluation seals |
+| B16 | `needs_human` | accepted; `done` refuses `AcceptanceNeedsHuman`; `update --accept` revises → old evaluation stale (F1) and carried (R11); new evaluation seals, naming it with `--supersedes` when the run's executor revised |
 | B17 | citation from another run, another item, or a non-holder observation | refuse at write |
 | B18 | verdict list missing a criterion, duplicate position, or `acceptance_basis` behind the current revision | refuse at write with "re-read show" |
 | B19 | criteria revised after a passing evaluation | `done` refuses `AcceptanceEvaluationStale { revision }` |
@@ -547,6 +582,10 @@ tests cite the row identifier in a nearby comment.
 | B50 | criterion bound to a test; a passed check at R_d, a source edit to R_e with no check after it; a pass citing the R_d check, undeclared or declaring R_e, with source freshness off and on; the same record as an earlier build admitted it, with the binding's obligation satisfied or waived, and on the waived path also declaring R_d; its exact resend; the check rerun at R_e and cited | refuse at write naming the citation and both revisions, nothing appended / `done` refuses `AcceptanceEvaluationStale { verification_source }` on every path, even with the matching completion fingerprint / the resend replays the admitted record, and a changed resend is refused / records and seals |
 | B51 | the same binding; a declared source ahead of the newest sighting at the cut; a declared workspace other than the check's; a declaration that matches the check exactly; after an edit to R_e, a declaration of R_d behind it; a quiet sighting at R_e before the cut, then one back at R_d; a reported change without a revision after the check; an R_d citation beside a fresh R_e check, cited or not; after the check, sightings of its own revision (the turn's closing one, one from another workspace); after the check, reported changes to R_e and back to R_d, both kept as changes; a check recorded in a later turn citing its earlier producer, with a sighting of its revision in between | refused naming both revisions, and the remedy names correcting the declaration, which an undeclared refusal does not / refused naming both workspaces / records / refused naming the later revision / refused as judged at R_e, then records / refused naming the change without a revision / refused naming the R_d check; the fresh check alone records / records and seals / records and stays fresh, while `done` asks for a check after the latest change under the satisfied binding's own rule / records |
 | B52 | evaluated policy; an item with no acceptance criteria, as a migration imports one; `done`, then the same `done` again; then a criterion added, `done`, an evaluation, `done`; the same item under a self-asserted policy | refuse `acceptance_criteria_required` naming the missing criteria, the host's refusal to evaluate without them, and the remedy in order, with nothing captured beyond the pending attempt, never `work_projection_invalid` / the retry is refused the same way / `MissingAcceptanceEvaluation`, then seals / seals as before |
+| B53 | `fail`, then the run's executor revises the criteria it judged; `evaluate` without `--supersedes`, naming another record, then naming the failed record; `done` | `show` discloses `carried_failure` (`revised_by: executor`, `supersedes_required: true`); refuse at write `acceptance_evaluation_refused` with details `reason: carried_failure_unacknowledged`, `failed_evaluation`, and a remedy naming `--supersedes RECORD_ID`, nothing appended / the same / records with `supersedes`; `done` seals, and the bound evaluation names the failure |
+| B54 | `fail`, then a planner (a session that never held the run) revises its criteria while the claim is released; or the executor revises and a planner revises again | `carried_failure` shows `revised_by: planner` and `evaluate` records without `supersedes` / `revised_by: executor`, and `evaluate` without `supersedes` is refused |
+| B55 | `--supersedes` before any evaluation, after a passing one, after a failing one whose item was only retitled or blocked and unblocked, or after a rewording back to the judged criteria | refuse at write with `reason: nothing_to_supersede`; nothing is carried, so `evaluate` without `supersedes` records as before |
+| B56 | `fail` on a criterion bound to a test, then the executor drops the binding (or `update --accept` repeats the same wording without `--bind`) or binds another kind | the failure is carried although the criterion's text is unchanged; `evaluate` without `--supersedes` is refused `carried_failure_unacknowledged` |
 
 ## Agent surface
 
@@ -557,7 +596,8 @@ counts in every contract file move with it.
 engram work evaluate [REF] --mode MODE --acceptance-basis N --evidence-basis M \
   --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT \
   [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] \
-  [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION]
+  [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION] \
+  [--supersedes RECORD_ID]
 ```
 
 `POSITION` is the one-based criterion position, `--acceptance-basis` the
@@ -566,40 +606,47 @@ run-feed position `show` prints beside it under an evaluated policy, which the
 evaluator read through, and `LOCATOR` a note/gate locator from `show --notes
 --gates` or the full id of host-minted verification or environment evidence
 (R7). `--source-fingerprint F` declares the host's source revision the
-evaluator judged (F3); a value in another form, such as a Git commit id,
-voids the evaluation at the host's next sighting of the source, and a pass
-on a bound criterion declared that way is refused at once, since no check
-ran at that revision (R5). Open items in
-self-asserted projects keep their unchanged `show` shape. MCP `evaluate` takes
-the same data as `mode`, `acceptance_basis`, `evidence_basis`, `verdicts:
-[{criterion, verdict, basis, rationale, evidence: [locator]}]`, and the
-optional fields. The receipt is a bounded projection of the immutable record,
-not the record: the evaluation id, mode, revision, run, evaluated cut,
-`passed`, the first blocking verdict with its criterion compacted,
-`verdicts_total`, a prefix of verdict rows (position, verdict, basis, citation
-count), `verdicts_omitted`, which counts exactly the rows left out to fit the
-agent budget, and the attempt key exactly as recorded. The core measures that
-response before the record is written, so an admitted evaluation never
-commits into a failed response. Ordinary `show` prints the same bounded
-prefix with the omitted count, the evaluator label, and the recorded source
-fingerprint (marked as checked at `done` when the policy requires freshness);
-`next` prints one `evaluation: <mode> P/N pass, fresh|stale: R` line under
-the focused evaluated item (`focus.evaluation` in JSON); `show REF --full`,
-the authored-contract read that may exceed 12 KiB, returns the complete
-newest evaluation with every verdict's full rationale and citations plus its
-freshness. `done [--source-fingerprint F]` presents the host-measured
-fingerprint (F4); its refusals carry the causes above, and its success line
-and the completed item's `show` carry the provenance (completion enforcement,
-step 5). `add --evaluation-mode MODE` pins the mode from creation (roots and
-`--under` children alike), and `update` accepts `--evaluation-mode MODE` and
-`--clear-evaluation-mode` as one audited revision (MCP action
+evaluator judged (F3); a value in another form, such as a Git commit id, voids
+the evaluation at the host's next sighting of the source, and a pass on a
+bound criterion declared that way is refused at once, since no check ran at
+that revision (R5). `--supersedes RECORD_ID` names the carried failing
+evaluation (R11), by the id `show` prints in
+`acceptance_evaluation.carried_failure` (`evaluation`, `revised_by`,
+`judged_revision`, `failing`, `supersedes_required`); `show --full` adds its
+non-passing verdicts as `blocking: [{criterion, verdict}]` and the bindings
+its criteria had as `judged_bindings`, gives the current ones as
+`work.acceptance_bindings` (for any item under any policy, omitted when there
+are none), and prints a `judged bindings:` line; both reads give a record's
+own `supersedes`. Open items in self-asserted projects keep their unchanged
+`show` shape. MCP `evaluate` takes the same data as `mode`,
+`acceptance_basis`, `evidence_basis`, `verdicts: [{criterion, verdict, basis,
+rationale, evidence: [locator]}]`, and the optional fields. The receipt is a
+bounded projection of the immutable record, not the record: the evaluation id,
+mode, revision, run, evaluated cut, `passed`, the first blocking verdict with
+its criterion compacted, `verdicts_total`, a prefix of verdict rows (position,
+verdict, basis, citation count), `verdicts_omitted`, which counts exactly the
+rows left out to fit the agent budget, and the attempt key exactly as
+recorded. The core measures that response before the record is written, so an
+admitted evaluation never commits into a failed response. Ordinary `show`
+prints the same bounded prefix with the omitted count, the evaluator label,
+and the recorded source fingerprint (marked as checked at `done` when the
+policy requires freshness); `next` prints one `evaluation: <mode> P/N pass,
+fresh|stale: R` line under the focused evaluated item (`focus.evaluation` in
+JSON); `show REF --full`, the authored-contract read that may exceed 12 KiB,
+returns the complete newest evaluation with every verdict's full rationale and
+citations plus its freshness. `done [--source-fingerprint F]` presents the
+host-measured fingerprint (F4); its refusals carry the causes above, and its
+success line and the completed item's `show` carry the provenance (completion
+enforcement, step 5). `add --evaluation-mode MODE` pins the mode from creation
+(roots and `--under` children alike), and `update` accepts `--evaluation-mode
+MODE` and `--clear-evaluation-mode` as one audited revision (MCP action
 `evaluation_mode`). A supplied blank or whitespace mode refuses at `add` and
 `update` alike through one shared parser; only omission (no pin at creation,
 the explicit clear on update) leaves the item unpinned. A pin or clear is a
 planning revision that `show` history and peers' `next` deltas name as
 `evaluation mode`; clearing an already unpinned item reads as `no planning
-change`. A graph snapshot carries the pinned mode and restores it
-verbatim, so a transfer never widens which evaluator may accept a task.
+change`. A graph snapshot carries the pinned mode and restores it verbatim, so
+a transfer never widens which evaluator may accept a task.
 
 A host selects the evaluator from two reads. `show --json` carries the task's
 pin as `status.work.evaluation_mode`, omitted when the task pins nothing; the
@@ -639,6 +686,16 @@ process:
   budget and permissions;
 - submitting the evaluation through `evaluate` under the evaluator's own
   attributed identity;
+- handing over a carried failure (R11): when `show --json` carries
+  `acceptance_evaluation.carried_failure`, giving the evaluator the failed
+  verdicts and the criteria and their bindings before and after the revision
+  (`show --full`: the failed record's per-verdict `criterion` and
+  `carried_failure.judged_bindings` before, `work.acceptance` and
+  `work.acceptance_bindings` after), asking it whether the revised criteria
+  still deliver the requested outcome, and passing `supersedes` with the
+  failed record's id when `supersedes_required` is true, or when a planner
+  revised and the evaluator judged the failure; without it, an evaluation
+  after an executor's revision is refused `carried_failure_unacknowledged`;
 - measuring the source fingerprint at evaluation time and again at completion
   time, binding it to the exact attempt rather than reusing the evaluator's
   earlier string;
@@ -690,9 +747,11 @@ until the host integration exists.
 
 No durable DDL change: the evaluation is a canonical object with a run-feed
 entry; the policy field is part of the canonical policy object; the task mode
-lives in the item's canonical projection; the seal gains an optional field.
+lives in the item's canonical projection; the seal gains an optional field,
+and so does the evaluation (`supersedes`, R11).
 Each new field is omitted from canonical bytes when it holds its default value
-(self-asserted policy, absent task mode or absent seal evaluation),
+(self-asserted policy, absent task mode, absent seal evaluation or absent
+`supersedes`),
 so records written without the feature re-serialize to the same bytes; the
 policy-history replay and seal tests exercise that. Nothing more is claimed:
 opening a store written by a different build stays governed by the generic

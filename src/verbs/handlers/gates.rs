@@ -106,6 +106,7 @@ impl AgentVerbs {
                     model: input.model,
                     execution_identity: input.execution_identity,
                     parent_session: input.parent_session,
+                    supersedes: input.supersedes,
                 },
                 now,
             )
@@ -122,8 +123,13 @@ impl AgentVerbs {
             ),
         };
         let replay = if result.replayed { " (replayed)" } else { "" };
+        let superseding = projection
+            .supersedes
+            .as_ref()
+            .map(|failed| format!(", superseding the carried failure {failed}"))
+            .unwrap_or_default();
         let lines = vec![format!(
-            "recorded {} evaluation on {work_ref} \"{}\": {}/{} pass, {outcome}{replay}{}",
+            "recorded {} evaluation on {work_ref} \"{}\": {}/{} pass, {outcome}{superseding}{replay}{}",
             projection.mode.word(),
             short(&after.status.work.title),
             projection.passed,

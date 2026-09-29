@@ -867,6 +867,7 @@ fn a_blank_evaluation_mode_is_refused_at_creation() {
 #[test]
 fn the_minimal_evaluate_receipt_is_bounded() {
     let projection = crate::work_service::WorkEvaluationProjection {
+        supersedes: None,
         mode: AcceptanceEvaluationMode::IndependentSession,
         work_revision: i64::MAX,
         run_id: crate::domain::WorkRunId::new(),
@@ -1143,6 +1144,7 @@ fn the_word_envelope_stays_within_its_reserve() {
         .service
         .work_evaluate_on(
             &crate::WorkEvaluateInput {
+                supersedes: None,
                 work_ref: Some(work_ref.clone()),
                 mode: input.mode.clone(),
                 acceptance_basis: input.acceptance_basis,

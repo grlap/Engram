@@ -349,6 +349,56 @@ pub(super) struct ShowEvaluation {
     pub(super) verdicts: Vec<ShowVerdict>,
     pub(super) verdicts_omitted: usize,
     pub(super) full_detail: String,
+    /// Record id of the carried failing evaluation this record acknowledged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) supersedes: Option<String>,
+    /// The failing evaluation whose criteria were revised on this run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) carried_failure: Option<ShowCarriedFailure>,
+}
+
+/// A failing evaluation whose criteria were revised after it, as `show`
+/// discloses it: the next evaluation sees it, and after the executor's
+/// revision must name it with `--supersedes`.
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShowCarriedFailure {
+    /// The failing evaluation's record id.
+    pub(super) evaluation: String,
+    /// `executor` or `planner`.
+    pub(super) revised_by: &'static str,
+    /// The work revision whose criteria it judged.
+    pub(super) judged_revision: i64,
+    /// How many of its verdicts did not pass.
+    pub(super) failing: usize,
+    /// Whether the next evaluation must name it.
+    pub(super) supersedes_required: bool,
+}
+
+pub(super) fn show_carried_failure(carried: &crate::domain::CarriedFailure) -> ShowCarriedFailure {
+    ShowCarriedFailure {
+        evaluation: carried.evaluation.as_str().to_owned(),
+        revised_by: carried.revised_by.word(),
+        judged_revision: carried.judged_revision,
+        failing: carried.blocking.len(),
+        supersedes_required: carried.revised_by == crate::domain::CarriedFailureReviser::Executor,
+    }
+}
+
+/// The text line that discloses a carried failure.
+pub(super) fn carried_failure_line(carried: &ShowCarriedFailure) -> String {
+    let next = if carried.supersedes_required {
+        "the next evaluation must name it"
+    } else {
+        "the next evaluation sees it and may name it"
+    };
+    format!(
+        "  carried failure: evaluation {} did not pass {} of the criteria at revision {}, which the {} has since revised; {next}: --supersedes {}",
+        carried.evaluation,
+        carried.failing,
+        carried.judged_revision,
+        carried.revised_by,
+        carried.evaluation
+    )
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -544,6 +594,8 @@ pub(super) fn show_evaluation(
             .collect(),
         verdicts_omitted: record.verdicts.len() - visible,
         full_detail: super::mutation::full_contract(work_ref),
+        supersedes: record.supersedes.as_ref().map(|id| id.as_str().to_owned()),
+        carried_failure: status.carried_failure.as_ref().map(show_carried_failure),
     }
 }
 
@@ -579,6 +631,12 @@ fn evaluation_lines(
                 ""
             }
         ));
+    }
+    if let Some(superseded) = &projected.supersedes {
+        lines.push(format!("  supersedes the carried failure {superseded}"));
+    }
+    if let Some(carried) = &projected.carried_failure {
+        lines.push(carried_failure_line(carried));
     }
     for (verdict, record) in projected.verdicts.iter().zip(&status.record.verdicts) {
         lines.push(format!(

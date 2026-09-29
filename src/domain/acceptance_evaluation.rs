@@ -332,6 +332,61 @@ pub struct AcceptanceEvaluation {
     /// Explicit or content-derived attempt identity.
     pub attempt_key: String,
     pub created_at: DateTime<Utc>,
+    /// The record id of the failing evaluation whose criteria were revised
+    /// before this one was recorded. The evaluator judged the revised
+    /// criteria knowing that failure, so the record names it for good.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<ObjectId>,
+}
+
+/// Who revised the criteria a failing evaluation judged.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CarriedFailureReviser {
+    /// A session that holds or held the evaluated run, or its executor.
+    Executor,
+    /// Any other session, such as a planner or coordinator.
+    Planner,
+}
+
+impl CarriedFailureReviser {
+    /// Stable lower-case word.
+    #[must_use]
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Executor => "executor",
+            Self::Planner => "planner",
+        }
+    }
+}
+
+/// One non-passing verdict of a carried failure, by its one-based position
+/// in the criteria the failing evaluation judged.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CarriedFailureVerdict {
+    pub criterion: usize,
+    pub verdict: AcceptanceVerdict,
+}
+
+/// A failing evaluation whose criteria were revised after it was recorded.
+/// A revision retires the evaluation as stale, and without this the failure
+/// would vanish from every surface once a later evaluation lands; the next
+/// evaluation sees it, and after an executor's revision must name it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CarriedFailure {
+    /// The failing evaluation's record id.
+    pub evaluation: ObjectId,
+    /// `executor` when any revision that changed its criteria came from the
+    /// run's executor or a session that holds or held the run.
+    pub revised_by: CarriedFailureReviser,
+    /// The work revision whose criteria the failing evaluation judged.
+    pub judged_revision: i64,
+    /// The verification bindings its criteria had then. A binding-only
+    /// revision leaves the criteria's text unchanged, so these are the only
+    /// record of what the revision weakened.
+    pub judged_bindings: Vec<super::AcceptanceBinding>,
+    /// Its non-passing verdicts.
+    pub blocking: Vec<CarriedFailureVerdict>,
 }
 
 impl AcceptanceEvaluation {
@@ -447,6 +502,11 @@ pub struct RecordAcceptanceEvaluationRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt_key: Option<String>,
     pub recorded_at: DateTime<Utc>,
+    /// The record id of the carried failure this evaluation acknowledges.
+    /// Required after the run's executor revised a failing evaluation's
+    /// criteria; refused when no failure is carried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<ObjectId>,
 }
 
 /// Maximum citations admitted per verdict.

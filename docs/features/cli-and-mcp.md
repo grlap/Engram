@@ -301,7 +301,10 @@ criteria remain available through `show REF --full`.
 `show REF --full` (MCP `show { work_ref: REF, full: true }`) is an explicit
 complete authored-contract read, not a verbose host projection. It returns
 the stored title, outcome and entire acceptance list, together with the short
-ref and item revision from one read snapshot. JSON retains exact stored text;
+ref and item revision from one read snapshot. JSON adds the criteria's
+verification bindings as `work.acceptance_bindings` under any policy,
+omitted when there are none; the text marks each bound criterion as ordinary
+`show` does. JSON retains exact stored text;
 terminal text frames unsafe controls and multiline content as data. It does
 not expose host claims, fences or control bindings. The revision identifies
 the read version, not execution authority. Like `show --note` full-note
@@ -823,17 +826,26 @@ Rules that matter:
 - `evaluate` records one immutable acceptance evaluation on the targeted
   item's active run: `evaluate [REF] --mode MODE --acceptance-basis N
   --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale
-  POSITION=TEXT [--evidence POSITION=LOCATOR]...`, where `show` prints both
-  bases and `LOCATOR` is a note/gate locator exactly as `show --notes
-  --gates` prints it (resolved as `done --link` resolves it) or the full
-  record id of host-minted verification or environment evidence. The evaluator's
-  own session is the attributed identity; a pass needs at least one
-  run-evidence citation; the core validates structure and provenance, never
-  relevance, and refuses a submission whose evidence basis a host-observed
-  change has already overtaken. The receipt and ordinary `show` carry a
-  bounded prefix of verdict rows with an exact `verdicts_omitted` count and
-  the decision facts (passed count, first blocking verdict, evaluator label,
-  freshness, recorded source fingerprint); `next` prints one `evaluation:`
+  POSITION=TEXT [--evidence POSITION=LOCATOR]... [--supersedes RECORD_ID]`,
+  where `show` prints both bases and `LOCATOR` is a note/gate locator
+  exactly as `show --notes --gates` prints it (resolved as `done --link`
+  resolves it) or the full record id of host-minted verification or
+  environment evidence. The evaluator's own session is the attributed
+  identity; a pass needs at least one run-evidence citation; the core
+  validates structure and provenance, never relevance, and refuses a
+  submission whose evidence basis a host-observed change has already
+  overtaken. When the criteria a failing evaluation judged, or their
+  verification bindings, were revised after it, `show` discloses that
+  carried failure (`acceptance_evaluation.carried_failure`; `show --full`
+  adds the bindings it judged as `judged_bindings`), and after a revision by
+  the run's executor `evaluate` must name the failed record with
+  `--supersedes RECORD_ID` (MCP `supersedes`); a mismatch is refused with
+  `acceptance_evaluation_refused`, details `reason:
+  carried_failure_unacknowledged` or `nothing_to_supersede`. The receipt and
+  ordinary `show` carry a bounded prefix of verdict rows with an exact
+  `verdicts_omitted` count and the decision facts (passed count, first
+  blocking verdict, evaluator label, freshness, recorded source
+  fingerprint); `next` prints one `evaluation:`
   line under the focused evaluated item; `show REF --full` returns the
   complete newest evaluation with every rationale and citation. It is
   refused until an operator enables the

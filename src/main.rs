@@ -718,6 +718,9 @@ enum WorkCommand {
         /// Sub-agent mode only: the host-attested parent session.
         #[arg(long, value_name = "SESSION", requires = "execution_identity")]
         parent_session: Option<String>,
+        /// Record id of the carried failing evaluation this one acknowledges, as show prints it; required after the run's executor revised the criteria that evaluation failed
+        #[arg(long, value_name = "RECORD_ID")]
+        supersedes: Option<String>,
     },
     /// Store one attributed project memory.
     #[command(group(clap::ArgGroup::new("memory_text").required(true).args(["text", "text_flag"])))]
@@ -1802,6 +1805,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             model,
             execution_identity,
             parent_session,
+            supersedes,
         } => evaluate_verdicts(&verdicts, &rationales, &evidence).and_then(|verdicts| {
             verbs.evaluate(
                 engram::EvaluateInput {
@@ -1815,6 +1819,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                     model,
                     execution_identity,
                     parent_session,
+                    supersedes,
                 },
                 now,
             )

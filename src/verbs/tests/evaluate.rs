@@ -1,5 +1,6 @@
 //! The `evaluate` word and its `show`, `update`, and `done` disclosures.
 
+mod carried_failure;
 mod criteria_required;
 mod review;
 
@@ -62,6 +63,7 @@ fn evaluate_input(
     verdicts: Vec<WorkCriterionVerdictInput>,
 ) -> EvaluateInput {
     EvaluateInput {
+        supersedes: None,
         work_ref: Some(work_ref.into()),
         mode: "same_session".into(),
         acceptance_basis: 1,

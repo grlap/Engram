@@ -733,6 +733,44 @@ impl EvaluationBasisMove {
     }
 }
 
+/// Why an acceptance evaluation's `supersedes` does not match the carried
+/// failure on its run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CarriedFailureRefusal {
+    /// The run's executor revised a failing evaluation's criteria, and the
+    /// evaluation does not name that failing evaluation; or it names another
+    /// record than the failure carried.
+    Unacknowledged,
+    /// The evaluation names a failure to supersede, but no failing
+    /// evaluation's criteria were revised on this run.
+    NothingToSupersede,
+}
+
+impl CarriedFailureRefusal {
+    /// Stable reason word, under the `acceptance_evaluation_refused` code.
+    #[must_use]
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Unacknowledged => "carried_failure_unacknowledged",
+            Self::NothingToSupersede => "nothing_to_supersede",
+        }
+    }
+
+    /// What the evaluator does next. The refusal message and the MCP details
+    /// both carry this text, because a host may relay only the message.
+    #[must_use]
+    pub const fn remedy(self) -> &'static str {
+        match self {
+            Self::Unacknowledged => {
+                "show the evaluator the failed verdicts and the criteria and their bindings before and after the revision, have it judge whether the revised criteria still deliver the requested outcome, and submit with --supersedes RECORD_ID naming the failed evaluation"
+            }
+            Self::NothingToSupersede => {
+                "submit without --supersedes: no failing evaluation's criteria were revised on this run"
+            }
+        }
+    }
+}
+
 /// Errors at the immutable storage boundary.
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -842,6 +880,16 @@ pub enum StoreError {
     #[error("acceptance evaluation for {work:?} was refused: {reason}")]
     AcceptanceEvaluationRefused {
         work: crate::domain::WorkId,
+        reason: String,
+    },
+    /// An evaluation's `supersedes` does not match the failure carried on its
+    /// run: `refusal` names which way, and `failed` the carried failing
+    /// evaluation when there is one.
+    #[error("acceptance evaluation for {work:?} was refused ({}): {reason}", refusal.word())]
+    AcceptanceEvaluationCarriedFailure {
+        work: crate::domain::WorkId,
+        refusal: CarriedFailureRefusal,
+        failed: Option<ObjectId>,
         reason: String,
     },
     /// The run moved past the evidence basis an evaluation read through.

@@ -21,16 +21,17 @@ use super::{
 };
 use crate::domain::{
     AcceptanceBasis, AcceptanceEvaluation, AcceptanceEvaluationMode, AcceptanceEvaluationPolicy,
-    AcceptanceResult, AcceptanceStaleReason, AcceptanceVerdict, AssuranceLevel, CompletionSeal,
-    CriterionVerdict, CriterionVerdictInput, ExecutionObservation, ExecutionSourceBasis, FeedId,
+    AcceptanceResult, AcceptanceStaleReason, AcceptanceVerdict, AssuranceLevel, CarriedFailure,
+    CarriedFailureReviser, CarriedFailureVerdict, CompletionSeal, CriterionVerdict,
+    CriterionVerdictInput, ExecutionObservation, ExecutionSourceBasis, FeedId,
     MAX_ACCEPTANCE_EVALUATION_BYTES, MAX_ACCEPTANCE_SOURCE_BASIS_BYTES,
     MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis,
     NamedRootBindingEvent, NamedRootBindingKind, ProjectId, RecordAcceptanceEvaluationRequest,
     SourceRootState, VerificationEvidence, VerificationResult, WorkEvent, WorkEvidence,
-    WorkLifecycle, WorkObligation, WorkTransition,
+    WorkLifecycle, WorkObligation, WorkPlanningAuthority, WorkTransition,
 };
 use crate::memory::Redactor;
-use crate::storage::{EvaluationBasisMove, SqliteStore, StoreError};
+use crate::storage::{CarriedFailureRefusal, EvaluationBasisMove, SqliteStore, StoreError};
 
 /// Canonical object kind and run-feed entry kind of one evaluation.
 pub(crate) const KIND: &str = "acceptance_evaluation";
@@ -94,6 +95,10 @@ pub struct AcceptanceEvaluationStatus {
     /// not measure a fingerprint: the recorded basis is checked against the
     /// fingerprint `done` presents, and this read does not call it stale.
     pub source_checked_at_done: bool,
+    /// The failing evaluation whose criteria were revised on this run, which
+    /// the next evaluation must see and, after the executor's revision, name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carried_failure: Option<CarriedFailure>,
 }
 
 /// What a completion would do with the newest evaluation right now.
@@ -157,6 +162,10 @@ struct AttemptFingerprint<'a> {
     evaluator_model: Option<&'a crate::domain::EvaluatorModel>,
     source_basis: Option<&'a crate::domain::AcceptanceSourceBasis>,
     verdicts: &'a [CriterionVerdictInput],
+    /// Left out when absent, so every attempt recorded before the field
+    /// existed keeps its fingerprint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supersedes: Option<&'a ObjectId>,
 }
 
 enum Citation {
@@ -190,8 +199,14 @@ impl SqliteStore {
     /// # Errors
     ///
     /// Returns [`StoreError::AcceptanceEvaluationRefused`] for policy, mode,
-    /// identity, criteria, or citation violations, and other [`StoreError`]
-    /// values for stale revisions, closed work, or persistence failures.
+    /// identity, criteria, or citation violations;
+    /// [`StoreError::AcceptanceEvaluationCarriedFailure`] when `supersedes`
+    /// does not answer the failure carried on the run
+    /// ([`CarriedFailureRefusal::Unacknowledged`], naming the failed record,
+    /// when it is missing after the executor's revision or names another
+    /// record; [`CarriedFailureRefusal::NothingToSupersede`] when nothing is
+    /// carried); and other [`StoreError`] values for stale
+    /// revisions, closed work, damaged projections, or persistence failures.
     /// Nothing is appended on refusal.
     pub fn record_acceptance_evaluation<R: Redactor>(
         &mut self,
@@ -257,6 +272,8 @@ impl SqliteStore {
             run.executor.as_ref(),
             &history,
         )?;
+        let carried = carried_failure_on(&transaction, &item, run_id)?;
+        admit_supersedes(&item, carried.as_ref(), request.supersedes.as_ref())?;
         // The evaluator names the run-feed position it read through. Anything
         // the host observed after that point means the verdicts describe a
         // superseded state, so the record is refused rather than silently
@@ -387,7 +404,9 @@ impl SqliteStore {
                 SourceCheck::AtCompletion(Some(fingerprint))
             });
             let stale = staleness(connection, &item, run_id, &policy, &record, source)?;
+            let carried_failure = carried_failure_on(connection, &item, run_id)?;
             Ok(Some(AcceptanceEvaluationStatus {
+                carried_failure,
                 evaluation: hash,
                 source_checked_at_done: policy.require_source_freshness
                     && record.source_basis.is_some()
@@ -551,6 +570,7 @@ pub(crate) fn attempt_identity(
         evaluator_model: request.evaluator_model.as_ref(),
         source_basis: request.source_basis.as_ref(),
         verdicts: &request.verdicts,
+        supersedes: request.supersedes.as_ref(),
     })?;
     let key = match request.attempt_key.as_deref().map(str::trim) {
         Some(key) if key.is_empty() || key.len() > MAX_ATTEMPT_KEY_BYTES => {
@@ -608,6 +628,7 @@ fn append_evaluation(
         verdicts,
         attempt_key: attempt.key.clone(),
         created_at: request.recorded_at,
+        supersedes: request.supersedes.clone(),
     };
     let object = CanonicalObject::mint(&record)?;
     if object.bytes().len() > MAX_ACCEPTANCE_EVALUATION_BYTES {
@@ -1297,6 +1318,211 @@ pub(super) fn latest_on(
         ));
     }
     Ok(Some((hash, record)))
+}
+
+/// The failure carried on `run_id`: the newest evaluation on the run, when it
+/// does not pass everywhere and a revision after it changed the criteria it
+/// judged or their verification bindings, while the item's criteria and
+/// bindings still differ from them. Both are followed through each
+/// revision's snapshot, so a revision of other fields carries nothing and a
+/// revision back to the judged contract ends the carry.
+/// Its other staleness reasons do not matter: a check or source change after
+/// the failure is the executor's ordinary next step, not a reason to forget
+/// it. The reviser is the executor when any criteria-changing revision was
+/// made under the run's claim, or by its executor or a session that holds or
+/// held the run.
+/// The carry belongs to the item's active run: once completion, disposal or
+/// detachment ends that run, nothing is carried.
+pub(super) fn carried_failure_on(
+    connection: &Connection,
+    item: &WorkItem,
+    run_id: WorkRunId,
+) -> Result<Option<CarriedFailure>, StoreError> {
+    if item.active_run_id != Some(run_id) {
+        return Ok(None);
+    }
+    let Some((evaluation, record)) = latest_on(connection, run_id)? else {
+        return Ok(None);
+    };
+    if record.first_blocking().is_none() {
+        return Ok(None);
+    }
+    let position = citation_position(connection, run_id, &evaluation)?.ok_or_else(|| {
+        StoreError::InvalidWorkProjection(format!(
+            "acceptance evaluation {evaluation} is not on its run feed"
+        ))
+    })?;
+    // The contract the evaluation judged: the criteria it copied, and the
+    // verification bindings they had then, read from the newest snapshot of
+    // the item before it on the run feed. Dropping or changing a binding
+    // weakens a criterion as surely as rewording it. Every run starts with a
+    // work event, and every revision lands on the run feed, so a missing or
+    // mismatched snapshot is a damaged projection, never a reason to stop
+    // comparing bindings.
+    let judged_bindings = work_snapshot_before(connection, run_id, item.work_id, position)?
+        .filter(|work| work.acceptance == record.criteria)
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(format!(
+                "acceptance evaluation {evaluation} has no snapshot of the criteria it judged on its run feed"
+            ))
+        })?
+        .acceptance_bindings;
+    if record.criteria == item.acceptance && judged_bindings == item.acceptance_bindings {
+        return Ok(None);
+    }
+    let mut statement = connection.prepare(
+        "SELECT object_id FROM work_feed_entries
+         WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_kind = 'work_event'
+           AND position > ?2
+         ORDER BY position",
+    )?;
+    let rows = statement
+        .query_map(params![run_id.0.to_string(), position], |row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut criteria = record.criteria.clone();
+    let mut bindings = judged_bindings.clone();
+    // Each revision that changed the criteria or their bindings: whether its
+    // claim authority makes it the executor's, and the session that made it.
+    let mut revisions: Vec<(bool, Option<SessionId>)> = Vec::new();
+    for stored in rows {
+        let id =
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+        let event: WorkEvent = load_typed_work_object(connection, &id, "work_event")?;
+        let WorkTransition::Revised { authority } = &event.transition else {
+            continue;
+        };
+        if event.work_id != item.work_id
+            || (event.work.acceptance == criteria && event.work.acceptance_bindings == bindings)
+        {
+            continue;
+        }
+        criteria.clone_from(&event.work.acceptance);
+        bindings.clone_from(&event.work.acceptance_bindings);
+        revisions.push((
+            matches!(authority, WorkPlanningAuthority::Claim { .. }),
+            event.actor.session_id.clone(),
+        ));
+    }
+    // Every revision of an item with an active run lands on that run's feed,
+    // so the revisions after the evaluation must lead to the item as it is.
+    // When they do not, the projection is damaged; reading nothing carried
+    // would silently lift the requirement to name the failure.
+    if criteria != item.acceptance || bindings != item.acceptance_bindings {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "the revisions after acceptance evaluation {evaluation} on its run feed do not lead to the item's current criteria"
+        )));
+    }
+    let claim = load_work_claim_optional(connection, run_id)?;
+    let run = load_work_run(connection, run_id)?;
+    let history = run_holder_history(connection, run_id)?;
+    let executor = revisions.iter().any(|(under_claim, session)| {
+        *under_claim
+            || session.as_ref().is_some_and(|session| {
+                history.contains(session)
+                    || claim.as_ref().is_some_and(|claim| claim.holder == *session)
+                    || run.executor.as_ref() == Some(session)
+            })
+    });
+    Ok(Some(CarriedFailure {
+        evaluation,
+        revised_by: if executor {
+            CarriedFailureReviser::Executor
+        } else {
+            CarriedFailureReviser::Planner
+        },
+        judged_revision: record.work_revision,
+        judged_bindings,
+        blocking: record
+            .verdicts
+            .iter()
+            .enumerate()
+            .filter(|(_, verdict)| verdict.verdict != AcceptanceVerdict::Pass)
+            .map(|(index, verdict)| CarriedFailureVerdict {
+                criterion: index + 1,
+                verdict: verdict.verdict,
+            })
+            .collect(),
+    }))
+}
+
+/// The item as the newest work event on the run feed before `position`
+/// recorded it: every revision of an item with an active run lands on that
+/// feed, so this is the item as it stood at that point.
+fn work_snapshot_before(
+    connection: &Connection,
+    run_id: WorkRunId,
+    work_id: WorkId,
+    position: i64,
+) -> Result<Option<WorkItem>, StoreError> {
+    let stored: Option<String> = connection
+        .query_row(
+            "SELECT object_id FROM work_feed_entries
+             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_kind = 'work_event'
+               AND position < ?2
+             ORDER BY position DESC LIMIT 1",
+            params![run_id.0.to_string(), position],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+    let id = ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+    let event: WorkEvent = load_typed_work_object(connection, &id, "work_event")?;
+    Ok((event.work_id == work_id).then_some(event.work))
+}
+
+/// Admits an evaluation's `supersedes` against the failure carried on its
+/// run. After the executor's revision the evaluation must name the carried
+/// failure; after a planner's alone it may; with none carried it must not.
+fn admit_supersedes(
+    item: &WorkItem,
+    carried: Option<&CarriedFailure>,
+    supersedes: Option<&ObjectId>,
+) -> Result<(), StoreError> {
+    let refuse = |refusal: CarriedFailureRefusal, failed: Option<&ObjectId>, reason: String| {
+        StoreError::AcceptanceEvaluationCarriedFailure {
+            work: item.work_id,
+            refusal,
+            failed: failed.cloned(),
+            reason: format!("{reason}; {}", refusal.remedy()),
+        }
+    };
+    let Some(carried) = carried else {
+        return supersedes.map_or(Ok(()), |named| {
+            Err(refuse(
+                CarriedFailureRefusal::NothingToSupersede,
+                None,
+                format!(
+                    "it supersedes {named}, but no failing evaluation's criteria were revised on this run"
+                ),
+            ))
+        });
+    };
+    match supersedes {
+        Some(named) if *named == carried.evaluation => Ok(()),
+        Some(named) => Err(refuse(
+            CarriedFailureRefusal::Unacknowledged,
+            Some(&carried.evaluation),
+            format!(
+                "it supersedes {named}, but the failure carried on this run is evaluation {}",
+                carried.evaluation
+            ),
+        )),
+        // A planner's revision alone is shown to the evaluation, which need
+        // not name it.
+        None if carried.revised_by == CarriedFailureReviser::Planner => Ok(()),
+        None => Err(refuse(
+            CarriedFailureRefusal::Unacknowledged,
+            Some(&carried.evaluation),
+            format!(
+                "the run's executor revised the criteria that evaluation {} failed",
+                carried.evaluation
+            ),
+        )),
+    }
 }
 
 /// The newest evaluation entry on the run feed at or before `cut`: the one a

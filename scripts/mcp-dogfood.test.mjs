@@ -3203,6 +3203,70 @@ test("evaluated acceptance policy over the real transports: locators, source fre
   }
 });
 
+test("a carried failure over the real transports: shown, refused until named, then recorded", async (t) => {
+  const engramHome = fixtureHome("engram-carried-failure-", t);
+  const holder = "carried-holder";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const policy = spawnSync(binary, [
+      "--home", engramHome, "control-policy", "set-acceptance-evaluation",
+      "--modes", "same-session", "--mechanical-basis", "asserted",
+      "--authorized-by", "dogfood-operator", "--idempotency-key", "dogfood-carried-failure",
+    ], { cwd: root, encoding: "utf8" });
+    assert.equal(policy.status, 0, policy.stderr);
+    const ref = cliJson(engramHome, holder, "add", "Carried item", "--accept", "the report lists every store").work.short_ref;
+    cliJson(engramHome, holder, "claim", ref);
+    cliJson(engramHome, holder, "gate", "cargo-test");
+    const shown = cliJson(engramHome, holder, "show", ref);
+    const bases = (read) => ["--acceptance-basis", String(read.acceptance_basis), "--evidence-basis", String(read.evidence_basis)];
+    const failed = cliJson(engramHome, holder, "evaluate", ref, "--mode", "same-session", ...bases(shown),
+      "--verdict", "1=fail:judgment", "--rationale", "1=it lists one store");
+    const failedId = failed.evaluation.hash;
+    // The executor rewords the criterion the evaluation failed.
+    cliJson(engramHome, holder, "update", ref, "--accept", "the report lists some stores");
+    const carried = cliJson(engramHome, holder, "show", ref);
+    assert.deepEqual(carried.acceptance_evaluation.carried_failure, {
+      evaluation: failedId,
+      revised_by: "executor",
+      judged_revision: failed.evaluation.work_revision,
+      failing: 1,
+      supersedes_required: true,
+    });
+    const gate = cliJson(engramHome, holder, "show", ref, "--notes", "--gates").notes
+      .find((row) => String(row.family).toLowerCase() === "gates");
+    assert.ok(gate);
+
+    client = new McpClient(engramHome, holder);
+    await client.initialize();
+    const request = {
+      work_ref: ref, mode: "same_session",
+      acceptance_basis: carried.acceptance_basis, evidence_basis: carried.evidence_basis,
+      verdicts: [{ criterion: 1, verdict: "pass", basis: "asserted", rationale: "the gate passed", evidence: [gate.locator] }],
+    };
+    const refused = structuredError(await client.call("evaluate", request), "acceptance_evaluation_refused");
+    assert.equal(refused.details.reason, "carried_failure_unacknowledged");
+    assert.equal(refused.details.failed_evaluation, failedId);
+    assert.match(refused.details.remedy, /--supersedes RECORD_ID/u);
+    const recorded = receipt(await client.call("evaluate", { ...request, supersedes: failedId }));
+    assert.equal(recorded.evaluation.supersedes, failedId);
+
+    // Once a newer evaluation ends the carry, the CLI flag names nothing.
+    const after = cliJson(engramHome, holder, "show", ref);
+    assert.equal(after.acceptance_evaluation.carried_failure, undefined);
+    assert.equal(after.acceptance_evaluation.supersedes, failedId);
+    const nothing = cliWord(engramHome, holder, "evaluate", ref, "--mode", "same-session", ...bases(after),
+      "--verdict", "1=pass:asserted", "--rationale", "1=the gate passed", "--evidence", `1=${gate.locator}`,
+      "--supersedes", failedId, "--json");
+    assert.notEqual(nothing.status, 0);
+    assert.equal(JSON.parse(nothing.stderr || nothing.stdout).error.details.reason, "nothing_to_supersede");
+    assert.equal(cliJson(engramHome, holder, "done", ref, "Delivered").work.lifecycle, "completed");
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("CLI words translate the same ambient lifecycle service", (t) => {
   const engramHome = fixtureHome("engram-work-cli-", t);
   try {

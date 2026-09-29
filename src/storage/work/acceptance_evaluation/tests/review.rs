@@ -698,6 +698,7 @@ fn the_word_accepts_full_record_ids_of_host_minted_verification_evidence() {
     let recorded = verbs
         .evaluate(
             crate::EvaluateInput {
+                supersedes: None,
                 work_ref: Some(work.work_id.0.to_string()),
                 mode: "same_session".into(),
                 acceptance_basis: work.revision,

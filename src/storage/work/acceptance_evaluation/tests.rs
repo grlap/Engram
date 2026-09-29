@@ -3,6 +3,7 @@
 
 mod basis_moves;
 mod bound_criteria;
+mod carried_failure;
 mod citation_sources;
 mod corrections;
 mod criteria_required;
@@ -124,6 +125,7 @@ fn request(
     second: i64,
 ) -> RecordAcceptanceEvaluationRequest {
     RecordAcceptanceEvaluationRequest {
+        supersedes: None,
         project_id: work.project_id.clone(),
         work_id: work.work_id,
         expected_work_revision: work.revision,

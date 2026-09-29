@@ -98,10 +98,10 @@ pub use project::{
 };
 pub use storage::{
     AcceptanceEvaluationPolicyUpdateReceipt, AcceptanceEvaluationReceipt,
-    AcceptanceEvaluationStatus, BackupManifest, ControlDiagnostics, ControlPolicyRecoveryFinding,
-    ControlPolicyRecoveryReport, ControlPolicyUpdateReceipt, EvaluationBasisMove, IntegrityReport,
-    ObligationRuleSetUpdateReceipt, SqliteStore, StoreError, describe_host_path_policy,
-    install_store_copy_without_replacing,
+    AcceptanceEvaluationStatus, BackupManifest, CarriedFailureRefusal, ControlDiagnostics,
+    ControlPolicyRecoveryFinding, ControlPolicyRecoveryReport, ControlPolicyUpdateReceipt,
+    EvaluationBasisMove, IntegrityReport, ObligationRuleSetUpdateReceipt, SqliteStore, StoreError,
+    describe_host_path_policy, install_store_copy_without_replacing,
 };
 pub use verbs::{
     AddInput, AgentVerbs, ClaimInput, ClaimUnderInput, DoneInput, EvaluateInput, ForgetInput,

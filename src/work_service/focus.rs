@@ -29,6 +29,10 @@ pub(crate) struct WorkAuthoredEvaluation {
     pub evaluated_cut: i64,
     pub stale: Option<&'static str>,
     pub verdicts: Vec<WorkAuthoredVerdict>,
+    /// Record id of the carried failing evaluation this record acknowledged.
+    pub supersedes: Option<String>,
+    /// The failing evaluation whose criteria were revised on this run.
+    pub carried_failure: Option<crate::domain::CarriedFailure>,
 }
 
 /// One complete verdict of the `show --full` read.
@@ -306,6 +310,12 @@ impl LocalWorkService {
                                     .collect(),
                             })
                             .collect(),
+                        supersedes: status
+                            .record
+                            .supersedes
+                            .as_ref()
+                            .map(|id| id.as_str().to_owned()),
+                        carried_failure: status.carried_failure.clone(),
                     })
             } else {
                 None

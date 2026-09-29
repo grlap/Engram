@@ -1,4 +1,5 @@
 mod budget;
+mod carried_failure;
 mod review;
 
 use std::path::Path;
@@ -65,6 +66,7 @@ fn evaluate_input(
     verdicts: Vec<WorkCriterionVerdictInput>,
 ) -> WorkEvaluateInput {
     WorkEvaluateInput {
+        supersedes: None,
         work_ref: Some(work_ref.into()),
         mode: "same_session".into(),
         acceptance_basis: revision,

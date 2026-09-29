@@ -335,6 +335,7 @@ fn the_preflight_projection_carries_the_recorded_attempt_key() {
         ("content", None),
     ] {
         let request = RecordAcceptanceEvaluationRequest {
+            supersedes: None,
             project_id: project.clone(),
             work_id: work.work_id,
             expected_work_revision: work.revision,

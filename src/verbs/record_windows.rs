@@ -193,6 +193,34 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
             evaluation.work_revision,
             evaluation.evaluated_cut
         ));
+        if let Some(superseded) = &evaluation.supersedes {
+            lines.push(format!("  supersedes the carried failure {superseded}"));
+        }
+        let carried = evaluation
+            .carried_failure
+            .as_ref()
+            .map(super::show::show_carried_failure);
+        if let (Some(carried), Some(full)) = (&carried, &evaluation.carried_failure) {
+            lines.push(super::show::carried_failure_line(carried));
+            // A binding-only revision leaves the text unchanged, so the
+            // bindings it judged are the before side of the comparison.
+            let judged = if full.judged_bindings.is_empty() {
+                "none".to_owned()
+            } else {
+                full.judged_bindings
+                    .iter()
+                    .map(|binding| {
+                        format!(
+                            "criterion {} {}",
+                            binding.criterion,
+                            super::show::binding_note(&binding.requirement).trim_start()
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            };
+            lines.push(format!("  judged bindings: {judged}"));
+        }
         for verdict in &evaluation.verdicts {
             lines.push(format!(
                 "  {}. {} ({})",
@@ -206,7 +234,7 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
                 lines.push(format!("     citations: {}", verdict.citations.join(", ")));
             }
         }
-        json!({
+        let mut value = json!({
             "hash": evaluation.hash,
             "mode": evaluation.mode,
             "work_revision": evaluation.work_revision,
@@ -225,7 +253,21 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
                     "citations": verdict.citations,
                 }))
                 .collect::<Vec<_>>(),
-        })
+        });
+        if let Some(object) = value.as_object_mut() {
+            if let Some(superseded) = &evaluation.supersedes {
+                object.insert("supersedes".into(), json!(superseded));
+            }
+            if let (Some(carried), Some(full)) = (&carried, &evaluation.carried_failure) {
+                let mut carried = json!(carried);
+                if let Some(fields) = carried.as_object_mut() {
+                    fields.insert("blocking".into(), json!(full.blocking));
+                    fields.insert("judged_bindings".into(), json!(full.judged_bindings));
+                }
+                object.insert("carried_failure".into(), carried);
+            }
+        }
+        value
     });
     let mut work = json!({
         "short_ref": contract.short_ref,
@@ -234,8 +276,18 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
         "outcome": contract.outcome,
         "acceptance": contract.acceptance,
     });
-    if let (Some(object), Some(evaluation)) = (work.as_object_mut(), evaluation) {
-        object.insert("evaluation".into(), evaluation);
+    if let Some(object) = work.as_object_mut() {
+        // The after side of a carried failure's binding comparison, beside
+        // the criteria it binds.
+        if !contract.acceptance_bindings.is_empty() {
+            object.insert(
+                "acceptance_bindings".into(),
+                json!(contract.acceptance_bindings),
+            );
+        }
+        if let Some(evaluation) = evaluation {
+            object.insert("evaluation".into(), evaluation);
+        }
     }
     Receipt::assemble(
         lines,

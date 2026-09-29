@@ -534,7 +534,8 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::EnvironmentEvidenceNotFound(_) => "environment_evidence_not_found",
         StoreError::EnvironmentBasisMismatch(_) => "environment_basis_mismatch",
         StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
-        StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
+        StoreError::AcceptanceEvaluationRefused { .. }
+        | StoreError::AcceptanceEvaluationCarriedFailure { .. } => "acceptance_evaluation_refused",
         StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
             evaluation_basis_move_code(*moved)
         }
