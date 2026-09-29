@@ -850,16 +850,60 @@ fn a_stored_page_without_an_open_count_keeps_its_omission_reminder() {
 
 #[test]
 fn open_test_obligation_becomes_the_test_reminder() {
-    // The stock rule's change is recorded as untested at done; a project
-    // rule of the same kind still owes the test.
+    // The stock rule's words follow what done would do at this read. A page
+    // without a classification promises neither an untested record nor a
+    // particular refusal; a project rule of the same kind still owes the
+    // test.
+    use crate::storage::WorkObligationCompletionAction as Action;
     let reminders = obligation_reminders(&page(VerificationKind::Test, WorkObligationState::Open));
     assert_eq!(
         reminders,
         vec![
-            "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one, unless a named root holds it open: then done refuses and names the check or waiver it needs"
+            "tests have not run since your last source change — run them; the host records the result, and done says whether it records the change as untested or needs a credited check or waiver"
                 .to_owned()
         ]
     );
+    for (action, words) in [
+        (
+            Action::DoneWaives,
+            "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one",
+        ),
+        (
+            Action::DoneDisplaces,
+            "a source change made in another workspace before the root was named is open — no action is needed; done records it as displaced",
+        ),
+        (
+            Action::CheckOrWaiver,
+            "tests have not run since a source change done cannot record as untested — run the credited check or obtain an authorized waiver; done refuses until one of them resolves it",
+        ),
+        (
+            Action::NameRootCheckOrWaiver,
+            "tests have not run since a source change whose workspace is unknown — name a source root and run its credited check, or obtain an authorized waiver; done refuses until one of them resolves it",
+        ),
+        (
+            Action::WaiverOnly,
+            "a source change made outside the named root while it was bound is open — only an authorized human waiver resolves it, since no check in a named root can; done refuses until then",
+        ),
+    ] {
+        let mut classified = page(VerificationKind::Test, WorkObligationState::Open);
+        classified.items[0].completion_action = Some(action);
+        assert_eq!(
+            obligation_reminders(&classified),
+            vec![words.to_owned()],
+            "{action:?}"
+        );
+        // Only the in-root change is promised an untested record, and every
+        // refusing action names the check or waiver that resolves it.
+        let blocks = !matches!(action, Action::DoneWaives | Action::DoneDisplaces);
+        assert_eq!(
+            words.contains("records the change as untested"),
+            action == Action::DoneWaives
+        );
+        assert_eq!(words.contains("done refuses"), blocks, "{action:?}");
+        if blocks {
+            assert!(words.contains("waiver"), "{action:?}");
+        }
+    }
     let mut pinned = page(VerificationKind::Test, WorkObligationState::Open);
     pinned.items[0].rule.rule_id = "source_mutation_requires_pinned_test".into();
     assert_eq!(

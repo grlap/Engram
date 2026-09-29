@@ -1330,10 +1330,27 @@ attribution, id or revision is cut; the delta's summary, in the same words
 and bounded at 192 bytes, is in the verbose `next --json` form. The
 protocol's value itself is on the obligation page and in the `--json` forms
 of `show` and `done`.
-Before completion, the receipt reminder says tests have not run since the last
-source change and that `done` records the change as untested without one,
-unless a named root holds it open: then `done` refuses and names the check or
-waiver it needs. Criteria bound with `--bind` still refuse, and
+Before completion, the receipt reminder for an open obligation of the stock
+rule says what `done` would do with it at that read, as completion classifies
+it:
+- a change in the named root, or one recorded while no root was bound that a
+  later root does not displace (see the next case), is recorded as untested
+  without a test;
+- a change made in another workspace before the root was named is recorded as
+  displaced, and needs no action;
+- a change with no workspace, recorded while a root was bound, needs the
+  credited check in the active named root or an authorized waiver; once no
+  root is bound, it first needs a named root for that check;
+- a change made outside the named root while it was bound needs an authorized
+  human waiver, since no check in a named root can resolve it, even after
+  that root ends.
+
+In each refusing case the reminder says that `done` refuses until then. The
+words are read guidance: `done` classifies again when it runs. Under a
+self-asserted policy only the obligations the bounded page shows are
+classified. A page without a classification says that `done` will say whether
+it records the change as untested or needs a credited check or waiver.
+Criteria bound with `--bind` still refuse, and
 so does every operator-selected rule except the exact stock definition (the
 stock id at version 1 with an unpinned test). The
 six-operation JSON protocol stays reachable for hosts and operators as

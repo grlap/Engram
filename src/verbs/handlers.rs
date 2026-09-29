@@ -2284,7 +2284,7 @@ pub(super) fn obligation_reminders(page: &WorkObligationPage) -> Vec<String> {
                     &item.requirement,
                 ) =>
             {
-                "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one, unless a named root holds it open: then done refuses and names the check or waiver it needs"
+                super::evaluation_guidance::stock_source_change_reminder(item.completion_action)
             }
             VerificationKind::Test => {
                 "tests have not run since your last source change — run them; the host records the result"

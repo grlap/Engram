@@ -2006,6 +2006,7 @@ fn pinned_store(suite: &str) -> SqliteStore {
 }
 
 mod operator_guidance;
+mod stock_reminder;
 
 /// When the stock rule and an operator rule both open an obligation for one
 /// change, both are displaced, and the seal and the obligation page count

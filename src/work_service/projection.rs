@@ -994,17 +994,50 @@ pub(super) fn disclosed_work_obligation_page(
     } else {
         Vec::new()
     };
-    for item in &mut page.items {
-        if item.state == WorkObligationState::Open && page.action_required_total.is_some() {
-            let index = open_records
+    let open_record_of = |item: &WorkObligationSummary| {
+        open_records
+            .iter()
+            .position(|record| record.obligation.obligation_id == item.obligation_id)
+            .ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "bounded obligation is absent from its source records".into(),
+                )
+            })
+    };
+    // Under a self-asserted policy the page's reminders still say what `done`
+    // would do, so the obligations this bounded page shows are classified,
+    // and only those: the read cost stays bounded by the page. The count of
+    // obligations needing action stays an evaluated-policy disclosure.
+    let visible_actions = if page.action_required_total.is_none() {
+        let visible = page
+            .items
+            .iter()
+            .filter(|item| item.state == WorkObligationState::Open)
+            .map(|item| open_record_of(item).map(|index| &open_records[index].obligation))
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        if visible.is_empty() {
+            Vec::new()
+        } else {
+            let actions = store.work_obligation_completion_actions(&visible)?;
+            visible
                 .iter()
-                .position(|record| record.obligation.obligation_id == item.obligation_id)
-                .ok_or_else(|| {
-                    StoreError::InvalidWorkProjection(
-                        "bounded obligation is absent from its source records".into(),
-                    )
-                })?;
-            item.completion_action = Some(actions[index]);
+                .map(|obligation| obligation.obligation_id)
+                .zip(actions)
+                .collect()
+        }
+    } else {
+        Vec::new()
+    };
+    for item in &mut page.items {
+        if item.state == WorkObligationState::Open {
+            if page.action_required_total.is_some() {
+                item.completion_action = Some(actions[open_record_of(item)?]);
+            } else {
+                item.completion_action = visible_actions
+                    .iter()
+                    .find(|(id, _)| *id == item.obligation_id)
+                    .map(|(_, action)| *action);
+            }
         }
         let stock =
             crate::control::is_stock_source_change_obligation(&item.rule, &item.requirement);

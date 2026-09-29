@@ -1,5 +1,7 @@
-//! Safe, bounded timing guidance for an evaluated item's open obligations.
-//! Exact obligation ids and definitions remain in the host-only focus view.
+//! Safe, bounded timing guidance for an evaluated item's open obligations,
+//! and the words of the stock source-change reminder for any policy, both
+//! chosen from what completion would do with the obligation. Exact obligation
+//! ids and definitions remain in the host-only focus view.
 
 use serde::Serialize;
 
@@ -151,6 +153,36 @@ impl EvaluationObligation {
                 WorkObligationCompletionAction::DoneWaives
                     | WorkObligationCompletionAction::DoneDisplaces
             ),
+        }
+    }
+}
+
+/// The stock source-change reminder, in the words of what `done` would do
+/// with the obligation at this read. Completion classifies again; without a
+/// classification the words promise neither an untested record nor a
+/// particular refusal.
+pub(super) fn stock_source_change_reminder(
+    action: Option<WorkObligationCompletionAction>,
+) -> &'static str {
+    use WorkObligationCompletionAction as Action;
+    match action {
+        Some(Action::DoneWaives) => {
+            "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one"
+        }
+        Some(Action::DoneDisplaces) => {
+            "a source change made in another workspace before the root was named is open — no action is needed; done records it as displaced"
+        }
+        Some(Action::CheckOrWaiver) => {
+            "tests have not run since a source change done cannot record as untested — run the credited check or obtain an authorized waiver; done refuses until one of them resolves it"
+        }
+        Some(Action::NameRootCheckOrWaiver) => {
+            "tests have not run since a source change whose workspace is unknown — name a source root and run its credited check, or obtain an authorized waiver; done refuses until one of them resolves it"
+        }
+        Some(Action::WaiverOnly) => {
+            "a source change made outside the named root while it was bound is open — only an authorized human waiver resolves it, since no check in a named root can; done refuses until then"
+        }
+        None => {
+            "tests have not run since your last source change — run them; the host records the result, and done says whether it records the change as untested or needs a credited check or waiver"
         }
     }
 }
