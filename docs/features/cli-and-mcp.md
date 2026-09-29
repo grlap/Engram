@@ -1279,7 +1279,13 @@ verification. With `--json`, the named changes are in `untested_changes`,
 each with `reported_source_change` when the host said, and the count left
 out is in `untested_changes_omitted`; every obligation of the stock
 source-change rule on the obligation page carries the same
-`reported_source_change`, when the host said. A peer's `next` delta for an
+`reported_source_change`, when the host said. Under a named root, a change
+another workspace recorded before the binding is displaced instead, and
+`done` and `show` print `foreign workspace change: ID (workspace WS; source
+revision REV); captured before the named root, displaced and not verified`,
+then `foreign workspace changes: N more not shown (T in total)`; with
+`--json` they are in `foreign_workspace_changes` and
+`foreign_workspace_changes_omitted`. A peer's `next` delta for an
 execution observation begins with the change, in one word each: `changed:
 WORD` when the host said how it found the change, `changed` when it did
 not, `repeat; host: WORD` when the host said how it found a change the core
@@ -1295,8 +1301,9 @@ and bounded at 192 bytes, is in the verbose `next --json` form. The
 protocol's value itself is on the obligation page and in the `--json` forms
 of `show` and `done`.
 Before completion, the receipt reminder says tests have not run since the last
-source change and that `done` records the change as untested without one. The
-remaining text is unchanged. Criteria bound with `--bind` still refuse, and
+source change and that `done` records the change as untested without one,
+unless a named root holds it open: then `done` refuses and names the check or
+waiver it needs. Criteria bound with `--bind` still refuse, and
 so does every operator-selected rule except the exact stock definition (the
 stock id at version 1 with an unpinned test). The
 six-operation JSON protocol stays reachable for hosts and operators as
@@ -1587,7 +1594,8 @@ rule, requirement, trigger, terminal
 resolution/evidence when present, and deterministic typed guidance. An open
 verification requirement directs the caller to record matching host
 verification, checkpoint it, then complete, or request a host/operator waiver.
-Trimming retains open obligations before satisfied or waived history and keeps
+Trimming retains open obligations before satisfied, waived or displaced
+history and keeps
 deterministic trigger/resolution ordering within those state groups. In focus
 evidence, a visible verification summary keeps its referenced environment
 summary ahead of it. Count and byte trimming remove
@@ -1791,19 +1799,30 @@ do not count, while a move seen only by a check or an environment capture,
 even one that later came back, still counts at the next change. When the
 report or that newest change carries no revision, the host's report stands, so a
 later change with a revision still re-anchors obligations that a
-revision-less change left waiver-only. A passed typed test satisfies open
-obligations only against the newest mutation source revision at the evaluated
-run-feed cut. Thus a newest basisless mutation makes the open set waiver-only
-until a later basis-bearing mutation plus passed test arrives; that later test
-may satisfy both the earlier and newer definitions. For the stock rule that
-waiver comes at `done`: completion records each still-open stock obligation as
-an untested change instead of refusing. `work_focus` exposes the
+revision-less change left waiver-only. For a claim without a named root, a
+passed typed test satisfies open obligations only against the newest mutation
+source revision at the evaluated run-feed cut. Thus a newest basisless
+mutation makes the open set waiver-only until a later basis-bearing mutation
+plus passed test arrives; that later test may satisfy both the earlier and
+newer definitions. For the stock rule that waiver comes at `done`: completion
+records each still-open stock obligation as an untested change instead of
+refusing. Under a named root, a fresh check in the root that ran after a
+basisless change accounts for it, and `done` refuses the changes a named root
+holds open, now or since it ended or the claim was released, instead of
+recording them as untested (see
+[the host binding](behavioral-control-plane.md#5a-bind-a-named-source-root)).
+`work_focus` exposes the
 canonical bounded `obligation_page`, the same field appears inside
 `work_next.focus`, and `work_next` deltas use
 `obligation_opened`, `obligation_satisfied`, `obligation_waived`, or, for a
 waived stock obligation, `untested_source_change` naming the change and its
-source revision, without leaking host authority. The page's `untested_total`
-counts every untested change on the run, and its items name those that fit.
+source revision, or, for a displaced one, `foreign_workspace_change` naming
+its workspace, without leaking host authority. A host's named-root events
+arrive as `source_root_named` and `source_root_ended`, naming the workspace
+and generation. The page's `untested_total` counts every untested change on
+the run, and its items name those that fit; likewise `displaced_total` counts
+every displaced change, and an item's `displaced_change` names its
+observation id, workspace and source revision.
 Its `open_total` counts every open obligation on the run before count and byte
 trimming, and is 0 for an item that has no run yet, such as one restored from
 a work-graph snapshot and not yet claimed. When it exceeds the open

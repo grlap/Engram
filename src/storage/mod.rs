@@ -246,9 +246,10 @@ use crate::{
         ExecutionOutcome, ForgetProjectMemoryRequest, HostPathPolicy, IssuedTurnGrant,
         MAX_PROJECT_MEMORY_BODY_BYTES, MAX_PROJECT_MEMORY_KEY_BYTES,
         MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
-        MemoryId, MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest,
-        NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation,
-        ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
+        MemoryId, MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, NamedRootBindingEvent,
+        NamedRootBindingKind, NamedRootBindingReceipt, NamedRootEndReason, NoteReceipt,
+        NoteRequest, NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
+        OpenWorkObligation, ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
         ProjectMemoryListRow, ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision,
         ProjectPolicyEpoch, ProjectPolicyOperation, RememberProjectMemoryRequest, SCHEMA_VERSION,
         Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskId, TurnBeginDecision,
@@ -647,6 +648,20 @@ struct ControlTurnCheckpointFingerprint<'a> {
     idempotency_key: &'a str,
 }
 
+#[derive(Serialize)]
+struct NamedRootBindingFingerprint<'a> {
+    control_schema_version: u16,
+    session_id: &'a SessionId,
+    claim_id: &'a crate::domain::WorkClaimId,
+    claim_fence: i64,
+    workspace_id: &'a str,
+    generation: i64,
+    named_at: DateTime<Utc>,
+    kind: NamedRootBindingKind,
+    end_reason: Option<NamedRootEndReason>,
+    idempotency_key: &'a str,
+}
+
 fn execution_observations_are_empty(value: &&[ExecutionObservationInput]) -> bool {
     value.is_empty()
 }
@@ -782,6 +797,8 @@ pub enum StoreError {
     InvalidProjectMemory(String),
     #[error("control session input is invalid: {0}")]
     InvalidControlSession(String),
+    #[error("named-root binding refused: {0}")]
+    NamedRootBindingRefused(String),
     #[error(
         "the project root's filesystem identity is unresolved, so path intents are refused; pass --host-path-policy case_fold|case_sensitive or set ENGRAM_HOST_PATH_POLICY"
     )]

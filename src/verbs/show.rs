@@ -585,6 +585,13 @@ pub(super) struct ShowReceiptValue {
     /// Untested source changes the bounded page counts but does not name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) untested_changes_omitted: Option<usize>,
+    /// Source changes captured in another workspace before the claim's
+    /// named root, displaced rather than verified or waived.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) foreign_workspace_changes: Vec<crate::DisplacedSourceChange>,
+    /// Displaced source changes the bounded page counts but does not name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) foreign_workspace_changes_omitted: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) current_status: Option<crate::work_service::WorkCurrentStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -721,6 +728,58 @@ pub(super) fn untested_change_lines(page: &crate::WorkObligationPage) -> Vec<Str
         lines.push(format!(
             "untested source changes: {omitted} more not shown ({} in total)",
             page.untested_total
+        ));
+    }
+    lines
+}
+
+/// The source changes on `page` a named root displaced: captured in another
+/// workspace before the claim's root, disclosed rather than verified. A change
+/// several rules opened obligations for is named once, by its record id as the
+/// page's `displaced_total` counts it, never by its shortened host label.
+pub(super) fn displaced_changes(
+    page: &crate::WorkObligationPage,
+) -> Vec<crate::DisplacedSourceChange> {
+    let mut named = Vec::new();
+    let mut changes = Vec::new();
+    for item in &page.items {
+        let Some(change) = item.displaced_change.as_ref() else {
+            continue;
+        };
+        if !named.contains(&&item.triggering_observation) {
+            named.push(&item.triggering_observation);
+            changes.push(change.clone());
+        }
+    }
+    changes
+}
+
+/// How many displaced source changes on the run `page` counts but does not
+/// name.
+pub(super) fn displaced_changes_omitted(page: &crate::WorkObligationPage) -> usize {
+    page.displaced_total
+        .saturating_sub(displaced_changes(page).len())
+}
+
+/// One line per source change on `page` a named root displaced, then the
+/// exact count of those the bounded page leaves out.
+pub(super) fn displaced_change_lines(page: &crate::WorkObligationPage) -> Vec<String> {
+    let mut lines = displaced_changes(page)
+        .iter()
+        .map(|change| {
+            format!(
+                "foreign workspace change: {} (workspace {}; source revision {}); captured before the named root, displaced and not verified",
+                super::terminal_safe_line(&change.observation_id),
+                super::terminal_safe_line(&change.workspace_id),
+                super::terminal_safe_line(&change.source_revision)
+            )
+        })
+        .collect::<Vec<_>>();
+    let omitted = displaced_changes_omitted(page);
+    if omitted > 0 {
+        lines.push(format!(
+            "foreign workspace changes: {omitted} more not shown ({} in total)",
+            page.displaced_total
         ));
     }
     lines
@@ -965,6 +1024,7 @@ pub(super) fn show_lines(
         }
     }
     lines.extend(untested_change_lines(&view.obligation_page));
+    lines.extend(displaced_change_lines(&view.obligation_page));
     if !view.blockers.is_empty() {
         lines.push("blockers:".into());
         for blocker in &view.blockers {
@@ -1191,6 +1251,9 @@ pub(super) fn show_receipt_value(
             .and(view.acceptance_evidence_error_class),
         untested_changes: untested_changes(&view.obligation_page),
         untested_changes_omitted: Some(untested_changes_omitted(&view.obligation_page))
+            .filter(|omitted| *omitted > 0),
+        foreign_workspace_changes: displaced_changes(&view.obligation_page),
+        foreign_workspace_changes_omitted: Some(displaced_changes_omitted(&view.obligation_page))
             .filter(|omitted| *omitted > 0),
         current_status: work.current_status.clone(),
         status_observation: work.status_observation.clone(),

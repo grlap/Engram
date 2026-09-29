@@ -5,12 +5,140 @@ use super::super::session::{
 use super::super::test_support::*;
 use super::super::*;
 use super::*;
+use crate::storage::test_support::bind_control_for;
 
 mod claims;
 mod gate_evidence;
 mod next_ready;
 mod sessions;
 mod status;
+
+#[test]
+fn named_root_binding_is_claim_scoped_replayed_and_explicit_clear_is_session_scoped() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let work = store
+        .create_work(
+            &root_request("project-a", "named-root-work", 1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("work");
+    let claim = claim(&mut store, &work, "runner", "named-root-claim", 2, 300);
+    let host = bind_control_for(
+        &mut store,
+        "runner",
+        "named-root-control",
+        &[EffectClass::Observe],
+        at(3),
+    );
+    assert!(host.status.work_binding.is_none());
+    let mut host_actor = actor("runner");
+    let named = store
+        .bind_named_root(
+            &work.project_id,
+            &host.status.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            claim.claim_id,
+            claim.fence,
+            "workspace-B",
+            7,
+            at(3),
+            crate::domain::NamedRootBindingKind::Bound,
+            None,
+            &mut host_actor,
+            "name-generation-7",
+            at(4),
+        )
+        .expect("name root from host session without a work binding");
+    assert_eq!(
+        named.position.feed,
+        crate::domain::FeedId::RunExecution(claim.run_id)
+    );
+    let replay = store
+        .bind_named_root(
+            &work.project_id,
+            &host.status.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            claim.claim_id,
+            claim.fence,
+            "workspace-B",
+            7,
+            at(3),
+            crate::domain::NamedRootBindingKind::Bound,
+            None,
+            &mut host_actor,
+            "name-generation-7",
+            at(5),
+        )
+        .expect("exact retry");
+    assert_eq!(replay, named);
+    let peer = bind_control_for(
+        &mut store,
+        "peer",
+        "named-root-peer-control",
+        &[EffectClass::Observe],
+        at(4),
+    );
+    let mut peer_actor = actor("peer");
+    assert!(matches!(
+        store.bind_named_root(
+            &work.project_id,
+            &peer.status.session_id,
+            &peer.connection_token,
+            &peer.routing_token,
+            claim.claim_id,
+            claim.fence,
+            "workspace-B",
+            7,
+            at(3),
+            crate::domain::NamedRootBindingKind::Ended,
+            Some(crate::domain::NamedRootEndReason::ExplicitClear),
+            &mut peer_actor,
+            "peer-clear",
+            at(5),
+        ),
+        Err(StoreError::NamedRootBindingRefused(_))
+    ));
+    let ended = store
+        .bind_named_root(
+            &work.project_id,
+            &peer.status.session_id,
+            &peer.connection_token,
+            &peer.routing_token,
+            claim.claim_id,
+            claim.fence,
+            "workspace-B",
+            7,
+            at(3),
+            crate::domain::NamedRootBindingKind::Ended,
+            Some(crate::domain::NamedRootEndReason::RootInvalid),
+            &mut peer_actor,
+            "host-ended-root",
+            at(5),
+        )
+        .expect("host ends an invalid root from another bound session");
+    assert!(ended.position.position > named.position.position);
+    assert!(matches!(
+        store.bind_named_root(
+            &work.project_id,
+            &host.status.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            claim.claim_id,
+            claim.fence,
+            "workspace-B",
+            7,
+            at(3),
+            crate::domain::NamedRootBindingKind::Bound,
+            None,
+            &mut host_actor,
+            "stale-generation",
+            at(6),
+        ),
+        Err(StoreError::NamedRootBindingRefused(_))
+    ));
+}
 
 #[test]
 fn work_bound_control_checkpoint_records_execution_observation_once() {
@@ -239,6 +367,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
                 source_revision: "content-revision-1".into(),
+                source_root_generation: None,
+                source_root_state: None,
             }),
             observed_at: Some(at(9)),
         },
@@ -252,6 +382,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-b".into(),
                 source_revision: "content-revision-1".into(),
+                source_root_generation: None,
+                source_root_state: None,
             }),
             observed_at: Some(at(9)),
         },
@@ -279,6 +411,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         source_basis: ExecutionSourceBasis {
             workspace_id: "workspace-b".into(),
             source_revision: "content-revision-1".into(),
+            source_root_generation: None,
+            source_root_state: None,
         },
         environment_fingerprint,
         components: Some(environment_components.clone()),
@@ -593,7 +727,9 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         evidence: Some(&verification),
         producer: Some(&producer),
         latest_mutation: Some((&observation, run_positions(observation_id))),
+        named_root: None,
         evidence_position: run_positions(verification_hash),
+        producer_position: None,
         requirement: &crate::domain::VerificationRequirement {
             check_kind: crate::domain::VerificationKind::Test,
             check_fingerprint: Some(producer.action_fingerprint.clone()),

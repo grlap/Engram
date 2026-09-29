@@ -6,6 +6,7 @@ mod bound_criteria;
 mod citation_sources;
 mod corrections;
 mod criteria_required;
+mod named_root;
 mod review;
 mod snapshots;
 
@@ -335,6 +336,8 @@ impl HostSession {
             basis: ExecutionSourceBasis {
                 workspace_id: "workspace-evaluated".into(),
                 source_revision: "content-revision-1".into(),
+                source_root_generation: None,
+                source_root_state: None,
             },
             turns: 0,
         };
@@ -529,6 +532,8 @@ impl HostSession {
                     source_basis: revision.map(|revision| ExecutionSourceBasis {
                         workspace_id: self.basis.workspace_id.clone(),
                         source_revision: revision.into(),
+                        source_root_generation: None,
+                        source_root_state: None,
                     }),
                     observed_at: revision.map(|_| at(second + 1)),
                 },
@@ -621,6 +626,8 @@ impl HostSession {
             source_basis: ExecutionSourceBasis {
                 workspace_id: self.basis.workspace_id.clone(),
                 source_revision: revision.into(),
+                source_root_generation: None,
+                source_root_state: None,
             },
             environment_fingerprint: CanonicalObject::freeze(&components)
                 .expect("freeze environment components")

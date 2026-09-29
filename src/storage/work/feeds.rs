@@ -21,8 +21,9 @@ use crate::{
     CanonicalObject, ObjectId,
     domain::{
         ActorContext, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
-        MemoryAssertionEvent, MemoryVersion, SCHEMA_VERSION, SessionId, WorkHandoffOffer,
-        WorkHandoffState, WorkId, WorkRunId, WorkSourceSnapshot, WorkTransition,
+        MemoryAssertionEvent, MemoryVersion, NamedRootBindingEvent, SCHEMA_VERSION, SessionId,
+        WorkClaimId, WorkHandoffOffer, WorkHandoffState, WorkId, WorkRunId, WorkSourceSnapshot,
+        WorkTransition,
     },
     memory::Redactor,
 };
@@ -423,9 +424,163 @@ pub(super) fn current_run_feed_cut_on(
     })
 }
 
+/// Appends a host-authorized named-root selection to its bound run feed.
+pub(in crate::storage) fn append_named_root_binding_on(
+    transaction: &Transaction<'_>,
+    event: &NamedRootBindingEvent,
+) -> Result<(ObjectId, FeedPosition), StoreError> {
+    let item = load_work_item(transaction, event.work_id)?;
+    let run = load_work_run(transaction, event.run_id)?;
+    let root = load_root_execution(transaction, event.root_execution_id)?;
+    if item.project_id != event.project_id
+        || item.root_id != root.root_id
+        || run.work_id != item.work_id
+        || run.root_execution_id != root.root_execution_id
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "named-root binding crosses its canonical work run".into(),
+        ));
+    }
+    let object = CanonicalObject::mint(event)?;
+    SqliteStore::insert_object(transaction, "named_root_binding", &object)?;
+    let position = append_to_work_feeds(
+        transaction,
+        &event.project_id,
+        item.root_id,
+        Some(run.run_id),
+        None,
+        "named_root_binding",
+        &object,
+    )?
+    .into_iter()
+    .find(|position| position.feed == FeedId::RunExecution(run.run_id))
+    .ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "named-root binding did not receive a run-feed position".into(),
+        )
+    })?;
+    Ok((object.key().clone(), position))
+}
+
+pub(super) fn latest_named_root_binding_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    claim_id: WorkClaimId,
+    through: i64,
+) -> Result<Option<(FeedPosition, ObjectId, NamedRootBindingEvent)>, StoreError> {
+    // A release ends the claim, and with it every binding recorded before
+    // it, even though a later claim of the run reuses the claim id.
+    let released = latest_claim_release_on(connection, run_id, claim_id, through)?;
+    connection
+        .query_row(
+            "SELECT entry.position, entry.object_id, object.canonical_json
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.position <= ?2 AND entry.position > ?4
+               AND entry.object_kind = 'named_root_binding'
+               AND json_extract(object.canonical_json, '$.claim_id') = ?3
+             ORDER BY entry.position DESC LIMIT 1",
+            params![
+                run_id.0.to_string(),
+                through,
+                claim_id.0.to_string(),
+                released.unwrap_or(0)
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            },
+        )
+        .optional()?
+        .map(|(position, stored_id, bytes)| {
+            let id = ObjectId::from_stored(stored_id.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_id))?;
+            let event = CanonicalObject::stored(&id, bytes)?.decode()?;
+            Ok((
+                FeedPosition {
+                    feed: FeedId::RunExecution(run_id),
+                    position,
+                },
+                id,
+                event,
+            ))
+        })
+        .transpose()
+}
+
+/// The run-feed position of the newest release of `claim_id` on the run at
+/// or before `through`: the latest point at which that claim ended while the
+/// run went on.
+pub(super) fn latest_claim_release_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    claim_id: WorkClaimId,
+    through: i64,
+) -> Result<Option<i64>, StoreError> {
+    Ok(connection.query_row(
+        "SELECT MAX(entry.position)
+         FROM work_feed_entries entry
+         JOIN objects object ON object.object_id = entry.object_id
+         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+           AND entry.position <= ?2 AND entry.object_kind = 'work_event'
+           AND json_extract(object.canonical_json, '$.transition.kind') = 'released'
+           AND json_extract(object.canonical_json, '$.transition.claim_id') = ?3",
+        params![run_id.0.to_string(), through, claim_id.0.to_string()],
+        |row| row.get(0),
+    )?)
+}
+
+/// The run-feed position and workspace of the claim's first recorded `kind`
+/// event for `generation` at or before `through`, if there is one.
+pub(super) fn named_root_event_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    claim_id: WorkClaimId,
+    generation: i64,
+    kind: &str,
+    through: i64,
+) -> Result<Option<(i64, String)>, StoreError> {
+    Ok(connection
+        .query_row(
+            "SELECT entry.position, json_extract(object.canonical_json, '$.workspace_id')
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.position <= ?2 AND entry.object_kind = 'named_root_binding'
+               AND json_extract(object.canonical_json, '$.claim_id') = ?3
+               AND json_extract(object.canonical_json, '$.generation') = ?4
+               AND json_extract(object.canonical_json, '$.kind') = ?5
+             ORDER BY entry.position LIMIT 1",
+            params![
+                run_id.0.to_string(),
+                through,
+                claim_id.0.to_string(),
+                generation,
+                kind
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?)
+}
+
 pub(super) fn latest_source_mutation_on(
     connection: &Connection,
     run_id: WorkRunId,
+    through: i64,
+) -> Result<Option<(i64, ExecutionObservation)>, StoreError> {
+    latest_source_mutation_in_on(connection, run_id, None, through)
+}
+
+/// The newest source change on the run at or before `through`, only among
+/// changes the host recorded in `workspace` when one is given.
+pub(super) fn latest_source_mutation_in_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    workspace: Option<&str>,
     through: i64,
 ) -> Result<Option<(i64, ExecutionObservation)>, StoreError> {
     let stored = connection
@@ -437,8 +592,10 @@ pub(super) fn latest_source_mutation_on(
                AND entry.position <= ?2
                AND entry.object_kind = 'execution_observation'
                AND json_extract(object.canonical_json, '$.source_changed') = 1
+               AND (?3 IS NULL
+                    OR json_extract(object.canonical_json, '$.source_basis.workspace_id') = ?3)
              ORDER BY entry.position DESC LIMIT 1",
-            params![run_id.0.to_string(), through],
+            params![run_id.0.to_string(), through, workspace],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -456,6 +613,78 @@ pub(super) fn latest_source_mutation_on(
             Ok((position, observation))
         })
         .transpose()
+}
+
+/// Last capture in the active named root at the bound generation. A quiet
+/// capture matters: it can reveal a changed revision without opening a new
+/// source-change obligation.
+pub(super) fn latest_named_root_sighting_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    workspace_id: &str,
+    generation: i64,
+    through: i64,
+    changed_only: bool,
+) -> Result<Option<(i64, ExecutionObservation)>, StoreError> {
+    let row = connection
+        .query_row(
+            "SELECT entry.position, entry.object_id, object.canonical_json
+         FROM work_feed_entries entry
+         JOIN objects object ON object.object_id = entry.object_id
+         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+           AND entry.position <= ?2 AND entry.object_kind = 'execution_observation'
+           AND json_extract(object.canonical_json, '$.source_basis.workspace_id') = ?3
+           AND json_extract(object.canonical_json, '$.source_basis.source_root_generation') = ?4
+           AND json_extract(object.canonical_json, '$.source_basis.source_root_state') = 'named'
+           AND (?5 = 0 OR json_extract(object.canonical_json, '$.source_changed') = 1)
+         ORDER BY entry.position DESC LIMIT 1",
+            params![
+                run_id.0.to_string(),
+                through,
+                workspace_id,
+                generation,
+                changed_only
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            },
+        )
+        .optional()?;
+    row.map(|(position, stored, bytes)| {
+        let id =
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+        Ok((position, CanonicalObject::stored(&id, bytes)?.decode()?))
+    })
+    .transpose()
+}
+
+/// An unlocated source change after the name cannot be attributed safely to
+/// another workspace. A subsequent named-root check must outrun it.
+pub(super) fn latest_unlocated_source_change_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    binding_position: i64,
+    through: i64,
+) -> Result<Option<i64>, StoreError> {
+    connection
+        .query_row(
+            "SELECT entry.position FROM work_feed_entries entry
+         JOIN objects object ON object.object_id = entry.object_id
+         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+           AND entry.position > ?2 AND entry.position <= ?3
+           AND entry.object_kind = 'execution_observation'
+           AND json_extract(object.canonical_json, '$.source_changed') = 1
+           AND json_extract(object.canonical_json, '$.source_basis.workspace_id') IS NULL
+         ORDER BY entry.position DESC LIMIT 1",
+            params![run_id.0.to_string(), binding_position, through],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(Into::into)
 }
 
 pub(super) fn append_work_event(

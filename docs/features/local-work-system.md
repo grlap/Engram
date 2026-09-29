@@ -134,8 +134,42 @@ verification evidence to a mutation (source revision, position and time, not
 recording order alone), since it certifies code that has since moved; a change
 the host recorded without a source revision offers only its recording order,
 and that is what is compared. Both
-checks belong to `done`; recording an evaluation does not apply them. The
-seal binds the obligation, and an asserted criterion cites the verification
+checks belong to `done`; recording an evaluation does not apply them. When
+the host binds a claim to a named source root, only a check captured in the
+bound workspace and generation can satisfy a bound criterion. A foreign
+workspace's pre-binding source change is disclosed as
+`foreign_workspace_changes` in the seal with an audited `displaced`
+resolution; it never becomes passing verification or an untested waiver.
+A foreign change recorded under a bound name stays open until an explicit
+human waiver. A change with no established workspace recorded while a root was
+bound requires a fresh check in the claim's active named root or a waiver,
+even after that root ended, was released or was renamed; one recorded while
+no root was bound is waived as untested like any unbound change. A change in
+the
+root's own workspace from before the binding is satisfied by a later check of
+the root's newest sighting. A later change in that root makes an older check
+stale. The host records the binding and each sighting's capture-time root
+generation, without deriving identity from path text; see
+[the host binding](behavioral-control-plane.md#5a-bind-a-named-source-root).
+Pre-binding means by generation: a foreign change is displaced only when its
+sighting's generation is absent or below the binding's. Under a later name, a
+sighting stated under an earlier, still-bound name is displaced only when it
+was recorded in that earlier name's own root workspace; one already foreign to
+that root keeps needing the human waiver across renames, even a rename to that
+very workspace. Neither a later name nor a check made while the claim is
+unbound, after that root ended or the claim was released, discharges it, and
+`done` on an unbound claim refuses it too. A binding lasts as long as its
+claim: renewal, recovery and an accepted handoff keep it, and an
+`ended` event or the claim's release ends it. After an end or a release the
+claim is unbound again, and a sighting recorded on the run feed after its
+generation ended or was released is never displaced: a later matching check
+satisfies its change, as without a root. Displacement depends only on where
+and when a change was sighted, never on which rule opened its obligation: an
+operator-selected rule, even one that pins its check, is displaced and
+disclosed like the stock rule. A change with no source
+basis is placed by its run-feed position and is never displaced. Under a named
+root, the repeat rule compares a reported change within its own workspace.
+The seal binds the obligation, and an asserted criterion cites the verification
 that carried it when the completion cites it. Under an evaluated policy a
 bound criterion passes only on an `observed` basis citing that evidence —
 never judgment or an asserted gate — and seals with exactly the citations it
@@ -423,12 +457,21 @@ Every new seal also declares completion-obligation schema V1 and records the
 exact `(definition, terminal resolution)` pairs applicable at its pre-seal
 dense run-feed cut. First, each still-open obligation of the stock
 source-change rule is resolved as a waiver in the completing actor's name,
-inside that cut. That source change had no matching passing test after it, so
-completion records the change as untested instead of refusing
-([behavioral control plane](behavioral-control-plane.md#5-checkpoint-the-turn)).
-Any other open obligation refuses sealing before any terminal work mutation.
-A required child seal is decoded and checked recursively, and
-every accepted seal carries the current obligation-schema binding.
+inside that cut, unless a named root, active now or bound when the change was
+recorded, changes its disposition. A pre-binding foreign change receives an
+audited `displaced` resolution under the stock rule and any operator-selected
+one alike, and is disclosed separately, once. A foreign change
+recorded under a bound name stays open for an explicit human waiver, even
+after that root ended or the claim was released; an unknown-root change
+recorded while a root was bound needs a fresh check in the claim's active
+named root or that waiver, and with no root active `done` refuses it. In the
+ordinary unbound case,
+a source change with no matching passing test is recorded as untested instead
+of refusing ([behavioral control
+plane](behavioral-control-plane.md#5-checkpoint-the-turn)). Any other open
+obligation refuses sealing before any terminal work mutation. A required child
+seal is decoded and checked recursively, and every accepted seal carries the
+current obligation-schema binding.
 
 Post-completion `note` and `gate` evidence is appended after that immutable
 cut. It reuses the sealed claim identity and fence only as historical binding,
@@ -626,8 +669,17 @@ kind that verifies the run's latest observed source change; it is waived by an
 attributed operator waiver or a revision of the binding. A stock source-change
 obligation with no matching passing check is waived by `done` itself in the
 completing actor's name and disclosed in the seal as an untested change; a
-binding obligation is never waived that way. The verdict an acceptance
-evaluation records per criterion is `AcceptanceVerdict`.
+binding obligation is never waived that way. Under a named root, verification
+counts only in the bound workspace and generation, and `done` displaces a
+source-change obligation, of the stock rule or an operator-selected one, whose
+trigger was sighted in another workspace before the binding: it is neither
+satisfied nor waived, and the seal lists the change once in
+`foreign_workspace_changes`. A foreign change recorded under a bound
+name stays open for an explicit human waiver; an unknown-root change recorded
+while a root was bound needs a fresh check in the active named root or that
+waiver; until then `done` refuses, even after that root ended or the claim was
+released. The verdict an acceptance evaluation
+records per criterion is `AcceptanceVerdict`.
 
 ```mermaid
 stateDiagram-v2
@@ -635,9 +687,10 @@ stateDiagram-v2
         state "open" as obligation_open
         [*] --> obligation_open: bound criterion at add, decomposition, binding revision, or a claim on a run that does not yet hold it
         [*] --> obligation_open: rule matches a host observation
-        obligation_open --> satisfied: host verification of the required kind verifying the run's latest observed source change
+        obligation_open --> satisfied: host verification of the required kind verifying the run's latest observed source change, in the named root when one is bound
         obligation_open --> waived: attributed operator waiver, or binding revision
         obligation_open --> waived: done waives a stock source-change obligation, disclosed as untested
+        obligation_open --> displaced: done displaces a pre-binding foreign-workspace source change under any rule, disclosed in foreign_workspace_changes
     }
     state "Verdict per criterion" as verdict {
         [*] --> pass
@@ -650,8 +703,10 @@ stateDiagram-v2
 The word-level flow from creation to seal, with the completion refusal each
 gate answers. The refusal labels are the words a receipt carries: the `kind`
 of a typed recovery cause of `WorkCompletionRecoveryCause` (its Rust name in
-parentheses) and the `acceptance_criteria_required` error of
-[acceptance evaluation](acceptance-evaluation.md). A completion refusal's
+parentheses), the `acceptance_criteria_required` error of
+[acceptance evaluation](acceptance-evaluation.md), and the
+`work_completion_refused` error a named root raises for a source change it
+cannot account for. A completion refusal's
 top-level `code` equals its cause `kind`, except `open_obligation`, whose code
 is `open_work_obligations`. The refusal at `evaluate`
 is `acceptance_evaluation_refused`, applying that document's recording rule R5
@@ -673,6 +728,7 @@ flowchart TD
     DONE -->|"required_child_unsealed (RequiredChildUnsealed)"| CHILD["seal or waive the required child"] --> DONE
     DONE -->|"missing_contribution (MissingContribution)"| ROOT["account for the participant in the root execution"] --> DONE
     DONE -->|"open_obligation (OpenObligation)"| WORK
+    DONE -->|"work_completion_refused: a foreign or unknown-root source change a named root holds open"| WORK
     DONE -->|"missing_acceptance (MissingAcceptance), self-asserted policy"| DONE
     DONE -->|"missing_acceptance_evaluation (MissingAcceptanceEvaluation)"| EVAL
     DONE -->|"acceptance_criteria_required"| ACCEPT["update --accept criterion"] --> EVAL
@@ -1402,7 +1458,9 @@ object or its project/root/run feed entries. Focus and delta summaries expose
 the typed kind and compact binding fields without granting the agent a minting
 surface. A later mutation at the evaluated run-feed cut makes older
 verification stale even when it came from another workspace with the same
-previous content fingerprint.
+previous content fingerprint, unless the host has bound a named root for the
+claim. Then matching and freshness use the binding's exact workspace and
+generation; a foreign sighting never stands in for a check of that root.
 
 Every execution observation freezes the canonical obligation-rule-set id
 selected by the begun grant's project-policy epoch. The built-in set turns each
@@ -1411,14 +1469,20 @@ independent of action outcome and source-basis availability. Each definition
 repeats the exact rule-set id, rule identity/version, trigger, and requirement;
 changing the active policy affects only later observations and never
 reinterprets an existing definition. Definitions and their later
-satisfied/waived resolutions
+satisfied, waived or displaced resolutions
 are direct dense feed objects; `work_run_obligations` is only their verified
 query projection. Satisfaction is evaluated against the latest mutation at an
 exact run-feed cut. A passed test for a later basis-bearing mutation may close
-earlier open definitions, but a basisless latest mutation makes the open set
-waiver-only until a newer basis-bearing mutation and passed test arrive. For
-the stock rule, `done` supplies that waiver: completion records each still-open
-stock definition as an untested change instead of refusing.
+earlier open definitions. For a claim without a named root, a basisless latest
+mutation makes the open set waiver-only until a newer basis-bearing mutation
+and passed test arrive; under a named root, a fresh check in the root that ran
+after a basisless change accounts for it. For
+the stock rule, `done` supplies that waiver: completion records each
+still-open stock definition as an untested change instead of refusing, unless
+a named root changes its disposition. Pre-binding foreign changes are
+displaced and disclosed, while foreign changes recorded under a bound name and
+unknown-root changes recorded while a root was bound retain the barriers
+described above, even after that root ended or the claim was released.
 
 The page exposes immutable obligation and definition identities, the required
 selected rule-set id, rule, requirement, trigger, state, terminal
@@ -1432,8 +1496,13 @@ open obligation through an audited work update. Canonical resolutions retain
 their recorded actors and asserted `waived_by` attribution; agent pages omit
 the reason. At the
 exact pre-seal cut, every applicable definition must
-have a satisfied or waived resolution at or before that cut; the stock rule's
-still-open definitions receive completion's own waivers first. Otherwise
+have a satisfied, waived or displaced resolution at or before that cut.
+Completion first resolves the source-change definitions still open: the stock
+rule's receive completion's own waivers, except that a pre-binding foreign
+change is displaced under any source-change rule, and the changes a named root
+holds open, now or since it ended or was released, refuse (see
+[the host binding](behavioral-control-plane.md#5a-bind-a-named-source-root)).
+Otherwise
 `work_complete` returns the typed `open_work_obligations` result with the
 shared page and remedy: record matching host verification, checkpoint it, then
 complete; or request a host/operator waiver. A successful seal stores only

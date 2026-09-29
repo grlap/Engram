@@ -16,9 +16,9 @@ use crate::{
         ControlAssurance, ControlDirective, ControlRefusalCode, DirectiveSatisfaction,
         DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
         OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition, ObligationRuleSet,
-        ObservedTurnDecision, ParticipantMembership, SessionPhase, TaskDelta, TurnBeginDecision,
-        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision,
-        TurnEvaluationInput, TurnGrantBasis, TurnGrantState, VerificationEvidence,
+        ObservedTurnDecision, ParticipantMembership, SessionPhase, SourceRootState, TaskDelta,
+        TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot,
+        TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState, VerificationEvidence,
         VerificationEvidenceMismatch, VerificationRequirement, VerificationResult,
         WorkEvidenceKind, WorkObligation, WorkObligationId,
     },
@@ -39,16 +39,37 @@ pub struct VerificationEvidenceMatchInput<'a> {
     /// the verification is of the run's source as it stands, and the checks
     /// that compare it with a mutation do not apply.
     pub latest_mutation: Option<(&'a ExecutionObservation, i64)>,
+    /// The claim's active named root at this cut. Without one, historical
+    /// cross-workspace content matching retains its original behavior.
+    pub named_root: Option<NamedRootEvidenceMatch<'a>>,
     pub evidence_position: i64,
+    /// The run-feed position of the check's producer observation. Under a
+    /// named root the check itself, not only its later verification record,
+    /// must follow the binding and any change whose root is unknown.
+    pub producer_position: Option<i64>,
     pub requirement: &'a VerificationRequirement,
+}
+
+/// Host-recorded source context for a named-root verification.
+#[derive(Clone, Copy)]
+pub struct NamedRootEvidenceMatch<'a> {
+    pub workspace_id: &'a str,
+    pub generation: i64,
+    pub binding_position: i64,
+    pub latest_sighting: Option<(&'a ExecutionObservation, i64)>,
+    pub unknown_change_position: Option<i64>,
 }
 
 /// Applies the anti-stale verification rule without performing I/O.
 ///
 /// `source_revision` is a host-computed fingerprint of complete workspace
-/// content (committed state plus dirty-tree content). Workspace identity is
-/// retained for audit but deliberately does not participate in equality: a
-/// peer worktree may verify the same exact content fingerprint.
+/// content (committed state plus dirty-tree content). Without a named root,
+/// workspace identity is retained for audit but does not participate in
+/// equality: a peer worktree may verify the same exact content fingerprint.
+/// Under a named root the check, its producer and the newest sighting must
+/// carry the root's exact workspace, generation and `named` state, and the
+/// check must run after the binding and after any change whose root is
+/// unknown.
 ///
 /// # Errors
 ///
@@ -94,9 +115,50 @@ pub fn match_verification_evidence(
     if !same_run {
         return Err(VerificationEvidenceMismatch::WrongRun);
     }
+    // Under a named root the newest sighting in the root decides the revision
+    // a check must carry. A quiet move after the root's newest known change,
+    // or a change whose root is unknown, leaves that change's revision
+    // behind; the check must still run after the change.
+    let mut revision_from_root = false;
+    if let Some(root) = input.named_root {
+        let correct_root = |basis: &crate::domain::ExecutionSourceBasis| {
+            basis.workspace_id == root.workspace_id
+                && basis.source_root_generation == Some(root.generation)
+                && basis.source_root_state == Some(SourceRootState::Named)
+        };
+        let producer_position = input
+            .producer_position
+            .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+        if !correct_root(&evidence.source_basis)
+            || !producer.source_basis.as_ref().is_some_and(correct_root)
+            || input.evidence_position <= root.binding_position
+            || producer_position <= root.binding_position
+        {
+            return Err(VerificationEvidenceMismatch::StaleSourceRevision);
+        }
+        if let Some((sighting, _)) = root.latest_sighting {
+            let basis = sighting
+                .source_basis
+                .as_ref()
+                .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+            if !correct_root(basis)
+                || evidence.source_basis.source_revision != basis.source_revision
+            {
+                return Err(VerificationEvidenceMismatch::StaleSourceRevision);
+            }
+            revision_from_root = true;
+        }
+        if root
+            .unknown_change_position
+            .is_some_and(|unknown| producer_position <= unknown)
+        {
+            return Err(VerificationEvidenceMismatch::NotAfterMutation);
+        }
+    }
     if let Some((latest_mutation, _, latest_basis, _)) = mutation
         && (!latest_mutation.source_changed
-            || evidence.source_basis.source_revision != latest_basis.source_revision)
+            || (!revision_from_root
+                && evidence.source_basis.source_revision != latest_basis.source_revision))
     {
         return Err(VerificationEvidenceMismatch::StaleSourceRevision);
     }
@@ -114,6 +176,10 @@ pub fn match_verification_evidence(
     }
     if mutation.is_some_and(|(_, latest_mutation_position, _, _)| {
         input.evidence_position <= latest_mutation_position
+            || (input.named_root.is_some()
+                && input
+                    .producer_position
+                    .is_none_or(|position| position <= latest_mutation_position))
     }) {
         return Err(VerificationEvidenceMismatch::NotAfterMutation);
     }
@@ -156,6 +222,14 @@ pub fn is_stock_source_change_obligation(
                 && definition.rule == *rule
                 && definition.requirement == *requirement
         })
+}
+
+/// Whether `rule` opened its obligation from a source change, under the stock
+/// rule or an operator-selected one, rather than from an acceptance binding.
+/// Every rule a rule set holds is triggered by a source change.
+#[must_use]
+pub fn is_source_change_obligation(rule: &BuiltinObligationRuleRef) -> bool {
+    acceptance_binding_criterion(rule).is_none()
 }
 
 /// Stock immutable V1 rule table installed by project-policy bootstrap.
@@ -230,7 +304,11 @@ pub struct ObligationSatisfactionInput<'a> {
     /// mutation and is never satisfied without one; a binding's obligation
     /// is satisfied by verification of the source as it stands.
     pub latest_mutation: Option<(&'a ExecutionObservation, i64)>,
+    pub named_root: Option<NamedRootEvidenceMatch<'a>>,
     pub evidence_position: i64,
+    /// The run-feed position of `producer`; see
+    /// [`VerificationEvidenceMatchInput::producer_position`].
+    pub producer_position: Option<i64>,
     pub evaluated_cut: &'a crate::domain::FeedPosition,
 }
 
@@ -256,7 +334,20 @@ pub fn evaluate_obligation_satisfaction(
                 && obligation.trigger_position.feed == expected_feed
                 && obligation.trigger_position.position <= input.evaluated_cut.position
                 && input.evidence_position > obligation.trigger_position.position
+                // Under a named root a check accounts only for a source change
+                // it ran after, wherever that change was recorded.
+                && (input.named_root.is_none()
+                    || acceptance_binding_criterion(&obligation.rule).is_some()
+                    || input
+                        .producer_position
+                        .is_none_or(|producer| producer > obligation.trigger_position.position))
+                // Under a named root a check of the root's newest sighting
+                // stands for the source as it is, so it can account for a
+                // change the root holds from before its binding too.
                 && (input.latest_mutation.is_some()
+                    || input.named_root.is_some_and(|root| {
+                        root.unknown_change_position.is_some() || root.latest_sighting.is_some()
+                    })
                     || acceptance_binding_criterion(&obligation.rule).is_some())
         })
         .filter(|obligation| {
@@ -265,7 +356,9 @@ pub fn evaluate_obligation_satisfaction(
                 evidence: Some(input.evidence),
                 producer: Some(input.producer),
                 latest_mutation: input.latest_mutation,
+                named_root: input.named_root,
                 evidence_position: input.evidence_position,
+                producer_position: input.producer_position,
                 requirement: &obligation.requirement,
             })
             .is_ok()
@@ -1298,6 +1391,8 @@ mod tests {
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
                 source_revision: "content-revision-1".into(),
+                source_root_generation: None,
+                source_root_state: None,
             }),
             observed_at: Some(mutation_time),
             actor: actor.clone(),
@@ -1319,6 +1414,8 @@ mod tests {
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-b".into(),
                 source_revision: "content-revision-1".into(),
+                source_root_generation: None,
+                source_root_state: None,
             }),
             observed_at: Some(verification_time),
             actor: actor.clone(),
@@ -1356,7 +1453,9 @@ mod tests {
             evidence: Some(&evidence),
             producer: Some(&producer),
             latest_mutation: Some((&latest_mutation, 1)),
+            named_root: None,
             evidence_position: 4,
+            producer_position: None,
             requirement: &requirement,
         };
         assert_eq!(match_verification_evidence(&exact), Ok(()));
@@ -1403,7 +1502,9 @@ mod tests {
             evidence: Some(&evidence),
             producer: Some(&producer),
             latest_mutation: Some((&later_mutation, 3)),
+            named_root: None,
             evidence_position: 4,
+            producer_position: None,
             requirement: &requirement,
         };
         assert_eq!(

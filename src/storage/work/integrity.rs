@@ -18,11 +18,15 @@ use crate::{
     CanonicalObject, ObjectId, RestoredWorkEvidence,
     domain::{
         CompletionSeal, EnvironmentEvidence, ExecutionObservation, MemoryAssertionEvent,
-        MemoryVersion, SCHEMA_VERSION, VerificationEvidence, WorkCheckpoint, WorkClaim, WorkEvent,
-        WorkEvidence, WorkHandoffOffer, WorkId, WorkItem, WorkObligation, WorkObligationId,
-        WorkObligationResolutionEvent, WorkRun, WorkRunId, normalize_gate_evidence_input,
+        MemoryVersion, NamedRootBindingEvent, NamedRootBindingKind, SCHEMA_VERSION,
+        VerificationEvidence, WorkCheckpoint, WorkClaim, WorkEvent, WorkEvidence, WorkHandoffOffer,
+        WorkId, WorkItem, WorkObligation, WorkObligationId, WorkObligationResolutionEvent, WorkRun,
+        WorkRunId, normalize_gate_evidence_input,
     },
 };
+
+mod named_root;
+pub(super) use named_root::verify_named_root_history;
 
 #[cfg(test)]
 mod tests;
@@ -941,6 +945,12 @@ pub(super) fn verify_work_feed_integrity(
                 })
                 .transpose()?
                 .flatten(),
+            "named_root_binding" => object
+                .decode::<NamedRootBindingEvent>()
+                .ok()
+                .map(|event| expected_named_root_binding_feeds(connection, work_items, &event))
+                .transpose()?
+                .flatten(),
             "verification_evidence" => object
                 .decode::<VerificationEvidence>()
                 .ok()
@@ -1111,7 +1121,7 @@ pub(super) fn verify_work_feed_integrity(
            ON entry.object_id = object.object_id
          WHERE object.object_kind IN (
              'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
-             'verification_evidence', 'environment_evidence',
+              'verification_evidence', 'environment_evidence', 'named_root_binding',
              'work_obligation', 'work_obligation_resolution'
          )
            AND entry.object_id IS NULL
@@ -1270,6 +1280,53 @@ fn expected_execution_observation_feeds(
             Some(observation.binding.run_id),
         )
     }))
+}
+
+fn expected_named_root_binding_feeds(
+    connection: &Connection,
+    work_items: &HashMap<String, serde_json::Value>,
+    event: &NamedRootBindingEvent,
+) -> Result<Option<HashSet<String>>, StoreError> {
+    if event.actor.session_id.as_ref() != Some(&event.session_id)
+        || event.actor.run_id.as_deref() != Some(event.run_id.0.to_string().as_str())
+        || event.claim_fence <= 0
+        || event.workspace_id.trim() != event.workspace_id
+        || event.workspace_id.is_empty()
+        || event.workspace_id.len() > 512
+        || event.generation <= 0
+        || event.named_at > event.recorded_at
+        || (event.kind == NamedRootBindingKind::Bound) != event.end_reason.is_none()
+    {
+        return Ok(None);
+    }
+    let Some(item) = work_items.get(&event.work_id.0.to_string()) else {
+        return Ok(None);
+    };
+    if item.get("project_id").and_then(serde_json::Value::as_str)
+        != Some(event.project_id.0.as_str())
+    {
+        return Ok(None);
+    }
+    let relation_matches = connection
+        .query_row(
+            "SELECT 1 FROM work_runs run
+             JOIN work_root_executions root
+               ON root.root_execution_id = run.root_execution_id
+             WHERE run.run_id = ?1 AND run.work_id = ?2
+               AND run.root_execution_id = ?3 AND root.root_id = ?4",
+            params![
+                event.run_id.0.to_string(),
+                event.work_id.0.to_string(),
+                event.root_execution_id.0.to_string(),
+                item.get("root_id").and_then(serde_json::Value::as_str)
+            ],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    Ok(relation_matches
+        .then(|| expected_feeds_for_work(work_items, event.work_id, Some(event.run_id)))
+        .flatten())
 }
 
 fn verify_cross_feed_order(

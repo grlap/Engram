@@ -403,7 +403,8 @@ TurnCheckpoint {
 The shipped path accepts execution observations directly on the host-private
 `turn_checkpoint` request. Each observation names an action fingerprint,
 effect, outcome, and whether source state changed. It may also carry
-`source_basis { workspace_id, source_revision }` and `observed_at`.
+`source_basis { workspace_id, source_revision, source_root_generation?,
+source_root_state? }` and `observed_at`.
 With a reported change it may also say how the host established it, as
 `reported_source_change`: `content_comparison`, two content revisions
 were compared and differed; `assumed_missing_baseline`, the earlier
@@ -420,11 +421,93 @@ that the change was measured. The field is kept when the repeat rule below
 reads the report as no change, so a record can say that the host assumed a
 change and the core recognised a repeated state.
 `source_revision` is a host-computed fingerprint of the complete relevant
-content state, including committed and dirty content; `workspace_id` is audit
-context and is not an equality requirement, so equal revisions in different
-workspaces remain comparable. Storage supplies and freezes the exact
+content state, including committed and dirty content. `workspace_id` is the
+host-recorded workspace identity, compared byte-for-byte; Engram never
+derives it from path text. For runs without a named-root event, equal revisions
+in different workspaces retain the earlier comparison rule. After a claim has
+named a root, the optional positive `source_root_generation` and
+`source_root_state` (`named` or `ended`) travel together on a sighting. They
+describe the claim's root lifecycle at capture, even when the sighting measured
+its ordinary workdir. Both are absent on a sighting taken before the claim's
+first name. A stated generation must already have a matching host event for
+that claim; a missing or mismatched event refuses the checkpoint.
+Storage supplies and freezes the exact
 grant/session/work binding plus the recording time, then appends the object to
 the project, root, and run feeds atomically with the checkpoint receipt.
+
+### 5a. Bind a named source root
+
+The host-private `named_root_bind` operation records a claim's source-root
+selection or explicit end. It is not an agent word. Its request carries
+`routing_token`, `claim_id`, `claim_fence`, `workspace_id`, positive
+`generation`, `named_at`, `kind` (`bound` or `ended`), `idempotency_key`, and
+`end_reason` only for `ended` (`explicit_clear`,
+`session_gone_at_restore`, or `root_invalid`). The host derives a stable retry
+key from `(claim_id, generation, kind)`. `workspace_id` is exactly the
+canonical identity returned by the host's source capture, including a Windows
+verbatim prefix when present; Engram does not normalize it. The response names
+the immutable event's record id, dense run-feed position, workspace, generation
+and kind. An exact same-intent retry returns that receipt; reusing its key for
+different content returns `control_operation_idempotency_conflict`.
+
+Engram takes the reporting session from the control connection and checks its
+routing token. It derives work, run and root execution from the claim in the
+store; the session's current control work binding may name another claim or be
+absent. A `bound` event requires the named claim to be current and active. An
+`ended` event must repeat the recorded bound generation's workspace and
+`named_at`, the time of the original naming. Explicit clear uses the naming
+session's connection; restore or invalid-root ends may use any bound host
+session of this store and record that reporter. `claim_fence` is retained for
+disclosure, not compared with a renewed claim fence. New claim ids never
+inherit a root. Peers receive each `bound` event in `next` as a
+`source_root_named` delta and each `ended` event as a `source_root_ended`
+delta, naming the workspace and generation.
+
+A binding lasts as long as its claim. It survives a change of holder on the
+same claim: a renewal, a recovery by the same or another holder, and an
+accepted handoff. It ends with an `ended` event, or when the claim ends:
+its release (`update --release`), or cancellation, supersession, detach or
+completion of the run. Engram reuses a claim id when a released run is claimed
+again, so a binding recorded before the claim's latest release is never
+active again; the claim is unbound until a later name mints a fresh
+generation. A host that missed the release may go on stating the old
+generation: the checkpoint admits it, because that generation's bound event
+is recorded, and the sighting is unbound. The event's run-feed position
+orders durable events; `named_at` is audit time, not an ordering. A
+duplicate, stale generation, invalid lifecycle transition, wrong
+session or malformed field returns `named_root_binding_refused` with the
+reason; ordinary missing or wrong routing credentials retain their existing
+`control_session_not_bound`, `control_session_token_mismatch`, and
+`control_connection_superseded` codes. The host is the identity and policy
+enforcement point; the routing token alone is not cryptographic authentication.
+
+A sighting's generation, not its time or feed position, places it against a
+binding at generation g. The sighting is before that binding when its
+`source_root_generation` is absent or smaller than g, and after it otherwise.
+Under a later generation g2, a sighting stated under an earlier, still-bound
+generation g counts as before g2 only when it was recorded in g's own root
+workspace; a sighting already foreign to g's root stays a foreign change under
+a bound name, across renames and across a release, a reclaim and a new name,
+even when the later name is that very workspace. After an end or a release the
+claim is unbound again: a sighting recorded on the run feed after its
+generation ended or was released, or stated `ended`, is unbound, neither
+judged inside a root nor displaced, and the rules for a claim without a root
+apply to its change: a later matching check satisfies it, and without one the
+stock rule waives it as untested at `done` while an operator-selected rule
+keeps it open for an operator waiver. At completion, a source-change
+obligation is displaced only when its trigger sighting is in another
+workspace and before the active binding in that sense. Displacement depends
+only on where and when the trigger was sighted, never on which rule opened the
+obligation: an operator-selected rule, even one that pins its check, is
+displaced and disclosed like the stock rule. A foreign change recorded under a
+bound name stays open until an explicit human waiver. Neither a later name nor
+a check made while the claim is unbound, after that root ended or the claim
+was released, discharges it, and `done` on an unbound claim refuses it too. A
+source change that carries no source basis has no generation: its run-feed
+position places it against the binding event, and it is never displaced.
+Recorded while a root was bound, it needs a fresh check in the claim's active
+named root or an explicit human waiver, even after that root ended, was
+released or was renamed, and `done` on an unbound claim refuses it.
 
 The same private checkpoint may mint up to 16 `verification_evidence` objects
 and four `environment_evidence` objects. Verification cites its producer by
@@ -459,19 +542,22 @@ run-feed cut, so a later source mutation reopens the requirement. Generic
 agent-recorded `work_evidence` remains useful context but never verifies a
 check.
 
-The active immutable `ControlPolicy` selects a canonical
-`ObligationRuleSet` by record id. The built-in set contains the typed
+The active immutable `ControlPolicy` selects a canonical `ObligationRuleSet`
+by record id. The built-in set contains the typed
 `source_mutation_requires_test` rule, which evaluates every work-bound
 observation with `source_changed=true`, regardless of outcome or whether a
 source basis is present. The recorded `source_changed` is the core's reading
 of the host's report: it is true when the host reported a change, unless the
 reported `source_revision` equals the revision of the run's newest recorded
 source change and no host record on the run since that change (observation or
-environment evidence) carried another revision. Such a
-repeat is recorded as no change and opens no obligation. When the report or
-that newest change carries no revision, or the run has recorded no change,
-the host's report stands. The checkpoint resolves the rule set from the
-begun grant's frozen project-policy epoch and records its id on the
+environment evidence) carried another revision. Such a repeat is recorded as
+no change and opens no obligation. Under a named root the comparison stays
+within the reporting workspace: a sighting in the root is compared with the
+root's newest change, and any other with the newest change the host recorded
+in that workspace and the revisions seen there since. When the report or that
+newest change carries no revision, or the run has recorded no change, the
+host's report stands. The checkpoint resolves the rule set from the begun
+grant's frozen project-policy epoch and records its id on the
 `ExecutionObservation`; every resulting `WorkObligation` repeats that exact
 selection. Activating another set affects only observations from later policy
 epochs and cannot reinterpret a prior trigger, definition, or completion cut.
@@ -482,9 +568,12 @@ project, root-work, and run-execution feeds. A passed `test` verification
 appends a separate `work_obligation_resolution` only when it matches the exact
 run and the newest source basis visible at the evaluated run-feed cut. That
 evidence may satisfy older still-open mutation obligations as well as the
-newest one. If the newest mutation has no source basis, no verification can
-match it: all open obligations remain waiver-only until a later basis-bearing
-mutation and passed test establish a newer verifiable state.
+newest one. For a claim without a named root, if the newest mutation has no
+source basis, no verification can match it: all open obligations remain
+waiver-only until a later basis-bearing mutation and passed test establish a
+newer verifiable state. Under a named root, a change with no source basis
+never becomes the root's newest mutation; a fresh check in the root that ran
+after it accounts for it instead (see [5a](#5a-bind-a-named-source-root)).
 
 The stock rule records rather than blocks. The final checkpoint may leave a
 `source_mutation_requires_test` obligation open because no matching passing
@@ -501,14 +590,22 @@ time. An operator waiver of the same rule carries it too. The page's
 `untested_total` counts every such change on the run, including those the
 bounded page leaves out. Agent `done` and `show` print one
 `untested source change:` line per named change, then the exact count of any
-not shown, so the changes stay visible after completion. Peers receive each
-change in `next` as an `untested_source_change` delta. Only the exact stock
+not shown, so the changes stay visible after completion. A change a named
+root displaced is disclosed the same way: its obligation page entry carries
+`displaced_change` (the host's observation id, workspace and source
+revision), the page's `displaced_total` counts every such change, and
+`done` and `show` print one `foreign workspace change:` line per named
+change, then the exact count of any not shown. Peers receive each untested
+change in `next` as an `untested_source_change` delta, and each displaced
+change as a `foreign_workspace_change` delta, never as an untested waiver.
+Only the exact stock
 definition behaves this way: the stock id at version 1, triggered by a source
 change, requiring an unpinned test. Obligations from an acceptance binding
 (`--bind`) keep blocking completion, and so do obligations from any other
 operator-selected rule, including one that reuses the stock id with another
-version or a pinned check. Each needs a matching verification
-or an operator waiver.
+version or a pinned check. Each needs a matching verification or an operator
+waiver, unless a named root displaces its trigger (see
+[5a](#5a-bind-a-named-source-root)).
 
 Definitions and resolutions are canonical feed objects; the mutable obligation
 row is only a verified projection. `work_focus`, nested `work_next.focus`,
@@ -525,10 +622,15 @@ The shell request carries an attributed reason but no work grant; its actor
 and `waived_by` human are asserted, not authenticated. Revising or dropping an
 acceptance binding still resolves its open obligation with retained history.
 Agent-facing pages omit the reason. Completion first records the stock rule's
-open obligations as waivers, as above, then evaluates the cut-aware open set at
-the exact pre-seal run-feed cut; any obligation still open refuses. Terminal definitions are
-frozen into the seal as exact definition/resolution id pairs under obligation
-schema V1, and completion success reconstructs its page from that sealed basis.
+open obligations as waivers, as above, unless a named root, active now or
+bound when the change was recorded, changes that disposition: it displaces the
+pre-binding foreign changes of any source-change rule and refuses the changes
+a root held open, even after it ended or the claim was released
+([5a](#5a-bind-a-named-source-root)). It then evaluates the cut-aware open set
+at the exact pre-seal run-feed cut; any obligation still open refuses.
+Terminal definitions are frozen into the seal as exact definition/resolution
+id pairs under obligation schema V1, and completion success reconstructs its
+page from that sealed basis.
 New seals separately declare environment schema V1 and bind the sorted,
 distinct environment-evidence ids at or before the same dense run-feed cut.
 The seal carries ids only, refuses more than 64 records, and never copies

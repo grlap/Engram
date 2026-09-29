@@ -1233,6 +1233,8 @@ fn report_detected(
                 source_basis: revision.map(|revision| ExecutionSourceBasis {
                     workspace_id: host.basis.workspace_id.clone(),
                     source_revision: revision.into(),
+                    source_root_generation: None,
+                    source_root_state: None,
                 }),
                 observed_at: revision.map(|_| at(second + 1)),
             },

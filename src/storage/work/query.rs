@@ -1926,7 +1926,7 @@ pub(super) fn load_work_items_query(
 
 /// The run row and its latest run-feed event are compared, so they are read
 /// from one commit.
-pub(super) fn load_work_run(
+pub(in crate::storage) fn load_work_run(
     connection: &Connection,
     run_id: WorkRunId,
 ) -> Result<WorkRun, StoreError> {
@@ -2134,7 +2134,7 @@ fn active_root_execution_on_snapshot(
 
 /// The claim row and its latest run-feed event are compared, so they are
 /// read from one commit.
-pub(super) fn load_work_claim_optional(
+pub(in crate::storage) fn load_work_claim_optional(
     connection: &Connection,
     run_id: WorkRunId,
 ) -> Result<Option<WorkClaim>, StoreError> {

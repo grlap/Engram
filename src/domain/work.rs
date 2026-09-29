@@ -888,6 +888,14 @@ pub enum WorkObligationResolution {
         waived_by: String,
         reason: String,
     },
+    /// A change captured in another known workspace before this claim's
+    /// active named root: before the claim named any root, or in the own root
+    /// of an earlier name that was still bound. It did not satisfy the test
+    /// obligation and is not an attributed waiver of that obligation.
+    Displaced {
+        binding: ObjectId,
+        trigger_workspace_id: String,
+    },
 }
 
 /// Immutable terminal event for one work obligation.
@@ -910,6 +918,7 @@ pub enum WorkObligationState {
     Open,
     Satisfied,
     Waived,
+    Displaced,
 }
 
 /// Planning context is either the exact live claim or the project binding.
@@ -983,6 +992,10 @@ pub struct CompletionSeal {
     pub obligation_schema_version: u16,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub obligations: Vec<CompletionObligationBinding>,
+    /// Source-change observations displaced by the named root. These are
+    /// derived from audited obligation resolutions, never from path text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub foreign_workspace_changes: Vec<ObjectId>,
     pub environment_schema_version: u16,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub environment: Vec<ObjectId>,

@@ -771,12 +771,29 @@ pub struct WorkObligationSummary {
     /// was opened for: no matching passing test followed it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub untested_change: Option<UntestedSourceChange>,
+    /// The source change a displaced obligation of a source-change rule,
+    /// stock or operator-selected, was opened for: captured in another
+    /// workspace before the claim's named root, and disclosed rather than
+    /// verified or waived.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub displaced_change: Option<DisplacedSourceChange>,
     /// On an obligation of the stock source-change rule: how the host says
     /// it established the change that opened it. A host source observation,
     /// never verification. Absent when the host did not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reported_source_change: Option<crate::SourceChangeDetection>,
     pub guidance: WorkObligationGuidance,
+}
+
+/// A source change a named root displaced, disclosed on each displaced
+/// obligation a source-change rule, stock or operator-selected, opened for it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DisplacedSourceChange {
+    /// The host's id for the observed change.
+    pub observation_id: String,
+    /// The workspace the host recorded for the change, not the named root's.
+    pub workspace_id: String,
+    pub source_revision: String,
 }
 
 /// A source change that no matching passing test followed, disclosed on the
@@ -806,6 +823,10 @@ pub struct WorkObligationPage {
     /// those that fit, and the rest are omitted from the page.
     #[serde(default, skip_serializing_if = "discovery_count_is_zero")]
     pub untested_total: usize,
+    /// Every source change on the run that a named root displaced, counted
+    /// over all its obligations: the items above name those that fit.
+    #[serde(default, skip_serializing_if = "discovery_count_is_zero")]
+    pub displaced_total: usize,
     /// Open obligations counted over all of them, so a reader can tell
     /// whether any open one is among those the page leaves out. Absent on a
     /// page a receipt stored before the count existed, which is read as

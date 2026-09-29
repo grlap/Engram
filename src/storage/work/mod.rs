@@ -16,6 +16,7 @@ mod completion;
 mod discovery;
 mod execution;
 mod feeds;
+pub(in crate::storage) use feeds::append_named_root_binding_on;
 mod import;
 mod integrity;
 pub(in crate::storage) use import::{
@@ -370,7 +371,8 @@ pub(super) use planning::validate_control_work_binding_on;
 use query::feed_parts;
 pub(super) use query::{
     canonical_work_events_for_item, load_active_blocker_projections,
-    load_prerequisite_projection_ids, load_work_item, on_one_snapshot, verified_work_identity,
+    load_prerequisite_projection_ids, load_work_claim_optional, load_work_item, load_work_run,
+    on_one_snapshot, verified_work_identity,
 };
 pub(super) use schema::{
     initialize_schema, is_rebuildable_schema_object, is_rebuilt_projection_table,

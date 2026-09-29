@@ -1118,6 +1118,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidMemoryProjection(_)
         | StoreError::InvalidTaskProjection(_)
         | StoreError::InvalidControlSession(_)
+        | StoreError::NamedRootBindingRefused(_)
         | StoreError::HostPathIdentityUnresolved
         | StoreError::ControlSessionNotBound(_)
         | StoreError::ControlSessionTokenMismatch(_)

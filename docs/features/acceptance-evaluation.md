@@ -155,7 +155,12 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   is the value measured for the evaluated content, not one taken at
   submission. It is the host's source revision, as the host reports it on turn
   observations; a declared workspace id must match the observation's workspace
-  too.
+  too. Once the host binds a named root to the claim, the evaluated source
+  must be the newest sighting in that exact workspace and generation. A root
+  the host has named but not yet sighted anchors no evaluation, since its
+  first sighting could show any source: `evaluate` refuses until the host
+  captures it. An explicit declaration of another workspace refuses rather
+  than borrowing a matching revision from the named root.
 - **R4 independence.** `independent_session`: the evaluator session differs
   from the claim holder and from every recorded executor session of the run.
   `sub_agent`: `execution_identity` and `parent_session` are present and the
@@ -183,8 +188,12 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   newest execution observation that carries a revision must show the
   check's revision, and none may report a change without one. The revision
   fingerprints the full content, so a move and its revert leave the check
-  standing, while a later sighting of the same revision, from any
-  workspace, changes nothing. A passed check at R_d says nothing about an
+  standing. Without a named root, a later sighting of the same revision from
+  any workspace changes nothing. With a named root, the cited check must
+  follow the binding and carry its exact workspace, generation and `named`
+  state; a pre-binding check, a foreign check or an earlier generation cannot
+  pass even at the same revision. Later sightings are compared inside that
+  named root. A passed check at R_d says nothing about an
   edit to R_e that the source still holds, even one a declaration of R_d
   leaves out. So a citation of a check of another revision is refused,
   naming the citation and both revisions, and so is a check the run has
@@ -259,55 +268,57 @@ stale reason named.
   (criteria, outcome, title, mode, or other planning fields) invalidates.
 - **F2 run.** `run_id` is the completing run; a new run generation starts
   without an evaluation.
-- **F3 host-observed mutation.** No execution observation with
-  `source_changed`, no verification or environment evidence, and no obligation
-  definition or resolution was appended to the run feed after
-  `evaluated_cut`, and the newest execution observation after it that
-  carries a revision does not show the source at another revision than the
-  judged one.
-  These are host-minted facts about the workspace and its checks, with
-  `source_changed` recorded as the core's reading of the host's report: a
-  reported change that leaves the source at the revision of the run's newest
-  recorded source change, with no other revision seen since (in an observation
-  or environment evidence), is recorded as no change. That clears only its
-  change flag: like any observation, it is still compared with the judged
-  revision below. The only exception is a source change that left the source
-  at the revision the evaluation declared it judged (its `source_basis`), with
-  the obligation that change opened: the evaluator saw that state, so the
-  host's late report of it does not void the evaluation. The source can also
-  move without a reported change, as when a check runs after someone else's
-  edit. So when the newest execution observation after the cut that carries a
-  revision shows the source at another revision than the judged one, the
-  evaluation is void, whatever that observation claims. The judged revision is
-  the declared one, or else the revision the run was last seen at when the cut
-  was taken: that of the newest execution observation at or before the cut
-  that carries one. With neither there is nothing to compare. The revision
-  fingerprints the full content, so it is compared whatever workspace reported
-  it. Here only an execution observation counts as a sighting of the source:
-  the host lists a turn's observations in the order it saw them, each at the
-  revision the source had then. A turn reported after the cut may still hold
-  sightings from before the evaluation, such as a check that ran before the
-  edit the evaluator judged. So the newest sighting decides: a later sighting
-  of the judged revision, or a reported change to the declared revision, puts
-  the source back where it was judged, and sightings of another revision
-  before it no longer count. The repeat reading above also counts environment
-  evidence, which there only errs toward keeping a reported change.
-  Verification and environment records describe a check and carry the content
-  basis that check ran on, its producer's, which may predate the cut. So
-  neither counts here as a sighting, and either one recorded after the cut,
-  including the check that resolves that obligation, asks for a resubmission.
-  A check that a pass on a bound criterion cites is held to the judged
-  revision separately (R5, F8). The
-  declared revision is the evaluator's assertion, recorded like its verdicts;
-  Engram cannot attest what the evaluator read, so this exception carries the
-  evaluation's own asserted assurance. It must be the host's source revision
-  as the host reports it: a declaration in another form, such as a Git commit
-  id, matches no host sighting, so the host's next sighting of the source
-  voids the evaluation. A host that wants the revision to be one it measured
-  passes that revision to the evaluator itself (see [turns, focus and
-  evaluation timing](#turns-focus-and-evaluation-timing)). A
-  `same_session` implementer gains nothing from it: it can re-read and submit
-  at the new cut in any case.
+- **F3 host-observed mutation.** With no named root, no execution observation
+  with `source_changed`, no verification or environment evidence, and no
+  obligation definition or resolution was appended to the run feed after
+  `evaluated_cut`, and the newest execution observation after it that carries
+  a revision does not show the source at another revision than the judged one.
+  With a named root, source sightings are compared in its workspace and
+  generation; a foreign sighting cannot claim the named source moved. Host
+  checks and obligation records still ask the evaluator to re-read the cut,
+  and an unknown-root change is never presumed foreign. These are host-minted
+  facts about the workspace and its checks, with `source_changed` recorded as
+  the core's reading of the host's report: a reported change that leaves the
+  source at the revision of the run's newest recorded source change, with no
+  other revision seen since (in an observation or environment evidence), is
+  recorded as no change. That clears only its change flag: like any
+  observation, it is still compared with the judged revision below. The only
+  exception is a source change that left the source at the revision the
+  evaluation declared it judged (its `source_basis`), with the obligation that
+  change opened: the evaluator saw that state, so the host's late report of it
+  does not void the evaluation. The source can also move without a reported
+  change, as when a check runs after someone else's edit. So when the newest
+  execution observation after the cut that carries a revision shows the source
+  at another revision than the judged one, the evaluation is void, whatever
+  that observation claims. The judged revision is the declared one, or else
+  the revision the run was last seen at when the cut was taken: that of the
+  newest execution observation at or before the cut that carries one. With
+  neither there is nothing to compare. The revision fingerprints the full
+  content, so it is compared whatever workspace reported it. Here only an
+  execution observation counts as a sighting of the source: the host lists a
+  turn's observations in the order it saw them, each at the revision the
+  source had then. A turn reported after the cut may still hold sightings from
+  before the evaluation, such as a check that ran before the edit the
+  evaluator judged. So the newest sighting decides: a later sighting of the
+  judged revision, or a reported change to the declared revision, puts the
+  source back where it was judged, and sightings of another revision before it
+  no longer count. The repeat reading above also counts environment evidence,
+  which there only errs toward keeping a reported change. Verification and
+  environment records describe a check and carry the content basis that check
+  ran on, its producer's, which may predate the cut. So neither counts here as
+  a sighting, and either one recorded after the cut, including the check that
+  resolves that obligation, asks for a resubmission. A check that a pass on a
+  bound criterion cites is held to the judged revision separately (R5, F8).
+  The declared revision is the evaluator's assertion, recorded like its
+  verdicts; Engram cannot attest what the evaluator read, so this exception
+  carries the evaluation's own asserted assurance. It must be the host's
+  source revision as the host reports it: a declaration in another form, such
+  as a Git commit id, matches no host sighting, so the host's next sighting of
+  the source voids the evaluation. A host that wants the revision to be one it
+  measured passes that revision to the evaluator itself (see [turns, focus and
+  evaluation timing](#turns-focus-and-evaluation-timing)). A `same_session`
+  implementer gains nothing from it: it can re-read and submit at the new cut
+  in any case.
 - **F4 source fingerprint.** When policy `require_source_freshness` is on, the
   completion attempt presents a `source_fingerprint` measured by the host at
   completion time (`done --source-fingerprint F`) that equals
@@ -349,6 +360,21 @@ stale reason named.
   which no obligation rule matches to the run's latest source change. F4
   does not stand in for it: the fingerprint ties the evaluated content to
   the content at completion, not to the check a pass cites.
+
+The host-private [named-root binding](behavioral-control-plane.md#5a-bind-a-named-source-root)
+is claim-scoped. Evaluation records the binding active at its cut and becomes
+stale if that binding ends, by an `ended` event or the claim's release, or
+changes. Its judged source and F8 check use
+only sightings in the bound workspace and generation: a cited check counts
+only when both the check and the observation that produced it are in that
+root and the check ran after the binding. A source change from a
+foreign workspace captured before the binding can be disclosed at completion
+as a non-satisfaction displacement; one recorded under a still-bound name
+stays open until an explicit human waiver, even after that root ended or the
+claim was released. An unknown-root source change recorded while a root was
+bound requires a fresh check in the claim's active named root or a waiver,
+even after that root ended, was released or was renamed. Neither the
+evaluator nor the core infers workspace identity from a path string.
 
 What does **not** invalidate an evaluation: holder notes and their checkpoints,
 gate records for checks the passing verdicts did not cite, non-holder

@@ -1091,10 +1091,11 @@ fn a_source_change_recorded_without_a_revision_is_judged_by_recording_order() {
         )
         .expect("producer observation");
         super::super::binding_freshness_mismatch(
-            (&mutation, position(&change)),
+            Some((&mutation, position(&change))),
             (&evidence, position(hash)),
-            &producer,
+            (&producer, position(&evidence.producer_observation)),
             &bound(1, VerificationKind::Build).requirement,
+            None,
         )
     };
     assert_eq!(

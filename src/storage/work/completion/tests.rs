@@ -4,6 +4,7 @@ use super::super::*;
 use super::*;
 
 mod bindings;
+mod named_root;
 mod obligations;
 
 #[test]

@@ -216,7 +216,7 @@ impl SqliteStore {
         for row in operation_rows {
             let stored = row?;
             report.checked_control_records += 1;
-            if Self::verify_control_operation(&stored).is_err() {
+            if Self::verify_control_operation(&self.connection, &stored).is_err() {
                 report
                     .invalid_control_records
                     .push(format!("control_operation:{}", stored.sequence));
@@ -704,7 +704,70 @@ impl SqliteStore {
         Ok(())
     }
 
-    fn verify_control_operation(stored: &StoredControlOperation) -> Result<(), StoreError> {
+    /// Whether a stored named-root receipt names the binding event it
+    /// recorded: that event sits at the receipt's run-feed position with the
+    /// receipt's workspace, generation and kind, the row's session reported
+    /// it, and the row's immutable intent is the one that event answers.
+    fn named_root_receipt_matches(
+        connection: &Connection,
+        stored: &StoredControlOperation,
+        result: serde_json::Value,
+    ) -> Result<bool, StoreError> {
+        let Ok(receipt) = serde_json::from_value::<crate::domain::NamedRootBindingReceipt>(result)
+        else {
+            return Ok(false);
+        };
+        let bytes: Option<Vec<u8>> = connection
+            .query_row(
+                "SELECT canonical_json FROM objects
+                 WHERE object_id = ?1 AND object_kind = 'named_root_binding'",
+                [receipt.event.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(event) = bytes.and_then(|bytes| {
+            CanonicalObject::stored(&receipt.event, bytes)
+                .and_then(|object| object.decode::<crate::domain::NamedRootBindingEvent>())
+                .ok()
+        }) else {
+            return Ok(false);
+        };
+        let position: Option<i64> = connection
+            .query_row(
+                "SELECT position FROM work_feed_entries
+                 WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_id = ?2",
+                params![event.run_id.0.to_string(), receipt.event.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let intent = CanonicalObject::freeze(&super::NamedRootBindingFingerprint {
+            control_schema_version: crate::CONTROL_SCHEMA_VERSION,
+            session_id: &event.session_id,
+            claim_id: &event.claim_id,
+            claim_fence: event.claim_fence,
+            workspace_id: &event.workspace_id,
+            generation: event.generation,
+            named_at: event.named_at,
+            kind: event.kind,
+            end_reason: event.end_reason,
+            idempotency_key: &stored.idempotency_key,
+        })?;
+        Ok(
+            receipt.position.feed == crate::domain::FeedId::RunExecution(event.run_id)
+                && position == Some(receipt.position.position)
+                && receipt.workspace_id == event.workspace_id
+                && receipt.generation == event.generation
+                && receipt.kind == event.kind
+                && event.session_id.0 == stored.session_id
+                && intent.key().as_str() == stored.intent_hash
+                && intent.bytes() == stored.intent_json.as_slice(),
+        )
+    }
+
+    fn verify_control_operation(
+        connection: &Connection,
+        stored: &StoredControlOperation,
+    ) -> Result<(), StoreError> {
         let intent = Self::decode_canonical_value(&stored.intent_hash, stored.intent_json.clone())?;
         let result: serde_json::Value = Self::decode_json_projection(&stored.result_json)?;
         let row_matches = intent.get("session_id").and_then(serde_json::Value::as_str)
@@ -724,6 +787,7 @@ impl SqliteStore {
                     .get("lease_id")
                     .and_then(serde_json::Value::as_str)
                     .is_some(),
+                "named_root_bind" => Self::named_root_receipt_matches(connection, stored, result)?,
                 _ => false,
             };
         if !row_matches {

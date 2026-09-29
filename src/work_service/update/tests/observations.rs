@@ -784,6 +784,8 @@ fn host_turn_changing_source_detected(
                 workspace_id: "workspace".into(),
                 // As long as a host's content fingerprint.
                 source_revision: format!("content-v1:{key:0>64}"),
+                source_root_generation: None,
+                source_root_state: None,
             }),
             observed_at: Some(at(second + 3)),
         }],

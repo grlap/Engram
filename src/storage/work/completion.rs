@@ -10,8 +10,10 @@ use super::execution::{
 };
 use super::feeds::{
     append_to_work_feeds, append_work_event, checkpoint_feed_end, current_run_feed_cut_on,
-    expire_handoff_offers, inspect_work_request, latest_source_mutation_on,
-    load_handoff_offer_projection, load_typed_work_object, replay_operation, request_object,
+    expire_handoff_offers, inspect_work_request, latest_claim_release_on,
+    latest_named_root_binding_on, latest_named_root_sighting_on, latest_source_mutation_in_on,
+    latest_source_mutation_on, latest_unlocated_source_change_on, load_handoff_offer_projection,
+    load_typed_work_object, named_root_event_on, replay_operation, request_object,
     run_feed_position_for_object_on, verify_anchored_memory_feeds,
 };
 use super::integrity::{
@@ -47,14 +49,15 @@ use crate::{
         COMPLETION_OBLIGATION_SCHEMA_VERSION, ChildRequirement, CompleteWorkRequest,
         CompletionObligationBinding, CompletionSeal, ControlWorkBinding, DisposeWorkRequest,
         EnvironmentEvidence, ExecutionObservation, ExecutionSourceBasis, FeedId, FeedPosition,
-        MemoryAssertionEvent, MemoryVersion, OpenWorkObligation, ReopenWorkRequest,
-        RequiredChildWaiver, RootExecution, RootExecutionId, RootExecutionState, SCHEMA_VERSION,
-        SessionId, VerificationEvidence, WaiveRequiredChildRequest, WaiveWorkObligationRequest,
-        WorkBlocker, WorkCheckpoint, WorkClaim, WorkClaimState, WorkCompletionRecoveryCause,
-        WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer,
-        WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation, WorkObligationId,
-        WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkRun,
-        WorkRunId, WorkRunState, WorkTransition,
+        MemoryAssertionEvent, MemoryVersion, NamedRootBindingEvent, NamedRootBindingKind,
+        OpenWorkObligation, ReopenWorkRequest, RequiredChildWaiver, RootExecution, RootExecutionId,
+        RootExecutionState, SCHEMA_VERSION, SessionId, VerificationEvidence,
+        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkBlocker, WorkCheckpoint,
+        WorkClaim, WorkClaimId, WorkClaimState, WorkCompletionRecoveryCause, WorkDisposition,
+        WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffState, WorkId,
+        WorkItem, WorkLifecycle, WorkObligation, WorkObligationId, WorkObligationResolution,
+        WorkObligationResolutionEvent, WorkObligationState, WorkRun, WorkRunId, WorkRunState,
+        WorkTransition,
     },
     memory::Redactor,
 };
@@ -62,8 +65,15 @@ use crate::{
 mod child_barriers;
 mod child_resolutions;
 mod lifecycle;
+mod named_root;
 mod projections;
 mod root_binding;
+
+use named_root::{
+    NamedRootContext, displaced_source_changes_on, displaces_on, named_root_context_on,
+    obligation_matches_named_root, refuse_unresolved_named_root_changes_on,
+    resolve_source_change_obligations_on,
+};
 
 pub(super) use root_binding::{validate_seal_root_event, validate_stored_seal_root};
 
@@ -420,20 +430,25 @@ impl SqliteStore {
                     .into(),
             });
         }
-        // The stock source-change rule records rather than blocks. Each of its
-        // obligations still open here is resolved as a waiver in the completing
-        // actor's name, after the checkpoint and inside the sealed cut, so the
-        // seal still binds only terminal obligations and the untested change
-        // stays on record. A refusal below rolls the waivers back with the rest,
+        // The stock source-change rule records rather than blocks. The
+        // source-change obligations still open here are resolved after the
+        // checkpoint and inside the sealed cut: the stock rule's are waived in
+        // the completing actor's name, a pre-binding foreign change is displaced
+        // under any source-change rule, and the changes a named root holds open
+        // stay open for the refusal that follows. So the seal still binds only
+        // terminal obligations, and the untested or displaced change stays on
+        // record. A refusal below rolls these resolutions back with the rest,
         // and a recovery answer is read from the state before them.
         transaction.execute_batch(&format!("SAVEPOINT {UNTESTED_WAIVERS_SAVEPOINT}"))?;
-        waive_untested_source_changes_on(
+        resolve_source_change_obligations_on(
             &transaction,
             &item,
             run.run_id,
+            claim.claim_id,
             &request.actor,
             request.completed_at,
         )?;
+        refuse_unresolved_named_root_changes_on(&transaction, &item, run.run_id, claim.claim_id)?;
         let completion_cut = FeedPosition {
             position: feed_head(&transaction, &run_feed)?,
             feed: run_feed,
@@ -460,10 +475,12 @@ impl SqliteStore {
             }
             Err(error) => return Err(error),
         };
+        let foreign_workspace_changes =
+            displaced_source_changes_on(&transaction, run.run_id, &obligations)?;
         let acceptance = bind_acceptance_to_obligations_on(
             &transaction,
             &item,
-            run.run_id,
+            &claim,
             &completion_cut,
             &evidence,
             acceptance_evaluation.is_some(),
@@ -541,6 +558,7 @@ impl SqliteStore {
             acceptance_evaluation,
             obligation_schema_version: COMPLETION_OBLIGATION_SCHEMA_VERSION,
             obligations,
+            foreign_workspace_changes,
             environment_schema_version: COMPLETION_ENVIRONMENT_SCHEMA_VERSION,
             environment,
             required_child_seals,
@@ -896,6 +914,14 @@ pub(super) fn validate_completion_seal_obligation_basis_on(
     if seal.obligations != expected {
         return Err(StoreError::InvalidWorkProjection(format!(
             "completion seal for run {} does not bind the exact obligation cut",
+            seal.run_id.0
+        )));
+    }
+    if seal.foreign_workspace_changes
+        != displaced_source_changes_on(connection, seal.run_id, &expected)?
+    {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "completion seal for run {} does not disclose its foreign workspace changes",
             seal.run_id.0
         )));
     }
@@ -1273,8 +1299,23 @@ fn validate_obligation_resolution_projection(
             )?;
             let evidence_position =
                 run_feed_position_for_object_on(connection, obligation.run_id, evidence)?;
-            let latest =
-                latest_source_mutation_on(connection, obligation.run_id, evaluated_cut.position)?;
+            let root = named_root_context_on(
+                connection,
+                obligation.run_id,
+                verification.binding.claim_id,
+                evaluated_cut.position,
+            )?;
+            if !obligation_matches_named_root(connection, obligation, root.as_ref())? {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "satisfied obligation {} belongs to a foreign workspace",
+                    obligation.obligation_id.0
+                )));
+            }
+            let latest = if let Some(root) = &root {
+                root.latest_mutation.clone()
+            } else {
+                latest_source_mutation_on(connection, obligation.run_id, evaluated_cut.position)?
+            };
             let satisfied = crate::control::evaluate_obligation_satisfaction(
                 &crate::control::ObligationSatisfactionInput {
                     open_obligations: std::slice::from_ref(obligation),
@@ -1283,7 +1324,16 @@ fn validate_obligation_resolution_projection(
                     latest_mutation: latest
                         .as_ref()
                         .map(|(position, mutation)| (mutation, *position)),
+                    named_root: root.as_ref().map(NamedRootContext::match_input),
                     evidence_position: evidence_position.position,
+                    producer_position: Some(
+                        run_feed_position_for_object_on(
+                            connection,
+                            obligation.run_id,
+                            &verification.producer_observation,
+                        )?
+                        .position,
+                    ),
                     evaluated_cut,
                 },
             );
@@ -1305,6 +1355,56 @@ fn validate_obligation_resolution_projection(
             {
                 return Err(StoreError::InvalidWorkProjection(format!(
                     "waived obligation {} has inconsistent terminal bindings",
+                    obligation.obligation_id.0
+                )));
+            }
+        }
+        WorkObligationResolution::Displaced {
+            binding,
+            trigger_workspace_id,
+        } => {
+            if state != WorkObligationState::Displaced
+                || projected_kind != Some("displaced")
+                || projected_evidence.is_some()
+                || !crate::control::is_source_change_obligation(&obligation.rule)
+            {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "displaced obligation {} has inconsistent terminal bindings",
+                    obligation.obligation_id.0
+                )));
+            }
+            let trigger: ExecutionObservation = load_typed_work_object(
+                connection,
+                &obligation.triggering_observation,
+                "execution_observation",
+            )?;
+            let root = named_root_context_on(
+                connection,
+                obligation.run_id,
+                trigger.binding.claim_id,
+                resolution_position.position - 1,
+            )?
+            .ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "displaced source change has no active named root".into(),
+                )
+            })?;
+            let basis = trigger.source_basis.as_ref().ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "displaced source change has unknown workspace".into(),
+                )
+            })?;
+            if &root.binding_id != binding
+                || trigger_workspace_id != &basis.workspace_id
+                || !displaces_on(
+                    connection,
+                    &root,
+                    &trigger,
+                    obligation.trigger_position.position,
+                )?
+            {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "displaced obligation {} is not a pre-binding foreign change",
                     obligation.obligation_id.0
                 )));
             }
@@ -1515,20 +1615,35 @@ fn append_control_typed_evidence_on(
 /// newest recorded change carries no revision, or the run has none, or the
 /// report carries no revision, this answers `false` and the host's flag
 /// stands, so a later change with a revision can re-anchor obligations that a
-/// revision-less change left waiver-only. The revision fingerprints the full
-/// content, so it compares across workspaces, which are kept for audit only,
-/// as in test-obligation freshness.
+/// revision-less change left waiver-only. Without a named root, the content
+/// fingerprint compares across workspaces. Once the host names a root, only
+/// that workspace and generation can anchor source freshness.
 pub(in crate::storage) fn source_revision_repeats_on(
     connection: &Connection,
     run_id: WorkRunId,
+    claim_id: WorkClaimId,
     basis: Option<&ExecutionSourceBasis>,
 ) -> Result<bool, StoreError> {
     let Some(basis) = basis else {
         return Ok(false);
     };
-    let Some((change_position, newest_change)) =
-        latest_source_mutation_on(connection, run_id, i64::MAX)?
-    else {
+    // Under a named root a report is compared within its own workspace: a
+    // sighting in the root with the root's newest change, any other with the
+    // newest change the host recorded in that workspace.
+    let root = named_root_context_on(connection, run_id, claim_id, i64::MAX)?;
+    let newest = match &root {
+        Some(root)
+            if basis.workspace_id == root.binding.workspace_id
+                && basis.source_root_generation == Some(root.binding.generation) =>
+        {
+            root.latest_mutation.clone()
+        }
+        Some(_) => {
+            latest_source_mutation_in_on(connection, run_id, Some(&basis.workspace_id), i64::MAX)?
+        }
+        None => latest_source_mutation_on(connection, run_id, i64::MAX)?,
+    };
+    let Some((change_position, newest_change)) = newest else {
         return Ok(false);
     };
     if newest_change
@@ -1548,8 +1663,14 @@ pub(in crate::storage) fn source_revision_repeats_on(
                    IS NOT NULL
                AND json_extract(object.canonical_json, '$.source_basis.source_revision')
                    != ?3
+               AND (?4 IS NULL OR json_extract(object.canonical_json, '$.source_basis.workspace_id') = ?4)
          )",
-        params![run_id.0.to_string(), change_position, basis.source_revision],
+        params![
+            run_id.0.to_string(),
+            change_position,
+            basis.source_revision,
+            root.as_ref().map(|_| basis.workspace_id.as_str())
+        ],
         |row| row.get(0),
     )?;
     Ok(!moved_since)
@@ -1759,7 +1880,7 @@ pub(super) fn open_binding_obligations_on(
 fn bind_acceptance_to_obligations_on(
     connection: &Connection,
     item: &WorkItem,
-    run_id: WorkRunId,
+    claim: &WorkClaim,
     cut: &FeedPosition,
     completion_evidence: &[ObjectId],
     evaluated: bool,
@@ -1768,8 +1889,14 @@ fn bind_acceptance_to_obligations_on(
     if item.acceptance_bindings.is_empty() {
         return Ok(acceptance);
     }
+    let run_id = claim.run_id;
     let records = load_work_obligation_records_on(connection, run_id, None)?;
-    let latest_mutation = latest_source_mutation_on(connection, run_id, cut.position)?;
+    let root = named_root_context_on(connection, run_id, claim.claim_id, cut.position)?;
+    let latest_mutation = if let Some(root) = &root {
+        root.latest_mutation.clone()
+    } else {
+        latest_source_mutation_on(connection, run_id, cut.position)?
+    };
     for binding in &item.acceptance_bindings {
         let Some(index) = binding.criterion.checked_sub(1) else {
             return Err(StoreError::InvalidWorkProjection(format!(
@@ -1801,9 +1928,13 @@ fn bind_acceptance_to_obligations_on(
             continue;
         };
         let mut carried_by = satisfying.clone();
-        if let Some((position, newest, evidence)) =
-            newest_verification_of_kind_on(connection, run_id, &binding.requirement, cut)?
-        {
+        if let Some((position, newest, evidence)) = newest_verification_of_kind_on(
+            connection,
+            run_id,
+            &binding.requirement,
+            cut,
+            root.as_ref(),
+        )? {
             let kind = encode_state(binding.requirement.check_kind)?;
             if evidence.result != crate::domain::VerificationResult::Passed {
                 return Err(StoreError::WorkCompletionRefused {
@@ -1814,17 +1945,26 @@ fn bind_acceptance_to_obligations_on(
                     ),
                 });
             }
-            if let Some((mutation_position, mutation)) = latest_mutation.as_ref() {
+            if root.is_some() || latest_mutation.is_some() {
                 let producer = load_typed_work_object::<ExecutionObservation>(
                     connection,
                     &evidence.producer_observation,
                     "execution_observation",
                 )?;
+                let producer_position = run_feed_position_for_object_on(
+                    connection,
+                    run_id,
+                    &evidence.producer_observation,
+                )?
+                .position;
                 if let Some(mismatch) = binding_freshness_mismatch(
-                    (mutation, *mutation_position),
+                    latest_mutation
+                        .as_ref()
+                        .map(|(position, mutation)| (mutation, *position)),
                     (&evidence, position),
-                    &producer,
+                    (&producer, producer_position),
                     &binding.requirement,
+                    root.as_ref(),
                 ) {
                     use crate::domain::VerificationEvidenceMismatch as Mismatch;
                     let cause = match mismatch {
@@ -1849,6 +1989,14 @@ fn bind_acceptance_to_obligations_on(
                 // ran, and the record that satisfied the obligation stays.
                 carried_by = newest;
             }
+        } else if root.is_some() {
+            return Err(StoreError::WorkCompletionRefused {
+                work: item.work_id,
+                reason: format!(
+                    "criterion {} requires a passing check in the current named source root",
+                    binding.criterion
+                ),
+            });
         }
         // An evaluation's citations are its own and are sealed as recorded.
         // An asserted criterion cites the verification that carried it when
@@ -1874,12 +2022,16 @@ fn bind_acceptance_to_obligations_on(
 /// would refuse every verification forever; recording order is then all that
 /// can be said, and it is what is asked.
 fn binding_freshness_mismatch(
-    (mutation, mutation_position): (&ExecutionObservation, i64),
+    mutation: Option<(&ExecutionObservation, i64)>,
     (evidence, evidence_position): (&VerificationEvidence, i64),
-    producer: &ExecutionObservation,
+    (producer, producer_position): (&ExecutionObservation, i64),
     requirement: &crate::domain::VerificationRequirement,
+    root: Option<&NamedRootContext>,
 ) -> Option<crate::domain::VerificationEvidenceMismatch> {
-    if mutation.source_basis.is_none() || mutation.observed_at.is_none() {
+    if root.is_none()
+        && let Some((mutation, mutation_position)) = mutation
+        && (mutation.source_basis.is_none() || mutation.observed_at.is_none())
+    {
         return (evidence_position <= mutation_position)
             .then_some(crate::domain::VerificationEvidenceMismatch::NotAfterMutation);
     }
@@ -1887,8 +2039,10 @@ fn binding_freshness_mismatch(
         candidate_kind: crate::domain::WorkEvidenceKind::Verification,
         evidence: Some(evidence),
         producer: Some(producer),
-        latest_mutation: Some((mutation, mutation_position)),
+        latest_mutation: mutation,
+        named_root: root.map(NamedRootContext::match_input),
         evidence_position,
+        producer_position: Some(producer_position),
         requirement,
     })
     .err()
@@ -1902,6 +2056,7 @@ fn newest_verification_of_kind_on(
     run_id: WorkRunId,
     requirement: &crate::domain::VerificationRequirement,
     cut: &FeedPosition,
+    root: Option<&NamedRootContext>,
 ) -> Result<Option<(i64, ObjectId, VerificationEvidence)>, StoreError> {
     let stored: Vec<String> = connection
         .prepare(
@@ -1920,6 +2075,15 @@ fn newest_verification_of_kind_on(
         }
         let evidence: VerificationEvidence =
             load_typed_work_object(connection, &hash, "verification_evidence")?;
+        if root.is_some_and(|root| {
+            evidence.source_basis.workspace_id != root.binding.workspace_id
+                || evidence.source_basis.source_root_generation != Some(root.binding.generation)
+                || evidence.source_basis.source_root_state
+                    != Some(crate::domain::SourceRootState::Named)
+                || position.position <= root.binding_position
+        }) {
+            continue;
+        }
         if evidence.check_kind != requirement.check_kind
             || requirement
                 .check_fingerprint
@@ -2017,56 +2181,6 @@ fn recovery_before_untested_waivers(
     Ok(CompleteWorkStorageResult::Recovery(recovery))
 }
 
-/// Resolves as waived, in the completing actor's name, every obligation the
-/// stock source-change rule opened on `run_id` that is still open: no
-/// matching passing test followed that change. The waiver reason names the
-/// change and its source revision for the host record.
-fn waive_untested_source_changes_on(
-    transaction: &Transaction<'_>,
-    item: &WorkItem,
-    run_id: WorkRunId,
-    actor: &crate::domain::ActorContext,
-    now: DateTime<Utc>,
-) -> Result<(), StoreError> {
-    for record in
-        load_work_obligation_records_on(transaction, run_id, Some(WorkObligationState::Open))?
-    {
-        if !crate::control::is_stock_source_change_obligation(
-            &record.obligation.rule,
-            &record.obligation.requirement,
-        ) {
-            continue;
-        }
-        let change = load_typed_work_object::<ExecutionObservation>(
-            transaction,
-            &record.obligation.triggering_observation,
-            "execution_observation",
-        )?;
-        let revision = change.source_basis.as_ref().map_or_else(
-            || "no recorded source revision".to_owned(),
-            |basis| format!("source revision {}", basis.source_revision),
-        );
-        let event = WorkObligationResolutionEvent {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            obligation_id: record.obligation.obligation_id,
-            definition: record.definition_id.clone(),
-            run_id,
-            resolution: WorkObligationResolution::Waived {
-                waived_by: actor.actor_id.clone(),
-                reason: format!(
-                    "completed at revision {} with no matching passing test after source change {} ({revision})",
-                    item.revision, change.observation_id
-                ),
-            },
-            actor: actor.clone(),
-            created_at: now,
-        };
-        append_obligation_resolution_on(transaction, &record, &event)?;
-    }
-    Ok(())
-}
-
 fn satisfy_open_obligations_on(
     transaction: &Transaction<'_>,
     evidence: &VerificationEvidence,
@@ -2075,8 +2189,17 @@ fn satisfy_open_obligations_on(
     let evidence_position =
         run_feed_position_for_object_on(transaction, evidence.binding.run_id, evidence_id)?;
     let evaluated_cut = current_run_feed_cut_on(transaction, evidence.binding.run_id)?;
-    let latest =
-        latest_source_mutation_on(transaction, evidence.binding.run_id, evaluated_cut.position)?;
+    let root = named_root_context_on(
+        transaction,
+        evidence.binding.run_id,
+        evidence.binding.claim_id,
+        evaluated_cut.position,
+    )?;
+    let latest = if let Some(root) = &root {
+        root.latest_mutation.clone()
+    } else {
+        latest_source_mutation_on(transaction, evidence.binding.run_id, evaluated_cut.position)?
+    };
     let producer = load_typed_work_object::<ExecutionObservation>(
         transaction,
         &evidence.producer_observation,
@@ -2086,6 +2209,16 @@ fn satisfy_open_obligations_on(
         .into_iter()
         .filter(|record| record.state == WorkObligationState::Open)
         .collect::<Vec<_>>();
+    let records = records
+        .into_iter()
+        .filter_map(|record| {
+            match obligation_matches_named_root(transaction, &record.obligation, root.as_ref()) {
+                Ok(true) => Some(Ok(record)),
+                Ok(false) => None,
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
     let obligations = records
         .iter()
         .map(|record| record.obligation.clone())
@@ -2098,7 +2231,16 @@ fn satisfy_open_obligations_on(
             latest_mutation: latest
                 .as_ref()
                 .map(|(position, mutation)| (mutation, *position)),
+            named_root: root.as_ref().map(NamedRootContext::match_input),
             evidence_position: evidence_position.position,
+            producer_position: Some(
+                run_feed_position_for_object_on(
+                    transaction,
+                    evidence.binding.run_id,
+                    &evidence.producer_observation,
+                )?
+                .position,
+            ),
             evaluated_cut: &evaluated_cut,
         },
     );
@@ -2144,6 +2286,9 @@ fn append_obligation_resolution_on(
             Some(evidence.as_str()),
         ),
         WorkObligationResolution::Waived { .. } => (WorkObligationState::Waived, "waived", None),
+        WorkObligationResolution::Displaced { .. } => {
+            (WorkObligationState::Displaced, "displaced", None)
+        }
     };
     let object = CanonicalObject::mint(event)?;
     SqliteStore::insert_object(transaction, "work_obligation_resolution", &object)?;

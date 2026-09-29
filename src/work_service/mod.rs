@@ -1466,6 +1466,43 @@ fn agent_change_object(
                 created_at: event.created_at,
             }))
         }
+        "named_root_binding" => {
+            let event = serde_json::from_value::<crate::domain::NamedRootBindingEvent>(object)?;
+            if &event.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "named-root event is bound outside its project".into(),
+                ));
+            }
+            let item = store.get_work_item(event.work_id)?;
+            let (change_kind, summary) = match event.kind {
+                crate::domain::NamedRootBindingKind::Bound => (
+                    "source_root_named",
+                    format!(
+                        "claim source root named in workspace {} at generation {}",
+                        event.workspace_id, event.generation
+                    ),
+                ),
+                crate::domain::NamedRootBindingKind::Ended => (
+                    "source_root_ended",
+                    format!(
+                        "claim source root ended in workspace {} at generation {}",
+                        event.workspace_id, event.generation
+                    ),
+                ),
+            };
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: event.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(event.work_id),
+                work_ref: Some(item.short_ref),
+                revision: None,
+                change_kind: change_kind.into(),
+                summary: compact_text(&summary),
+                actor_id: Some(compact_text(&event.actor.actor_id)),
+                actor_context: projected_actor_context(&event.actor),
+                created_at: event.recorded_at,
+            }))
+        }
         "memory_version" => {
             let version = serde_json::from_value::<MemoryVersion>(object)?;
             memory_change_projection(
@@ -1605,6 +1642,16 @@ fn obligation_resolution_change_summary(
         WorkObligationResolution::Waived { waived_by, .. } => (
             "obligation_waived",
             format!("{rule_id} waiver attributed to {}", compact_text(waived_by)),
+        ),
+        WorkObligationResolution::Displaced {
+            trigger_workspace_id,
+            ..
+        } => (
+            "foreign_workspace_change",
+            format!(
+                "{rule_id} change in workspace {} was displaced by a later named root; no test satisfaction or waiver was recorded",
+                compact_text(trigger_workspace_id)
+            ),
         ),
     }
 }

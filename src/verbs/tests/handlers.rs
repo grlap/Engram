@@ -718,6 +718,50 @@ fn catalog_claim_guidance_routes_through_exact_show() {
 }
 
 #[test]
+fn displaced_changes_are_named_and_the_rest_counted() {
+    use crate::verbs::show::{displaced_change_lines, displaced_changes_omitted};
+    let mut displaced = page(VerificationKind::Test, WorkObligationState::Displaced);
+    displaced.items[0].displaced_change = Some(crate::DisplacedSourceChange {
+        observation_id: "write-main".into(),
+        workspace_id: "workspace-A".into(),
+        source_revision: "revision-3".into(),
+    });
+    displaced.omitted_count = 1;
+    displaced.displaced_total = 2;
+    assert_eq!(displaced_changes_omitted(&displaced), 1);
+    assert_eq!(
+        displaced_change_lines(&displaced),
+        vec![
+            "foreign workspace change: write-main (workspace workspace-A; source revision revision-3); captured before the named root, displaced and not verified"
+                .to_owned(),
+            "foreign workspace changes: 1 more not shown (2 in total)".to_owned(),
+        ]
+    );
+    // The obligations two rules opened for one change name it once.
+    let mut twice = displaced.clone();
+    twice.items.push(twice.items[0].clone());
+    assert_eq!(
+        displaced_change_lines(&twice),
+        displaced_change_lines(&displaced)
+    );
+    // Two distinct changes whose shortened host labels collide are both
+    // named: a change is known by its record id, as the total counts it.
+    let mut colliding = displaced.clone();
+    let mut other = colliding.items[0].clone();
+    other.triggering_observation = ObjectId::mint();
+    colliding.items.push(other);
+    colliding.omitted_count = 0;
+    assert_eq!(displaced_changes_omitted(&colliding), 0);
+    assert_eq!(displaced_change_lines(&colliding).len(), 2);
+    // An untested change is not a displaced one, and a page without a named
+    // root discloses none.
+    assert!(
+        displaced_change_lines(&page(VerificationKind::Test, WorkObligationState::Waived))
+            .is_empty()
+    );
+}
+
+#[test]
 fn untested_changes_are_named_and_the_rest_counted() {
     use crate::verbs::show::{untested_change_lines, untested_changes_omitted};
     // A tested change discloses nothing.
@@ -801,7 +845,7 @@ fn open_test_obligation_becomes_the_test_reminder() {
     assert_eq!(
         reminders,
         vec![
-            "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one"
+            "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one, unless a named root holds it open: then done refuses and names the check or waiver it needs"
                 .to_owned()
         ]
     );

@@ -16,8 +16,9 @@ use serde_json::Value;
 
 use crate::{
     ActorContext, ControlAssurance, ControlWorkBinding, EffectClass, EnvironmentEvidenceInput,
-    ExecutionObservationInput, HostPathPolicy, ObjectId, ProjectId, SessionId, SqliteStore,
-    TurnIntent, TurnPurpose, VerificationEvidenceInput,
+    ExecutionObservationInput, HostPathPolicy, NamedRootBindingKind, NamedRootEndReason, ObjectId,
+    ProjectId, SessionId, SqliteStore, TurnIntent, TurnPurpose, VerificationEvidenceInput,
+    WorkClaimId,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
     storage::StoreError,
 };
@@ -44,6 +45,18 @@ pub enum HostControlRequest {
     },
     SessionStatus {
         routing_token: String,
+    },
+    NamedRootBind {
+        routing_token: String,
+        claim_id: WorkClaimId,
+        claim_fence: i64,
+        workspace_id: String,
+        generation: i64,
+        named_at: chrono::DateTime<Utc>,
+        kind: NamedRootBindingKind,
+        #[serde(default)]
+        end_reason: Option<NamedRootEndReason>,
+        idempotency_key: String,
     },
     TurnEvaluate {
         routing_token: String,
@@ -220,6 +233,36 @@ impl HostControlServer {
                     &self.session_id,
                     &self.connection_token,
                     &routing_token,
+                    now,
+                )?)
+                .map_err(StoreError::Json)
+            }
+            HostControlRequest::NamedRootBind {
+                routing_token,
+                claim_id,
+                claim_fence,
+                workspace_id,
+                generation,
+                named_at,
+                kind,
+                end_reason,
+                idempotency_key,
+            } => {
+                let mut actor = self.actor("named_root_bind", "bind the run's named source root");
+                serde_json::to_value(self.store.bind_named_root(
+                    &self.project_id,
+                    &self.session_id,
+                    &self.connection_token,
+                    &routing_token,
+                    claim_id,
+                    claim_fence,
+                    &workspace_id,
+                    generation,
+                    named_at,
+                    kind,
+                    end_reason,
+                    &mut actor,
+                    &idempotency_key,
                     now,
                 )?)
                 .map_err(StoreError::Json)
@@ -473,6 +516,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::InvalidControlSession(_) => "invalid_control_session",
+        StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
         StoreError::ControlSessionTokenMismatch(_) => "control_session_token_mismatch",
@@ -615,6 +659,33 @@ mod tests {
             .expect_err("removed operation must fail closed");
         assert!(error.contains("obligation_waive"));
         assert!(error.contains("unknown variant"));
+    }
+
+    #[test]
+    fn named_root_binding_frame_carries_claim_and_workspace_identity() {
+        let frame = serde_json::json!({
+            "operation": "named_root_bind",
+            "routing_token": "routing-token",
+            "claim_id": uuid::Uuid::new_v4(),
+            "claim_fence": 4,
+            "workspace_id": r"\\?\C:\source-root",
+            "generation": 7,
+            "named_at": "2026-09-28T00:00:00Z",
+            "kind": "bound",
+            "idempotency_key": "claim-generation-7-bound"
+        });
+        let parsed = parse_host_control_request(&serde_json::to_vec(&frame).expect("frame"))
+            .expect("host accepts the claim-scoped frame");
+        assert!(matches!(
+            parsed,
+            HostControlRequest::NamedRootBind { workspace_id, generation: 7, .. }
+                if workspace_id == r"\\?\C:\source-root"
+        ));
+        let mut altered = frame;
+        altered["source_path"] = serde_json::json!("C:\\source-root");
+        let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
+            .expect_err("a path alias cannot stand in for the host workspace identity");
+        assert!(error.contains("source_path"));
     }
 
     #[test]

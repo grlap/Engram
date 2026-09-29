@@ -314,6 +314,10 @@ pub struct AcceptanceEvaluation {
     pub evidence_basis: Vec<ObjectId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_basis: Option<AcceptanceSourceBasis>,
+    /// Named-root event selected at the evaluated cut, when this claim has
+    /// one. A later name or end invalidates the evaluation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub named_root_binding: Option<ObjectId>,
     pub mode: AcceptanceEvaluationMode,
     pub evaluator: ActorContext,
     /// Sub-agent mode: the distinct evaluator execution identity.

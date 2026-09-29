@@ -823,6 +823,7 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
         evidence,
         waived_by,
         untested_change: None,
+        displaced_change: None,
         reported_source_change: None,
         guidance,
     }
@@ -923,11 +924,21 @@ fn records_untested_change(
         && crate::control::is_stock_source_change_obligation(rule, requirement)
 }
 
+/// Whether an obligation stands for a source change a named root displaced:
+/// a displaced obligation of a source-change rule, stock or operator-selected.
+fn records_displaced_change(
+    state: WorkObligationState,
+    rule: &crate::BuiltinObligationRuleRef,
+) -> bool {
+    state == WorkObligationState::Displaced && crate::control::is_source_change_obligation(rule)
+}
+
 /// The bounded page of `records` that also says, on every obligation of the
 /// stock source-change rule, how the host reported the change that opened
 /// it; names, on each waived one, the change no matching passing test
-/// followed; and counts every such change on the run. It loads the
-/// triggering observation of each such obligation, so a missing one fails
+/// followed, and on each displaced one of any source-change rule the change a
+/// named root displaced; and counts every such change on the run. It loads
+/// the triggering observation of each such obligation, so a missing one fails
 /// the page whatever the obligation's state.
 pub(super) fn disclosed_work_obligation_page(
     store: &SqliteStore,
@@ -943,10 +954,21 @@ pub(super) fn disclosed_work_obligation_page(
             )
         })
         .count();
+    // Several rules may open obligations for one change: count the change once.
+    let displaced_total = records
+        .iter()
+        .filter(|record| records_displaced_change(record.state, &record.obligation.rule))
+        .map(|record| &record.obligation.triggering_observation)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
     let mut page = count_bounded_work_obligation_page(records);
     page.untested_total = untested_total;
+    page.displaced_total = displaced_total;
     for item in &mut page.items {
-        if !crate::control::is_stock_source_change_obligation(&item.rule, &item.requirement) {
+        let stock =
+            crate::control::is_stock_source_change_obligation(&item.rule, &item.requirement);
+        let displaced = records_displaced_change(item.state, &item.rule);
+        if !stock && !displaced {
             continue;
         }
         let change: crate::domain::ExecutionObservation =
@@ -956,7 +978,23 @@ pub(super) fn disclosed_work_obligation_page(
                     item.obligation_id.0
                 ))
             })?;
-        item.reported_source_change = change.reported_source_change;
+        if stock {
+            item.reported_source_change = change.reported_source_change;
+        }
+        if displaced {
+            let basis = change.source_basis.as_ref().ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "displaced obligation {} has no recorded workspace",
+                    item.obligation_id.0
+                ))
+            })?;
+            item.displaced_change = Some(super::DisplacedSourceChange {
+                observation_id: compact_text(&change.observation_id),
+                workspace_id: compact_text(&basis.workspace_id),
+                source_revision: compact_text(&basis.source_revision),
+            });
+            continue;
+        }
         if !records_untested_change(item.state, &item.rule, &item.requirement) {
             continue;
         }
@@ -1028,6 +1066,7 @@ pub(super) fn count_bounded_work_obligation_page(
         items: records.iter().map(work_obligation_summary).collect(),
         omitted_count,
         untested_total: 0,
+        displaced_total: 0,
         open_total: Some(open_total),
     }
 }

@@ -274,6 +274,8 @@ fn completion_seals_a_tested_source_change_as_the_exact_terminal_basis() {
     let source_basis = ExecutionSourceBasis {
         workspace_id: "workspace-completion".into(),
         source_revision: "revision-after-mutation".into(),
+        source_root_generation: None,
+        source_root_state: None,
     };
     let mutation = ExecutionObservation {
         schema_version: SCHEMA_VERSION,
@@ -587,6 +589,8 @@ fn completion_refuses_more_than_the_bounded_environment_basis() {
                         source_basis: ExecutionSourceBasis {
                             workspace_id: components.workspace_id.clone(),
                             source_revision: "bounded-environment-revision".into(),
+                            source_root_generation: None,
+                            source_root_state: None,
                         },
                         environment_fingerprint,
                         components: Some(components),
@@ -700,6 +704,8 @@ fn open_completion_obligation_refusal_is_bounded_and_counts_omissions() {
                 source_basis: Some(ExecutionSourceBasis {
                     workspace_id: "workspace-bounded".into(),
                     source_revision: format!("revision-{index}"),
+                    source_root_generation: None,
+                    source_root_state: None,
                 }),
                 observed_at: Some(at(3)),
                 actor: run_actor.clone(),
@@ -785,6 +791,8 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
         let source_basis = ExecutionSourceBasis {
             workspace_id: "workspace-protocol".into(),
             source_revision: "revision-protocol".into(),
+            source_root_generation: None,
+            source_root_state: None,
         };
         append_control_execution_observation_on(
             &transaction,
@@ -1175,6 +1183,8 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         Some(ExecutionSourceBasis {
             workspace_id: "workspace-a".into(),
             source_revision: "revision-a".into(),
+            source_root_generation: None,
+            source_root_state: None,
         }),
         "cargo test",
         at(4),
@@ -1223,6 +1233,8 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         Some(ExecutionSourceBasis {
             workspace_id: "workspace-b".into(),
             source_revision: "revision-b".into(),
+            source_root_generation: None,
+            source_root_state: None,
         }),
         "write with basis",
         at(5),
@@ -1281,7 +1293,8 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
             WorkObligationResolution::Satisfied { evaluated_cut, .. } => {
                 Some(evaluated_cut.clone())
             }
-            WorkObligationResolution::Waived { .. } => None,
+            WorkObligationResolution::Waived { .. }
+            | WorkObligationResolution::Displaced { .. } => None,
         })
         .expect("satisfaction evaluated cut");
     assert_eq!(

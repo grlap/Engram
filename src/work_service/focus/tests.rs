@@ -559,6 +559,8 @@ fn execution_observation_has_a_compact_agent_work_projection() {
         source_basis: Some(crate::ExecutionSourceBasis {
             workspace_id: "workspace-a".into(),
             source_revision: "revision-a".into(),
+            source_root_generation: None,
+            source_root_state: None,
         }),
         observed_at: Some(at(1)),
         actor: ActorContext {

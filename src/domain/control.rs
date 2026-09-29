@@ -10,7 +10,7 @@ use unicode_normalization::UnicodeNormalization;
 use crate::ObjectId;
 
 use super::{
-    AcceptanceEvaluationPolicy, ActorContext, ChangeCursor, ContextPacket, ProjectId,
+    AcceptanceEvaluationPolicy, ActorContext, ChangeCursor, ContextPacket, FeedPosition, ProjectId,
     RootExecutionId, SessionId, TaskDelta, TaskId, WorkClaimId, WorkId, WorkRunId,
 };
 
@@ -289,6 +289,68 @@ pub struct ControlWorkBinding {
     pub claim_fence: i64,
 }
 
+/// A host-reported transition in one claim's named source-root lifecycle.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NamedRootBindingKind {
+    Bound,
+    Ended,
+}
+
+/// Why an existing named source-root selection ended.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NamedRootEndReason {
+    ExplicitClear,
+    SessionGoneAtRestore,
+    RootInvalid,
+}
+
+/// State carried by a host sighting after its claim has had a named root.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceRootState {
+    Named,
+    Ended,
+}
+
+/// Host-recorded named-root selection or explicit end for one claim. The
+/// source basis records the generation seen at capture, so a delayed
+/// checkpoint cannot place an earlier sighting after a later name. Whether
+/// that generation had ended or been released is read from the events
+/// recorded before the sighting on the run feed.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NamedRootBindingEvent {
+    pub schema_version: u16,
+    pub project_id: ProjectId,
+    pub root_execution_id: RootExecutionId,
+    pub work_id: WorkId,
+    pub run_id: WorkRunId,
+    pub claim_id: WorkClaimId,
+    /// Historical disclosure only; claim renewal does not invalidate a root.
+    pub claim_fence: i64,
+    pub session_id: SessionId,
+    pub workspace_id: String,
+    pub generation: i64,
+    pub named_at: DateTime<Utc>,
+    pub kind: NamedRootBindingKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_reason: Option<NamedRootEndReason>,
+    pub actor: ActorContext,
+    pub recorded_at: DateTime<Utc>,
+}
+
+/// Host-private receipt for one durable named-root selection.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NamedRootBindingReceipt {
+    pub event: ObjectId,
+    pub position: FeedPosition,
+    pub workspace_id: String,
+    pub generation: i64,
+    pub kind: NamedRootBindingKind,
+}
+
 /// Host-observed outcome for one material action performed during a begun
 /// turn. This is asserted execution evidence, never execution authority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -335,6 +397,12 @@ impl SourceChangeDetection {
 pub struct ExecutionSourceBasis {
     pub workspace_id: String,
     pub source_revision: String,
+    /// Host capture-time generation and state of this claim's named root.
+    /// Both are absent for a sighting taken before its first name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_root_generation: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_root_state: Option<SourceRootState>,
 }
 
 /// Host-supplied portion of one execution observation recorded at turn

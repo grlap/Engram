@@ -1554,6 +1554,9 @@ impl AgentVerbs {
                 lines.extend(super::show::untested_change_lines(
                     &completed.obligation_page,
                 ));
+                lines.extend(super::show::displaced_change_lines(
+                    &completed.obligation_page,
+                ));
                 (lines, guidance, false)
             }
             WorkCompleteResult::Refused(refusal) => {
@@ -1604,6 +1607,14 @@ impl AgentVerbs {
                 let omitted = super::show::untested_changes_omitted(&receipt.obligation_page);
                 if omitted > 0 {
                     value["untested_changes_omitted"] = json!(omitted);
+                }
+                let displaced = super::show::displaced_changes(&receipt.obligation_page);
+                if !displaced.is_empty() {
+                    value["foreign_workspace_changes"] = serde_json::to_value(displaced)?;
+                }
+                let omitted = super::show::displaced_changes_omitted(&receipt.obligation_page);
+                if omitted > 0 {
+                    value["foreign_workspace_changes_omitted"] = json!(omitted);
                 }
                 value
             }
@@ -2076,7 +2087,7 @@ pub(super) fn obligation_reminders(page: &WorkObligationPage) -> Vec<String> {
                     &item.requirement,
                 ) =>
             {
-                "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one"
+                "tests have not run since your last source change — run them; the host records the result, and done records the change as untested without one, unless a named root holds it open: then done refuses and names the check or waiver it needs"
             }
             VerificationKind::Test => {
                 "tests have not run since your last source change — run them; the host records the result"

@@ -504,6 +504,11 @@ impl SqliteStore {
         verify_canonical_work_rows(connection, &mut checked, &mut invalid)?;
         verify_required_child_waiver_bindings(connection, &mut audit, &mut checked, &mut invalid)?;
         verify_work_protocol_attempts(connection, &mut checked, &mut invalid)?;
+        crate::storage::work::integrity::verify_named_root_history(
+            connection,
+            &mut checked,
+            &mut invalid,
+        )?;
         crate::storage::work::receipts::verify_work_operation_results(
             connection,
             &mut checked,

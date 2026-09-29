@@ -91,6 +91,8 @@ fn status_correction_control_marker_is_refused() {
             source_basis: ExecutionSourceBasis {
                 workspace_id: "status-workspace".into(),
                 source_revision: "source-1".into(),
+                source_root_generation: None,
+                source_root_state: None,
             },
             environment_fingerprint: ObjectId::from_canonical_bytes(b"status environment"),
             components: None,
@@ -123,6 +125,8 @@ fn assert_non_note_evidence_is_not_status(
         source_basis: ExecutionSourceBasis {
             workspace_id: "status-workspace".into(),
             source_revision: "source-1".into(),
+            source_root_generation: None,
+            source_root_state: None,
         },
         environment_fingerprint: ObjectId::from_canonical_bytes(b"status environment"),
         components: None,

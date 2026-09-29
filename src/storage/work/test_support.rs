@@ -321,9 +321,42 @@ pub(super) fn host_verification_of(
     second: i64,
     source_revision: &str,
 ) -> ObjectId {
+    host_verification_from_basis(
+        store,
+        work,
+        claim,
+        holder,
+        key,
+        kind,
+        result,
+        second,
+        crate::domain::ExecutionSourceBasis {
+            workspace_id: format!("workspace-{key}"),
+            source_revision: source_revision.into(),
+            source_root_generation: None,
+            source_root_state: None,
+        },
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test fixture mirrors the host verification surface"
+)]
+pub(super) fn host_verification_from_basis(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    kind: crate::domain::VerificationKind,
+    result: crate::domain::VerificationResult,
+    second: i64,
+    source_basis: crate::domain::ExecutionSourceBasis,
+) -> ObjectId {
     use crate::domain::{
         ControlWorkBinding, EffectClass, EnvironmentComponents, EnvironmentEvidence,
-        ExecutionObservation, ExecutionOutcome, ExecutionSourceBasis, VerificationEvidence,
+        ExecutionObservation, ExecutionOutcome, VerificationEvidence,
     };
     let run = super::query::load_work_run(&store.connection, claim.run_id).expect("claimed run");
     let binding = ControlWorkBinding {
@@ -336,10 +369,6 @@ pub(super) fn host_verification_of(
     };
     let mut run_actor = actor(holder);
     run_actor.run_id = Some(run.run_id.0.to_string());
-    let source_basis = ExecutionSourceBasis {
-        workspace_id: format!("workspace-{key}"),
-        source_revision: source_revision.into(),
-    };
     let observation = ExecutionObservation {
         schema_version: SCHEMA_VERSION,
         project_id: work.project_id.clone(),
@@ -414,6 +443,106 @@ pub(super) fn host_verification_of(
     .expect("append verification evidence");
     transaction.commit().expect("commit verification");
     verification
+}
+
+/// Appends only the producer observation of a check that ran at `second`
+/// in `source_basis`, so a test can record its verification later, the way
+/// a checkpoint may cite a stored producer.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test fixture mirrors the host observation surface"
+)]
+pub(super) fn host_check_producer(
+    transaction: &rusqlite::Transaction<'_>,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    second: i64,
+    source_basis: crate::domain::ExecutionSourceBasis,
+) -> ObjectId {
+    use crate::domain::{ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome};
+    let run = super::query::load_work_run(transaction, claim.run_id).expect("claimed run");
+    let mut run_actor = actor(holder);
+    run_actor.run_id = Some(run.run_id.0.to_string());
+    let observation = ExecutionObservation {
+        schema_version: SCHEMA_VERSION,
+        project_id: work.project_id.clone(),
+        binding: ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: work.work_id,
+            run_id: run.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        },
+        session_id: SessionId(holder.into()),
+        grant_id: format!("grant-{key}"),
+        observation_id: format!("check-{key}"),
+        action_fingerprint: check_fingerprint(key),
+        effect: EffectClass::Observe,
+        outcome: ExecutionOutcome::Succeeded,
+        source_changed: false,
+        reported_source_change: None,
+        obligation_rule_set: active_rule_set_id(transaction),
+        source_basis: Some(source_basis),
+        observed_at: Some(at(second)),
+        actor: run_actor.clone(),
+        recorded_at: at(second),
+    };
+    super::completion::append_control_execution_observation_on(transaction, &observation)
+        .expect("append the check's producer")
+}
+
+/// Records a passing test verification of the stored `producer`, a check
+/// [`host_check_producer`] appended at `second` under `key`.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test fixture mirrors the host verification surface"
+)]
+pub(super) fn host_verification_of_producer(
+    transaction: &rusqlite::Transaction<'_>,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    second: i64,
+    recorded_second: i64,
+    source_basis: crate::domain::ExecutionSourceBasis,
+    producer: ObjectId,
+) -> ObjectId {
+    use crate::domain::{ControlWorkBinding, VerificationEvidence};
+    let run = super::query::load_work_run(transaction, claim.run_id).expect("claimed run");
+    let mut run_actor = actor(holder);
+    run_actor.run_id = Some(run.run_id.0.to_string());
+    super::completion::append_control_verification_evidence_on(
+        transaction,
+        &VerificationEvidence {
+            schema_version: SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            binding: ControlWorkBinding {
+                root_execution_id: run.root_execution_id,
+                work_id: work.work_id,
+                run_id: run.run_id,
+                work_revision: claim.accepted_work_revision,
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+            },
+            session_id: SessionId(holder.into()),
+            producer_observation: producer,
+            source_basis,
+            environment: None,
+            check_kind: crate::domain::VerificationKind::Test,
+            check_fingerprint: check_fingerprint(key),
+            result: crate::domain::VerificationResult::Passed,
+            completed_at: at(second),
+            summary: format!("host observed {key}"),
+            refs: vec![format!("command:{key}")],
+            actor: run_actor,
+            recorded_at: at(recorded_second),
+        },
+    )
+    .expect("append verification of the stored producer")
 }
 
 /// The smallest update result a gate stores for `work_id`, for a fixture
@@ -538,14 +667,77 @@ pub(super) fn source_mutation_detected(
     source_revision: Option<&str>,
     reported_source_change: Option<crate::domain::SourceChangeDetection>,
 ) -> ObjectId {
-    use crate::domain::{
-        ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome,
-        ExecutionSourceBasis,
-    };
-    let run = super::query::load_work_run(&store.connection, claim.run_id).expect("claimed run");
+    source_mutation_from_basis(
+        store,
+        work,
+        claim,
+        holder,
+        key,
+        second,
+        source_revision.map(|revision| crate::domain::ExecutionSourceBasis {
+            workspace_id: format!("workspace-{key}"),
+            source_revision: revision.into(),
+            source_root_generation: None,
+            source_root_state: None,
+        }),
+        reported_source_change,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test fixture mirrors the host observation surface"
+)]
+pub(super) fn source_mutation_from_basis(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    second: i64,
+    source_basis: Option<crate::domain::ExecutionSourceBasis>,
+    reported_source_change: Option<crate::domain::SourceChangeDetection>,
+) -> ObjectId {
+    let observation = source_mutation_observation(
+        &store.connection,
+        work,
+        claim,
+        holder,
+        key,
+        second,
+        source_basis,
+        reported_source_change,
+    );
+    let transaction = store
+        .connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .expect("mutation transaction");
+    let mutation = append_source_mutation_on(&transaction, &observation);
+    transaction.commit().expect("commit mutation");
+    mutation
+}
+
+/// The source-change observation [`source_mutation_from_basis`] records,
+/// prepared without appending it.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test fixture mirrors the host observation surface"
+)]
+pub(super) fn source_mutation_observation(
+    connection: &Connection,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    second: i64,
+    source_basis: Option<crate::domain::ExecutionSourceBasis>,
+    reported_source_change: Option<crate::domain::SourceChangeDetection>,
+) -> crate::domain::ExecutionObservation {
+    use crate::domain::{ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome};
+    let run = super::query::load_work_run(connection, claim.run_id).expect("claimed run");
     let mut run_actor = actor(holder);
     run_actor.run_id = Some(run.run_id.0.to_string());
-    let observation = ExecutionObservation {
+    ExecutionObservation {
         schema_version: SCHEMA_VERSION,
         project_id: work.project_id.clone(),
         binding: ControlWorkBinding {
@@ -564,22 +756,19 @@ pub(super) fn source_mutation_detected(
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,
         reported_source_change,
-        obligation_rule_set: active_rule_set_id(&store.connection),
-        source_basis: source_revision.map(|revision| ExecutionSourceBasis {
-            workspace_id: format!("workspace-{key}"),
-            source_revision: revision.into(),
-        }),
-        observed_at: source_revision.map(|_| at(second)),
-        actor: run_actor.clone(),
+        obligation_rule_set: active_rule_set_id(connection),
+        observed_at: source_basis.as_ref().map(|_| at(second)),
+        source_basis,
+        actor: run_actor,
         recorded_at: at(second),
-    };
-    let transaction = store
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .expect("mutation transaction");
-    let mutation =
-        super::completion::append_control_execution_observation_on(&transaction, &observation)
-            .expect("append the source mutation");
-    transaction.commit().expect("commit mutation");
-    mutation
+    }
+}
+
+/// Appends a prepared source-change observation inside `transaction`.
+pub(super) fn append_source_mutation_on(
+    transaction: &rusqlite::Transaction<'_>,
+    observation: &crate::domain::ExecutionObservation,
+) -> ObjectId {
+    super::completion::append_control_execution_observation_on(transaction, observation)
+        .expect("append the source mutation")
 }

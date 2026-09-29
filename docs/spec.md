@@ -1142,9 +1142,11 @@ audit provenance linked from each verification. A mismatched command or source
 basis leaves the obligation open; only exact passed evidence at the
 post-mutation cut satisfies it.
 A passed test satisfies open definitions only against the latest mutation at
-the evaluated run-feed cut. A latest basisless mutation therefore leaves the
-open set waiver-only until a later basis-bearing mutation and passed test; that
-test may satisfy earlier definitions too. Focus, nested next views, updates,
+the evaluated run-feed cut. For a claim without a named root, a latest
+basisless mutation therefore leaves the open set waiver-only until a later
+basis-bearing mutation and passed test; that test may satisfy earlier
+definitions too. Under a named root, a fresh check in the root that ran after a
+basisless change accounts for it. Focus, nested next views, updates,
 and both completion outcomes expose one count- and byte-bounded,
 authority-redacted `obligation_page` with an explicit omission count and
 deterministic typed guidance. Waiver is absent from MCP and `work_update`.
@@ -1157,12 +1159,20 @@ and transport faults remain request errors. The stock
 `source_mutation_requires_test` rule records rather than blocks. Once the
 final checkpoint is confirmed to reach the run-feed head, completion resolves
 each of that rule's still-open definitions as a waiver in the completing
-actor's name, inside the sealed cut, and discloses the change as untested. Completion then evaluates the cut-aware set at the exact
+actor's name, inside the sealed cut, and discloses the change as untested,
+unless a named root, active now or bound when the change was recorded,
+changes its disposition. A foreign change from before the binding receives a
+terminal `displaced` resolution under any source-change rule and is disclosed
+in the seal. A foreign change recorded under a bound name, or an unknown-root
+change recorded while a root was bound, stays open and refuses completion,
+even after that root ended or the claim was released. Completion then
+evaluates the cut-aware set at the exact
 pre-seal run-feed position. Any other open definition returns a bounded
 `open_work_obligations` protocol result recomputed from one coherent current
 snapshot; it is guidance rather than a durable replay result. A new seal
 declares obligation schema V1 and binds every applicable definition to its
-satisfied/waived resolution; success and fresh-session focus reconstruct their
+satisfied, waived or displaced resolution; success and fresh-session focus
+reconstruct their
 pages from canonical history, and the final checkpoint acknowledges the
 matching typed verification evidence.
 A requirement never names an environment id. New seals

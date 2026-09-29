@@ -9,20 +9,239 @@ use super::{
     IssuedTurnGrant, MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT,
     MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT, MAX_TYPED_EVIDENCE_REF_BYTES,
     MAX_TYPED_EVIDENCE_REFS, MAX_TYPED_EVIDENCE_SUMMARY_BYTES,
-    MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT, ObjectId, OptionalExtension, ParticipantMembership,
-    Redactor, SCHEMA_VERSION, SessionId, SessionPhase, SqliteStore, StoreError, TaskAdmissionEpoch,
-    TaskId, Transaction, TransactionBehavior, TurnBeginDecision, TurnBeginReceipt,
-    TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent, TurnCheckpointReceipt,
-    TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantState,
-    TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent, TurnIntentFingerprint,
-    TurnNextIntent, Utc, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
-    VerificationResult, effective_mediated_effects, enum_name, params, work,
+    MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT, NamedRootBindingEvent, NamedRootBindingFingerprint,
+    NamedRootBindingReceipt, ObjectId, OptionalExtension, ParticipantMembership, Redactor,
+    SCHEMA_VERSION, SessionId, SessionPhase, SqliteStore, StoreError, TaskAdmissionEpoch, TaskId,
+    Transaction, TransactionBehavior, TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot,
+    TurnCheckpointDecision, TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot,
+    TurnDecision, TurnEvaluationInput, TurnGrantState, TurnGrantSupersession,
+    TurnGrantSupersessionReason, TurnIntent, TurnIntentFingerprint, TurnNextIntent, Utc,
+    VerificationEvidence, VerificationEvidenceInput, VerificationKind, VerificationResult,
+    effective_mediated_effects, enum_name, params, work,
 };
 
 #[cfg(test)]
 mod tests;
 
 impl SqliteStore {
+    /// Records the host's explicit source-root selection for the exact live
+    /// claim on this control session. Agent-facing work operations do not
+    /// expose this event.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the host binding keeps routing, claim, source and retry inputs explicit"
+    )]
+    pub(crate) fn bind_named_root(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        claim_id: crate::domain::WorkClaimId,
+        claim_fence: i64,
+        workspace_id: &str,
+        generation: i64,
+        named_at: DateTime<Utc>,
+        kind: super::NamedRootBindingKind,
+        end_reason: Option<super::NamedRootEndReason>,
+        actor: &mut ActorContext,
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<NamedRootBindingReceipt, StoreError> {
+        if workspace_id.trim().is_empty()
+            || workspace_id.trim() != workspace_id
+            || workspace_id.len() > 512
+            || generation <= 0
+            || claim_fence <= 0
+            || named_at > now
+            || matches!(kind, super::NamedRootBindingKind::Bound) != end_reason.is_none()
+        {
+            return Err(StoreError::NamedRootBindingRefused(
+                "named-root binding requires a trimmed workspace (at most 512 bytes), positive generation and fence, a nonfuture named_at, and a reason exactly when ended".into(),
+            ));
+        }
+        let intent = CanonicalObject::freeze(&NamedRootBindingFingerprint {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id,
+            claim_id: &claim_id,
+            claim_fence,
+            workspace_id,
+            generation,
+            named_at,
+            kind,
+            end_reason,
+            idempotency_key,
+        })?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        work::require_work_schema_version(&transaction, self.work_schema_version)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let session = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        Self::verify_control_session(&session, project_id, routing_token)?;
+        if let Some(replay) = Self::replay_control_operation(
+            &transaction,
+            session_id,
+            "named_root_bind",
+            idempotency_key,
+            intent.key(),
+        )? {
+            transaction.commit()?;
+            return Ok(replay);
+        }
+        if session.phase == SessionPhase::Exited || actor.session_id.as_ref() != Some(session_id) {
+            return Err(StoreError::NamedRootBindingRefused(
+                "named-root binding requires an active host session".into(),
+            ));
+        }
+        let prior_bound = if kind == super::NamedRootBindingKind::Ended {
+            let stored: Option<(String, Vec<u8>)> = transaction
+                .query_row(
+                    "SELECT object_id, canonical_json FROM objects
+                     WHERE object_kind = 'named_root_binding'
+                       AND json_extract(canonical_json, '$.claim_id') = ?1
+                       AND json_extract(canonical_json, '$.generation') = ?2
+                       AND json_extract(canonical_json, '$.kind') = 'bound'",
+                    params![claim_id.0.to_string(), generation],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let (stored_id, bytes) = stored.ok_or_else(|| {
+                StoreError::NamedRootBindingRefused(
+                    "named-root end has no recorded bound generation".into(),
+                )
+            })?;
+            let id = ObjectId::from_stored(stored_id.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_id))?;
+            Some(CanonicalObject::stored(&id, bytes)?.decode::<NamedRootBindingEvent>()?)
+        } else {
+            None
+        };
+        let (work_id, run_id, root_execution_id) = if let Some(bound) = &prior_bound {
+            if bound.project_id != *project_id
+                || bound.workspace_id != workspace_id
+                || bound.named_at != named_at
+                || (end_reason == Some(super::NamedRootEndReason::ExplicitClear)
+                    && bound.session_id != *session_id)
+            {
+                return Err(StoreError::NamedRootBindingRefused(
+                    "named-root end must repeat its bound generation's project, workspace and named_at, and an explicit clear must come from the naming session".into(),
+                ));
+            }
+            (bound.work_id, bound.run_id, bound.root_execution_id)
+        } else {
+            let stored_run: Option<String> = transaction
+                .query_row(
+                    "SELECT run_id FROM work_claims WHERE claim_id = ?1",
+                    [claim_id.0.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let run_id = stored_run
+                .and_then(|value| uuid::Uuid::parse_str(&value).ok())
+                .map(crate::domain::WorkRunId)
+                .ok_or_else(|| {
+                    StoreError::NamedRootBindingRefused(
+                        "named-root claim is not current in this store".into(),
+                    )
+                })?;
+            let claim = work::load_work_claim_optional(&transaction, run_id)?.ok_or_else(|| {
+                StoreError::NamedRootBindingRefused(
+                    "named-root claim has no canonical state".into(),
+                )
+            })?;
+            if claim.claim_id != claim_id
+                || claim.state != crate::domain::WorkClaimState::Active
+                || claim.expires_at <= now
+            {
+                return Err(StoreError::NamedRootBindingRefused(
+                    "named-root claim is not active".into(),
+                ));
+            }
+            let item = work::load_work_item(&transaction, claim.work_id)?;
+            let run = work::load_work_run(&transaction, run_id)?;
+            if item.project_id != *project_id || run.work_id != item.work_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "named-root claim crosses its project or run".into(),
+                ));
+            }
+            (item.work_id, run_id, run.root_execution_id)
+        };
+        let previous: Option<(String, Vec<u8>)> = transaction
+            .query_row(
+                "SELECT entry.object_id, object.canonical_json
+                 FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
+                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+                   AND entry.object_kind = 'named_root_binding'
+                   AND json_extract(object.canonical_json, '$.claim_id') = ?2
+                 ORDER BY entry.position DESC LIMIT 1",
+                params![run_id.0.to_string(), claim_id.0.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let previous = previous
+            .map(|(stored_id, bytes)| {
+                let id = ObjectId::from_stored(stored_id.clone())
+                    .ok_or(StoreError::InvalidStoredKey(stored_id))?;
+                CanonicalObject::stored(&id, bytes)?.decode::<NamedRootBindingEvent>()
+            })
+            .transpose()?;
+        let sequence_valid = match (kind, previous.as_ref()) {
+            (super::NamedRootBindingKind::Bound, None) => true,
+            (super::NamedRootBindingKind::Bound, Some(previous)) => {
+                generation > previous.generation
+            }
+            (super::NamedRootBindingKind::Ended, Some(previous)) => {
+                previous.kind == super::NamedRootBindingKind::Bound
+                    && previous.generation == generation
+            }
+            (super::NamedRootBindingKind::Ended, None) => false,
+        };
+        if !sequence_valid {
+            return Err(StoreError::NamedRootBindingRefused(
+                "named-root generation or lifecycle transition is stale for the claim".into(),
+            ));
+        }
+        actor.run_id = Some(run_id.0.to_string());
+        let event = NamedRootBindingEvent {
+            schema_version: SCHEMA_VERSION,
+            project_id: project_id.clone(),
+            root_execution_id,
+            work_id,
+            run_id,
+            claim_id,
+            claim_fence,
+            session_id: session_id.clone(),
+            workspace_id: workspace_id.to_owned(),
+            generation,
+            named_at,
+            kind,
+            end_reason,
+            actor: actor.clone(),
+            recorded_at: now,
+        };
+        let (event_id, position) = work::append_named_root_binding_on(&transaction, &event)?;
+        let receipt = NamedRootBindingReceipt {
+            event: event_id,
+            position,
+            workspace_id: workspace_id.to_owned(),
+            generation,
+            kind,
+        };
+        Self::persist_control_operation(
+            &transaction,
+            session_id,
+            "named_root_bind",
+            idempotency_key,
+            &intent,
+            &receipt,
+            now,
+        )?;
+        transaction.commit()?;
+        Ok(receipt)
+    }
     /// Resolves the host's project-local rendezvous directly. This scope has
     /// no task lifecycle or participant roster; `control_sessions` owns binding.
     fn bind_control_anchor(
@@ -1023,6 +1242,13 @@ impl SqliteStore {
                             "execution observation lost its work binding".into(),
                         )
                     })?;
+                    if let Some(source_basis) = input.source_basis.as_ref() {
+                        validate_source_root_basis_on(
+                            &transaction,
+                            &observation_binding,
+                            source_basis,
+                        )?;
+                    }
                     // The revision decides a source change: a reported change
                     // that leaves the revision where this run last saw it is
                     // not one, so it opens no tests obligation. Evaluation
@@ -1031,6 +1257,7 @@ impl SqliteStore {
                         && !work::source_revision_repeats_on(
                             &transaction,
                             observation_binding.run_id,
+                            observation_binding.claim_id,
                             input.source_basis.as_ref(),
                         )?;
                     let observation = ExecutionObservation {
@@ -1068,6 +1295,7 @@ impl SqliteStore {
                             "environment evidence lost its work binding".into(),
                         )
                     })?;
+                    validate_source_root_basis_on(&transaction, binding, &input.source_basis)?;
                     if input.components.as_ref().is_some_and(|components| {
                         components.capability_map_revision != session.capability_map_revision
                     }) {
@@ -1460,9 +1688,59 @@ fn validate_execution_source_basis(
         || source_revision != source_basis.source_revision
         || workspace_id.len() > 512
         || source_revision.len() > 512
+        || !matches!(
+            (
+                source_basis.source_root_generation,
+                source_basis.source_root_state
+            ),
+            (None, None) | (Some(1..), Some(_))
+        )
     {
         return Err(StoreError::InvalidControlSession(format!(
-            "evidence {label:?} source basis fields must be trimmed, nonempty, and at most 512 bytes"
+            "evidence {label:?} source basis fields must be trimmed, nonempty, and at most 512 bytes; named-root generation and state must occur together with a positive generation"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_source_root_basis_on(
+    connection: &super::Connection,
+    binding: &ControlWorkBinding,
+    source_basis: &crate::domain::ExecutionSourceBasis,
+) -> Result<(), StoreError> {
+    let Some(generation) = source_basis.source_root_generation else {
+        return Ok(());
+    };
+    let kind = match source_basis.source_root_state {
+        Some(crate::domain::SourceRootState::Named) => "bound",
+        Some(crate::domain::SourceRootState::Ended) => "ended",
+        None => {
+            return Err(StoreError::NamedRootBindingRefused(
+                "source-root generation has no lifecycle state".into(),
+            ));
+        }
+    };
+    let exists: bool = connection.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.object_kind = 'named_root_binding'
+               AND json_extract(object.canonical_json, '$.claim_id') = ?2
+               AND json_extract(object.canonical_json, '$.generation') = ?3
+               AND json_extract(object.canonical_json, '$.kind') = ?4
+         )",
+        params![
+            binding.run_id.0.to_string(),
+            binding.claim_id.0.to_string(),
+            generation,
+            kind
+        ],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Err(StoreError::NamedRootBindingRefused(format!(
+            "source sighting names {kind} generation {generation} without a recorded binding for this claim"
         )));
     }
     Ok(())

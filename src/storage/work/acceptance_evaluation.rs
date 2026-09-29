@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use super::completion::feed_head;
 use super::feeds::{
-    append_to_work_feeds, inspect_work_request, load_typed_work_object, replay_operation,
-    request_object,
+    append_to_work_feeds, inspect_work_request, latest_named_root_binding_on,
+    latest_named_root_sighting_on, load_typed_work_object, replay_operation, request_object,
 };
 use super::planning::{normalize_note_text, persist_operation_result};
 use super::query::{load_work_claim_optional, load_work_item, load_work_run, on_one_snapshot};
@@ -24,9 +24,10 @@ use crate::domain::{
     AcceptanceResult, AcceptanceStaleReason, AcceptanceVerdict, AssuranceLevel, CompletionSeal,
     CriterionVerdict, CriterionVerdictInput, ExecutionObservation, ExecutionSourceBasis, FeedId,
     MAX_ACCEPTANCE_EVALUATION_BYTES, MAX_ACCEPTANCE_SOURCE_BASIS_BYTES,
-    MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis, ProjectId,
-    RecordAcceptanceEvaluationRequest, VerificationEvidence, VerificationResult, WorkEvent,
-    WorkEvidence, WorkLifecycle, WorkObligation, WorkTransition,
+    MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis,
+    NamedRootBindingEvent, NamedRootBindingKind, ProjectId, RecordAcceptanceEvaluationRequest,
+    SourceRootState, VerificationEvidence, VerificationResult, WorkEvent, WorkEvidence,
+    WorkLifecycle, WorkObligation, WorkTransition,
 };
 use crate::memory::Redactor;
 use crate::storage::{EvaluationBasisMove, SqliteStore, StoreError};
@@ -35,6 +36,34 @@ use crate::storage::{EvaluationBasisMove, SqliteStore, StoreError};
 pub(crate) const KIND: &str = "acceptance_evaluation";
 const OPERATION: &str = "record_acceptance_evaluation";
 const MAX_ATTEMPT_KEY_BYTES: usize = 256;
+
+struct NamedEvaluationRoot {
+    position: i64,
+    event_id: ObjectId,
+    event: NamedRootBindingEvent,
+}
+
+fn named_root_at_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    through: i64,
+) -> Result<Option<NamedEvaluationRoot>, StoreError> {
+    let Some(claim) = load_work_claim_optional(connection, run_id)? else {
+        return Ok(None);
+    };
+    let Some((position, event_id, event)) =
+        latest_named_root_binding_on(connection, run_id, claim.claim_id, through)?
+    else {
+        return Ok(None);
+    };
+    Ok(
+        (event.kind == NamedRootBindingKind::Bound).then_some(NamedEvaluationRoot {
+            position: position.position,
+            event_id,
+            event,
+        }),
+    )
+}
 /// Feed entry kinds that describe host-observed workspace or check changes;
 /// later notes, gates, observations, and evaluations never appear here.
 const MUTATION_KINDS: &[&str] = &[
@@ -242,9 +271,38 @@ impl SqliteStore {
                 ),
             ));
         }
-        if let Some(moved) =
-            basis_moved_after(&transaction, run_id, cut, request.source_basis.as_ref())?
+        let named_root = named_root_at_on(&transaction, run_id, cut)?;
+        if let (Some(root), Some(workspace)) = (
+            named_root.as_ref(),
+            request
+                .source_basis
+                .as_ref()
+                .and_then(|basis| basis.workspace_id.as_ref()),
+        ) && workspace != &root.event.workspace_id
         {
+            return Err(refused(
+                item.work_id,
+                "the evaluation declares a workspace other than the claim's named source root",
+            ));
+        }
+        if named_root_at_on(&transaction, run_id, head)?
+            .as_ref()
+            .map(|root| &root.event_id)
+            != named_root.as_ref().map(|root| &root.event_id)
+        {
+            return Err(StoreError::AcceptanceEvaluationBasisMoved {
+                work: item.work_id,
+                moved: EvaluationBasisMove::SourceChanged,
+                reason: "the named source root changed after the evaluated cut; re-read the run and evaluate its current root".into(),
+            });
+        }
+        if let Some(moved) = basis_moved_after(
+            &transaction,
+            run_id,
+            cut,
+            request.source_basis.as_ref(),
+            named_root.as_ref(),
+        )? {
             return Err(StoreError::AcceptanceEvaluationBasisMoved {
                 work: item.work_id,
                 moved,
@@ -261,7 +319,21 @@ impl SqliteStore {
             });
         }
         let verdicts = bind_verdicts(&transaction, &item, run_id, &policy, cut, &request.verdicts)?;
-        let judged = judged_source(&transaction, run_id, cut, request.source_basis.as_ref())?;
+        let judged = judged_source(
+            &transaction,
+            run_id,
+            cut,
+            request.source_basis.as_ref(),
+            named_root.as_ref(),
+        )?;
+        require_named_root_judged_source(
+            &transaction,
+            run_id,
+            cut,
+            named_root.as_ref(),
+            judged.as_ref(),
+            item.work_id,
+        )?;
         if let Some(stale) = stale_bound_citation(
             &transaction,
             &item,
@@ -269,6 +341,7 @@ impl SqliteStore {
             judged.as_ref(),
             cut,
             passing_citations(&verdicts),
+            named_root.as_ref(),
         )? {
             return Err(refused(
                 item.work_id,
@@ -526,6 +599,7 @@ fn append_evaluation(
         },
         evidence_basis: run_evidence_through(transaction, run_id, cut)?,
         source_basis: request.source_basis.clone(),
+        named_root_binding: named_root_at_on(transaction, run_id, cut)?.map(|root| root.event_id),
         mode: request.mode,
         evaluator: request.evaluator.clone(),
         execution_identity: request.execution_identity.clone(),
@@ -1287,9 +1361,10 @@ fn basis_moved_after(
     run_id: WorkRunId,
     position: i64,
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
+    root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<EvaluationBasisMove>, StoreError> {
     let judged =
-        judged_source(connection, run_id, position, declared)?.map(|judged| judged.revision);
+        judged_source(connection, run_id, position, declared, root)?.map(|judged| judged.revision);
     let mut statement = connection.prepare(
         "SELECT object_kind, object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position > ?2
@@ -1313,6 +1388,15 @@ fn basis_moved_after(
             "execution_observation" => {
                 let observation: ExecutionObservation =
                     load_typed_work_object(connection, &hash, "execution_observation")?;
+                if root.is_some_and(|root| {
+                    observation.source_basis.as_ref().is_some_and(|basis| {
+                        basis.workspace_id != root.event.workspace_id
+                            || basis.source_root_generation != Some(root.event.generation)
+                            || basis.source_root_state != Some(SourceRootState::Named)
+                    })
+                }) {
+                    continue;
+                }
                 if !observation.source_changed {
                     // The newest sighting decides where the source is.
                     if let (Some(judged_at), Some(sighting)) =
@@ -1355,7 +1439,19 @@ fn revision_seen_through(
     connection: &Connection,
     run_id: WorkRunId,
     through: i64,
+    root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<String>, StoreError> {
+    if let Some(root) = root {
+        return Ok(latest_named_root_sighting_on(
+            connection,
+            run_id,
+            &root.event.workspace_id,
+            root.event.generation,
+            through,
+            false,
+        )?
+        .and_then(|(_, observation)| observation.source_basis.map(|basis| basis.source_revision)));
+    }
     Ok(connection
         .query_row(
             "SELECT json_extract(object.canonical_json, '$.source_basis.source_revision')
@@ -1404,19 +1500,52 @@ fn judged_source(
     run_id: WorkRunId,
     through: i64,
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
+    root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<JudgedSource>, StoreError> {
     Ok(match declared {
         Some(declared) => Some(JudgedSource {
             revision: declared.fingerprint.clone(),
-            workspace: declared.workspace_id.clone(),
+            workspace: root
+                .map(|root| root.event.workspace_id.clone())
+                .or_else(|| declared.workspace_id.clone()),
             declared: true,
         }),
-        None => revision_seen_through(connection, run_id, through)?.map(|revision| JudgedSource {
-            revision,
-            workspace: None,
-            declared: false,
-        }),
+        None => {
+            revision_seen_through(connection, run_id, through, root)?.map(|revision| JudgedSource {
+                revision,
+                workspace: root.map(|root| root.event.workspace_id.clone()),
+                declared: false,
+            })
+        }
     })
+}
+
+fn require_named_root_judged_source(
+    connection: &Connection,
+    run_id: WorkRunId,
+    through: i64,
+    root: Option<&NamedEvaluationRoot>,
+    judged: Option<&JudgedSource>,
+    work_id: WorkId,
+) -> Result<(), StoreError> {
+    let Some(root) = root else {
+        return Ok(());
+    };
+    // A root the host has not yet sighted anchors no evaluation: its first
+    // sighting could show any source.
+    let Some(latest) = revision_seen_through(connection, run_id, through, Some(root))? else {
+        return Err(refused(
+            work_id,
+            "the named root has no sighting yet; capture that root, then evaluate it",
+        ));
+    };
+    if judged.map(|judged| judged.revision.as_str()) != Some(latest.as_str()) {
+        return Err(refused(
+            work_id,
+            "the evaluated source does not match the named root's newest sighting; capture and evaluate that root",
+        ));
+    }
+    Ok(())
 }
 
 /// Each passing verdict's one-based criterion position and citations.
@@ -1538,6 +1667,7 @@ fn stale_bound_citation<'a>(
     judged: Option<&JudgedSource>,
     through: i64,
     passes: impl IntoIterator<Item = (usize, &'a [ObjectId])>,
+    root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<StaleCitation>, StoreError> {
     for (criterion, citations) in passes {
         if !item
@@ -1553,26 +1683,55 @@ fn stale_bound_citation<'a>(
                     source_basis,
                     producer,
                     ..
-                }) => match judged {
-                    Some(judged) if judged.checked_by(&source_basis) => {
-                        match moved_after_check(
-                            connection,
-                            run_id,
-                            citation,
-                            &producer,
-                            &source_basis.source_revision,
-                            through,
-                        )? {
-                            None => continue,
-                            Some(moved) => StaleCause::MovedAfter {
-                                checked: source_basis.source_revision,
-                                moved,
-                            },
+                }) => {
+                    // Under a named root both the check and the observation
+                    // that produced it must be in the root's workspace and
+                    // generation, and both must follow the binding on the run
+                    // feed, as the obligation matcher requires.
+                    let same_named_root = match root {
+                        None => true,
+                        Some(root) => {
+                            let in_root = |basis: &ExecutionSourceBasis| {
+                                basis.workspace_id == root.event.workspace_id
+                                    && basis.source_root_generation == Some(root.event.generation)
+                                    && basis.source_root_state == Some(SourceRootState::Named)
+                            };
+                            let producer_basis = load_typed_work_object::<ExecutionObservation>(
+                                connection,
+                                &producer,
+                                "execution_observation",
+                            )?
+                            .source_basis;
+                            in_root(&source_basis)
+                                && producer_basis.as_ref().is_some_and(in_root)
+                                && citation_position(connection, run_id, &producer)?
+                                    .is_some_and(|position| position > root.position)
+                                && citation_position(connection, run_id, citation)?
+                                    .is_some_and(|position| position > root.position)
                         }
+                    };
+                    match judged {
+                        Some(judged) if judged.checked_by(&source_basis) && same_named_root => {
+                            match moved_after_check(
+                                connection,
+                                run_id,
+                                citation,
+                                &producer,
+                                &source_basis.source_revision,
+                                through,
+                                root,
+                            )? {
+                                None => continue,
+                                Some(moved) => StaleCause::MovedAfter {
+                                    checked: source_basis.source_revision,
+                                    moved,
+                                },
+                            }
+                        }
+                        Some(_) => StaleCause::OtherSource(source_basis),
+                        None => StaleCause::Unverifiable,
                     }
-                    Some(_) => StaleCause::OtherSource(source_basis),
-                    None => StaleCause::Unverifiable,
-                },
+                }
                 _ => StaleCause::Unverifiable,
             };
             return Ok(Some(StaleCitation {
@@ -1600,6 +1759,7 @@ fn moved_after_check(
     producer: &ObjectId,
     checked: &str,
     through: i64,
+    root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<Moved>, StoreError> {
     // The checkpoint admits a check only with a producer on the same run.
     let ran = citation_position(connection, run_id, producer)?.ok_or_else(|| {
@@ -1634,8 +1794,19 @@ fn moved_after_check(
                AND entry.object_kind = 'execution_observation'
                AND json_extract(object.canonical_json, '$.source_basis.source_revision')
                    IS NOT NULL
+               AND (?4 IS NULL OR (
+                   json_extract(object.canonical_json, '$.source_basis.workspace_id') = ?4
+                   AND json_extract(object.canonical_json, '$.source_basis.source_root_generation') = ?5
+                   AND json_extract(object.canonical_json, '$.source_basis.source_root_state') = 'named'
+               ))
              ORDER BY entry.position DESC LIMIT 1",
-            params![run, ran, through],
+            params![
+                run,
+                ran,
+                through,
+                root.map(|root| root.event.workspace_id.as_str()),
+                root.map(|root| root.event.generation),
+            ],
             |row| row.get(0),
         )
         .optional()?;
@@ -1675,6 +1846,11 @@ fn staleness(
     {
         return Ok(Some(AcceptanceStaleReason::Revision));
     }
+    let current_root = named_root_at_on(connection, run_id, i64::MAX)?;
+    if record.named_root_binding.as_ref() != current_root.as_ref().map(|root| &root.event_id) {
+        return Ok(Some(AcceptanceStaleReason::Mutation));
+    }
+    let evaluated_root = named_root_at_on(connection, run_id, record.evaluated_cut.position)?;
     // Every effective requirement is re-read from the current policy: a
     // strengthened mechanical basis retires asserted passes, and a pinned or
     // disallowed mode retires the whole record.
@@ -1711,6 +1887,7 @@ fn staleness(
         run_id,
         record.evaluated_cut.position,
         record.source_basis.as_ref(),
+        evaluated_root.as_ref(),
     )?
     .is_some()
     {
@@ -1721,7 +1898,21 @@ fn staleness(
         run_id,
         record.evaluated_cut.position,
         record.source_basis.as_ref(),
+        evaluated_root.as_ref(),
     )?;
+    if let Some(root) = evaluated_root.as_ref() {
+        let latest = revision_seen_through(
+            connection,
+            run_id,
+            record.evaluated_cut.position,
+            Some(root),
+        )?;
+        if latest.is_none()
+            || latest.as_deref() != judged.as_ref().map(|judged| judged.revision.as_str())
+        {
+            return Ok(Some(AcceptanceStaleReason::Source));
+        }
+    }
     if stale_bound_citation(
         connection,
         item,
@@ -1729,6 +1920,7 @@ fn staleness(
         judged.as_ref(),
         record.evaluated_cut.position,
         passing_citations(&record.verdicts),
+        evaluated_root.as_ref(),
     )?
     .is_some()
     {

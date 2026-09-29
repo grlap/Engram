@@ -110,6 +110,8 @@ fn environment_components_are_redactor_inspected_before_canonicalization() {
         source_basis: crate::ExecutionSourceBasis {
             workspace_id: components.workspace_id.clone(),
             source_revision: "revision-redaction".into(),
+            source_root_generation: None,
+            source_root_state: None,
         },
         environment_fingerprint: environment_components_fingerprint(&components)
             .expect("freeze environment components"),

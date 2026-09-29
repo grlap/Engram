@@ -560,6 +560,8 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         let child_basis = ExecutionSourceBasis {
             workspace_id: "workspace-child".into(),
             source_revision: "required-child-revision".into(),
+            source_root_generation: None,
+            source_root_state: None,
         };
         let child_verification = {
             let transaction = store
