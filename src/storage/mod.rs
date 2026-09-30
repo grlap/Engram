@@ -65,7 +65,8 @@ mod test_support;
 pub(crate) use work::test_support::source_mutation_from_basis;
 #[cfg(test)]
 pub(crate) use work::test_support::{
-    HostCheck, assessed_verification_fixture, verification_note_fixture,
+    HostCheck, assessed_verification_fixture, bound_verification_refusal_fixture,
+    verification_note_fixture,
 };
 
 #[cfg(test)]
@@ -1167,6 +1168,12 @@ pub enum StoreError {
     WorkCompletionRefused {
         work: crate::domain::WorkId,
         reason: String,
+    },
+    #[error("completion for work {work:?} was refused: {reason}")]
+    WorkBoundVerificationRefused {
+        work: crate::domain::WorkId,
+        reason: String,
+        cause: Box<crate::domain::WorkBoundVerificationCause>,
     },
     /// Completion under an evaluated acceptance policy on an item that has no
     /// acceptance criteria: there is nothing an evaluation could judge.

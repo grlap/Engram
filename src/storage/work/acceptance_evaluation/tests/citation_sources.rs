@@ -781,11 +781,11 @@ fn a_reported_move_and_revert_leave_the_check_standing() {
             .map(|status| (status.evaluation, status.stale)),
         Some((admitted.evaluation, None))
     );
-    let Err(StoreError::WorkCompletionRefused { reason, .. }) = done(
+    let Err(StoreError::WorkBoundVerificationRefused { reason, cause, .. }) = done(
         store,
         &work,
         &claim,
-        &[note, at_d],
+        &[note, at_d.clone()],
         None,
         "complete-after-revert",
         40,
@@ -795,6 +795,17 @@ fn a_reported_move_and_revert_leave_the_check_standing() {
     assert!(
         reason.contains("does not verify the run's latest source change"),
         "{reason}"
+    );
+    assert_eq!(cause.verification, at_d);
+    // The revision returned to the checked source, but both reported changes
+    // remain ordered after this check.
+    assert_eq!(
+        cause.mismatch,
+        crate::domain::VerificationEvidenceMismatch::NotAfterMutation
+    );
+    assert_eq!(
+        cause.remedy,
+        crate::domain::BoundVerificationRemedy::RunCurrentCheck
     );
 }
 

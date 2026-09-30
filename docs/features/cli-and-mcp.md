@@ -1735,6 +1735,24 @@ checkpoint its exact evidence set, and seal in one model-level call. Completion
 is refused while blockers, prerequisites, required child seals or explicit
 completion waivers, live handoffs, capture requirements, or run obligations
 remain unresolved. Open obligations are not an MCP error envelope.
+When a satisfied bound criterion is contradicted by a newer relevant failed
+or indeterminate check, or its newest check fails the existing verification
+freshness rule, completion returns `WorkBoundVerificationRefused`. Its
+`work_completion_refused` code, human message, CLI exit 1 and MCP error status
+are unchanged. Native CLI JSON and MCP `error.details` add `cause`, containing
+the one-based `criterion`, `requirement` (check kind and optional command
+fingerprint), `mismatch`, selected `verification`, original `satisfied_by`,
+`producer_observation`, actual `result`, and typed `remedy`.
+The remedy is `run_current_check` for a matcher mismatch or
+`run_passing_check_after` for a non-passing result. `error.details.remedy`
+and the word reminders format that action from the cause, without parsing
+the reason. Candidate selection, the completion-only recording-order
+fallback, and admissible bindings and waivers retain their existing rules.
+This is an error, not an owed-result completion receipt. The storage
+completion transaction rolls back temporary waivers and all completion
+effects on refusal; service preparation such as target focus, capture and
+checkpoint remains recorded as before.
+
 `work_complete` returns a typed `open_work_obligations` result with the same
 `obligation_page` used by `work_focus`, nested `work_next.focus`, and
 `work_update`. A completed receipt also returns that page reconstructed from

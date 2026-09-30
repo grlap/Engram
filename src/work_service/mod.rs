@@ -61,6 +61,8 @@ use crate::WorkReferenceCandidate;
 mod acceptance;
 pub(crate) use acceptance::{WorkAcceptanceEvidence, WorkAcceptanceLink};
 pub(crate) mod blocker_selector;
+mod bound_verification;
+pub(crate) use bound_verification::bound_verification_remedy;
 mod catalog;
 mod completion;
 mod continuation;

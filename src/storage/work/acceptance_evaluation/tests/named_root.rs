@@ -608,8 +608,11 @@ fn the_observed_sequence_through_the_host_checkpoint() {
             assert!(
                 matches!(
                     &completed,
-                    Err(StoreError::WorkCompletionRefused { reason, .. })
+                    Err(StoreError::WorkBoundVerificationRefused { reason, cause, .. })
                         if reason.contains("latest source change")
+                            && cause.verification == check
+                            && cause.mismatch == crate::domain::VerificationEvidenceMismatch::StaleSourceRevision
+                            && cause.remedy == crate::domain::BoundVerificationRemedy::RunCurrentCheck
                 ),
                 "{completed:?}"
             );

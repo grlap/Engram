@@ -482,7 +482,11 @@ fn a_named_root_change_after_the_check_needs_a_new_check() {
     assert!(
         matches!(
             &refused,
-            Err(StoreError::WorkCompletionRefused { reason, .. }) if reason.contains("latest source change")
+            Err(StoreError::WorkBoundVerificationRefused { reason, cause, .. })
+                if reason.contains("latest source change")
+                    && cause.verification == checked
+                    && cause.mismatch == crate::domain::VerificationEvidenceMismatch::StaleSourceRevision
+                    && cause.remedy == crate::domain::BoundVerificationRemedy::RunCurrentCheck
         ),
         "{refused:?}"
     );

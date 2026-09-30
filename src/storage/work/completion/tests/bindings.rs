@@ -326,9 +326,25 @@ fn a_newer_failed_verification_contradicts_a_satisfied_bound_criterion() {
             "complete-contradicted",
             7,
         );
-        let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+        let Err(StoreError::WorkBoundVerificationRefused { reason, cause, .. }) = refused else {
             panic!("a newer failed check must refuse completion: {refused:?}");
         };
+        assert_eq!(cause.criterion, 1);
+        assert_eq!(
+            cause.requirement,
+            bound(1, VerificationKind::Test).requirement
+        );
+        assert_eq!(cause.verification, failed);
+        assert_eq!(cause.satisfied_by, passed);
+        assert_eq!(cause.result, VerificationResult::Failed);
+        assert_eq!(
+            cause.mismatch,
+            crate::VerificationEvidenceMismatch::ResultNotPassed
+        );
+        assert_eq!(
+            cause.remedy,
+            crate::BoundVerificationRemedy::RunPassingCheckAfter
+        );
         assert!(
             reason.contains("criterion 1 requires test verification"),
             "{reason}"
@@ -338,6 +354,66 @@ fn a_newer_failed_verification_contradicts_a_satisfied_bound_criterion() {
             "{reason}"
         );
         assert!(reason.contains(failed.as_str()), "{reason}");
+    }
+}
+
+#[test]
+fn bound_check_refusals_roll_back_temporary_waivers_and_all_completion_effects() {
+    // B27, B29, B40: the stock source-change waiver is temporary until the
+    // bound criterion also passes completion's current-check rule.
+    for result in [
+        VerificationResult::Passed,
+        VerificationResult::Failed,
+        VerificationResult::Indeterminate,
+    ] {
+        let directory = crate::test_support::temp_home().expect("temporary directory");
+        let database = directory.path().join("bound-refusal.sqlite3");
+        let fixture =
+            bound_verification_refusal_fixture(&database, "bound-rollback", "runner", result, 2);
+        let mut store = SqliteStore::open(&database).expect("store");
+        assert!(
+            store
+                .work_run_obligations(fixture.claim.run_id)
+                .expect("obligations")
+                .iter()
+                .any(|record| record.state == WorkObligationState::Open)
+        );
+        let before = test_database_shape_snapshot(&store.connection).expect("before");
+        let refused = complete(
+            &mut store,
+            &fixture.work,
+            &fixture.claim,
+            "runner",
+            &fixture.generic,
+            "refuse",
+            9,
+        );
+        let Err(StoreError::WorkBoundVerificationRefused {
+            work,
+            reason,
+            cause,
+        }) = refused
+        else {
+            panic!("bound check must refuse: {refused:?}");
+        };
+        assert_eq!(cause.verification, fixture.verification);
+        assert_eq!(cause.satisfied_by, fixture.satisfied_by);
+        assert_eq!(cause.result, result);
+        let legacy = StoreError::WorkCompletionRefused {
+            work,
+            reason: reason.clone(),
+        };
+        let typed = StoreError::WorkBoundVerificationRefused {
+            work,
+            reason,
+            cause,
+        };
+        assert_eq!(typed.to_string(), legacy.to_string());
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).expect("after"),
+            before
+        );
+        assert!(store.verify_all().expect("doctor").is_healthy());
     }
 }
 
@@ -730,7 +806,7 @@ fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_crit
         let mut stale = completion_request(&work, &claim, "runner", &generic, "complete-stale", 8);
         stale.evidence.push(build.clone());
         let refused = store.complete_work(&stale, &DevelopmentNoopRedactor);
-        let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+        let Err(StoreError::WorkBoundVerificationRefused { reason, .. }) = refused else {
             panic!("a build older than the latest source change must not seal: {refused:?}");
         };
         assert!(
@@ -764,11 +840,27 @@ fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_crit
         );
         let mut rerecorded =
             completion_request(&work, &claim, "runner", &generic, "complete-old-source", 11);
-        rerecorded.evidence.push(old_source);
+        rerecorded.evidence.push(old_source.clone());
         let refused = store.complete_work(&rerecorded, &DevelopmentNoopRedactor);
-        let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+        let Err(StoreError::WorkBoundVerificationRefused { reason, cause, .. }) = refused else {
             panic!("a build of the older source must not seal: {refused:?}");
         };
+        assert_eq!(cause.criterion, 1);
+        assert_eq!(
+            cause.requirement,
+            bound(1, VerificationKind::Build).requirement
+        );
+        assert_eq!(cause.verification, old_source);
+        assert_eq!(cause.satisfied_by, build);
+        assert_eq!(cause.result, VerificationResult::Passed);
+        assert_eq!(
+            cause.mismatch,
+            crate::VerificationEvidenceMismatch::StaleSourceRevision
+        );
+        assert_eq!(
+            cause.remedy,
+            crate::BoundVerificationRemedy::RunCurrentCheck
+        );
         assert!(
             reason.contains("does not verify the run's latest source change")
                 && reason.contains("stale_source_revision"),

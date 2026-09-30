@@ -474,6 +474,108 @@ pub(crate) fn assessed_verification_fixture(
     (work.short_ref, verifications)
 }
 
+/// The records needed to exercise a bound-check completion refusal.
+pub(crate) struct BoundVerificationFixture {
+    pub work: WorkItem,
+    pub claim: WorkClaim,
+    pub generic: ObjectId,
+    pub satisfied_by: ObjectId,
+    pub verification: ObjectId,
+}
+
+/// A satisfied build binding, an outstanding source-change test obligation,
+/// and a newer build that either did not pass or passed on the older source.
+pub(crate) fn bound_verification_refusal_fixture(
+    database: &std::path::Path,
+    project: &str,
+    holder: &str,
+    result: VerificationResult,
+    second: i64,
+) -> BoundVerificationFixture {
+    let mut store = SqliteStore::open(database).expect("store");
+    let mut request = root_request(project, "bound-refusal", 1);
+    request.acceptance = vec!["build is clean".into()];
+    request.acceptance_bindings = vec![crate::domain::AcceptanceBinding {
+        criterion: 1,
+        requirement: crate::domain::VerificationRequirement {
+            check_kind: VerificationKind::Build,
+            check_fingerprint: None,
+        },
+    }];
+    let work = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("work");
+    let claim = claim(
+        &mut store,
+        &work,
+        holder,
+        "bound-refusal-claim",
+        second,
+        36_000,
+    );
+    let satisfied_by = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "first-build",
+        VerificationKind::Build,
+        VerificationResult::Passed,
+        second + 1,
+    );
+    let generic = evidence(&mut store, &work, &claim, holder, "generic", second + 2);
+    source_mutation(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "change",
+        second + 3,
+        Some("changed-source"),
+    );
+    let verification = host_verification_with_outcome(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        HostCheck {
+            key: "newest-build",
+            kind: VerificationKind::Build,
+            outcome: match result {
+                VerificationResult::Passed => ExecutionOutcome::Succeeded,
+                VerificationResult::Failed => ExecutionOutcome::Failed,
+                VerificationResult::Indeterminate => ExecutionOutcome::Unknown,
+            },
+            result,
+            summary: "host observed the newest build",
+        },
+        second + 4,
+        ExecutionSourceBasis {
+            workspace_id: "workspace-newest-build".into(),
+            source_revision: "revision-as-it-stands".into(),
+            source_root_generation: None,
+            source_root_state: None,
+        },
+    );
+    let all = store.work_run_evidence(claim.run_id).expect("evidence");
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "checkpoint",
+        second + 5,
+        &all,
+    );
+    BoundVerificationFixture {
+        work,
+        claim,
+        generic,
+        satisfied_by,
+        verification,
+    }
+}
+
 /// Records a host check, its environment and its verification at `second`.
 pub(super) fn host_verification_with_outcome(
     store: &mut SqliteStore,

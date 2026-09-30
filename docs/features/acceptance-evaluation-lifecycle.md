@@ -215,7 +215,7 @@ context. A word must not re-infer policy, identity or source state from prose.
 | --- | --- |
 | Movement → `EvaluationBasisMove`; carried failure → typed carried-failure refusal; freshness → `AcceptanceStaleReason` / completion recovery | Retain these typed paths. They already distinguish admission from consumption. |
 | Eligibility, root admission, re-roll and citation refusal → generic `AcceptanceEvaluationRefused { reason }` | Should expose typed causes from their storage owners. Today service/words forward these reasons; they do not parse them as acceptance rules. |
-| Bound completion → typed `VerificationEvidenceMismatch` → `WorkCompletionRefused` prose | Should preserve the mismatch and criterion/evidence context instead of losing them at the completion adapter. |
+| Bound completion → `WorkBoundVerificationRefused` carrying `WorkBoundVerificationCause` | **Implemented:** the existing matcher mismatch, or `result_not_passed` from the preceding contradiction check, reaches service/words and CLI JSON/MCP with criterion, requirement, check and producer ids, actual result and typed remedy. The existing message, error code and status remain unchanged. |
 | Core stale recovery gives generic new-evaluation action; word stale-source recovery gives waiting/fingerprint alternatives | Should share recovery selection from a richer core cause. Mode-aware missing-evaluation words are shared, but the whole stale recovery is not. |
 
 `AcceptanceStaleReason::Source` currently joins root confirmation and
@@ -242,7 +242,9 @@ should let its outward advice use the shared remedy selection as well.
 These corrections were ranked as separate implementation proposals. Ranks 1
 and 2 are implemented by the shared `assess_mode_policy` and
 `SessionStanding::evaluator_is_independent` predicates, with mode/pin and
-affiliation tables, policy-strengthening and handoff regressions. The remaining
+affiliation tables, policy-strengthening and handoff regressions. Rank 4
+preserves typed bound-check refusal context through the existing error path,
+with storage rollback and word/MCP regressions. The remaining
 proposals need their own implementation and review. Size describes code scope, not a time
 estimate. Preserve serialized contracts or coordinate their change with the
 host; no compatibility shim is proposed.
@@ -252,7 +254,7 @@ host; no compatibility shim is proposed.
 | 1 | Share mode/pin eligibility in evaluation storage; keep mechanical-basis checking explicit | A policy change is admitted by one predicate but consumed by another, or recovery names a forbidden mode | Small helper and admission/freshness regressions |
 | 2 | Share evaluator affiliation using `SessionStanding`; keep submission-time parent relation separate | A self-affiliated independent/child session slips through one phase, as the self-sub-agent Medium demonstrated | Small predicate extraction with handoff tests |
 | 3 | Make core recovery own unconfirmed-root versus fingerprint causes, and let service/words format that recovery | `done` asks for a new judgment while a turn-boundary sighting would suffice, or suggests a fingerprint where no source basis exists | Medium typed cause and host-contract change; cannot separate awaiting from never-reported absence |
-| 4 | Preserve typed bound-verification mismatch at completion | A holder receives generic prose after a newer failure or stale-source check, despite the matcher knowing the precise cause | Small adapter/type change with word/host tests |
+| 4 | Preserve typed bound-verification mismatch at completion (implemented) | A holder loses the inline newer-check contradiction or matcher mismatch at the error adapter | Small transient cause and shared guidance change with rollback and word/MCP tests |
 | 5 | Expose typed admission causes for eligibility, re-roll and citation/root refusal | A caller must infer whether to change a mark, record new evidence, or refresh the cut from a sentence | Medium storage/service/CLI/MCP change; stage by cause family |
 | 6 | Share named-root assessment, including workspace and rebinding comparisons, with an explicit admission/consumption phase and horizons | The same declaration or root event is independently interpreted by admission and completion, recreating the design failure | Medium extraction with declared, undeclared, contradicted, rebound and never-sighted cases; remove redundant `declared_not_contradicted` logic only after proving movement covers it |
 

@@ -442,6 +442,13 @@ impl VerbError {
                     ],
                 )
             }
+            StoreError::WorkBoundVerificationRefused { cause, .. } => (
+                vec![crate::work_service::bound_verification_remedy(cause)],
+                vec![
+                    format!("engram work show {target}"),
+                    format!("engram work show {target} --notes --gates"),
+                ],
+            ),
             StoreError::WorkCompletionRecoveryRequired { cause, .. } => (
                 vec![format!("completion recovery is required: {cause:?}")],
                 vec![format!("engram work show {target}")],

@@ -1928,8 +1928,18 @@ fn bind_acceptance_to_obligations_on(
         )? {
             let kind = encode_state(binding.requirement.check_kind)?;
             if evidence.result != crate::domain::VerificationResult::Passed {
-                return Err(StoreError::WorkCompletionRefused {
+                return Err(StoreError::WorkBoundVerificationRefused {
                     work: item.work_id,
+                    cause: Box::new(crate::domain::WorkBoundVerificationCause {
+                        criterion: binding.criterion,
+                        requirement: binding.requirement.clone(),
+                        mismatch: crate::domain::VerificationEvidenceMismatch::ResultNotPassed,
+                        verification: newest.clone(),
+                        satisfied_by: satisfying.clone(),
+                        producer_observation: evidence.producer_observation.clone(),
+                        result: evidence.result,
+                        remedy: crate::domain::BoundVerificationRemedy::RunPassingCheckAfter,
+                    }),
                     reason: format!(
                         "criterion {} requires {kind} verification and is contradicted by newer verification evidence {newest} that did not pass; record a passing check after it, or drop the binding",
                         binding.criterion
@@ -1966,8 +1976,18 @@ fn bind_acceptance_to_obligations_on(
                             "is not admissible for it under the verification rule at the completion cut"
                         }
                     };
-                    return Err(StoreError::WorkCompletionRefused {
+                    return Err(StoreError::WorkBoundVerificationRefused {
                         work: item.work_id,
+                        cause: Box::new(crate::domain::WorkBoundVerificationCause {
+                            criterion: binding.criterion,
+                            requirement: binding.requirement.clone(),
+                            mismatch,
+                            verification: newest.clone(),
+                            satisfied_by: satisfying.clone(),
+                            producer_observation: evidence.producer_observation.clone(),
+                            result: evidence.result,
+                            remedy: crate::domain::BoundVerificationRemedy::RunCurrentCheck,
+                        }),
                         reason: format!(
                             "criterion {} requires {kind} verification, and the newest one ({newest}) {cause} ({}); record a passing check of the current source, or drop the binding",
                             binding.criterion,

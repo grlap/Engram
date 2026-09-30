@@ -1053,6 +1053,16 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "reason": reason,
             "remedy": "record evidence, checkpoint the current feed cut, and satisfy every current acceptance criterion",
         }),
+        StoreError::WorkBoundVerificationRefused {
+            work,
+            reason,
+            cause,
+        } => json!({
+            "work_id": work,
+            "reason": reason,
+            "cause": cause,
+            "remedy": crate::work_service::bound_verification_remedy(cause),
+        }),
         StoreError::WorkCompletionRecoveryRequired { work, cause } => json!({
             "work_id": work,
             "cause": cause,
@@ -1160,7 +1170,8 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkClaimHeld { .. } => "work_claim_held",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
-        StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
+        StoreError::WorkCompletionRefused { .. }
+        | StoreError::WorkBoundVerificationRefused { .. } => "work_completion_refused",
         StoreError::WorkReleaseWaiverRequired { .. } => "work_release_waiver_required",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::AcceptanceCriteriaRequired { .. } => "acceptance_criteria_required",
@@ -1217,6 +1228,7 @@ fn invalid_argument(field: &str, message: &str) -> CallToolResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     /// The MCP `show` tool pages a verification record's obligation
     /// assessment: `note` gives the first eight, and `note` with `after`
@@ -1377,6 +1389,99 @@ mod tests {
         let message = value["error"]["message"].as_str().unwrap();
         assert!(message.contains("use the Engram build that owns this store"));
         assert!(!message.contains("invalid data"));
+    }
+
+    #[test]
+    fn done_preserves_bound_check_error_status_and_exposes_typed_guidance() {
+        for result in [
+            crate::VerificationResult::Passed,
+            crate::VerificationResult::Failed,
+            crate::VerificationResult::Indeterminate,
+        ] {
+            let directory = crate::test_support::temp_home().expect("temporary MCP home");
+            let database = directory.path().join("bound-refusal.sqlite3");
+            let second = Utc::now().timestamp()
+                - chrono::Utc
+                    .with_ymd_and_hms(2026, 8, 27, 1, 0, 0)
+                    .single()
+                    .expect("epoch")
+                    .timestamp()
+                - 10;
+            let fixture = crate::storage::bound_verification_refusal_fixture(
+                &database,
+                "mcp-bound-refusal",
+                "runner",
+                result,
+                second,
+            );
+            let server = McpServer::new_with_actor_context(
+                database,
+                ProjectId("mcp-bound-refusal".into()),
+                "runner".into(),
+                SessionId("runner".into()),
+                None,
+                None,
+            );
+            let response = server.done(Parameters(DoneArgs {
+                work_ref: Some(fixture.work.short_ref),
+                summary: Some("delivered".into()),
+                note: None,
+                links: None,
+                link_basis: None,
+                source_fingerprint: None,
+                landing: None,
+            }));
+            assert_eq!(response.is_error, Some(true));
+            let value = response.structured_content.expect("structured refusal");
+            let error = &value["error"];
+            assert_eq!(error["code"], "work_completion_refused");
+            let details = &error["details"];
+            let cause: crate::WorkBoundVerificationCause =
+                serde_json::from_value(details["cause"].clone()).expect("typed cause");
+            assert_eq!(cause.criterion, 1);
+            assert_eq!(cause.requirement.check_kind, crate::VerificationKind::Build);
+            assert_eq!(cause.verification, fixture.verification);
+            assert_eq!(cause.satisfied_by, fixture.satisfied_by);
+            assert_eq!(cause.result, result);
+            let (mismatch, remedy) = if result == crate::VerificationResult::Passed {
+                (
+                    crate::VerificationEvidenceMismatch::StaleSourceRevision,
+                    crate::BoundVerificationRemedy::RunCurrentCheck,
+                )
+            } else {
+                (
+                    crate::VerificationEvidenceMismatch::ResultNotPassed,
+                    crate::BoundVerificationRemedy::RunPassingCheckAfter,
+                )
+            };
+            assert_eq!(cause.mismatch, mismatch);
+            assert_eq!(cause.remedy, remedy);
+            let legacy = StoreError::WorkCompletionRefused {
+                work: fixture.work.work_id,
+                reason: details["reason"].as_str().expect("reason").into(),
+            };
+            assert_eq!(error["message"], legacy.to_string());
+            let guidance = crate::work_service::bound_verification_remedy(&cause);
+            assert_eq!(details["remedy"], guidance);
+            assert!(
+                error["reminders"]
+                    .as_array()
+                    .expect("word reminders")
+                    .iter()
+                    .any(|entry| entry == &json!(guidance))
+            );
+            // Native CLI JSON uses this same formatter. No adapter extracts a
+            // cause from the human message, whose bytes remain unchanged.
+            let typed = StoreError::WorkBoundVerificationRefused {
+                work: fixture.work.work_id,
+                reason: details["reason"].as_str().unwrap().into(),
+                cause: Box::new(cause),
+            };
+            let shared = store_error_value(&typed);
+            assert_eq!(shared["error"]["code"], error["code"]);
+            assert_eq!(shared["error"]["message"], error["message"]);
+            assert_eq!(shared["error"]["details"], error["details"]);
+        }
     }
 
     #[test]

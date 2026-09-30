@@ -269,9 +269,11 @@ fn a_failed_and_a_passed_record_of_one_check_read_by_their_own_positions() {
             assert!(
                 matches!(
                     &done,
-                    Err(StoreError::WorkCompletionRefused { reason, .. })
+                    Err(StoreError::WorkBoundVerificationRefused { reason, cause, .. })
                         if reason.contains("criterion 1")
                             && reason.contains("contradicted by newer verification evidence")
+                            && cause.mismatch == Mismatch::ResultNotPassed
+                            && cause.verification == failed
                 ),
                 "{context}: {done:?}"
             );

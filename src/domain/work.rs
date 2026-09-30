@@ -13,9 +13,31 @@ use crate::schema::SCHEMA_VERSION;
 
 use super::{
     ActorContext, AssuranceLevel, BuiltinObligationRuleRef, ProjectId, RootExecutionId, SessionId,
-    VerificationKind, VerificationRequirement, WorkClaimId, WorkEvidenceKind, WorkHandoffOfferId,
-    WorkId, WorkObligationId, WorkRunId,
+    VerificationEvidenceMismatch, VerificationKind, VerificationRequirement, VerificationResult,
+    WorkClaimId, WorkEvidenceKind, WorkHandoffOfferId, WorkId, WorkObligationId, WorkRunId,
 };
+
+/// Recovery action for a bound criterion whose newest relevant check cannot carry it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BoundVerificationRemedy {
+    RunCurrentCheck,
+    RunPassingCheckAfter,
+}
+
+/// Transient completion-refusal context, read at the completion transaction's cut.
+/// This is guidance, not a stored obligation resolution or a completion receipt.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WorkBoundVerificationCause {
+    pub criterion: usize,
+    pub requirement: VerificationRequirement,
+    pub mismatch: VerificationEvidenceMismatch,
+    pub verification: ObjectId,
+    pub satisfied_by: ObjectId,
+    pub producer_observation: ObjectId,
+    pub result: VerificationResult,
+    pub remedy: BoundVerificationRemedy,
+}
 
 /// Sliding lease applied after every successful claim-holder work mutation.
 pub const DEFAULT_WORK_CLAIM_TTL_SECONDS: i64 = 3_600;
