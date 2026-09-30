@@ -383,9 +383,9 @@ Present:
 - Commands run:
 
 ## Consolidated Action
-- Critical/High:
-- Medium/Low:
-- Notes:
+- Critical/High/Medium (fixed before the landing):
+- Low (fixed, or filed as its own item; does not block):
+- Notes (no action needed):
 ```
 
 When the optional third review was commissioned, add a section
@@ -416,11 +416,14 @@ passage in those sentences, as an exact string after whitespace normalisation
 and with Markdown list and quote markers at line starts removed, and judges
 for each removed passage whether a recorded concurrence names it as removed.
 The auditing coordinator notes on the item the input fingerprint, which
-recorded message governs each changed passage, the script's result for each
-added or altered passage and the judgement for each removed one. The audit
-passes when the script finds every added or altered passage and every removed
-passage is named as removed, and fails otherwise. Other files in the frozen
-change are covered by the gate and the review pair, not by the audit.
+recorded message governs each changed passage, which recorded message carried
+each passage's final wording to Greg before the landing, the script's result
+for each added or altered passage and the judgement for each removed one. The
+audit passes when the script finds every added or altered passage, every
+removed passage is named as removed, and every changed passage has a recorded
+message that carried its final wording to Greg before the landing; it fails
+otherwise. Other files in the frozen change are covered by the gate and the
+review pair, not by the audit.
 
 A passage of authority text that no recorded concurrence quotes whole is
 concurred, word for word, or taken out before the landing. A change of the
