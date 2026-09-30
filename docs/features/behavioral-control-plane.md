@@ -1048,11 +1048,81 @@ A conforming host adapter must:
    capability and require and begin a matching single-use action grant;
 6. (not built) report action outcomes even when the model turn later fails;
 7. request and persist a turn checkpoint before starting the next turn;
-8. checkpoint before context compaction and reconcile or exit before ending a
-   session;
+8. where the runtime lets the host intercept context compaction, checkpoint
+   before it; otherwise, on learning that a compaction happened, make the
+   agent's next prompt re-orient through a non-advancing read (`next` with
+   peek, and `memories`), never advance delivery on the agent's behalf, and
+   report the turn's evidence at its normal checkpoint; reconcile or exit
+   before ending a session;
 9. treat Engram notifications only as doorbells and fetch state by cursor;
 10. resume after restart through a fresh bind, never from cached permission;
-11. surface refusal codes and recovery actions to the human and agent.
+11. surface refusal codes and recovery actions to the human and agent;
+12. after an uncertain checkpoint outcome (a timeout or a lost reply), resend
+    the same report under the same idempotency key; whenever the report
+    changes, change the key;
+13. keep the record ids a checkpoint receipt returns and compare them with
+    the evidence sent; never present a closed grant as recorded evidence;
+    when it closes a grant with less evidence than the turn produced, tell
+    the holder which evidence was not recorded;
+14. never open a grant only to carry evidence, and never attribute a source
+    change made outside a turn to a later turn;
+15. bind a named source root with `named_root_bind` before stating its
+    generation on a sighting, and treat a binding whose outcome is unknown as
+    no binding: state its generation on no sighting, and give no check credit
+    and no evaluation source under that generation.
+
+**What a checkpoint receipt proves.** A `turn_checkpoint` commits its
+evidence and closes the grant in one transaction. Its receipt names the grant
+and returns the ids of the execution observations, verification evidence and
+environment evidence it stored; it proves those records and no others. A
+timeout or a lost reply is an unresolved write: the host settles it by the
+exact replay of requirement 12 before it treats any of that evidence as
+recorded. `cursor` and `confirmed_cursor` are the position of the checkpoint
+event in the task's audit index. They are not positions in a run's evidence
+feed, and a host compares them with nothing. A host that must know whether an
+evaluation's cut includes a checkpoint's evidence reads that run's work view
+(`work show … --json`) after the receipt, takes its top-level
+`evidence_basis`, builds the evaluator's evidence from that same read, and
+submits that basis. An evaluation whose evaluated cut is at or above that
+value on the same run feed includes the checkpoint's evidence. A host never
+raises the submitted basis while keeping evidence from an older read.
+
+**Evidence order.** Within one checkpoint the order Engram requires is
+causal, not total: a verification's producer must resolve, by stored id or by
+an observation id in the same request, and its environment by stored id or by
+its index in the same request; every record in the report carries the one
+work binding; ids are unique, non-empty and trimmed. A host must not rely on
+any storage order among observations, environments and verifications.
+
+**Dropping evidence is a host's choice.** Engram refuses a report whole and
+never asks a host to drop part of it. A host that answers a refusal by
+sending a smaller report does so by its own policy, and requirement 13
+applies.
+
+**Evidence apart from a grant.** Typed verification and environment evidence
+enter only through the checkpoint of a begun grant. No operation reports
+evidence without closing a grant. A host may separate the two in its own
+design, and must not read that separation as permission to checkpoint a
+closed grant again.
+
+**Replaying a named-root event.** The operation itself is described under
+`named_root_bind` above; this paragraph states what a host may rely on when
+it replays or reconciles one. The reporting session is part of a
+`named_root_bind` intent and of its replay key, and connection and routing
+checks run before replay. So only the reporting session, on a current
+connection, can replay; a replacement connection of the same session may, a
+superseded one cannot, and another session's call is a new event. When the
+reporter's outcome is unknown and it cannot replay, the current holder
+settles it from the `named_root` state of the claim it is bound to: the read
+establishes the effect, no receipt is inferred from it, and a fresh name
+takes a generation above the claim's latest event. An `ended` with
+`explicit_clear` stays the naming session's operation and a handoff does not
+transfer it; `session_gone_at_restore` and `root_invalid` are sent only when
+true: Engram cannot inspect the host, so it validates only the end's
+structure and, for `explicit_clear`, its reporter. A `session_status` read is
+authoritative only for the claim in that session's own work binding, and a
+claim's absence from one session's `work core held` list says nothing about
+that claim's binding.
 
 Hooks are sufficient for `turn_gated` control. `action_gated` control requires
 a runtime wrapper, gateway, or native host integration around tools. MCP alone
@@ -1070,8 +1140,8 @@ fail-mode result; a hung hook is not an acceptable control mechanism.
 
 The shipped host channel is `session_bind`, `session_status`,
 `turn_evaluate`, `turn_begin`, `turn_checkpoint` and `named_root_bind`. The
-design named seven
-more. None is built, and no host calls them:
+design named seven more and an eighth was identified since. None is built,
+and no host calls them:
 
 - **`action_authorize`, `action_begin` and `action_complete` (not built).**
   They would put a single-use grant around each material tool call. A host
@@ -1086,6 +1156,15 @@ more. None is built, and no host calls them:
 - **`delivery_ack` (not built).** It would acknowledge a delivered context page
   without a model turn. Grants no longer carry a page, so there is nothing to
   acknowledge.
+- **A claim-scoped root lifecycle read (not built).** A bounded, read-only
+  read for a host session of the same store, for a claim that is not the
+  session's current binding. One snapshot would return the claim and run
+  lifecycle, the derived root state, the latest root event with its position
+  and generation, and the read cut. It would change nothing, infer no
+  receipt, never report a still-bound root as ended because its holder is
+  gone, and a failed or refused read would be distinct from `none`. Until it
+  exists a host cannot learn the fate of a root whose sessions have all moved
+  to other claims, and keeps such entries under its own bound.
 
 Engram never answers `defer`; a turn is granted or refused.
 
