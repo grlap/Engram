@@ -200,6 +200,7 @@ fn compact_remedy_elides_only_one_bound_title_and_preserves_core_wording() {
             },
             command: format!("engram work show {work}"),
             deciding_observation: None,
+            source: None,
         },
         required_child_successor: None,
     };

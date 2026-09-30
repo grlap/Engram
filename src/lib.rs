@@ -30,8 +30,9 @@ pub use control::{
 pub use domain::{
     AcceptWorkHandoffRequest, AcceptanceBasis, AcceptanceEvaluation,
     AcceptanceEvaluationAdmissionCause, AcceptanceEvaluationMode, AcceptanceEvaluationPolicy,
-    AcceptanceResult, AcceptanceSourceBasis, AcceptanceStaleReason, AcceptanceVerdict,
-    ActorContext, AddWorkBlockerRequest, Authority, BoundVerificationRemedy,
+    AcceptanceResult, AcceptanceSourceBasis, AcceptanceSourceMismatch,
+    AcceptanceSourceRecoveryCause, AcceptanceSourceRemedy, AcceptanceStaleReason,
+    AcceptanceVerdict, ActorContext, AddWorkBlockerRequest, Authority, BoundVerificationRemedy,
     BuiltinObligationRuleRef, BuiltinObligationTrigger, COMPLETION_ENVIRONMENT_SCHEMA_VERSION,
     COMPLETION_OBLIGATION_SCHEMA_VERSION, CONTROL_SCHEMA_VERSION, CancelWorkHandoffRequest,
     ChangeCursor, ChangeWorkPrerequisiteRequest, CheckpointWorkRequest, ChildRequirement,

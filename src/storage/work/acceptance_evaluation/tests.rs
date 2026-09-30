@@ -17,6 +17,10 @@ mod reroll;
 mod review;
 mod same_turn;
 mod snapshots;
+mod source_recovery;
+pub(crate) use source_recovery::{
+    SourceRecoveryTransportFixture, source_recovery_transport_fixture,
+};
 
 use super::super::test_support::*;
 use super::*;

@@ -215,12 +215,12 @@ context. A word must not re-infer policy, identity or source state from prose.
 | Movement → `EvaluationBasisMove`; carried failure → typed carried-failure refusal; freshness → `AcceptanceStaleReason` / completion recovery | Retain these typed paths. They already distinguish admission from consumption. |
 | Eligibility, root admission and citation refusal → `AcceptanceEvaluationAdmissionRefused` carrying `AcceptanceEvaluationAdmissionCause` | **Implemented:** the deciding storage guard supplies an `eligibility`, `source_root` or `citation` cause and its remedy action. Service/words and CLI JSON/MCP retain the original reason, error code and failure status, adding context without parsing prose. Re-roll and remaining structural refusals retain their separate owners and generic refusal shape. |
 | Bound completion → `WorkBoundVerificationRefused` carrying `WorkBoundVerificationCause` | **Implemented:** the existing matcher mismatch, or `result_not_passed` from the preceding contradiction check, reaches service/words and CLI JSON/MCP with criterion, requirement, check and producer ids, actual result and typed remedy. The existing message, error code and status remain unchanged. |
-| Core stale recovery gives generic new-evaluation action; word stale-source recovery gives waiting/fingerprint alternatives | Should share recovery selection from a richer core cause. Mode-aware missing-evaluation words are shared, but the whole stale recovery is not. |
+| Source freshness → sibling `AcceptanceSourceRecoveryCause` | **Implemented:** the deciding snapshot retains the existing stale `source` cause and supplies confirmation, measurement or new-evaluation context. One service formatter supplies core recovery, words and show; raw errors preserve their message and status. |
 
-`AcceptanceStaleReason::Source` currently joins root confirmation and
+`AcceptanceStaleReason::Source` retains its shared label for root confirmation and
 completion-fingerprint failure. Root not yet confirmed and a declaration
 that will never be confirmed are indistinguishable until another observation
-arrives. A proposed cause must report **unconfirmed declaration**, not claim
+arrives. The sibling context reports **unconfirmed declaration**, without claiming
 to know the future. A missing completion measurement can be retried with a
 fresh host measurement; an actual source mismatch or missing evaluation
 source basis needs a new judgment. The word cannot safely promise that copying
@@ -243,7 +243,7 @@ eligibility.
 These corrections were ranked as separate implementation proposals. Ranks 1
 and 2 are implemented by the shared `assess_mode_policy` and
 `SessionStanding::evaluator_is_independent` predicates, with mode/pin and
-affiliation tables, policy-strengthening and handoff regressions. Rank 4
+affiliation tables, policy-strengthening and handoff regressions. Rank 3 now carries source recovery context from the deciding snapshot through service, words and CLI/MCP, with declared-root confirmation and fingerprint regressions. Rank 4
 preserves typed bound-check refusal context through the existing error path,
 with storage rollback and word/MCP regressions. Rank 5 now exposes eligibility,
 source-root and citation causes through the existing failure transport, with
@@ -256,7 +256,7 @@ host; no compatibility shim is proposed.
 | --- | --- | --- | --- |
 | 1 | Share mode/pin eligibility in evaluation storage; keep mechanical-basis checking explicit | A policy change is admitted by one predicate but consumed by another, or recovery names a forbidden mode | Small helper and admission/freshness regressions |
 | 2 | Share evaluator affiliation using `SessionStanding`; keep submission-time parent relation separate | A self-affiliated independent/child session slips through one phase, as the self-sub-agent Medium demonstrated | Small predicate extraction with handoff tests |
-| 3 | Make core recovery own unconfirmed-root versus fingerprint causes, and let service/words format that recovery | `done` asks for a new judgment while a turn-boundary sighting would suffice, or suggests a fingerprint where no source basis exists | Medium typed cause and host-contract change; cannot separate awaiting from never-reported absence |
+| 3 | Make core recovery own unconfirmed-root versus fingerprint causes, and let service/words format that recovery (implemented) | `done` asks for a new judgment while a turn-boundary sighting would suffice, or suggests a fingerprint where no source basis exists | Medium typed cause and host-contract change; cannot separate awaiting from never-reported absence |
 | 4 | Preserve typed bound-verification mismatch at completion (implemented) | A holder loses the inline newer-check contradiction or matcher mismatch at the error adapter | Small transient cause and shared guidance change with rollback and word/MCP tests |
 | 5 | Expose typed admission causes for eligibility and citation/root refusal (implemented); retain separately owned re-roll work | A caller must infer whether to change a mark, record new evidence, or refresh the cut from a sentence | Medium storage/service/CLI/MCP change; stage by cause family |
 | 6 | Share named-root assessment, including workspace and rebinding comparisons, with an explicit admission/consumption phase and horizons | The same declaration or root event is independently interpreted by admission and completion, recreating the design failure | Medium extraction with declared, undeclared, contradicted, rebound and never-sighted cases; remove redundant `declared_not_contradicted` logic only after proving movement covers it |

@@ -570,7 +570,7 @@ fn receipts_and_recovery_refusals_never_spell_the_locked_store_phrase() {
         cause: engram::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
             reason: engram::AcceptanceStaleReason::Mutation,
         },
-        context: engram::storage::StaleRecoveryContext::default(),
+        context: Box::default(),
     };
     let text = serde_json::to_string_pretty(&value).unwrap();
     let guarded = super::refusal_stderr_text(&error, text);

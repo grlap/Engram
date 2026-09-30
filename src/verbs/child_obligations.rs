@@ -102,6 +102,8 @@ struct DoneRecovery<'a> {
     /// evaluation whose source move an observation after its cut decided.
     #[serde(skip_serializing_if = "Option::is_none")]
     deciding_observation: Option<crate::work_service::ShownDecidingObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<crate::AcceptanceSourceRecoveryCause>,
 }
 
 #[derive(Serialize)]
@@ -137,6 +139,7 @@ pub(super) fn done_refusal_value(
         item,
         command,
         deciding_observation,
+        source,
     } = recovery;
     // Bounded per field and labelled as show labels sessions, so the receipt
     // stays within the agent budget whatever the host recorded; the storage
@@ -172,6 +175,9 @@ pub(super) fn done_refusal_value(
             },
             command,
             deciding_observation,
+            source: source
+                .as_deref()
+                .map(crate::work_service::shown_source_recovery),
         },
     })?)
 }

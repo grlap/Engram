@@ -1368,6 +1368,53 @@ fn a_declared_revision_the_root_is_about_to_report_records_and_seals_once_sighte
         stale_reason(store, &work),
         Some(AcceptanceStaleReason::Source)
     );
+    let shown = store
+        .acceptance_evaluation_status(work.work_id, None)
+        .unwrap()
+        .unwrap();
+    let source = shown.source_recovery.unwrap();
+    assert_eq!(source.evaluation, recorded.evaluation);
+    assert_eq!(
+        source.mismatch,
+        crate::AcceptanceSourceMismatch::UnconfirmedDeclaration
+    );
+    assert_eq!(
+        source.remedy,
+        crate::AcceptanceSourceRemedy::EndTurnReadAndRetry
+    );
+    assert_eq!(source.declared_revision.as_deref(), Some("R2"));
+    assert_eq!(source.reported_revision.as_deref(), Some("R1"));
+    let blocked = complete_evaluated(
+        store,
+        &work,
+        &claim,
+        "runner",
+        &note,
+        None,
+        "await-report",
+        45,
+    );
+    let error = blocked.expect_err("the snapshot does not confirm the declaration");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "completion for work {:?} requires recovery: AcceptanceEvaluationStale {{ reason: Source }}",
+            work.work_id
+        )
+    );
+    let StoreError::WorkCompletionRecoveryRequired { context, .. } = &error else {
+        panic!("{error:?}")
+    };
+    assert_eq!(context.source.as_deref(), Some(source.as_ref()));
+    let raw = crate::mcp::store_error_value(&error);
+    assert_eq!(
+        raw["error"]["details"]["cause"],
+        serde_json::json!({"kind":"acceptance_evaluation_stale", "reason":"source"})
+    );
+    assert_eq!(
+        raw["error"]["details"]["source"]["mismatch"],
+        "unconfirmed_declaration"
+    );
     // The requesting turn's report: the change to R2 and its passed test.
     host.basis = workspace("workspace-B", "R2", Some(9));
     host.checkpoint(
@@ -1412,6 +1459,22 @@ fn a_declared_revision_the_root_never_reports_blocks_until_evaluated_again() {
         stale_reason(store, &work),
         Some(AcceptanceStaleReason::Source)
     );
+    let source = store
+        .acceptance_evaluation_status(work.work_id, None)
+        .unwrap()
+        .unwrap()
+        .source_recovery
+        .unwrap();
+    assert_eq!(
+        source.mismatch,
+        crate::AcceptanceSourceMismatch::UnconfirmedDeclaration
+    );
+    assert_eq!(
+        source.remedy,
+        crate::AcceptanceSourceRemedy::EndTurnReadAndRetry
+    );
+    assert_eq!(source.declared_revision.as_deref(), Some("R9"));
+    assert_eq!(source.reported_revision.as_deref(), Some("R1"));
     let blocked = complete_evaluated(store, &work, &claim, "runner", &note, None, "blocked", 45);
     assert!(
         matches!(

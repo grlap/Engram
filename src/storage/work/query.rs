@@ -942,6 +942,7 @@ pub(super) fn completion_recovery_on(
         item,
         command,
         deciding_observation: None,
+        source: None,
     })
 }
 
@@ -973,6 +974,7 @@ pub(super) fn completion_recovery_snapshot_on(
     };
     let mut recovery = completion_recovery_on(connection, work, cause)?;
     recovery.deciding_observation = context.deciding_observation;
+    recovery.source = context.source;
     Ok(CompletionRecoverySnapshot {
         recovery,
         obligations: load_work_obligation_records_on(connection, run_id, None)?,

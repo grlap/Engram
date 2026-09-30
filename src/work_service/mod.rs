@@ -69,6 +69,8 @@ mod catalog;
 mod completion;
 mod continuation;
 mod deciding;
+mod source_recovery;
+pub(crate) use source_recovery::{shown_source_recovery, source_recovery_remedy};
 mod evaluate;
 mod evaluation_windows;
 mod focus;
@@ -938,7 +940,9 @@ fn completion_recovery_result(
         }
         WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. } => "acceptance_needs_human",
     };
-    let remedy = if matches!(
+    let remedy = if let Some(source) = &recovery.source {
+        source_recovery_remedy(source).into()
+    } else if matches!(
         &recovery.cause,
         WorkCompletionRecoveryCause::OpenObligation { .. }
     ) {

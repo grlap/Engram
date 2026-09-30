@@ -2832,3 +2832,126 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
     }
   }
 });
+
+// B77/B78 and B21/B22: native completion consumes host reports, not promises.
+test("source recovery keeps a judgment through host confirmation and separates fingerprint remedies", async (t) => {
+  const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
+  assert.equal(built.status, 0, built.stderr);
+  const engramHome = fixtureHome("engram-source-recovery-", t);
+  const actor = "source-recovery-runner";
+  const word = (...args) => spawnSync(binary,
+    ["--home", engramHome, "work", "--actor-id", actor, "--session-id", actor, ...args],
+    { cwd: root, encoding: "utf8" });
+  const jsonWord = (...args) => {
+    const result = word(...args, "--json");
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  const setPolicy = (fresh) => {
+    const result = spawnSync(binary, ["--home", engramHome, "control-policy", "set-acceptance-evaluation",
+      "--modes", "same-session", "--mechanical-basis", "asserted",
+      ...(fresh ? ["--require-source-freshness"] : []), "--authorized-by", "operator",
+      "--idempotency-key", `source-policy-${fresh}`], { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  const create = (title) => {
+    const ref = jsonWord("add", title, "--accept", "the outcome is delivered").work.short_ref;
+    jsonWord("claim", ref);
+    jsonWord("gate", "source-evidence", "--work-ref", ref);
+    return ref;
+  };
+  const evaluate = (ref, revision) => {
+    const shown = jsonWord("show", ref);
+    const citation = jsonWord("show", ref, "--notes", "--gates").notes
+      .find((row) => String(row.family).toLowerCase() === "gates").locator;
+    return jsonWord("evaluate", ref, "--mode", "same-session",
+      "--acceptance-basis", String(shown.acceptance_basis), "--evidence-basis", String(shown.evidence_basis),
+      "--verdict", "1=pass:judgment", "--rationale", "1=judge the recorded outcome", "--evidence", `1=${citation}`,
+      ...(revision ? ["--source-fingerprint", revision] : []));
+  };
+  const refused = (ref, mismatch, action, presented) => {
+    const result = word("done", ref, "Delivered", ...(presented ? ["--source-fingerprint", presented] : []), "--json");
+    assert.equal(result.status, 2, result.stderr);
+    const value = JSON.parse(result.stdout);
+    assert.equal(value.code, "acceptance_evaluation_stale");
+    assert.deepEqual(value.recovery.cause, { kind: "acceptance_evaluation_stale", reason: "source" });
+    assert.equal(value.recovery.source.mismatch, mismatch);
+    assert.equal(value.recovery.source.remedy, action);
+    assert.ok(value.reminders.some((line) => line.includes(value.remedy)));
+    assert.ok(value.next.some((command) => command.includes(ref)));
+    return { result, value };
+  };
+  let client;
+  try {
+    const init = spawnSync(binary, ["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
+    assert.equal(init.status, 0, init.stderr);
+    setPolicy(false);
+    const ref = create("Declared root confirmation");
+    const binding = cliWorkFocus(engramHome, actor, ref).control_binding;
+    client = new ControlClient(engramHome, actor);
+    const control = ok(await client.request({ operation: "session_bind", external_ref: `local-work:${actor}`,
+      title: "Source recovery host", assurance: "turn_gated", mediated_effects: ["observe", "mutate_local"],
+      work_binding: binding, capability_map_revision: 1, idempotency_key: "source-host" }));
+    const workspace = "C:/database is locked/源";
+    ok(await client.request({ operation: "named_root_bind", routing_token: control.routing_token,
+      claim_id: binding.claim_id, claim_fence: binding.claim_fence, workspace_id: workspace,
+      generation: 1, named_at: new Date().toISOString(), kind: "bound", idempotency_key: "source-root" }));
+    let turn = 0;
+    const sight = async (revision) => {
+      const key = `source-sighting-${++turn}`;
+      const granted = ok(await client.request({ operation: "turn_evaluate", routing_token: control.routing_token,
+        idempotency_key: key, intent_fingerprint: fingerprint(key), purpose: "ordinary",
+        requested_effects: ["mutate_local"], resource_intents: [libraryFile] }));
+      assert.equal(granted.decision, "grant", JSON.stringify(granted));
+      assert.equal(ok(await client.request({ operation: "turn_begin", routing_token: control.routing_token,
+        grant_id: granted.grant.grant_id, delivery_tokens: [], idempotency_key: `begin-${key}` })).decision, "begin");
+      return ok(await client.request({ operation: "turn_checkpoint", routing_token: control.routing_token,
+        grant_id: granted.grant.grant_id, next_intent: "continue", idempotency_key: `checkpoint-${key}`,
+        observations: [{ observation_id: key, action_fingerprint: fingerprint(key), effect: "mutate_local",
+          outcome: "succeeded", source_changed: false, source_basis: { workspace_id: workspace,
+            source_revision: revision, source_root_generation: 1, source_root_state: "named" },
+          observed_at: new Date().toISOString() }] }));
+    };
+    await sight("R1");
+    const recorded = evaluate(ref, "R2");
+    const pending = refused(ref, "unconfirmed_declaration", "end_turn_read_and_retry");
+    assert.equal(pending.value.recovery.source.evaluation, recorded.evaluation.hash);
+    assert.equal(pending.value.recovery.source.workspace_id, workspace);
+    assert.equal(pending.value.recovery.source.declared_revision, "R2");
+    assert.equal(pending.value.recovery.source.reported_revision, "R1");
+    assert.doesNotMatch(pending.result.stdout.toLowerCase(), /database is locked/u);
+    assert.match(pending.value.remedy, /no future report is promised/u);
+    const read = jsonWord("show", ref);
+    assert.deepEqual(read.acceptance_evaluation.source_recovery, pending.value.recovery.source);
+    // No further report: a later retry has exactly the same knowledge and action.
+    assert.deepEqual(refused(ref, "unconfirmed_declaration", "end_turn_read_and_retry").value.recovery.source,
+      pending.value.recovery.source);
+    await sight("R2");
+    const sealed = jsonWord("done", ref, "Delivered");
+    assert.equal(sealed.work.lifecycle, "completed");
+    assert.equal(sealed.acceptance.evaluation, recorded.evaluation.hash);
+    await client.close();
+    client = null;
+
+    setPolicy(true);
+    const measuredRef = create("Fresh measurement required");
+    const measured = evaluate(measuredRef, "measured-A");
+    const missing = refused(measuredRef, "completion_measurement_missing", "measure_source_and_retry");
+    assert.equal(missing.value.recovery.source.evaluation, measured.evaluation.hash);
+    assert.match(missing.value.remedy, /fresh source measurement/u);
+    const mismatch = refused(measuredRef, "completion_fingerprint_mismatch", "evaluate_current_source", "measured-B");
+    assert.match(mismatch.value.remedy, /new acceptance evaluation/u);
+    assert.match(mismatch.value.remedy, /copying.*insufficient/u);
+    assert.equal(jsonWord("show", measuredRef).acceptance_evaluation.source_recovery, undefined);
+    assert.equal(jsonWord("done", measuredRef, "Delivered", "--source-fingerprint", "measured-A").work.lifecycle, "completed");
+    const absentRef = create("No evaluated source basis");
+    evaluate(absentRef);
+    const absent = refused(absentRef, "evaluation_source_basis_missing", "evaluate_current_source", "measured-A");
+    assert.equal(absent.value.recovery.source.expected_fingerprint, undefined);
+    assert.match(absent.value.remedy, /new acceptance evaluation/u);
+    assert.match(absent.value.remedy, /copying.*insufficient/u);
+  } finally {
+    if (client) await client.close();
+    removeFixtureHomes(engramHome);
+  }
+});

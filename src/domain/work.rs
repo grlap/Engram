@@ -507,6 +507,9 @@ pub struct WorkCompletionRecovery {
     /// it, so the cause keeps its shape and words.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deciding_observation: Option<Box<DecidingObservation>>,
+    /// Source-specific recovery from the same deciding snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Box<super::AcceptanceSourceRecoveryCause>>,
 }
 
 /// Aggregate generation that owns the root completion barrier.

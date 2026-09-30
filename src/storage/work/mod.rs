@@ -462,4 +462,7 @@ pub(crate) struct CompletionRecoverySnapshot {
 }
 
 #[cfg(test)]
-pub(crate) use acceptance_evaluation::{AdmissionTransportFixture, admission_transport_fixture};
+pub(crate) use acceptance_evaluation::{
+    AdmissionTransportFixture, SourceRecoveryTransportFixture, admission_transport_fixture,
+    source_recovery_transport_fixture,
+};

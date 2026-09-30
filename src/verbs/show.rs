@@ -391,6 +391,8 @@ pub(super) struct ShowEvaluation {
     /// not measure a fingerprint: `done --source-fingerprint` checks it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) source_checked_at_done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) source_recovery: Option<crate::AcceptanceSourceRecoveryCause>,
     /// A prefix of the verdict rows; the rest are counted, never dropped
     /// silently, and the complete record is the `full_detail` read.
     pub(super) verdicts: Vec<ShowVerdict>,
@@ -642,6 +644,10 @@ pub(super) fn show_evaluation(
             .as_ref()
             .map(|basis| basis.fingerprint.clone()),
         source_checked_at_done: status.source_checked_at_done,
+        source_recovery: status
+            .source_recovery
+            .as_deref()
+            .map(crate::work_service::shown_source_recovery),
         verdicts: record
             .verdicts
             .iter()
@@ -699,6 +705,12 @@ fn evaluation_lines(
     }
     if let Some(observation) = &projected.stale_observation {
         lines.push(format!("  {}", observation.line(super::terminal_safe_line)));
+    }
+    if let Some(source) = &projected.source_recovery {
+        lines.push(format!(
+            "  {}",
+            crate::work_service::source_recovery_remedy(source)
+        ));
     }
     if let Some(carried) = &projected.carried_failure {
         lines.push(carried_failure_line(carried));

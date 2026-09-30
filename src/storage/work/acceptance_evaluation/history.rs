@@ -13,6 +13,7 @@ use super::{
     SqliteStore, StoreError, WorkId, WorkItem, WorkRunId, latest_on, load_typed_work_object,
     load_work_item, on_one_snapshot, params, staleness_named,
 };
+use crate::storage::StaleRecoveryContext;
 use rusqlite::OptionalExtension;
 
 /// One evaluation record on a run feed, at its dense run-feed position.
@@ -133,17 +134,18 @@ impl SqliteStore {
                                 .into(),
                         ));
                     }
-                    let (stale, stale_observation) = if judged {
+                    let (stale, context) = if judged {
                         staleness_named(
                             connection,
                             &item,
                             run_id,
                             &policy,
+                            &entry.evaluation,
                             &record,
                             SourceCheck::Unmeasured,
                         )?
                     } else {
-                        (None, None)
+                        (None, StaleRecoveryContext::default())
                     };
                     Ok(AssessedAcceptanceEvaluation {
                         position: entry.position,
@@ -151,7 +153,7 @@ impl SqliteStore {
                         evaluation: entry.evaluation.clone(),
                         record,
                         stale,
-                        stale_observation,
+                        stale_observation: context.deciding_observation.map(|value| *value),
                         judged,
                     })
                 })
@@ -204,15 +206,20 @@ impl SqliteStore {
             let (stale, stale_observation, judged) = match item.active_run_id {
                 Some(run_id) => {
                     let policy = SqliteStore::load_acceptance_evaluation_policy_on(connection)?;
-                    let (stale, stale_observation) = staleness_named(
+                    let (stale, context) = staleness_named(
                         connection,
                         &item,
                         run_id,
                         &policy,
+                        evaluation,
                         &record,
                         SourceCheck::Unmeasured,
                     )?;
-                    (stale, stale_observation, true)
+                    (
+                        stale,
+                        context.deciding_observation.map(|value| *value),
+                        true,
+                    )
                 }
                 None => (None, None, false),
             };

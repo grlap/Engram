@@ -133,6 +133,7 @@ fn mode_and_pin_matrix_preserves_admission_and_freshness() {
                         &item,
                         held.run_id,
                         &policy,
+                        &recorded.evaluation,
                         &evaluation,
                         SourceCheck::Unmeasured,
                     )

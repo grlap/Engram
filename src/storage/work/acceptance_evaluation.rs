@@ -100,6 +100,8 @@ pub struct AcceptanceEvaluationStatus {
     /// for, when an observation decided it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stale_observation: Option<DecidingObservation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_recovery: Option<Box<crate::domain::AcceptanceSourceRecoveryCause>>,
     /// True when the policy requires source freshness and this read could
     /// not measure a fingerprint: the recorded basis is checked against the
     /// fingerprint `done` presents, and this read does not call it stale.
@@ -495,12 +497,13 @@ impl SqliteStore {
             let source = source_fingerprint.map_or(SourceCheck::Unmeasured, |fingerprint| {
                 SourceCheck::AtCompletion(Some(fingerprint))
             });
-            let (stale, stale_observation) =
-                staleness_named(connection, &item, run_id, &policy, &record, source)?;
+            let (stale, context) =
+                staleness_named(connection, &item, run_id, &policy, &hash, &record, source)?;
             let carried_failure = carried_failure_on(connection, &item, run_id)?;
             Ok(Some(AcceptanceEvaluationStatus {
                 carried_failure,
-                stale_observation,
+                stale_observation: context.deciding_observation.map(|value| *value),
+                source_recovery: context.source,
                 evaluation: hash,
                 source_checked_at_done: policy.require_source_freshness
                     && record.source_basis.is_some()
@@ -2665,16 +2668,21 @@ fn judged_revision(
 /// observation that decided a source move when it reads stale for one: such a
 /// move reads as `Mutation`, and the observation is named beside it, never as
 /// a cause.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the record id and freshness inputs belong to one assessment"
+)]
 fn staleness_named(
     connection: &Connection,
     item: &WorkItem,
     run_id: WorkRunId,
     policy: &AcceptanceEvaluationPolicy,
+    evaluation: &ObjectId,
     record: &AcceptanceEvaluation,
     source: SourceCheck<'_>,
-) -> Result<(Option<AcceptanceStaleReason>, Option<DecidingObservation>), StoreError> {
+) -> Result<(Option<AcceptanceStaleReason>, StaleRecoveryContext), StoreError> {
     if let Some(reason) = staleness_before_move(connection, item, run_id, policy, record)? {
-        return Ok((Some(reason), None));
+        return Ok((Some(reason), StaleRecoveryContext::default()));
     }
     let evaluated_root = named_root_at_on(connection, run_id, record.evaluated_cut.position)?;
     if let Some(finding) = basis_moved_after(
@@ -2684,18 +2692,24 @@ fn staleness_named(
         record.source_basis.as_ref(),
         evaluated_root.as_ref(),
     )? {
-        return Ok((Some(AcceptanceStaleReason::Mutation), finding.observation));
+        return Ok((
+            Some(AcceptanceStaleReason::Mutation),
+            StaleRecoveryContext {
+                deciding_observation: finding.observation.map(Box::new),
+                ..StaleRecoveryContext::default()
+            },
+        ));
     }
-    let reason = staleness_after_move(
+    staleness_after_move(
         connection,
         item,
         run_id,
         policy,
+        evaluation,
         record,
         source,
         evaluated_root.as_ref(),
-    )?;
-    Ok((reason, None))
+    )
 }
 
 /// The stale reasons judged before a move past the cut.
@@ -2789,10 +2803,42 @@ fn staleness_after_move(
     item: &WorkItem,
     run_id: WorkRunId,
     policy: &AcceptanceEvaluationPolicy,
+    evaluation: &ObjectId,
     record: &AcceptanceEvaluation,
     source: SourceCheck<'_>,
     evaluated_root: Option<&NamedEvaluationRoot>,
-) -> Result<Option<AcceptanceStaleReason>, StoreError> {
+) -> Result<(Option<AcceptanceStaleReason>, StaleRecoveryContext), StoreError> {
+    let mut source_context = crate::domain::AcceptanceSourceRecoveryCause {
+        mismatch: crate::domain::AcceptanceSourceMismatch::EvaluationSourceBasisMissing,
+        remedy: crate::domain::AcceptanceSourceRemedy::EvaluateCurrentSource,
+        evaluation: evaluation.clone(),
+        run_id,
+        evaluated_cut: record.evaluated_cut.position,
+        root_binding: evaluated_root.map(|root| root.event_id.clone()),
+        workspace_id: evaluated_root.map(|root| root.event.workspace_id.clone()),
+        declared_revision: record
+            .source_basis
+            .as_ref()
+            .map(|basis| basis.fingerprint.clone()),
+        reported_revision: None,
+        expected_fingerprint: record
+            .source_basis
+            .as_ref()
+            .map(|basis| basis.fingerprint.clone()),
+        presented_fingerprint: match source {
+            SourceCheck::Unmeasured => None,
+            SourceCheck::AtCompletion(value) => value.map(str::to_owned),
+        },
+    };
+    let refused_source = |source| {
+        (
+            Some(AcceptanceStaleReason::Source),
+            StaleRecoveryContext {
+                source: Some(Box::new(source)),
+                ..StaleRecoveryContext::default()
+            },
+        )
+    };
     let judged = judged_source(
         connection,
         run_id,
@@ -2813,7 +2859,18 @@ fn staleness_after_move(
         if latest.is_none()
             || latest.as_deref() != judged.as_ref().map(|judged| judged.revision.as_str())
         {
-            return Ok(Some(AcceptanceStaleReason::Source));
+            source_context.mismatch = if judged.as_ref().is_some_and(|judged| judged.declared) {
+                crate::domain::AcceptanceSourceMismatch::UnconfirmedDeclaration
+            } else {
+                crate::domain::AcceptanceSourceMismatch::UnconfirmedEvaluatedRevision
+            };
+            source_context.remedy = if judged.as_ref().is_some_and(|judged| judged.declared) {
+                crate::domain::AcceptanceSourceRemedy::EndTurnReadAndRetry
+            } else {
+                crate::domain::AcceptanceSourceRemedy::ReadSourceAndEvaluate
+            };
+            source_context.reported_revision = latest;
+            return Ok(refused_source(source_context));
         }
     }
     if stale_bound_citation(
@@ -2827,7 +2884,10 @@ fn staleness_after_move(
     )?
     .is_some()
     {
-        return Ok(Some(AcceptanceStaleReason::VerificationSource));
+        return Ok((
+            Some(AcceptanceStaleReason::VerificationSource),
+            StaleRecoveryContext::default(),
+        ));
     }
     let relied_on = cited_gate_names(connection, run_id, record)?;
     if gate_superseded_after(
@@ -2836,7 +2896,10 @@ fn staleness_after_move(
         record.evaluated_cut.position,
         &relied_on,
     )? {
-        return Ok(Some(AcceptanceStaleReason::Evidence));
+        return Ok((
+            Some(AcceptanceStaleReason::Evidence),
+            StaleRecoveryContext::default(),
+        ));
     }
     if policy.require_source_freshness {
         let evaluated = record
@@ -2845,17 +2908,26 @@ fn staleness_after_move(
             .map(|basis| basis.fingerprint.as_str());
         match (evaluated, source) {
             // A record without a basis can never match a measurement.
-            (None, _) => return Ok(Some(AcceptanceStaleReason::Source)),
+            (None, _) => return Ok(refused_source(source_context)),
             // A read measured nothing: the check is pending, not failed.
             (Some(_), SourceCheck::Unmeasured) => {}
             (Some(evaluated), SourceCheck::AtCompletion(presented))
                 if presented == Some(evaluated) => {}
-            (Some(_), SourceCheck::AtCompletion(_)) => {
-                return Ok(Some(AcceptanceStaleReason::Source));
+            (Some(_), SourceCheck::AtCompletion(None)) => {
+                source_context.mismatch =
+                    crate::domain::AcceptanceSourceMismatch::CompletionMeasurementMissing;
+                source_context.remedy =
+                    crate::domain::AcceptanceSourceRemedy::MeasureSourceAndRetry;
+                return Ok(refused_source(source_context));
+            }
+            (Some(_), SourceCheck::AtCompletion(Some(_))) => {
+                source_context.mismatch =
+                    crate::domain::AcceptanceSourceMismatch::CompletionFingerprintMismatch;
+                return Ok(refused_source(source_context));
             }
         }
     }
-    Ok(None)
+    Ok((None, StaleRecoveryContext::default()))
 }
 
 /// Completion-side assessment of the newest evaluation on `run_id`, under an
@@ -2880,15 +2952,11 @@ pub(super) fn assess_on(
             item,
             run_id,
             policy,
+            &hash,
             &record,
             SourceCheck::AtCompletion(source_fingerprint),
         )? {
-            (Some(reason), observation) => AcceptanceEvaluationAssessment::Stale(
-                reason,
-                StaleRecoveryContext {
-                    deciding_observation: observation.map(Box::new),
-                },
-            ),
+            (Some(reason), context) => AcceptanceEvaluationAssessment::Stale(reason, context),
             (None, _) => AcceptanceEvaluationAssessment::Fresh {
                 hash,
                 evaluation: Box::new(record),
@@ -2953,4 +3021,7 @@ mod same_turn;
 mod tests;
 
 #[cfg(test)]
-pub(crate) use tests::{AdmissionTransportFixture, admission_transport_fixture};
+pub(crate) use tests::{
+    AdmissionTransportFixture, SourceRecoveryTransportFixture, admission_transport_fixture,
+    source_recovery_transport_fixture,
+};

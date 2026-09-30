@@ -1476,6 +1476,15 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
         .done(done_input(&item.work_ref), at(6))
         .expect("done returns a recovery receipt");
     assert!(unmeasured.owed);
+    assert_eq!(
+        unmeasured.value["recovery"]["source"]["mismatch"],
+        "completion_measurement_missing"
+    );
+    assert_eq!(
+        unmeasured.value["recovery"]["source"]["remedy"],
+        "measure_source_and_retry"
+    );
+    assert!(unmeasured.text().contains("fresh source measurement"));
     assert_eq!(unmeasured.value["code"], "acceptance_evaluation_stale");
     assert!(
         unmeasured.text().contains("--source-fingerprint"),
@@ -1493,6 +1502,15 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
         )
         .expect("done returns a recovery receipt");
     assert!(changed.owed);
+    assert_eq!(
+        changed.value["recovery"]["source"]["mismatch"],
+        "completion_fingerprint_mismatch"
+    );
+    assert_eq!(
+        changed.value["recovery"]["source"]["remedy"],
+        "evaluate_current_source"
+    );
+    assert!(changed.text().contains("new acceptance evaluation"));
     assert_eq!(changed.value["code"], "acceptance_evaluation_stale");
     assert!(
         changed.text().contains("stale (source)"),

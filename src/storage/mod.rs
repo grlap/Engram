@@ -743,6 +743,7 @@ pub struct StaleRecoveryContext {
     /// The source observation that decided a source move after the newest
     /// evaluation's cut.
     pub deciding_observation: Option<Box<DecidingObservation>>,
+    pub source: Option<Box<crate::domain::AcceptanceSourceRecoveryCause>>,
 }
 
 impl DecidingObservation {
@@ -1183,7 +1184,7 @@ pub enum StoreError {
         work: crate::domain::WorkId,
         cause: WorkCompletionRecoveryCause,
         /// Beside the cause, so the message above keeps its words.
-        context: StaleRecoveryContext,
+        context: Box<StaleRecoveryContext>,
     },
     #[error("completion for work {work:?} has open work obligations")]
     OpenWorkObligations {
@@ -1822,4 +1823,7 @@ pub struct SqliteStore {
 }
 
 #[cfg(test)]
-pub(crate) use work::{AdmissionTransportFixture, admission_transport_fixture};
+pub(crate) use work::{
+    AdmissionTransportFixture, SourceRecoveryTransportFixture, admission_transport_fixture,
+    source_recovery_transport_fixture,
+};

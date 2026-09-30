@@ -627,7 +627,7 @@ Refusals extend the typed recovery causes; each carries one recovery command:
 | Cause | Meaning | Recovery |
 | --- | --- | --- |
 | `MissingAcceptanceEvaluation { criterion }` | no evaluation for this run | record one: `engram work evaluate REF …` (or the host's evaluator) |
-| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`) | re-evaluate against the current state; `source` under a named root first waits for the host to report the root at the declared revision (end the turn, then run `done` again, with no new evaluation), and names `done --source-fingerprint F` where the policy requires a completion fingerprint; `identity` needs a session that never held the run; `verification_source` needs the cited check run again on the current source |
+| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`) | re-evaluate against the current state; `source` uses the sibling source context below to select confirmation, measurement or new-evaluation guidance; `identity` needs a session that never held the run; `verification_source` needs the cited check run again on the current source |
 | `AcceptanceFailed { criterion }` | newest fresh evaluation has a `fail` | corrective work, then evaluate again |
 | `AcceptanceInsufficientEvidence { criterion }` | newest fresh evaluation has `insufficient_evidence` | record the missing evidence, then evaluate again |
 | `AcceptanceNeedsHuman { criterion }` | a criterion needs a human decision | obtain that decision; only a separately authorized revision (`update REF --accept …`) or cancellation changes the requirement, and a new evaluation follows the decision. No agent override exists. |
@@ -649,6 +649,36 @@ The CLI writes every JSON receipt, and a recovery error's JSON on stderr,
 with the spaces of the locked-store phrase as `\u0020` escapes, so no field
 spells it and every field still decodes to what was recorded; MCP returns the
 structured values as recorded.
+
+A stale `source` recovery also carries an optional sibling `source` context,
+without changing `AcceptanceEvaluationStale { reason: Source }`, its raw
+error message, or transport status. Core completion and agent `done` use
+`recovery.source`; raw recovery errors add `error.details.source`. An ordinary
+read exposes the same assessment as `acceptance_evaluation.source_recovery`.
+The context names the minted evaluation id, run and evaluated cut. The deciding
+snapshot supplies the root binding, workspace, declared/reported revisions and
+expected/presented fingerprints only when available. Agent receipts bound each
+host-recorded string at 128 bytes with its stored length; raw errors keep it
+whole. CLI JSON keeps the locked-store phrase escaped without changing decoded
+fields. No durable record, schema or acceptance predicate changes.
+
+| Source mismatch | Remedy action | Safe next step |
+| --- | --- | --- |
+| `unconfirmed_declaration` | `end_turn_read_and_retry` | End the turn, read the same run again, then retry `done`. Matching host confirmation can preserve the judgment; the current snapshot makes no promise that another report will arrive. |
+| `unconfirmed_evaluated_revision` | `read_source_and_evaluate` | Read the named root's current source and request a new evaluation. This defensive assessment fallback does not make an unsighted root admissible. |
+| `completion_measurement_missing` | `measure_source_and_retry` | Obtain a fresh host measurement and present it at `done`; copying the evaluated fingerprint is not a measurement. |
+| `completion_fingerprint_mismatch` | `evaluate_current_source` | Evaluate the current source with its host-measured source basis, then retry; copying an earlier fingerprint is insufficient. |
+| `evaluation_source_basis_missing` | `evaluate_current_source` | Obtain a new evaluation with a host-measured source basis; a completion measurement alone cannot supply the missing evaluated basis. |
+
+One service formatter selects both core recovery and word guidance from this
+context. The word's stale-source prefix remains unchanged. `show` measures no
+completion fingerprint: a record with a source basis remains pending that check,
+not stale merely because the read is unmeasured. Under a freshness policy, a
+record without a source basis remains stale even on a read. Revision, run,
+root rebinding, policy, identity and movement still decide before source
+confirmation; citation and gate freshness still decide before the completion
+fingerprint. Agent `done` remains an owed receipt (CLI exit 2, MCP non-error);
+a raw recovery error retains `work_completion_recovery_required`.
 
 Admission refusals for eligibility, named-root source and citation checks carry
 `AcceptanceEvaluationAdmissionCause` beside their unchanged reason text. CLI

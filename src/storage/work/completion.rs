@@ -299,7 +299,7 @@ impl SqliteStore {
                     return Err(StoreError::WorkCompletionRecoveryRequired {
                         work: item.work_id,
                         cause,
-                        context,
+                        context: Box::new(context),
                     });
                 }
             }
@@ -319,7 +319,7 @@ impl SqliteStore {
                         &item,
                         run.run_id,
                         cause,
-                        context,
+                        *context,
                     )?;
                     return Ok(CompleteWorkStorageResult::Recovery(recovery));
                 }
@@ -449,7 +449,7 @@ impl SqliteStore {
             return Err(StoreError::WorkCompletionRecoveryRequired {
                 work: item.work_id,
                 cause,
-                context: StaleRecoveryContext::default(),
+                context: Box::default(),
             });
         }
         let run_feed = FeedId::RunExecution(run.run_id);
@@ -563,7 +563,7 @@ impl SqliteStore {
             return Err(StoreError::WorkCompletionRecoveryRequired {
                 work: item.work_id,
                 cause,
-                context: StaleRecoveryContext::default(),
+                context: Box::default(),
             });
         }
         let child_seal_is_restored = required_child_seals.iter().try_fold(
@@ -2388,7 +2388,7 @@ pub(crate) fn normalize_completion_acceptance_shape(
                 cause: WorkCompletionRecoveryCause::MissingAcceptance {
                     criterion: criterion.clone(),
                 },
-                context: StaleRecoveryContext::default(),
+                context: Box::default(),
             });
         }
         return Err(StoreError::WorkCompletionRefused {
@@ -2420,7 +2420,7 @@ pub(crate) fn normalize_completion_acceptance_shape(
                 cause: WorkCompletionRecoveryCause::MissingAcceptance {
                     criterion: criterion.clone(),
                 },
-                context: StaleRecoveryContext::default(),
+                context: Box::default(),
             });
         };
         if !result.satisfied {
@@ -2429,7 +2429,7 @@ pub(crate) fn normalize_completion_acceptance_shape(
                 cause: WorkCompletionRecoveryCause::MissingAcceptance {
                     criterion: criterion.clone(),
                 },
-                context: StaleRecoveryContext::default(),
+                context: Box::default(),
             });
         }
         normalized.push(AcceptanceResult {

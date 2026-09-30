@@ -1085,6 +1085,9 @@ pub fn store_error_value(error: &StoreError) -> Value {
             if let Some(observation) = &context.deciding_observation {
                 details["deciding_observation"] = json!(observation);
             }
+            if let Some(source) = &context.source {
+                details["source"] = json!(source);
+            }
             details
         }
         StoreError::AcceptanceCriteriaRequired { work } => json!({
@@ -1497,6 +1500,115 @@ mod tests {
                 assert!(observation.is_null(), "{value}");
                 assert!(!named, "{value}");
             }
+        }
+    }
+
+    // B21/B22/B77/B78: storage's deciding source context selects both the
+    // service remedy and word guidance, without changing the owed status.
+    #[test]
+    fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
+        for case in ["unconfirmed", "missing", "mismatch", "no_basis"] {
+            let fixture: crate::storage::SourceRecoveryTransportFixture =
+                crate::storage::source_recovery_transport_fixture(case, Utc::now());
+            let service = crate::LocalWorkService::new(
+                fixture.database.clone(),
+                fixture.work.project_id.clone(),
+                "runner".into(),
+                SessionId("runner".into()),
+                None,
+            );
+            let result = service
+                .work_complete_on(
+                    Some(&fixture.work.short_ref),
+                    crate::WorkCompleteInput {
+                        links: vec![],
+                        link_basis: None,
+                        capture: None,
+                        evidence: vec![],
+                        acceptance: None,
+                        note: None,
+                        source_fingerprint: fixture.presented.clone(),
+                        landing: None,
+                        idempotency_key: String::new(),
+                    },
+                    Utc::now(),
+                )
+                .expect("structured service recovery");
+            let crate::WorkCompleteResult::Refused(refusal) = result else {
+                panic!("{case}: completion must remain owed")
+            };
+            assert_eq!(refusal.code, "acceptance_evaluation_stale");
+            assert_eq!(
+                refusal.recovery.cause,
+                crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+                    reason: crate::AcceptanceStaleReason::Source,
+                }
+            );
+            let source = refusal.recovery.source.as_ref().expect("source context");
+            assert_eq!(source.mismatch, fixture.mismatch);
+            assert_eq!(source.evaluation, fixture.evaluation);
+            assert_eq!(source.run_id, fixture.work.active_run_id.unwrap());
+            assert_eq!(
+                refusal.remedy,
+                crate::work_service::source_recovery_remedy(source)
+            );
+            let server = McpServer::new_with_actor_context(
+                fixture.database.clone(),
+                fixture.work.project_id.clone(),
+                "runner".into(),
+                SessionId("runner".into()),
+                None,
+                None,
+            );
+            let response = server.done(Parameters(DoneArgs {
+                work_ref: Some(fixture.work.short_ref.clone()),
+                summary: Some("delivered".into()),
+                note: None,
+                links: None,
+                link_basis: None,
+                source_fingerprint: fixture.presented.clone(),
+                landing: None,
+            }));
+            assert_ne!(response.is_error, Some(true), "{case}: an owed receipt");
+            let value = response
+                .structured_content
+                .expect("structured word receipt");
+            assert_eq!(value["code"], refusal.code);
+            assert_eq!(value["recovery"]["cause"], json!(refusal.recovery.cause));
+            assert_eq!(value["recovery"]["source"], json!(source));
+            assert!(value["reminders"].as_array().unwrap().iter().any(|line| {
+                line.as_str()
+                    .is_some_and(|text| text.contains(&refusal.remedy))
+            }));
+            assert!(
+                value["next"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|command| command.as_str().unwrap().contains(&fixture.work.short_ref))
+            );
+            let raw = StoreError::WorkCompletionRecoveryRequired {
+                work: fixture.work.work_id,
+                cause: refusal.recovery.cause,
+                context: Box::new(crate::storage::StaleRecoveryContext {
+                    source: Some(source.clone()),
+                    ..Default::default()
+                }),
+            };
+            let legacy = StoreError::WorkCompletionRecoveryRequired {
+                work: fixture.work.work_id,
+                cause: crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+                    reason: crate::AcceptanceStaleReason::Source,
+                },
+                context: Box::default(),
+            };
+            assert_eq!(raw.to_string(), legacy.to_string());
+            let raw_json = store_error_value(&raw);
+            assert_eq!(
+                raw_json["error"]["code"],
+                "work_completion_recovery_required"
+            );
+            assert_eq!(raw_json["error"]["details"]["source"], json!(source));
         }
     }
 

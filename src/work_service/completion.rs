@@ -334,7 +334,7 @@ impl LocalWorkService {
             Ok(acceptance) => acceptance,
             Err(StoreError::WorkCompletionRecoveryRequired { cause, context, .. }) => {
                 let snapshot =
-                    store.work_completion_recovery(&work, &claim, now, &cause, context)?;
+                    store.work_completion_recovery(&work, &claim, now, &cause, *context)?;
                 let obligation_page = work_completion_recovery_page(&store, &snapshot)?;
                 let result = completion_recovery_result(
                     work.work_id,

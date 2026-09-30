@@ -2,6 +2,7 @@
 
 mod acceptance_admission;
 mod acceptance_evaluation;
+mod acceptance_source_recovery;
 mod control;
 mod identity;
 mod memory;
@@ -19,6 +20,7 @@ pub use crate::schema::{
 };
 pub use acceptance_admission::*;
 pub use acceptance_evaluation::*;
+pub use acceptance_source_recovery::*;
 pub use control::*;
 pub use identity::*;
 pub use memory::*;
