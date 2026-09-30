@@ -942,6 +942,31 @@ fn run_holder_history(
     Ok(holders)
 }
 
+#[derive(Debug, Eq, PartialEq)]
+enum ModePolicyMismatch {
+    DisallowedMode,
+    SelectedPinMismatch(AcceptanceEvaluationMode),
+}
+
+/// Current policy membership and task-pin agreement, shared by recording and
+/// consumption. Enabling evaluation and evaluator affiliation are separate
+/// checks; each phase keeps its own outward refusal or stale cause.
+fn assess_mode_policy(
+    item: &WorkItem,
+    policy: &AcceptanceEvaluationPolicy,
+    mode: AcceptanceEvaluationMode,
+) -> Result<(), ModePolicyMismatch> {
+    if !policy.allows(mode) {
+        return Err(ModePolicyMismatch::DisallowedMode);
+    }
+    if let Some(selected) = item.evaluation_mode
+        && selected != mode
+    {
+        return Err(ModePolicyMismatch::SelectedPinMismatch(selected));
+    }
+    Ok(())
+}
+
 fn admit_mode(
     item: &WorkItem,
     policy: &AcceptanceEvaluationPolicy,
@@ -953,8 +978,8 @@ fn admit_mode(
             "the project policy does not enable acceptance evaluation; completion stays self-asserted",
         ));
     }
-    if !policy.allows(mode) {
-        return Err(refused(
+    match assess_mode_policy(item, policy, mode) {
+        Err(ModePolicyMismatch::DisallowedMode) => Err(refused(
             item.work_id,
             format!(
                 "mode {} is not allowed by the project policy; allowed: {}",
@@ -966,20 +991,16 @@ fn admit_mode(
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-        ));
-    }
-    if let Some(selected) = item.evaluation_mode
-        && selected != mode
-    {
-        return Err(refused(
+        )),
+        Err(ModePolicyMismatch::SelectedPinMismatch(selected)) => Err(refused(
             item.work_id,
             format!(
                 "this task is marked for mode {}; evaluate in that mode",
                 selected.word()
             ),
-        ));
+        )),
+        Ok(()) => Ok(()),
     }
-    Ok(())
 }
 
 /// The evaluation a refused same-session evaluator can request instead, in
@@ -2492,10 +2513,7 @@ fn staleness(
     // Every effective requirement is re-read from the current policy: a
     // strengthened mechanical basis retires asserted passes, and a pinned or
     // disallowed mode retires the whole record.
-    if !policy.allows(record.mode)
-        || item
-            .evaluation_mode
-            .is_some_and(|selected| selected != record.mode)
+    if assess_mode_policy(item, policy, record.mode).is_err()
         || (policy.mechanical_basis == MechanicalBasis::Observed
             && record.verdicts.iter().any(|verdict| {
                 verdict.verdict == AcceptanceVerdict::Pass

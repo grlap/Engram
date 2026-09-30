@@ -49,7 +49,7 @@ must retain each phase's inputs and reason for refusing.
 
 | Rule | Recording owner | Completion owner | Decision |
 | --- | --- | --- | --- |
-| Project enables evaluation, admits the mode, and task pin agrees | `admit_mode`; `bind_verdicts` checks mechanical basis | Inline policy/pin/mechanical-basis checks in `staleness` | **Should share one policy owner.** Re-reading current policy is justified; independently spelling its predicate is not. A strengthened observed-basis policy must retire an asserted pass. Preserve admission-only refusal of a self-asserted project. |
+| Project enables evaluation, admits the mode, and task pin agrees | `admit_mode` → `assess_mode_policy`; `admit_pass_citation` checks mechanical basis | `staleness` → `assess_mode_policy`, with explicit mechanical-basis retirement | **Mode and pin assessment is shared.** Admission alone refuses a self-asserted project before assessing the mode. Freshness re-reads the current policy and retires an asserted pass under a strengthened observed-basis policy; those phase-specific checks remain explicit. |
 | Same-session mark author and sub-agent evaluator affiliation | `same_session_ineligibility` using `same_session_mark_author` → pure `mark_author` | The same `same_session_ineligibility` with current standing | **Shared and sound within asserted identity.** A mark author or child evaluator that later takes this run makes the earlier record ineligible. Imported history and a copied detach mark cannot invent an author. Session ids remain asserted; this does not authenticate a session against deliberate forgery. |
 | Evaluator identity and sub-agent parent | `admit_identity` | Independent-session predicate inline in `staleness`; child affiliation uses the shared helper above | **Should share the independent identity predicate.** **Justified difference:** admission requires the parent to hold/execute when the child submits; completion must not demand that original parent still hold the run after a legitimate handoff. Nor does it require a same-session evaluator to remain the current holder. |
 | Named-root binding and judged source | `judged_source`, `require_named_root_judged_source`, `declared_not_contradicted`; inline declared-workspace and root-at-cut versus root-at-head checks in `record_acceptance_evaluation` | Binding comparison and named-root block in `staleness`, using `judged_source` and `revision_seen_through` | **Should share a phase-aware source assessment, including rebinding.** Admission rejects a declared workspace different from the named root and a changed root event between cut and head (`SourceChanged`); consumption rejects a changed stored binding as stale `mutation`. **Justified horizons:** admission requires an initial sighting through the evaluated cut but may accept a declaration awaiting the report. Consumption confirms a declared revision through head; an undeclared judgment uses the sighting through its evaluated cut. Declare a new revision, then let the host report it, is the concrete case. |
@@ -239,10 +239,12 @@ should let its outward advice use the shared remedy selection as well.
 
 ## Ranked corrections
 
-These are separate implementation proposals. None changes behavior in this
-brief; each needs its own item and review. Size describes code scope, not a
-time estimate. Preserve serialized contracts or coordinate their change with
-the host; no compatibility shim is proposed.
+These corrections were ranked as separate implementation proposals. Rank 1
+is implemented by the shared `assess_mode_policy` predicate, with a mode/pin
+matrix and policy-strengthening regressions. The remaining proposals need
+their own implementation and review. Size describes code scope, not a time
+estimate. Preserve serialized contracts or coordinate their change with the
+host; no compatibility shim is proposed.
 
 | Rank | Correction and proposed owner | Transition it prevents | Rough size |
 | --- | --- | --- | --- |

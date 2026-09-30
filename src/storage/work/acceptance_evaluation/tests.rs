@@ -10,6 +10,7 @@ mod criteria_required;
 mod host_checks;
 mod mark_author;
 mod named_root;
+mod policy;
 mod reroll;
 mod review;
 mod same_turn;
@@ -1973,7 +1974,7 @@ fn policy_changes_invalidate_and_self_asserted_restores_self_assertion() {
     let work = fixture.work.clone();
     let claim = fixture.claim.clone();
     let evidence = fixture.evidence.clone();
-    record(
+    let original = record(
         store,
         &request(
             &work,
@@ -2013,6 +2014,32 @@ fn policy_changes_invalidate_and_self_asserted_restores_self_assertion() {
             reason: AcceptanceStaleReason::Policy
         }
     ));
+    let mut disallowed = request(
+        &work,
+        cut(store, &work),
+        "runner",
+        Mode::SameSession,
+        vec![verdict(
+            1,
+            AcceptanceVerdict::Pass,
+            AcceptanceBasis::Judgment,
+            std::slice::from_ref(&evidence),
+        )],
+        8,
+    );
+    disallowed.attempt_key = Some("fresh-after-policy-change".into());
+    assert!(
+        refusal(record(store, &disallowed))
+            .contains("mode same_session is not allowed by the project policy")
+    );
+    assert_eq!(
+        store
+            .acceptance_evaluation_status(work.work_id, None)
+            .expect("read unchanged newest evaluation")
+            .expect("original evaluation remains")
+            .evaluation,
+        original.evaluation
+    );
     let self_asserted = enable(
         store,
         &[],
