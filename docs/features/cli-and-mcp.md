@@ -164,6 +164,31 @@ A bare mutation keeps its existing target, not the item just read. These
 reads do not register a fresh process-default session; registration waits for
 a stateful operation.
 
+These are the reads that record nothing:
+
+- `next --peek` (MCP `next` with `peek: true`);
+- `ls` in every form, and MCP `search` (CLI `ls --search`);
+- `show` in every form: plain, `--full`, `--notes` and `--notes --gates`,
+  `--history`, `--note LOCATOR`, `--evaluations`, `--evaluation RECORD_ID`,
+  and their continuations;
+- `memories` in every form but one: the listing, a search, a continuation
+  page, `KEY --full` and `KEY --full --revision N`;
+- the host's `work core held` and `work core inspect`.
+
+Each opens the existing store read-only for that one call: it never writes
+database or WAL bytes, needs no write access to those files, and never
+creates or initializes a store. On a path with no store, or a file with no
+schema, it refuses with `store_not_initialized` and `engram init` guidance,
+and it never retries through a writable connection. SQLite may still create
+or map the store's coordination files (the shared-memory `-shm` file, and an
+empty `-wal` file that it removes again when the last connection closes); a
+live store that a writer has open already has both. The one `memories` form that records is the first
+page of an unfiltered listing that carries `--context-generation` (MCP
+`context_generation`): it reads like the others and then records the
+listing for the session through the writable connection (see the peek
+contract below). Where that record cannot be written, the listing is still
+delivered. Every other word, and ordinary `next`, is stateful.
+
 ```bash
 engram work next --peek [--verbose]  # orientation without advancing delivery
 engram work next [--verbose]         # explicitly advance ordinary delivery

@@ -1800,7 +1800,7 @@ test("peek orientation preserves pending context and memory signals on CLI and M
   }
 });
 
-test("peek cold CLI and MCP refuse a missing store without creating it", async (t) => {
+test("peek and the other read words, cold on CLI and MCP, refuse a missing store without creating it", async (t) => {
   const engramHome = fixtureHome("engram-peek-cold-", t);
   const missingHome = join(engramHome, "missing-store");
   let client;
@@ -1824,6 +1824,25 @@ test("peek cold CLI and MCP refuse a missing store without creating it", async (
     assert.equal(mcpError.message, cliError.message);
     assert.deepEqual(mcpError.next, cliError.next);
     assert.equal(existsSync(missingHome), false);
+    // Every other read word opens the store read-only too and refuses alike.
+    const reads = [
+      [["ls"], "ls", {}],
+      [["ls", "--search", "anything"], "search", { query: "anything" }],
+      [["show", "w-000000000001"], "show", { work_ref: "w-000000000001" }],
+      [["show", "w-000000000001", "--full"], "show", { work_ref: "w-000000000001", full: true }],
+      [["show", "w-000000000001", "--notes"], "show", { work_ref: "w-000000000001", notes: true }],
+      [["show", "w-000000000001", "--history"], "show", { work_ref: "w-000000000001", history: true }],
+      [["memories"], "memories", {}],
+      [["memories", "rule"], "memories", { query: "rule" }],
+      [["memories", "a-key", "--full"], "memories", { query: "a-key", full: true }],
+    ];
+    for (const [cliArgs, word, mcpArgs] of reads) {
+      const cold = cliWord(missingHome, "cold-reader", ...cliArgs, "--json");
+      assert.notEqual(cold.status, 0, cliArgs.join(" "));
+      assert.equal(JSON.parse(cold.stderr).error.code, "store_not_initialized", cliArgs.join(" "));
+      structuredError(await client.call(word, mcpArgs), "store_not_initialized");
+      assert.equal(existsSync(missingHome), false, cliArgs.join(" "));
+    }
   } finally {
     try { if (client) await client.close(); }
     finally { removeFixtureHomes(engramHome); }

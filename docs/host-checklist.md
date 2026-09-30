@@ -68,9 +68,14 @@ receipt supplies presence facts, never permission to clear recovery state.
    context, not authentication.
 3. **One MCP child per session.** Start
    `engram mcp --actor-id … --session-id … [--actor-context …]` on stdio; it
-   exposes the fourteen words plus `search`. Ordinary calls reuse a cached
-   store connection; each peek opens a separate transient read-only connection.
-   A failed operation rolls back before the next call.
+   exposes the fourteen words plus `search`. Stateful calls reuse a cached
+   store connection; each read that records nothing (`next --peek`, `ls`,
+   `search`, `show`, and every `memories` form) opens a separate transient
+   read-only connection, needs no write access to the database or WAL file,
+   and refuses `store_not_initialized` instead of creating a store. Only the
+   first page of an unfiltered `memories` listing that carries
+   `context_generation` then records the listing through the cached
+   connection. A failed operation rolls back before the next call.
 4. **Show the agent what is ready.** Run `engram work next --peek` at session
    start and after every context compaction, and inject its text at the next
    dispatched prompt, not an immediate runtime-authored continuation; agents

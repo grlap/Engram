@@ -150,9 +150,21 @@ impl LocalWorkService {
         Ok(store)
     }
 
-    /// Read words validate attribution but do not register a process-default
-    /// session. Its first stateful operation still initializes it in `store_at`.
-    pub(super) fn read_store_at(
+    /// Read words validate attribution, then open the existing store
+    /// read-only for this one call, as peek does: they record nothing, never
+    /// register a process-default session (its first stateful operation still
+    /// does that in `store_at`), and never create or initialize a store; a
+    /// path without one refuses with `store_not_initialized`. A refusal is
+    /// never retried through the writable connection.
+    pub(super) fn read_store_at(&self, now: DateTime<Utc>) -> Result<SqliteStore, StoreError> {
+        self.validate_read_attribution(now)?;
+        SqliteStore::open_existing_read_only(&self.database)
+    }
+
+    /// The cached writable connection for the one advisory record a read
+    /// word makes: the memories listing that carries a context generation.
+    /// Like a read, it does not register a process-default session.
+    pub(super) fn record_store_at(
         &self,
         now: DateTime<Utc>,
     ) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {

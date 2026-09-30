@@ -1220,6 +1220,11 @@ turn boundary (see
 [acceptance evaluation](acceptance-evaluation.md#turns-focus-and-evaluation-timing)).
 Process-default session registration is lazy for these reads, catalog queries,
 and project-memory reads; a subsequent stateful operation registers normally.
+These reads open the existing store read-only for each call, as peek does, so
+they write no database or WAL bytes, need no write access to those files, and
+refuse `store_not_initialized` rather than creating a store; the list of reads
+that record nothing is in the
+[agent read contract](cli-and-mcp.md#using-engram-as-an-agent).
 
 A staged page never blocks anything. Core explicit focus and mutation binding
 still change focus. Changing focus discards the un-delivered

@@ -725,3 +725,150 @@ fn a_new_run_refuses_the_old_cursor_and_keeps_the_earlier_record_readable() {
     assert_eq!(detail.value["evaluation"]["stale_judged"], true);
     assert_eq!(detail.value["evaluation"]["newest"], false);
 }
+
+/// Every show form that reads a run's records, continuations and details
+/// included, succeeds for another session while the store's database and WAL
+/// files cannot be written, and changes neither.
+#[test]
+fn every_record_window_and_detail_reads_where_the_store_files_cannot_be_written() {
+    use crate::verbs::tests::customer_workflow::read_only_reads::UnwritableStoreFiles;
+    let fixture = fixture("read-only", 1);
+    // More records than one evaluations window, and notes too long for one
+    // notes or history window, so that every window has a continuation.
+    let records = (0..17)
+        .map(|index| {
+            let word = if index % 2 == 0 { "fail" } else { "pass" };
+            fixture.evaluate(1, &[word], 4 + index)
+        })
+        .collect::<Vec<_>>();
+    for index in 0..16 {
+        fixture
+            .verbs
+            .note(
+                &NoteInput {
+                    status: false,
+                    work_ref: Some(fixture.work_ref.clone()),
+                    text: format!("long note {index}: {}", "x".repeat(900)),
+                    refs: Vec::new(),
+                },
+                at(40 + index),
+            )
+            .expect("long note");
+    }
+    let reader = AgentVerbs::new(
+        fixture.database.clone(),
+        fixture.project.clone(),
+        "reader".into(),
+        SessionId("reader".into()),
+        None,
+    );
+    let wal = std::path::PathBuf::from(format!("{}-wal", fixture.database.display()));
+    assert!(wal.exists(), "a live store has its WAL file");
+    let _unwritable = UnwritableStoreFiles::deny(&fixture.database);
+    let database_before = std::fs::read(&fixture.database).unwrap();
+    let wal_before = std::fs::read(&wal).unwrap();
+    let show = |form: &str, input: ShowInput| {
+        let receipt = reader
+            .show_records(&fixture.work_ref, &input, at(100))
+            .unwrap_or_else(|error| panic!("{form}: {error}"));
+        assert_eq!(
+            std::fs::read(&fixture.database).unwrap(),
+            database_before,
+            "{form}"
+        );
+        assert_eq!(std::fs::read(&wal).unwrap(), wal_before, "{form}");
+        receipt
+    };
+    let continuation = |receipt: &Receipt, pointer: &str| {
+        receipt
+            .value
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("a continuation at {pointer}: {}", receipt.text()))
+            .to_owned()
+    };
+
+    let evaluations = show(
+        "--evaluations",
+        ShowInput {
+            evaluations: true,
+            ..ShowInput::default()
+        },
+    );
+    let after = continuation(&evaluations, "/evaluations_window/after");
+    show(
+        "--evaluations --after",
+        ShowInput {
+            evaluations: true,
+            after: Some(after),
+            ..ShowInput::default()
+        },
+    );
+    for record in [&records[0], &records[16]] {
+        let detail = show(
+            "--evaluation",
+            ShowInput {
+                evaluation: Some(record.clone()),
+                ..ShowInput::default()
+            },
+        );
+        assert!(detail.text().contains(record.as_str()), "{}", detail.text());
+    }
+
+    for gates in [false, true] {
+        let notes = show(
+            "--notes",
+            ShowInput {
+                notes: true,
+                gates,
+                ..ShowInput::default()
+            },
+        );
+        let after = continuation(&notes, "/notes_window/after");
+        show(
+            "--notes --after",
+            ShowInput {
+                notes: true,
+                gates,
+                after: Some(after),
+                ..ShowInput::default()
+            },
+        );
+        let locator = notes.value["notes"][0]["locator"]
+            .as_str()
+            .expect("note locator")
+            .to_owned();
+        show(
+            "--note",
+            ShowInput {
+                note: Some(locator),
+                ..ShowInput::default()
+            },
+        );
+    }
+
+    let history = show(
+        "--history",
+        ShowInput {
+            history: true,
+            ..ShowInput::default()
+        },
+    );
+    let after = continuation(&history, "/history/window/after");
+    show(
+        "--history --after",
+        ShowInput {
+            history: true,
+            after: Some(after),
+            ..ShowInput::default()
+        },
+    );
+    show(
+        "--full",
+        ShowInput {
+            full: true,
+            ..ShowInput::default()
+        },
+    );
+    show("show", ShowInput::default());
+}

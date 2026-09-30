@@ -312,23 +312,24 @@ fn a_memory_written_after_a_listing_is_announced_without_the_direction() {
 
 #[test]
 fn a_listing_that_cannot_be_recorded_still_lists_and_leaves_the_direction() {
-    let (_home, reader, path, _) = fixture();
-    remember(&reader, "first", 0);
-    let inspect = rusqlite::Connection::open(&path).unwrap();
-    inspect
-        .execute_batch(
-            "CREATE TRIGGER refuse_listing_record BEFORE INSERT ON project_memory_advertisements
-             BEGIN SELECT RAISE(ABORT, 'the record is refused'); END;",
-        )
-        .unwrap();
-
-    let listed = list(&reader, Some("termal-1"), 1);
-    assert_eq!(listed.value["memories"][0]["key"], "first");
-
-    inspect
-        .execute_batch("DROP TRIGGER refuse_listing_record;")
-        .unwrap();
-    assert_directed(&peek(&reader, Some("termal-1"), false, 2), "termal-1");
+    let (_home, writer, path, project) = fixture();
+    remember(&writer, "first", 0);
+    // A session that cannot write the store: the listing is a read and
+    // succeeds; only its record fails, silently.
+    let lister = AgentVerbs::new(
+        path.clone(),
+        project,
+        "lister".into(),
+        SessionId("lister".into()),
+        None,
+    );
+    {
+        let _unwritable = super::read_only_reads::UnwritableStoreFiles::deny(&path);
+        let receipt = list(&lister, Some("termal-1"), 1);
+        assert_eq!(receipt.value["memories"][0]["key"], "first");
+        assert_directed(&peek(&lister, Some("termal-1"), false, 2), "termal-1");
+    }
+    assert_directed(&peek(&lister, Some("termal-1"), false, 3), "termal-1");
 }
 
 #[test]

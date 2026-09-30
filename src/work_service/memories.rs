@@ -128,7 +128,7 @@ impl LocalWorkService {
         context_generation: &str,
         now: DateTime<Utc>,
     ) {
-        let Ok(mut store) = self.read_store_at(now) else {
+        let Ok(mut store) = self.record_store_at(now) else {
             return;
         };
         let _ = store.acknowledge_project_memory_listing(
