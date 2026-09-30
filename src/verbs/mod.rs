@@ -50,6 +50,7 @@ mod next_context;
 mod receipts;
 mod record_windows;
 mod show;
+mod verification_assessment;
 
 #[cfg(test)]
 mod tests;

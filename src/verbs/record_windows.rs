@@ -67,9 +67,8 @@ impl AgentVerbs {
         }
         if (input.notes && input.history)
             || (input.gates && !input.notes)
-            || (input.note.is_some()
-                && (input.notes || input.history || input.after.is_some() || input.full))
-            || (input.after.is_some() && !input.notes && !input.history)
+            || (input.note.is_some() && (input.notes || input.history || input.full))
+            || (input.after.is_some() && !input.notes && !input.history && input.note.is_none())
             || (input.full
                 && (input.notes
                     || input.history
@@ -79,7 +78,7 @@ impl AgentVerbs {
         {
             return Err(VerbError::at(
                 StoreError::InvalidWork(
-                    "choose --notes [--gates] or --history with optional --after, --note LOCATOR alone, or --full"
+                    "choose --notes [--gates] or --history with optional --after, --note LOCATOR with optional --after, or --full"
                         .into(),
                 ),
                 work_ref,
@@ -93,21 +92,75 @@ impl AgentVerbs {
             return Ok(full_contract_receipt(&contract));
         }
         if let Some(locator) = &input.note {
-            let (work_ref, row) = self
+            let (work_ref, row, assessment) = self
                 .service
-                .work_note_detail(work_ref, locator, now)
-                .map_err(|error| VerbError::at(error, work_ref))?;
-            let value = row_value(&row, false, &work_ref, self.service.display_identity());
+                .work_note_detail(work_ref, locator, input.after.as_deref(), now)
+                .map_err(|error| match error {
+                    // A refused continuation starts again from the detail.
+                    StoreError::WorkShowCursorInvalid { .. } => VerbError::for_listing(
+                        error,
+                        &format!(
+                            "engram work show {} --note {}",
+                            safe_reference_argument(work_ref),
+                            safe_reference_argument(locator)
+                        ),
+                    ),
+                    error => VerbError::at(error, work_ref),
+                })?;
+            let continuation = assessment
+                .as_ref()
+                .and_then(|page| page.continuation.as_ref())
+                .map(|token| {
+                    format!(
+                        "engram work show {work_ref} --note {} --after {token}",
+                        row.locator
+                    )
+                });
+            // The continuation names the record's full id, so it stays on the
+            // assessment block, like a window row's detail command, not in `next`.
+            let next = vec![format!("engram work show {work_ref} --notes")];
+            let assessment_value = assessment
+                .as_ref()
+                .map(|page| super::verification_assessment::value(page, continuation.as_deref()));
+            // A continuation page carries the assessment alone; the note itself
+            // was on the first page. The service refuses `after` on any other
+            // note, so a continued note always has its assessment.
+            if let (Some(_), Some(page)) = (&input.after, &assessment) {
+                let mut lines = vec![format!("note {}: assessment continued", row.locator)];
+                super::verification_assessment::append_lines(
+                    &mut lines,
+                    page,
+                    continuation.as_deref(),
+                );
+                return Ok(Receipt::assemble(
+                    lines,
+                    Guidance {
+                        reminders: Vec::new(),
+                        next,
+                    },
+                    json!({ "work_ref": work_ref, "locator": row.locator, "assessment": assessment_value }),
+                    false,
+                ));
+            }
+            let mut value = row_value(&row, false, &work_ref, self.service.display_identity());
             let mut lines = vec![format!(
                 "note {}: {} UTF-8 body bytes (complete detail)",
                 row.locator, row.body_bytes
             )];
             append_row_lines(&mut lines, &value, row.family);
+            if let (Some(page), Some(assessment)) = (&assessment, assessment_value) {
+                super::verification_assessment::append_lines(
+                    &mut lines,
+                    page,
+                    continuation.as_deref(),
+                );
+                value["assessment"] = assessment;
+            }
             return Ok(Receipt::assemble(
                 lines,
                 Guidance {
                     reminders: Vec::new(),
-                    next: vec![format!("engram work show {work_ref} --notes")],
+                    next,
                 },
                 json!({ "work_ref": work_ref, "note": value }),
                 false,

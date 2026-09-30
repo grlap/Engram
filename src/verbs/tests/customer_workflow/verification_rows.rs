@@ -7,7 +7,7 @@ use crate::storage::{HostCheck, verification_note_fixture};
 
 /// Every row of every user table, in a stable order: a read must leave the
 /// whole store as it was, not only its row counts.
-fn store_snapshot(database: &std::path::Path) -> Vec<(String, Vec<String>)> {
+pub(super) fn store_snapshot(database: &std::path::Path) -> Vec<(String, Vec<String>)> {
     let connection = rusqlite::Connection::open(database).expect("open");
     let tables = connection
         .prepare(

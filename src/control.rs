@@ -20,7 +20,7 @@ use crate::{
         TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot,
         TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState, VerificationEvidence,
         VerificationEvidenceMismatch, VerificationRequirement, VerificationResult,
-        WorkEvidenceKind, WorkObligation, WorkObligationId,
+        WorkEvidenceKind, WorkObligation,
     },
     storage::StoreError,
 };
@@ -293,10 +293,9 @@ pub fn evaluate_obligation_rules(
         .collect()
 }
 
-/// Complete immutable inputs for resolving open obligations with one evidence
-/// candidate at an exact dense run-feed cut.
+/// Complete immutable inputs for deciding what one evidence candidate does to
+/// an obligation at an exact dense run-feed cut.
 pub struct ObligationSatisfactionInput<'a> {
-    pub open_obligations: &'a [WorkObligation],
     pub evidence: &'a VerificationEvidence,
     pub producer: &'a ExecutionObservation,
     /// The newest source mutation at the cut with its run-feed position, or
@@ -312,59 +311,89 @@ pub struct ObligationSatisfactionInput<'a> {
     pub evaluated_cut: &'a crate::domain::FeedPosition,
 }
 
-/// Returns the open definitions satisfied by one exact verification fact.
-///
-/// Storage owns snapshotting and append-only persistence. This function owns
-/// the deterministic rule and anti-stale decision only.
+/// Why an obligation was left out before the typed matcher ran. Control
+/// decides the first three from positions and source context; storage adds the
+/// two it reads from the store: an obligation already closed at the cut, and one
+/// its named root holds as foreign or displaced.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObligationSkip {
+    /// Bound to another run or feed than the evidence.
+    OtherRun,
+    /// Not yet defined when the check ran: opened at or after the record, or,
+    /// under a named root, by a change the check did not run after.
+    NotYetDefined,
+    /// No source mutation, root sighting or binding for the check to account for.
+    NoSourceContext,
+    /// Already resolved at the cut.
+    AlreadyClosed,
+    /// Held by the named root as a foreign or displaced change.
+    ForeignOrDisplaced,
+}
+
+/// What one verification fact does to one obligation at one cut.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObligationAssessment {
+    /// The record satisfies the obligation.
+    Matches,
+    /// The typed matcher's first mismatch.
+    Mismatch(VerificationEvidenceMismatch),
+    /// Left out before matching.
+    Skipped(ObligationSkip),
+}
+
+/// The deterministic rule and anti-stale decision for one obligation: the
+/// position and source-context prefilter, then the typed matcher. The
+/// satisfaction path and the reads that explain it share this decision.
 #[must_use]
-pub fn evaluate_obligation_satisfaction(
+pub fn assess_obligation_satisfaction(
     input: &ObligationSatisfactionInput<'_>,
-) -> Vec<WorkObligationId> {
+    obligation: &WorkObligation,
+) -> ObligationAssessment {
     let expected_feed = crate::domain::FeedId::RunExecution(input.evidence.binding.run_id);
     if input.evaluated_cut.feed != expected_feed
-        || input.evidence_position > input.evaluated_cut.position
+        || obligation.run_id != input.evidence.binding.run_id
+        || obligation.trigger_position.feed != expected_feed
     {
-        return Vec::new();
+        return ObligationAssessment::Skipped(ObligationSkip::OtherRun);
     }
-    input
-        .open_obligations
-        .iter()
-        .filter(|obligation| {
-            obligation.run_id == input.evidence.binding.run_id
-                && obligation.trigger_position.feed == expected_feed
-                && obligation.trigger_position.position <= input.evaluated_cut.position
-                && input.evidence_position > obligation.trigger_position.position
-                // Under a named root a check accounts only for a source change
-                // it ran after, wherever that change was recorded.
-                && (input.named_root.is_none()
-                    || acceptance_binding_criterion(&obligation.rule).is_some()
-                    || input
-                        .producer_position
-                        .is_none_or(|producer| producer > obligation.trigger_position.position))
-                // Under a named root a check of the root's newest sighting
-                // stands for the source as it is, so it can account for a
-                // change the root holds from before its binding too.
-                && (input.latest_mutation.is_some()
-                    || input.named_root.is_some_and(|root| {
-                        root.unknown_change_position.is_some() || root.latest_sighting.is_some()
-                    })
-                    || acceptance_binding_criterion(&obligation.rule).is_some())
+    if input.evidence_position > input.evaluated_cut.position
+        || obligation.trigger_position.position > input.evaluated_cut.position
+        || input.evidence_position <= obligation.trigger_position.position
+        // Under a named root a check accounts only for a source change it ran
+        // after, wherever that change was recorded.
+        || (input.named_root.is_some()
+            && acceptance_binding_criterion(&obligation.rule).is_none()
+            && input
+                .producer_position
+                .is_some_and(|producer| producer <= obligation.trigger_position.position))
+    {
+        return ObligationAssessment::Skipped(ObligationSkip::NotYetDefined);
+    }
+    // Under a named root a check of the root's newest sighting stands for the
+    // source as it is, so it can account for a change the root holds from
+    // before its binding too.
+    if input.latest_mutation.is_none()
+        && !input.named_root.is_some_and(|root| {
+            root.unknown_change_position.is_some() || root.latest_sighting.is_some()
         })
-        .filter(|obligation| {
-            match_verification_evidence(&VerificationEvidenceMatchInput {
-                candidate_kind: WorkEvidenceKind::Verification,
-                evidence: Some(input.evidence),
-                producer: Some(input.producer),
-                latest_mutation: input.latest_mutation,
-                named_root: input.named_root,
-                evidence_position: input.evidence_position,
-                producer_position: input.producer_position,
-                requirement: &obligation.requirement,
-            })
-            .is_ok()
-        })
-        .map(|obligation| obligation.obligation_id)
-        .collect()
+        && acceptance_binding_criterion(&obligation.rule).is_none()
+    {
+        return ObligationAssessment::Skipped(ObligationSkip::NoSourceContext);
+    }
+    match match_verification_evidence(&VerificationEvidenceMatchInput {
+        candidate_kind: WorkEvidenceKind::Verification,
+        evidence: Some(input.evidence),
+        producer: Some(input.producer),
+        latest_mutation: input.latest_mutation,
+        named_root: input.named_root,
+        evidence_position: input.evidence_position,
+        producer_position: input.producer_position,
+        requirement: &obligation.requirement,
+    }) {
+        Ok(()) => ObligationAssessment::Matches,
+        Err(mismatch) => ObligationAssessment::Mismatch(mismatch),
+    }
 }
 
 /// Minimum host assurance that may mediate one material effect class.
@@ -1491,7 +1520,7 @@ mod tests {
             Err(VerificationEvidenceMismatch::WrongKind)
         );
 
-        let mut later_mutation = latest_mutation;
+        let mut later_mutation = latest_mutation.clone();
         later_mutation
             .source_basis
             .as_mut()
@@ -1510,6 +1539,86 @@ mod tests {
         assert_eq!(
             match_verification_evidence(&stale),
             Err(VerificationEvidenceMismatch::StaleSourceRevision)
+        );
+
+        // The decision around the matcher: positions and source context
+        // first, each named, then the matcher's first mismatch.
+        let run_feed = |position| crate::domain::FeedPosition {
+            feed: crate::domain::FeedId::RunExecution(run_id),
+            position,
+        };
+        let obligation = crate::domain::WorkObligation {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            obligation_id: crate::domain::WorkObligationId(uuid::Uuid::now_v7()),
+            project_id: evidence.project_id.clone(),
+            root_execution_id: evidence.binding.root_execution_id,
+            root_id: evidence.binding.work_id,
+            work_id: evidence.binding.work_id,
+            run_id,
+            work_revision: 3,
+            rule_set: hash("obligation rule set"),
+            rule: rules[0].0.clone(),
+            triggering_observation: hash("source mutation"),
+            trigger_position: run_feed(1),
+            requirement: requirement.clone(),
+            opened_at: mutation_time,
+        };
+        let cut = run_feed(5);
+        let at_cut = ObligationSatisfactionInput {
+            evidence: &evidence,
+            producer: &producer,
+            latest_mutation: Some((&latest_mutation, 1)),
+            named_root: None,
+            evidence_position: 4,
+            producer_position: None,
+            evaluated_cut: &cut,
+        };
+        let assess = |input: &ObligationSatisfactionInput<'_>, obligation| {
+            assess_obligation_satisfaction(input, obligation)
+        };
+        assert_eq!(assess(&at_cut, &obligation), ObligationAssessment::Matches);
+        let other_feed = crate::domain::FeedPosition {
+            feed: crate::domain::FeedId::RunExecution(WorkRunId::new()),
+            position: 5,
+        };
+        assert_eq!(
+            assess(
+                &ObligationSatisfactionInput {
+                    evaluated_cut: &other_feed,
+                    ..at_cut
+                },
+                &obligation
+            ),
+            ObligationAssessment::Skipped(ObligationSkip::OtherRun)
+        );
+        let later = crate::domain::WorkObligation {
+            trigger_position: run_feed(6),
+            ..obligation.clone()
+        };
+        assert_eq!(
+            assess(&at_cut, &later),
+            ObligationAssessment::Skipped(ObligationSkip::NotYetDefined)
+        );
+        assert_eq!(
+            assess(
+                &ObligationSatisfactionInput {
+                    latest_mutation: None,
+                    ..at_cut
+                },
+                &obligation
+            ),
+            ObligationAssessment::Skipped(ObligationSkip::NoSourceContext),
+            "a rule's obligation with no mutation, sighting or binding at the cut"
+        );
+        assert_eq!(
+            assess(
+                &ObligationSatisfactionInput {
+                    latest_mutation: Some((&later_mutation, 3)),
+                    ..at_cut
+                },
+                &obligation
+            ),
+            ObligationAssessment::Mismatch(VerificationEvidenceMismatch::StaleSourceRevision)
         );
     }
 

@@ -24,8 +24,8 @@ mod test_support;
 pub use canonical::{CanonicalObject, ObjectId};
 pub use control::{
     ObligationSatisfactionInput, VerificationEvidenceMatchInput, builtin_obligation_rule_set,
-    evaluate_obligation_rules, evaluate_obligation_satisfaction, evaluate_turn_begin,
-    evaluate_turn_checkpoint, match_verification_evidence, observe_turn,
+    evaluate_obligation_rules, evaluate_turn_begin, evaluate_turn_checkpoint,
+    match_verification_evidence, observe_turn,
 };
 pub use domain::{
     AcceptWorkHandoffRequest, AcceptanceBasis, AcceptanceEvaluation, AcceptanceEvaluationMode,

@@ -2005,6 +2005,7 @@ fn pinned_store(suite: &str) -> SqliteStore {
     store
 }
 
+mod assessment;
 mod operator_guidance;
 mod stock_reminder;
 

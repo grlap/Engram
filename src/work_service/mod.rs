@@ -100,7 +100,7 @@ pub(crate) use evaluation_windows::{
 };
 pub use operations::*;
 pub(crate) use projection::*;
-pub(crate) use record_windows::{WorkRecordRow, WorkRecordWindow};
+pub(crate) use record_windows::{VerificationAssessmentPage, WorkRecordRow, WorkRecordWindow};
 pub use views::*;
 
 /// Ceiling for bounded agent work responses. Explicit single-note detail and

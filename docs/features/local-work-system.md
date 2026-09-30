@@ -1421,6 +1421,29 @@ limit and a carry-bulk-as-reference remedy. Existing larger notes remain
 readable; canonical read validation does not impose the new write limit.
 See the [CLI/MCP contract](cli-and-mcp.md#using-engram-as-an-agent).
 
+The detail of a native verification record also assesses it against every
+obligation of its check kind on its run. The assessment is computed when read,
+at the record's own run-feed position: the claim's named root and generation,
+the latest source mutation, the root's newest sighting and each obligation's
+state are those of that position, the same eligibility decision and typed
+matcher that satisfaction ran then. It is labelled "reconstructed at record
+position N under the current matching rules", since the rules may have changed
+since the record was stored and no rejection was recorded. Each obligation
+reads as matching, as not matching with the matcher's first mismatch (check
+kind, wrong run, stale source revision, not after the mutation, fingerprint,
+result not passed, invalid time or producer), or as left out before matching
+(not yet defined for the record, already closed, foreign or displaced
+workspace, no usable source context), which gets no matcher code. Apart from
+it, each row gives the obligation's recorded end as stored: open, satisfied by
+this record or another, waived or displaced. Rows name the rule and version,
+check kind, whether the rule pins its check, the criterion a binding rule
+requires and the run position that opened the obligation, never a raw id. A
+page shows at most eight, with exact total, shown, earlier and omitted counts;
+`show REF --note LOCATOR --after CURSOR` (MCP `note` with `after`) continues
+it, bound to the item, run, record, its position and the run feed's head, and
+refuses once the run has moved or for any other note. Ordinary `next`, `show`
+and note windows carry no assessment. The read changes nothing.
+
 The six mutation words `add`, `claim`, `gate`, `evaluate`, `note`, and `done` use one
 verbs-owned compact receipt: operation facts, one ref/title/lifecycle/revision
 summary, relative live holder/expiry, actionable obligation counts, source

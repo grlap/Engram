@@ -135,8 +135,10 @@ struct ShowArgs {
     /// Newest history window, using the same bounded continuation contract.
     history: Option<bool>,
     /// Item/kind-bound continuation; readable query context, not confidential.
+    /// With note, continues a verification record's obligation assessment.
     after: Option<String>,
     /// Complete note body beyond the window ceiling: record id or `RECORD_ID:INDEX`.
+    /// A verification record also shows its reconstructed obligation assessment.
     note: Option<String>,
     /// Complete stored title, outcome, and acceptance; exclusive of windows.
     full: Option<bool>,
@@ -1187,6 +1189,62 @@ fn invalid_argument(field: &str, message: &str) -> CallToolResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The MCP `show` tool pages a verification record's obligation
+    /// assessment: `note` gives the first eight, and `note` with `after`
+    /// the rest.
+    #[test]
+    fn show_pages_a_verification_records_assessment_over_mcp() {
+        let directory = crate::test_support::temp_home().expect("temp home");
+        let database = directory.path().join("work.sqlite3");
+        let (work_ref, records) = crate::storage::assessed_verification_fixture(
+            &database,
+            "mcp-assessment",
+            "runner",
+            9,
+            1,
+        );
+        let record = &records[0];
+        let server = McpServer::new_with_actor_context(
+            database,
+            ProjectId("mcp-assessment".into()),
+            "runner".into(),
+            SessionId("runner".into()),
+            None,
+            None,
+        );
+        let args = |after: Option<String>| ShowArgs {
+            work_ref: work_ref.clone(),
+            notes: None,
+            gates: None,
+            history: None,
+            after,
+            note: Some(record.as_str().to_owned()),
+            full: None,
+            evaluations: None,
+            evaluation: None,
+        };
+        let detail = server
+            .show(Parameters(args(None)))
+            .structured_content
+            .expect("structured detail");
+        let block = &detail["note"]["assessment"];
+        assert_eq!(
+            (block["total"].as_u64(), block["shown"].as_u64()),
+            (Some(10), Some(8))
+        );
+        let token = block["continuation"]
+            .as_str()
+            .and_then(|command| command.split_once(" --after "))
+            .map(|(_, token)| token.to_owned())
+            .expect("continuation");
+        let rest = server
+            .show(Parameters(args(Some(token))))
+            .structured_content
+            .expect("structured continuation");
+        assert_eq!(rest["assessment"]["shown"], 2, "{rest}");
+        assert_eq!(rest["assessment"]["earlier"], 8);
+    }
 
     /// The MCP `show` tool gives a native verification record's typed facts,
     /// in the notes window and in the record's detail, beside its summary.

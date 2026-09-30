@@ -192,12 +192,30 @@ impl LocalWorkService {
 
     /// Complete immutable note detail; deliberately no window byte limit.
     /// Record-id prefixes resolve only within this item's note membership.
+    /// A native verification record also carries a page of its reconstructed
+    /// obligation assessment; `after` continues that page and is refused for
+    /// any other note.
     pub(crate) fn work_note_detail(
         &self,
         work_ref: &str,
         locator: &str,
+        after: Option<&str>,
         now: DateTime<Utc>,
-    ) -> Result<(String, WorkRecordRow), StoreError> {
+    ) -> Result<(String, WorkRecordRow, Option<VerificationAssessmentPage>), StoreError> {
+        let cursor = after
+            .map(|token| {
+                super::continuation::decode::<AssessmentCursor>("v1-", token)
+                    .ok_or_else(|| invalid("invalid assessment cursor; read the note detail again"))
+            })
+            .transpose()?;
+        if cursor
+            .as_ref()
+            .is_some_and(|cursor| cursor.project != self.project_id)
+        {
+            return Err(invalid(
+                "continuation belongs to another item, project or record",
+            ));
+        }
         let (prefix, member) = locator
             .split_once(':')
             .map_or((locator, None), |(prefix, member)| (prefix, Some(member)));
@@ -241,18 +259,155 @@ impl LocalWorkService {
                     matches.iter().map(|row| row.locator.clone()).collect(),
                 ));
             }
-            Ok((
-                item.short_ref.clone(),
-                project_record(
-                    store,
+            let row = project_record(
+                store,
+                &self.project_id,
+                item.work_id,
+                matches[0],
+                WorkRecordKind::NotesWithGates,
+            )?;
+            if cursor.as_ref().is_some_and(|cursor| {
+                cursor.work != item.work_id || cursor.record != row.address.hash
+            }) {
+                return Err(invalid(
+                    "continuation belongs to another item, project or record",
+                ));
+            }
+            let assessment = if row.verification.is_some() && row.address.member.is_none() {
+                store.verification_assessment(
+                    item.work_id,
+                    &row.address.hash,
+                    cursor
+                        .as_ref()
+                        .map(|cursor| crate::storage::AssessmentBoundary {
+                            trigger_position: cursor.trigger_position,
+                            obligation_id: cursor.obligation,
+                        }),
+                    MAX_ASSESSMENT_ROWS,
+                )?
+            } else {
+                None
+            };
+            let page = match (assessment, cursor) {
+                // A cursor is issued only for a verification record and is
+                // bound to it, so real input meets the record check above;
+                // this refuses a cursor that names a note with no assessment.
+                (None, Some(_)) => {
+                    return Err(invalid(
+                        "only a verification record's assessment continues; drop --after",
+                    ));
+                }
+                (None, None) => None,
+                (Some(assessment), cursor) => Some(assessment_page(
                     &self.project_id,
                     item.work_id,
-                    matches[0],
-                    WorkRecordKind::NotesWithGates,
-                )?,
-            ))
+                    &row.address.hash,
+                    assessment,
+                    cursor.as_ref(),
+                )?),
+            };
+            Ok((item.short_ref.clone(), row, page))
         })
     }
+}
+
+/// Obligation assessments shown per page of a verification record's detail.
+pub(crate) const MAX_ASSESSMENT_ROWS: usize = 8;
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AssessmentCursor {
+    project: ProjectId,
+    work: WorkId,
+    run: WorkRunId,
+    record: ObjectId,
+    record_position: i64,
+    /// The run feed's head when the page was read: any append since, such as
+    /// a new obligation or a resolution, makes the continuation stale.
+    head: i64,
+    total: usize,
+    /// The last obligation shown, in trigger-position and id order.
+    trigger_position: i64,
+    obligation: crate::domain::WorkObligationId,
+}
+
+/// One page of a verification record's reconstructed assessment: exact
+/// counts over every candidate, the rows of this page, and the continuation
+/// to the rest.
+pub(crate) struct VerificationAssessmentPage {
+    pub record_position: i64,
+    pub cut_position: i64,
+    pub total: usize,
+    /// Candidates shown on earlier pages.
+    pub earlier: usize,
+    pub rows: Vec<crate::storage::VerificationObligationAssessment>,
+    pub continuation: Option<String>,
+}
+
+impl VerificationAssessmentPage {
+    /// Candidates not on this page, earlier pages included.
+    pub(crate) fn omitted(&self) -> usize {
+        self.total - self.rows.len()
+    }
+}
+
+fn assessment_page(
+    project: &ProjectId,
+    work: WorkId,
+    record: &ObjectId,
+    assessment: crate::storage::VerificationAssessment,
+    cursor: Option<&AssessmentCursor>,
+) -> Result<VerificationAssessmentPage, StoreError> {
+    let total = assessment.total;
+    if let Some(cursor) = cursor {
+        if cursor.run != assessment.run_id {
+            return Err(invalid(
+                "continuation belongs to another item, project or record",
+            ));
+        }
+        if cursor.record_position != assessment.record_position
+            || cursor.head != assessment.head_position
+            || cursor.total != total
+        {
+            return Err(invalid(
+                "the run changed since this page was read; read the note detail again",
+            ));
+        }
+        if !assessment.boundary_found {
+            return Err(invalid(
+                "continuation boundary no longer matches this record",
+            ));
+        }
+    }
+    let shown = assessment.earlier + assessment.rows.len();
+    let continuation = match assessment.rows.last() {
+        Some(last) if shown < total => Some(
+            super::continuation::encode(
+                "v1-",
+                &AssessmentCursor {
+                    project: project.clone(),
+                    work,
+                    run: assessment.run_id,
+                    record: record.clone(),
+                    record_position: assessment.record_position,
+                    head: assessment.head_position,
+                    total,
+                    trigger_position: last.trigger_position,
+                    obligation: last.obligation_id,
+                },
+            )
+            .ok_or_else(|| invalid("assessment continuation exceeds its budget"))?,
+        ),
+        _ => None,
+    };
+    Ok(VerificationAssessmentPage {
+        record_position: assessment.record_position,
+        cut_position: assessment.cut_position,
+        total,
+        earlier: assessment.earlier,
+        rows: assessment.rows,
+        continuation,
+    })
 }
 
 fn project_record(

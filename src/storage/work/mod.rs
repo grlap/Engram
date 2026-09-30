@@ -15,6 +15,10 @@ mod child_resolution;
 pub(crate) use child_resolution::RequiredChildSuccessor;
 mod completion;
 pub use completion::RecordedLanding;
+pub(crate) use completion::{
+    AssessmentBoundary, RecordedObligationEnd, VerificationAssessment,
+    VerificationObligationAssessment,
+};
 mod discovery;
 mod execution;
 mod feeds;

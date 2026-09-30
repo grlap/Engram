@@ -64,7 +64,9 @@ mod test_support;
 #[cfg(test)]
 pub(crate) use work::test_support::source_mutation_from_basis;
 #[cfg(test)]
-pub(crate) use work::test_support::{HostCheck, verification_note_fixture};
+pub(crate) use work::test_support::{
+    HostCheck, assessed_verification_fixture, verification_note_fixture,
+};
 
 #[cfg(test)]
 pub(crate) mod concurrent_commit;
@@ -82,6 +84,10 @@ use task_memory::{fts_query, normalize_project_memory_query};
 pub(crate) use work::RequiredChildSuccessor;
 pub(crate) use work::SelectedStatusNote;
 pub(crate) use work::WorkDiscoveryRow;
+pub(crate) use work::{
+    AssessmentBoundary, RecordedObligationEnd, VerificationAssessment,
+    VerificationObligationAssessment,
+};
 pub(crate) use work::{VerificationFacts, WorkNoteRecord};
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
 pub(crate) use work::{

@@ -546,6 +546,16 @@ Rules that matter:
   reference lines are framed as data in text; JSON preserves exact content.
   These existing canonical locators are read-navigation exceptions, not
   execution tokens. No per-note identity is invented for inherited members.
+- For a native verification record, `--note LOCATOR` adds `assessment`: each
+  obligation of the record's check kind on its run, reconstructed at the
+  record's own run-feed position under the current matching rules
+  (`label`), as `status` `matches`, `mismatch` with the matcher's first
+  `mismatch` code, or `left_out` with its reason, beside the obligation's
+  `recorded` end as stored. At most eight rows are shown, with exact `total`,
+  `shown`, `earlier` and `omitted` counts; its `continuation` command,
+  `show REF --note LOCATOR --after CURSOR` (MCP `note` with `after`), shows the
+  rest and refuses once the run has moved on. See the
+  [local work system](local-work-system.md) for what each part means.
 - Newly written note bodies are limited to 64 KiB of normalized UTF-8 text.
   `work_note_too_large` reports actual bytes, limit and the remedy to carry
   bulk content as a reference. Initial-note batches remain atomic. Existing

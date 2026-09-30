@@ -419,6 +419,61 @@ pub(crate) fn verification_note_fixture(
     (work.short_ref, verification, claim.claim_id.0.to_string())
 }
 
+/// A file store at `database` holding one item whose first criterion binds a
+/// test, claimed by `holder`, with `changes` source changes and then
+/// `records` passing tests of the newest revision. Returns the item's short
+/// ref and the verifications' record ids, oldest first.
+pub(crate) fn assessed_verification_fixture(
+    database: &std::path::Path,
+    project: &str,
+    holder: &str,
+    changes: usize,
+    records: usize,
+) -> (String, Vec<ObjectId>) {
+    let mut store = SqliteStore::open(database).expect("store");
+    let mut request = root_request(project, "assessed-verification", 1);
+    request.acceptance = vec!["run the tests".into()];
+    request.acceptance_bindings = vec![crate::domain::AcceptanceBinding {
+        criterion: 1,
+        requirement: crate::domain::VerificationRequirement {
+            check_kind: crate::domain::VerificationKind::Test,
+            check_fingerprint: None,
+        },
+    }];
+    let work = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("work");
+    let claim = claim(&mut store, &work, holder, "assessed-claim", 2, 36_000);
+    let second = |index: usize| 3 + i64::try_from(index).expect("small index");
+    for index in 0..changes {
+        source_mutation(
+            &mut store,
+            &work,
+            &claim,
+            holder,
+            &format!("change-{index}"),
+            second(index),
+            Some(&format!("R{index}")),
+        );
+    }
+    let verifications = (0..records)
+        .map(|index| {
+            host_verification_of(
+                &mut store,
+                &work,
+                &claim,
+                holder,
+                &format!("suite-{index}"),
+                crate::domain::VerificationKind::Test,
+                crate::domain::VerificationResult::Passed,
+                second(changes + index),
+                &format!("R{}", changes.saturating_sub(1)),
+            )
+        })
+        .collect();
+    (work.short_ref, verifications)
+}
+
 /// Records a host check, its environment and its verification at `second`.
 pub(super) fn host_verification_with_outcome(
     store: &mut SqliteStore,

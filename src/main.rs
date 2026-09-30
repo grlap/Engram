@@ -566,8 +566,8 @@ enum WorkCommand {
         /// Newest history window, rendered chronologically.
         #[arg(long, conflicts_with = "note")]
         history: bool,
-        /// Item-bound continuation from the same note, history or evaluations window.
-        #[arg(long, conflicts_with = "note")]
+        /// Item-bound continuation from the same note, history or evaluations window, or of a verification record's assessment with --note.
+        #[arg(long)]
         after: Option<String>,
         /// Complete note body: record-id prefix (8+ hex), or `RECORD_ID:INDEX`.
         #[arg(long)]

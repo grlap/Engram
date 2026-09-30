@@ -62,6 +62,11 @@ use crate::{
     memory::Redactor,
 };
 
+mod assessment;
+pub(crate) use assessment::{
+    AssessmentBoundary, RecordedObligationEnd, VerificationAssessment,
+    VerificationObligationAssessment,
+};
 mod child_barriers;
 mod child_resolutions;
 mod landings;
@@ -74,8 +79,7 @@ mod root_binding;
 
 use named_root::{
     NamedRootContext, displaced_source_changes_on, displaces_on, named_root_context_on,
-    obligation_matches_named_root, refuse_unresolved_named_root_changes_on,
-    resolve_source_change_obligations_on,
+    refuse_unresolved_named_root_changes_on, resolve_source_change_obligations_on,
 };
 
 pub(super) use root_binding::{validate_seal_root_event, validate_stored_seal_root};
@@ -935,48 +939,56 @@ pub(super) fn validate_completion_seal_obligation_basis_on(
     Ok(())
 }
 
+/// The projection columns [`obligation_projection_row`] reads, in its order.
+const OBLIGATION_COLUMNS: &str = "obligation_id, definition_id, project_id, root_execution_id,
+    root_id, work_id, run_id, work_revision, rule_set_id, rule_id, rule_version,
+    triggering_observation_id, trigger_position, check_kind,
+    check_fingerprint, state, resolution_id, resolution_kind,
+    evidence_id, opened_at_ms, resolved_at_ms";
+
+fn obligation_projection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObligationProjectionRow> {
+    Ok(ObligationProjectionRow {
+        obligation_id: row.get(0)?,
+        definition_id: row.get(1)?,
+        project_id: row.get(2)?,
+        root_execution_id: row.get(3)?,
+        root_id: row.get(4)?,
+        work_id: row.get(5)?,
+        run_id: row.get(6)?,
+        work_revision: row.get(7)?,
+        rule_set_id: row.get(8)?,
+        rule_id: row.get(9)?,
+        rule_version: row.get(10)?,
+        triggering_observation_id: row.get(11)?,
+        trigger_position: row.get(12)?,
+        check_kind: row.get(13)?,
+        check_fingerprint: row.get(14)?,
+        state: row.get(15)?,
+        resolution_id: row.get(16)?,
+        resolution_kind: row.get(17)?,
+        evidence_id: row.get(18)?,
+        opened_at_ms: row.get(19)?,
+        resolved_at_ms: row.get(20)?,
+    })
+}
+
 pub(super) fn load_work_obligation_records_on(
     connection: &Connection,
     run_id: WorkRunId,
     state: Option<WorkObligationState>,
 ) -> Result<Vec<WorkObligationRecord>, StoreError> {
     let state = state.map(encode_state).transpose()?;
-    let mut statement = connection.prepare(
-        "SELECT obligation_id, definition_id, project_id, root_execution_id,
-                root_id, work_id, run_id, work_revision, rule_set_id, rule_id, rule_version,
-                triggering_observation_id, trigger_position, check_kind,
-                check_fingerprint, state, resolution_id, resolution_kind,
-                evidence_id, opened_at_ms, resolved_at_ms
+    let mut statement = connection.prepare(&format!(
+        "SELECT {OBLIGATION_COLUMNS}
          FROM work_run_obligations
          WHERE run_id = ?1 AND (?2 IS NULL OR state = ?2)
-         ORDER BY trigger_position, obligation_id",
-    )?;
+         ORDER BY trigger_position, obligation_id"
+    ))?;
     let rows = statement
-        .query_map(params![run_id.0.to_string(), state], |row| {
-            Ok(ObligationProjectionRow {
-                obligation_id: row.get(0)?,
-                definition_id: row.get(1)?,
-                project_id: row.get(2)?,
-                root_execution_id: row.get(3)?,
-                root_id: row.get(4)?,
-                work_id: row.get(5)?,
-                run_id: row.get(6)?,
-                work_revision: row.get(7)?,
-                rule_set_id: row.get(8)?,
-                rule_id: row.get(9)?,
-                rule_version: row.get(10)?,
-                triggering_observation_id: row.get(11)?,
-                trigger_position: row.get(12)?,
-                check_kind: row.get(13)?,
-                check_fingerprint: row.get(14)?,
-                state: row.get(15)?,
-                resolution_id: row.get(16)?,
-                resolution_kind: row.get(17)?,
-                evidence_id: row.get(18)?,
-                opened_at_ms: row.get(19)?,
-                resolved_at_ms: row.get(20)?,
-            })
-        })?
+        .query_map(
+            params![run_id.0.to_string(), state],
+            obligation_projection_row,
+        )?
         .collect::<Result<Vec<_>, _>>()?;
     let records = rows
         .into_iter()
@@ -1299,56 +1311,28 @@ fn validate_obligation_resolution_projection(
                 evidence,
                 "verification_evidence",
             )?;
-            let producer = load_typed_work_object::<ExecutionObservation>(
+            let at_cut = assessment::VerificationAtCut::load_on(
                 connection,
-                &verification.producer_observation,
-                "execution_observation",
+                verification,
+                evidence,
+                evaluated_cut.clone(),
             )?;
-            let evidence_position =
-                run_feed_position_for_object_on(connection, obligation.run_id, evidence)?;
-            let root = named_root_context_on(
-                connection,
-                obligation.run_id,
-                verification.binding.claim_id,
-                evaluated_cut.position,
-            )?;
-            if !obligation_matches_named_root(connection, obligation, root.as_ref())? {
-                return Err(StoreError::InvalidWorkProjection(format!(
-                    "satisfied obligation {} belongs to a foreign workspace",
-                    obligation.obligation_id.0
-                )));
-            }
-            let latest = if let Some(root) = &root {
-                root.latest_mutation.clone()
-            } else {
-                latest_source_mutation_on(connection, obligation.run_id, evaluated_cut.position)?
-            };
-            let satisfied = crate::control::evaluate_obligation_satisfaction(
-                &crate::control::ObligationSatisfactionInput {
-                    open_obligations: std::slice::from_ref(obligation),
-                    evidence: &verification,
-                    producer: &producer,
-                    latest_mutation: latest
-                        .as_ref()
-                        .map(|(position, mutation)| (mutation, *position)),
-                    named_root: root.as_ref().map(NamedRootContext::match_input),
-                    evidence_position: evidence_position.position,
-                    producer_position: Some(
-                        run_feed_position_for_object_on(
-                            connection,
-                            obligation.run_id,
-                            &verification.producer_observation,
-                        )?
-                        .position,
-                    ),
-                    evaluated_cut,
-                },
-            );
-            if satisfied != [obligation.obligation_id] {
-                return Err(StoreError::InvalidWorkProjection(format!(
-                    "satisfied obligation {} does not match its verification evidence",
-                    obligation.obligation_id.0
-                )));
+            match at_cut.assess_on(connection, obligation)? {
+                crate::control::ObligationAssessment::Matches => {}
+                crate::control::ObligationAssessment::Skipped(
+                    crate::control::ObligationSkip::ForeignOrDisplaced,
+                ) => {
+                    return Err(StoreError::InvalidWorkProjection(format!(
+                        "satisfied obligation {} belongs to a foreign workspace",
+                        obligation.obligation_id.0
+                    )));
+                }
+                _ => {
+                    return Err(StoreError::InvalidWorkProjection(format!(
+                        "satisfied obligation {} does not match its verification evidence",
+                        obligation.obligation_id.0
+                    )));
+                }
             }
         }
         WorkObligationResolution::Waived { waived_by, reason } => {
@@ -2193,79 +2177,33 @@ fn satisfy_open_obligations_on(
     evidence: &VerificationEvidence,
     evidence_id: &ObjectId,
 ) -> Result<Vec<ObjectId>, StoreError> {
-    let evidence_position =
-        run_feed_position_for_object_on(transaction, evidence.binding.run_id, evidence_id)?;
     let evaluated_cut = current_run_feed_cut_on(transaction, evidence.binding.run_id)?;
-    let root = named_root_context_on(
+    let at_cut = assessment::VerificationAtCut::load_on(
         transaction,
-        evidence.binding.run_id,
-        evidence.binding.claim_id,
-        evaluated_cut.position,
-    )?;
-    let latest = if let Some(root) = &root {
-        root.latest_mutation.clone()
-    } else {
-        latest_source_mutation_on(transaction, evidence.binding.run_id, evaluated_cut.position)?
-    };
-    let producer = load_typed_work_object::<ExecutionObservation>(
-        transaction,
-        &evidence.producer_observation,
-        "execution_observation",
+        evidence.clone(),
+        evidence_id,
+        evaluated_cut.clone(),
     )?;
     let records = load_work_obligation_records_on(transaction, evidence.binding.run_id, None)?
         .into_iter()
         .filter(|record| record.state == WorkObligationState::Open)
         .collect::<Vec<_>>();
-    let records = records
-        .into_iter()
-        .filter_map(|record| {
-            match obligation_matches_named_root(transaction, &record.obligation, root.as_ref()) {
-                Ok(true) => Some(Ok(record)),
-                Ok(false) => None,
-                Err(error) => Some(Err(error)),
-            }
-        })
-        .collect::<Result<Vec<_>, StoreError>>()?;
-    let obligations = records
-        .iter()
-        .map(|record| record.obligation.clone())
-        .collect::<Vec<_>>();
-    let satisfied = crate::control::evaluate_obligation_satisfaction(
-        &crate::control::ObligationSatisfactionInput {
-            open_obligations: &obligations,
-            evidence,
-            producer: &producer,
-            latest_mutation: latest
-                .as_ref()
-                .map(|(position, mutation)| (mutation, *position)),
-            named_root: root.as_ref().map(NamedRootContext::match_input),
-            evidence_position: evidence_position.position,
-            producer_position: Some(
-                run_feed_position_for_object_on(
-                    transaction,
-                    evidence.binding.run_id,
-                    &evidence.producer_observation,
-                )?
-                .position,
-            ),
-            evaluated_cut: &evaluated_cut,
-        },
-    );
-    let by_id = records
-        .into_iter()
-        .map(|record| (record.obligation.obligation_id, record))
-        .collect::<HashMap<_, _>>();
+    // Every open obligation is decided at the cut before any resolution is
+    // appended.
+    let mut satisfied = Vec::new();
+    for record in &records {
+        if at_cut.assess_on(transaction, &record.obligation)?
+            == crate::control::ObligationAssessment::Matches
+        {
+            satisfied.push(record);
+        }
+    }
     let mut resolution_hashes = Vec::new();
-    for obligation_id in satisfied {
-        let record = by_id.get(&obligation_id).ok_or_else(|| {
-            StoreError::InvalidWorkProjection(
-                "pure obligation evaluation returned an unknown definition".into(),
-            )
-        })?;
+    for record in satisfied {
         let event = WorkObligationResolutionEvent {
             schema_version: SCHEMA_VERSION,
             project_id: evidence.project_id.clone(),
-            obligation_id,
+            obligation_id: record.obligation.obligation_id,
             definition: record.definition_id.clone(),
             run_id: evidence.binding.run_id,
             resolution: WorkObligationResolution::Satisfied {
