@@ -169,6 +169,10 @@ user profile:
   the exact error or behavior, the ids and times, and the workaround;
   do not wait to be asked. Report each distinct problem once, and add
   later occurrences or new evidence to the same thread.
+- A TermAl problem met once is reported as a request for a fix, asking for
+  the tracked item's reference, not as a suggestion (Greg, 2026-09-30, in
+  Engram::Fable's session: 'suggestion might be if you hit it once, this is
+  a repeated problem / should be escalated to request').
 - An agent without a mailbox route, such as a read-only reviewer, puts
   the report in its result for its parent to forward. If the mailbox
   itself fails, tell Greg.
