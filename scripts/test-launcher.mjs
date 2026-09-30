@@ -3,7 +3,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants, accessSync, closeSync, createReadStream, existsSync, linkSync, mkdirSync,
-  openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+  openSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureFingerprint, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
@@ -16,7 +17,8 @@ const diagnosticLimit = 2400;
 // older than this many intervals means the launcher has most likely stopped,
 // whatever process now holds its pid. The one-second floor normally keeps that
 // window wider than the launcher's own synchronous steps; an unusually slow
-// input capture can briefly read as interrupted until the next beat.
+// input capture or executor identity query can briefly read as interrupted
+// until the next beat.
 export const HEARTBEAT_STALE_INTERVALS = 3;
 const validHeartbeatEveryMs = (value) => Number.isInteger(value) && value >= 1_000 && value <= 600_000;
 function heartbeatEveryMs(env) {
@@ -328,6 +330,166 @@ function executable(command, cwd, env) {
   throw new Error(`executable not found: ${command}${lastError ? `; last error: ${lastError.message}` : ""}; check PATH or supply the shell explicitly`);
 }
 
+// Where Windows keeps its own PowerShell. Never a copy found by name, which
+// could be one in the working directory or earlier on PATH.
+function systemPowerShell(env) {
+  const root = Object.entries(env).find(([key]) => key.toLowerCase() === "systemroot")?.[1];
+  return root && isAbsolute(root) ? join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : null;
+}
+
+// How long one identity query may take. A run whose executor could not ask
+// records that, and recover then treats it as a record without a creation
+// time, so a short bound costs nothing but that.
+const identityQueryMs = 15_000;
+
+// Where macOS keeps ps.
+const systemPs = "/bin/ps";
+
+// The system calls processIdentity makes; tests replace them.
+export const systemProbes = {
+  powershell(script, env = process.env) {
+    const executable = systemPowerShell(env);
+    if (!executable) return { error: new Error("SystemRoot names no Windows directory") };
+    return spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", script],
+      { encoding: "utf8", windowsHide: true, timeout: identityQueryMs });
+  },
+  // Signal 0 only asks whether the process exists; nothing is sent to it.
+  exists(pid) {
+    try { process.kill(pid, 0); return "exists"; }
+    catch (error) { return error.code === "ESRCH" ? "absent" : error.code === "EPERM" ? "exists" : error.code ?? "error"; }
+  },
+  procStat: (pid) => readFileSync(`/proc/${pid}/stat`, "utf8"),
+  // The system's own ps, never one found on PATH, in one clock and one
+  // language, so that every query gives a process the same start text.
+  ps(pid) {
+    if (!existsSync(systemPs)) return { error: new Error(`${systemPs} is not present`) };
+    return spawnSync(systemPs, ["-o", "lstart=", "-p", String(pid)],
+      { encoding: "utf8", timeout: identityQueryMs, env: { ...process.env, TZ: "UTC", LC_ALL: "C" } });
+  },
+};
+
+// Where a process id belongs: its system and, on Linux, its process
+// namespace. An id means nothing to a query made from another, such as WSL
+// asking about a Windows process or a host about a container's.
+export function processHost() {
+  let pidNamespace = null;
+  if (process.platform === "linux") {
+    try { pidNamespace = readlinkSync("/proc/self/ns/pid"); } catch { pidNamespace = null; }
+  }
+  return { platform: process.platform, hostname: hostname(), pidNamespace };
+}
+
+const sameHost = (a, b) => a.platform === b.platform && a.hostname === b.hostname && a.pidNamespace === b.pidNamespace;
+const describeHost = ({ platform, hostname: name, pidNamespace }) =>
+  `${platform} on ${name}${pidNamespace ? ` in ${pidNamespace}` : ""}`;
+const wellFormedHost = (host) => host !== null && typeof host === "object" && typeof host.platform === "string"
+  && typeof host.hostname === "string" && (host.pidNamespace === null || typeof host.pidNamespace === "string");
+
+// The creation-time family each platform's query gives.
+const createdFamilies = { win32: "win32", linux: "linux", darwin: "ps" };
+
+// The form each platform's creation time takes; any other is not an identity.
+const createdForms = { win32: /^win32:\d+$/u, linux: /^linux:\d+$/u, ps: /^ps:[!-~]+(?: [!-~]+)*$/u };
+export const wellFormedCreated = (created) => {
+  if (typeof created !== "string") return false;
+  const family = created.split(":", 1)[0];
+  return Object.hasOwn(createdForms, family) && createdForms[family].test(created);
+};
+
+// WMI's creation time, `yyyyMMddHHmmss.ffffff` in local time followed by its
+// offset from UTC in minutes, as a UTC FILETIME: 100 ns since 1601, here to
+// the microsecond. The arithmetic uses the offset WMI wrote, so no time-zone
+// rule is applied a second time. Anything else is null.
+export function wmiFileTime(text) {
+  const parts = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\.(\d{6})([+-]\d{3})$/u.exec(text);
+  if (!parts) return null;
+  const [year, month, day, hour, minute, second] = parts.slice(1, 7).map(Number);
+  const local = Date.UTC(year, month - 1, day, hour, minute, second);
+  const back = new Date(local);
+  if (back.getUTCFullYear() !== year || back.getUTCMonth() !== month - 1 || back.getUTCDate() !== day
+    || back.getUTCHours() !== hour || back.getUTCMinutes() !== minute || back.getUTCSeconds() !== second) {
+    return null;
+  }
+  const utcMilliseconds = BigInt(local) - BigInt(Number(parts[8])) * 60_000n;
+  return (utcMilliseconds + 11_644_473_600_000n) * 10_000n + BigInt(parts[7]) * 10n;
+}
+
+// Whether a creation time the system gave now is the recorded one. A coarse
+// answer, which Windows gives only to the microsecond for a process the query
+// may not open, is the recorded time cut to a whole microsecond.
+export function sameCreation(recorded, found) {
+  if (found.created === recorded) return true;
+  if (!found.coarse || !wellFormedCreated(recorded) || !/^win32:\d+$/u.test(recorded)
+    || !/^win32:\d+$/u.test(found.created)) {
+    return false;
+  }
+  const exact = BigInt(recorded.slice(6));
+  const coarse = BigInt(found.created.slice(6));
+  return coarse <= exact && exact < coarse + 10n;
+}
+
+// The operating system's word on one process: alive, with a creation time
+// that tells it from a later process given the same id; gone, only when the
+// system says no such process exists; or unknown when the query cannot say.
+// It only asks: it never opens, waits on or signals the process.
+export function processIdentity(pid, { platform = process.platform, probes = systemProbes } = {}) {
+  const gone = { state: "gone" };
+  const unknown = (why) => ({ state: "unknown", why });
+  const failed = (query) => query.error ? query.error.message
+    : query.signal ? `stopped by ${query.signal}` : `exit ${query.status}${query.stderr?.trim() ? `: ${query.stderr.trim().slice(0, 200)}` : ""}`;
+  if (!Number.isSafeInteger(pid) || pid <= 0) return unknown("malformed process id");
+  if (platform === "win32") {
+    // An exited process some handle still keeps is gone. The getters are
+    // called as methods, since PowerShell turns a property's failure into
+    // nothing. A process the query may not open, such as a system service
+    // that took a dead launcher's id, is asked of WMI through .NET, with no
+    // module loaded by name: WMI knows every running process and gives its
+    // creation time to the microsecond, as local time with its offset.
+    const script = `$ErrorActionPreference = 'Stop'
+try { $p = [System.Diagnostics.Process]::GetProcessById(${pid}) } catch [System.ArgumentException] { 'gone'; exit 0 }
+try { if ($p.get_HasExited()) { 'gone' } else { 'alive ' + $p.get_StartTime().ToFileTimeUtc() } }
+catch {
+  try {
+    $found = @((New-Object System.Management.ManagementObjectSearcher('SELECT CreationDate FROM Win32_Process WHERE ProcessId = ${pid}')).Get())
+    if ($found.Count -eq 0) { 'gone' } else { 'coarse ' + $found[0]['CreationDate'] }
+  } catch { 'unknown ' + $_.Exception.GetType().Name }
+}`;
+    const query = probes.powershell(script);
+    if (query.error || query.signal || query.status !== 0) return unknown(`process query failed: ${failed(query)}`);
+    const answer = query.stdout.trim();
+    if (answer === "gone") return gone;
+    const alive = /^alive (\d+)$/u.exec(answer);
+    if (alive) return { state: "alive", created: `win32:${alive[1]}` };
+    const coarse = /^coarse (\S+)$/u.exec(answer);
+    const fileTime = coarse ? wmiFileTime(coarse[1]) : null;
+    if (fileTime !== null) return { state: "alive", created: `win32:${fileTime}`, coarse: true };
+    return unknown(answer.startsWith("unknown ") ? answer.slice(8) : "unreadable process query");
+  }
+  const presence = probes.exists(pid);
+  if (presence === "absent") return gone;
+  if (presence !== "exists") return unknown(`cannot ask whether process ${pid} exists: ${presence}`);
+  if (platform === "linux") {
+    let stat;
+    // The process exists, so a status that cannot be read, as under a
+    // hidden /proc, says nothing of its end.
+    try { stat = probes.procStat(pid); }
+    catch (error) { return unknown(`its status cannot be read: ${error.code ?? error.message}`); }
+    // The fields after the command name: state first, start time twentieth.
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    if (fields[0] === "Z" || fields[0] === "X") return gone;
+    return /^\d+$/u.test(fields[19] ?? "") ? { state: "alive", created: `linux:${fields[19]}` }
+      : unknown("unreadable process start time");
+  }
+  // Only macOS keeps a process's start as a wall-clock time. Other kernels
+  // report it from uptime, so a clock step moves it and a living process
+  // would read as a later one: there a process that exists is unknown.
+  if (platform !== "darwin") return unknown("this system's start times move with its clock");
+  const query = probes.ps(pid);
+  if (query.error || query.signal || query.status !== 0) return unknown(`process query failed: ${failed(query)}`);
+  const started = query.stdout.trim().replace(/\s+/gu, " ");
+  return started ? { state: "alive", created: `ps:${started}` } : unknown("unreadable process start time");
+}
+
 export function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false }, env = process.env) {
   const everyMs = heartbeatEveryMs(env);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
@@ -497,7 +659,14 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     // anything else falls back to this worker's own setting.
     const recorded = result.heartbeat?.everyMs;
     const everyMs = validHeartbeatEveryMs(recorded) ? recorded : heartbeatEveryMs(env);
-    Object.assign(result, { pid: process.pid, owner: request.owner, preflight: [], clearedToolchainOverrides,
+    // Who executes the run, as recover later asks the system for it: the id
+    // alone could by then name another process.
+    const self = processIdentity(process.pid);
+    const executor = self.state === "alive" && !self.coarse
+      ? { pid: process.pid, created: self.created, host: processHost() }
+      : { pid: process.pid, created: null, host: processHost(), unidentified: self.coarse
+        ? "the system gave only a coarse creation time" : self.why ?? "the system did not report this process" };
+    Object.assign(result, { pid: process.pid, owner: request.owner, preflight: [], clearedToolchainOverrides, executor,
       heartbeat: { at: new Date().toISOString(), everyMs } });
     save(resultPath, result);
     // Beat on a timer, not only at stage boundaries, so a long stage stays
@@ -578,12 +747,15 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   return result;
 }
 
+// A terminal result, as every reader of results.json tells it, TermAl's
+// included: never replaced.
+const isTerminal = (result) => ["passed", "failed"].includes(result.state) && Boolean(result.ended)
+  && Number.isInteger(result.exitCode);
+
 // How a reader tells a run's state from results.json alone. The pid is never
 // consulted: after a kill it may already belong to an unrelated process.
 export function runLiveness(result, now = Date.now()) {
-  if (["passed", "failed"].includes(result.state) && result.ended && Number.isInteger(result.exitCode)) {
-    return result.state;
-  }
+  if (isTerminal(result)) return result.state;
   const at = Date.parse(result.heartbeat?.at ?? "");
   const everyMs = result.heartbeat?.everyMs;
   if (!Number.isFinite(at) || !Number.isInteger(everyMs) || everyMs <= 0) return "unknown";
@@ -594,7 +766,10 @@ export async function summarize(runDir, { now = Date.now() } = {}) {
   const result = readJson(join(runDir, "results.json"));
   const liveness = runLiveness(result, now);
   const terminal = liveness === "passed" || liveness === "failed";
-  const status = {
+  // A recovered run failed only because its executor ended without a result:
+  // it reads with the word an inferred interruption uses, never as FAIL.
+  const recovered = liveness === "failed" && result.interrupted === true;
+  const status = recovered ? `INTERRUPTED (${recoveredWhere(result.recovered)}; recovered at ${result.recovered?.at ?? result.ended}: its executor had ended without a result, and no stage was rerun)` : {
     passed: "PASS",
     failed: "FAIL",
     running: `RUNNING (no terminal result yet; heartbeat ${result.heartbeat?.at})`,
@@ -614,7 +789,7 @@ export async function summarize(runDir, { now = Date.now() } = {}) {
       header: `preflight ${probe.name}: exit=${probe.code} log=${probe.log}`,
     })),
     ...result.stages.map((stage) => ({ ...stage, failed: stage.state === "failed",
-      header: `${stage.name}: ${stage.state} exit=${stage.code ?? "unrun/unknown"}${stage.log ? ` log=${stage.log}` : ""}`,
+      header: `${stage.name}: ${stage.state}${stage.outcome ? ` outcome=${stage.outcome}` : ""} exit=${stage.code ?? "unrun/unknown"}${stage.log ? ` log=${stage.log}` : ""}`,
       ...(stage.reported ? { error: stage.reported } : {}),
     })),
   ].sort((a, b) => Number(b.failed) - Number(a.failed));
@@ -631,6 +806,122 @@ export async function summarize(runDir, { now = Date.now() } = {}) {
   }
   if (result.limitations) lines.push(...[result.limitations].flat());
   return `${lines.join("\n")}\n`;
+}
+
+function recoveredWhere(recovered) {
+  switch (recovered?.phase) {
+    case "stage": return `stopped in stage ${recovered.stage}`;
+    case "startup": return "stopped during startup, before any stage ran";
+    case "between-stages": return `stopped between stages, after ${recovered.stage}`;
+    case "finishing": return "stopped after its stages, before its result was saved";
+    default: return "stopped";
+  }
+}
+
+// The executor a run published: its process id, its host and, from the
+// executor itself, its creation time. A run from before executors were
+// recorded names the id alone, with no host. Anything else cannot be
+// identified.
+function recordedExecutor(result) {
+  const { executor } = result;
+  if (executor !== undefined) {
+    if (executor === null || typeof executor !== "object" || !Number.isSafeInteger(executor.pid) || executor.pid <= 0
+      || !(executor.created === null || wellFormedCreated(executor.created))
+      || !wellFormedHost(executor.host)) {
+      return { unidentifiable: true };
+    }
+    return { pid: executor.pid, created: executor.created, host: executor.host };
+  }
+  if (result.pid === undefined) return null;
+  return Number.isSafeInteger(result.pid) && result.pid > 0 ? { pid: result.pid, created: null } : { unidentifiable: true };
+}
+
+const refused = (message) => Object.assign(new Error(message), { refused: true });
+
+// Settles a run whose executor has ended without saving a result, once, on
+// request. It writes the result TermAl's launcher and reader already agree on
+// for an interrupted run: failed, `interrupted: true`, an error beginning
+// "interrupted:", and the stage that was running failed with an unknown
+// outcome. It asks the system whether the recorded executor still exists and
+// never kills, reruns or notifies. A terminal run is left as it is; a run
+// whose executor may be alive, cannot be identified or never published itself
+// is refused without changing a file. `recovery.lock` serialises recoveries
+// and is released after every attempt; one a killed recovery left makes the
+// next refuse and name it.
+export async function recoverRun(runDir, {
+  identify = processIdentity, now = () => new Date(), write = save, host = processHost(),
+} = {}) {
+  const path = join(runDir, "results.json");
+  const read = () => {
+    const current = readJson(path);
+    if (!current || typeof current !== "object" || current.runId !== basename(runDir) || !Array.isArray(current.stages)) {
+      throw refused(`results.json does not describe run ${basename(runDir)}`);
+    }
+    return current;
+  };
+  const seen = read();
+  if (isTerminal(seen)) return { settled: false, result: seen };
+  const executor = recordedExecutor(seen);
+  if (executor === null) throw refused("the run has not published its executor; it may still be starting");
+  if (executor.unidentifiable) throw refused("the run's record of its executor is malformed, so it cannot be identified");
+  // Its id is asked of this system only where the executor ran on it.
+  if (executor.host && !sameHost(executor.host, host)) {
+    throw refused(`executor ${executor.pid} ran as ${describeHost(executor.host)}, not ${describeHost(host)}, so its id cannot be asked here`);
+  }
+  if (executor.created !== null && executor.created.split(":", 1)[0] !== createdFamilies[host.platform]) {
+    throw refused(`executor ${executor.pid}'s creation time is not one ${host.platform} gives, so it ran elsewhere`);
+  }
+  const found = identify(executor.pid);
+  if (found.state === "unknown") throw refused(`cannot tell whether executor ${executor.pid} is alive: ${found.why}`);
+  if (found.state === "alive") {
+    if (executor.created === null) {
+      throw refused(`a process with executor id ${executor.pid} exists, and the run recorded no creation time to tell it from a later one`);
+    }
+    if (sameCreation(executor.created, found)) throw refused(`executor ${executor.pid} is alive; a stale heartbeat does not end a run`);
+    if (!wellFormedCreated(found.created) || found.created.split(":", 1)[0] !== executor.created.split(":", 1)[0]) {
+      throw refused(`executor ${executor.pid}'s creation time cannot be compared with the recorded one`);
+    }
+  } else if (found.state !== "gone") {
+    throw refused(`cannot tell whether executor ${executor.pid} is alive: unreadable answer`);
+  }
+  const lock = join(runDir, "recovery.lock");
+  let locked = false;
+  try { closeSync(openSync(lock, "wx", 0o600)); locked = true; }
+  catch (error) { if (error.code !== "EEXIST") throw error; }
+  try {
+    // Gone is final: a dead executor writes nothing more. Read again under
+    // the lock, since the executor may have saved a terminal result before
+    // it ended, or an earlier recovery may have settled the run.
+    const result = read();
+    if (isTerminal(result)) return { settled: false, result };
+    if (!locked) throw refused(`another recovery of this run is in progress, or one was killed before releasing ${lock}`);
+    const { stages } = result;
+    const running = stages.find((stage) => stage.state === "running");
+    const finished = stages.filter((stage) => stage.state !== "unrun" && stage.state !== "running");
+    const phase = running ? "stage" : finished.length === 0 ? "startup"
+      : stages.some((stage) => stage.state === "unrun") && !finished.some((stage) => stage.state === "failed")
+        ? "between-stages" : "finishing";
+    const at = now().toISOString();
+    const why = found.state === "gone" ? "no process has its id" : "its id now names a later process";
+    const interruption = `executor ${executor.pid} ended without saving a terminal result (${why})`;
+    if (running) {
+      Object.assign(running, { state: "failed", outcome: "unknown",
+        error: `interrupted: ${interruption}; this stage's outcome is unknown` });
+    }
+    Object.assign(result, {
+      state: "failed",
+      exitCode: 1,
+      interrupted: true,
+      error: `interrupted: ${interruption}; no stage was rerun`,
+      ended: at,
+      recovered: { at, phase, stage: running?.name ?? (phase === "between-stages" ? finished.at(-1).name : null),
+        executor, found: why, lastHeartbeat: result.heartbeat?.at ?? null },
+    });
+    write(path, result);
+    return { settled: true, result };
+  } finally {
+    if (locked) rmSync(lock, { force: true });
+  }
 }
 
 export async function notifyRun(runDir, env = process.env, send = runCommand) {
@@ -728,14 +1019,28 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
 
 async function main(args) {
   const mode = args.shift();
-  if (["summary", "notify", "_run"].includes(mode)) {
+  if (["summary", "notify", "recover", "_run"].includes(mode)) {
     if (args.length !== 1) throw new Error(`${mode} requires one run directory`);
     const runDir = resolve(args[0]);
     if (mode === "summary") { process.stdout.write(await summarize(runDir)); return; }
+    if (mode === "recover") {
+      // Only the summary follows: a recovered run is not a run to record again.
+      let settled;
+      try { ({ settled } = await recoverRun(runDir)); }
+      catch (error) {
+        if (!error.refused) throw error;
+        process.stderr.write(`REFUSED recover ${runDir}: ${error.message}; nothing changed\n`);
+        process.exitCode = 1;
+        return;
+      }
+      process.stdout.write(await summarize(runDir));
+      process.stdout.write(`${settled ? "Settled as interrupted" : "Already terminal"}; tests not rerun.\n`);
+      return;
+    }
     if (mode === "notify") { await notifyRun(runDir); console.log(`Notification sent; tests not rerun. ${runDir}`); return; }
     await finish(runDir, { workerHandshake: true }); return;
   }
-  if (!["full", "focused"].includes(mode)) throw new Error("usage: test-launcher.mjs full|focused [--notify SESSION] [--detach] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary|notify RUN_DIR");
+  if (!["full", "focused"].includes(mode)) throw new Error("usage: test-launcher.mjs full|focused [--notify SESSION] [--detach] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary|notify|recover RUN_DIR");
   let notifyTo, detach = false;
   const requiredBinaryEnv = [];
   while (args.length && args[0] !== "--") {

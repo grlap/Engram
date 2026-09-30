@@ -9,8 +9,9 @@ import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import {
-  commandKind, countTests, createRun, diagnostics, executeRun, machineRecord, notifyRun, renameWithRetry,
-  requiredStages, selectsTests, startDetached, summarize,
+  commandKind, countTests, createRun, diagnostics, executeRun, machineRecord, notifyRun, processHost, processIdentity,
+  recoverRun, renameWithRetry, requiredStages, sameCreation, selectsTests, startDetached, summarize,
+  systemProbes, wellFormedCreated, wmiFileTime,
 } from "./test-launcher.mjs";
 import { fixtureHome, fixtureRoot, removeFixtureHomes, removeFixturePath, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 
@@ -891,25 +892,9 @@ test("a killed launcher's run reads as interrupted once its heartbeat stops", { 
       copyFileSync(fileURLToPath(new URL(name, import.meta.url)), join(root, "scripts", name));
     }
     const everyMs = 1000;
-    const address = process.platform === "win32" ? `\\\\.\\pipe\\engram-${randomUUID()}` : ".git/stage.sock";
     // The broker tells this test when the stage is parked, releases it on
     // request, and reports when the stage process has gone.
-    const broker = spawn(process.execPath, ["-e", `
-      const sockets = new Set();
-      const server = require('node:net').createServer(socket => {
-        sockets.add(socket);
-        socket.on('close', () => { sockets.delete(socket); process.send('closed'); });
-        socket.on('error', () => socket.destroy());
-        process.send('connected');
-      });
-      process.on('message', message => { if (message === 'release') for (const socket of sockets) socket.write('x'); });
-      process.on('disconnect', () => { for (const socket of sockets) socket.destroy(); server.close(); });
-      server.listen(${JSON.stringify(address)}, () => process.send('listening'));
-    `], { cwd: root, env, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
-    const brokerCompletion = once(broker, "exit");
-    // Every wait on the broker also ends if the broker itself dies.
-    const brokerGone = brokerCompletion.then(([code]) => [`broker exited (${code})`]);
-    const fromBroker = () => Promise.race([once(broker, "message", { signal: t.signal }), brokerGone]);
+    const { address, next: fromBroker, release, close } = parkingBroker(t, root);
     // The stage parks only after the heartbeat has advanced during the stage,
     // so the launcher is killed mid-stage with its timer demonstrably beating.
     const source = `
@@ -969,10 +954,9 @@ test("a killed launcher's run reads as interrupted once its heartbeat stops", { 
       if (completion) await completion;
       // Release the parked stage and wait for it to go, without letting a
       // cleanup failure replace the test's own error.
-      if (gone && broker.connected) broker.send("release");
+      if (gone) release();
       if (gone) await gone.catch(() => {});
-      if (broker.connected) broker.disconnect();
-      await brokerCompletion;
+      await close();
     }
   });
 });
@@ -2075,5 +2059,441 @@ test("the record ends the executing process's stdout, and summary and notify nev
     const survived = parseRecord(broken.stdout.slice(broken.stdout.lastIndexOf("\ntest-launcher/v1", broken.stdout.lastIndexOf("\ntest-launcher/v1") - 1) + 1));
     assert.equal(survived.state, "passed");
     assert.deepEqual(survived.stages.map(({ state, exit }) => [state, exit]), [["passed", "0"]]);
+  });
+});
+
+// The host the recover unit tests recover from: the Windows system their
+// records describe, whatever system runs them.
+const fixtureHost = { platform: "win32", hostname: "fixture-host", pidNamespace: null };
+// Whether this system's identity query answers for a living process.
+const identifies = ["win32", "linux", "darwin"].includes(process.platform);
+
+// Every file of a run directory, by name, as bytes.
+const directoryBytes = (runDir) => Object.fromEntries(readdirSync(runDir).sort()
+  .map((name) => [name, readFileSync(join(runDir, name))]));
+
+// Rewrites a run's results.json as `change` returns it.
+const rewriteResults = (runDir, change) => {
+  const path = join(runDir, "results.json");
+  writeFileSync(path, JSON.stringify(change(json(path)), null, 2));
+};
+
+test("the system tells a living process by its creation time and a finished one from it", async () => {
+  if (!identifies) {
+    // Where start times move with the clock, a living process is unknown.
+    assert.equal(processIdentity(process.pid).state, "unknown");
+    return;
+  }
+  const self = processIdentity(process.pid);
+  assert.equal(self.state, "alive", JSON.stringify(self));
+  assert.equal(wellFormedCreated(self.created), true, self.created);
+  assert.deepEqual(processIdentity(process.pid), self, "the creation time is stable");
+  const child = spawn(process.execPath, ["-e", "process.stdin.resume()"], { windowsHide: true, stdio: ["pipe", "ignore", "ignore"] });
+  const exited = once(child, "exit");
+  let living;
+  try {
+    await once(child, "spawn");
+    living = processIdentity(child.pid);
+    assert.equal(living.state, "alive", JSON.stringify(living));
+  } finally {
+    // The child ends however the assertions went.
+    child.stdin.end();
+    await exited;
+  }
+  // Once it has ended, its id names no process, or, if the system has already
+  // given the id to another, a later one.
+  const after = processIdentity(child.pid);
+  assert.ok(after.state === "gone" || (after.state === "alive" && !sameCreation(living.created, after)), JSON.stringify(after));
+  for (const pid of [0, -1, 1.5, Number.NaN]) assert.equal(processIdentity(pid).state, "unknown", String(pid));
+});
+
+test("only the system's own no-such-process answer reads as gone", () => {
+  const probes = (overrides) => ({ ...systemProbes, ...overrides });
+  const ask = (platform, overrides) => processIdentity(4242, { platform, probes: probes(overrides) });
+  const run = (status, stdout, stderr = "", extra = {}) => () => ({ status, stdout, stderr, signal: null, ...extra });
+  // Windows: the system PowerShell's answer, and every failure is unknown.
+  assert.deepEqual(ask("win32", { powershell: run(0, "alive 133\r\n") }), { state: "alive", created: "win32:133" });
+  assert.deepEqual(ask("win32", { powershell: run(0, "gone\r\n") }), { state: "gone" });
+  // A process the query may not open is asked of WMI, to the microsecond.
+  assert.deepEqual(ask("win32", { powershell: run(0, "coarse 20260929182308.939671-420\r\n") }),
+    { state: "alive", created: "win32:134352049889396710", coarse: true });
+  assert.equal(ask("win32", { powershell: run(0, "coarse 20261399000000.000000+000\r\n") }).state, "unknown");
+  for (const failure of [run(1, ""), run(0, "unknown Win32Exception"), run(0, "garbage"), run(null, "", "", { signal: "SIGTERM" }),
+    () => ({ error: new Error("SystemRoot names no Windows directory") })]) {
+    assert.equal(ask("win32", { powershell: failure }).state, "unknown");
+  }
+  // Linux: absence only from the signal-0 answer; an unreadable status of an
+  // existing process is unknown, a zombie is gone.
+  const stat = (state, start) => () => `4242 (node (x)) ${state} 1 ${Array.from({ length: 17 }, () => "0").join(" ")} ${start} 0`;
+  assert.deepEqual(ask("linux", { exists: () => "absent" }), { state: "gone" });
+  assert.deepEqual(ask("linux", { exists: () => "exists", procStat: stat("S", "777") }), { state: "alive", created: "linux:777" });
+  assert.deepEqual(ask("linux", { exists: () => "exists", procStat: stat("Z", "777") }), { state: "gone" });
+  const hidden = ask("linux", { exists: () => "exists", procStat: () => { throw Object.assign(new Error("hidden"), { code: "ENOENT" }); } });
+  assert.equal(hidden.state, "unknown", "a hidden /proc says nothing of an end");
+  assert.equal(ask("linux", { exists: () => "EINVAL" }).state, "unknown");
+  // Elsewhere: ps, whose failure is unknown whatever it printed.
+  assert.deepEqual(ask("darwin", { exists: () => "exists", ps: run(0, "Wed  Sep 30 01:02:03 2026\n") }),
+    { state: "alive", created: "ps:Wed Sep 30 01:02:03 2026" });
+  assert.equal(ask("darwin", { exists: () => "exists", ps: run(1, "", "ps: illegal option -- o") }).state, "unknown");
+  assert.equal(ask("darwin", { exists: () => "exists", ps: run(1, "") }).state, "unknown");
+  assert.deepEqual(ask("darwin", { exists: () => "absent" }), { state: "gone" });
+  // Where a start time moves with the clock, an existing process is unknown
+  // and only absence settles.
+  assert.equal(ask("freebsd", { exists: () => "exists", ps: () => assert.fail("not asked") }).state, "unknown");
+  assert.deepEqual(ask("freebsd", { exists: () => "absent" }), { state: "gone" });
+  // The creation-time forms that identify a process, and some that do not.
+  for (const created of ["win32:133", "linux:777", "ps:Wed Sep 30 01:02:03 2026"]) assert.equal(wellFormedCreated(created), true, created);
+  for (const created of ["win32:", "win32:garbage", "linux:1.5", "ps:", "ps:two  spaces", "other:1", "", 7, null,
+    "toString:1", "constructor:1", "__proto__:1", "hasOwnProperty:1"]) {
+    assert.equal(wellFormedCreated(created), false, String(created));
+  }
+});
+
+test("WMI's local creation time is read with the offset it carries", () => {
+  // Measured on one host: WMI's CreationDate and .NET's exact StartTime for
+  // one process, 2026-09-30 01:23:08.9396716 UTC.
+  assert.equal(wmiFileTime("20260929182308.939671-420"), 134352049889396710n);
+  assert.equal(sameCreation("win32:134352049889396716", { state: "alive", created: "win32:134352049889396710", coarse: true }), true);
+  // The same instant written with another offset is the same time.
+  assert.equal(wmiFileTime("20260930012308.939671+000"), 134352049889396710n);
+  assert.equal(wmiFileTime("20260930032308.939671+120"), 134352049889396710n);
+  for (const text of ["", "20260929182308.939671", "20260929182308-420", "20261329182308.939671-420",
+    "20260231000000.000000+000", "20260929182308.93967-420", "2026092918230x.939671-420"]) {
+    assert.equal(wmiFileTime(text), null, text);
+  }
+});
+
+test("a coarse creation time is the exact one cut to the microsecond", () => {
+  const coarse = (created) => ({ state: "alive", created, coarse: true });
+  assert.equal(sameCreation("win32:1345", { state: "alive", created: "win32:1345" }), true);
+  assert.equal(sameCreation("win32:1345", { state: "alive", created: "win32:1340" }), false, "an exact answer must match exactly");
+  for (const exact of ["win32:1340", "win32:1345", "win32:1349"]) assert.equal(sameCreation(exact, coarse("win32:1340")), true, exact);
+  for (const exact of ["win32:1339", "win32:1350"]) assert.equal(sameCreation(exact, coarse("win32:1340")), false, exact);
+  // Beyond a double's precision, as FILETIMEs are.
+  assert.equal(sameCreation("win32:134352045952779645", coarse("win32:134352045952779640")), true);
+  assert.equal(sameCreation("win32:134352045952779655", coarse("win32:134352045952779640")), false);
+  assert.equal(sameCreation("linux:5", coarse("linux:5")), true, "an identical value is the same whatever its precision");
+  assert.equal(sameCreation("linux:6", coarse("linux:5")), false);
+});
+
+test("a process the query may not open is still identified", { skip: process.platform !== "win32" }, () => {
+  // The system process: an ordinary user may not open it for query, and an
+  // administrator may; either way it is alive with a creation time.
+  const system = processIdentity(4);
+  assert.equal(system.state, "alive", JSON.stringify(system));
+  assert.equal(wellFormedCreated(system.created), true, system.created);
+});
+
+test("the executor publishes its process id and creation time before it reports ready", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("clean")] }, env);
+    let published;
+    const result = await executeRun(runDir, env, () => { published = json(join(runDir, "results.json")).executor; });
+    assert.equal(result.state, "passed");
+    const self = processIdentity(process.pid);
+    assert.equal(published.pid, process.pid);
+    assert.deepEqual(published.host, processHost());
+    if (self.state === "alive" && !self.coarse) assert.equal(published.created, self.created);
+    else assert.deepEqual([published.created, typeof published.unidentified], [null, "string"]);
+  });
+});
+
+test("recover refuses, changing no file, a run whose executor is alive, unknown, unpublished or locked", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("first"), stage("second")] }, env);
+    const refuses = async (identify, pattern, label) => {
+      const before = directoryBytes(runDir);
+      await assert.rejects(recoverRun(runDir, { host: fixtureHost, identify }), (error) => error.refused === true && pattern.test(error.message), label);
+      assert.deepEqual(directoryBytes(runDir), before, `${label}: no file changed`);
+    };
+    const never = () => assert.fail("no executor to ask about");
+    await refuses(never, /has not published its executor/u, "unpublished");
+    const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+    rewriteResults(runDir, (result) => ({ ...result, heartbeat: { at: hourAgo, everyMs: 1000 },
+      pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost },
+      stages: [{ name: "first", state: "running" }, { name: "second", state: "unrun" }] }));
+    assert.match(await summarize(runDir), /^INTERRUPTED \(no terminal result/u, "the heartbeat alone reads as interrupted");
+    await refuses(() => ({ state: "alive", created: "win32:100" }), /executor 4242 is alive/u, "alive with a stale heartbeat");
+    await refuses(() => ({ state: "unknown", why: "access is denied" }), /cannot tell .*access is denied/u, "unknown");
+    await refuses(() => ({ state: "alive", created: "linux:5" }), /cannot be compared/u, "another clock");
+    await refuses(() => ({ state: "alive", created: "win32:garbage" }), /cannot be compared/u, "a malformed answer");
+    await refuses(() => ({ state: "alive", created: "win32:100", coarse: true }), /executor 4242 is alive/u, "alive, coarsely");
+    // An executor that ran on another system, or recorded a creation time this
+    // system does not give, is not asked about here.
+    for (const [other, label] of [
+      [{ ...fixtureHost, platform: "linux" }, "another platform"],
+      [{ ...fixtureHost, hostname: "container" }, "another host"],
+      [{ ...fixtureHost, pidNamespace: "pid:[4026531836]" }, "another pid namespace"],
+    ]) {
+      rewriteResults(runDir, (result) => ({ ...result, executor: { pid: 4242, created: "win32:100", host: other } }));
+      await refuses(never, /ran as .*so its id cannot be asked here/u, label);
+    }
+    rewriteResults(runDir, (result) => ({ ...result, executor: { pid: 4242, created: "linux:100", host: fixtureHost } }));
+    await refuses(never, /not one win32 gives, so it ran elsewhere/u, "another platform's creation time");
+    rewriteResults(runDir, (result) => ({ ...result, executor: { pid: 4242, created: "win32:100", host: { platform: "win32" } } }));
+    await refuses(never, /malformed/u, "a malformed host");
+    rewriteResults(runDir, (result) => ({ ...result, executor: { pid: 4242, created: "win32:100" } }));
+    await refuses(never, /malformed/u, "an executor record without its host");
+    rewriteResults(runDir, (result) => ({ ...result, executor: { pid: 4242, created: "win32:100", host: fixtureHost } }));
+    await refuses(() => ({ state: "alive", created: "win32:100" }), /executor 4242 is alive/u, "the same host");
+    // A run directory whose results name another run is not recovered.
+    const { runId } = json(join(runDir, "results.json"));
+    rewriteResults(runDir, (result) => ({ ...result, runId: "test-another" }));
+    await refuses(never, /does not describe run/u, "another run's results");
+    rewriteResults(runDir, (result) => ({ ...result, runId }));
+    // A recovery that holds the lock, or a killed one that left it, makes the
+    // next refuse and name the file.
+    writeFileSync(join(runDir, "recovery.lock"), "");
+    await refuses(() => ({ state: "gone" }), /another recovery .*recovery\.lock/u, "locked");
+    unlinkSync(join(runDir, "recovery.lock"));
+    for (const executor of [null, { pid: "4242", created: "win32:100" }, { pid: 4242, created: 7 }, { pid: 4242 },
+      { pid: 4242, created: "win32:" }, { pid: 4242, created: "win32:garbage" }, { pid: 4242, created: "toString:1" },
+      { pid: 4242, created: "__proto__:1" }]) {
+      rewriteResults(runDir, (result) => ({ ...result, executor }));
+      await refuses(never, /malformed/u, `malformed ${JSON.stringify(executor)}`);
+    }
+    // An executor whose own query failed is recorded without a creation
+    // time, as a run from before creation times were recorded names its id
+    // alone: both are recovered only when no process has that id.
+    rewriteResults(runDir, (result) => ({ ...result, executor: { pid: 4242, created: null, host: fixtureHost, unidentified: "access is denied" } }));
+    await refuses(() => ({ state: "alive", created: "win32:1" }), /recorded no creation time/u, "unidentified executor alive");
+    rewriteResults(runDir, (result) => { const { executor: _, ...older } = result; return older; });
+    await refuses(() => ({ state: "alive", created: "win32:1" }), /recorded no creation time/u, "historical id alive");
+    const { settled, result } = await recoverRun(runDir, { host: fixtureHost, identify: () => ({ state: "gone" }) });
+    assert.equal(settled, true);
+    assert.equal(result.interrupted, true);
+    assert.deepEqual(result.recovered.executor, { pid: 4242, created: null });
+    assert.equal(existsSync(join(runDir, "recovery.lock")), false, "the lock is released");
+  });
+});
+
+test("recover writes the interrupted result TermAl's launcher writes and leaves a terminal run as it is", async () => {
+  await repository(async (root) => {
+    const recover = async (stages, identify = () => ({ state: "gone" })) => {
+      const runDir = createRun({ root, stages: stages.map(({ name }) => stage(name)) }, env);
+      rewriteResults(runDir, (result) => ({ ...result, pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost }, stages }));
+      const outcome = await recoverRun(runDir, { host: fixtureHost, identify, now: () => new Date("2026-09-30T01:00:00.000Z") });
+      return { runDir, ...outcome };
+    };
+    const passed = { name: "first", state: "passed", code: 0, signal: null, started: "s", ended: "e", log: "first.log",
+      tests: { executed: 3, passed: 3, failed: 0, ignored: 0, runners: 1, filteredOut: 0, failures: 0 } };
+    const running = { name: "second", state: "running", started: "s2", command: ["node"], log: "second.log" };
+    const { runDir, settled, result } = await recover([passed, running, { name: "third", state: "unrun" }]);
+    assert.equal(settled, true);
+    // The run, as TermAl's `recover` writes it and its reader reads it.
+    assert.equal(result.state, "failed");
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.interrupted, true);
+    assert.equal(result.ended, "2026-09-30T01:00:00.000Z");
+    assert.equal(result.error, "interrupted: executor 4242 ended without saving a terminal result (no process has its id); no stage was rerun");
+    assert.deepEqual(result.stages[0], passed, "a finished stage is kept as it was");
+    assert.deepEqual(result.stages[1], { ...running, state: "failed", outcome: "unknown",
+      error: "interrupted: executor 4242 ended without saving a terminal result (no process has its id); this stage's outcome is unknown" });
+    assert.deepEqual(result.stages[2], { name: "third", state: "unrun" });
+    for (const invented of ["code", "signal", "tests", "ended"]) assert.equal(Object.hasOwn(result.stages[1], invented), false, invented);
+    assert.deepEqual(result.recovered, { at: "2026-09-30T01:00:00.000Z", phase: "stage", stage: "second",
+      executor: { pid: 4242, created: "win32:100", host: fixtureHost }, found: "no process has its id", lastHeartbeat: result.heartbeat.at });
+    assert.deepEqual(json(join(runDir, "results.json")), result);
+    const summary = await summarize(runDir);
+    assert.match(summary, /^INTERRUPTED \(stopped in stage second; recovered at 2026-09-30T01:00:00.000Z: .*\) test-\S+ exit=1$/mu);
+    assert.match(summary, /^second: failed outcome=unknown exit=unrun\/unknown log=/mu);
+    assert.doesNotMatch(summary, /^(?:PASS|FAIL)\b|test-launcher\/v1/mu);
+
+    // Recovering again, like recovering any terminal run, changes nothing.
+    const before = directoryBytes(runDir);
+    assert.equal((await recoverRun(runDir, { host: fixtureHost, identify: () => assert.fail("not asked") })).settled, false);
+    assert.deepEqual(directoryBytes(runDir), before);
+
+    // An id a system service took is told apart by its coarse creation time.
+    const taken = await recover([running], () => ({ state: "alive", created: "win32:990", coarse: true }));
+    assert.equal(taken.result.recovered.found, "its id now names a later process");
+
+    // Where it stopped when no stage was running, and a reused id.
+    const reused = await recover([{ name: "first", state: "unrun" }], () => ({ state: "alive", created: "win32:999" }));
+    assert.deepEqual([reused.result.recovered.phase, reused.result.recovered.stage, reused.result.recovered.found],
+      ["startup", null, "its id now names a later process"]);
+    assert.match(await summarize(reused.runDir), /^INTERRUPTED \(stopped during startup, before any stage ran;/mu);
+    const between = await recover([passed, { name: "second", state: "unrun" }]);
+    assert.deepEqual([between.result.recovered.phase, between.result.recovered.stage], ["between-stages", "first"]);
+    assert.match(await summarize(between.runDir), /^INTERRUPTED \(stopped between stages, after first;/mu);
+    const finishing = await recover([passed]);
+    assert.deepEqual([finishing.result.recovered.phase, finishing.result.recovered.stage], ["finishing", null]);
+
+    for (const state of ["passed", "failed"]) {
+      const terminal = createRun({ root, stages: [stage("only")] }, env);
+      rewriteResults(terminal, (result) => ({ ...result, state, exitCode: state === "passed" ? 0 : 1, ended: "e" }));
+      const bytes = directoryBytes(terminal);
+      assert.equal((await recoverRun(terminal, { host: fixtureHost, identify: () => assert.fail("not asked") })).settled, false);
+      assert.deepEqual(directoryBytes(terminal), bytes, state);
+    }
+  });
+});
+
+test("a launcher that finishes while recover asks about it keeps its own result", async () => {
+  await repository(async (root) => {
+    const running = { name: "only", state: "running", started: "s", command: ["node"], log: "only.log" };
+    const runDir = createRun({ root, stages: [stage("only")] }, env);
+    rewriteResults(runDir, (result) => ({ ...result, pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost }, stages: [running] }));
+    // The executor saves its terminal result and ends between recover's
+    // first reading and the system's answer that it is gone.
+    const outcome = await recoverRun(runDir, { host: fixtureHost, identify: () => {
+      rewriteResults(runDir, (result) => ({ ...result, state: "passed", exitCode: 0, ended: "e",
+        stages: [{ ...running, state: "passed", code: 0 }] }));
+      return { state: "gone" };
+    } });
+    assert.equal(outcome.settled, false);
+    const kept = json(join(runDir, "results.json"));
+    assert.deepEqual([kept.state, kept.exitCode, Object.hasOwn(kept, "interrupted")], ["passed", 0, false]);
+    assert.equal(existsSync(join(runDir, "recovery.lock")), false);
+  });
+});
+
+test("a recovery whose write fails releases the lock and leaves the run as it was", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("only")] }, env);
+    rewriteResults(runDir, (result) => ({ ...result, pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost },
+      stages: [{ name: "only", state: "running" }] }));
+    const before = directoryBytes(runDir);
+    await assert.rejects(recoverRun(runDir, { host: fixtureHost, identify: () => ({ state: "gone" }), write: () => { throw new Error("disk full"); } }),
+      /disk full/u);
+    assert.deepEqual(directoryBytes(runDir), before, "no lock or result is left behind");
+    assert.equal((await recoverRun(runDir, { host: fixtureHost, identify: () => ({ state: "gone" }) })).settled, true, "a later recovery can settle it");
+  });
+});
+
+test("a second recovery started while the first holds the lock refuses", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("only")] }, env);
+    rewriteResults(runDir, (result) => ({ ...result, pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost },
+      stages: [{ name: "only", state: "running" }] }));
+    // The second recovery starts while the first holds the lock, just before
+    // the first writes its result.
+    let second;
+    const first = await recoverRun(runDir, { host: fixtureHost, identify: () => ({ state: "gone" }), now: () => {
+      assert.equal(existsSync(join(runDir, "recovery.lock")), true, "the first holds the lock while it writes");
+      second = recoverRun(runDir, { host: fixtureHost, identify: () => ({ state: "gone" }) });
+      return new Date("2026-09-30T01:00:00.000Z");
+    } });
+    assert.equal(first.settled, true);
+    await assert.rejects(second, (error) => error.refused === true && /another recovery .*recovery\.lock/u.test(error.message));
+    assert.equal(json(join(runDir, "results.json")).recovered.at, "2026-09-30T01:00:00.000Z", "the first recovery's result stands");
+    assert.equal(existsSync(join(runDir, "recovery.lock")), false);
+  });
+});
+
+// A stage that parks until the broker releases it, and a broker that says
+// when the stage has connected and when it has gone.
+function parkingBroker(t, root) {
+  // Both processes resolve this short socket path from the same fixture cwd.
+  const address = process.platform === "win32" ? `\\\\.\\pipe\\engram-${randomUUID()}` : ".git/stage.sock";
+  const broker = spawn(process.execPath, ["-e", `
+    const sockets = new Set();
+    const server = require('node:net').createServer(socket => {
+      sockets.add(socket);
+      socket.on('close', () => { sockets.delete(socket); process.send('closed'); });
+      socket.on('error', () => socket.destroy());
+      process.send('connected');
+    });
+    process.on('message', message => { if (message === 'release') for (const socket of sockets) socket.write('x'); });
+    process.on('disconnect', () => { for (const socket of sockets) socket.destroy(); server.close(); });
+    server.listen(${JSON.stringify(address)}, () => process.send('listening'));
+  `], { cwd: root, env, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
+  const exited = once(broker, "exit");
+  const gone = exited.then(([code]) => [`broker exited (${code})`]);
+  const next = () => Promise.race([once(broker, "message", { signal: t.signal }), gone]);
+  const parked = `const socket = require('node:net').connect(${JSON.stringify(address)});
+    socket.on('data', () => process.exit(0));
+    socket.on('close', () => process.exit(0));
+    socket.on('error', () => process.exit(1));`;
+  const close = async () => {
+    if (broker.connected) broker.send("release");
+    if (broker.connected) broker.disconnect();
+    await exited;
+  };
+  return { address, next, parked, close, release: () => broker.connected && broker.send("release") };
+}
+
+test("a launcher stopped during its second stage is recovered with the first stage unchanged", { timeout: 60_000 }, async (t) => {
+  await repository(async (root) => {
+    const broker = parkingBroker(t, root);
+    let child, completion;
+    try {
+      assert.equal((await broker.next())[0], "listening");
+      const runDir = createRun({ root, stages: [stage("first", "console.log('first stage output')"),
+        { name: "second", command: process.execPath, args: ["-e", broker.parked] }] }, env);
+      child = spawn(process.execPath, [launcher, "_run", runDir], { cwd: root, env, windowsHide: true, stdio: ["ignore", "ignore", "ignore"] });
+      completion = once(child, "close");
+      const parked = await Promise.race([broker.next(), completion.then(([code]) => [`launcher ended (${code})`])]);
+      assert.equal(parked[0], "connected");
+      const before = json(join(runDir, "results.json"));
+      assert.deepEqual(before.stages.map(({ state }) => state), ["passed", "running"]);
+      const firstLog = readFileSync(logPath(runDir, before.stages[0]));
+      child.kill("SIGKILL");
+      await completion;
+
+      const recovered = spawnSync(process.execPath, [launcher, "recover", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
+      assert.equal(recovered.status, 0, recovered.stderr);
+      assert.match(recovered.stdout, /^INTERRUPTED \(stopped in stage second;/u);
+      assert.match(recovered.stdout, /^Settled as interrupted; tests not rerun\.$/mu);
+      assert.doesNotMatch(recovered.stdout, /^(?:PASS|FAIL)\b|test-launcher\/v1/mu);
+      const after = json(join(runDir, "results.json"));
+      assert.deepEqual([after.state, after.interrupted, after.exitCode], ["failed", true, 1]);
+      assert.match(after.error, /^interrupted: /u);
+      assert.deepEqual(after.stages[0], before.stages[0], "the first stage's fields are unchanged");
+      assert.deepEqual(readFileSync(logPath(runDir, after.stages[0])), firstLog, "the first stage's log bytes are unchanged");
+      assert.equal(after.stages[1].state, "failed");
+      assert.equal(after.stages[1].outcome, "unknown");
+      assert.match(after.stages[1].error, /^interrupted: .*this stage's outcome is unknown$/u);
+      // The system may already have given the killed launcher's id to another
+      // process; either answer settles the run.
+      assert.match(after.recovered.found, /^(?:no process has its id|its id now names a later process)$/u);
+      assert.deepEqual(after.recovered.executor, before.executor);
+      const again = spawnSync(process.execPath, [launcher, "recover", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
+      assert.equal(again.status, 0, again.stderr);
+      assert.match(again.stdout, /^Already terminal; tests not rerun\.$/mu);
+      assert.deepEqual(json(join(runDir, "results.json")), after);
+    } finally {
+      if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      if (completion) await completion;
+      // The parked stage outlived its launcher; release it.
+      await broker.close();
+    }
+  });
+});
+
+test("recover refuses a living launcher whose heartbeat has gone stale, changing no file", { timeout: 60_000 }, async (t) => {
+  await repository(async (root) => {
+    const broker = parkingBroker(t, root);
+    let child, completion;
+    try {
+      assert.equal((await broker.next())[0], "listening");
+      const runDir = createRun({ root, stages: [{ name: "parked", command: process.execPath, args: ["-e", broker.parked] }] },
+        { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "600000" });
+      child = spawn(process.execPath, [launcher, "_run", runDir], { cwd: root, env, windowsHide: true, stdio: ["ignore", "ignore", "ignore"] });
+      completion = once(child, "close");
+      const parked = await Promise.race([broker.next(), completion.then(([code]) => [`launcher ended (${code})`])]);
+      assert.equal(parked[0], "connected");
+      // The launcher lives; only its heartbeat reads an hour old.
+      rewriteResults(runDir, (result) => ({ ...result, heartbeat: { ...result.heartbeat, at: new Date(Date.now() - 3_600_000).toISOString() } }));
+      assert.match(await summarize(runDir), /^INTERRUPTED \(no terminal result/u);
+      const before = directoryBytes(runDir);
+      const recovered = spawnSync(process.execPath, [launcher, "recover", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
+      assert.equal(recovered.status, 1);
+      // Where start times move with the clock the living executor is unknown,
+      // and recover refuses for that.
+      assert.match(recovered.stderr, identifies
+        ? /^REFUSED recover .*: executor \d+ is alive; a stale heartbeat does not end a run; nothing changed$/mu
+        : /^REFUSED recover .*: cannot tell whether executor \d+ is alive: .*; nothing changed$/mu);
+      assert.equal(recovered.stdout, "");
+      assert.deepEqual(directoryBytes(runDir), before);
+      broker.release();
+      const [code] = await completion;
+      assert.equal(code, 0);
+      assert.equal(json(join(runDir, "results.json")).state, "passed", "the living launcher finished its run");
+    } finally {
+      if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      if (completion) await completion;
+      await broker.close();
+    }
   });
 });

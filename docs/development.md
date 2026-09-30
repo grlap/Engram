@@ -266,6 +266,63 @@ invisible on any platform. Known intervening edits still invalidate a run.
 The Windows executable-mode/symlink limitation is separate. Artifacts use
 owner-only POSIX modes (0700 run directory, 0600 files); Windows uses its ACLs.
 
+A run whose launcher ended without saving a result can be recovered, which
+saves for it the terminal result of an interrupted run:
+
+```bash
+node scripts/test-launcher.mjs recover RUN_DIRECTORY
+```
+
+Before it reports ready, the process that executes the stages records itself in
+`results.json` as `executor: { pid, created }`: its process id and the creation
+time the operating system gives for it. On Windows that comes from the system's
+own `powershell.exe` under `SystemRoot`, never a copy found by name; on Linux
+from `/proc`; on macOS from `/bin/ps`, never one found on PATH, run in UTC and
+the C locale so that every query gives the same text. Other systems give a start
+time that moves when the clock is set, so there an existing process reads as
+unknown, and a run is recovered only once no process has its executor's id. The
+executor also records `host`: its platform, host name and, on Linux, its process
+namespace. When that query fails, the executor records `created: null` with the
+reason in `unidentified`. `recover` asks the system for that process by id,
+never by command line. Only the system's own answer that no such process exists
+counts as gone: on Windows the query's, and elsewhere signal 0, which sends
+nothing; a process that has ended but is still held, a Linux zombie or a Windows
+process some handle keeps open, is gone too. A status or `ps` query that fails
+for an existing process leaves it unknown. On Windows a process the query may
+not open, such as a system service that took a dead launcher's id, is asked of
+WMI through .NET, with no module loaded by name. WMI gives its creation time to
+the microsecond, in local time with its offset, which the launcher applies
+itself. That process is the recorded executor only when the recorded time cut to
+the microsecond equals it, and an executor records only an exact time of its
+own. When the process is alive with the same creation time, `recover` refuses,
+whatever the heartbeat says. It refuses too when the query cannot answer, when
+the run has not yet published its executor, when that record or its creation
+time is malformed, when `results.json` describes another run, and when the
+executor ran on another system or in another process namespace, or recorded a
+creation time this system does not give, since its id means nothing to a query
+made here. A refusal changes no file and exits 1. When no process has that id,
+or the id now names a later process, the run is settled with the result TermAl's
+launcher writes for an interrupted run and its reader already reads: `state:
+"failed"`, `exitCode: 1`, `interrupted: true`, `ended` at the time of recovery,
+and an `error` that begins `interrupted:`. The stage that was running is failed
+with `outcome: "unknown"` and an `error` that begins `interrupted:`; it gets no
+exit code, signal, end time or test count. Finished stages keep their fields and
+logs, and unrun stages stay unrun. A `recovered` record adds where the run
+stopped (`stage`, `startup`, `between-stages` or `finishing`), the stage, when
+it was recovered and what the system answered. A run recorded before executors
+were recorded names its id alone, with no host, so its id is asked of the system
+running `recover` unguarded; it is recovered only when no process has that id.
+An executor that could not ask for its own creation time records `created: null`
+and is likewise recovered only when no process has its id. A terminal run is
+left as it is, so recovering twice changes nothing. `recovery.lock` in the run
+directory serialises recoveries and is released after every attempt, a failed
+write included; a lock left by a killed recovery makes the next one refuse and
+name the file. Under that lock `recover` reads the result again after the system
+has said the executor is gone, so a result the executor saved just before it
+ended is kept. `recover` never kills, reruns or notifies, and prints no record
+line. `summary` shows a recovered run as `INTERRUPTED`, with the stage or phase,
+never as a pass or a failure.
+
 Foreground and detached launch receipts both print the run directory, manifest
 path and expected fingerprint before waiting for completion. Foreground mode
 prints this after execution admission and before running stages, so the parent
@@ -321,7 +378,8 @@ not add a power-loss durability guarantee.
 An unreadable request cannot supply a notification target, so it fails startup
 without a `STARTED` receipt. A killed process or unwritable results directory
 cannot guarantee completion delivery; a run without terminal results reads as
-interrupted once its heartbeat is stale, never as a pass.
+interrupted once its heartbeat is stale and never as a pass; `recover` settles
+it as failed and interrupted.
 `execution.lock` prevents a second execution of the same run directory, not
 separate launches; the caller owns repository-level serialization. After a
 crash, recover its artifacts and classify
@@ -333,9 +391,9 @@ within the authorized scope, then validate the changed input; never retry blindl
 A process that executed the stages and waited for them ends its stdout with a
 record of what ran: one line per stage in stage order, then one overall line.
 The human summary above it is unchanged. The detached parent prints no record,
-because its run has not finished; `summary` and `notify` never print one, so a
-saved run cannot be replayed as a new one. A detached worker writes its record
-into `launcher.log`, which is a file like `results.json`.
+because its run has not finished; `summary`, `recover` and `notify` never print
+one, so a saved run cannot be replayed as a new one. A detached worker writes
+its record into `launcher.log`, which is a file like `results.json`.
 
 ```text
 test-launcher/v1 run=ID stage=NAME kind=KIND state=STATE exit=EXIT
