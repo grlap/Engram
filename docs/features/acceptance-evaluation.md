@@ -608,7 +608,7 @@ Refusals extend the typed recovery causes; each carries one recovery command:
 | Cause | Meaning | Recovery |
 | --- | --- | --- |
 | `MissingAcceptanceEvaluation { criterion }` | no evaluation for this run | record one: `engram work evaluate REF …` (or the host's evaluator) |
-| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`) | re-evaluate against the current state; `source` names `done --source-fingerprint F` as the alternative; `identity` needs a session that never held the run; `verification_source` needs the cited check run again on the current source |
+| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`) | re-evaluate against the current state; `source` under a named root first waits for the host to report the root at the declared revision (end the turn, then run `done` again, with no new evaluation), and names `done --source-fingerprint F` where the policy requires a completion fingerprint; `identity` needs a session that never held the run; `verification_source` needs the cited check run again on the current source |
 | `AcceptanceFailed { criterion }` | newest fresh evaluation has a `fail` | corrective work, then evaluate again |
 | `AcceptanceInsufficientEvidence { criterion }` | newest fresh evaluation has `insufficient_evidence` | record the missing evidence, then evaluate again |
 | `AcceptanceNeedsHuman { criterion }` | a criterion needs a human decision | obtain that decision; only a separately authorized revision (`update REF --accept …`) or cancellation changes the requirement, and a new evaluation follows the decision. No agent override exists. |
@@ -755,6 +755,7 @@ tests cite the row identifier in a nearby comment.
 | B78 | as B77, but the declared revision is never sighted | `done` refuses stale (`source`); an evaluation of the revision the host reports replaces it and seals |
 | B79 | a named root sighted at R1; the turn's report sights it at R2 with a passed test; then the evaluator submits R2 on its earlier cut / a passed check on the root's revision reported from another workspace after an evaluation | records, fresh, `done` seals / stale (`mutation`): a check off the root is not exempt |
 | B80 | a passed check verified late for an earlier run of the declared revision, after the run moved on to another revision | stale (`mutation`): a check is exempt only while the run was last sighted at the declared revision |
+| B81 | an evaluation declaring the revision the run is at; a passed check of an earlier revision verified late, after its cut | stale (`mutation`): the check did not run on the declared revision, although the run's newest sighting is there |
 
 ## Agent surface
 

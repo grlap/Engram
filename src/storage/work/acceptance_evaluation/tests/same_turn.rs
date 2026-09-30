@@ -345,3 +345,49 @@ fn a_late_check_of_the_declared_revision_after_the_run_moved_on_still_counts() {
     host.cite_earlier_producer(store, &producer, None, 50);
     assert_eq!(stale(store, &work), Some(AcceptanceStaleReason::Mutation));
 }
+
+// B81: the mirror case. The evaluation declares the revision the run is at,
+// and a passed check of an earlier revision is verified late, after its cut:
+// the check did not run on the judged source, so it still leaves the
+// evaluation stale although the run's newest sighting is the declared one.
+#[test]
+fn a_late_passed_check_on_another_revision_than_the_declared_one_still_counts() {
+    let mut fixture = fixture("project-other-revision");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    disable_obligation_rules(store, 6);
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+    let earlier = host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
+        20,
+    );
+    let producer = load_typed_work_object::<VerificationEvidence>(
+        &store.connection,
+        &earlier[0],
+        "verification_evidence",
+    )
+    .expect("earlier verification")
+    .producer_observation;
+    // The run moves on, and the evaluation judges where it is now.
+    host.basis.source_revision = JUDGED.into();
+    host.checkpoint(store, true, None, 30);
+    record(
+        store,
+        &declared_pass(&work, &note, cut(store, &work), JUDGED, None, "current", 40),
+    )
+    .expect("the evaluation records");
+    assert_eq!(stale(store, &work), None);
+    // A late verification of the earlier revision's build.
+    host.cite_earlier_producer(store, &producer, None, 50);
+    assert_eq!(stale(store, &work), Some(AcceptanceStaleReason::Mutation));
+}

@@ -366,8 +366,9 @@ pub struct WorkEvaluateInput {
     pub acceptance_basis: i64,
     /// The run-feed position the evaluator read through, as printed by
     /// `show` (`evidence_basis`). A host check after it asks for a
-    /// resubmission, a source change after it voids the evaluation unless it
-    /// is to the declared judged revision, and a citation beyond it refuses.
+    /// resubmission unless it passed on the declared judged revision, a
+    /// source change after it voids the evaluation unless it is to that
+    /// revision, and a citation beyond it refuses.
     pub evidence_basis: i64,
     pub verdicts: Vec<WorkCriterionVerdictInput>,
     /// Explicit attempt key: identical resends replay, contradicting content
