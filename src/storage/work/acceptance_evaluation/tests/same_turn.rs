@@ -391,3 +391,96 @@ fn a_late_passed_check_on_another_revision_than_the_declared_one_still_counts() 
     host.cite_earlier_producer(store, &producer, None, 50);
     assert_eq!(stale(store, &work), Some(AcceptanceStaleReason::Mutation));
 }
+
+// A criterion bound to a test, whose only passed test arrives in the turn's
+// report after the evaluator's cut. The declared revision exempts that check
+// from the movement scan, so the evaluation is not asked to resubmit, but the
+// check lies beyond the cut and cannot support that record's pass: citing it
+// is refused as beyond the evidence basis. An evaluation read through a cut
+// that includes the check records.
+#[test]
+fn a_bound_criterions_only_passed_check_after_the_cut_cannot_support_its_pass() {
+    let mut fixture = fixture("project-same-turn-bound");
+    let claim = fixture.claim.clone();
+    let work = revise(
+        &mut fixture.store,
+        &fixture.work,
+        &claim,
+        WorkRevisionPatch {
+            acceptance_bindings: Some(vec![crate::domain::AcceptanceBinding {
+                criterion: 1,
+                requirement: crate::domain::VerificationRequirement {
+                    check_kind: VerificationKind::Test,
+                    check_fingerprint: None,
+                },
+            }]),
+            ..empty_patch()
+        },
+        "bind-to-a-test",
+        4,
+    )
+    .expect("bind the criterion to a test");
+    let claim = crate::storage::work::query::load_work_claim_optional(
+        &fixture.store.connection,
+        claim.run_id,
+    )
+    .expect("claim read")
+    .expect("the claim is held");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let note = fixture.evidence.clone();
+    let mut host = HostSession::bind(store, &work, &claim, 10);
+    // The run is sighted at revision 1 with no check.
+    host.checkpoint(store, true, None, 20);
+    let started_at = cut(store, &work);
+    // The requesting turn's report: the change to the declared revision and
+    // the criterion's only passed test.
+    host.basis.source_revision = JUDGED.into();
+    let passed = host.checkpoint(
+        store,
+        true,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        30,
+    );
+    assert_eq!(passed.len(), 1);
+    let citing = |started_at: i64, key: &str, second: i64| {
+        let mut request = declared_pass(&work, &note, started_at, JUDGED, None, key, second);
+        request.verdicts = vec![verdict(
+            1,
+            AcceptanceVerdict::Pass,
+            AcceptanceBasis::Observed,
+            &passed,
+        )];
+        request
+    };
+    let refused = record(store, &citing(started_at, "on-the-earlier-cut", 40));
+    assert!(
+        matches!(
+            &refused,
+            Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
+                if reason.contains("beyond evidence basis")
+        ),
+        "the movement scan passes and the citation is refused: {refused:?}"
+    );
+    // The movement scan alone: the same cut still records a verdict that
+    // cites nothing after it.
+    let mut failing = declared_pass(&work, &note, started_at, JUDGED, None, "fail", 41);
+    failing.verdicts = vec![verdict(
+        1,
+        AcceptanceVerdict::Fail,
+        AcceptanceBasis::Judgment,
+        &[],
+    )];
+    record(store, &failing).expect("the report asks for no resubmission");
+    assert_eq!(stale(store, &work), None);
+    let recorded = record(store, &citing(cut(store, &work), "on-a-later-cut", 50))
+        .expect("an evaluation whose basis includes the check records");
+    assert!(recorded.record.evidence_basis.contains(&passed[0]));
+}

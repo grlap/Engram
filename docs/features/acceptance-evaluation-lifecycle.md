@@ -141,16 +141,15 @@ The [basis-movement tests](../../src/storage/work/acceptance_evaluation/tests/ba
 pin quiet sightings away and back after the cut; the
 [citation-source tests](../../src/storage/work/acceptance_evaluation/tests/citation_sources.rs)
 pin a flagged move/revert before the cut, where the citation stands but
-completion still owes a later check. The flagged move/revert after the cut
-follows from `basis_moved_after` returning at the first invalidating change;
-these linked tests do not pin that exact two-change sequence.
+completion still owes a later check. The basis-movement tests also pin a
+flagged move to B and back to A after the cut, in one turn or two, declared
+or not: the evaluation stays void and names the change to B as the
+observation that decided it.
 The [evaluation tests](../../src/storage/work/acceptance_evaluation/tests.rs)
 pin the beyond-cut citation refusal with a late asserted gate on an unbound
-criterion. The bound passing-check row follows from the shared
-`bind_verdicts` position check, even when the declared-source exemption
-allows movement scanning to pass; the linked test does not exercise that
-exact host-verification case. Those two boundaries are source-path
-conclusions, not claims of dedicated regression coverage.
+criterion; the same-turn tests pin it for a bound criterion whose only
+passed host check arrives after the cut on the declared revision, where the
+exemption lets the movement scan pass and the citation is still refused.
 
 ## Engram's side of the host check-and-cut guarantee
 

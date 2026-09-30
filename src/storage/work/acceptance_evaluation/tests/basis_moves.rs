@@ -1479,3 +1479,77 @@ fn an_observation_without_the_field_reads_as_stored_and_an_unknown_value_is_refu
         assert!(message.contains(known.as_str()), "{message}");
     }
 }
+
+// A flagged change away from the judged revision and a flagged change back to
+// it, both after the cut, in one turn or in two: the first change voids the
+// evaluation, and the return to the judged revision does not restore it, as
+// it would for quiet sightings alone.
+#[test]
+fn a_flagged_move_and_revert_after_the_cut_leave_the_evaluation_void() {
+    for (declared, one_turn) in [(true, false), (true, true), (false, false), (false, true)] {
+        let mut fixture = fixture(&format!("project-flagged-revert-{declared}-{one_turn}"));
+        let store = &mut fixture.store;
+        enable(
+            store,
+            &[Mode::SameSession],
+            MechanicalBasis::Asserted,
+            false,
+            "enable",
+            5,
+        );
+        disable_obligation_rules(store, 6);
+        let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+        let mut host = HostSession::bind(store, &work, &fixture.claim, 10);
+        host.report(store, &[(true, Some("content-revision-a"))], 20);
+        let read = cut(store, &work);
+        let source = declared.then(|| revision("content-revision-a", None));
+        let recorded = record(
+            store,
+            &judged_again(&work, &note, read, source.clone(), "judged", 25),
+        )
+        .expect("the evaluation of A records");
+        assert_eq!(
+            freshness(store, &work),
+            Some((recorded.evaluation.clone(), None))
+        );
+        if one_turn {
+            host.report(
+                store,
+                &[
+                    (true, Some("content-revision-b")),
+                    (true, Some("content-revision-a")),
+                ],
+                30,
+            );
+        } else {
+            host.report(store, &[(true, Some("content-revision-b"))], 30);
+            host.report(store, &[(true, Some("content-revision-a"))], 35);
+        }
+        let status = store
+            .acceptance_evaluation_status(work.work_id, None)
+            .expect("status read")
+            .expect("an evaluation");
+        assert_eq!(status.evaluation, recorded.evaluation);
+        assert_eq!(
+            status.stale,
+            Some(AcceptanceStaleReason::Mutation),
+            "declared {declared}, one turn {one_turn}"
+        );
+        let deciding = status.stale_observation.expect("the deciding observation");
+        assert!(deciding.source_changed);
+        assert_eq!(deciding.revision.as_deref(), Some("content-revision-b"));
+        // A submission on the original cut is void too.
+        let refused = record(
+            store,
+            &judged_again(&work, &note, read, source, "resubmitted", 40),
+        );
+        assert_eq!(
+            moved(refused),
+            (
+                EvaluationBasisMove::SourceChanged,
+                "acceptance_evaluation_void".into()
+            ),
+            "declared {declared}, one turn {one_turn}"
+        );
+    }
+}
