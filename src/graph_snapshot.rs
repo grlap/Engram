@@ -210,11 +210,15 @@ pub struct WorkGraphSnapshotHistory {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WorkGraphSnapshotRecordPayload {
-    /// Canonical restored records will be carried verbatim once load ships.
+    /// An inherited restored record, carried verbatim: `graph load` keeps
+    /// its record id and separately checks that its canonical bytes are
+    /// exactly what its typed shape freezes to.
     Restored {
         object_id: ObjectId,
         canonical_json: Value,
     },
+    /// A layer of the exporting store's own history; `graph load` mints a
+    /// fresh record id for the restored record it builds from it.
     Native {
         history: Box<WorkGraphSnapshotHistory>,
     },
@@ -232,8 +236,11 @@ pub struct WorkGraphSnapshotRecord {
 /// Immutable, inert history layer recreated by `graph load`.
 ///
 /// The record deliberately carries no run, claim, feed, or completion-seal
-/// identity. Its hash binds the project, planning item, relation cut,
-/// generation, and history independently of the importing store.
+/// identity. Its record id is a stored identity, never derived from its
+/// content: an inherited record keeps the id it was restored under, and a
+/// native layer's id is minted at load. Its canonical bytes carry the
+/// project, planning item, relation cut, generation, and history
+/// independently of the importing store, and are compared separately.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestoredRecord {
