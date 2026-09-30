@@ -1768,9 +1768,11 @@ impl AgentVerbs {
             }
         };
         let value = match &result {
-            WorkCompleteResult::Refused(refusal) => {
-                super::child_obligations::done_refusal_value(refusal, child_resolution)?
-            }
+            WorkCompleteResult::Refused(refusal) => super::child_obligations::done_refusal_value(
+                refusal,
+                child_resolution,
+                &self.service.display_identity(),
+            )?,
             WorkCompleteResult::Completed(receipt) => {
                 let mut value = json!({
                     "seal": receipt.seal,

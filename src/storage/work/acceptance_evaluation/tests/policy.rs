@@ -128,7 +128,7 @@ fn mode_and_pin_matrix_preserves_admission_and_freshness() {
                 let expected_freshness = (expected.is_err() || unmarked_affiliation)
                     .then_some(AcceptanceStaleReason::Policy);
                 assert_eq!(
-                    staleness(
+                    staleness_named(
                         &store.connection,
                         &item,
                         held.run_id,
@@ -136,7 +136,8 @@ fn mode_and_pin_matrix_preserves_admission_and_freshness() {
                         &evaluation,
                         SourceCheck::Unmeasured,
                     )
-                    .expect("matrix freshness assessment"),
+                    .expect("matrix freshness assessment")
+                    .0,
                     expected_freshness,
                     "{cell}"
                 );

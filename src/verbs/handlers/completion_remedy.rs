@@ -22,7 +22,7 @@ pub(in crate::verbs) fn completion_recovery_reminder(
     } else {
         item.short_ref.clone()
     };
-    match &recovery.cause {
+    let reminder = match &recovery.cause {
         crate::WorkCompletionRecoveryCause::OpenObligation {
             obligation_id,
             required_check,
@@ -88,5 +88,11 @@ pub(in crate::verbs) fn completion_recovery_reminder(
             "{label} needs a human decision on \"{}\"; revise the criteria or cancel",
             short(criterion)
         ),
+    };
+    // The cause's words stay as they are; the observation that decided a
+    // stale evaluation's source move follows them as one escaped sentence.
+    match &recovery.deciding_observation {
+        Some(observation) => format!("{reminder}. {}", observation.sentence()),
+        None => reminder,
     }
 }

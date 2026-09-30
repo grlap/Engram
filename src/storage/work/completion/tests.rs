@@ -49,6 +49,7 @@ fn criterion_disclosure_empty_links_are_admitted_but_foreign_citations_still_ref
         Err(StoreError::WorkCompletionRecoveryRequired {
             work: refused_work,
             cause: WorkCompletionRecoveryCause::MissingAcceptance { criterion },
+            ..
         }) if refused_work == work.work_id && criterion == work.acceptance[0]
     ));
 }

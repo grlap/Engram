@@ -2041,9 +2041,14 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
 }
 
 fn serialize_agent_receipt(value: &serde_json::Value) -> serde_json::Result<String> {
-    // Agent response budgets are measured against compact JSON. Emitting that
-    // exact representation keeps the CLI transport inside the same hard bound.
+    // Agent response budgets are measured against compact JSON with the
+    // locked-store phrase's spaces escaped. Emitting that exact representation
+    // keeps the CLI transport inside the same hard bound. A receipt can carry
+    // host-recorded text, such as the source observation named in done's
+    // refusal; it never spells the phrase, and every string still decodes
+    // unchanged.
     serde_json::to_string(value)
+        .map(|text| engram::storage::json_without_locked_store_phrase(&text))
 }
 
 fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<ExitCode> {
@@ -2151,7 +2156,12 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
     };
     match result {
         Ok(value) => {
-            println!("{}", serde_json::to_string_pretty(&value)?);
+            println!(
+                "{}",
+                engram::storage::json_without_locked_store_phrase(&serde_json::to_string_pretty(
+                    &value
+                )?)
+            );
             Ok(if completion_refused {
                 ExitCode::FAILURE
             } else {
@@ -2166,12 +2176,17 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
     }
 }
 
-/// A moved-basis refusal carries host-recorded text in its details; written
-/// to stderr it must never read as a locked store to a host that retries on
-/// that phrase. Every other refusal is written as it is, so a real lock error
-/// still reads as one.
+/// A moved-basis refusal, and a completion recovery naming the source
+/// observation that decided a stale evaluation, carry host-recorded text in
+/// their details; written to stderr they must never read as a locked store to
+/// a host that retries on that phrase. Every other refusal is written as it
+/// is, so a real lock error still reads as one.
 fn refusal_stderr_text(error: &StoreError, text: String) -> String {
-    if matches!(error, StoreError::AcceptanceEvaluationBasisMoved { .. }) {
+    if matches!(
+        error,
+        StoreError::AcceptanceEvaluationBasisMoved { .. }
+            | StoreError::WorkCompletionRecoveryRequired { .. }
+    ) {
         engram::storage::json_without_locked_store_phrase(&text)
     } else {
         text

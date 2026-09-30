@@ -39,6 +39,35 @@ pub struct WorkBoundVerificationCause {
     pub remedy: BoundVerificationRemedy,
 }
 
+/// The source observation that decided a source move after an evaluation's
+/// cut, named beside the move so an agent can see what voided the evaluation.
+/// It is never a cause of its own: the move stays the cause. Every field is as
+/// the observation recorded it; `None` means the observation did not record
+/// that field.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DecidingObservation {
+    /// The observation's record id.
+    pub observation: ObjectId,
+    /// Its position on the run feed.
+    pub position: i64,
+    /// Whether the observation reported a source change, as stored.
+    pub source_changed: bool,
+    pub workspace: Option<String>,
+    pub revision: Option<String>,
+    pub root_generation: Option<i64>,
+    /// The session that reported it.
+    pub reporting_session: SessionId,
+    /// When the host observed it; `None` when the host did not say.
+    pub observed_at: Option<DateTime<Utc>>,
+    /// When the store recorded it.
+    pub recorded_at: DateTime<Utc>,
+    /// The revision the evaluation declared it judged or, without a
+    /// declaration, the revision it judged at its cut.
+    pub evaluated_revision: Option<String>,
+    /// Whether `evaluated_revision` is the evaluation's own declaration.
+    pub evaluated_revision_declared: bool,
+}
+
 /// Sliding lease applied after every successful claim-holder work mutation.
 pub const DEFAULT_WORK_CLAIM_TTL_SECONDS: i64 = 3_600;
 pub(crate) const GATE_EVIDENCE_SUMMARY: &str = "typed gate evidence";
@@ -473,6 +502,11 @@ pub struct WorkCompletionRecovery {
     pub cause: WorkCompletionRecoveryCause,
     pub item: WorkReferenceCandidate,
     pub command: String,
+    /// For a stale evaluation whose source move a source observation after
+    /// its cut decided: that observation, beside the cause and never inside
+    /// it, so the cause keeps its shape and words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deciding_observation: Option<Box<DecidingObservation>>,
 }
 
 /// Aggregate generation that owns the root completion barrier.

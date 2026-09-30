@@ -5,7 +5,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::super::{
-    BeginWorkProtocolAttempt, DECOMPOSE_PROTOCOL_OPERATION, SqliteStore, StoreError,
+    BeginWorkProtocolAttempt, DECOMPOSE_PROTOCOL_OPERATION, SqliteStore, StaleRecoveryContext,
+    StoreError,
 };
 use super::completion::feed_head;
 use super::feeds::{
@@ -326,6 +327,7 @@ impl SqliteStore {
         claim: &WorkClaim,
         now: DateTime<Utc>,
         cause: &WorkCompletionRecoveryCause,
+        context: StaleRecoveryContext,
     ) -> Result<CompletionRecoverySnapshot, StoreError> {
         debug_assert!(self.connection.is_autocommit());
         let transaction = self.connection.unchecked_transaction()?;
@@ -367,8 +369,13 @@ impl SqliteStore {
                 ));
             }
         }
-        let recovery =
-            completion_recovery_snapshot_on(&transaction, &work, claim.run_id, cause.clone())?;
+        let recovery = completion_recovery_snapshot_on(
+            &transaction,
+            &work,
+            claim.run_id,
+            cause.clone(),
+            context,
+        )?;
         transaction.commit()?;
         Ok(recovery)
     }

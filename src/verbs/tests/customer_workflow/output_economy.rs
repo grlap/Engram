@@ -278,6 +278,7 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
                 lifecycle: WorkLifecycle::Open,
             },
             command: format!("engram work done {work_ref} \"…\""),
+            deciding_observation: None,
         },
         required_child_successor: None,
     };
@@ -290,7 +291,7 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
     let compact = crate::verbs::mutation::receipt(
         &view,
         "done",
-        crate::verbs::child_obligations::done_refusal_value(&refusal, None).unwrap(),
+        done_refusal_value(&refusal).unwrap(),
         vec![format!("not done {work_ref} \"{title}\"")],
         Guidance {
             reminders: reminders.clone(),
@@ -338,7 +339,7 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
     let stored = crate::verbs::mutation::receipt(
         &view,
         "done",
-        crate::verbs::child_obligations::done_refusal_value(&refusal, None).unwrap(),
+        done_refusal_value(&refusal).unwrap(),
         vec![format!("not done {work_ref} \"{title}\"")],
         Guidance {
             reminders,
@@ -522,4 +523,21 @@ fn continuation_headers_reduce_same_row_bytes_and_fixed_backlog_page_count() {
         );
         assert!(compact_pages < full_pages);
     }
+}
+
+/// done's refusal value as a reader with no deciding observation sees it.
+fn done_refusal_value(
+    refusal: &crate::work_service::WorkCompleteRefusal,
+) -> Result<serde_json::Value, crate::verbs::VerbError> {
+    let project = crate::ProjectId("refusal-reader".into());
+    let session = crate::SessionId("refusal-reader".into());
+    crate::verbs::child_obligations::done_refusal_value(
+        refusal,
+        None,
+        &crate::work_service::identity::DisplayIdentity {
+            project: &project,
+            actor: "refusal-reader",
+            session: &session,
+        },
+    )
 }

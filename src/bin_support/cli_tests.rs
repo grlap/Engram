@@ -267,6 +267,16 @@ fn agent_json_emission_uses_the_response_budget_representation() {
             > limit
     );
     assert!(!emitted.contains('\n'));
+    // The phrase's escaped spaces are part of the representation the budget
+    // measures: one occurrence adds ten bytes.
+    let phrase =
+        serde_json::json!({ "a": format!("{}database is locked", "x".repeat(limit - 36)) });
+    let emitted = serialize_agent_receipt(&phrase).expect("serialize agent receipt");
+    assert_eq!(emitted.len(), limit);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&emitted).unwrap(),
+        phrase
+    );
 }
 
 #[test]
@@ -530,4 +540,46 @@ fn work_cli_show_takes_the_observations_window_alone() {
             "{other}"
         );
     }
+}
+
+// A receipt, such as done's refusal naming the source observation that decided
+// a stale evaluation, can carry host-recorded text. Written as the CLI writes
+// it, it never spells the locked-store phrase, and every string still decodes
+// to what was recorded. A recovery refusal on stderr is guarded the same way.
+#[test]
+fn receipts_and_recovery_refusals_never_spell_the_locked_store_phrase() {
+    let value = serde_json::json!({
+        "code": "acceptance_evaluation_stale",
+        "recovery": {
+            "deciding_observation": {
+                "revision": "Database Is Locked",
+                "workspace": "C:/work/database is locked",
+            },
+        },
+    });
+    let written = super::serialize_agent_receipt(&value).unwrap();
+    assert!(
+        !written.to_lowercase().contains("database is locked"),
+        "{written}"
+    );
+    let decoded: serde_json::Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(decoded, value);
+
+    let error = engram::storage::StoreError::WorkCompletionRecoveryRequired {
+        work: engram::WorkId::new(),
+        cause: engram::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+            reason: engram::AcceptanceStaleReason::Mutation,
+        },
+        context: engram::storage::StaleRecoveryContext::default(),
+    };
+    let text = serde_json::to_string_pretty(&value).unwrap();
+    let guarded = super::refusal_stderr_text(&error, text);
+    assert!(
+        !guarded.to_lowercase().contains("database is locked"),
+        "{guarded}"
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&guarded).unwrap(),
+        value
+    );
 }

@@ -576,6 +576,169 @@ pub(crate) fn bound_verification_refusal_fixture(
     }
 }
 
+/// A done refused for a stale evaluation, with the source observation that
+/// decided it.
+pub(crate) struct StaleDecidingFixture {
+    pub work: WorkItem,
+    pub claim: WorkClaim,
+    pub generic: ObjectId,
+    /// The run-feed position of the flagged change that voided the evaluation.
+    pub position: i64,
+}
+
+/// A same-session pass judged at `judged`, then a flagged change to
+/// `revision` in `workspace` after its cut: the evaluation reads stale, and
+/// that change is the observation that decided it. With `decided` false the
+/// evaluation reads stale for another cause instead: the project policy no
+/// longer admits the mode it was recorded in.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test fixture mirrors the host observation surface"
+)]
+pub(crate) fn stale_deciding_refusal_fixture(
+    database: &std::path::Path,
+    project: &str,
+    holder: &str,
+    judged: &str,
+    workspace: &str,
+    revision: &str,
+    decided: bool,
+    second: i64,
+) -> StaleDecidingFixture {
+    use crate::domain::{
+        AcceptanceBasis, AcceptanceEvaluationMode, AcceptanceEvaluationPolicy, AcceptanceVerdict,
+        CriterionVerdictInput, MechanicalBasis, OBLIGATION_RULE_SET_SCHEMA_VERSION,
+        ObligationRuleSet, RecordAcceptanceEvaluationRequest,
+    };
+    let mut store = SqliteStore::open(database).expect("store");
+    let work = store
+        .create_work(
+            &root_request(project, "stale-deciding", second),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("work");
+    let claim = claim(
+        &mut store,
+        &work,
+        holder,
+        "stale-deciding-claim",
+        second + 1,
+        36_000,
+    );
+    let generic = evidence(&mut store, &work, &claim, holder, "generic", second + 2);
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "checkpoint",
+        second + 3,
+        std::slice::from_ref(&generic),
+    );
+    let policy = |modes: Vec<AcceptanceEvaluationMode>| AcceptanceEvaluationPolicy {
+        allowed_modes: modes,
+        mechanical_basis: MechanicalBasis::Asserted,
+        require_source_freshness: false,
+    };
+    store
+        .set_acceptance_evaluation_policy(
+            &policy(vec![AcceptanceEvaluationMode::SameSession]),
+            &actor("policy-admin"),
+            "enable",
+            None,
+            at(second + 4),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("evaluated policy");
+    store
+        .set_obligation_rule_set(
+            &ObligationRuleSet {
+                schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
+                rules: Vec::new(),
+            },
+            &actor("obligation-rule-admin"),
+            "no-obligation-rules",
+            None,
+            at(second + 5),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("empty obligation rules");
+    let basis = |workspace: &str, revision: &str| crate::domain::ExecutionSourceBasis {
+        workspace_id: workspace.into(),
+        source_revision: revision.into(),
+        source_root_generation: None,
+        source_root_state: None,
+    };
+    source_mutation_from_basis(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "judged",
+        second + 6,
+        Some(basis("workspace-judged", judged)),
+        None,
+    );
+    let run_feed = crate::domain::FeedId::RunExecution(claim.run_id);
+    store
+        .record_acceptance_evaluation(
+            &RecordAcceptanceEvaluationRequest {
+                supersedes: None,
+                project_id: work.project_id.clone(),
+                work_id: work.work_id,
+                expected_work_revision: work.revision,
+                evaluated_through: store.work_feed_head(&run_feed).expect("run feed head"),
+                mode: AcceptanceEvaluationMode::SameSession,
+                execution_identity: None,
+                parent_session: None,
+                evaluator_model: None,
+                source_basis: None,
+                verdicts: vec![CriterionVerdictInput {
+                    criterion: 1,
+                    verdict: AcceptanceVerdict::Pass,
+                    basis: AcceptanceBasis::Judgment,
+                    rationale: "criterion 1: pass".into(),
+                    evidence: vec![generic.clone()],
+                }],
+                evaluator: actor(holder),
+                attempt_key: None,
+                recorded_at: at(second + 7),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("the evaluation records");
+    if decided {
+        source_mutation_from_basis(
+            &mut store,
+            &work,
+            &claim,
+            holder,
+            "moved",
+            second + 8,
+            Some(basis(workspace, revision)),
+            None,
+        );
+    } else {
+        store
+            .set_acceptance_evaluation_policy(
+                &policy(vec![AcceptanceEvaluationMode::IndependentSession]),
+                &actor("policy-admin"),
+                "independent-only",
+                None,
+                at(second + 8),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("stricter policy");
+    }
+    let position = store.work_feed_head(&run_feed).expect("run feed head");
+    StaleDecidingFixture {
+        work,
+        claim,
+        generic,
+        position,
+    }
+}
+
 /// Records a host check, its environment and its verification at `second`.
 pub(super) fn host_verification_with_outcome(
     store: &mut SqliteStore,

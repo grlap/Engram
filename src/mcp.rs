@@ -1063,10 +1063,20 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "cause": cause,
             "remedy": crate::work_service::bound_verification_remedy(cause),
         }),
-        StoreError::WorkCompletionRecoveryRequired { work, cause } => json!({
-            "work_id": work,
-            "cause": cause,
-        }),
+        StoreError::WorkCompletionRecoveryRequired {
+            work,
+            cause,
+            context,
+        } => {
+            let mut details = json!({
+                "work_id": work,
+                "cause": cause,
+            });
+            if let Some(observation) = &context.deciding_observation {
+                details["deciding_observation"] = json!(observation);
+            }
+            details
+        }
         StoreError::AcceptanceCriteriaRequired { work } => json!({
             "work_id": work,
             "reason": "the item has no acceptance criteria; an acceptance evaluation needs at least one, and the host refuses to evaluate an item without criteria",
@@ -1389,6 +1399,94 @@ mod tests {
         let message = value["error"]["message"].as_str().unwrap();
         assert!(message.contains("use the Engram build that owns this store"));
         assert!(!message.contains("invalid data"));
+    }
+
+    // done's refusal for a stale evaluation names the source observation that
+    // decided it beside the unchanged cause; a stale refusal for another
+    // reason names none. The receipt keeps its code and words.
+    #[test]
+    fn done_names_the_deciding_observation_beside_the_unchanged_stale_cause() {
+        for decided in [true, false] {
+            let directory = crate::test_support::temp_home().expect("temporary MCP home");
+            let database = directory.path().join("stale-deciding.sqlite3");
+            let second = Utc::now().timestamp()
+                - chrono::Utc
+                    .with_ymd_and_hms(2026, 8, 27, 1, 0, 0)
+                    .single()
+                    .expect("epoch")
+                    .timestamp()
+                - 20;
+            let fixture = crate::storage::stale_deciding_refusal_fixture(
+                &database,
+                "mcp-stale-deciding",
+                "runner",
+                "revision-judged",
+                "C:/work/other tree",
+                "revision-moved",
+                decided,
+                second,
+            );
+            let server = McpServer::new_with_actor_context(
+                database,
+                ProjectId("mcp-stale-deciding".into()),
+                "runner".into(),
+                SessionId("runner".into()),
+                None,
+                None,
+            );
+            let response = server.done(Parameters(DoneArgs {
+                work_ref: Some(fixture.work.short_ref.clone()),
+                summary: Some("delivered".into()),
+                note: None,
+                links: None,
+                link_basis: None,
+                source_fingerprint: None,
+                landing: None,
+            }));
+            assert_ne!(
+                response.is_error,
+                Some(true),
+                "an owed receipt, not an error"
+            );
+            let value = response.structured_content.expect("structured receipt");
+            assert_eq!(value["code"], "acceptance_evaluation_stale", "{value}");
+            let reason = if decided { "mutation" } else { "policy" };
+            assert_eq!(
+                value["recovery"]["cause"],
+                json!(
+                    crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+                        reason: if decided {
+                            crate::AcceptanceStaleReason::Mutation
+                        } else {
+                            crate::AcceptanceStaleReason::Policy
+                        }
+                    }
+                ),
+                "{value}"
+            );
+            assert_eq!(value["recovery"]["cause"]["reason"], reason);
+            let reminders = value["reminders"].as_array().expect("reminders");
+            let named = reminders.iter().any(|reminder| {
+                reminder
+                    .as_str()
+                    .is_some_and(|text| text.contains("The deciding source observation"))
+            });
+            let observation = &value["recovery"]["deciding_observation"];
+            if decided {
+                assert_eq!(observation["position"], fixture.position, "{value}");
+                assert_eq!(observation["workspace"], "C:/work/other tree");
+                assert_eq!(observation["revision"], "revision-moved");
+                assert_eq!(observation["source_changed"], true);
+                // Labelled as show labels sessions: the caller's own is "you".
+                assert_eq!(observation["reporting_session"], "you");
+                assert_eq!(observation["evaluated_revision"], "revision-judged");
+                assert_eq!(observation["evaluated_revision_declared"], false);
+                assert!(named, "{value}");
+            } else {
+                assert!(observation.is_null(), "{value}");
+                assert!(!named, "{value}");
+            }
+        }
     }
 
     #[test]

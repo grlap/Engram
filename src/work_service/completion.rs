@@ -332,8 +332,9 @@ impl LocalWorkService {
             links::validated_acceptance(&store, &work, &claim, &input, &actor, &evidence_basis);
         let acceptance = match validated_acceptance {
             Ok(acceptance) => acceptance,
-            Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) => {
-                let snapshot = store.work_completion_recovery(&work, &claim, now, &cause)?;
+            Err(StoreError::WorkCompletionRecoveryRequired { cause, context, .. }) => {
+                let snapshot =
+                    store.work_completion_recovery(&work, &claim, now, &cause, context)?;
                 let obligation_page = work_completion_recovery_page(&store, &snapshot)?;
                 let result = completion_recovery_result(
                     work.work_id,
@@ -357,8 +358,9 @@ impl LocalWorkService {
             claim.run_id,
             input.source_fingerprint.as_deref(),
         )? {
-            crate::storage::AcceptanceEvaluationReadiness::Blocked(cause) => {
-                let snapshot = store.work_completion_recovery(&work, &claim, now, &cause)?;
+            crate::storage::AcceptanceEvaluationReadiness::Blocked(cause, context) => {
+                let snapshot =
+                    store.work_completion_recovery(&work, &claim, now, &cause, context)?;
                 let obligation_page = work_completion_recovery_page(&store, &snapshot)?;
                 return Ok(completion_recovery_result(
                     work.work_id,

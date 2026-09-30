@@ -98,6 +98,10 @@ struct DoneRecovery<'a> {
     cause: &'a crate::WorkCompletionRecoveryCause,
     item: WithChildSuccessor<RecoveryItem<'a>>,
     command: &'a str,
+    /// Beside the cause, as `show` names it; present only for a stale
+    /// evaluation whose source move an observation after its cut decided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deciding_observation: Option<crate::work_service::ShownDecidingObservation>,
 }
 
 #[derive(Serialize)]
@@ -118,6 +122,7 @@ struct DoneRefusal<'a> {
 pub(super) fn done_refusal_value(
     refusal: &crate::work_service::WorkCompleteRefusal,
     child_resolution: Option<ShowChildSuccessor>,
+    identity: &crate::work_service::identity::DisplayIdentity<'_>,
 ) -> Result<Value, VerbError> {
     let crate::work_service::WorkCompleteRefusal {
         code,
@@ -131,7 +136,14 @@ pub(super) fn done_refusal_value(
         cause,
         item,
         command,
+        deciding_observation,
     } = recovery;
+    // Bounded per field and labelled as show labels sessions, so the receipt
+    // stays within the agent budget whatever the host recorded; the storage
+    // refusal's details keep it whole.
+    let deciding_observation = deciding_observation.as_deref().map(|observation| {
+        crate::work_service::ShownDecidingObservation::new(observation, identity)
+    });
     // The current item is already named by the common envelope. Preserve the
     // actionable remedy without repeating its title in a prose projection.
     let remedy = if *work_id == item.work_id
@@ -159,6 +171,7 @@ pub(super) fn done_refusal_value(
                 child_resolution,
             },
             command,
+            deciding_observation,
         },
     })?)
 }

@@ -35,8 +35,8 @@ use crate::domain::{
     WorkObligation, WorkPlanningAuthority, WorkTransition,
 };
 use crate::memory::Redactor;
-use crate::storage::DecidingObservation;
 use crate::storage::{CarriedFailureRefusal, EvaluationBasisMove, SqliteStore, StoreError};
+use crate::storage::{DecidingObservation, StaleRecoveryContext};
 
 /// Canonical object kind and run-feed entry kind of one evaluation.
 pub(crate) const KIND: &str = "acceptance_evaluation";
@@ -118,8 +118,9 @@ pub enum AcceptanceEvaluationReadiness {
     /// A fresh, all-pass evaluation completion would consume; the seal will
     /// carry its citations.
     Ready(Box<AcceptanceEvaluation>),
-    /// The typed recovery completion would raise.
-    Blocked(WorkCompletionRecoveryCause),
+    /// The typed recovery completion would raise, with the context read
+    /// beside it.
+    Blocked(WorkCompletionRecoveryCause, StaleRecoveryContext),
 }
 
 /// How a completion-time source fingerprint enters a freshness check.
@@ -145,7 +146,7 @@ pub(crate) struct AttemptIdentity {
 #[derive(Clone, Debug)]
 pub(super) enum AcceptanceEvaluationAssessment {
     Absent,
-    Stale(AcceptanceStaleReason),
+    Stale(AcceptanceStaleReason, StaleRecoveryContext),
     Fresh {
         hash: ObjectId,
         evaluation: Box<AcceptanceEvaluation>,
@@ -513,15 +514,20 @@ impl SqliteStore {
                     WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
                         criterion: item.acceptance.first().cloned().unwrap_or_default(),
                     },
+                    StaleRecoveryContext::default(),
                 ),
-                AcceptanceEvaluationAssessment::Stale(reason) => {
+                AcceptanceEvaluationAssessment::Stale(reason, context) => {
                     AcceptanceEvaluationReadiness::Blocked(
                         WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason },
+                        context,
                     )
                 }
                 AcceptanceEvaluationAssessment::Fresh { evaluation, .. } => {
                     match blocking_cause(&evaluation) {
-                        Some(cause) => AcceptanceEvaluationReadiness::Blocked(cause),
+                        Some(cause) => AcceptanceEvaluationReadiness::Blocked(
+                            cause,
+                            StaleRecoveryContext::default(),
+                        ),
                         None => AcceptanceEvaluationReadiness::Ready(evaluation),
                     }
                 }
@@ -2556,20 +2562,10 @@ fn judged_revision(
             .is_none_or(|workspace| *workspace == basis.workspace_id)
 }
 
-fn staleness(
-    connection: &Connection,
-    item: &WorkItem,
-    run_id: WorkRunId,
-    policy: &AcceptanceEvaluationPolicy,
-    record: &AcceptanceEvaluation,
-    source: SourceCheck<'_>,
-) -> Result<Option<AcceptanceStaleReason>, StoreError> {
-    Ok(staleness_named(connection, item, run_id, policy, record, source)?.0)
-}
-
-/// [`staleness`] together with the source observation that decided a source
-/// move, when the record reads stale for one: such a move reads as
-/// `Mutation`, and the observation is named beside it, never as a cause.
+/// Why the record reads stale, if it does, together with the source
+/// observation that decided a source move when it reads stale for one: such a
+/// move reads as `Mutation`, and the observation is named beside it, never as
+/// a cause.
 fn staleness_named(
     connection: &Connection,
     item: &WorkItem,
@@ -2780,7 +2776,7 @@ pub(super) fn assess_on(
         return Ok(AcceptanceEvaluationAssessment::Absent);
     };
     Ok(
-        match staleness(
+        match staleness_named(
             connection,
             item,
             run_id,
@@ -2788,8 +2784,13 @@ pub(super) fn assess_on(
             &record,
             SourceCheck::AtCompletion(source_fingerprint),
         )? {
-            Some(reason) => AcceptanceEvaluationAssessment::Stale(reason),
-            None => AcceptanceEvaluationAssessment::Fresh {
+            (Some(reason), observation) => AcceptanceEvaluationAssessment::Stale(
+                reason,
+                StaleRecoveryContext {
+                    deciding_observation: observation.map(Box::new),
+                },
+            ),
+            (None, _) => AcceptanceEvaluationAssessment::Fresh {
                 hash,
                 evaluation: Box::new(record),
             },

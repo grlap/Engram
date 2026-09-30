@@ -352,6 +352,12 @@ that count existed falls back to the open entries it shows.
 `obligations.omitted` retains its exact undisplayed count, not an assertion
 that omitted entries are resolved. Actionable reminders, source omissions,
 refusal `code`/`remedy`/`recovery`, and done's child-follow-up groups remain.
+A stale-evaluation refusal whose source move an observation decided adds
+`recovery.deciding_observation` beside the unchanged `recovery.cause`, as
+[acceptance evaluation](acceptance-evaluation.md) describes. The CLI writes
+JSON receipts so that no field spells the locked-store phrase, with its spaces
+as `\u0020` escapes; every field still decodes to what was recorded, and the
+response budget measures that written form.
 Creation names root/child kind and any parent/requirement; gate reports name,
 pass/fail, failure count and reference presence; note retains its evidence
 locator and a distinct checkpoint when present; done retains seal and time.

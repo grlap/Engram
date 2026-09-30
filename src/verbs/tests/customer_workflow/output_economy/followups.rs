@@ -199,11 +199,12 @@ fn compact_remedy_elides_only_one_bound_title_and_preserves_core_wording() {
                 lifecycle: WorkLifecycle::Open,
             },
             command: format!("engram work show {work}"),
+            deciding_observation: None,
         },
         required_child_successor: None,
     };
     let original = serde_json::to_value(&refusal).unwrap();
-    let compact = crate::verbs::child_obligations::done_refusal_value(&refusal, None).unwrap();
+    let compact = done_refusal_value(&refusal).unwrap();
     assert_eq!(
         compact["remedy"],
         format!("New core advice for {work}; retain second citation {work} {title:?}.")
@@ -211,13 +212,13 @@ fn compact_remedy_elides_only_one_bound_title_and_preserves_core_wording() {
     assert_eq!(serde_json::to_value(&refusal).unwrap(), original);
     refusal.remedy = "New core advice with no title citation".into();
     assert_eq!(
-        crate::verbs::child_obligations::done_refusal_value(&refusal, None).unwrap()["remedy"],
+        done_refusal_value(&refusal).unwrap()["remedy"],
         refusal.remedy
     );
     refusal.remedy = format!("Core advice for {work} {title:?}");
     refusal.recovery.item.work_id = crate::WorkId::new();
     assert_eq!(
-        crate::verbs::child_obligations::done_refusal_value(&refusal, None).unwrap()["remedy"],
+        done_refusal_value(&refusal).unwrap()["remedy"],
         refusal.remedy
     );
     refusal.recovery.item.work_id = refusal.work_id;
@@ -230,7 +231,24 @@ fn compact_remedy_elides_only_one_bound_title_and_preserves_core_wording() {
         required_check: VerificationKind::Test,
     };
     assert_eq!(
-        crate::verbs::child_obligations::done_refusal_value(&refusal, None).unwrap()["remedy"],
+        done_refusal_value(&refusal).unwrap()["remedy"],
         refusal.remedy
     );
+}
+
+/// done's refusal value as a reader with no deciding observation sees it.
+fn done_refusal_value(
+    refusal: &crate::work_service::WorkCompleteRefusal,
+) -> Result<serde_json::Value, crate::verbs::VerbError> {
+    let project = crate::ProjectId("refusal-reader".into());
+    let session = crate::SessionId("refusal-reader".into());
+    crate::verbs::child_obligations::done_refusal_value(
+        refusal,
+        None,
+        &crate::work_service::identity::DisplayIdentity {
+            project: &project,
+            actor: "refusal-reader",
+            session: &session,
+        },
+    )
 }

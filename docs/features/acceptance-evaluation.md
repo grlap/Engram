@@ -246,7 +246,8 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   its whitespace is collapsed: such a field writes every whitespace character
   as a visible escape such as `\u{20}`, counted within its bound; the CLI's
   JSON refusal writes the spaces of that phrase as `\u0020` escapes, so the
-  fields still decode to what was recorded. The source also counts as changed when the newest
+  fields still decode to what was recorded. `done`'s refusal naming the same
+  observation, below the recovery causes, is guarded alike. The source also counts as changed when the newest
   execution observation after the cut that carries a revision shows it at
   another revision than the judged one, even while reporting no change (F3
   below). The one source change that does not count is a change to the
@@ -630,6 +631,24 @@ Refusals extend the typed recovery causes; each carries one recovery command:
 | `AcceptanceFailed { criterion }` | newest fresh evaluation has a `fail` | corrective work, then evaluate again |
 | `AcceptanceInsufficientEvidence { criterion }` | newest fresh evaluation has `insufficient_evidence` | record the missing evidence, then evaluate again |
 | `AcceptanceNeedsHuman { criterion }` | a criterion needs a human decision | obtain that decision; only a separately authorized revision (`update REF --accept …`) or cancellation changes the requirement, and a new evaluation follows the decision. No agent override exists. |
+
+When `done` refuses with `AcceptanceEvaluationStale` because a source
+observation after the newest evaluation's cut decided that the source moved,
+the refusal names that observation beside the cause, never inside it. The
+receipt's `code`, `recovery.cause`, its "not done" line and its stale
+reminder keep their words. The reminder adds the same one-line sentence the
+evaluate refusal adds, and the receipt's JSON, from the CLI and from MCP,
+adds `recovery.deciding_observation` as `show` names it: each host-recorded
+field cut at 128 bytes with its stored length, and the reporting session as
+`show` labels sessions, so the receipt stays within the agent budget. A raw
+storage recovery error keeps its message, which is the cause's words alone,
+and adds `deciding_observation` to `error.details` beside `cause`, with the
+fields whole. A stale
+evaluation that no observation decided names none, nor does any other cause.
+The CLI writes every JSON receipt, and a recovery error's JSON on stderr,
+with the spaces of the locked-store phrase as `\u0020` escapes, so no field
+spells it and every field still decodes to what was recorded; MCP returns the
+structured values as recorded.
 
 An item with no acceptance criteria has nothing an evaluation could judge, and
 the host refuses to evaluate it. So under an evaluated policy `done` refuses

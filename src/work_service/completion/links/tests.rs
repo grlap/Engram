@@ -45,7 +45,7 @@ fn criterion_links_recovery_matches_unlinked_acceptance_recovery() {
     let linked = validated_acceptance(&store, &item, &claim, &input, &actor, &[]).unwrap_err();
     for error in [ordinary, linked] {
         assert!(matches!(error, StoreError::WorkCompletionRecoveryRequired {
-            work: id, cause: crate::WorkCompletionRecoveryCause::MissingAcceptance { criterion }
+            work: id, cause: crate::WorkCompletionRecoveryCause::MissingAcceptance { criterion }, ..
         } if id == work.work_id && criterion == " unnormalized criterion "));
     }
 }

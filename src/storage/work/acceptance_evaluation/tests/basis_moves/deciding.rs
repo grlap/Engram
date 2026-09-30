@@ -946,3 +946,271 @@ fn the_guard_never_lengthens_the_refusal_past_its_bound() {
             .contains(phrase)
     );
 }
+
+/// A done refused for a stale evaluation, from the shared fixture: a flagged
+/// change to `revision` decided it, or, with `decided` false, the policy no
+/// longer admits its mode.
+fn stale_done(
+    name: &str,
+    revision: &str,
+    decided: bool,
+) -> (
+    crate::test_support::TempHome,
+    std::path::PathBuf,
+    crate::storage::work::test_support::StaleDecidingFixture,
+) {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let database = directory.path().join("engram.sqlite3");
+    let fixture = crate::storage::stale_deciding_refusal_fixture(
+        &database,
+        name,
+        "runner",
+        "revision-judged",
+        "C:/work/other tree",
+        revision,
+        decided,
+        10,
+    );
+    (directory, database, fixture)
+}
+
+// done's storage completion carries the deciding observation beside the
+// cause on every path: the preflight, the recovery the protocol returns, and
+// the raw refusal, whose message keeps its words and never prints the
+// recorded text. A stale evaluation for another reason carries none.
+#[test]
+fn completion_carries_the_deciding_observation_beside_the_unchanged_cause() {
+    for decided in [true, false] {
+        let (_directory, database, fixture) =
+            stale_done("project-done-deciding", "database is locked", decided);
+        let mut store = SqliteStore::open(&database).expect("store");
+        let (work, claim) = (fixture.work.clone(), fixture.claim.clone());
+        let expected = WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+            reason: if decided {
+                AcceptanceStaleReason::Mutation
+            } else {
+                AcceptanceStaleReason::Policy
+            },
+        };
+        let named = |observation: Option<&DecidingObservation>| {
+            observation.map(|observation| {
+                (
+                    observation.position,
+                    observation.revision.clone(),
+                    observation.workspace.clone(),
+                    observation.evaluated_revision.clone(),
+                )
+            })
+        };
+        let want = decided.then(|| {
+            (
+                fixture.position,
+                Some("database is locked".to_owned()),
+                Some("C:/work/other tree".to_owned()),
+                Some("revision-judged".to_owned()),
+            )
+        });
+
+        let crate::storage::AcceptanceEvaluationReadiness::Blocked(cause, context) = store
+            .acceptance_evaluation_readiness(work.work_id, claim.run_id, None)
+            .expect("readiness")
+        else {
+            panic!("a stale evaluation blocks completion");
+        };
+        assert_eq!(cause, expected);
+        assert_eq!(named(context.deciding_observation.as_deref()), want);
+
+        let all = store.work_run_evidence(claim.run_id).expect("evidence");
+        checkpoint(&mut store, &work, &claim, "runner", "final", 60, &all);
+        let mut request = completion_request(&work, &claim, "runner", &fixture.generic, "done", 61);
+        request.evidence = all;
+        request.acceptance = Vec::new();
+        match store
+            .complete_work_for_protocol(&request, &DevelopmentNoopRedactor)
+            .expect("the protocol path answers with a recovery")
+        {
+            crate::storage::work::CompleteWorkStorageResult::Recovery(snapshot) => {
+                assert_eq!(snapshot.recovery.cause, expected);
+                assert_eq!(
+                    named(snapshot.recovery.deciding_observation.as_deref()),
+                    want
+                );
+            }
+            crate::storage::work::CompleteWorkStorageResult::Completed(_) => {
+                panic!("a stale evaluation never seals")
+            }
+        }
+        let error = store
+            .complete_work(&request, &DevelopmentNoopRedactor)
+            .expect_err("the raw path refuses");
+        let StoreError::WorkCompletionRecoveryRequired { cause, context, .. } = &error else {
+            panic!("expected a recovery refusal, got {error:?}");
+        };
+        assert_eq!(cause, &expected);
+        assert_eq!(named(context.deciding_observation.as_deref()), want);
+        // The message is the cause's words alone, as before.
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "completion for work {:?} requires recovery: {expected:?}",
+                work.work_id
+            )
+        );
+        assert!(!error.to_string().contains("database is locked"));
+        let details = &crate::store_error_value(&error)["error"]["details"];
+        assert_eq!(details["cause"], serde_json::json!(expected));
+        if decided {
+            assert_eq!(
+                details["deciding_observation"]["revision"],
+                "database is locked"
+            );
+            assert_eq!(
+                details["deciding_observation"]["position"],
+                fixture.position
+            );
+        } else {
+            assert!(details.get("deciding_observation").is_none(), "{details}");
+        }
+    }
+}
+
+// The word's refusal: the "not done" line and the stale reminder keep their
+// words, and the reminder adds the escaped sentence naming the observation;
+// the receipt's JSON names it beside the cause. Nothing is named for a stale
+// evaluation no observation decided.
+#[test]
+fn the_done_word_names_the_deciding_observation_after_its_words() {
+    use crate::verbs::{AgentVerbs, DoneInput};
+    for decided in [true, false] {
+        let (_directory, database, fixture) =
+            stale_done("project-done-word", "database is locked", decided);
+        let verbs = AgentVerbs::new(
+            database,
+            fixture.work.project_id.clone(),
+            "runner".into(),
+            crate::SessionId("runner".into()),
+            None,
+        );
+        let receipt = verbs
+            .done(
+                DoneInput {
+                    work_ref: Some(fixture.work.short_ref.clone()),
+                    summary: Some("delivered".into()),
+                    ..DoneInput::default()
+                },
+                at(100),
+            )
+            .expect("an owed receipt");
+        assert!(receipt.owed);
+        let text = receipt.text();
+        assert!(
+            text.contains(&format!(
+                "not done {} \"{}\": something is still owed",
+                fixture.work.short_ref, fixture.work.title
+            )),
+            "{text}"
+        );
+        let reason = if decided { "mutation" } else { "policy" };
+        let words = format!(
+            "{} acceptance evaluation is stale ({reason})",
+            fixture.work.short_ref
+        );
+        let reminder = text
+            .lines()
+            .find(|line| line.contains(&words))
+            .unwrap_or_else(|| panic!("the stale reminder: {text}"));
+        let value = &receipt.value;
+        assert_eq!(value["code"], "acceptance_evaluation_stale");
+        if decided {
+            let observation = &value["recovery"]["deciding_observation"];
+            let recorded: chrono::DateTime<chrono::Utc> =
+                serde_json::from_value(observation["recorded_at"].clone()).expect("recorded time");
+            let observed: chrono::DateTime<chrono::Utc> =
+                serde_json::from_value(observation["observed_at"].clone()).expect("observed time");
+            let sentence = format!(
+                "The deciding source observation is at run-feed position {}: workspace C:/work/other tree, revision database\\u{{20}}is\\u{{20}}locked, reported by session runner, observed {} (recorded {}); the evaluation judged revision revision-judged at its cut.",
+                fixture.position,
+                observed.to_rfc3339(),
+                recorded.to_rfc3339(),
+            );
+            assert!(
+                reminder.ends_with(&format!("{words}; evaluate again. {sentence}")),
+                "{reminder}"
+            );
+            assert!(
+                !text.to_lowercase().contains("database is locked"),
+                "{text}"
+            );
+            assert_eq!(observation["revision"], "database is locked");
+        } else {
+            assert!(
+                !reminder.contains("deciding source observation"),
+                "{reminder}"
+            );
+            assert!(value["recovery"].get("deciding_observation").is_none());
+        }
+    }
+}
+
+// The widest admitted host text, 512 control characters in the judged
+// revision, the workspace and the revision, still leaves done's refusal
+// within the agent budget, in
+// text and in JSON: the receipt names the observation as show does, each
+// field bounded with its stored length, and the storage refusal's details
+// keep it whole.
+#[test]
+fn the_widest_deciding_observation_fits_done_within_the_agent_budget() {
+    use crate::verbs::{AgentVerbs, DoneInput};
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let database = directory.path().join("engram.sqlite3");
+    let workspace = format!("w{}w", "\u{1}".repeat(510));
+    let revision = format!("v{}v", "\u{2}".repeat(510));
+    let judged = format!("j{}j", "\u{3}".repeat(510));
+    let fixture = crate::storage::stale_deciding_refusal_fixture(
+        &database,
+        "project-done-widest",
+        "runner",
+        &judged,
+        &workspace,
+        &revision,
+        true,
+        10,
+    );
+    let verbs = AgentVerbs::new(
+        database,
+        fixture.work.project_id.clone(),
+        "runner".into(),
+        crate::SessionId("runner".into()),
+        None,
+    );
+    let receipt = verbs
+        .done(
+            DoneInput {
+                work_ref: Some(fixture.work.short_ref.clone()),
+                summary: Some("delivered".into()),
+                ..DoneInput::default()
+            },
+            at(100),
+        )
+        .expect("an owed receipt");
+    let observation = &receipt.value["recovery"]["deciding_observation"];
+    assert_eq!(observation["position"], fixture.position);
+    for field in ["workspace", "revision", "evaluated_revision"] {
+        let shown = observation[field].as_str().expect("the shown field");
+        assert!(
+            shown.ends_with("… (512 bytes stored)"),
+            "{field}: {shown:?}"
+        );
+    }
+    let text = format!("{}\n", receipt.text());
+    assert!(text.contains("The deciding source observation"), "{text}");
+    for emitted in [
+        text.len(),
+        serde_json::to_vec(&receipt.value).unwrap().len(),
+    ] {
+        assert!(
+            emitted < crate::work_service::MAX_AGENT_WORK_RESPONSE_BYTES,
+            "{emitted} bytes"
+        );
+    }
+}

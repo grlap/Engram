@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use super::super::{SqliteStore, StoreError};
+use super::super::{SqliteStore, StaleRecoveryContext, StoreError};
 use super::execution::{
     ensure_restored_execution_state, ensure_run_evidence, validate_gate_evidence_chain,
     validate_work_evidence_event_phase_on,
@@ -238,30 +238,37 @@ impl SqliteStore {
             )?;
             // A fresh, all-pass evaluation is the only path to a sealed vector;
             // everything else is a recovery cause the evaluator must resolve.
-            let outcome: Result<(Vec<AcceptanceResult>, ObjectId), WorkCompletionRecoveryCause> =
-                match assessment {
-                    super::acceptance_evaluation::AcceptanceEvaluationAssessment::Absent => {
-                        Err(WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
-                            criterion: item.acceptance.first().cloned().unwrap_or_default(),
-                        })
-                    }
-                    super::acceptance_evaluation::AcceptanceEvaluationAssessment::Stale(reason) => {
-                        Err(WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason })
-                    }
-                    super::acceptance_evaluation::AcceptanceEvaluationAssessment::Fresh {
-                        hash,
-                        evaluation,
-                    } => match super::acceptance_evaluation::blocking_cause(&evaluation) {
-                        Some(cause) => Err(cause),
-                        None => Ok((
-                            super::acceptance_evaluation::derive_acceptance_results(
-                                &evaluation,
-                                request.actor.assurance,
-                            ),
-                            hash,
-                        )),
+            let outcome: Result<
+                (Vec<AcceptanceResult>, ObjectId),
+                (WorkCompletionRecoveryCause, StaleRecoveryContext),
+            > = match assessment {
+                super::acceptance_evaluation::AcceptanceEvaluationAssessment::Absent => Err((
+                    WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
+                        criterion: item.acceptance.first().cloned().unwrap_or_default(),
                     },
-                };
+                    StaleRecoveryContext::default(),
+                )),
+                super::acceptance_evaluation::AcceptanceEvaluationAssessment::Stale(
+                    reason,
+                    context,
+                ) => Err((
+                    WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason },
+                    context,
+                )),
+                super::acceptance_evaluation::AcceptanceEvaluationAssessment::Fresh {
+                    hash,
+                    evaluation,
+                } => match super::acceptance_evaluation::blocking_cause(&evaluation) {
+                    Some(cause) => Err((cause, StaleRecoveryContext::default())),
+                    None => Ok((
+                        super::acceptance_evaluation::derive_acceptance_results(
+                            &evaluation,
+                            request.actor.assurance,
+                        ),
+                        hash,
+                    )),
+                },
+            };
             match outcome {
                 Ok((derived, hash)) => {
                     // The evaluation froze its own run-evidence selection when
@@ -278,15 +285,21 @@ impl SqliteStore {
                     ensure_acceptance_citations_within(&item, &evidence, &derived)?;
                     (derived, Some(hash))
                 }
-                Err(cause) if return_recovery => {
-                    let recovery =
-                        completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
+                Err((cause, context)) if return_recovery => {
+                    let recovery = completion_recovery_snapshot_on(
+                        &transaction,
+                        &item,
+                        run.run_id,
+                        cause,
+                        context,
+                    )?;
                     return Ok(CompleteWorkStorageResult::Recovery(recovery));
                 }
-                Err(cause) => {
+                Err((cause, context)) => {
                     return Err(StoreError::WorkCompletionRecoveryRequired {
                         work: item.work_id,
                         cause,
+                        context,
                     });
                 }
             }
@@ -298,11 +311,16 @@ impl SqliteStore {
                 request.actor.assurance,
             ) {
                 Ok(value) => value,
-                Err(StoreError::WorkCompletionRecoveryRequired { cause, .. })
+                Err(StoreError::WorkCompletionRecoveryRequired { cause, context, .. })
                     if return_recovery =>
                 {
-                    let recovery =
-                        completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
+                    let recovery = completion_recovery_snapshot_on(
+                        &transaction,
+                        &item,
+                        run.run_id,
+                        cause,
+                        context,
+                    )?;
                     return Ok(CompleteWorkStorageResult::Recovery(recovery));
                 }
                 Err(error) => return Err(error),
@@ -419,13 +437,19 @@ impl SqliteStore {
             }
             let cause = WorkCompletionRecoveryCause::RequiredChildUnsealed { child };
             if return_recovery {
-                let recovery =
-                    completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
+                let recovery = completion_recovery_snapshot_on(
+                    &transaction,
+                    &item,
+                    run.run_id,
+                    cause,
+                    StaleRecoveryContext::default(),
+                )?;
                 return Ok(CompleteWorkStorageResult::Recovery(recovery));
             }
             return Err(StoreError::WorkCompletionRecoveryRequired {
                 work: item.work_id,
                 cause,
+                context: StaleRecoveryContext::default(),
             });
         }
         let run_feed = FeedId::RunExecution(run.run_id);
@@ -539,6 +563,7 @@ impl SqliteStore {
             return Err(StoreError::WorkCompletionRecoveryRequired {
                 work: item.work_id,
                 cause,
+                context: StaleRecoveryContext::default(),
             });
         }
         let child_seal_is_restored = required_child_seals.iter().try_fold(
@@ -2188,7 +2213,13 @@ fn recovery_before_untested_waivers(
     cause: WorkCompletionRecoveryCause,
 ) -> Result<CompleteWorkStorageResult, StoreError> {
     transaction.execute_batch(&format!("ROLLBACK TO {UNTESTED_WAIVERS_SAVEPOINT}"))?;
-    let recovery = completion_recovery_snapshot_on(transaction, item, run_id, cause)?;
+    let recovery = completion_recovery_snapshot_on(
+        transaction,
+        item,
+        run_id,
+        cause,
+        StaleRecoveryContext::default(),
+    )?;
     Ok(CompleteWorkStorageResult::Recovery(recovery))
 }
 
@@ -2357,6 +2388,7 @@ pub(crate) fn normalize_completion_acceptance_shape(
                 cause: WorkCompletionRecoveryCause::MissingAcceptance {
                     criterion: criterion.clone(),
                 },
+                context: StaleRecoveryContext::default(),
             });
         }
         return Err(StoreError::WorkCompletionRefused {
@@ -2388,6 +2420,7 @@ pub(crate) fn normalize_completion_acceptance_shape(
                 cause: WorkCompletionRecoveryCause::MissingAcceptance {
                     criterion: criterion.clone(),
                 },
+                context: StaleRecoveryContext::default(),
             });
         };
         if !result.satisfied {
@@ -2396,6 +2429,7 @@ pub(crate) fn normalize_completion_acceptance_shape(
                 cause: WorkCompletionRecoveryCause::MissingAcceptance {
                     criterion: criterion.clone(),
                 },
+                context: StaleRecoveryContext::default(),
             });
         }
         normalized.push(AcceptanceResult {

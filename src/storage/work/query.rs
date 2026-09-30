@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params, types::Value};
 
-use super::super::{SqliteStore, StoreError};
+use super::super::{SqliteStore, StaleRecoveryContext, StoreError};
 use super::completion::{
     ancestors_admit_execution, applicable_work_obligations_at_cut_on, feed_head,
     load_work_obligation_records_on, work_run_uses_active_root_execution,
@@ -941,6 +941,7 @@ pub(super) fn completion_recovery_on(
         cause,
         item,
         command,
+        deciding_observation: None,
     })
 }
 
@@ -949,6 +950,7 @@ pub(super) fn completion_recovery_snapshot_on(
     work: &WorkItem,
     run_id: WorkRunId,
     cause: WorkCompletionRecoveryCause,
+    context: StaleRecoveryContext,
 ) -> Result<CompletionRecoverySnapshot, StoreError> {
     let required_child_successor = match &cause {
         WorkCompletionRecoveryCause::RequiredChildUnsealed { child } => {
@@ -969,8 +971,10 @@ pub(super) fn completion_recovery_snapshot_on(
         | WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { .. }
         | WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. } => None,
     };
+    let mut recovery = completion_recovery_on(connection, work, cause)?;
+    recovery.deciding_observation = context.deciding_observation;
     Ok(CompletionRecoverySnapshot {
-        recovery: completion_recovery_on(connection, work, cause)?,
+        recovery,
         obligations: load_work_obligation_records_on(connection, run_id, None)?,
         required_child_successor: required_child_successor.map(Box::new),
     })

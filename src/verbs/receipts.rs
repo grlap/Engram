@@ -608,9 +608,11 @@ impl From<serde_json::Error> for VerbError {
     }
 }
 
-/// Compact application-receipt JSON bytes, matching CLI `--json` and MCP payloads.
+/// Compact application-receipt JSON bytes as the CLI writes them with
+/// `--json`: the spaces of the locked-store phrase escaped, so no field spells
+/// it. An MCP payload carries the same value and is never larger.
 pub(super) fn compact_receipt_json_bytes(value: &Value) -> Result<usize, VerbError> {
-    Ok(serde_json::to_vec(value)?.len())
+    Ok(crate::storage::json_without_locked_store_phrase(&serde_json::to_string(value)?).len())
 }
 
 /// CLI `println` writes one trailing LF after the application receipt text.

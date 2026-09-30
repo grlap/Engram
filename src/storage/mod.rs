@@ -66,7 +66,7 @@ pub(crate) use work::test_support::source_mutation_from_basis;
 #[cfg(test)]
 pub(crate) use work::test_support::{
     HostCheck, assessed_verification_fixture, bound_verification_refusal_fixture,
-    verification_note_fixture,
+    stale_deciding_refusal_fixture, verification_note_fixture,
 };
 
 #[cfg(test)]
@@ -732,33 +732,17 @@ pub enum EvaluationBasisMove {
     SourceChanged,
 }
 
-/// The source observation that decided a source move after an evaluation's
-/// cut, named beside the move so an agent can see what voided the evaluation.
-/// It is never a cause of its own: the move stays the cause. Every field is as
-/// the observation recorded it; `None` means the observation did not record
-/// that field.
-#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-pub struct DecidingObservation {
-    /// The observation's record id.
-    pub observation: crate::ObjectId,
-    /// Its position on the run feed.
-    pub position: i64,
-    /// Whether the observation reported a source change, as stored.
-    pub source_changed: bool,
-    pub workspace: Option<String>,
-    pub revision: Option<String>,
-    pub root_generation: Option<i64>,
-    /// The session that reported it.
-    pub reporting_session: SessionId,
-    /// When the host observed it; `None` when the host did not say.
-    pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
-    /// When the store recorded it.
-    pub recorded_at: chrono::DateTime<chrono::Utc>,
-    /// The revision the evaluation declared it judged or, without a
-    /// declaration, the revision it judged at its cut.
-    pub evaluated_revision: Option<String>,
-    /// Whether `evaluated_revision` is the evaluation's own declaration.
-    pub evaluated_revision_declared: bool,
+pub use crate::domain::DecidingObservation;
+
+/// What a stale-evaluation recovery carries beside its cause, never inside
+/// it: the cause's words stay as they are, and this context is read from the
+/// same snapshot that decided the cause. Every field is `None` for another
+/// cause.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StaleRecoveryContext {
+    /// The source observation that decided a source move after the newest
+    /// evaluation's cut.
+    pub deciding_observation: Option<Box<DecidingObservation>>,
 }
 
 impl DecidingObservation {
@@ -835,10 +819,11 @@ fn one_line(value: &str) -> String {
     shown
 }
 
-/// A serialized JSON refusal in which no string spells the locked-store
-/// phrase, while every string decodes to the same text: the spaces inside the
-/// phrase are written as `\u0020` escapes. Only for a refusal that is not
-/// itself a lock, so that a real lock error still reads as one.
+/// Serialized JSON in which no string spells the locked-store phrase, while
+/// every string decodes to the same text: the spaces inside the phrase are
+/// written as `\u0020` escapes. The CLI writes every JSON receipt this way,
+/// and a refusal on stderr that carries host-recorded text; never a real lock
+/// error, which must still read as one.
 #[must_use]
 pub fn json_without_locked_store_phrase(json: &str) -> String {
     let lower = json.to_ascii_lowercase();
@@ -1190,6 +1175,8 @@ pub enum StoreError {
     WorkCompletionRecoveryRequired {
         work: crate::domain::WorkId,
         cause: WorkCompletionRecoveryCause,
+        /// Beside the cause, so the message above keeps its words.
+        context: StaleRecoveryContext,
     },
     #[error("completion for work {work:?} has open work obligations")]
     OpenWorkObligations {

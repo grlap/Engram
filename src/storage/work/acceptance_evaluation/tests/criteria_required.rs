@@ -157,6 +157,7 @@ fn a_recovery_cause_naming_an_absent_criterion_stays_a_projection_error() {
             &WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
                 criterion: "a criterion this item does not have".into(),
             },
+            crate::storage::StaleRecoveryContext::default(),
         )
         .expect_err("an inconsistent cause is refused");
     assert!(

@@ -566,6 +566,7 @@ fn completion_recovery_reminder_names_each_disposed_child_lifecycle() {
             },
             command: "engram work update w-000000000002 --waive w-000000000001 --reason \"why\""
                 .into(),
+            deciding_observation: None,
         };
         assert_eq!(
             completion_recovery_reminder(
@@ -597,6 +598,7 @@ fn completion_recovery_reminder_names_the_verification_source_remedy() {
             lifecycle: WorkLifecycle::Open,
         },
         command: "engram work show w-000000000003 --notes --gates".into(),
+        deciding_observation: None,
     };
     assert_eq!(
         completion_recovery_reminder(
