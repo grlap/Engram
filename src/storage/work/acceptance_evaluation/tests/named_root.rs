@@ -824,8 +824,10 @@ fn an_evaluation_goes_stale_when_its_named_root_ends_is_released_or_renamed() {
     }
 }
 
-/// Under a named root an evaluation cannot judge another workspace, and it
-/// cannot judge a revision other than the root's newest sighting.
+/// Under a named root an evaluation cannot judge another workspace. A
+/// declared revision other than the root's newest sighting may still be the
+/// one the host is about to report, but a bound pass must cite a check that
+/// ran on the revision it declared, so declaring an older one refuses.
 #[test]
 fn an_evaluation_under_a_named_root_judges_only_that_root_as_it_stands() {
     let mut named = named_evaluation();
@@ -853,7 +855,7 @@ fn an_evaluation_under_a_named_root_judges_only_that_root_as_it_stands() {
         11,
     ));
     assert!(
-        behind.contains("does not match the named root's newest sighting"),
+        behind.contains("ran on source revision revision-B, not the revision revision-older"),
         "{behind}"
     );
 }
@@ -1236,4 +1238,212 @@ fn a_foreign_report_under_a_named_root_does_not_unlock_a_failure() {
     host.basis = workspace("workspace-B", "R2", Some(9));
     host.checkpoint(store, true, None, 70);
     fail(store, "after-change", 80).expect("a change inside the named root is new evidence");
+}
+
+/// A named-root claim whose root was last sighted, changed and tested, at
+/// `R1`, with an evaluated same-session policy and obligation rules on.
+fn sighted_root(name: &str) -> (Fixture, WorkItem, WorkClaim, HostSession) {
+    let mut fixture = fixture(name);
+    let (work, claim) = (fixture.work.clone(), fixture.claim.clone());
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let mut host = HostSession::bind(store, &work, &claim, 6);
+    host_binds(
+        store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        20,
+        "name-B",
+        20,
+    )
+    .expect("host names B");
+    host.basis = workspace("workspace-B", "R1", Some(9));
+    host.checkpoint(
+        store,
+        true,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        30,
+    );
+    (fixture, work, claim, host)
+}
+
+fn declared_pass(
+    work: &WorkItem,
+    note: &ObjectId,
+    through: i64,
+    revision: &str,
+    key: &str,
+    second: i64,
+) -> RecordAcceptanceEvaluationRequest {
+    let mut input = request(
+        work,
+        through,
+        "runner",
+        Mode::SameSession,
+        vec![verdict(
+            1,
+            AcceptanceVerdict::Pass,
+            AcceptanceBasis::Judgment,
+            std::slice::from_ref(note),
+        )],
+        second,
+    );
+    input.source_basis = Some(AcceptanceSourceBasis {
+        workspace_id: None,
+        fingerprint: revision.into(),
+    });
+    input.attempt_key = Some(key.into());
+    input
+}
+
+fn stale_reason(store: &SqliteStore, work: &WorkItem) -> Option<AcceptanceStaleReason> {
+    store
+        .acceptance_evaluation_status(work.work_id, None)
+        .expect("status read")
+        .expect("an evaluation")
+        .stale
+}
+
+/// B77: under a named root sighted at R1, the requesting turn changes the
+/// source to R2 and asks. The evaluator declares R2 before the host reports
+/// it: the evaluation records but completion waits (stale source) until the
+/// host sights the root at R2, then seals. A declaration the root's newest
+/// sighting after the cut contradicts still refuses.
+#[test]
+fn a_declared_revision_the_root_is_about_to_report_records_and_seals_once_sighted() {
+    let (mut fixture, work, claim, mut host) = sighted_root("project-root-ahead");
+    let note = fixture.evidence.clone();
+    let store = &mut fixture.store;
+    let started_at = cut(store, &work);
+    let recorded = record(
+        store,
+        &declared_pass(&work, &note, started_at, "R2", "ahead", 40),
+    )
+    .expect("a declaration the host has not reported yet records");
+    assert_eq!(
+        stale_reason(store, &work),
+        Some(AcceptanceStaleReason::Source)
+    );
+    // The requesting turn's report: the change to R2 and its passed test.
+    host.basis = workspace("workspace-B", "R2", Some(9));
+    host.checkpoint(
+        store,
+        true,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        50,
+    );
+    assert_eq!(stale_reason(store, &work), None);
+    // Now the root's newest sighting after the cut is R2: another
+    // declaration on that cut is contradicted, and the reported change to
+    // R2 voids it first.
+    let contradicted = refusal(record(
+        store,
+        &declared_pass(&work, &note, started_at, "R3", "contradicted", 55),
+    ));
+    assert!(
+        contradicted.contains("the evaluation is void"),
+        "{contradicted}"
+    );
+    let seal = complete_evaluated(store, &work, &claim, "runner", &note, None, "complete", 60)
+        .expect("done seals once the host sighted the declared revision");
+    assert_eq!(seal.acceptance_evaluation, Some(recorded.evaluation));
+    let report = store.verify_all().expect("doctor");
+    assert!(report.is_healthy(), "{report:?}");
+}
+
+/// B78: a declared revision the host never sights blocks completion; a later
+/// evaluation of the revision the host reports replaces it and seals.
+#[test]
+fn a_declared_revision_the_root_never_reports_blocks_until_evaluated_again() {
+    let (mut fixture, work, claim, _host) = sighted_root("project-root-never");
+    let note = fixture.evidence.clone();
+    let store = &mut fixture.store;
+    let started_at = cut(store, &work);
+    record(
+        store,
+        &declared_pass(&work, &note, started_at, "R9", "never", 40),
+    )
+    .expect("the declaration records");
+    assert_eq!(
+        stale_reason(store, &work),
+        Some(AcceptanceStaleReason::Source)
+    );
+    let blocked = complete_evaluated(store, &work, &claim, "runner", &note, None, "blocked", 45);
+    assert!(
+        matches!(
+            recovery_cause(blocked),
+            WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+                reason: AcceptanceStaleReason::Source
+            }
+        ),
+        "completion waits for the host to sight the declared revision"
+    );
+    let replaced = record(
+        store,
+        &declared_pass(&work, &note, cut(store, &work), "R1", "reported", 50),
+    )
+    .expect("an evaluation of the reported revision replaces it");
+    let seal = complete_evaluated(store, &work, &claim, "runner", &note, None, "complete", 55)
+        .expect("done seals on the replacement");
+    assert_eq!(seal.acceptance_evaluation, Some(replaced.evaluation));
+}
+
+/// B79: under a named root the evaluator submits after the requesting turn's
+/// report sighted the root at the declared revision, on its earlier cut: it
+/// records, is fresh and seals. A passed check on that revision reported
+/// from another workspace, outside the root, still leaves an evaluation
+/// stale.
+#[test]
+fn a_late_declaration_under_a_named_root_records_and_an_off_root_check_still_counts() {
+    let (mut fixture, work, claim, mut host) = sighted_root("project-root-late");
+    let note = fixture.evidence.clone();
+    let store = &mut fixture.store;
+    let started_at = cut(store, &work);
+    host.basis = workspace("workspace-B", "R2", Some(9));
+    host.checkpoint(
+        store,
+        true,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        40,
+    );
+    let recorded = record(
+        store,
+        &declared_pass(&work, &note, started_at, "R2", "late", 50),
+    )
+    .expect("a late declaration the root's report confirms records");
+    assert_eq!(stale_reason(store, &work), None);
+    let seal = complete_evaluated(store, &work, &claim, "runner", &note, None, "complete", 60)
+        .expect("done seals");
+    assert_eq!(seal.acceptance_evaluation, Some(recorded.evaluation));
+
+    // Off the root: the same revision, checked in another workspace.
+    let (mut fixture, work, _claim, mut host) = sighted_root("project-root-off");
+    let note = fixture.evidence.clone();
+    let store = &mut fixture.store;
+    record(
+        store,
+        &declared_pass(&work, &note, cut(store, &work), "R1", "on-root", 40),
+    )
+    .expect("the evaluation of the root's revision records");
+    host.basis = workspace("workspace-A", "R1", None);
+    host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        50,
+    );
+    assert_eq!(
+        stale_reason(store, &work),
+        Some(AcceptanceStaleReason::Mutation)
+    );
 }

@@ -293,7 +293,7 @@ struct EvaluateArgs {
     mode: String,
     /// The item revision whose criteria the verdicts address, as printed by show.
     acceptance_basis: i64,
-    /// The run-feed position the evaluator read through, as printed by show. A host check after it asks for a resubmission; a source change after it voids the evaluation, unless it is to the revision given as `source_fingerprint`.
+    /// The run-feed position the evaluator read through, as printed by show. A host check after it asks for a resubmission, unless it passed on the revision given as `source_fingerprint`; a source change after it voids the evaluation, unless it is to that revision.
     evidence_basis: i64,
     /// One verdict per current criterion by one-based position; a pass cites note/gate locators as `show` with notes and gates prints them, or full record ids of host-minted verification or environment evidence.
     verdicts: Vec<crate::WorkCriterionVerdictInput>,

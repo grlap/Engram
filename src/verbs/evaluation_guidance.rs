@@ -10,7 +10,7 @@ use crate::work_service::WorkObligationSummary;
 
 use super::{VerificationKind, WorkObligationPage, WorkObligationState, short};
 
-const TIMING: &str = "A check or waiver recorded after an evaluation's evidence basis makes it stale. Resolve obligations marked action required before evaluation; done handles those marked no action before evaluation.";
+const TIMING: &str = "A check or waiver recorded after an evaluation's evidence basis makes it stale, unless the check passed on the source revision the evaluation declared. Resolve obligations marked action required before evaluation; done handles those marked no action before evaluation.";
 
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct EvaluationObligations {

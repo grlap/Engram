@@ -1937,8 +1937,10 @@ pub(super) fn newest_evaluation_through(
 /// source separately.
 ///
 /// Any other host check (a verification, an environment record, an
-/// obligation opened or resolved) asks for a re-read and resubmission. A
-/// move the evaluator did not see wins over a check.
+/// obligation opened or resolved) asks for a re-read and resubmission, except
+/// a passed check on the declared revision with its own environment record
+/// and the obligation resolutions it satisfied (see `same_turn`). A move the
+/// evaluator did not see wins over a check.
 fn basis_moved_after(
     connection: &Connection,
     run_id: WorkRunId,
@@ -1958,6 +1960,9 @@ fn basis_moved_after(
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    // Collected first: a report lands its environment records before the
+    // checks that link them.
+    let exempt = same_turn::ExemptChecks::after(connection, run_id, position, declared, root)?;
     let mut seen = std::collections::BTreeSet::new();
     let mut check = false;
     let mut quiet_move = false;
@@ -1967,6 +1972,9 @@ fn basis_moved_after(
         }
         let hash =
             ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+        if exempt.covers(connection, &kind, &hash)? {
+            continue;
+        }
         match kind.as_str() {
             "execution_observation" => {
                 let observation: ExecutionObservation =
@@ -2130,13 +2138,52 @@ fn require_named_root_judged_source(
             "the named root has no sighting yet; capture that root, then evaluate it",
         ));
     };
-    if judged.map(|judged| judged.revision.as_str()) != Some(latest.as_str()) {
+    let Some(judged) = judged else {
         return Err(refused(
             work_id,
             "the evaluated source does not match the named root's newest sighting; capture and evaluate that root",
         ));
+    };
+    if judged.revision == latest
+        || (judged.declared
+            && declared_not_contradicted(connection, run_id, through, root, &judged.revision)?)
+    {
+        return Ok(());
     }
-    Ok(())
+    Err(refused(
+        work_id,
+        "the evaluated source does not match the named root's newest sighting; capture and evaluate that root",
+    ))
+}
+
+/// Whether a revision declared under a named root, other than the one the
+/// root was sighted at through the cut, is still open: the requesting turn
+/// may report it after the evaluator's cut. It is, unless the root's newest
+/// sighting after the cut shows another revision. Completion waits for the
+/// host to sight the root there (`staleness`).
+fn declared_not_contradicted(
+    connection: &Connection,
+    run_id: WorkRunId,
+    through: i64,
+    root: &NamedEvaluationRoot,
+    declared: &str,
+) -> Result<bool, StoreError> {
+    Ok(
+        match latest_named_root_sighting_on(
+            connection,
+            run_id,
+            &root.event.workspace_id,
+            root.event.generation,
+            i64::MAX,
+            false,
+        )? {
+            None => true,
+            Some((position, _)) if position <= through => true,
+            Some((_, sighting)) => sighting
+                .source_basis
+                .is_some_and(|basis| basis.source_revision == declared),
+        },
+    )
 }
 
 /// Each passing verdict's one-based criterion position and citations.
@@ -2520,12 +2567,15 @@ fn staleness(
         evaluated_root.as_ref(),
     )?;
     if let Some(root) = evaluated_root.as_ref() {
-        let latest = revision_seen_through(
-            connection,
-            run_id,
-            record.evaluated_cut.position,
-            Some(root),
-        )?;
+        // A declared revision is confirmed by the root's newest sighting
+        // through the head, since the host may report it after the cut; an
+        // undeclared evaluation judged the sighting at its cut.
+        let horizon = if judged.as_ref().is_some_and(|judged| judged.declared) {
+            i64::MAX
+        } else {
+            record.evaluated_cut.position
+        };
+        let latest = revision_seen_through(connection, run_id, horizon, Some(root))?;
         if latest.is_none()
             || latest.as_deref() != judged.as_ref().map(|judged| judged.revision.as_str())
         {
@@ -2652,6 +2702,7 @@ pub(super) fn blocking_cause(
 mod history;
 pub(crate) use history::AssessedAcceptanceEvaluation;
 mod reroll;
+mod same_turn;
 
 #[cfg(test)]
 mod tests;

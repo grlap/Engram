@@ -54,7 +54,7 @@ pub(in crate::verbs) fn completion_recovery_reminder(
         }
         crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason } => match reason {
             crate::AcceptanceStaleReason::Source => format!(
-                "{label} acceptance evaluation is stale (source): done must present the host-measured fingerprint that equals the evaluated one; pass --source-fingerprint F, or evaluate again with the current fingerprint"
+                "{label} acceptance evaluation is stale (source): under a named root, the host has not yet reported the root at the revision the evaluation declared, so end the turn for it to report, then run done again, or evaluate again on the revision the host reports; where the policy requires a completion fingerprint, done presents the host-measured one that equals the evaluated one (--source-fingerprint F)"
             ),
             crate::AcceptanceStaleReason::Identity => format!(
                 "{label} acceptance evaluation is stale (identity): its independent evaluator has since held this run; a session that never held the run must evaluate again"

@@ -676,9 +676,9 @@ enum WorkCommand {
         #[arg(long, value_name = "REVISION")]
         acceptance_basis: i64,
         /// The run-feed position the evaluator read through, as printed by show.
-        /// A host check after it asks for a resubmission; a source change after
-        /// it voids the evaluation, unless it is to the revision given as
-        /// --source-fingerprint.
+        /// A host check after it asks for a resubmission, unless it passed on
+        /// the revision given as --source-fingerprint; a source change after
+        /// it voids the evaluation, unless it is to that revision.
         #[arg(long, value_name = "POSITION")]
         evidence_basis: i64,
         /// POSITION=VERDICT[:BASIS]; repeatable, one per criterion. VERDICT is pass, fail,

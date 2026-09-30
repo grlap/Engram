@@ -315,9 +315,9 @@ pub struct AcceptanceEvaluation {
     pub criteria: Vec<String>,
     /// The run-feed position the evaluator read through, exactly as the
     /// submission supplied it (R3b); the head at submission time is never
-    /// substituted. A host check after it asks for a resubmission, and a
-    /// source change after it voids the record unless it is to the declared
-    /// judged revision (`source_basis`).
+    /// substituted. A host check after it asks for a resubmission unless it
+    /// passed on the declared judged revision (`source_basis`), and a source
+    /// change after it voids the record unless it is to that revision.
     pub evaluated_cut: FeedPosition,
     /// Every run evidence object on the feed at or before `evaluated_cut`:
     /// the selection the evaluator could have read.
@@ -502,8 +502,9 @@ pub struct RecordAcceptanceEvaluationRequest {
     pub expected_work_revision: i64,
     /// The run-feed position the evaluator read through (the evidence
     /// basis printed by `show`). A host check after it asks for a
-    /// resubmission, a source change after it voids the evaluation unless it
-    /// is to the declared judged revision, and a citation beyond it refuses:
+    /// resubmission unless it passed on the declared judged revision, a
+    /// source change after it voids the evaluation unless it is to that
+    /// revision, and a citation beyond it refuses:
     /// the record binds what was evaluated, never the feed head sampled at
     /// submission.
     pub evaluated_through: i64,

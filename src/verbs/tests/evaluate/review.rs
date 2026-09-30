@@ -1096,7 +1096,7 @@ fn the_minimal_evaluate_receipt_is_bounded() {
         omitted_open: 3,
         action_required_total: Some(2),
         items: Vec::new(),
-        timing: "A check or waiver recorded after an evaluation's evidence basis makes it stale. Resolve obligations marked action required before evaluation; done handles those marked no action before evaluation.",
+        timing: "A check or waiver recorded after an evaluation's evidence basis makes it stale, unless the check passed on the source revision the evaluation declared. Resolve obligations marked action required before evaluation; done handles those marked no action before evaluation.",
     };
     let warned = crate::verbs::handlers::minimal_evaluate_receipt(
         "w-000000000000",

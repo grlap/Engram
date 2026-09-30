@@ -233,15 +233,29 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   another revision than the judged one, even while reporting no change (F3
   below). The one source change that does not count is a change to the
   revision the evaluation declared it judged (below), together with the
-  obligation it opened; a later check, including the test that resolves that
-  obligation, still asks for a resubmission. Likewise the source fingerprint
+  obligation it opened. Nor does a host check that passed on that declared
+  revision, with the environment record it links and the obligation
+  resolution it made, while the run's newest sighting is at that revision: a
+  passed check on the judged source can only support the verdicts, and a host
+  that starts the evaluator during the requesting turn reports that turn's
+  tests after the cut. Any other check still asks for a resubmission: a
+  failed or indeterminate one, even beside a passed one in the same report,
+  one on another revision or in another declared workspace, and any check
+  after an evaluation that declared no revision. Likewise the source fingerprint
   is the value measured for the evaluated content, not one taken at
   submission. It is the host's source revision, as the host reports it on turn
   observations; a declared workspace id must match the observation's workspace
   too. Once the host binds a named root to the claim, the evaluated source
-  must be the newest sighting in that exact workspace and generation. A root
-  the host has named but not yet sighted anchors no evaluation, since its
-  first sighting could show any source: `evaluate` refuses until the host
+  must be the newest sighting in that exact workspace and generation through
+  the cut, or a revision the evaluation declared that no sighting of the root
+  after the cut contradicts. A host that starts the evaluator during the
+  requesting turn declares the revision it measured before that turn's report
+  sights it. Completion then waits until the host sights the root at the
+  declared revision (stale with reason `source` until then), and a declared
+  revision the host never sights blocks completion until a later evaluation
+  replaces the record; an older passing evaluation does not stand in for it.
+  A root the host has named but not yet sighted anchors no evaluation, since
+  its first sighting could show any source: `evaluate` refuses until the host
   captures it. An explicit declaration of another workspace refuses rather
   than borrowing a matching revision from the named root.
 - **R4 independence.** `independent_session`: the evaluator session differs
@@ -442,9 +456,10 @@ stale reason named.
   source at the revision of the run's newest recorded source change, with no
   other revision seen since (in an observation or environment evidence), is
   recorded as no change. That clears only its change flag: like any
-  observation, it is still compared with the judged revision below. The only
-  exception is a source change that left the source at the revision the
-  evaluation declared it judged (its `source_basis`), with the obligation that
+  observation, it is still compared with the judged revision below. Two
+  exceptions: a check that passed on the declared revision (R3b), and a
+  source change that left the source at the revision the evaluation declared
+  it judged (its `source_basis`), with the obligation that
   change opened: the evaluator saw that state, so the host's late report of it
   does not void the evaluation. The source can also move without a reported
   change, as when a check runs after someone else's edit. So when the newest
@@ -466,8 +481,9 @@ stale reason named.
   which there only errs toward keeping a reported change. Verification and
   environment records describe a check and carry the content basis that check
   ran on, its producer's, which may predate the cut. So neither counts here as
-  a sighting, and either one recorded after the cut, including the check that
-  resolves that obligation, asks for a resubmission. A check that a pass on a
+  a sighting, and either one recorded after the cut asks for a resubmission,
+  except a check that passed on the declared revision, with its own
+  environment record and the resolution it made (R3b). A check that a pass on a
   bound criterion cites is held to the judged revision separately (R5, F8).
   The declared revision is the evaluator's assertion, recorded like its
   verdicts; Engram cannot attest what the evaluator read, so this exception
@@ -478,7 +494,9 @@ stale reason named.
   measured passes that revision to the evaluator itself (see [turns, focus and
   evaluation timing](#turns-focus-and-evaluation-timing)). A `same_session`
   implementer gains nothing from it: it can re-read and submit at the new cut
-  in any case.
+  in any case. Under a named root, an evaluation that declared its revision
+  is fresh only while the root's newest sighting, through the run feed's head,
+  is at that revision (R3b).
 - **F4 source fingerprint.** When policy `require_source_freshness` is on, the
   completion attempt presents a `source_fingerprint` measured by the host at
   completion time (`done --source-fingerprint F`) that equals
@@ -687,7 +705,7 @@ tests cite the row identifier in a nearby comment.
 | B28 | `done "summary"` capture and its checkpoint after the evaluation | still fresh; seal binds the evaluation |
 | B29 | `show` and `next` on an evaluated item | per-criterion newest verdict, basis, evaluator label, mode, and freshness; `done` receipt names the path |
 | B30 | host-owned (not a core test): TermAl evaluator spawn, attested sub-agent identity, fingerprint at completion, observed build via the control channel | documented in the host item; end-to-end acceptance stays open until exercised |
-| B31 | evaluator reads at cut `c`; a host-observed `source_changed` observation or check lands after `c`; the verdicts are submitted with `evidence_basis = c` | refuse at write: `acceptance_evaluation_resubmit` after a check, `acceptance_evaluation_void` after a source change the evaluation did not judge, or when the newest execution observation after `c` that carries a revision is at another revision than the judged one, even when it reports no change; a change to the declared judged revision does not refuse; a citation beyond `c` also refuses; resubmission with the current basis records |
+| B31 | evaluator reads at cut `c`; a host-observed `source_changed` observation or check lands after `c`; the verdicts are submitted with `evidence_basis = c` | refuse at write: `acceptance_evaluation_resubmit` after a check, `acceptance_evaluation_void` after a source change the evaluation did not judge, or when the newest execution observation after `c` that carries a revision is at another revision than the judged one, even when it reports no change; a change to the declared judged revision does not refuse, nor does a passed host check on it with its environment record and resolution (B73); a citation beyond `c` also refuses; resubmission with the current basis records |
 | B32 | passing `asserted` evaluation, then policy `mechanical_basis` → `observed`; passing evaluation without a source basis, then `require_source_freshness` → on | `done` refuses `AcceptanceEvaluationStale { policy }` / `{ source }`; no older, weaker record seals |
 | B33 | `pass` cites gate `cargo-test`; a newer `cargo-test` record (any result) lands after the cut; an unrelated gate lands after another passing evaluation | `done` refuses `AcceptanceEvaluationStale { evidence }` / the unrelated gate leaves the evaluation fresh |
 | B34 | passing evaluation followed by a newer `fail`, `insufficient_evidence`, or `needs_human` record | `done` refuses with the newer verdict's cause; the older pass is never selected |
@@ -729,6 +747,14 @@ tests cite the row identifier in a nearby comment.
 | B70 | a newest `insufficient_evidence`, then a newest `needs_human`, each re-rolled without evidence; a policy edit after the `needs_human` | each refused at write |
 | B71 | a `fail`; a quiet sighting at another revision; then a flagged change to that revision; then a flagged change with no revision | refused / refused / records |
 | B72 | an unmarked task's own same_session pass sealed under a same-session-only policy; the policy then admits `independent_session` | a new such evaluation refuses; the seal still validates (doctor healthy) and `show` reads it unchanged |
+| B73 | the requesting turn changes the source to R2, runs a passing test there and asks; the evaluator declares R2 at cut `c` and submits before the turn's report lands / after it, on `c` | records; the report (the change, its obligation, the environment, the passed test and its resolution) leaves it fresh; `done` seals on it and doctor stays healthy |
+| B74 | as B73, but the report carries a failed test beside the passed one, in either order, or an indeterminate check | the evaluation is stale (`mutation`); a submission on `c` refuses `acceptance_evaluation_resubmit` |
+| B75 | an evaluation that declared no revision / declared another workspace; a passed host check after its cut | stale (`mutation`), as before |
+| B76 | a `fail` declaring R2 at `c`; the turn's report with a passed test on R2; a replacement on `c` / on a cut that includes the test | refused as a re-roll / records |
+| B77 | a named root sighted at R1; the requesting turn changes it to R2 and tests there; the evaluator declares R2 at cut `c` before the report / a declaration of R3 on `c` after it | records, stale (`source`) until the host sights the root at R2, then fresh; `done` seals and doctor stays healthy / refused (void) |
+| B78 | as B77, but the declared revision is never sighted | `done` refuses stale (`source`); an evaluation of the revision the host reports replaces it and seals |
+| B79 | a named root sighted at R1; the turn's report sights it at R2 with a passed test; then the evaluator submits R2 on its earlier cut / a passed check on the root's revision reported from another workspace after an evaluation | records, fresh, `done` seals / stale (`mutation`): a check off the root is not exempt |
+| B80 | a passed check verified late for an earlier run of the declared revision, after the run moved on to another revision | stale (`mutation`): a check is exempt only while the run was last sighted at the declared revision |
 
 ## Agent surface
 
@@ -880,9 +906,12 @@ Full obligation identities and waiver authority stay on the
 host-only work view. A stock source-change obligation that `done` can waive
 itself says that no action is needed before evaluation; its waiver inside
 completion does not void the evaluation. An independently recorded check or
-waiver after the evaluator's evidence basis does void it (F3). Therefore the
-order is: settle required obligations, gather credited checks and evidence,
-evaluate against a fresh read cut, then complete. `evaluate` still records
+waiver after the evaluator's evidence basis does make it stale (F3), except a
+check that passed on the revision the evaluation declared, with its own
+environment record and the resolution it made (R3b). Therefore the order is:
+settle required obligations, gather credited checks and evidence (a check a
+bound pass cites must be recorded before the request), evaluate against a
+fresh read cut, then complete. `evaluate` still records
 while obligations remain open; its receipt repeats the warning and counts,
 even in the minimal response. A bounded page that omits open obligations
 names their exact count and never implies the visible list is complete.
@@ -1009,12 +1038,20 @@ session that holds several claims.
   on a peer's item still moves focus there; `held` then marks none of the
   session's claims as focused, and the host binds by its own rule, so
   `claim` the item you are working on again before the next turn.
-- Request an evaluation at a turn boundary, not after changing the source in
-  the same turn. The host fixes the evidence basis when it starts the
-  evaluator; the requesting turn's own report arrives after that, and unless
-  the evaluation declared the revision it judged, it voids the evaluation.
-  A host can instead defer the evaluator until the requesting turn's
-  checkpoint and declare the revision it measured then.
+- Request an evaluation when the work is done, in the same turn that changed,
+  tested and committed it, when every check that turn ran was on the final
+  source and passed. The host fixes the evidence basis when it starts the
+  evaluator and declares the source revision it measured then; the requesting
+  turn's report arrives after that basis, and neither its change to the
+  declared revision nor a test that passed there asks for anything (R3b).
+  Under a named root, completion takes the evaluation once the host has
+  reported the root at that revision. Otherwise request in the next turn: the
+  host reports a change at each revision a check of the turn ran on, so a
+  check before a later edit voids the evaluation, and a check on an earlier
+  revision, a failed one or an indeterminate one leaves it stale. And a
+  criterion bound to a check needs that check recorded before the request,
+  because the evaluator can cite only evidence at or before its basis, until
+  the host holds the evaluation for the requesting turn's report.
 
 Fixture coverage of the matrix is not live proof. The end-to-end acceptance —
 a real port-PR task with a real evaluator and an observed build — stays open

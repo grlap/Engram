@@ -56,7 +56,12 @@ fn judged(
 }
 
 /// The ids of the run-feed entries of `kind` after `position`.
-fn entries_after(store: &SqliteStore, work: &WorkItem, position: i64, kind: &str) -> Vec<ObjectId> {
+pub(super) fn entries_after(
+    store: &SqliteStore,
+    work: &WorkItem,
+    position: i64,
+    kind: &str,
+) -> Vec<ObjectId> {
     let run = work.active_run_id.expect("active run");
     let mut statement = store
         .connection
@@ -206,9 +211,10 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
         Some((recorded.evaluation, None))
     );
 
-    // The passing test that resolves the obligation that change opened is a
-    // check the evaluator has not seen: it asks for a resubmission, not a new
-    // evaluation, and a re-read resubmission records.
+    // The passing test that resolves the obligation that change opened ran
+    // on the revision the evaluation judged: it can only support the verdicts,
+    // so the evaluation stays fresh, and one submitted on the old cut records
+    // too, as an evaluator started before that report would submit.
     host.checkpoint(
         store,
         false,
@@ -220,7 +226,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
             .acceptance_evaluation_status(work.work_id, None)
             .expect("status read")
             .map(|status| status.stale),
-        Some(Some(AcceptanceStaleReason::Mutation))
+        Some(None)
     );
     // Its own attempt key: the identical content would replay the committed
     // record instead of submitting anew.
@@ -232,13 +238,7 @@ fn a_source_change_to_the_judged_revision_does_not_move_the_basis() {
         27,
     );
     unrefreshed.attempt_key = Some("after-the-check".into());
-    assert_eq!(
-        moved(record(store, &unrefreshed)),
-        (
-            EvaluationBasisMove::CheckRecorded,
-            "acceptance_evaluation_resubmit".into()
-        )
-    );
+    record(store, &unrefreshed).expect("a passed check on the judged revision asks for nothing");
     let resubmitted = record(
         store,
         &judged(
