@@ -482,13 +482,24 @@ pub(crate) fn check_landings(
         ),
     };
     let repository = repository.as_path();
-    let findings: Vec<(&RecordedLanding, LandingStatus)> = match &problem {
-        Some(_) => Vec::new(),
-        None => recorded
-            .iter()
-            .map(|landing| (landing, check_landing(repository, landing)))
-            .collect(),
-    };
+    // Every recorded landing is listed, with its installed build, whether or
+    // not the repository could be read: the build does not depend on Git.
+    // Without a repository, only the shape check that needs no git still runs.
+    let findings: Vec<(&RecordedLanding, LandingStatus)> = recorded
+        .iter()
+        .map(|landing| {
+            let status = match &problem {
+                None => check_landing(repository, landing),
+                Some(_) => landing
+                    .landing
+                    .validate()
+                    .map_or_else(LandingStatus::Malformed, |()| {
+                        LandingStatus::Unverifiable("the repository could not be read".into())
+                    }),
+            };
+            (landing, status)
+        })
+        .collect();
     let unverified = findings
         .iter()
         .filter(|(_, status)| *status != LandingStatus::Verified)

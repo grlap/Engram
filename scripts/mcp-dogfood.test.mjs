@@ -1433,10 +1433,30 @@ test("doctor checks recorded landings against a local repository only on request
     mkdirSync(plain);
     const refused = doctor("doctor", "--check-landings", "--repo", plain, "--json");
     assert.notEqual(refused.status, 0);
+    const refusedReport = JSON.parse(refused.stdout);
     assert.match(
-      JSON.parse(refused.stdout).repository_problem,
+      refusedReport.repository_problem,
       /^git could not open .+ as a repository \(git exited with 128\)$/,
     );
+    // Every landing is still listed, unchecked by Git, with its installed
+    // build in full and what it is worth: the build does not depend on Git.
+    const everyRef = [verifiedRef, absentRef, ...builtRefs.map(([ref]) => ref)];
+    assert.deepEqual(statuses(refusedReport).map(([ref]) => ref).sort(), [...everyRef].sort());
+    for (const entry of refusedReport.landings) {
+      assert.equal(entry.status, "unverifiable");
+      assert.match(entry.finding, /could not be checked: the repository could not be read$/u);
+      const build = builtRefs.find(([ref]) => ref === entry.work_ref)?.[1] ?? null;
+      assert.deepEqual([entry.installed_build, entry.installed_build_assurance],
+        [build, build ? "asserted, unchecked" : "no installed build recorded"]);
+    }
+    const refusedText = doctor("doctor", "--check-landings", "--repo", plain);
+    assert.notEqual(refusedText.status, 0);
+    const refusedLines = refusedText.stdout.split(/\r?\n/u);
+    for (const [, build] of builtRefs) {
+      assert.ok(refusedLines.includes(`  installed build: ${build} (asserted, unchecked)`), refusedText.stdout);
+    }
+    assert.equal(refusedLines.filter((line) => line === "  installed build: no installed build recorded").length, 2,
+      refusedText.stdout);
 
     // Without the flag, the doctor's audit is unchanged and runs no check.
     const audit = doctor("doctor", "--json");

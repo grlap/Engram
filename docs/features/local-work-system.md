@@ -485,7 +485,9 @@ that fails, as in a damaged repository, leaves the landing unverifiable, as does
 a commit not found on the branch of a shallow repository, whose cut history may
 hold it. Apart from Git's answer, it prints each landing's installed build as
 `show` does, in full beside "asserted, unchecked"; the build never enters the
-verdict and is never compared with the executable running the check.
+verdict and is never compared with the executable running the check. When the
+repository cannot be read, every landing is still listed with its installed
+build, each marked as not checked.
 
 Every new seal also declares completion-obligation schema V1 and records the
 exact `(definition, terminal resolution)` pairs applicable at its pre-seal
