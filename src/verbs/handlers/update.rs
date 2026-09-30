@@ -7,6 +7,45 @@ use super::{
     parse_supplied_evaluation_mode, short, trimmed, validate_priority,
 };
 
+/// The exact command that clears the blocker whose stored id is
+/// `blocker_id` from `work_ref`.
+pub(in crate::verbs) fn unblock_command(work_ref: &str, blocker_id: &str) -> String {
+    format!(
+        "engram work update {work_ref} --unblock --blocker {}",
+        crate::work_service::blocker_selector::encode(blocker_id)
+    )
+}
+
+/// What guidance offers for the item's active blockers: for one, the exact
+/// command that clears it; for several, the read that lists each with its
+/// own command, since only the agent knows which reason has gone, and nothing
+/// from `show` itself, which already lists them.
+pub(super) fn unblock_guidance(
+    view: &crate::work_service::WorkFocusView,
+    word: &str,
+) -> Option<String> {
+    let work_ref = &view.status.work.short_ref;
+    match (
+        view.blocker_count.max(view.blockers.len()),
+        view.blockers.as_slice(),
+    ) {
+        (1, [blocker]) => Some(unblock_command(work_ref, &blocker.blocker_id)),
+        (0, _) => None,
+        _ => (word != "show").then(|| format!("engram work show {work_ref}")),
+    }
+}
+
+/// A cleared blocker as the receipt names it: its selector, kind and detail
+/// as it was recorded when it was raised.
+fn cleared_blocker_words(blocker: &crate::WorkBlocker) -> String {
+    format!(
+        "blocker {} ({}) \"{}\"",
+        crate::work_service::blocker_selector::encode(&blocker.blocker_id),
+        crate::work_service::blocker_kind_word(blocker.kind),
+        short(&blocker.detail)
+    )
+}
+
 impl AgentVerbs {
     /// `update`: revise planning/lifecycle state or waive one disposed required child.
     ///
@@ -58,6 +97,26 @@ impl AgentVerbs {
                 }
                 VerbError::at(error, &work_ref)
             })?;
+        // What an unblock cleared is read from its committed clear, the one
+        // that moved the item to the receipt's revision, so a replayed
+        // answer names it as the first did, and a peer's change between this
+        // word's read and the clear cannot make it name another blocker.
+        let cleared_blocker = if result.operation == "unblock" {
+            // The clear's own revision is its core result's; the receipt's
+            // outer revision is the item's when the answer was shaped, which
+            // a later change may already have moved on.
+            let cleared_at = result
+                .receipt
+                .result
+                .get("revision")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(result.receipt.revision);
+            self.service
+                .blocker_cleared_at(result.receipt.work_id, cleared_at, now)
+                .map_err(|error| VerbError::at(error, &work_ref))?
+        } else {
+            None
+        };
         let after = if result.operation == "detach" {
             self.target(Some(&result.receipt.work_ref), now)?
         } else {
@@ -82,16 +141,26 @@ impl AgentVerbs {
                 "{line}; your reason is recorded as the waiver of this session's missing contribution{}",
                 held_suffix(self.holder(&after, now), now)
             )
+        } else if let Some(blocker) = &cleared_blocker {
+            format!(
+                "{line}: cleared {}; {} active blocker(s) remain{}",
+                cleared_blocker_words(blocker),
+                after.blocker_count.max(after.blockers.len()),
+                held_suffix(self.holder(&after, now), now)
+            )
         } else {
             format!("{line}{}", held_suffix(self.holder(&after, now), now))
         };
         let guidance = self.guidance(&after, "update", now);
-        let receipt = self.finish_mutation(Receipt::assemble(
-            vec![line],
-            guidance,
-            serde_json::to_value(&result)?,
-            false,
-        ));
+        let mut value = serde_json::to_value(&result)?;
+        if let Some(blocker) = &cleared_blocker {
+            value["cleared_blocker"] = serde_json::Value::String(
+                crate::work_service::blocker_selector::encode(&blocker.blocker_id),
+            );
+            value["blockers_remaining"] =
+                serde_json::json!(after.blocker_count.max(after.blockers.len()));
+        }
+        let receipt = self.finish_mutation(Receipt::assemble(vec![line], guidance, value, false));
         // Memories naming this item as their retiring target are surfaced
         // when it leaves open work other than by completion: a cancel or a
         // rejection cancels it, a supersede or a detach replaces it.
@@ -207,13 +276,33 @@ impl AgentVerbs {
                     format!("blocked {work_ref} \"{title}\": {}", short(&detail)),
                 )
             }
-            UpdateAction::Unblock => (
-                WorkUpdateInput::Unblock {
-                    blocker_id: None,
-                    idempotency_key: String::new(),
-                },
-                format!("unblocked {work_ref} \"{title}\""),
-            ),
+            UpdateAction::Unblock { blocker } => {
+                // A selector is checked before anything is attempted: only
+                // the exact spelling show prints names a blocker.
+                let blocker_id = blocker
+                    .map(|selector| {
+                        if selector.trim().is_empty() {
+                            return Err(StoreError::InvalidWork(
+                                "the blocker selector is empty; omit it to clear the item's only blocker"
+                                    .into(),
+                            ));
+                        }
+                        crate::work_service::blocker_selector::decode(&selector).ok_or_else(|| {
+                            StoreError::InvalidWork(
+                                "that is not a blocker selector; use one exactly as show prints it"
+                                    .into(),
+                            )
+                        })
+                    })
+                    .transpose()?;
+                (
+                    WorkUpdateInput::Unblock {
+                        blocker_id,
+                        idempotency_key: String::new(),
+                    },
+                    format!("unblocked {work_ref} \"{title}\""),
+                )
+            }
             UpdateAction::Revise {
                 title: new_title,
                 external,

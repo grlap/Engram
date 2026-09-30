@@ -19,6 +19,7 @@ use super::{
 
 mod gates;
 mod update;
+pub(super) use update::unblock_command;
 
 /// Host context for one agent connection. Authority comes from the host, never
 /// from a word's arguments.
@@ -194,7 +195,12 @@ pub enum UpdateAction {
     Blocked {
         detail: String,
     },
-    Unblock,
+    /// Clear one blocker: the one `blocker` names, as `show` prints its
+    /// selector, or, when omitted, the item's only active blocker.
+    Unblock {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blocker: Option<String>,
+    },
     /// Any combination of planning fields, applied as one revision.
     Revise {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2052,11 +2058,12 @@ impl AgentVerbs {
                 }
             }
         }
+        let unblock = update::unblock_guidance(view, word);
         let mut next = next_commands(
             &view.allowed_next,
             &view.status.work.short_ref,
             word,
-            !view.blockers.is_empty(),
+            unblock.as_deref(),
             view.status.work.lifecycle == WorkLifecycle::Open,
             &view.prerequisites,
         );
@@ -2338,11 +2345,14 @@ pub(super) fn detach_command(work_ref: &str) -> String {
 /// planning exception is removing a dead prerequisite that can never
 /// satisfy its edge. Other planning edits and entries the agent cannot run
 /// through the agent words stay in `allowed_next` on the structured receipt.
+/// `unblock` is the exact command that clears the item's only active
+/// blocker, or the read that lists each of several with its own; it is
+/// suggested only while the caller may unblock.
 pub(super) fn next_commands(
     allowed_next: &[String],
     work_ref: &str,
     word: &str,
-    blocked: bool,
+    unblock: Option<&str>,
     open: bool,
     prerequisites: &[crate::work_service::WorkItemSummary],
 ) -> Vec<String> {
@@ -2389,14 +2399,17 @@ pub(super) fn next_commands(
     if has("work_complete") {
         push(format!("engram work done {work_ref} \"…\""));
     }
-    if blocked && has("work_update:unblock") {
-        push(format!("engram work update {work_ref} --unblock"));
+    if let Some(command) = unblock
+        && has("work_update:unblock")
+    {
+        push(command.to_owned());
     }
     let lifecycle = !out.is_empty();
     // Looking at a closed item again or calling `next` from `next` changes
     // nothing, so neither is suggested.
-    if open && has("work_focus") && word != "show" {
-        out.push(format!("engram work show {work_ref}"));
+    let show = format!("engram work show {work_ref}");
+    if open && has("work_focus") && word != "show" && !out.contains(&show) {
+        out.push(show);
     }
     if !lifecycle && word != "next" {
         out.push("engram work next".into());

@@ -235,6 +235,9 @@ struct UpdateArgs {
     reason: Option<String>,
     /// Why the item is blocked.
     text: Option<String>,
+    /// For unblock: the blocker to clear, by the selector `show` prints
+    /// beside it; omit to clear the item's only active blocker.
+    blocker: Option<String>,
     title: Option<String>,
     outcome: Option<String>,
     /// Replace the whole acceptance list for revise. Omission preserves it;
@@ -567,6 +570,9 @@ impl McpServer {
         if args.bindings.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
             return invalid_argument("bindings", "verification bindings require action revise");
         }
+        if args.blocker.is_some() && !matches!(args.action, UpdateActionArg::Unblock) {
+            return invalid_argument("blocker", "a blocker selector requires action unblock");
+        }
         if args.evaluation_mode.is_some() && !matches!(args.action, UpdateActionArg::EvaluationMode)
         {
             return invalid_argument(
@@ -581,7 +587,9 @@ impl McpServer {
             UpdateActionArg::Blocked => UpdateAction::Blocked {
                 detail: args.text.unwrap_or_default(),
             },
-            UpdateActionArg::Unblock => UpdateAction::Unblock,
+            UpdateActionArg::Unblock => UpdateAction::Unblock {
+                blocker: args.blocker,
+            },
             UpdateActionArg::Revise => {
                 let defer = match args.defer.as_deref().map(parse_defer_date).transpose() {
                     Ok(defer) => defer,

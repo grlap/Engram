@@ -8,6 +8,7 @@ mod reject_retry;
 mod release;
 mod renewal;
 mod replayed_pins;
+mod selected_unblock;
 
 #[test]
 fn work_update_does_not_admit_obligation_waivers() {

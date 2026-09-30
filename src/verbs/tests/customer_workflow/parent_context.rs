@@ -242,7 +242,10 @@ fn show_parent_correction_paginated_first_page_keeps_parent_and_recovery_visible
         [
             recovery.clone(),
             format!("engram work note {child} \"…\""),
-            format!("engram work update {child} --unblock"),
+            format!(
+                "engram work update {child} --unblock --blocker {}",
+                plain.value["blockers"][0]["blocker"].as_str().unwrap()
+            ),
         ],
         "fixture must exercise all three lifecycle suggestions"
     );

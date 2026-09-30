@@ -218,6 +218,11 @@ fn done_names_resolve_first_conditions_instead_of_an_unavailable_detach() {
         .unwrap();
     claim_for_completion(&verbs, &parent, 13);
     let receipt = finish(&verbs, &parent, 14);
+    // The remedy names the one blocker by the selector show prints for it.
+    let selector = verbs.show(&blocked, at(15)).unwrap().value["blockers"][0]["blocker"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let rows = receipt.value["child_obligations"]["open_optional"]["items"]
         .as_array()
         .unwrap();
@@ -230,7 +235,7 @@ fn done_names_resolve_first_conditions_instead_of_an_unavailable_detach() {
         (
             blocked.clone(),
             "active blocker",
-            format!("engram work update {blocked} --unblock"),
+            format!("engram work update {blocked} --unblock --blocker {selector}"),
         ),
         (
             ordered.clone(),

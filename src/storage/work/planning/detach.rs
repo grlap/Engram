@@ -268,14 +268,22 @@ fn validate_detach_on(
         }
     }
     require_work_item_relation_integrity(connection, item.work_id)?;
-    let blocker_count = load_active_blocker_projections(connection, item.work_id)?.len();
-    if blocker_count > 0 {
+    let blockers = load_active_blocker_projections(connection, item.work_id)?;
+    if !blockers.is_empty() {
         return Err(refuse(
-            &format!("resolve {blocker_count} independent active blocker(s) before detaching"),
-            if blocker_count == 1 {
-                format!("engram work update {} --unblock", item.short_ref)
-            } else {
-                show()
+            &format!(
+                "resolve {} independent active blocker(s) before detaching",
+                blockers.len()
+            ),
+            // One blocker: the exact command that clears it. Several: the
+            // read that lists each with its own.
+            match blockers.as_slice() {
+                [only] => format!(
+                    "engram work update {} --unblock --blocker {}",
+                    item.short_ref,
+                    crate::work_service::blocker_selector::encode(&only.blocker_id)
+                ),
+                _ => show(),
             },
         ));
     }

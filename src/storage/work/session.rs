@@ -668,6 +668,29 @@ impl SqliteStore {
         Ok(())
     }
 
+    /// Retires one pending protocol attempt whose core operation was refused,
+    /// so that repeating the same call begins a fresh attempt on the state
+    /// the item has then. An attempt that recorded a result is never retired:
+    /// it stays for exact replay.
+    pub(crate) fn retire_refused_work_protocol_attempt(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        operation: &str,
+        idempotency_key: &str,
+    ) -> Result<(), StoreError> {
+        let transaction = self.begin_work_mutation()?;
+        transaction.execute(
+            "DELETE FROM work_protocol_attempts
+             WHERE project_id = ?1 AND session_id = ?2
+               AND operation = ?3 AND idempotency_key = ?4
+               AND result_id IS NULL AND result_json IS NULL",
+            params![project_id.0, session_id.0, operation, idempotency_key],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// Refreshes one pending protocol attempt to a newer live basis without
     /// losing its caller-key, request, or target binding. The caller first
     /// verifies that both bases name the same work item.

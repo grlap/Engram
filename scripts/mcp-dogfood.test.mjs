@@ -1330,6 +1330,78 @@ test("done records a typed landing on CLI and MCP, and show reads it back", asyn
   }
 });
 
+test("show names each of several blockers, and its printed command clears only that one on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-blockers-", t);
+  const session = "blocker-author";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const update = (await client.tools()).find(({ name }) => name === "update");
+    assert.match(update.inputSchema.properties.blocker.description, /selector/u);
+    const ref = cliJson(engramHome, session, "add", "Wait on three things").work.short_ref;
+    for (const detail of ["Await the release", "Await the release", "Await the vendor"]) {
+      cliJson(engramHome, session, "update", ref, "--blocked", detail);
+    }
+    const shown = cliJson(engramHome, session, "show", ref);
+    assertTerseShow(shown);
+    assert.equal(shown.blockers_total, 3);
+    assert.equal(shown.blockers.length, 3);
+    for (const blocker of shown.blockers) {
+      assert.match(blocker.blocker, /^b1-[A-Za-z0-9_-]+$/u);
+      assert.equal(blocker.unblock, `engram work update ${ref} --unblock --blocker ${blocker.blocker}`);
+    }
+    assert.ok(!shown.next.some((command) => command.includes("--unblock")), JSON.stringify(shown.next));
+    const text = cliText(engramHome, session, "show", ref);
+    assert.match(text, /^blockers: 3 active$/mu);
+    // A bare unblock cannot choose among several and changes nothing.
+    const bare = cliWord(engramHome, session, "update", ref, "--unblock", "--json");
+    assert.notEqual(bare.status, 0);
+    assert.equal(cliJson(engramHome, session, "show", ref).blockers_total, 3);
+    // A selector that names no blocker is refused on both surfaces.
+    const malformed = cliWord(engramHome, session, "update", ref, "--unblock", "--blocker", "b1-!!", "--json");
+    assert.notEqual(malformed.status, 0);
+    assert.match(malformed.stdout + malformed.stderr, /not a blocker selector/u);
+    const refused = await client.call("update", { work_ref: ref, action: "unblock", blocker: `${shown.blockers[0].blocker}=` });
+    assert.match(JSON.stringify(refused), /not a blocker selector/u);
+    const misplaced = await client.call("update", { work_ref: ref, action: "cancel", reason: "no", blocker: shown.blockers[0].blocker });
+    assert.match(JSON.stringify(misplaced), /requires action unblock/u);
+    assert.equal(cliJson(engramHome, session, "show", ref).blockers_total, 3);
+
+    // The CLI runs the second printed command exactly as printed.
+    const [first, second, third] = shown.blockers;
+    const [, , , , ...args] = second.unblock.split(" ");
+    const cleared = cliJson(engramHome, session, "update", ref, ...args);
+    assert.equal(cleared.cleared_blocker, second.blocker);
+    assert.equal(cleared.blockers_remaining, 2);
+    // MCP clears the third by its selector.
+    const viaMcp = receipt(await client.call("update", { work_ref: ref, action: "unblock", blocker: third.blocker }));
+    assert.equal(viaMcp.cleared_blocker, third.blocker);
+    assert.equal(viaMcp.blockers_remaining, 1);
+    // Repeating the MCP call after a lost answer returns the same answer.
+    const repeated = receipt(await client.call("update", { work_ref: ref, action: "unblock", blocker: third.blocker }));
+    assert.equal(repeated.cleared_blocker, third.blocker);
+    assert.equal(repeated.revision, viaMcp.revision);
+
+    const after = receipt(await client.call("show", { work_ref: ref }));
+    assertTerseShow(after);
+    assert.deepEqual(after.blockers.map(({ blocker }) => blocker), [first.blocker]);
+    assert.ok(after.next.includes(first.unblock), JSON.stringify(after.next));
+    const clearedHistory = after.history.items
+      .filter(({ kind }) => kind === "unblocked")
+      .map(({ summary }) => summary)
+      .sort();
+    assert.deepEqual(clearedHistory, [
+      `cleared blocker ${second.blocker} (manual) "Await the release": "Wait on three things"`,
+      `cleared blocker ${third.blocker} (manual) "Await the vendor": "Wait on three things"`,
+    ].sort());
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("doctor checks recorded landings against a local repository only on request", (t) => {
   const engramHome = fixtureHome("engram-landing-doctor-", t);
   const session = "landing-doctor";
@@ -4119,7 +4191,11 @@ test("two MCP sessions complete ambient work through a fenced handoff", async (t
       blockedShow.reminders.includes("blocked: Dogfood the agent-visible blocker identity"),
       JSON.stringify(blockedShow.reminders),
     );
-    assert.ok(blockedShow.next.includes(`engram work update ${workRef} --unblock`));
+    assert.match(blockedShow.blockers[0].blocker, /^b1-[A-Za-z0-9_-]+$/u);
+    assert.ok(
+      blockedShow.next.includes(`engram work update ${workRef} --unblock --blocker ${blockedShow.blockers[0].blocker}`),
+      JSON.stringify(blockedShow.next),
+    );
     receipt(await a.call("update", { action: "unblock" }));
     assert.equal(
       receipt(await a.call("show", { work_ref: workRef })).blockers.length,

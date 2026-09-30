@@ -922,6 +922,9 @@ fn open_test_obligation_becomes_the_test_reminder() {
     );
 }
 
+/// The exact clear command guidance passes through for an only blocker.
+const UNBLOCK: &str = "engram work update w-0123456789ab --unblock --blocker b1-YmxvY2tlcg";
+
 #[test]
 fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
     let tags = [
@@ -935,7 +938,7 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
     ]
     .map(String::from);
     assert_eq!(
-        next_commands(&tags, "w-0123456789ab", "add", false, true, &[]),
+        next_commands(&tags, "w-0123456789ab", "add", None, true, &[]),
         vec![
             "engram work claim w-0123456789ab",
             "engram work show w-0123456789ab",
@@ -959,18 +962,18 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
     ]
     .map(String::from);
     assert_eq!(
-        next_commands(&held, "w-0123456789ab", "show", false, true, &[]),
+        next_commands(&held, "w-0123456789ab", "show", None, true, &[]),
         vec![
             "engram work note w-0123456789ab \"…\"",
             "engram work done w-0123456789ab \"…\"",
         ]
     );
     assert_eq!(
-        next_commands(&held, "w-0123456789ab", "claim", true, true, &[]),
+        next_commands(&held, "w-0123456789ab", "claim", Some(UNBLOCK), true, &[]),
         vec![
             "engram work note w-0123456789ab \"…\"",
             "engram work done w-0123456789ab \"…\"",
-            "engram work update w-0123456789ab --unblock",
+            UNBLOCK,
             "engram work show w-0123456789ab",
         ]
     );
@@ -986,7 +989,7 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
     ]
     .map(String::from);
     assert_eq!(
-        next_commands(&crowded, "w-0123456789ab", "next", true, true, &[]),
+        next_commands(&crowded, "w-0123456789ab", "next", Some(UNBLOCK), true, &[]),
         vec![
             "engram work handoff w-0123456789ab --accept",
             "engram work claim w-0123456789ab",
@@ -999,7 +1002,7 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
             &["work_focus".into()],
             "w-0123456789ab",
             "done",
-            false,
+            None,
             true,
             &[],
         ),
@@ -1012,7 +1015,7 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
             &["work_focus".into()],
             "w-0123456789ab",
             "done",
-            false,
+            None,
             false,
             &[],
         ),
@@ -1023,7 +1026,7 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
             &["work_focus".into()],
             "w-0123456789ab",
             "next",
-            false,
+            None,
             false,
             &[],
         )
@@ -1080,7 +1083,7 @@ fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
             &["work_focus".into()],
             "w-111111111111",
             "show",
-            false,
+            None,
             true,
             std::slice::from_ref(&cancelled),
         )
@@ -1094,7 +1097,7 @@ fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
             ],
             "w-111111111111",
             "show",
-            false,
+            None,
             true,
             &[open],
         )
@@ -1108,7 +1111,7 @@ fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
             ],
             "w-111111111111",
             "show",
-            false,
+            None,
             true,
             &[cancelled],
         )
@@ -1122,7 +1125,7 @@ fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
             ],
             "w-111111111111",
             "show",
-            false,
+            None,
             true,
             &[superseded_dead],
         )
@@ -1142,7 +1145,14 @@ fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
     ]
     .map(String::from);
     assert_eq!(
-        next_commands(&crowded, "w-111111111111", "show", true, true, &cancelled,),
+        next_commands(
+            &crowded,
+            "w-111111111111",
+            "show",
+            Some(UNBLOCK),
+            true,
+            &cancelled,
+        ),
         [
             "engram work update w-111111111111 --drop-after w-000000000000",
             "engram work handoff w-111111111111 --accept",

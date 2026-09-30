@@ -1054,7 +1054,7 @@ fn detach_refuses_independent_constraints_and_stale_or_cross_project_requests() 
                     panic!("wrong refusal: {error:?}")
                 };
                 assert!(remedy.contains(match case {
-                    "blocker" => "--unblock",
+                    "blocker" => "--unblock --blocker b1-",
                     "prerequisite" => "--drop-after",
                     _ => "engram work show",
                 }));

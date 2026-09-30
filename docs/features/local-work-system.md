@@ -1348,8 +1348,19 @@ memory-version fields. It retains note/detail locators, sealed evidence links,
 and the scoped `acceptance_basis` read token. Acceptance evaluation exposes its
 full record id in JSON; the text evaluation summary uses a 12-character prefix.
 The evaluated work revision and any source fingerprint remain visible. Active
-core blockers include their id, type, and compact detail; when exactly one blocker
-is active the agent word infers it for `unblock`. Authorized memory bodies
+core blockers include their id, type, and compact detail. Agent `show` gives
+each visible active blocker a selector, the stored id in a reversible
+encoding that is navigation rather than authority, and the exact
+`update REF --unblock --blocker SELECTOR` command, with the exact active total
+and omitted count; a bare `unblock` still infers the one active blocker. A
+selected clear's keyless retry identity binds the item and the blocker, not
+the item's revision, so a repeat after a lost answer replays its recorded
+result; an attempt the core refused is retired so a later repeat is admitted
+afresh, while one interrupted before the core answered still refuses once the
+item changed. The receipt names the blocker from the committed clear at its
+revision, never from an earlier read. History resolves a cleared blocker from its retained row, checked
+against the event that raised it, and names it by the same selector, kind and
+detail; no stored event is rewritten. Authorized memory bodies
 remain available on demand through their version id on host-only reads.
 An explicit `show REF --notes` / MCP `notes: true` substitutes complete note
 bodies and references in a newest-selected window, rendered oldest to newest

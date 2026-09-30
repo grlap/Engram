@@ -276,8 +276,48 @@ pub(super) struct ShowRelation {
 
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowBlocker {
+    /// The selector that names this blocker to `update --unblock --blocker`.
+    pub(super) blocker: String,
     pub(super) kind: WorkBlockerKind,
     pub(super) detail: String,
+    /// The exact command that clears this blocker, while the caller may.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) unblock: Option<String>,
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes the field by reference"
+)]
+fn is_zero(count: &usize) -> bool {
+    *count == 0
+}
+
+/// The exact number of active blockers: the count taken before the bounded
+/// prefix, and never fewer than the rows the view holds.
+fn active_blocker_total(view: &WorkFocusView) -> usize {
+    view.blocker_count.max(view.blockers.len())
+}
+
+/// Each visible active blocker with its selector and, while the caller may
+/// unblock the open item, the exact command that clears it.
+fn show_blockers(view: &WorkFocusView) -> Vec<ShowBlocker> {
+    let clearable = view.status.work.lifecycle == crate::domain::WorkLifecycle::Open
+        && view
+            .allowed_next
+            .iter()
+            .any(|action| action == "work_update:unblock");
+    view.blockers
+        .iter()
+        .map(|blocker| ShowBlocker {
+            blocker: crate::work_service::blocker_selector::encode(&blocker.blocker_id),
+            kind: blocker.kind,
+            detail: blocker.detail.clone(),
+            unblock: clearable.then(|| {
+                super::handlers::unblock_command(&view.status.work.short_ref, &blocker.blocker_id)
+            }),
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -751,6 +791,11 @@ pub(super) struct ShowReceiptValue {
     pub(super) prerequisites: Vec<ShowRelation>,
     pub(super) handoffs: Vec<ShowHandoff>,
     pub(super) blockers: Vec<ShowBlocker>,
+    /// Exact number of active blockers, shown or not.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(super) blockers_total: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) blockers_omitted: Option<usize>,
     pub(super) notes: Vec<ShowNote>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) notes_omitted: Option<usize>,
@@ -1168,14 +1213,24 @@ pub(super) fn show_lines(
     }
     lines.extend(untested_change_lines(&view.obligation_page));
     lines.extend(displaced_change_lines(&view.obligation_page));
-    if !view.blockers.is_empty() {
-        lines.push("blockers:".into());
-        for blocker in &view.blockers {
+    let blocker_total = active_blocker_total(view);
+    if blocker_total > 0 {
+        let omitted = blocker_total - view.blockers.len();
+        let mut line = format!("blockers: {blocker_total} active");
+        if omitted > 0 {
+            let _ = write!(line, ", {omitted} not shown");
+        }
+        lines.push(line);
+        for blocker in show_blockers(view) {
             lines.push(format!(
-                "  - {}: {}",
+                "  - {} {}: {}",
+                blocker.blocker,
                 blocker_word(blocker.kind),
                 super::terminal_safe_line(&blocker.detail)
             ));
+            if let Some(command) = blocker.unblock {
+                lines.push(format!("    clear: {command}"));
+            }
         }
     }
     let children_omitted = view.child_count.saturating_sub(view.children.len());
@@ -1486,14 +1541,10 @@ pub(super) fn show_receipt_value(
                 expires_at: offer.expires_at,
             })
             .collect(),
-        blockers: view
-            .blockers
-            .iter()
-            .map(|blocker| ShowBlocker {
-                kind: blocker.kind,
-                detail: blocker.detail.clone(),
-            })
-            .collect(),
+        blockers: show_blockers(view),
+        blockers_total: active_blocker_total(view),
+        blockers_omitted: Some(active_blocker_total(view) - view.blockers.len())
+            .filter(|omitted| *omitted > 0),
         notes_omitted: (view.evidence_count > notes.len())
             .then(|| view.evidence_count - notes.len()),
         notes,

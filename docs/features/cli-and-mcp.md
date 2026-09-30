@@ -175,7 +175,7 @@ engram work show REF --evaluation RECORD_ID  # one evaluation record complete
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work claim --under PARENT [--ttl SECONDS] [--recover "why"]   # hold the parent's next ready child, chosen in ls --ready order and claimed in one transaction
-engram work update REF [--release [--reason "why"] | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release [--reason "why"] | --blocked "why" | --unblock [--blocker SELECTOR] | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N] [--landed COMMIT --remote R --branch B --pushed-at RFC3339 [--installed-build FINGERPRINT]]
@@ -805,6 +805,28 @@ Rules that matter:
   --check-landings` print it in full beside "asserted, unchecked", or "no
   installed build recorded"; Engram never compares it with any build. See the
   [landing record](local-work-system.md#completion-seal-and-report-assembly-claim).
+- `show` lists each visible active blocker with a selector (`b1-` and the
+  stored blocker id in unpadded base64url, one spelling per id), its kind,
+  its detail and, while you may unblock the open item, the exact command that
+  clears it: `update REF --unblock --blocker SELECTOR` (MCP `blocker`). It
+  states the exact number of active blockers and how many it does not show.
+  A selector is navigation, not authority: the clear it names is admitted
+  like any other. A blank, malformed or differently spelled selector is
+  refused before anything is attempted; one of another item, one already
+  cleared, and an old one after a new blocker with the same text are refused
+  and never clear a remaining blocker. A bare `--unblock` still clears an
+  item's only blocker and refuses when several are active. Repeating the same
+  selected command after a lost answer returns the recorded result, with one
+  clear and one event, even after the item changed. An attempt interrupted
+  before the core answered refuses once the item changed, naming `show REF`
+  and who can still clear the blocker; one the core
+  refused, such as a clear under a peer's live claim, is retired, so the same
+  command repeated later is admitted afresh. A keyless unblock naming its
+  blocker on the core JSON update surface has the same identity. The receipt
+  names the blocker its committed clear removed, by selector, kind and
+  detail, and how many blockers remain, and
+  history names each raised and cleared blocker by the same selector, kind
+  and detail, clears recorded before selectors existed included.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Ordinary mutation words never ask for fences or
   idempotency keys. Words accept record ids as inputs only for scoped evidence
@@ -1428,7 +1450,7 @@ fourteen words plus `search`.
 | `show` | One item in safe agent detail; changes neither focus nor claims |
 | `add` | A root from a title, or one child with `under`; `optional` permits a peer proposal beneath a foreign-held parent; `notes` records ordered initial observations atomically; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
-| `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `reject`, `after`, `drop_after`, `waive`, `detach`, or `supersede` |
+| `update` | One `action`: `release`, `blocked`, `unblock` (optional `blocker` selector), `revise`, `cancel`, `reject`, `after`, `drop_after`, `waive`, `detach`, or `supersede` |
 | `gate` | Record one bounded pass/fail observation; completed work accepts it as a late finding without a claim or reopen |
 | `note` | Record evidence and checkpoint open work; completed work records only late evidence, both keyless |
 | `done` | Complete the held item. A source change with no later matching passing test is recorded and disclosed as untested; any other open obligation returns the typed `open_work_obligations` result |
@@ -1444,7 +1466,9 @@ Every agent tool result keeps its structured shape and adds two fields.
 claim holder. `next` holds literal `engram work …` commands derived by a fixed
 table from `allowed_next`: at most one dead-prerequisite `--drop-after`
 recovery followed by lifecycle moves in priority order (`handoff --accept`,
-`claim`, `note`, `done`, `update --unblock`), with three commands total and
+`claim`, `note`, `done`, and for an item's only active blocker the exact
+`update REF --unblock --blocker SELECTOR`, or `show REF` when several are
+active), with three commands total and
 one trailing `show REF`, so no receipt lists more than four. Other planning
 edits (`--blocked`, `--release`, `handoff --to`, `add --under`, `--title`,
 `--cancel`, `--after`, `--waive`, `--supersede-with`) are not synthesized as

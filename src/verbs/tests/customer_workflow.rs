@@ -2,6 +2,7 @@ use super::*;
 
 mod acceptance_evidence;
 mod attribution;
+mod blockers;
 mod budgets;
 mod child_summary;
 mod contract_text;

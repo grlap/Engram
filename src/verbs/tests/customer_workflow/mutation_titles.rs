@@ -806,7 +806,10 @@ fn oversized_child_keeps_parent_and_full_when_lifecycle_fills_the_text_footer() 
         [
             recovery.clone(),
             format!("engram work note {child} \"…\""),
-            format!("engram work update {child} --unblock"),
+            format!(
+                "engram work update {child} --unblock --blocker {}",
+                shown.value["blockers"][0]["blocker"].as_str().unwrap()
+            ),
         ],
         "fixture must exercise all three lifecycle suggestions"
     );

@@ -60,6 +60,7 @@ use crate::WorkReferenceCandidate;
 
 mod acceptance;
 pub(crate) use acceptance::{WorkAcceptanceEvidence, WorkAcceptanceLink};
+pub(crate) mod blocker_selector;
 mod catalog;
 mod completion;
 mod continuation;
@@ -127,6 +128,10 @@ const MAX_FOCUS_MEMORIES: u32 = 8;
 pub(crate) const MAX_SUMMARY_BYTES: usize = 192;
 const MAX_HISTORY_TITLE_BYTES: usize = 72;
 const MAX_HISTORY_DETAIL_BYTES: usize = 72;
+/// A blocker's detail in history is bounded so its whole selector and kind
+/// come first within the summary bound; a long title after them may still be
+/// shortened.
+const MAX_HISTORY_BLOCKER_DETAIL_BYTES: usize = 48;
 const MAX_ACCEPTANCE_ITEMS: usize = 6;
 const MAX_LABEL_ITEMS: usize = 8;
 const MAX_DELIVERY_STAGE_RETRIES: usize = 8;
@@ -1855,10 +1860,32 @@ fn project_work_event(
     } else {
         Vec::new()
     };
-    Ok(agent_work_event_summary(event, &fields))
+    // A clear event carries only the blocker's id; the blocker it removed is
+    // read from its retained row, checked against the event that raised it,
+    // never from the active set or a row position.
+    let cleared = match &event.transition {
+        WorkTransition::Unblocked { blocker_id } => {
+            store.cleared_work_blocker(event.work_id, blocker_id)?
+        }
+        _ => None,
+    };
+    Ok(agent_work_event_summary_with(
+        event,
+        &fields,
+        cleared.as_ref(),
+    ))
 }
 
+#[cfg(test)]
 fn agent_work_event_summary(event: &WorkEvent, revised_fields: &[&str]) -> WorkChangeSummary {
+    agent_work_event_summary_with(event, revised_fields, None)
+}
+
+fn agent_work_event_summary_with(
+    event: &WorkEvent,
+    revised_fields: &[&str],
+    cleared: Option<&crate::WorkBlocker>,
+) -> WorkChangeSummary {
     let change_kind = work_transition_kind(&event.transition);
     WorkChangeSummary {
         schema_version: event.schema_version,
@@ -1869,7 +1896,7 @@ fn agent_work_event_summary(event: &WorkEvent, revised_fields: &[&str]) -> WorkC
         change_kind: change_kind.into(),
         summary: compact_text(&format!(
             "{change_kind}: {}",
-            work_transition_summary(event, revised_fields)
+            work_transition_summary(event, revised_fields, cleared)
         )),
         actor_id: Some(compact_text(&event.actor.actor_id)),
         actor_context: projected_actor_context(&event.actor),
@@ -1877,7 +1904,38 @@ fn agent_work_event_summary(event: &WorkEvent, revised_fields: &[&str]) -> WorkC
     }
 }
 
-fn work_transition_summary(event: &WorkEvent, revised_fields: &[&str]) -> String {
+/// One blocker as history names it: its selector first, whole, then its kind
+/// and a bounded preview of the detail it was raised with.
+fn history_blocker(blocker_id: &str, blocker: Option<&crate::WorkBlocker>) -> String {
+    let selector = blocker_selector::encode(blocker_id);
+    blocker.map_or_else(
+        || format!("blocker {selector}"),
+        |blocker| {
+            format!(
+                "blocker {selector} ({}) \"{}\"",
+                blocker_kind_word(blocker.kind),
+                compact_text_to(&blocker.detail, MAX_HISTORY_BLOCKER_DETAIL_BYTES)
+            )
+        },
+    )
+}
+
+/// The stored spelling of a blocker kind, as `show` names it beside a
+/// blocker's selector.
+pub(crate) fn blocker_kind_word(kind: WorkBlockerKind) -> &'static str {
+    match kind {
+        WorkBlockerKind::Manual => "manual",
+        WorkBlockerKind::HumanDecision => "human_decision",
+        WorkBlockerKind::ExternalInput => "external_input",
+        WorkBlockerKind::Policy => "policy",
+    }
+}
+
+fn work_transition_summary(
+    event: &WorkEvent,
+    revised_fields: &[&str],
+    cleared: Option<&crate::WorkBlocker>,
+) -> String {
     let title = compact_text_to(&event.work.title, MAX_HISTORY_TITLE_BYTES);
     let detail = |value: &str| compact_text_to(value, MAX_HISTORY_DETAIL_BYTES);
     match &event.transition {
@@ -1913,11 +1971,14 @@ fn work_transition_summary(event: &WorkEvent, revised_fields: &[&str]) -> String
         WorkTransition::PrerequisiteRemoved { .. } => {
             format!("removed one prerequisite: \"{title}\"")
         }
-        WorkTransition::Blocked { .. } => event.blocker.as_ref().map_or_else(
-            || format!("\"{title}\""),
-            |blocker| format!("{}: \"{title}\"", detail(&blocker.detail)),
+        WorkTransition::Blocked { blocker_id } => format!(
+            "{}: \"{title}\"",
+            history_blocker(blocker_id, event.blocker.as_ref())
         ),
-        WorkTransition::Unblocked { .. } => format!("removed one blocker: \"{title}\""),
+        WorkTransition::Unblocked { blocker_id } => format!(
+            "cleared {}: \"{title}\"",
+            history_blocker(blocker_id, cleared)
+        ),
         WorkTransition::Claimed {
             recovered: true, ..
         } => format!("after recovery by a session: \"{title}\""),

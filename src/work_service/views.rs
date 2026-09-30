@@ -667,6 +667,10 @@ pub struct WorkFocusView {
     pub prerequisites: Vec<WorkItemSummary>,
     pub handoffs: Vec<WorkHandoffSummary>,
     pub blockers: Vec<WorkBlockerSummary>,
+    /// Exact number of active blockers before the bounded `blockers` prefix.
+    /// Agent-show metadata only; never part of the core/ambient wire.
+    #[serde(skip)]
+    pub(crate) blocker_count: usize,
     pub evidence: Vec<ObjectId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence_items: Vec<WorkEvidenceSummary>,

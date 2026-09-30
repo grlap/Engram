@@ -1689,6 +1689,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 reason,
                 blocked,
                 unblock,
+                blocker,
                 assignee,
                 priority,
                 defer,
@@ -1738,7 +1739,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release [--reason WHY], --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, --evaluation-mode MODE, --clear-evaluation-mode, or field changes (--title, --outcome, --accept, --bind, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release [--reason WHY], --blocked WHY, --unblock [--blocker SELECTOR], --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, --evaluation-mode MODE, --clear-evaluation-mode, or field changes (--title, --outcome, --accept, --bind, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1746,7 +1747,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             } else if let Some(detail) = blocked {
                 UpdateAction::Blocked { detail }
             } else if unblock {
-                UpdateAction::Unblock
+                UpdateAction::Unblock { blocker }
             } else if let Some(reason) = cancel {
                 UpdateAction::Cancel { reason }
             } else if let Some(reason) = reject {
@@ -2310,9 +2311,14 @@ struct WorkUpdateArgs {
     /// Mark the item blocked and say why.
     #[arg(long, value_name = "WHY")]
     blocked: Option<String>,
-    /// Clear the item's single active blocker.
+    /// Clear a blocker: the one --blocker names, or the item's only active
+    /// blocker.
     #[arg(long)]
     unblock: bool,
+    /// With --unblock: the blocker to clear, by the selector show prints
+    /// beside it.
+    #[arg(long, value_name = "SELECTOR", requires = "unblock")]
+    blocker: Option<String>,
     #[arg(long)]
     assignee: Option<String>,
     /// 0 (highest) through 4.

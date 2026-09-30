@@ -683,11 +683,11 @@ fn completed_show_advertises_late_note_without_hijacking_done_navigation() {
         "work_update:reopen".into(),
     ];
     assert_eq!(
-        next_commands(&tags, "w-0123456789ab", "show", false, false, &[],),
+        next_commands(&tags, "w-0123456789ab", "show", None, false, &[],),
         vec!["engram work note w-0123456789ab \"…\""]
     );
     assert_eq!(
-        next_commands(&tags, "w-0123456789ab", "done", false, false, &[],),
+        next_commands(&tags, "w-0123456789ab", "done", None, false, &[],),
         vec!["engram work next"]
     );
 }

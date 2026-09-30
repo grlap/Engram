@@ -4,6 +4,23 @@ use crate::domain::AppendRestoredWorkGateRequest;
 mod reject_retry;
 
 impl LocalWorkService {
+    /// The blocker whose committed clear moved `work_id` to `revision`, as it
+    /// was recorded when it was raised: what an unblock receipt names, read
+    /// from the clear itself rather than from any earlier read.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the store cannot be opened or the clear's
+    /// records disagree with their bindings.
+    pub(crate) fn blocker_cleared_at(
+        &self,
+        work_id: crate::domain::WorkId,
+        revision: i64,
+        now: DateTime<Utc>,
+    ) -> Result<Option<crate::WorkBlocker>, StoreError> {
+        self.store_at(now)?.blocker_cleared_at(work_id, revision)
+    }
+
     /// Applies one typed update to ambient focused work.
     ///
     /// # Errors
@@ -576,8 +593,27 @@ impl LocalWorkService {
                 now,
             );
         }
-        let raw_key =
-            self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent, now)?;
+        // A selected clear is one intent for its one blocker, and a blocker
+        // is cleared at most once, so its keyless retry identity binds the
+        // blocker instead of the item's revision, which the clear bumps.
+        // Repeating it after a lost answer replays the recorded result; a
+        // bare unblock keeps the ordinary identity.
+        let selected_unblock_key = match &input {
+            WorkUpdateInput::Unblock {
+                blocker_id: Some(blocker_id),
+                ..
+            } if raw_key.trim().is_empty() && !blocker_id.trim().is_empty() => {
+                Some(self.selected_unblock_idempotency_key(&basis, blocker_id, &intent)?)
+            }
+            _ => None,
+        };
+        let raw_key = self.effective_idempotency_key(
+            selected_unblock_key.as_deref().unwrap_or(raw_key),
+            &protocol_operation,
+            &basis,
+            &intent,
+            now,
+        )?;
         let attempt = store
             .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
                 project_id: &self.project_id,
@@ -678,6 +714,19 @@ impl LocalWorkService {
                     &basis,
                     &recorded_basis,
                 ));
+            }
+            if selected_unblock_key.is_some()
+                && matches!(error, StoreError::WorkOperationIdempotencyConflict { .. })
+            {
+                // An interrupted selected clear is not replayed onto an item
+                // that changed since; say so with what the caller can run.
+                let work_ref = basis
+                    .focused_work
+                    .as_ref()
+                    .map_or("the item", |work| work.short_ref.as_str());
+                return Err(StoreError::InvalidWork(format!(
+                    "this selected unblock began earlier and was never answered, and {work_ref} has changed since, so it is not carried onto the changed item; run engram work show {work_ref}: a blocker still active there can be cleared by another session, or by a bare unblock once it is the only one"
+                )));
             }
             return Err(error);
         }
@@ -871,7 +920,8 @@ impl LocalWorkService {
                     }
                     None => unique_blocker_id(&store.inspect_work(work.work_id, now)?.blockers)?,
                 };
-                let item = store.clear_work_blocker(
+                let core_key = scoped_key.clone();
+                let cleared = store.clear_work_blocker(
                     &ClearWorkBlockerRequest {
                         work_id: work.work_id,
                         expected_work_revision: work.revision,
@@ -882,7 +932,39 @@ impl LocalWorkService {
                         cleared_at: now,
                     },
                     &DevelopmentNoopRedactor,
-                )?;
+                );
+                let item = match cleared {
+                    Ok(item) => item,
+                    // A selected clear's identity outlives the item's
+                    // revision, so an attempt the core refused, such as one
+                    // under a peer's live claim, would otherwise refuse every
+                    // later repeat once the item changed. Retire it: the
+                    // repeat begins afresh and is admitted like any clear.
+                    // An attempt interrupted before the core answered stays,
+                    // and still refuses once the item changed. So does one
+                    // whose clear another call of the same key committed: a
+                    // replay conflict, or any committed core result, means
+                    // the clear happened and that call will finish it.
+                    Err(error)
+                        if selected_unblock_key.is_some()
+                            && !matches!(
+                                error,
+                                StoreError::WorkOperationIdempotencyConflict { .. }
+                            )
+                            && store
+                                .work_operation_result_value("clear_work_blocker", &core_key)?
+                                .is_none() =>
+                    {
+                        store.retire_refused_work_protocol_attempt(
+                            &self.project_id,
+                            &self.session_id,
+                            &protocol_operation,
+                            &raw_key,
+                        )?;
+                        return Err(error);
+                    }
+                    Err(error) => return Err(error),
+                };
                 ("unblock", serde_json::to_value(item)?)
             }
             WorkUpdateInput::Revise {

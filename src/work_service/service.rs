@@ -318,6 +318,33 @@ impl LocalWorkService {
         Ok(format!("auto:{}", object.key().as_str()))
     }
 
+    /// The keyless attempt identity of clearing one named blocker: this
+    /// session's clear of that blocker on that item, with the same canonical
+    /// intent. It leaves out the item's revision, which the clear itself
+    /// bumps, so repeating the call finds the attempt it made. The attempt's
+    /// recorded basis still refuses an unfinished retry after the item
+    /// changed.
+    pub(super) fn selected_unblock_idempotency_key<T: Serialize>(
+        &self,
+        basis: &WorkProtocolBasis,
+        blocker_id: &str,
+        intent: &WorkProtocolIntent<'_, T>,
+    ) -> Result<String, StoreError> {
+        let work = basis.focused_work.as_ref().ok_or_else(|| {
+            StoreError::InvalidWorkProjection("a selected unblock has no bound item".into())
+        })?;
+        let intent = CanonicalObject::freeze(intent)?;
+        let key = CanonicalObject::freeze(&serde_json::json!({
+            "project": self.project_id,
+            "session": self.session_id,
+            "operation": "work_update:unblock",
+            "work": work.work_id,
+            "blocker": blocker_id,
+            "intent": intent.key(),
+        }))?;
+        Ok(format!("auto:{}", key.key().as_str()))
+    }
+
     /// Resolves an optional caller-supplied target, makes it the ambient
     /// focus on this connection, and returns its id so the mutation binds to
     /// it regardless of any concurrent focus change by the same session.
@@ -1002,6 +1029,7 @@ impl LocalWorkService {
                 .take(MAX_FOCUS_RELATIONS)
                 .map(work_handoff_summary)
                 .collect(),
+            blocker_count: blockers.len(),
             blockers: blockers
                 .into_iter()
                 .take(MAX_FOCUS_RELATIONS)
