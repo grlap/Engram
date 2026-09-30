@@ -426,3 +426,46 @@ fn more_blockers_than_show_lists_are_counted_and_each_listed_row_is_whole() {
         assert!(text.contains(&format!("    clear: {command}")), "{text}");
     }
 }
+
+#[test]
+fn a_reader_who_cannot_unblock_still_sees_each_exact_command() {
+    let (_directory, holder, path, project) = fixture();
+    let reader = AgentVerbs::new(
+        path,
+        project,
+        "reader".into(),
+        SessionId("reader".into()),
+        None,
+    );
+    let work = add(&holder, "Held and blocked", None, false, 0);
+    holder
+        .claim(
+            ClaimInput {
+                work_ref: work.clone(),
+                ttl_seconds: Some(3600),
+                recover: None,
+            },
+            at(1),
+        )
+        .expect("claim");
+    block(&holder, &work, "Await the first", 2);
+    block(&holder, &work, "Await the second", 3);
+    // Another session's live claim leaves the reader no planning authority,
+    // yet show still prints each blocker's exact command; running it is what
+    // admits or refuses the clear.
+    let shown = reader.show(&work, at(4)).expect("show");
+    let text = shown.text();
+    let blockers = shown.value["blockers"].as_array().expect("blockers");
+    assert_eq!(blockers.len(), 2);
+    for blocker in blockers {
+        let selector = blocker["blocker"].as_str().expect("selector");
+        let command = format!("engram work update {work} --unblock --blocker {selector}");
+        assert_eq!(blocker["unblock"], command.as_str());
+        assert!(text.contains(&format!("    clear: {command}")), "{text}");
+    }
+    let first = blockers[0]["blocker"].as_str().expect("first").to_owned();
+    let before = state(&reader, &work, 5);
+    unblock(&reader, &work, Some(&first), 6).expect_err("the holder's claim refuses the reader");
+    assert_eq!(state(&reader, &work, 7), before);
+    unblock(&holder, &work, Some(&first), 8).expect("the holder clears it");
+}

@@ -280,9 +280,9 @@ pub(super) struct ShowBlocker {
     pub(super) blocker: String,
     pub(super) kind: WorkBlockerKind,
     pub(super) detail: String,
-    /// The exact command that clears this blocker, while the caller may.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) unblock: Option<String>,
+    /// The exact command that clears this blocker. It is admitted or refused
+    /// when it runs, like any clear; printing it grants nothing.
+    pub(super) unblock: String,
 }
 
 #[allow(
@@ -299,23 +299,19 @@ fn active_blocker_total(view: &WorkFocusView) -> usize {
     view.blocker_count.max(view.blockers.len())
 }
 
-/// Each visible active blocker with its selector and, while the caller may
-/// unblock the open item, the exact command that clears it.
+/// Each visible active blocker with its selector and the exact command that
+/// clears it, whoever reads it: the clear is admitted or refused when it runs.
 fn show_blockers(view: &WorkFocusView) -> Vec<ShowBlocker> {
-    let clearable = view.status.work.lifecycle == crate::domain::WorkLifecycle::Open
-        && view
-            .allowed_next
-            .iter()
-            .any(|action| action == "work_update:unblock");
     view.blockers
         .iter()
         .map(|blocker| ShowBlocker {
             blocker: crate::work_service::blocker_selector::encode(&blocker.blocker_id),
             kind: blocker.kind,
             detail: blocker.detail.clone(),
-            unblock: clearable.then(|| {
-                super::handlers::unblock_command(&view.status.work.short_ref, &blocker.blocker_id)
-            }),
+            unblock: super::handlers::unblock_command(
+                &view.status.work.short_ref,
+                &blocker.blocker_id,
+            ),
         })
         .collect()
 }
@@ -1228,9 +1224,7 @@ pub(super) fn show_lines(
                 blocker_word(blocker.kind),
                 super::terminal_safe_line(&blocker.detail)
             ));
-            if let Some(command) = blocker.unblock {
-                lines.push(format!("    clear: {command}"));
-            }
+            lines.push(format!("    clear: {}", blocker.unblock));
         }
     }
     let children_omitted = view.child_count.saturating_sub(view.children.len());

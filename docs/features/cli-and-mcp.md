@@ -807,8 +807,8 @@ Rules that matter:
   [landing record](local-work-system.md#completion-seal-and-report-assembly-claim).
 - `show` lists each visible active blocker with a selector (`b1-` and the
   stored blocker id in unpadded base64url, one spelling per id), its kind,
-  its detail and, while you may unblock the open item, the exact command that
-  clears it: `update REF --unblock --blocker SELECTOR` (MCP `blocker`). It
+  its detail and the exact command that clears it, whoever reads it (the
+  clear is admitted or refused when it runs): `update REF --unblock --blocker SELECTOR` (MCP `blocker`). It
   states the exact number of active blockers and how many it does not show.
   A selector is navigation, not authority: the clear it names is admitted
   like any other. A blank, malformed or differently spelled selector is
