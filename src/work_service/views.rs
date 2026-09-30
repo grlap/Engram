@@ -62,6 +62,13 @@ pub struct WorkNextPeek {
     /// There are feed entries beyond this bounded preview, not necessarily
     /// visible peer changes. Repeating peek does not paginate them.
     pub more_changes_available: bool,
+    /// The peek carried a context generation that no recorded memories
+    /// listing of this session carries, so the session is told to list its
+    /// memories before acting. It reports the host's assertion and what is
+    /// recorded, never that a compaction happened or that notes were read.
+    /// Absent when no generation was supplied or a listing carried it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub memory_listing_due: bool,
 }
 
 /// Diagnostic basis of the advisory snapshot, not the staged delivery range,
@@ -209,8 +216,10 @@ pub struct WorkNextQuery {
     pub assigned_to: Option<String>,
     pub label: Option<String>,
     pub after: Option<String>,
-    /// Asserted host/client context generation. A changed value may reannounce
-    /// the content-free project-memory signal without creating a delivery cursor.
+    /// Asserted host/client context generation. A value that no recorded
+    /// memories listing of the session carries reannounces the content-free
+    /// project-memory signal, and makes a peek direct the session to list its
+    /// memories; it creates no delivery cursor.
     pub context_generation: Option<String>,
 }
 

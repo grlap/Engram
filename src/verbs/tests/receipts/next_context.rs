@@ -49,6 +49,7 @@ fn peek_disclosures_survive_even_an_impossible_budget() {
     compact.peek = Some(crate::work_service::WorkNextPeek {
         delivery_advanced: false,
         more_changes_available: true,
+        memory_listing_due: false,
     });
     compact.memories = Some(ProjectMemorySignal {
         count: 17,
@@ -76,6 +77,101 @@ fn peek_disclosures_survive_even_an_impossible_budget() {
     assert!(text.contains("memory detail: engram work memories"));
     assert!(fitted.held.is_empty());
     assert!(fitted.discovery.assigned.is_empty());
+}
+
+fn recovering_receipt() -> CompactNextReceipt {
+    let mut compact = context_receipt();
+    compact.peek = Some(crate::work_service::WorkNextPeek {
+        delivery_advanced: false,
+        more_changes_available: false,
+        memory_listing_due: true,
+    });
+    compact.context_generation = Some("termal-7".into());
+    compact.guidance.next = vec![
+        "engram work memories --context-generation termal-7".into(),
+        "engram work next".into(),
+    ];
+    compact
+}
+
+fn memory_recovery_direction(compact: &CompactNextReceipt) -> String {
+    crate::verbs::memory_recovery::reminder(compact.peek.as_ref()).expect("direction")
+}
+
+#[test]
+fn the_memory_recovery_direction_survives_an_impossible_budget() {
+    let mut compact = recovering_receipt();
+    compact.guidance.reminders = vec!["one".into(), "two".into()];
+    let direction = memory_recovery_direction(&compact);
+    let fitted = fit_compact_next_to(compact, 1).unwrap();
+    assert_eq!(fitted.guidance.reminders, std::slice::from_ref(&direction));
+    assert_eq!(
+        fitted.guidance.next,
+        ["engram work memories --context-generation termal-7"]
+    );
+    let value = compact_next_value(&fitted);
+    assert_eq!(value["reminders"], json!([direction]));
+    assert_eq!(value["peek"]["memory_listing_due"], true);
+    assert_eq!(
+        value["memories_detail"],
+        "engram work memories --context-generation termal-7"
+    );
+    let lines = compact_next_lines(&fitted);
+    assert_eq!(lines[0], direction);
+    assert_eq!(
+        lines[1],
+        "  engram work memories --context-generation termal-7"
+    );
+    assert!(
+        fitted
+            .omissions
+            .iter()
+            .any(|omission| omission.section == "reminders" && omission.omitted_count == 2)
+    );
+}
+
+#[test]
+fn the_memory_recovery_direction_precedes_the_clipped_status_reminder() {
+    let compact = recovering_receipt();
+    let direction = memory_recovery_direction(&compact);
+    let budget = serde_json::to_vec(&compact_next_value(&context_receipt()))
+        .unwrap()
+        .len();
+    let fitted = fit_compact_next_to(compact, budget).unwrap();
+    assert!(!fitted.held[0].current_status.as_ref().unwrap().complete);
+    assert_eq!(
+        fitted.guidance.reminders[..2],
+        [
+            direction,
+            crate::verbs::next_context::CLIPPED_STATUS_REMINDER.to_owned()
+        ]
+    );
+}
+
+#[test]
+fn the_memory_recovery_direction_is_kept_by_the_reminder_count_limit() {
+    let mut compact = recovering_receipt();
+    compact.discovery = WorkDiscoveryView::default();
+    compact.guidance.reminders = (0..MAX_COMPACT_REMINDER_ITEMS)
+        .map(|index| format!("reminder {index}"))
+        .collect();
+    let direction = memory_recovery_direction(&compact);
+    for _ in 0..2 {
+        crate::verbs::next_context::refresh_guidance(&mut compact);
+        assert_eq!(compact.guidance.reminders.len(), MAX_COMPACT_REMINDER_ITEMS);
+        assert_eq!(compact.guidance.reminders[0], direction);
+        assert_eq!(compact.guidance.reminders[1], "reminder 0");
+        assert_eq!(
+            compact
+                .omissions
+                .iter()
+                .filter(|omission| omission.section == "reminders")
+                .map(|omission| omission.omitted_count)
+                .collect::<Vec<_>>(),
+            [1],
+            "the displaced reminder is counted once"
+        );
+    }
 }
 
 #[test]

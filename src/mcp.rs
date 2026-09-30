@@ -88,7 +88,7 @@ struct NextArgs {
     /// Return rich structured output, including raw identity and integrity metadata.
     /// Terse show and compact rows omit selected fields; this is not a global security boundary.
     verbose: Option<bool>,
-    /// Asserted host/client context generation; a new value may reannounce project memories.
+    /// Asserted host/client context generation, a plain token; until a memories listing carries it, a peek directs the session to list them.
     #[schemars(length(max = 256))]
     context_generation: Option<String>,
 }
@@ -346,6 +346,11 @@ struct MemoriesArgs {
     full: Option<bool>,
     /// With full and an exact key, read this historical revision instead of the current one.
     revision: Option<u64>,
+    /// The host's context generation, as a peek printed it; the first page of an
+    /// unfiltered listing records it, which records a listing, not a reading.
+    /// Without it, memories records nothing.
+    #[schemars(length(max = 256))]
+    context_generation: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -711,7 +716,7 @@ impl McpServer {
     /// List, search, or fully read project memories.
     #[tool(
         name = "memories",
-        description = "List or search current project memories; full with an exact key reads one body, with optional revision for attributed history"
+        description = "List or search current project memories; full with an exact key reads one body, with optional revision for attributed history; records nothing unless context_generation is given"
     )]
     fn memories(&self, Parameters(args): Parameters<MemoriesArgs>) -> CallToolResult {
         self.verb(self.verbs().memories(
@@ -720,6 +725,7 @@ impl McpServer {
                 after: args.after,
                 full: args.full.unwrap_or(false),
                 revision: args.revision,
+                context_generation: args.context_generation,
             },
             Utc::now(),
         ))
@@ -885,7 +891,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
         StoreError::InvalidProjectMemory(reason) if reason.contains("context_generation") => {
             json!({
                 "reason": reason,
-                "remedy": "omit context_generation or use at most 256 bytes without control characters",
+                "remedy": "omit context_generation or use 1 to 256 ASCII letters, digits, dots, underscores or dashes, not starting with a dash",
             })
         }
         StoreError::InvalidProjectMemory(reason) => json!({
@@ -1400,12 +1406,12 @@ mod tests {
     #[test]
     fn invalid_context_generation_has_a_specific_mcp_remedy() {
         let error = StoreError::InvalidProjectMemory(
-            "context_generation must be at most 256 bytes without control characters".into(),
+            "context_generation must be 1 to 256 ASCII letters, digits, dots, underscores or dashes, and must not start with a dash".into(),
         );
         let value = store_error_value(&error);
         assert_eq!(
             value["error"]["details"]["remedy"],
-            "omit context_generation or use at most 256 bytes without control characters"
+            "omit context_generation or use 1 to 256 ASCII letters, digits, dots, underscores or dashes, not starting with a dash"
         );
     }
 

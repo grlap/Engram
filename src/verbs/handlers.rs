@@ -331,6 +331,11 @@ pub struct MemoriesInput {
     #[serde(default)]
     pub full: bool,
     pub revision: Option<u64>,
+    /// The host's context generation, as a peek printed it. The first page of
+    /// an unfiltered listing records it with the listing; searches, full
+    /// reads and continuation pages accept it and record nothing. Without it
+    /// no form of `memories` records anything.
+    pub context_generation: Option<String>,
 }
 
 /// `forget`: permanently retire one project-memory key.
@@ -665,9 +670,23 @@ impl AgentVerbs {
             guidance.next.push("engram work add \"…\"".into());
         }
         if input.peek {
-            guidance.next.insert(0, "engram work memories".into());
+            guidance.next.insert(
+                0,
+                super::memory_recovery::listing_command(
+                    view.peek.as_ref(),
+                    view.context_generation.as_deref(),
+                ),
+            );
         }
         let (lines, value, guidance) = if input.verbose {
+            // The direction to list memories stays first among the reminders
+            // and is never shed; its command is the first next command, which
+            // the loop below keeps.
+            let recovery = super::memory_recovery::reminder(view.peek.as_ref());
+            if let Some(recovery) = &recovery {
+                guidance.reminders.insert(0, recovery.clone());
+            }
+            let kept_reminders = usize::from(recovery.is_some());
             let mut peek_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             let mut agent_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             let mut evaluation_obligations = view.focus.as_ref().and_then(|focus| {
@@ -694,7 +713,10 @@ impl AgentVerbs {
                     .iter()
                     .map(|change| change.line.clone())
                     .collect::<Vec<_>>();
-                let mut lines = Vec::new();
+                let mut lines = super::memory_recovery::opening_lines(
+                    view.peek.as_ref(),
+                    view.context_generation.as_deref(),
+                );
                 match &view.focus {
                     Some(focus) => {
                         lines.push(format!(
@@ -751,7 +773,11 @@ impl AgentVerbs {
                     ));
                 }
                 if input.peek {
-                    super::receipts::append_peek_disclosure(&mut lines);
+                    super::receipts::append_peek_disclosure(
+                        &mut lines,
+                        view.peek.as_ref(),
+                        view.context_generation.as_deref(),
+                    );
                 }
                 for omission in view
                     .omissions
@@ -769,7 +795,10 @@ impl AgentVerbs {
                     value["evaluation_obligations"] = json!(advisory);
                 }
                 if input.peek {
-                    value["memories_detail"] = json!("engram work memories");
+                    value["memories_detail"] = json!(super::memory_recovery::listing_command(
+                        view.peek.as_ref(),
+                        view.context_generation.as_deref(),
+                    ));
                     value["preview_omissions"] = json!(peek_omissions);
                     for omission in &peek_omissions {
                         lines.push(format!(
@@ -852,7 +881,8 @@ impl AgentVerbs {
                     .is_some_and(super::evaluation_guidance::EvaluationObligations::omit_one)
                 {
                     continue;
-                } else if guidance.reminders.pop().is_some() {
+                } else if guidance.reminders.len() > kept_reminders {
+                    guidance.reminders.pop();
                     "reminders"
                 } else if guidance.next.len() > 1 {
                     guidance.next.pop();
@@ -1450,6 +1480,7 @@ impl AgentVerbs {
             )
             .into());
         }
+        crate::storage::validate_context_generation(input.context_generation.as_deref())?;
         if input.full {
             if input.after.is_some() {
                 return Err(StoreError::InvalidProjectMemory(
@@ -1476,12 +1507,25 @@ impl AgentVerbs {
             .query
             .as_deref()
             .is_some_and(|query| !query.trim().is_empty());
-        let mut result =
-            self.service
-                .project_memories(input.query.as_deref(), input.after.as_deref(), now)?;
+        let (mut result, listing) = self.service.project_memories_at_cut(
+            input.query.as_deref(),
+            input.after.as_deref(),
+            now,
+        )?;
         loop {
             let receipt = project_memory_list_receipt(&result, filtered)?;
             if super::receipts::agent_receipt_fits(&receipt, MAX_AGENT_WORK_RESPONSE_BYTES)? {
+                // Only the start of the unfiltered listing, carrying the
+                // generation a peek printed, is the recovery read that peek
+                // asks for, and only once it has been rendered. Every other
+                // form stays a read that records nothing.
+                if let Some(generation) = &input.context_generation
+                    && !filtered
+                    && input.after.is_none()
+                {
+                    self.service
+                        .acknowledge_project_memory_listing(listing, generation, now);
+                }
                 return Ok(receipt);
             }
             if result.memories.pop().is_none() {

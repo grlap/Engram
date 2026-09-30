@@ -134,7 +134,9 @@ it as left out with its row count and does not write it, and repair derives
 it again in the new store, so the report never counts a row the published
 store does not hold. A file that declares such a table among the ones it
 copies is refused by the table's name. The delivery bookkeeping alone is not derived again; it
-starts empty, which causes one harmless memory re-announcement per session.
+starts empty, which causes one harmless memory re-announcement per session,
+and one more direction to list memories for a session whose host supplies a
+context generation.
 
 The new file is built inside the private file the transfer reserves for it,
 which is opened in place rather than deleted and recreated. On a system with

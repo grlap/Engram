@@ -44,6 +44,7 @@ mod evaluation_guidance;
 mod evaluation_windows;
 mod handlers;
 mod listing;
+mod memory_recovery;
 mod memory_retirement;
 mod mutation;
 mod next_context;

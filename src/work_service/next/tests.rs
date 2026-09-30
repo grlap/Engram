@@ -118,7 +118,14 @@ fn preview_correction_invalid_generation_precedes_store_and_delivery_effects() {
         SessionId("reader".into()),
         None,
     );
-    let invalid = ["x".repeat(257), "é".repeat(129), "bad\ngeneration".into()];
+    let invalid = [
+        String::new(),
+        "x".repeat(257),
+        "é".repeat(128),
+        "bad\ngeneration".into(),
+        "two words".into(),
+        "-leading".into(),
+    ];
     let query = |generation: &str| WorkNextQuery {
         sections: vec![WorkNextSection::Focus],
         context_generation: Some(generation.into()),
@@ -127,7 +134,7 @@ fn preview_correction_invalid_generation_precedes_store_and_delivery_effects() {
     let assert_refusal = |result: Result<WorkNextView, StoreError>| {
         assert!(
             matches!(result, Err(StoreError::InvalidProjectMemory(message))
-            if message == "context_generation must be at most 256 bytes without control characters")
+            if message == "context_generation must be 1 to 256 ASCII letters, digits, dots, underscores or dashes, and must not start with a dash")
         );
     };
     for generation in &invalid {
@@ -203,9 +210,9 @@ fn preview_correction_generation_boundary_without_memories_preserves_delivery() 
     let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
     for generation in [
         None,
-        Some(String::new()),
+        Some("x".into()),
         Some("x".repeat(256)),
-        Some("é".repeat(128)),
+        Some("A.b_c-9".into()),
     ] {
         let view = service
             .work_next(

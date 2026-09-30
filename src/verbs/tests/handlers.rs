@@ -278,6 +278,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
                 query: Some("memory-key".into()),
                 after: Some("after-key".into()),
                 full: true,
+                context_generation: None,
             },
             at(0),
         )
@@ -290,6 +291,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
                 query: None,
                 after: None,
                 full: true,
+                context_generation: None,
             },
             at(0),
         )
@@ -320,6 +322,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
                 query: Some("plain-boundary".into()),
                 after: None,
                 full: true,
+                context_generation: None,
             },
             at(0),
         )
@@ -374,6 +377,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
                 query: Some("terminal-safe".into()),
                 after: None,
                 full: true,
+                context_generation: None,
             },
             at(2),
         )
@@ -401,6 +405,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
                 query: Some("terminal-safe".into()),
                 after: None,
                 full: false,
+                context_generation: None,
             },
             at(2),
         )
@@ -447,6 +452,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
                 query: Some("unsafe-actor-label".into()),
                 after: None,
                 full: false,
+                context_generation: None,
             },
             at(3),
         )
@@ -1242,7 +1248,7 @@ fn completed_holder_word_refusal_supplies_only_the_late_note_command() {
 
 #[test]
 fn invalid_context_generation_guidance_retries_next_without_the_bad_advisory() {
-    let reason = "context_generation must be at most 256 bytes without control characters";
+    let reason = "context_generation must be 1 to 256 ASCII letters, digits, dots, underscores or dashes, and must not start with a dash";
     let guidance = VerbError::from(StoreError::InvalidProjectMemory(reason.into())).guidance();
     assert_eq!(guidance.reminders, vec![reason]);
     assert_eq!(guidance.next, vec!["engram work next"]);

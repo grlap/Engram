@@ -47,7 +47,7 @@ fn status_correction_verbose_guidance_counts_toward_budget() {
     };
     let input = NextInput {
         verbose: true,
-        context_generation: Some(String::new()),
+        context_generation: Some("x".into()),
         ..NextInput::default()
     };
     let compact_len = |value: &serde_json::Value| serde_json::to_vec(value).unwrap().len();

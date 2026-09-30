@@ -47,12 +47,14 @@ impl LocalWorkService {
             let session = store.work_session_state(&self.project_id, &self.session_id, now)?;
             let sections = selected_work_next_sections(&query.sections);
             let wants_changes = sections.contains(&WorkNextSection::Changes);
+            let mut memory_listing_due = false;
             let memories = if sections.contains(&WorkNextSection::Memories) {
                 let advertisement = store.project_memory_advertisement_candidate(
                     &self.project_id,
                     &self.session_id,
                     query.context_generation.as_deref(),
                 )?;
+                memory_listing_due = advertisement.generation_unlisted;
                 Some(ProjectMemorySignal {
                     count: advertisement.count,
                     changed: advertisement.changed,
@@ -98,6 +100,7 @@ impl LocalWorkService {
                     delivery_advanced: false,
                     more_changes_available: wants_changes
                         && position < advisory.read_cut.project_position,
+                    memory_listing_due,
                 }),
                 build_fingerprint: crate::build_identity::current().build_fingerprint.clone(),
                 read_cut: advisory.read_cut,

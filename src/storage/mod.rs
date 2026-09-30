@@ -1258,8 +1258,16 @@ enum MemoryProjectionMode {
 pub(crate) struct ProjectMemoryAdvertisement {
     pub count: usize,
     pub changed: bool,
+    /// The call supplied a context generation that no recorded memories
+    /// listing of the session carries.
+    pub generation_unlisted: bool,
     change_position: i64,
-    context_generation_digest: Option<String>,
+}
+
+/// The project-memory position that a listing's own snapshot read.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ProjectMemoryListingCut {
+    change_position: i64,
 }
 
 const PROJECT_MEMORY_LIST_LIMIT: usize = 20;

@@ -12,6 +12,7 @@ use crate::storage::{
 use crate::*;
 use crate::{ProjectId, domain::ProvenanceLink};
 
+mod listing_acknowledgement;
 mod retiring;
 mod revisions;
 
@@ -113,24 +114,42 @@ fn assert_project_memory_advertisement_contract(
             .expect("omitted signal reannounces")
             .changed
     );
+    // An advancing next delivers the signal and never records the supplied
+    // generation, so the signal repeats until a listing carries it.
     store
         .acknowledge_project_memory_advertisement(project, session, &omitted)
         .expect("acknowledge delivered signal");
-    let stored_generation_digest = store
-        .connection
-        .query_row(
-            "SELECT context_generation_digest FROM project_memory_advertisements
-             WHERE project_id = ?1 AND session_id = ?2",
-            params![project.0, session.0],
-            |row| row.get::<_, String>(0),
-        )
-        .expect("stored context-generation digest");
-    assert_eq!(stored_generation_digest.len(), 64);
-    assert_ne!(stored_generation_digest, "fresh-context");
+    let stored_generation_digest = |store: &SqliteStore| {
+        store
+            .connection
+            .query_row(
+                "SELECT context_generation_digest FROM project_memory_advertisements
+                 WHERE project_id = ?1 AND session_id = ?2",
+                params![project.0, session.0],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("the session's row")
+    };
+    assert_eq!(stored_generation_digest(store), None);
+    assert!(
+        store
+            .project_memory_advertisement_candidate(project, session, Some("fresh-context"))
+            .expect("unlisted generation reannounces")
+            .changed
+    );
+    let (_, listing) = store
+        .project_memories_at_cut(project, session, &actor(&session.0), None, None)
+        .expect("list memories");
+    store
+        .acknowledge_project_memory_listing(project, session, listing, "fresh-context")
+        .expect("record the listing");
+    let digest = stored_generation_digest(store).expect("stored context-generation digest");
+    assert_eq!(digest.len(), 64);
+    assert_ne!(digest, "fresh-context");
     assert!(
         !store
             .project_memory_advertisement_candidate(project, session, Some("fresh-context"))
-            .expect("acknowledged signal stays quiet")
+            .expect("listed generation stays quiet")
             .changed
     );
 }
@@ -143,8 +162,8 @@ fn project_memory_advertisement_bookkeeping_is_bounded_per_project() {
     let current_advertisement = ProjectMemoryAdvertisement {
         count: 0,
         changed: true,
+        generation_unlisted: false,
         change_position: 0,
-        context_generation_digest: None,
     };
     store
         .acknowledge_project_memory_advertisement(
@@ -1970,8 +1989,8 @@ fn refuse_advertisement_ack_before_effects(live: &SessionId) {
             &ProjectMemoryAdvertisement {
                 count: 1,
                 changed: true,
+                generation_unlisted: false,
                 change_position: 1,
-                context_generation_digest: None,
             },
         )
         .expect_err("oversized advertisement session");
@@ -2053,8 +2072,8 @@ fn project_memory_advertisement_preserves_an_exact_64_byte_session() {
             &ProjectMemoryAdvertisement {
                 count: 1,
                 changed: true,
+                generation_unlisted: false,
                 change_position: 1,
-                context_generation_digest: None,
             },
         )
         .expect("admitted advertisement");

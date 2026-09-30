@@ -282,35 +282,40 @@ fn clipped(current: Option<&WorkCurrentStatus>, peer: Option<&WorkCurrentStatus>
 
 pub(super) fn refresh_guidance(compact: &mut CompactNextReceipt) {
     let clipped = Context::new(compact).clipped;
-    compact
-        .guidance
-        .reminders
-        .retain(|reminder| reminder != CLIPPED_STATUS_REMINDER);
+    // A peek's direction to list memories goes before every other reminder,
+    // the clipped-status one included: it says what to do before acting.
+    let recovery = super::memory_recovery::reminder(compact.peek.as_ref());
+    compact.guidance.reminders.retain(|reminder| {
+        reminder != CLIPPED_STATUS_REMINDER && Some(reminder) != recovery.as_ref()
+    });
     if clipped {
         compact
             .guidance
             .reminders
             .insert(0, CLIPPED_STATUS_REMINDER.into());
-        if compact.guidance.reminders.len() > super::MAX_COMPACT_REMINDER_ITEMS {
-            let omitted = compact.guidance.reminders.len() - super::MAX_COMPACT_REMINDER_ITEMS;
+    }
+    if let Some(recovery) = recovery {
+        compact.guidance.reminders.insert(0, recovery);
+    }
+    if compact.guidance.reminders.len() > super::MAX_COMPACT_REMINDER_ITEMS {
+        let omitted = compact.guidance.reminders.len() - super::MAX_COMPACT_REMINDER_ITEMS;
+        compact
+            .guidance
+            .reminders
+            .truncate(super::MAX_COMPACT_REMINDER_ITEMS);
+        if let Some(entry) = compact.omissions.iter_mut().find(|entry| {
+            entry.section == "reminders"
+                && entry.reason == super::WorkSectionOmissionReason::CountLimit
+        }) {
+            entry.omitted_count += omitted;
+        } else {
             compact
-                .guidance
-                .reminders
-                .truncate(super::MAX_COMPACT_REMINDER_ITEMS);
-            if let Some(entry) = compact.omissions.iter_mut().find(|entry| {
-                entry.section == "reminders"
-                    && entry.reason == super::WorkSectionOmissionReason::CountLimit
-            }) {
-                entry.omitted_count += omitted;
-            } else {
-                compact
-                    .omissions
-                    .push(super::receipts::CompactSectionOmission {
-                        section: "reminders".into(),
-                        reason: super::WorkSectionOmissionReason::CountLimit,
-                        omitted_count: omitted,
-                    });
-            }
+                .omissions
+                .push(super::receipts::CompactSectionOmission {
+                    section: "reminders".into(),
+                    reason: super::WorkSectionOmissionReason::CountLimit,
+                    omitted_count: omitted,
+                });
         }
     }
 }

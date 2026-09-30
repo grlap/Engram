@@ -15,7 +15,9 @@ backup/portable/sync, and publication are independent optional capabilities.
 At session start and after context compaction or replacement, recover context
 before substantive work. First confirm an access route under Work Tracking
 below. Call `next` with `peek: true`, then `memories` without
-a query. Follow its continuation commands to discover keys; read relevant
+a query; when the peek prints a `memories` command that carries a context
+generation, run that command. Follow its continuation commands to discover
+keys; read relevant
 entries with `memories` using the returned key and `full: true`. The CLI forms
 are `engram work next --peek`, `engram work memories`, and
 `engram work memories KEY --full`. Omit `revision` to read the current version.
@@ -564,7 +566,7 @@ engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --v
 engram work note "what you found or decided"
 engram work done ["what was delivered"] [--source-fingerprint F] [--landed COMMIT --remote R --branch B --pushed-at T [--installed-build F]]
 engram work remember "project note" [--key KEY [--revise [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
-engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
+engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full | engram work memories --context-generation GENERATION
 engram work forget KEY
 ```
 

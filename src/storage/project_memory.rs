@@ -7,9 +7,9 @@ use super::{
     MemoryKind, MemoryProjectionMode, MemoryStatus, MemoryVersion, ObjectId, OptionalExtension,
     PROJECT_MEMORY_FIRST_LINE_BYTES, PROJECT_MEMORY_LIST_LIMIT, PreparedProjectMemory,
     ProjectMemoryAdvertisement, ProjectMemoryFull, ProjectMemoryList, ProjectMemoryListRow,
-    ProjectMemoryMutationReceipt, Redactor, RememberProjectMemoryRequest, SCHEMA_VERSION, Scope,
-    Sensitivity, SessionId, SqliteStore, StoreError, StoredProjectMemory, TransactionBehavior,
-    fts_query, normalize_project_memory_query, params,
+    ProjectMemoryListingCut, ProjectMemoryMutationReceipt, Redactor, RememberProjectMemoryRequest,
+    SCHEMA_VERSION, Scope, Sensitivity, SessionId, SqliteStore, StoreError, StoredProjectMemory,
+    TransactionBehavior, fts_query, normalize_project_memory_query, params,
 };
 
 mod history;
@@ -18,14 +18,22 @@ mod tests;
 use history::memory_full;
 pub(in crate::storage) use history::project_memory_history_on;
 
+/// A context generation is a plain token, so that the `memories` command a
+/// peek prints with it reaches either supported shell, and the terminal, as
+/// exactly the value that was supplied.
 pub(crate) fn validate_context_generation(
     context_generation: Option<&str>,
 ) -> Result<(), StoreError> {
     if context_generation.is_some_and(|value| {
-        value.len() > MAX_CONTEXT_GENERATION_BYTES || value.chars().any(char::is_control)
+        value.is_empty()
+            || value.len() > MAX_CONTEXT_GENERATION_BYTES
+            || value.starts_with('-')
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
     }) {
         return Err(StoreError::InvalidProjectMemory(format!(
-            "context_generation must be at most {MAX_CONTEXT_GENERATION_BYTES} bytes without control characters"
+            "context_generation must be 1 to {MAX_CONTEXT_GENERATION_BYTES} ASCII letters, digits, dots, underscores or dashes, and must not start with a dash"
         )));
     }
     Ok(())
@@ -427,6 +435,21 @@ impl SqliteStore {
         query: Option<&str>,
         after: Option<&str>,
     ) -> Result<ProjectMemoryList, StoreError> {
+        self.project_memories_at_cut(project_id, session_id, actor, query, after)
+            .map(|(list, _)| list)
+    }
+
+    /// The listing together with the memory position its own snapshot read.
+    /// A listing that carries a context generation records that position, so
+    /// a memory a peer writes after the snapshot is announced again.
+    pub(crate) fn project_memories_at_cut(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        actor: &ActorContext,
+        query: Option<&str>,
+        after: Option<&str>,
+    ) -> Result<(ProjectMemoryList, ProjectMemoryListingCut), StoreError> {
         admit_live_project_memory_sessions(session_id, actor)?;
         validate_project_memory_authorization(session_id, actor)?;
         let normalized_query = normalize_project_memory_query(query)?;
@@ -462,16 +485,21 @@ impl SqliteStore {
         } else {
             next_after.is_none()
         };
+        let (_, change_position) = project_memory_state_on(&transaction, project_id)?;
         transaction.commit()?;
-        Ok(ProjectMemoryList {
-            memories,
-            next_after,
-            omitted_count,
-            exhausted,
-        })
+        Ok((
+            ProjectMemoryList {
+                memories,
+                next_after,
+                omitted_count,
+                exhausted,
+            },
+            ProjectMemoryListingCut { change_position },
+        ))
     }
 
-    /// Returns and advances the advisory content-free memory signal for next.
+    /// Returns the advisory content-free memory signal and acknowledges it as
+    /// an advancing next does.
     ///
     /// # Errors
     ///
@@ -517,23 +545,31 @@ impl SqliteStore {
                     |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
                 )
                 .optional()?;
-            let changed = prior
-                .as_ref()
-                .is_none_or(|(prior_position, prior_generation)| {
-                    *prior_position != change_position
-                        || context_generation_digest
-                            .as_deref()
-                            .is_some_and(|digest| prior_generation.as_deref() != Some(digest))
-                });
+            // The supplied generation is one that no recorded listing of the
+            // session carries; a session with no row carries none.
+            let generation_unlisted = context_generation_digest.as_deref().is_some_and(|digest| {
+                prior
+                    .as_ref()
+                    .is_none_or(|(_, prior_generation)| prior_generation.as_deref() != Some(digest))
+            });
+            let changed = generation_unlisted
+                || prior
+                    .as_ref()
+                    .is_none_or(|(prior_position, _)| *prior_position != change_position);
             Ok(ProjectMemoryAdvertisement {
                 count,
                 changed,
+                generation_unlisted,
                 change_position,
-                context_generation_digest,
             })
         })
     }
 
+    /// Records that an advancing `next` delivered the memory signal: the
+    /// session's recorded memory position becomes the advertised one. The
+    /// recorded context generation is kept and the supplied one is never
+    /// recorded, because only a memories listing that carries a generation
+    /// records it.
     pub(crate) fn acknowledge_project_memory_advertisement(
         &mut self,
         project_id: &crate::domain::ProjectId,
@@ -544,22 +580,78 @@ impl SqliteStore {
         if !advertisement.changed {
             return Ok(());
         }
+        self.record_project_memory_position(
+            project_id,
+            session_id,
+            advertisement.change_position,
+            None,
+        )
+    }
+
+    /// Records that the session listed project memories from their start
+    /// with this context generation: the generation's digest and the memory
+    /// position the listing read. The row records a listing, not that the
+    /// notes were read or applied. A listing that repeats the recorded
+    /// position and generation writes nothing.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed project-memory refusal when the context generation is
+    /// invalid or the advisory projection cannot be updated.
+    pub(crate) fn acknowledge_project_memory_listing(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        listing: ProjectMemoryListingCut,
+        context_generation: &str,
+    ) -> Result<(), StoreError> {
+        validate_context_generation(Some(context_generation))?;
+        crate::storage::admit_session_id(session_id)?;
+        let digest = project_memory_context_generation_digest(context_generation);
+        let recorded = self
+            .connection
+            .query_row(
+                "SELECT memory_position, context_generation_digest
+                 FROM project_memory_advertisements
+                 WHERE project_id = ?1 AND session_id = ?2",
+                params![project_id.0, session_id.0],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?;
+        if recorded.is_some_and(|(position, recorded_digest)| {
+            position == listing.change_position && recorded_digest.as_ref() == Some(&digest)
+        }) {
+            return Ok(());
+        }
+        self.record_project_memory_position(
+            project_id,
+            session_id,
+            listing.change_position,
+            Some(digest),
+        )
+    }
+
+    /// Writes the session's row, keeping the recorded generation digest when
+    /// none is given, and bounds the rows kept for the project.
+    fn record_project_memory_position(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        memory_position: i64,
+        context_generation_digest: Option<String>,
+    ) -> Result<(), StoreError> {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let context_generation_digest =
-            advertisement
-                .context_generation_digest
-                .clone()
-                .or(transaction
-                    .query_row(
-                        "SELECT context_generation_digest FROM project_memory_advertisements
-                     WHERE project_id = ?1 AND session_id = ?2",
-                        params![project_id.0, session_id.0],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .optional()?
-                    .flatten());
+        let context_generation_digest = context_generation_digest.or(transaction
+            .query_row(
+                "SELECT context_generation_digest FROM project_memory_advertisements
+                 WHERE project_id = ?1 AND session_id = ?2",
+                params![project_id.0, session_id.0],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten());
         transaction.execute(
             "DELETE FROM project_memory_advertisements
              WHERE project_id = ?1
@@ -584,7 +676,7 @@ impl SqliteStore {
                 project_id.0,
                 session_id.0,
                 context_generation_digest,
-                advertisement.change_position
+                memory_position
             ],
         )?;
         transaction.commit()?;

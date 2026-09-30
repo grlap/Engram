@@ -181,7 +181,7 @@ engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N] [--landed COMMIT --remote R --branch B --pushed-at RFC3339 [--installed-build FINGERPRINT]]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
 engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N] [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
-engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
+engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N] | engram work memories --context-generation GENERATION
 engram work forget KEY
 ```
 
@@ -393,10 +393,41 @@ Rules that matter:
   ordinary `next` when writes and delivery advancement are permitted.
   Text/JSON fitting may omit rows with explicit counts, but never the
   non-advancement disclosure, memory signal or `memories_detail` command
-  (`engram work memories`). That command also remains in `next`. Memory
+  (`engram work memories`, carrying the host's context generation while a
+  listing is due, as described below). That command also remains in `next`. Memory
   `changed` compares the recorded advertisement, not whether notes were read
-  or applied. Pure reads, including `memories`, do not acknowledge it;
-  ordinary `next` retains its existing rendered-signal acknowledgement.
+  or applied. Pure reads, including every `memories` form without a context
+  generation, do not acknowledge it; ordinary `next` retains its existing
+  rendered-signal acknowledgement of the memory position and never records a
+  context generation.
+  When a peek carries a context generation that no recorded `memories`
+  listing of the session carries (a session with no record carries none), a
+  listing is due. The peek's text then opens with "the host reports a new
+  context for this session: before acting, list project memories through the
+  continuation and read the relevant current entries in full" and, on the
+  line under it, the command
+  `engram work memories --context-generation GENERATION`. The structured
+  receipt carries the direction as its first reminder, that command as its
+  first `next` command and as `memories_detail`, and
+  `peek.memory_listing_due: true`; the text's memory detail names the same
+  command. Fitting never sheds the direction or the command, and the
+  direction precedes every other reminder. A peek with no context generation
+  gives no direction. The direction reports the host's assertion and what is
+  recorded, never that a compaction happened.
+  Only the first page of an unfiltered `memories` listing that carries
+  `--context-generation` (MCP `context_generation`) records anything: once
+  that page has been rendered, it records the generation and the memory
+  position its snapshot read. Searches, `--full` reads, history reads and
+  `--after` pages accept the argument and record nothing, and without the
+  argument no `memories` form records anything. The record shows that a
+  listing was delivered, not that notes were read or applied. Writing it is
+  best-effort: when the store cannot be written, or a writer stays busy for
+  the store's ordinary five-second wait, the listing is still delivered
+  after that wait and the direction stays. An ordinary `next` that is given
+  a context generation keeps reporting `changed` until a listing carries it.
+  A context generation is a plain token, 1 to 256 ASCII letters, digits, dots, underscores or dashes, not starting with a dash;
+  `next` and `memories` refuse any other value, so the printed command always
+  carries exactly the value supplied.
 
 - `show PARENT`, including first `--notes` pages and MCP, carries
   `child_obligations.required_owed` and `child_obligations.open_optional`
@@ -1030,7 +1061,8 @@ committed state, not the timestamp. Retaining an older block retains its cut;
 compare with a new read to see which committed state the block could reflect.
 This does not promise automatic mid-turn refresh. TermAl, the live consumer,
 fetches CLI `next --context-generation termal-N` text at dispatch and tolerates
-these additive diagnostic fields; its generation is asserted host context.
+these additive diagnostic fields; its generation is asserted host context, a
+plain token as the peek contract above defines it.
 Compare the build token with a fresh CLI process after an
 install to detect a stale, long-lived MCP child; restart the child to run the
 new executable. The token is diagnostic, not an execution hash to copy into

@@ -229,7 +229,7 @@ engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N] [--source-fingerprint F]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
 engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N] [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
-engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
+engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N] | engram work memories --context-generation GENERATION
 engram work forget KEY
 ```
 
@@ -297,6 +297,11 @@ Rules that matter:
   navigation are never shed. `changed` compares the recorded advertisement,
   not whether notes were read or applied. Pure reads do not acknowledge it;
   it repeats until an ordinary `next` renders and acknowledges that signal.
+  When the peek carries a context generation that no `memories` listing of
+  the session has carried, it opens with a direction to list memories before
+  acting and the command to run; run that command as printed, because only
+  the listing that carries the generation settles it. Every other `memories`
+  form is a read that records nothing.
 
 - Reading never steers a later write: `show REF`, including notes, history,
   continuations and detail, preserves focus and staged delivery. Follow its

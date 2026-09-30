@@ -1053,8 +1053,10 @@ binding, current item state, fenced claims, and reason-attributed audit records.
 Project-memory advertisement in `next` is advisory and
 content-free: a count of retained project notes and a changed flag, with
 no exactly-once guarantee. `memories` is the source of truth, and a
-host-passed `context_generation` marks a fresh or compacted context and
-may reannounce the count. Only a domain-separated digest of that asserted
+host-passed `context_generation` asserts a fresh or compacted context and
+reannounces the count: until an unfiltered `memories` listing of the session
+carries that value, `next --peek` directs the session to list its memories
+before acting. Only a domain-separated digest of that asserted
 value is persisted; its raw text is never retained.
 
 This surface is for capture, retrieval, explanation, and coordination

@@ -92,7 +92,9 @@ outside stored memory and outside any block of untrusted work data. Use this
 sequence before substantive work at session start or after compaction:
 
 1. Read `engram work next --peek` (MCP `next` with `peek: true`).
-2. Read `engram work memories` without a query. Follow returned continuation
+2. Run the `memories` command the peek names: `engram work memories` without
+   a query, with `--context-generation` when the peek prints it (MCP
+   `memories` with `context_generation`). Follow returned continuation
    commands to discover keys without needing to remember one.
 3. Read relevant entries with `engram work memories KEY --full` (MCP
    `memories` with `query: KEY` and `full: true`). Omit `revision` for the
@@ -106,6 +108,27 @@ the full guidance. Recover on resume even when `changed` is false: it tracks
 the recorded advertisement, not what survived compaction. A failed read is a
 visible recovery gap, not an empty collection. Do not create or repair a store
 automatically to hide it.
+
+The peek itself says when this read is due, if the host tells it. Pass
+`--context-generation` with a value that is distinct for every context the
+host starts or compacts, including across the host's own restarts. While no
+`memories` listing of the session carries that value, the peek's text opens
+with the direction to list memories before acting and the command to run,
+and both survive fitting; see the
+[peek contract](features/cli-and-mcp.md#using-engram-as-an-agent). A value
+that repeats matches the earlier record, and the direction is withheld for a
+context that is in fact new. The value is a plain token (1 to 256 ASCII letters, digits, dots, underscores or dashes, not starting with a dash); any
+other value is refused. Supply the session id as well: with a session id the
+process defaults for itself, each call is another session and the direction
+cannot settle. Keep the opening of the peek text when truncating it. Only the
+printed command records the listing, and that is a store write; every other
+`memories` form, and the peek, record nothing, so a host that confines a
+read-only agent to reads that record nothing can allow them and either allow
+that one form too or leave the direction standing for that agent. The
+direction reports the host's assertion and what is recorded; the record it
+waits for shows that a listing was delivered, not that the agent read or
+applied the notes, so it replaces neither the startup instruction above nor
+the natural observation below.
 
 Verify the actual runtime boundary. A hook that marks context for the next
 dispatched prompt does not cover a continuation inside an already running
@@ -238,7 +261,10 @@ Surface access/recovery errors to the operator before using ordinary `next`
 when writes and delivery advancement are permitted. Peek retains memory
 navigation: its `changed` compares the recorded advertisement, not whether notes
 were read or applied,
-and repeating pure reads never acknowledges it. MCP hosts use `peek: true`.
+and repeating pure reads never acknowledges it. This hook passes no context
+generation, so its peek never directs the agent to list memories; to have it
+do so after each of these events, pass `--context-generation` with a value
+that differs on each one. MCP hosts use `peek: true`.
 
 Everything else on this page applies unchanged: one store per project on
 each host initialized with an explicit `advisory` assurance, the same values

@@ -2060,19 +2060,31 @@ O(1) from a rebuildable per-project count and change position — no
 keys, no first lines, no body-derived text. In ordinary advancing `next`, when
 even that does not fit, the signal is omitted without acknowledgement and
 reannounces later. Peek never sheds this signal or its memory navigation.
-`changed` is not evidence that notes are unread or unapplied. `memories` and
-other pure reads do not acknowledge it; repeated peeks can repeat `changed`
-until ordinary `next` renders and records the advertisement. Delivery is
+`changed` is not evidence that notes are unread or unapplied. `memories`
+without a context generation and other pure reads do not acknowledge it;
+repeated peeks can repeat `changed` until ordinary `next` renders and records
+the advertisement. Delivery is
 advisory: no
 per-session authoritative delivery stream, no dedicated acknowledgement
-token, no exactly-once guarantee; a host-passed `context_generation` marks
-a fresh or compacted context and may reannounce the count. Only a
+token, no exactly-once guarantee; a host-passed `context_generation` is the
+host's assertion of a fresh or compacted context, not proof of one, and
+reannounces the count. It is recorded for the session only by the first page
+of an unfiltered `memories` listing that carries it, once that page has been
+rendered, together with the memory position that listing's snapshot read;
+ordinary `next` records the memory position and never a generation. Until a
+listing carries the generation, `changed` repeats for calls that supply it
+and a peek directs the session to list its memories before acting (see the
+[peek contract](cli-and-mcp.md#using-engram-as-an-agent)). The record shows
+that a listing was delivered, not that notes were read or applied; a
+generation that an earlier build's ordinary `next` recorded counts as
+recorded although no listing carried it. Only a
 domain-separated digest of that asserted value is persisted; its raw text is
 never retained. The discardable
 acknowledgement table is bounded per project; evicting an old session can only
-cause one harmless reannouncement. SQLite busy/locked contention while writing
-that advisory acknowledgement does not fail `next`; the signal simply
-reannounces. An agent that
+cause one harmless reannouncement, and one more direction to list when the
+host supplies a generation. SQLite busy/locked contention while writing
+that advisory acknowledgement fails neither `next` nor `memories`; the signal
+and the direction simply repeat. An agent that
 wants the notes runs `memories`. The existing `work_next` decode, latency,
 and 12 KiB response targets stay as acceptance tests. Rules that must
 survive every session belong in the instruction files; memories are for

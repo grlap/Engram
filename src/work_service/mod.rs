@@ -50,8 +50,8 @@ use crate::{
         CompletionRecoverySnapshot, PROCESS_DEFAULT_WORK_SESSION_NAMESPACE,
         PROCESS_DEFAULT_WORK_SESSION_PREFIX, PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS,
         PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL, ProjectMemoryAdvertisement,
-        StageWorkSessionDelivery, StoreError, WorkEvidenceProjectionSummary, WorkNoteCapture,
-        normalize_completion_acceptance_shape,
+        ProjectMemoryListingCut, StageWorkSessionDelivery, StoreError,
+        WorkEvidenceProjectionSummary, WorkNoteCapture, normalize_completion_acceptance_shape,
     },
 };
 

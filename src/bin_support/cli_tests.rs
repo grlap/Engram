@@ -467,3 +467,24 @@ fn work_cli_parses_required_child_waiver() {
             if matches!(*operation, WorkCommand::Update(ref args) if args.waive.is_some() && args.reason.is_some())
     ));
 }
+
+#[test]
+fn work_cli_memories_takes_the_context_generation_a_peek_prints() {
+    let parsed = Cli::try_parse_from([
+        "engram",
+        "work",
+        "memories",
+        "--context-generation",
+        "termal-7",
+    ])
+    .expect("parse the memories context generation");
+    assert!(matches!(
+        parsed.command,
+        Command::Work { operation, .. }
+            if matches!(
+                *operation,
+                WorkCommand::Memories { ref context_generation, ref query, .. }
+                    if context_generation.as_deref() == Some("termal-7") && query.is_none()
+            )
+    ));
+}

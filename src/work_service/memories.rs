@@ -1,8 +1,8 @@
 use super::{
     DateTime, DevelopmentNoopRedactor, ForgetProjectMemoryRequest, LocalWorkService,
-    ProjectMemoryFullResponse, ProjectMemoryList, ProjectMemoryMutationReceipt,
-    RememberProjectMemoryRequest, StoreError, Utc, ensure_project_memory_full_is_admissible,
-    project_memory_full_response,
+    ProjectMemoryFullResponse, ProjectMemoryList, ProjectMemoryListingCut,
+    ProjectMemoryMutationReceipt, RememberProjectMemoryRequest, StoreError, Utc,
+    ensure_project_memory_full_is_admissible, project_memory_full_response,
 };
 
 impl LocalWorkService {
@@ -96,13 +96,47 @@ impl LocalWorkService {
         after: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryList, StoreError> {
-        self.read_store_at(now)?.project_memories(
+        self.project_memories_at_cut(query, after, now)
+            .map(|(list, _)| list)
+    }
+
+    /// The listing together with the memory position its snapshot read, for
+    /// [`Self::acknowledge_project_memory_listing`].
+    pub(crate) fn project_memories_at_cut(
+        &self,
+        query: Option<&str>,
+        after: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<(ProjectMemoryList, ProjectMemoryListingCut), StoreError> {
+        self.read_store_at(now)?.project_memories_at_cut(
             &self.project_id,
             &self.session_id,
             &self.actor("memories", "list attributed project memories"),
             query,
             after,
         )
+    }
+
+    /// Records, after the listing was rendered, that this session listed
+    /// project memories from their start with this context generation. The
+    /// record is advisory: any failure (a store that cannot be written, a
+    /// writer that stays busy) leaves the listing delivered and the session
+    /// still told to list, never an error.
+    pub(crate) fn acknowledge_project_memory_listing(
+        &self,
+        listing: ProjectMemoryListingCut,
+        context_generation: &str,
+        now: DateTime<Utc>,
+    ) {
+        let Ok(mut store) = self.read_store_at(now) else {
+            return;
+        };
+        let _ = store.acknowledge_project_memory_listing(
+            &self.project_id,
+            &self.session_id,
+            listing,
+            context_generation,
+        );
     }
 
     /// Reads one live project memory through its dedicated bounded envelope.

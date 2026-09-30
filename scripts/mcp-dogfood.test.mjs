@@ -1673,6 +1673,127 @@ test("peek orientation preserves pending context and memory signals on CLI and M
     assertPeek(receipt(await client.call("next", { peek: true })), true);
     receipt(await client.call("next", {}));
     assertPeek(cliJson(engramHome, session, "next", "--peek"), false);
+
+    // The host reports a context generation. Until a listing carries it,
+    // the peek opens with the direction and names one listing command
+    // everywhere; running that command as printed settles it.
+    const direction = "the host reports a new context for this session: before acting, list project memories through the continuation and read the relevant current entries in full";
+    const assertHostPeek = (value, generation, due) => {
+      const command = due
+        ? `engram work memories --context-generation ${generation}`
+        : "engram work memories";
+      assert.equal(value.peek.delivery_advanced, false);
+      assert.equal(value.context_generation, generation);
+      assert.equal(value.peek.memory_listing_due, due ? true : undefined);
+      assert.equal(value.memories.changed, due);
+      assert.equal(value.next[0], command);
+      assert.equal(value.memories_detail, command);
+      assert.equal(value.reminders.includes(direction), due);
+      if (due) assert.equal(value.reminders[0], direction);
+      assert.ok(Buffer.byteLength(JSON.stringify(value)) < 12288);
+    };
+    const memoriesTool = (await client.tools()).find(({ name }) => name === "memories");
+    assert.equal(memoriesTool.inputSchema.properties.context_generation.maxLength, 256);
+    assert.match(memoriesTool.description, /records nothing unless context_generation is given/);
+    const memoriesHelp = cliWord(engramHome, session, "memories", "--help");
+    assert.equal(memoriesHelp.status, 0, memoriesHelp.stderr);
+    assert.match(
+      memoriesHelp.stdout.replace(/\s+/g, " "),
+      /--context-generation.*records a listing, not a reading\. Without it, memories records nothing/,
+    );
+    const cliCommand = "engram work memories --context-generation termal-1";
+    for (const verbose of [false, true]) {
+      const flags = ["--peek", "--context-generation", "termal-1", ...(verbose ? ["--verbose"] : [])];
+      assertHostPeek(cliJson(engramHome, session, "next", ...flags), "termal-1", true);
+      assertHostPeek(
+        receipt(await client.call("next", { peek: true, verbose, context_generation: "termal-1" })),
+        "termal-1",
+        true,
+      );
+      const hostText = cliWord(engramHome, session, "next", ...flags);
+      assert.equal(hostText.status, 0, hostText.stderr);
+      assert.ok(
+        hostText.stdout.startsWith(`${direction}\n  ${cliCommand}\nfocus: `),
+        hostText.stdout.slice(0, 400),
+      );
+      assert.ok(hostText.stdout.includes(`memory detail: ${cliCommand};`));
+    }
+    // Every memories form without the generation, and an advancing next
+    // with it, record no listing: the direction stays.
+    cliJson(engramHome, session, "memories");
+    receipt(await client.call("memories", {}));
+    receipt(await client.call("memories", { query: "orientation", full: true }));
+    receipt(await client.call("next", { context_generation: "termal-1" }));
+    assertHostPeek(
+      cliJson(engramHome, session, "next", "--peek", "--context-generation", "termal-1"),
+      "termal-1",
+      true,
+    );
+    // The printed command, run as printed.
+    cliJson(engramHome, session, ...cliCommand.split(" ").slice(2));
+    assertHostPeek(
+      cliJson(engramHome, session, "next", "--peek", "--context-generation", "termal-1"),
+      "termal-1",
+      false,
+    );
+    assertHostPeek(
+      receipt(await client.call("next", { peek: true, context_generation: "termal-1" })),
+      "termal-1",
+      false,
+    );
+    // The same over MCP for the next generation.
+    assertHostPeek(
+      receipt(await client.call("next", { peek: true, context_generation: "termal-2" })),
+      "termal-2",
+      true,
+    );
+    receipt(await client.call("memories", { context_generation: "termal-2" }));
+    assertHostPeek(
+      receipt(await client.call("next", { peek: true, context_generation: "termal-2" })),
+      "termal-2",
+      false,
+    );
+    assertHostPeek(
+      cliJson(engramHome, session, "next", "--peek", "--context-generation", "termal-2"),
+      "termal-2",
+      false,
+    );
+    // A generation is a plain token on both words and both routes.
+    for (const word of ["next", "memories"]) {
+      const refused = structuredError(
+        await client.call(word, { context_generation: "two words" }),
+        "memory_invalid",
+      );
+      assert.match(refused.details.remedy, /1 to 256 ASCII letters, digits, dots, underscores or dashes/);
+      const cliRefused = cliWord(engramHome, session, word, "--context-generation", "two words", "--json");
+      assert.notEqual(cliRefused.status, 0);
+      assert.match(JSON.parse(cliRefused.stderr).error.message, /context_generation must be 1 to 256 ASCII/);
+    }
+    // A host that sends a value outside the set gets, from the peek itself,
+    // a refusal its agent can act on: the typed error and its remedy, never
+    // a crash or an empty block.
+    const refusedPeek = structuredError(
+      await client.call("next", { peek: true, context_generation: "two words" }),
+      "memory_invalid",
+    );
+    assert.match(refusedPeek.details.remedy, /omit context_generation or use 1 to 256 ASCII letters/);
+    const refusedPeekJson = cliWord(engramHome, session, "next", "--peek", "--context-generation", "two words", "--json");
+    assert.notEqual(refusedPeekJson.status, 0);
+    assert.equal(JSON.parse(refusedPeekJson.stderr).error.code, "memory_invalid");
+    const refusedPeekText = cliWord(engramHome, session, "next", "--peek", "--context-generation", "two words");
+    assert.notEqual(refusedPeekText.status, 0);
+    assert.equal(refusedPeekText.stdout, "");
+    assert.match(
+      refusedPeekText.stderr,
+      /context_generation must be 1 to 256 ASCII letters, digits, dots, underscores or dashes, and must not start with a dash/,
+    );
+    assert.doesNotMatch(refusedPeekText.stderr, /panicked/);
+    // The refused peeks changed nothing: the settled generation stays settled.
+    assertHostPeek(
+      cliJson(engramHome, session, "next", "--peek", "--context-generation", "termal-2"),
+      "termal-2",
+      false,
+    );
   } finally {
     try { if (client) await client.close(); }
     finally { removeFixtureHomes(engramHome); }

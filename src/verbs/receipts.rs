@@ -669,9 +669,21 @@ pub(super) fn append_next_changes_lines(
     }
 }
 
-pub(super) fn append_peek_disclosure(lines: &mut Vec<String>) {
+/// The memory detail names the peek's listing command, which carries the
+/// host's context generation while that listing is due.
+pub(super) fn append_peek_disclosure(
+    lines: &mut Vec<String>,
+    peek: Option<&crate::work_service::WorkNextPeek>,
+    context_generation: Option<&str>,
+) {
     lines.push("delivery: not advanced (peek; focus and cursors unchanged)".into());
-    lines.push("memory detail: engram work memories; changed compares the recorded advertisement, not whether notes were read or applied".into());
+    lines.push(format!(
+        "memory detail: {}; changed compares the recorded advertisement, not whether notes were read or applied",
+        super::terminal_command(&super::memory_recovery::listing_command(
+            peek,
+            context_generation
+        ))
+    ));
 }
 
 pub(super) fn ambiguous_reference_guidance(
@@ -937,7 +949,11 @@ pub(super) fn fit_compact_next_to(
             record_compact_omission(&mut compact.omissions, "held", 1);
             continue;
         }
-        if compact.guidance.reminders.pop().is_some() {
+        // The direction to list memories is the first reminder and stays.
+        let kept_reminders =
+            usize::from(super::memory_recovery::reminder(compact.peek.as_ref()).is_some());
+        if compact.guidance.reminders.len() > kept_reminders {
+            compact.guidance.reminders.pop();
             record_compact_omission(&mut compact.omissions, "reminders", 1);
             continue;
         }
@@ -1058,7 +1074,10 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
     }
     if let Some(peek) = &compact.peek {
         value["peek"] = json!(peek);
-        value["memories_detail"] = json!("engram work memories");
+        value["memories_detail"] = json!(super::memory_recovery::listing_command(
+            Some(peek),
+            compact.context_generation.as_deref(),
+        ));
     }
     if let (Value::Object(discovery), Value::Object(receipt)) =
         (json!(compact.discovery), &mut value)
@@ -1108,7 +1127,10 @@ pub(super) fn compact_section_name(section: WorkNextSection) -> &'static str {
 
 pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
     let context = super::next_context::Context::new(compact);
-    let mut lines = Vec::new();
+    let mut lines = super::memory_recovery::opening_lines(
+        compact.peek.as_ref(),
+        compact.context_generation.as_deref(),
+    );
     match &compact.focus {
         Some(focus) => {
             lines.push(format!("focus: {}", compact_row_line(focus)));
@@ -1178,7 +1200,11 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
         ));
     }
     if compact.peek.is_some() {
-        append_peek_disclosure(&mut lines);
+        append_peek_disclosure(
+            &mut lines,
+            compact.peek.as_ref(),
+            compact.context_generation.as_deref(),
+        );
     }
     let mut omitted_sections = HashSet::new();
     for omission in compact.omissions.iter().filter(|omission| {

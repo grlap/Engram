@@ -79,15 +79,16 @@ fn peek_reads_residual_wal_after_all_connections_exit_with_or_without_shm() {
 }
 
 fn assert_peek(receipt: &Receipt, changed: bool) {
+    assert_peek_listing(receipt, changed, "engram work memories");
+}
+
+/// `listing` is the memories command the peek names: plain, or carrying the
+/// host's context generation while no listing of the session carries it.
+fn assert_peek_listing(receipt: &Receipt, changed: bool, listing: &str) {
     assert_eq!(receipt.value["peek"]["delivery_advanced"], false);
     assert_eq!(receipt.value["memories"]["changed"], changed);
-    assert_eq!(receipt.value["memories_detail"], "engram work memories");
-    assert!(
-        receipt
-            .next
-            .iter()
-            .any(|command| command == "engram work memories")
-    );
+    assert_eq!(receipt.value["memories_detail"], listing);
+    assert!(receipt.next.iter().any(|command| command == listing));
     assert!(receipt.text().contains("delivery: not advanced"));
     assert!(
         receipt
@@ -468,7 +469,7 @@ fn peek_refuses_damaged_schema_without_repair_and_validates_before_open() {
 }
 
 #[test]
-fn peek_memory_revision_retirement_and_generation_repeat_until_advertised() {
+fn peek_memory_revision_retirement_and_generation_repeat_until_acknowledged() {
     let (_home, reader, path, _) = fixture();
     reader
         .service
@@ -508,14 +509,17 @@ fn peek_memory_revision_retirement_and_generation_repeat_until_advertised() {
         context_generation: Some("compacted".into()),
         ..peek_input(false)
     };
+    let listing = "engram work memories --context-generation compacted";
     let before = crate::storage::test_database_shape_snapshot(&inspect).unwrap();
     for time in [10, 11] {
-        assert_peek(&reader.next(&input, at(time)).unwrap(), true);
+        assert_peek_listing(&reader.next(&input, at(time)).unwrap(), true, listing);
     }
     assert_eq!(
         crate::storage::test_database_shape_snapshot(&inspect).unwrap(),
         before
     );
+    // An advancing next never records a generation; the listing that
+    // carries it does.
     reader
         .next(
             &NextInput {
@@ -525,5 +529,15 @@ fn peek_memory_revision_retirement_and_generation_repeat_until_advertised() {
             at(12),
         )
         .unwrap();
-    assert_peek(&reader.next(&input, at(13)).unwrap(), false);
+    assert_peek_listing(&reader.next(&input, at(13)).unwrap(), true, listing);
+    reader
+        .memories(
+            &MemoriesInput {
+                context_generation: input.context_generation.clone(),
+                ..MemoriesInput::default()
+            },
+            at(14),
+        )
+        .unwrap();
+    assert_peek(&reader.next(&input, at(15)).unwrap(), false);
 }
