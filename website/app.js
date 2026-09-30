@@ -12,6 +12,11 @@ try {
 function syncMotion() {
   const paused = manuallyPaused || motionPreference.matches;
   root.dataset.motion = paused ? "paused" : "playing";
+  if (paused) {
+    document.querySelectorAll(".boot-line").forEach((line) => {
+      line.classList.add("boot-revealed");
+    });
+  }
   motionToggle.setAttribute("aria-pressed", String(paused));
   motionToggle.querySelector(".motion-label").textContent =
     motionPreference.matches
@@ -24,6 +29,9 @@ function syncMotion() {
 }
 
 syncMotion();
+document.querySelectorAll(".boot-line").forEach((line) => {
+  line.addEventListener("animationend", () => line.classList.add("boot-revealed"), { once: true });
+});
 motionPreference.addEventListener("change", syncMotion);
 motionToggle.addEventListener("click", () => {
   manuallyPaused = !manuallyPaused;
@@ -83,12 +91,24 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".site-header") && !mobileNav.hidden) closeMenu();
 });
-window.matchMedia("(min-width: 1101px)").addEventListener("change", closeMenu);
+window.matchMedia("(min-width: 1251px)").addEventListener("change", closeMenu);
 
 const folios = [...document.querySelectorAll("[data-folio]")];
 const folioLinks = [...document.querySelectorAll("[data-folio-link]")];
 const nextFolio = document.querySelector("#next-folio");
-const folioTitles = ["The idea", "The mechanism", "Your notebook", "Agent notes"];
+const folioTitles = [
+  "The idea",
+  "The mechanism",
+  "Your notebook",
+  "Agent notes",
+  "The machine",
+  "Vocabulary",
+  "Wake up",
+  "Honest limits",
+];
+const machineStart = folios.findIndex((folio) =>
+  folio.classList.contains("folio-machine"),
+);
 let activeFolio = -1;
 let folioFrame;
 
@@ -102,8 +122,12 @@ function updateFolio() {
   if (index === -1) index = 0;
   if (index === activeFolio) return;
   activeFolio = index;
+  root.dataset.theme =
+    machineStart !== -1 && index >= machineStart ? "machine" : "manuscript";
   for (const link of folioLinks) {
-    if (link.hash === `#${folios[index].id}`) {
+    const machineGroup = index >= machineStart && machineStart !== -1 &&
+      link.hash === "#machine-boot" && link.closest(".chapter-nav, .mobile-nav");
+    if (link.hash === `#${folios[index].id}` || machineGroup) {
       link.setAttribute("aria-current", "location");
     } else {
       link.removeAttribute("aria-current");
@@ -297,40 +321,56 @@ const commands = {
   windows:
     '# 01 — Build from source (Git + Rust required)\ngit clone https://github.com/grlap/Engram.git\ncd Engram\ncargo install --path .\n\n# 02 — Open a local advisory notebook (PowerShell)\n$env:ENGRAM_HOME = "$env:USERPROFILE/.engram"\nengram init --required-assurance advisory `\n  --authorized-by "$env:USERNAME"\nengram work next',
 };
-const copyButton = document.querySelector("#copy-setup");
-const copyFeedback = document.querySelector("#copy-feedback");
-let feedbackTimer;
+function bindCopyButton(button, codeElement, feedbackElement, copiedMessage) {
+  let feedbackTimer;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    clearTimeout(feedbackTimer);
+    try {
+      await navigator.clipboard.writeText(codeElement.textContent);
+      button.querySelector("span").textContent = "Copied";
+      feedbackElement.textContent = copiedMessage;
+    } catch {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(codeElement);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.querySelector("span").textContent = "Selected";
+      feedbackElement.textContent =
+        "Clipboard unavailable. Commands selected; use your browser’s Copy command.";
+    } finally {
+      button.disabled = false;
+      feedbackTimer = setTimeout(() => {
+        button.querySelector("span").textContent = "Copy";
+      }, 2500);
+    }
+  });
+  return () => {
+    clearTimeout(feedbackTimer);
+    button.querySelector("span").textContent = "Copy";
+    feedbackElement.textContent = "";
+  };
+}
+
+const resetSetupCopy = bindCopyButton(
+  document.querySelector("#copy-setup"),
+  setupCode,
+  document.querySelector("#copy-feedback"),
+  "Setup commands copied to clipboard.",
+);
 
 bindTabs([...document.querySelectorAll("[data-os]")], (tab) => {
   setupCode.textContent = commands[tab.dataset.os];
   document
     .querySelector("#setup-code-panel")
     .setAttribute("aria-labelledby", tab.id);
-  clearTimeout(feedbackTimer);
-  copyButton.querySelector("span").textContent = "Copy";
-  copyFeedback.textContent = "";
+  resetSetupCopy();
 });
 
-copyButton.addEventListener("click", async () => {
-  copyButton.disabled = true;
-  clearTimeout(feedbackTimer);
-  try {
-    await navigator.clipboard.writeText(setupCode.textContent);
-    copyButton.querySelector("span").textContent = "Copied";
-    copyFeedback.textContent = "Setup commands copied to clipboard.";
-  } catch {
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(setupCode);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    copyButton.querySelector("span").textContent = "Selected";
-    copyFeedback.textContent =
-      "Clipboard unavailable. Commands selected; use your browser’s Copy command.";
-  } finally {
-    copyButton.disabled = false;
-    feedbackTimer = setTimeout(() => {
-      copyButton.querySelector("span").textContent = "Copy";
-    }, 2500);
-  }
-});
+bindCopyButton(
+  document.querySelector("#copy-connect"),
+  document.querySelector("#connect-code"),
+  document.querySelector("#connect-copy-feedback"),
+  "Connection commands copied to clipboard.",
+);

@@ -1,6 +1,10 @@
 # Project website
 
-The four-chapter project website lives in [website/index.html](../website/index.html).
+The project website lives in [website/index.html](../website/index.html).
+It is one continuous page in two worlds: four manuscript chapters for the
+humans, then four machine signals for the agents — scrolling past the
+manuscript crosses into the machine's own future, and the fixed header and
+footer flip themes with it.
 It is a static site with no JavaScript dependencies or build step. Its copy
 introduces the memory and work loop described in the [vision](vision.md),
 and keeps [shipped alpha capabilities](shipped.md) separate from the
@@ -59,13 +63,18 @@ unify the hero and margin paper tones. Navigation also has a maximum width
 to follow the centered composition. Meaningful captions use italic serif type. Fonts use local system
 families; the page makes no third-party asset requests and contains no analytics.
 
-Typography uses a shared, responsive scale: main copy is 17–20 px at the
+Manuscript typography uses a shared, responsive scale: main copy is 17–20 px at the
 default browser font size, controls and supporting prose are 16–18 px, code
 is 14–16 px, and small labels are 12–14 px. The scale uses rem units so
 browser text preferences carry through. Shorter screens allow the chapters
 to grow while keeping the text readable. On small phones the source link
 lives in the navigation menu, and the motion control keeps its accessible
 text label alongside a visible icon.
+
+In both themes, the header uses a menu button at widths up to 1250px. At
+1360px and below, the footer fits eight page links between 44px motion and
+next-page controls; the motion label stays accessible but is visually hidden,
+and the page cue and numeric page count are hidden.
 
 The four chapters are **The idea**, **The mechanism**, **Your notebook**, and
 **Agent notes**.
@@ -104,15 +113,61 @@ not execute commands or connect to a real Engram store. Setup commands
 explicitly initialize an advisory notebook; enforced control requires the
 integration described in the [host checklist](host-checklist.md).
 
+## The machine section
+
+After the fourth manuscript leaf, four machine signals — **Boot**,
+**Vocabulary**, **Wake up**, and **Honest limits** — speak to the product's
+primary users, coding agents, in a warm machine voice ("You will end. Your
+work won't."): the fourteen words as the agent's working vocabulary, recovery
+after context compaction, and the product's stated boundaries (identity is
+asserted, turn gating depends on host integration, Engram never calls a model, the demos execute
+nothing).
+
+The machine section uses black ceramic and chrome, cyan and magenta optical
+lighting, bold filled and outlined capitals, circuit traces and console
+instrumentation. Plate V is an original synthetic intelligence portrait,
+generated with the built-in image tool and stored as a lazy-loaded 1254-pixel
+WebP. Its exact prompt is in
+[synthetic-agent.prompt.txt](../website/assets/synthetic-agent.prompt.txt).
+The portrait contains no text; captions and decorative HUD labels remain HTML.
+The compact machine HTML annotations and captions intentionally use a smaller
+0.5–0.6875rem scale (8–11px at the default browser font size), distinct from
+the manuscript labels. These rem sizes still follow browser text preferences;
+larger text can make a signal grow beyond one viewport.
+The fourteen words form a command matrix lit by group, recovery uses a
+circular instrument, and limits use a hazard-striped panel beside the
+connection snippet. Recovery copy distinguishes retained notes from authority
+and requires inspection of claim ownership and expiry before resuming.
+Machine styles live in a separate
+[machine.css](../website/machine.css) loaded after `styles.css`; it
+redefines the manuscript's colour variables under `.folio-machine`. While a
+machine folio is active the script sets
+`data-theme="machine"` on the root so the fixed header, footer, and page
+index flip with the content. Manuscript leaf content keeps its original styling;
+shared navigation lives in `styles.css` and follows the responsive layout described above. The same motion contract
+applies: the footer control pauses animation, the OS reduced-motion
+preference wins, and content stays visible without JavaScript. All console
+demos are explicitly illustrative, and the connect snippet initializes
+nothing by itself.
+
 ## Validation
 
 Run `node --check website/app.js` and the repository's required quality gates.
 Preview at desktop and mobile widths, including short landscape windows and
 ultrawide displays. Check that the studies stay close to the central content
 and that their faded edges keep text and controls readable.
-Check the four leaves, wheel scrolling in both directions, keyboard page
+Check all eight folios, wheel scrolling in both directions, keyboard page
 navigation, chapter links, deep links, browser history, and active page
 indicators. Exercise all four work-cycle tabs, both operating-system tabs,
-the copy action, mobile navigation, and the motion control. Check reduced
+both copy actions (setup and connect), mobile navigation, and the motion
+control. Check reduced
 motion and reload with JavaScript disabled. Check for horizontal overflow,
 content obscured by the fixed navigation, failed assets, and console errors.
+At the manuscript/machine boundary, check that the header, footer, and page
+index flip themes as the boundary folio crosses the viewport midpoint in both
+directions, that the core's float, scan line, rings, gauge arc, and status
+pulses stop with the motion control, that the boot-log lines reveal in order,
+and that every signal fits a 900px-tall window at desktop widths of 1001px
+and wider, with default text size, without the title block covering content.
+Narrower screens and enlarged text use growing folios and native scrolling.
+The manuscript folios print; the machine section is a screen feature and is not printed.
