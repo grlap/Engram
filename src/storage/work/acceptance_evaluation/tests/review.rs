@@ -58,6 +58,245 @@ fn handoff(
         .expect("accept handoff")
 }
 
+// B05, B06, B35 and R4: every holder/executor/history combination denies
+// independence; missing identity is never independent. These are pure
+// assessment inputs, not synthetic records written into the store.
+#[test]
+fn independent_affiliation_table_includes_unknown_and_overlapping_sessions() {
+    let evaluator = SessionId("judge".into());
+    let other = SessionId("other".into());
+    let history = [evaluator.clone()];
+    let other_history = [other.clone()];
+    let cases = [
+        ("unknown", None, None, None, &[][..], false),
+        (
+            "unknown with other affiliations",
+            None,
+            Some(&other),
+            Some(&other),
+            &other_history[..],
+            false,
+        ),
+        ("unaffiliated", Some(&evaluator), None, None, &[][..], true),
+        (
+            "other sessions only",
+            Some(&evaluator),
+            Some(&other),
+            Some(&other),
+            &other_history[..],
+            true,
+        ),
+        (
+            "holder",
+            Some(&evaluator),
+            Some(&evaluator),
+            None,
+            &[][..],
+            false,
+        ),
+        (
+            "executor",
+            Some(&evaluator),
+            None,
+            Some(&evaluator),
+            &[][..],
+            false,
+        ),
+        ("history", Some(&evaluator), None, None, &history[..], false),
+        (
+            "holder and executor",
+            Some(&evaluator),
+            Some(&evaluator),
+            Some(&evaluator),
+            &[][..],
+            false,
+        ),
+        (
+            "holder and history",
+            Some(&evaluator),
+            Some(&evaluator),
+            None,
+            &history[..],
+            false,
+        ),
+        (
+            "executor and history",
+            Some(&evaluator),
+            None,
+            Some(&evaluator),
+            &history[..],
+            false,
+        ),
+        (
+            "all affiliations",
+            Some(&evaluator),
+            Some(&evaluator),
+            Some(&evaluator),
+            &history[..],
+            false,
+        ),
+    ];
+    for (name, evaluator, holder, executor, history, expected) in cases {
+        let standing = SessionStanding {
+            evaluator,
+            holder,
+            executor,
+            history,
+        };
+        assert_eq!(standing.evaluator_is_independent(), expected, "{name}");
+    }
+}
+
+// B07, B63 and R4/F7: the child must never hold the run itself, but its
+// original parent's current execution relationship is checked only at write.
+#[test]
+fn sub_agent_pass_survives_parent_handoff_and_refuses_a_former_holder() {
+    let mut fx = fixture("project-child-parent-handoff");
+    let store = &mut fx.store;
+    enable(
+        store,
+        &[Mode::SubAgent, Mode::IndependentSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-child-handoff",
+        5,
+    );
+    let work = fx.work.clone();
+    let runner = fx.claim.clone();
+    let note = fx.evidence.clone();
+    let child_request = |work: &WorkItem, cut: i64, evaluator: &str, parent: &str, second| {
+        RecordAcceptanceEvaluationRequest {
+            execution_identity: Some("child-execution".into()),
+            parent_session: Some(SessionId(parent.into())),
+            ..request(
+                work,
+                cut,
+                evaluator,
+                Mode::SubAgent,
+                pass_judgment(&note),
+                second,
+            )
+        }
+    };
+    let self_evaluation = refusal(record(
+        store,
+        &child_request(&work, cut(store, &work), "runner", "runner", 6),
+    ));
+    assert!(
+        self_evaluation.contains("must be recorded from a distinct child session"),
+        "{self_evaluation}"
+    );
+    let admitted = record(
+        store,
+        &child_request(&work, cut(store, &work), "child", "runner", 7),
+    )
+    .expect("distinct child submits under the currently executing parent");
+    let second = handoff(store, &work, &runner, "second", 8);
+    let after = store
+        .get_work_item(work.work_id)
+        .expect("item after handoff");
+    assert_eq!(after.revision, work.revision);
+    assert_eq!(after.active_run_id, work.active_run_id);
+    assert_eq!(second.run_id, runner.run_id);
+    assert_eq!(second.claim_id, runner.claim_id);
+    assert_eq!(
+        load_work_run(&store.connection, runner.run_id)
+            .expect("run after handoff")
+            .executor,
+        Some(second.holder.clone())
+    );
+    let mut former = child_request(&after, cut(store, &after), "runner", "second", 10);
+    former.attempt_key = Some("former-holder-child-attempt".into());
+    let former_refusal = refusal(record(store, &former));
+    assert!(
+        former_refusal.contains("must be recorded from a distinct child session"),
+        "{former_refusal}"
+    );
+    assert_eq!(
+        store
+            .acceptance_evaluation_status(work.work_id, None)
+            .expect("read unchanged newest record")
+            .expect("child record remains")
+            .evaluation,
+        admitted.evaluation
+    );
+    let seal = checkpoint_then_complete(
+        store,
+        &after,
+        &second,
+        "second",
+        std::slice::from_ref(&note),
+        false,
+        None,
+        "complete-after-parent-handoff",
+        11,
+    )
+    .expect("unrelated new holder consumes the original child's pass");
+    assert_eq!(seal.acceptance_evaluation, Some(admitted.evaluation));
+}
+
+// B63: a legitimately admitted child that then takes this same run becomes
+// executor-affiliated; the shared same_session_ineligibility owner retires it.
+#[test]
+fn sub_agent_evaluator_taking_the_run_cannot_consume_its_pass() {
+    let mut fx = fixture("project-child-takeover");
+    let store = &mut fx.store;
+    enable(
+        store,
+        &[Mode::SubAgent, Mode::IndependentSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-child-takeover",
+        5,
+    );
+    let work = fx.work.clone();
+    let runner = fx.claim.clone();
+    let note = fx.evidence.clone();
+    record(
+        store,
+        &RecordAcceptanceEvaluationRequest {
+            execution_identity: Some("child-execution".into()),
+            parent_session: Some(runner.holder.clone()),
+            ..request(
+                &work,
+                cut(store, &work),
+                "child",
+                Mode::SubAgent,
+                pass_judgment(&note),
+                6,
+            )
+        },
+    )
+    .expect("child evaluates before taking the run");
+    let child = handoff(store, &work, &runner, "child", 7);
+    let after = store
+        .get_work_item(work.work_id)
+        .expect("item after handoff");
+    assert_eq!(after.revision, work.revision);
+    assert_eq!(after.active_run_id, work.active_run_id);
+    assert_eq!(child.run_id, runner.run_id);
+    let cause = recovery_cause(checkpoint_then_complete(
+        store,
+        &after,
+        &child,
+        "child",
+        std::slice::from_ref(&note),
+        false,
+        None,
+        "complete-as-child-evaluator",
+        9,
+    ));
+    assert!(
+        matches!(
+            cause,
+            WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+                reason: AcceptanceStaleReason::Policy
+            }
+        ),
+        "{cause:?}"
+    );
+}
+
 /// Rewrites the stored `seal` as `forged`. The record keeps its id, so the
 /// completion event and the run projection still name it and only the forged
 /// relationship is wrong.

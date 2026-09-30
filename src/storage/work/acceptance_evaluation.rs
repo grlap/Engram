@@ -1064,6 +1064,13 @@ impl SessionStanding<'_> {
             || self.executor == Some(session)
             || self.history.contains(session)
     }
+
+    /// Independence requires a known evaluator that has never held or executed
+    /// this run. Admission and consumption adapt this same relationship.
+    fn evaluator_is_independent(&self) -> bool {
+        self.evaluator
+            .is_some_and(|session| !self.holds_or_held(session))
+    }
 }
 
 /// Who set the task's current same-session mark: the session of the
@@ -1227,7 +1234,13 @@ fn admit_identity(
             }
         }
         AcceptanceEvaluationMode::IndependentSession => {
-            if executing(evaluator_session) || history.contains(evaluator_session) {
+            let standing = SessionStanding {
+                evaluator: Some(evaluator_session),
+                holder,
+                executor,
+                history,
+            };
+            if !standing.evaluator_is_independent() {
                 return Err(refused(
                     item.work_id,
                     "independent_session evaluation must come from a session that neither holds nor executes the run, now or at any earlier point of this run",
@@ -2557,12 +2570,13 @@ fn staleness(
         let claim = load_work_claim_optional(connection, run_id)?;
         let run = load_work_run(connection, run_id)?;
         let history = run_holder_history(connection, run_id)?;
-        let independent = record.evaluator.session_id.as_ref().is_some_and(|session| {
-            claim.as_ref().is_none_or(|claim| claim.holder != *session)
-                && run.executor.as_ref() != Some(session)
-                && !history.contains(session)
-        });
-        if !independent {
+        let standing = SessionStanding {
+            evaluator: record.evaluator.session_id.as_ref(),
+            holder: claim.as_ref().map(|claim| &claim.holder),
+            executor: run.executor.as_ref(),
+            history: &history,
+        };
+        if !standing.evaluator_is_independent() {
             return Ok(Some(AcceptanceStaleReason::Identity));
         }
     }
