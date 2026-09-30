@@ -257,9 +257,10 @@ visible.
 Project policy determines what blocks completion or check-in. The standing rule
 for review findings lives in the engram-repo skill
 (`.agents/skills/engram-repo/SKILL.md`), not in this proposal: every justified
-finding about the scope a change modifies, Low included, is fixed before that
-change closes, while problems that already existed and are unrelated to that
-scope are identified, deduplicated against existing work, and recorded with
+finding of Medium or higher about the scope a change modifies is fixed
+before that change closes, while problems that already existed and are
+unrelated to that scope are identified, deduplicated against existing work,
+and recorded with
 their provenance without widening the change. Each frozen input is reviewed by
 an independent review pair, and fixes address that round's actual findings; a
 fix that changes the reviewed input is handled as described below. Severity

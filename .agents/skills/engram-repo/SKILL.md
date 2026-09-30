@@ -543,9 +543,10 @@ full gate by itself. Even a comment-only change in a `.rs` test uses the full
 gate. Mixed or uncertain changes use the stronger applicable checks; focused
 correction checks never replace landing validation.
 After consolidating review findings, deduplicate them in Engram. This is the
-standing rule for review findings: every justified finding about the scope a
-change modifies, Low included, is fixed before that change closes; it is not
-parked as a new low-priority follow-up. Record such a fix with a note on the
+standing rule for review findings: every justified finding of Medium or
+higher about the scope a change modifies is fixed before that change closes;
+a justified Low is fixed or left for later as an independent root, and a Note
+needs no action. Record such a fix with a note on the
 reviewed item. Create a required child of its open item only when separate
 ownership, independently scoped work or a real dependency warrants it.
 A small in-scope correction stays on the reviewed item, with the finding,
@@ -556,18 +557,20 @@ file an in-scope finding as an optional
 child, even when a refused required child suggests one, because optional
 children do not block completion; an optional child is only for work
 intentionally finished within the parent's execution window that is not a
-review finding. Only an existing problem unrelated to that scope is left for
-later, as an independent root, never an optional or required child, even if
-the reviewed item is still open.
+review finding. Only a Low and an existing problem unrelated to that scope
+are left for later, as an independent root, never an optional or required
+child, even if the reviewed item is still open.
 Add a provenance note on each new follow-up naming the reviewed item's reference
-and title, the finding evidence, and why it lies outside the changed scope; do
+and title, the finding evidence, and why it is left for later; do
 not substitute a parent or prerequisite edge for provenance. Note matching
 existing follow-ups instead of duplicating them; a match records provenance
-only, and an in-scope finding is still fixed before the change closes.
+only, and an in-scope finding of Medium or higher is still fixed before the
+change closes.
 Informational observations need no work item.
 In pair work, the implementer continues after review consolidation without
-waiting for another prompt: fix in-scope actionable findings and start a new
-round on the corrected input (gate, freeze and both reviewers in parallel).
+waiting for another prompt: fix the in-scope findings the standing rule above
+requires and start a new round on the corrected input (gate, freeze and both
+reviewers in parallel).
 After clean acceptance, record the
 delivered outcome and complete owned implementation items when their obligations
 are satisfied. Pause only for a real blocker, disputed acceptance, or a decision

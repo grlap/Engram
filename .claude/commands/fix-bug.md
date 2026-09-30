@@ -24,10 +24,10 @@ Fix the Engram work item whose ref is supplied in `$ARGUMENTS`.
 6. Add or update behavioral tests that would fail without the fix.
 7. Invoke `/review-changes`, which runs the required gates and both reviews
    in parallel on one frozen input.
-8. Fix every justified review finding about the scope this change modifies,
-   Low included, and start a new round (gate, freeze and both reviewers in
-   parallel), as the engram-repo skill requires.
-   Leave only an existing problem unrelated to that scope for later, as an
+8. Fix every justified review finding of Medium or higher about the scope
+   this change modifies, and start a new round (gate, freeze and both
+   reviewers in parallel), as the engram-repo skill requires. Leave only a
+   Low or an existing problem unrelated to that scope for later, as an
    independent root with a provenance note.
 9. `engram work note` the validation evidence, then `engram work done` with
    what was delivered; it tells you if anything is still owed. Never commit,

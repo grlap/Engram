@@ -47,9 +47,10 @@ fan-in, apart from the pair's. It never counts toward the two reviews the
 standing approval requires, its absence or failure never blocks a landing, and
 none is commissioned on an input whose round has finished. Before landing it
 has returned, failed or been cancelled; the parent may cancel it to land. A
-justified in-scope finding from it is fixed and reviewed again by the pair
-like any other finding. A finding the parent refutes on evidence is an
-in-scope finding rejected on evidence: it is recorded on the item with that
+justified in-scope finding of Medium or higher from it is fixed and reviewed
+again by the pair like any other finding; a justified Low or Note is handled
+as the standing approval's review condition describes. A finding of Medium or
+higher the parent refutes on evidence is recorded on the item with that
 evidence and goes to Greg, as the standing approval's review condition
 requires; showing it to the pair first is optional.
 
@@ -405,15 +406,16 @@ coordinator reads the final frozen diff in its place.
 ## 7. Record findings in Engram from the parent
 
 Only after consolidation, search Engram for each actionable finding
-(`engram work ls --search "<phrase>" --all`). A justified finding about the
-scope this change modifies, Low included, is fixed in this slice before
+(`engram work ls --search "<phrase>" --all`). A justified finding of Medium
+or higher about the scope this change modifies is fixed in this slice before
 completion, as the engram-repo skill (`.agents/skills/engram-repo/SKILL.md`)
-requires. Only a problem that already existed and is unrelated to that scope
-may be left for later.
+requires. Only a Low and a problem that already existed and is unrelated to
+that scope may be left for later; a Note needs no action.
 
-- Fix an in-scope finding in this slice. Record the fix with a note on the
-  reviewed item. Create a required child only when separate ownership,
-  independently scoped work or a real dependency warrants it:
+- Fix an in-scope finding of Medium or higher in this slice. Record the fix
+  with a note on the reviewed item. Create a required child only when
+  separate ownership, independently scoped work or a real dependency warrants
+  it:
   `engram work add "<finding>" --kind bug --label review --priority
   <0 for Critical … 3 for Low> --under <item under review>`. While another
   session holds the reviewed item, only that holder can add the required child,
@@ -424,18 +426,19 @@ may be left for later.
   the item could close with the fix still open. An optional child is only for
   work intentionally completed inside the parent's execution window that is not
   a review finding.
-- An existing problem unrelated to the changed scope, which this slice does
-  not fix, is an independent root, even while the reviewed item is open. Use
+- A Low or an existing problem unrelated to the changed scope, which this
+  slice does not fix, is an independent root, even while the reviewed item
+  is open. Use
   `engram work add "<finding>" --kind bug --label review --priority <0 for
   Critical … 3 for Low>` without `--under` or `--optional`, then `note` the new
   root with the reviewed item's reference and title, the review evidence, and
-  why it lies outside the changed scope. Provenance belongs in that note, not in
+  why it is left for later. Provenance belongs in that note, not in
   a parent or prerequisite edge.
 - If a matching follow-up exists, note the new evidence and provenance on it
   instead of duplicating it. A match records provenance only; an in-scope
-  finding is still fixed in this slice. Do not turn an existing child into an
-  independent root by editing its history; use the explicit detach workflow
-  separately when admitted.
+  finding of Medium or higher is still fixed in this slice. Do not turn an
+  existing child into an independent root by editing its history; use the
+  explicit detach workflow separately when admitted.
 
 Never add children to completed work or reopen it merely to record a finding.
 When evidence rejects a filed finding, note that evidence and cancel with a
@@ -444,17 +447,17 @@ Use `update CHILD --reject "why"` when admitted to compose those two effects
 atomically; otherwise follow the conditional cancel/parent-waive remedy.
 `done` is reserved for satisfied current acceptance, with the successful
 receipt's visible criterion-count assertion and no-criterion-change disclosure.
-An actionable finding left for later, which this step allows only for an
-existing problem outside the changed scope, needs its independent work item
-before closure; an informational observation that requests no action needs no
-tracker mutation.
+An actionable finding left for later, which this step allows only for a Low
+and an existing problem outside the changed scope, needs its independent
+work item before closure; an informational observation that requests no
+action needs no tracker mutation.
 
 Consolidation itself records evidence, not source changes or implementation
 completion. In pair work, when this writable parent is also the implementer,
 continue directly into the next authorized implementation iteration without
-waiting for another prompt: fix in-scope actionable findings and start a new
-round on the corrected input, with gate, freeze and both reviewers in
-parallel. Keep the
+waiting for another prompt: fix the in-scope findings the standing rule
+requires and start a new round on the corrected input, with gate, freeze and
+both reviewers in parallel. Keep the
 coordinator informed of material changes; pause for a real blocker, disputed
 acceptance, or a decision outside the agreed scope or authority. A review-only
 parent hands the findings to the implementer instead of assuming write authority.

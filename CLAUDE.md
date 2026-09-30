@@ -69,15 +69,19 @@ user profile:
     fingerprint checked at completion;
   - the latest review round from two independent read-only reviewers of
     different vendors, Codex and Claude, on a verified freeze of that same
-    tree, is clean (no outstanding in-scope findings), and every
-    in-scope finding from earlier rounds, Low and Note included, was fixed
-    and reviewed again; while Codex is unavailable (a usage limit or outage,
-    recorded on the item with the refusal text), Kimi stands in for it under
-    Greg's word of 2026-09-29 ('if clean you have a go', 'you should just
-    check-in, that should be the rule'), and every other condition is
-    unchanged; any out-of-scope finding was filed as an independent root
-    with provenance. An in-scope finding left unfixed, even one rejected
-    on evidence, goes to Greg;
+    tree, has no outstanding in-scope finding of Medium or higher, and every
+    in-scope finding of Medium or higher from earlier rounds was fixed and
+    reviewed again; a Low or a Note need not be fixed before the landing,
+    and a Low left unfixed is filed as its own item (Greg, 2026-09-30:
+    'ignore Notes and trivial lows, that can be handled later. if they
+    choose to fix low, fine, but that is not must have', 'anything including
+    Medium must be fixed'); while Codex is unavailable (a usage limit or
+    outage, recorded on the item with the refusal text), Kimi stands in for
+    it under Greg's word of 2026-09-29 ('if clean you have a go', 'you
+    should just check-in, that should be the rule'), and every other
+    condition is unchanged; any out-of-scope finding was filed as an
+    independent root with provenance. An in-scope finding of Medium or
+    higher left unfixed, even one rejected on evidence, goes to Greg;
   - the changeset delivers its items' acceptance criteria, and a
     criterion bound to host-observed evidence has that evidence;
   - before committing, the changeset was judged as the next rule
@@ -86,7 +90,7 @@ user profile:
 
   Greg confirmed on 2026-09-27 that the same standing approval applies to
   Engram and TermAl: required checks pass on the reviewed input, review has
-  no outstanding findings on the changeset (Low and Note included), and
+  no outstanding findings on the changeset, and
   evidence satisfies its acceptance criteria. A pre-existing problem outside
   its scope, filed as an independent root with provenance, does not block.
   The readiness, install and exact-input conditions above and below remain
@@ -452,12 +456,13 @@ waiting to integrate its documentation does not postpone it.
   two reviews the standing approval requires, its absence or failure never
   blocks a landing, and none is commissioned on an input whose round has
   finished. Before landing it has returned, failed or been cancelled; the
-  parent may cancel it to land. A justified in-scope finding from it is fixed
-  and reviewed again by the pair like any other finding. A finding the parent
-  refutes on evidence is an in-scope finding rejected on evidence: it is
-  recorded on the item with that evidence and goes to Greg, as the standing
-  approval's review condition requires; showing it to the pair first is
-  optional.
+  parent may cancel it to land. A justified in-scope finding of Medium or
+  higher from it is fixed and reviewed again by the pair like any other
+  finding; a justified Low or Note is handled as the standing approval's
+  review condition describes. A finding of Medium or higher the parent
+  refutes on evidence is recorded on the item with that evidence and goes to
+  Greg, as the standing approval's review condition requires; showing it to
+  the pair first is optional.
 - A bounded execution worker may run the parent's logged gate batch once;
   it is not a third reviewer. The parent retains validation ownership,
   inspects and attributes results, and records gates. The worker must not
