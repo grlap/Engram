@@ -394,14 +394,41 @@ the pair, and consolidate its findings with the pair's.
 
 Deduplicate overlapping findings and tracker suggestions.
 
-Before a landing of authority text (AGENTS.md, CLAUDE.md, or any instruction
-or command file that grants or limits commit, push, tracker or approval
-authority), the project's coordinator reads the final frozen diff line by
-line against the sentences whose concurrence is recorded on the item and
-notes on the item which recorded message governs each changed passage; a
-passage no recorded concurrence quotes whole is concurred before the freeze
-or taken out. Where the coordinator wrote the change, the other project's
-coordinator reads the final frozen diff in its place.
+When the reviewed change touches authority text — the text whose change
+conditions (a), (b) and (c) of the Authority and Git section of AGENTS.md and
+CLAUDE.md cover — the parent sends the final frozen change (the diff of its
+tracked files and the content of each untracked file), the input fingerprint
+its checks recorded, and the list of recorded messages that word each changed
+passage of authority text to the auditing coordinator by TermAl mailbox. The
+change is neither committed nor pushed before the audit of that input is
+recorded on the item as passed.
+
+The auditing coordinator is the project's coordinator; where the project's
+coordinator worded the change, it is the other project's coordinator. A
+changed passage is each sentence or heading of authority text that the
+word-level diff of the change against its base commit (`git diff
+--word-diff BASE`) adds, alters or removes, each sentence and heading of an
+untracked file of authority text counting as added; text that differs only
+in whitespace is not a changed passage. The auditing coordinator reads the
+final frozen change line by line against the sentences whose concurrence is
+recorded on the item, runs a script that looks for each added or altered
+passage in those sentences, as an exact string after whitespace normalisation
+and with Markdown list and quote markers at line starts removed, and judges
+for each removed passage whether a recorded concurrence names it as removed.
+The auditing coordinator notes on the item the input fingerprint, which
+recorded message governs each changed passage, the script's result for each
+added or altered passage and the judgement for each removed one. The audit
+passes when the script finds every added or altered passage and every removed
+passage is named as removed, and fails otherwise. Other files in the frozen
+change are covered by the gate and the review pair, not by the audit.
+
+A passage of authority text that no recorded concurrence quotes whole is
+concurred, word for word, or taken out before the landing. A change of the
+input, such as taking a passage out, needs a new freeze, gate, review pair
+and audit. A concurrence recorded after the freeze leaves the input
+unchanged: it needs no new freeze, gate or review pair, but the audit is
+repeated, and the conditions of the Authority and Git section hold for that
+wording as for any other.
 
 ## 7. Record findings in Engram from the parent
 

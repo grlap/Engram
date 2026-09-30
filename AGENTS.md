@@ -132,8 +132,8 @@ user profile:
   coordinators (as of 2026-09-28: Engram::Fable and Termal::Fable2) have
   recorded their concurrence on the exact wording in the item's notes,
   (b) Greg has been sent the exact wording and its consequence before the
-  landing, and (c) the coordinator's final-diff audit under
-  `/review-changes` is recorded on the item before the landing; an objection
+  landing, and (c) the final-diff audit that `/review-changes` requires is
+  recorded on the item as passed before the landing; an objection
   from Greg, by any route, stops it. An edit that widens agent authority —
   a new act granted, or a condition of this rule loosened — also needs
   Greg's recorded word on that widening, verbatim with its source, by any
