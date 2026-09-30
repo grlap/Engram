@@ -2075,8 +2075,11 @@ token, no exactly-once guarantee; a host-passed `context_generation` is the
 host's assertion of a fresh or compacted context, not proof of one, and
 reannounces the count. It is recorded for the session only by the first page
 of an unfiltered `memories` listing that carries it, once that page has been
-rendered, together with the memory position that listing's snapshot read;
-ordinary `next` records the memory position and never a generation. Until a
+rendered, together with the memory position that listing's snapshot read.
+Only that listing reads the position: every other listing and search answers
+from the memory rows alone, even while the position is missing and awaits
+repair, and that listing then answers unrecorded. Ordinary `next` records the
+memory position and never a generation. Until a
 listing carries the generation, `changed` repeats for calls that supply it
 and a peek directs the session to list its memories before acting (see the
 [peek contract](cli-and-mcp.md#using-engram-as-an-agent)). The record shows

@@ -1507,22 +1507,21 @@ impl AgentVerbs {
             .query
             .as_deref()
             .is_some_and(|query| !query.trim().is_empty());
+        // Only the start of the unfiltered listing, carrying the generation a
+        // peek printed, is the recovery read that peek asks for, and only once
+        // it has been rendered. Every other form stays a read that records
+        // nothing and reads no recorded position.
+        let records = input.context_generation.is_some() && !filtered && input.after.is_none();
         let (mut result, listing) = self.service.project_memories_at_cut(
             input.query.as_deref(),
             input.after.as_deref(),
+            records,
             now,
         )?;
         loop {
             let receipt = project_memory_list_receipt(&result, filtered)?;
             if super::receipts::agent_receipt_fits(&receipt, MAX_AGENT_WORK_RESPONSE_BYTES)? {
-                // Only the start of the unfiltered listing, carrying the
-                // generation a peek printed, is the recovery read that peek
-                // asks for, and only once it has been rendered. Every other
-                // form stays a read that records nothing.
-                if let Some(generation) = &input.context_generation
-                    && !filtered
-                    && input.after.is_none()
-                {
+                if let (Some(generation), Some(listing)) = (&input.context_generation, listing) {
                     self.service
                         .acknowledge_project_memory_listing(listing, generation, now);
                 }

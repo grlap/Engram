@@ -137,9 +137,11 @@ fn assert_project_memory_advertisement_contract(
             .expect("unlisted generation reannounces")
             .changed
     );
-    let (_, listing) = store
-        .project_memories_at_cut(project, session, &actor(&session.0), None, None)
-        .expect("list memories");
+    let listing = store
+        .project_memories_at_cut(project, session, &actor(&session.0), None, None, true)
+        .expect("list memories")
+        .1
+        .expect("the listing that records reads the position");
     store
         .acknowledge_project_memory_listing(project, session, listing, "fresh-context")
         .expect("record the listing");

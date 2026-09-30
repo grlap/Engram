@@ -47,9 +47,10 @@ fn list(store: &mut SqliteStore, generation: &str) {
 
 fn listing_cut(store: &SqliteStore) -> ProjectMemoryListingCut {
     store
-        .project_memories_at_cut(&project(), &session(), &actor(SESSION), None, None)
+        .project_memories_at_cut(&project(), &session(), &actor(SESSION), None, None, true)
         .expect("list memories")
         .1
+        .expect("the listing that records reads the position")
 }
 
 fn advance(store: &mut SqliteStore, generation: Option<&str>) {
@@ -279,4 +280,88 @@ fn a_listing_record_refuses_an_oversized_session_before_effects() {
             before
         );
     }
+}
+
+/// Deletes the project's memory position, the drift a repair rebuilds.
+fn drop_memory_position(connection: &rusqlite::Connection) {
+    connection
+        .execute(
+            "DELETE FROM project_memory_state WHERE project_id = ?1",
+            [PROJECT],
+        )
+        .expect("delete the memory position");
+}
+
+// While the project's memory position is missing, a listing and a search
+// answer from the memory rows as they always did and read no position; the
+// listing that would record one answers too and records nothing.
+#[test]
+fn every_listing_answers_while_the_memory_position_is_missing() {
+    let store = store_with_one_memory();
+    drop_memory_position(&store.connection);
+    let listed = |query: Option<&str>| {
+        store
+            .project_memories(&project(), &session(), &actor(SESSION), query, None)
+            .expect("the listing answers")
+            .memories
+            .len()
+    };
+    assert_eq!(listed(None), 1);
+    assert_eq!(listed(Some("first")), 1);
+    let (list, listing) = store
+        .project_memories_at_cut(&project(), &session(), &actor(SESSION), None, None, true)
+        .expect("the recording form answers too");
+    assert_eq!(list.memories.len(), 1);
+    assert!(listing.is_none(), "no position to record");
+    assert_eq!(stored_row(&store), None);
+}
+
+// The word: `memories`, `memories QUERY` and `memories --context-generation
+// G` all return the row in that drift state, and nothing is recorded.
+#[test]
+fn the_memories_word_answers_while_the_memory_position_is_missing() {
+    use crate::verbs::{AgentVerbs, MemoriesInput, RememberInput};
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let database = directory.path().join("engram.sqlite3");
+    let verbs = AgentVerbs::new(database.clone(), project(), "agent".into(), session(), None);
+    verbs
+        .remember(
+            RememberInput {
+                revise: false,
+                expected_revision: None,
+                retires_with: None,
+                clear_retires_with: false,
+                text: "a retained note".into(),
+                key: Some("retained".into()),
+            },
+            chrono::Utc::now(),
+        )
+        .expect("remember");
+    let store = SqliteStore::open(&database).expect("store");
+    drop_memory_position(&store.connection);
+    for (query, context_generation) in [
+        (None, None),
+        (Some("retained"), None),
+        (None, Some("fresh-context")),
+    ] {
+        let receipt = verbs
+            .memories(
+                &MemoriesInput {
+                    revision: None,
+                    query: query.map(Into::into),
+                    after: None,
+                    full: false,
+                    context_generation: context_generation.map(Into::into),
+                },
+                chrono::Utc::now(),
+            )
+            .unwrap_or_else(|error| panic!("{query:?} {context_generation:?}: {error}"));
+        assert_eq!(
+            receipt.value["memories"].as_array().map(Vec::len),
+            Some(1),
+            "{query:?} {context_generation:?}: {}",
+            receipt.value
+        );
+    }
+    assert_eq!(stored_row(&store), None, "nothing is recorded");
 }

@@ -96,24 +96,26 @@ impl LocalWorkService {
         after: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryList, StoreError> {
-        self.project_memories_at_cut(query, after, now)
+        self.project_memories_at_cut(query, after, false, now)
             .map(|(list, _)| list)
     }
 
-    /// The listing together with the memory position its snapshot read, for
-    /// [`Self::acknowledge_project_memory_listing`].
+    /// The listing and, with `records`, the memory position its snapshot
+    /// read, for [`Self::acknowledge_project_memory_listing`].
     pub(crate) fn project_memories_at_cut(
         &self,
         query: Option<&str>,
         after: Option<&str>,
+        records: bool,
         now: DateTime<Utc>,
-    ) -> Result<(ProjectMemoryList, ProjectMemoryListingCut), StoreError> {
+    ) -> Result<(ProjectMemoryList, Option<ProjectMemoryListingCut>), StoreError> {
         self.read_store_at(now)?.project_memories_at_cut(
             &self.project_id,
             &self.session_id,
             &self.actor("memories", "list attributed project memories"),
             query,
             after,
+            records,
         )
     }
 

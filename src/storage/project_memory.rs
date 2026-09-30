@@ -435,13 +435,17 @@ impl SqliteStore {
         query: Option<&str>,
         after: Option<&str>,
     ) -> Result<ProjectMemoryList, StoreError> {
-        self.project_memories_at_cut(project_id, session_id, actor, query, after)
+        self.project_memories_at_cut(project_id, session_id, actor, query, after, false)
             .map(|(list, _)| list)
     }
 
-    /// The listing together with the memory position its own snapshot read.
-    /// A listing that carries a context generation records that position, so
-    /// a memory a peer writes after the snapshot is announced again.
+    /// The listing, and with `records` the memory position its own snapshot
+    /// read. A listing that carries a context generation records that
+    /// position, so a memory a peer writes after the snapshot is announced
+    /// again. Only that listing reads the position: every other form lists
+    /// from the memory rows alone, as it always did, even while the position
+    /// is missing. The record is advisory, so a position that cannot be read
+    /// leaves the listing delivered and unrecorded.
     pub(crate) fn project_memories_at_cut(
         &self,
         project_id: &crate::domain::ProjectId,
@@ -449,7 +453,8 @@ impl SqliteStore {
         actor: &ActorContext,
         query: Option<&str>,
         after: Option<&str>,
-    ) -> Result<(ProjectMemoryList, ProjectMemoryListingCut), StoreError> {
+        records: bool,
+    ) -> Result<(ProjectMemoryList, Option<ProjectMemoryListingCut>), StoreError> {
         admit_live_project_memory_sessions(session_id, actor)?;
         validate_project_memory_authorization(session_id, actor)?;
         let normalized_query = normalize_project_memory_query(query)?;
@@ -485,7 +490,13 @@ impl SqliteStore {
         } else {
             next_after.is_none()
         };
-        let (_, change_position) = project_memory_state_on(&transaction, project_id)?;
+        let listing = if records {
+            project_memory_state_on(&transaction, project_id)
+                .ok()
+                .map(|(_, change_position)| ProjectMemoryListingCut { change_position })
+        } else {
+            None
+        };
         transaction.commit()?;
         Ok((
             ProjectMemoryList {
@@ -494,7 +505,7 @@ impl SqliteStore {
                 omitted_count,
                 exhausted,
             },
-            ProjectMemoryListingCut { change_position },
+            listing,
         ))
     }
 
