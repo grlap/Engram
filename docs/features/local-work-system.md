@@ -8,6 +8,7 @@
 > [CLI & MCP](cli-and-mcp.md),
 > [atomic work plans](atomic-work-plan.md),
 > [write policy & review](write-policy-and-review.md),
+> [acceptance-evaluation lifecycle](acceptance-evaluation-lifecycle.md),
 > [security & trust](security-and-trust.md), and
 > [execution pipeline](execution-pipeline.md).
 

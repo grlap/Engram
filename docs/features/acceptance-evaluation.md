@@ -6,7 +6,9 @@
 > [Behavioral control plane](behavioral-control-plane.md) (host channel),
 > [CLI & MCP](cli-and-mcp.md) (agent words),
 > [Turn gate assessment](turn-gate-assessment.md) (why the evaluation request
-> stays out of the turn gate).
+> stays out of the turn gate),
+> [Lifecycle ownership](acceptance-evaluation-lifecycle.md) (rule owners,
+> admission and completion horizons, consolidation proposals).
 
 This brief is the contract for evidence-based acceptance evaluation before
 completion. It describes the agreed design, not a claim that every row is

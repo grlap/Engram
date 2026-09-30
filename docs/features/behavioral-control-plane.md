@@ -5,6 +5,7 @@
 > Related briefs: [context packets](context-packets.md),
 > [local work system](local-work-system.md),
 > [local tasks & reports](local-tasks-and-reports.md),
+> [acceptance-evaluation lifecycle](acceptance-evaluation-lifecycle.md),
 > [CLI & MCP](cli-and-mcp.md),
 > [security & trust](security-and-trust.md),
 > [execution pipeline](execution-pipeline.md), and the
