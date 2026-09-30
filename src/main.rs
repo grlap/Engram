@@ -2176,16 +2176,16 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
     }
 }
 
-/// A moved-basis refusal, and a completion recovery naming the source
-/// observation that decided a stale evaluation, carry host-recorded text in
-/// their details; written to stderr they must never read as a locked store to
-/// a host that retries on that phrase. Every other refusal is written as it
-/// is, so a real lock error still reads as one.
+/// Evaluation admission, moved-basis and completion recovery refusals carry
+/// host-recorded text in their details; written to stderr they must never
+/// read as a locked store to a host that retries on that phrase. Every other
+/// refusal is written as it is, so a real lock error still reads as one.
 fn refusal_stderr_text(error: &StoreError, text: String) -> String {
     if matches!(
         error,
         StoreError::AcceptanceEvaluationBasisMoved { .. }
             | StoreError::WorkCompletionRecoveryRequired { .. }
+            | StoreError::AcceptanceEvaluationAdmissionRefused { .. }
     ) {
         engram::storage::json_without_locked_store_phrase(&text)
     } else {

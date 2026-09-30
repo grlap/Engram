@@ -1019,6 +1019,13 @@ pub enum StoreError {
         work: crate::domain::WorkId,
         reason: String,
     },
+    /// Additive admission context; Display preserves the generic refusal bytes.
+    #[error("acceptance evaluation for {work:?} was refused: {reason}")]
+    AcceptanceEvaluationAdmissionRefused {
+        work: crate::domain::WorkId,
+        reason: String,
+        cause: Box<crate::domain::AcceptanceEvaluationAdmissionCause>,
+    },
     /// An evaluation's `supersedes` does not match the failure carried on its
     /// run: `refusal` names which way, and `failed` the carried failing
     /// evaluation when there is one.
@@ -1813,3 +1820,6 @@ pub struct SqliteStore {
     /// unresolved: reads and work proceed, path intents fail closed.
     host_path_policy: Option<HostPathPolicy>,
 }
+
+#[cfg(test)]
+pub(crate) use work::{AdmissionTransportFixture, admission_transport_fixture};

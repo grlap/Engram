@@ -460,14 +460,23 @@ fn a_bound_criterions_only_passed_check_after_the_cut_cannot_support_its_pass() 
         )];
         request
     };
-    let refused = record(store, &citing(started_at, "on-the-earlier-cut", 40));
+    let (reason, cause) =
+        admission::typed_refusal(record(store, &citing(started_at, "on-the-earlier-cut", 40)));
+    assert!(reason.contains("beyond evidence basis"), "{reason}");
+    let AcceptanceEvaluationAdmissionCause::Citation(cause) = cause else {
+        panic!("citation cause");
+    };
+    assert_eq!(cause.mismatch, EvaluationCitationMismatch::BeyondCut);
+    assert_eq!(cause.citation, passed[0].as_str());
+    assert_eq!(cause.evaluated_cut, started_at);
     assert!(
-        matches!(
-            &refused,
-            Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
-                if reason.contains("beyond evidence basis")
-        ),
-        "the movement scan passes and the citation is refused: {refused:?}"
+        cause
+            .citation_position
+            .is_some_and(|position| position > started_at)
+    );
+    assert_eq!(
+        cause.remedy,
+        crate::domain::EvaluationAdmissionRemedy::ReadCurrentCut
     );
     // The movement scan alone: the same cut still records a verdict that
     // cites nothing after it.

@@ -442,6 +442,10 @@ impl VerbError {
                     ],
                 )
             }
+            StoreError::AcceptanceEvaluationAdmissionRefused { cause, .. } => (
+                vec![crate::work_service::evaluation_admission_remedy(cause)],
+                vec![format!("engram work show {target}"), format!("engram work show {target} --notes --gates")],
+            ),
             StoreError::WorkBoundVerificationRefused { cause, .. } => (
                 vec![crate::work_service::bound_verification_remedy(cause)],
                 vec![

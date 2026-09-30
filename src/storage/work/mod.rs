@@ -460,3 +460,6 @@ pub(crate) struct CompletionRecoverySnapshot {
     /// Advisory successor context from the same refusal read cut; never persisted.
     pub(crate) required_child_successor: Option<Box<RequiredChildSuccessor>>,
 }
+
+#[cfg(test)]
+pub(crate) use acceptance_evaluation::{AdmissionTransportFixture, admission_transport_fixture};

@@ -428,13 +428,31 @@ fn evaluate_accepts_the_locators_show_prints_and_refuses_observations() {
                 at(12),
             )
             .expect_err(label);
-        assert!(
-            matches!(
-                refused.error,
-                StoreError::AcceptanceEvaluationRefused { .. }
-            ),
-            "{label}: {refused:?}"
-        );
+        if label == "not evidence at all" {
+            assert!(
+                matches!(
+                    refused.error,
+                    StoreError::AcceptanceEvaluationRefused { .. }
+                ),
+                "{label}: {refused:?}"
+            );
+        } else {
+            let StoreError::AcceptanceEvaluationAdmissionRefused { cause, .. } = &refused.error
+            else {
+                panic!("{label}: {refused:?}");
+            };
+            let crate::domain::AcceptanceEvaluationAdmissionCause::Citation(cause) = cause.as_ref()
+            else {
+                panic!("citation family");
+            };
+            assert_eq!(
+                cause.mismatch,
+                crate::domain::EvaluationCitationMismatch::NotOnRun
+            );
+            assert_eq!(cause.citation, rejected);
+            assert_eq!(cause.evaluated_cut, head_before_refusals);
+            assert!(!refused.guidance().next.is_empty());
+        }
         let message = refused.to_string();
         assert!(
             message.contains(&rejected) && message.contains(reason_word),

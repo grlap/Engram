@@ -1101,12 +1101,42 @@ fn an_evaluation_waits_for_the_named_root_first_sighting() {
         input.attempt_key = Some(key.into());
         input
     };
-    let before = judge(&fixture.store, "before-sighting", 10);
-    let unsighted = refusal(record(&mut fixture.store, &before));
-    assert!(
-        unsighted.contains("the named root has no sighting yet"),
-        "{unsighted}"
-    );
+    // B71: a declaration does not supply the initial host sighting.
+    for declaration in [
+        None,
+        Some(AcceptanceSourceBasis {
+            workspace_id: Some("workspace-B".into()),
+            fingerprint: "revision-B".into(),
+        }),
+    ] {
+        let mut before = judge(&fixture.store, "before-sighting", 10);
+        before.source_basis = declaration.clone();
+        let snapshot = test_database_shape_snapshot(&fixture.store.connection).expect("snapshot");
+        let (unsighted, cause) = admission::typed_refusal(record(&mut fixture.store, &before));
+        assert_eq!(
+            unsighted,
+            "the named root has no sighting yet; capture that root, then evaluate it"
+        );
+        let AcceptanceEvaluationAdmissionCause::SourceRoot(cause) = cause else {
+            panic!("root family");
+        };
+        assert_eq!(cause.mismatch, EvaluationRootMismatch::NoInitialSighting);
+        assert_eq!(cause.workspace_id, "workspace-B");
+        assert_eq!(cause.evaluated_cut, before.evaluated_through);
+        assert_eq!(
+            cause.declared_revision,
+            declaration.map(|basis| basis.fingerprint)
+        );
+        assert!(cause.reported_revision.is_none());
+        assert_eq!(
+            cause.remedy,
+            crate::domain::EvaluationAdmissionRemedy::CaptureRootAndEvaluate
+        );
+        assert_eq!(
+            test_database_shape_snapshot(&fixture.store.connection).expect("snapshot"),
+            snapshot
+        );
+    }
     host_verification_from_basis(
         &mut fixture.store,
         &work,

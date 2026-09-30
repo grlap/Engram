@@ -1053,6 +1053,16 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "reason": reason,
             "remedy": "record evidence, checkpoint the current feed cut, and satisfy every current acceptance criterion",
         }),
+        StoreError::AcceptanceEvaluationAdmissionRefused {
+            work,
+            reason,
+            cause,
+        } => json!({
+            "work_id": work,
+            "reason": reason,
+            "cause": cause,
+            "remedy": crate::work_service::evaluation_admission_remedy(cause),
+        }),
         StoreError::WorkBoundVerificationRefused {
             work,
             reason,
@@ -1186,6 +1196,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::AcceptanceCriteriaRequired { .. } => "acceptance_criteria_required",
         StoreError::AcceptanceEvaluationRefused { .. }
+        | StoreError::AcceptanceEvaluationAdmissionRefused { .. }
         | StoreError::AcceptanceEvaluationCarriedFailure { .. } => "acceptance_evaluation_refused",
         StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
             crate::host::evaluation_basis_move_code(*moved)
@@ -1486,6 +1497,94 @@ mod tests {
                 assert!(observation.is_null(), "{value}");
                 assert!(!named, "{value}");
             }
+        }
+    }
+
+    #[test]
+    fn evaluation_admission_errors_keep_status_and_deciding_causes_across_service_and_mcp() {
+        for case in [
+            "eligibility",
+            "source_root",
+            "wrong_run",
+            "beyond_cut",
+            "wrong_source",
+        ] {
+            let fixture: crate::storage::AdmissionTransportFixture =
+                crate::storage::admission_transport_fixture(case, Utc::now());
+            let service = crate::LocalWorkService::new(
+                fixture.database.clone(),
+                fixture.work.project_id.clone(),
+                "runner".into(),
+                SessionId("runner".into()),
+                None,
+            );
+            let error = service
+                .work_evaluate_on(&fixture.input, Utc::now())
+                .expect_err(case);
+            let shared = store_error_value(&error);
+            assert_eq!(
+                shared["error"]["details"]["cause"]["kind"], fixture.family,
+                "{case}: {shared}"
+            );
+            assert_eq!(
+                shared["error"]["details"]["cause"]["mismatch"], fixture.mismatch,
+                "{case}: {shared}"
+            );
+            let server = McpServer::new_with_actor_context(
+                fixture.database.clone(),
+                fixture.work.project_id.clone(),
+                "runner".into(),
+                SessionId("runner".into()),
+                None,
+                None,
+            );
+            let input = &fixture.input;
+            let response = server.evaluate(Parameters(EvaluateArgs {
+                work_ref: input.work_ref.clone(),
+                mode: input.mode.clone(),
+                acceptance_basis: input.acceptance_basis,
+                evidence_basis: input.evidence_basis,
+                verdicts: input.verdicts.clone(),
+                attempt: input.attempt.clone(),
+                source_fingerprint: input.source_fingerprint.clone(),
+                model: input.model.clone(),
+                execution_identity: input.execution_identity.clone(),
+                parent_session: input.parent_session.clone(),
+                supersedes: input.supersedes.clone(),
+            }));
+            assert_eq!(response.is_error, Some(true), "{case}");
+            let value = response
+                .structured_content
+                .expect("structured admission error");
+            let error = &value["error"];
+            assert_eq!(error["code"], "acceptance_evaluation_refused");
+            assert_eq!(error["message"], shared["error"]["message"]);
+            assert_eq!(error["details"], shared["error"]["details"]);
+            let cause: crate::AcceptanceEvaluationAdmissionCause =
+                serde_json::from_value(error["details"]["cause"].clone()).unwrap();
+            let remedy = crate::work_service::evaluation_admission_remedy(&cause);
+            assert_eq!(error["details"]["remedy"], remedy);
+            assert!(
+                error["reminders"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|entry| entry == &json!(remedy))
+            );
+            assert!(
+                error["next"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|entry| entry.as_str().unwrap().contains(&fixture.work.short_ref))
+            );
+            let store = crate::SqliteStore::open(&fixture.database).unwrap();
+            assert!(
+                store
+                    .acceptance_evaluation_status(fixture.work.work_id, None)
+                    .unwrap()
+                    .is_none()
+            );
         }
     }
 

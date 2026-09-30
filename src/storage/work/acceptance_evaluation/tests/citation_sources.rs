@@ -195,10 +195,34 @@ fn a_pass_citing_a_check_of_an_older_revision_is_refused_and_a_rerun_seals() {
     assert!(host.checkpoint(store, true, None, 30).is_empty());
 
     let before = cut(store, &work);
-    let refused = refusal(record(
+    let before_database = test_database_shape_snapshot(&store.connection).expect("snapshot");
+    let (refused, cause) = admission::typed_refusal(record(
         store,
         &evaluation(store, &work, std::slice::from_ref(&at_d), &note, None, 35),
     ));
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("snapshot"),
+        before_database
+    );
+    let AcceptanceEvaluationAdmissionCause::Citation(cause) = cause else {
+        panic!("citation family");
+    };
+    assert_eq!(cause.mismatch, EvaluationCitationMismatch::WrongSource);
+    assert_eq!(cause.criterion, 1);
+    assert_eq!(cause.citation, at_d.as_str());
+    assert_eq!(cause.run_id, claim.run_id);
+    assert_eq!(cause.evaluated_cut, before);
+    assert_eq!(cause.checked_revision.as_deref(), Some("revision-d"));
+    assert_eq!(cause.judged_revision.as_deref(), Some("revision-e"));
+    assert!(cause.producer_observation.is_some());
+    assert_eq!(
+        cause.requirement.as_ref().unwrap().check_kind,
+        VerificationKind::Test
+    );
+    assert_eq!(
+        cause.remedy,
+        crate::domain::EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate
+    );
     assert!(
         refused.contains(&format!(
             "criterion 1 is bound to test verification, and {at_d} ran on source revision revision-d, not the revision revision-e this evaluation judged; run the check on the current source, then evaluate again citing it"

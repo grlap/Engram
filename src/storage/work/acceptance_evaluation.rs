@@ -208,8 +208,10 @@ impl SqliteStore {
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError::AcceptanceEvaluationRefused`] for policy, mode,
-    /// identity, criteria, or citation violations;
+    /// Returns [`StoreError::AcceptanceEvaluationAdmissionRefused`] for typed
+    /// policy, mode, identity, source-root or citation violations, and
+    /// [`StoreError::AcceptanceEvaluationRefused`] for remaining structural
+    /// and replacement-admission refusals;
     /// [`StoreError::AcceptanceEvaluationCarriedFailure`] when `supersedes`
     /// does not answer the failure carried on the run
     /// ([`CarriedFailureRefusal::Unacknowledged`], naming the failed record,
@@ -277,7 +279,13 @@ impl SqliteStore {
         let holder = claim.as_ref().map(|claim| claim.holder.clone());
         let history = run_holder_history(&transaction, run_id)?;
         admit_identity(
-            &item,
+            &EligibilityContext {
+                item: &item,
+                policy: &policy,
+                mode: request.mode,
+                evaluator: Some(&evaluator_session),
+                parent: request.parent_session.as_ref(),
+            },
             request,
             &evaluator_session,
             holder.as_ref(),
@@ -320,8 +328,13 @@ impl SqliteStore {
                 .and_then(|basis| basis.workspace_id.as_ref()),
         ) && workspace != &root.event.workspace_id
         {
-            return Err(refused(
+            return Err(admission::root_refusal(
                 item.work_id,
+                root,
+                cut,
+                EvaluationRootMismatch::DeclaredWorkspaceMismatch,
+                request.source_basis.as_ref(),
+                None,
                 "the evaluation declares a workspace other than the claim's named source root",
             ));
         }
@@ -376,6 +389,7 @@ impl SqliteStore {
             named_root.as_ref(),
             judged.as_ref(),
             item.work_id,
+            request.source_basis.as_ref(),
         )?;
         if let Some(stale) = stale_bound_citation(
             &transaction,
@@ -386,15 +400,36 @@ impl SqliteStore {
             passing_citations(&verdicts),
             named_root.as_ref(),
         )? {
-            return Err(refused(
+            let context = CitationContext {
+                item: &item,
+                run_id,
+                cut,
+                criterion: stale.criterion,
+                citation: stale.citation.as_str(),
+                position: citation_position(&transaction, run_id, &stale.citation)?,
+            };
+            let mut cause = context.cause(match &stale.cause {
+                StaleCause::OtherSource(_) => EvaluationCitationMismatch::WrongSource,
+                StaleCause::MovedAfter { .. } => EvaluationCitationMismatch::SourceMovedAfterCheck,
+                StaleCause::Unverifiable => EvaluationCitationMismatch::UnverifiableSource,
+            });
+            cause.checked_revision = match &stale.cause {
+                StaleCause::OtherSource(basis) => Some(basis.source_revision.clone()),
+                StaleCause::MovedAfter { checked, .. } => Some(checked.clone()),
+                StaleCause::Unverifiable => None,
+            };
+            cause.judged_revision = judged.as_ref().map(|source| source.revision.clone());
+            cause.producer_observation.clone_from(&stale.producer);
+            return Err(admission::refusal(
                 item.work_id,
                 stale.refusal(&item, judged.as_ref(), cut)?,
+                AcceptanceEvaluationAdmissionCause::Citation(Box::new(cause)),
             ));
         }
         // Last, after every structural and basis refusal, which are the more
         // specific answers: a same-session record needs an eligible mark, or
         // no other admitted mode.
-        if let Some(reason) = same_session_ineligibility(
+        if let Some(failure) = same_session_ineligibility(
             &transaction,
             &item,
             &policy,
@@ -406,7 +441,14 @@ impl SqliteStore {
                 history: &history,
             },
         )? {
-            return Err(refused(item.work_id, reason));
+            return Err(EligibilityContext {
+                item: &item,
+                policy: &policy,
+                mode: request.mode,
+                evaluator: Some(&evaluator_session),
+                parent: request.parent_session.as_ref(),
+            }
+            .refused(failure.mismatch, failure.reason, failure.mark_author));
         }
         // And a blocking evaluation stands until something that could change
         // it lies within this one's basis.
@@ -988,15 +1030,23 @@ fn admit_mode(
     policy: &AcceptanceEvaluationPolicy,
     mode: AcceptanceEvaluationMode,
 ) -> Result<(), StoreError> {
+    let context = EligibilityContext {
+        item,
+        policy,
+        mode,
+        evaluator: None,
+        parent: None,
+    };
     if policy.is_self_asserted() {
-        return Err(refused(
-            item.work_id,
+        return Err(context.refused(
+            EvaluationEligibilityMismatch::EvaluationDisabled,
             "the project policy does not enable acceptance evaluation; completion stays self-asserted",
+            None,
         ));
     }
     match assess_mode_policy(item, policy, mode) {
-        Err(ModePolicyMismatch::DisallowedMode) => Err(refused(
-            item.work_id,
+        Err(ModePolicyMismatch::DisallowedMode) => Err(context.refused(
+            EvaluationEligibilityMismatch::ModeDisallowed,
             format!(
                 "mode {} is not allowed by the project policy; allowed: {}",
                 mode.word(),
@@ -1007,13 +1057,15 @@ fn admit_mode(
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            None,
         )),
-        Err(ModePolicyMismatch::SelectedPinMismatch(selected)) => Err(refused(
-            item.work_id,
+        Err(ModePolicyMismatch::SelectedPinMismatch(selected)) => Err(context.refused(
+            EvaluationEligibilityMismatch::TaskPinMismatch,
             format!(
                 "this task is marked for mode {}; evaluate in that mode",
                 selected.word()
             ),
+            None,
         )),
         Ok(()) => Ok(()),
     }
@@ -1182,34 +1234,48 @@ fn same_session_ineligibility(
     policy: &AcceptanceEvaluationPolicy,
     mode: AcceptanceEvaluationMode,
     standing: &SessionStanding<'_>,
-) -> Result<Option<String>, StoreError> {
+) -> Result<Option<SameSessionRefusal>, StoreError> {
     if mode == AcceptanceEvaluationMode::SubAgent {
         return Ok(standing
             .evaluator
             .is_some_and(|evaluator| standing.holds_or_held(evaluator))
-            .then(|| {
-                format!(
+            .then(|| SameSessionRefusal {
+                reason: format!(
                     "a sub_agent evaluation must be recorded from a distinct child session with a holder or executor as its parent; this one comes from a session that holds, executes or held the run, which makes it the executor's own evaluation: {}",
                     host_evaluation_words(policy)
                         .unwrap_or("record it from the sub-agent's own session")
-                )
+                ),
+                mismatch: EvaluationEligibilityMismatch::SubAgentEvaluatorAffiliated,
+                mark_author: None,
             }));
     }
     if mode != AcceptanceEvaluationMode::SameSession {
         return Ok(None);
     }
     Ok(match item.evaluation_mode {
-        None if !policy.admits_only_same_session() => Some(unmarked_same_session(policy)),
+        None if !policy.admits_only_same_session() => Some(SameSessionRefusal {
+            reason: unmarked_same_session(policy),
+            mismatch: EvaluationEligibilityMismatch::SameSessionUnmarked,
+            mark_author: None,
+        }),
         Some(AcceptanceEvaluationMode::SameSession) => {
             match same_session_mark_author(connection, item)? {
-                None => Some(ineligible_mark(
-                    policy,
-                    "has no author recorded on this item (it was restored, or carried over by a detach)",
-                )),
-                Some(author) if standing.includes(&author) => Some(ineligible_mark(
-                    policy,
-                    "was set by a session that evaluates, holds or executes its run",
-                )),
+                None => Some(SameSessionRefusal {
+                    reason: ineligible_mark(
+                        policy,
+                        "has no author recorded on this item (it was restored, or carried over by a detach)",
+                    ),
+                    mismatch: EvaluationEligibilityMismatch::MarkAuthorUnrecorded,
+                    mark_author: None,
+                }),
+                Some(author) if standing.includes(&author) => Some(SameSessionRefusal {
+                    reason: ineligible_mark(
+                        policy,
+                        "was set by a session that evaluates, holds or executes its run",
+                    ),
+                    mismatch: EvaluationEligibilityMismatch::MarkAuthorAffiliated,
+                    mark_author: Some(author),
+                }),
                 Some(_) => None,
             }
         }
@@ -1218,20 +1284,22 @@ fn same_session_ineligibility(
 }
 
 fn admit_identity(
-    item: &WorkItem,
+    context: &EligibilityContext<'_>,
     request: &RecordAcceptanceEvaluationRequest,
     evaluator_session: &SessionId,
     holder: Option<&SessionId>,
     executor: Option<&SessionId>,
     history: &[SessionId],
 ) -> Result<(), StoreError> {
+    let item = context.item;
     let executing = |session: &SessionId| holder == Some(session) || executor == Some(session);
     match request.mode {
         AcceptanceEvaluationMode::SameSession => {
             if !executing(evaluator_session) {
-                return Err(refused(
-                    item.work_id,
+                return Err(context.refused(
+                    EvaluationEligibilityMismatch::SameSessionNotExecuting,
                     "same_session evaluation must come from the session that holds or executes the run",
+                    None,
                 ));
             }
         }
@@ -1243,9 +1311,10 @@ fn admit_identity(
                 )
             })?;
             if !executing(parent) {
-                return Err(refused(
-                    item.work_id,
+                return Err(context.refused(
+                    EvaluationEligibilityMismatch::SubAgentParentNotExecuting,
                     "sub_agent parent session must hold or execute the run",
+                    None,
                 ));
             }
         }
@@ -1257,9 +1326,10 @@ fn admit_identity(
                 history,
             };
             if !standing.evaluator_is_independent() {
-                return Err(refused(
-                    item.work_id,
+                return Err(context.refused(
+                    EvaluationEligibilityMismatch::IndependentEvaluatorAffiliated,
                     "independent_session evaluation must come from a session that neither holds nor executes the run, now or at any earlier point of this run",
+                    None,
                 ));
             }
         }
@@ -1309,8 +1379,8 @@ fn bind_verdicts(
             && input.verdict == AcceptanceVerdict::Pass
             && input.basis != AcceptanceBasis::Observed
         {
-            return Err(refused(
-                item.work_id,
+            return Err(CitationContext { item, run_id, cut, criterion: index + 1, citation: input.evidence.first().map_or("", ObjectId::as_str), position: None }.refused(
+                EvaluationCitationMismatch::ObservedBasisRequired,
                 format!(
                     "criterion {} is bound to {} verification: a pass needs an observed basis citing host-minted verification evidence of that kind with a passed result, never judgment or an asserted gate",
                     index + 1,
@@ -1322,20 +1392,29 @@ fn bind_verdicts(
         evidence.sort();
         evidence.dedup();
         for hash in &evidence {
+            let mut context = CitationContext {
+                item,
+                run_id,
+                cut,
+                criterion: index + 1,
+                citation: hash.as_str(),
+                position: None,
+            };
             let citation = classify_citation(connection, run_id, hash)?.ok_or_else(|| {
-                refused(
-                    item.work_id,
+                context.refused(
+                    EvaluationCitationMismatch::NotOnRun,
                     format!(
                         "criterion {} cites {hash}, which is not evidence on this run",
                         index + 1
                     ),
                 )
             })?;
-            match citation_position(connection, run_id, hash)? {
+            context.position = citation_position(connection, run_id, hash)?;
+            match context.position {
                 Some(position) if position <= cut => {}
                 _ => {
-                    return Err(refused(
-                        item.work_id,
+                    return Err(context.refused(
+                        EvaluationCitationMismatch::BeyondCut,
                         format!(
                             "criterion {} cites {hash}, which lies beyond evidence basis {cut}; re-read show",
                             index + 1
@@ -1344,7 +1423,7 @@ fn bind_verdicts(
                 }
             }
             if input.verdict == AcceptanceVerdict::Pass {
-                admit_pass_citation(item.work_id, index + 1, input.basis, policy, &citation)?;
+                admit_pass_citation(&context, input.basis, policy, &citation)?;
                 if let Some(binding) = binding {
                     let matches = matches!(&citation, Citation::VerificationPassed { kind, check_fingerprint, .. }
                         if *kind == binding.requirement.check_kind
@@ -1354,8 +1433,8 @@ fn bind_verdicts(
                                 .as_ref()
                                 .is_none_or(|required| required == check_fingerprint));
                     if !matches {
-                        return Err(refused(
-                            item.work_id,
+                        return Err(context.refused(
+                            EvaluationCitationMismatch::BoundVerificationMismatch,
                             format!(
                                 "criterion {} is bound to {} verification; {hash} is not passed host-minted verification evidence of that kind",
                                 index + 1,
@@ -1378,17 +1457,17 @@ fn bind_verdicts(
 }
 
 fn admit_pass_citation(
-    work: WorkId,
-    position: usize,
+    context: &CitationContext<'_>,
     basis: AcceptanceBasis,
     policy: &AcceptanceEvaluationPolicy,
     citation: &Citation,
 ) -> Result<(), StoreError> {
+    let position = context.criterion;
     match basis {
         AcceptanceBasis::Observed => match citation {
             Citation::VerificationPassed { .. } => Ok(()),
-            _ => Err(refused(
-                work,
+            _ => Err(context.refused(
+                EvaluationCitationMismatch::PassedVerificationRequired,
                 format!(
                     "criterion {position}: an observed pass requires host-minted verification evidence with a passed result"
                 ),
@@ -1396,8 +1475,8 @@ fn admit_pass_citation(
         },
         AcceptanceBasis::Asserted => {
             if policy.mechanical_basis == MechanicalBasis::Observed {
-                return Err(refused(
-                    work,
+                return Err(context.refused(
+                    EvaluationCitationMismatch::ObservedPolicyRequired,
                     format!(
                         "criterion {position}: the project policy requires observed check evidence for a mechanical pass; agent gate records are not observed builds"
                     ),
@@ -1405,8 +1484,8 @@ fn admit_pass_citation(
             }
             match citation {
                 Citation::Gate { passed: true, .. } => Ok(()),
-                _ => Err(refused(
-                    work,
+                _ => Err(context.refused(
+                    EvaluationCitationMismatch::PassingGateRequired,
                     format!(
                         "criterion {position}: an asserted pass requires a gate record with no failure labels"
                     ),
@@ -1415,7 +1494,7 @@ fn admit_pass_citation(
         }
         AcceptanceBasis::Judgment => Ok(()),
         AcceptanceBasis::HumanRequired => Err(refused(
-            work,
+            context.item.work_id,
             format!("criterion {position} cannot pass on a human_required basis"),
         )),
     }
@@ -2221,6 +2300,7 @@ fn require_named_root_judged_source(
     root: Option<&NamedEvaluationRoot>,
     judged: Option<&JudgedSource>,
     work_id: WorkId,
+    declaration: Option<&crate::domain::AcceptanceSourceBasis>,
 ) -> Result<(), StoreError> {
     let Some(root) = root else {
         return Ok(());
@@ -2228,14 +2308,24 @@ fn require_named_root_judged_source(
     // A root the host has not yet sighted anchors no evaluation: its first
     // sighting could show any source.
     let Some(latest) = revision_seen_through(connection, run_id, through, Some(root))? else {
-        return Err(refused(
+        return Err(admission::root_refusal(
             work_id,
+            root,
+            through,
+            EvaluationRootMismatch::NoInitialSighting,
+            declaration,
+            None,
             "the named root has no sighting yet; capture that root, then evaluate it",
         ));
     };
     let Some(judged) = judged else {
-        return Err(refused(
+        return Err(admission::root_refusal(
             work_id,
+            root,
+            through,
+            EvaluationRootMismatch::JudgedSourceMismatch,
+            declaration,
+            Some(latest),
             "the evaluated source does not match the named root's newest sighting; capture and evaluate that root",
         ));
     };
@@ -2245,8 +2335,13 @@ fn require_named_root_judged_source(
     {
         return Ok(());
     }
-    Err(refused(
+    Err(admission::root_refusal(
         work_id,
+        root,
+        through,
+        EvaluationRootMismatch::JudgedSourceMismatch,
+        declaration,
+        Some(latest),
         "the evaluated source does not match the named root's newest sighting; capture and evaluate that root",
     ))
 }
@@ -2298,6 +2393,7 @@ struct StaleCitation {
     criterion: usize,
     citation: ObjectId,
     cause: StaleCause,
+    producer: Option<ObjectId>,
 }
 
 enum StaleCause {
@@ -2411,6 +2507,7 @@ fn stale_bound_citation<'a>(
             continue;
         }
         for citation in citations {
+            let mut producer_observation = None;
             let cause = match classify_citation(connection, run_id, citation)? {
                 Some(Citation::VerificationPassed {
                     source_basis,
@@ -2421,6 +2518,7 @@ fn stale_bound_citation<'a>(
                     // that produced it must be in the root's workspace and
                     // generation, and both must follow the binding on the run
                     // feed, as the obligation matcher requires.
+                    producer_observation = Some(producer.clone());
                     let same_named_root = match root {
                         None => true,
                         Some(root) => {
@@ -2471,6 +2569,7 @@ fn stale_bound_citation<'a>(
                 criterion,
                 citation: citation.clone(),
                 cause,
+                producer: producer_observation,
             }));
         }
     }
@@ -2839,6 +2938,12 @@ pub(super) fn blocking_cause(
     })
 }
 
+mod admission;
+use crate::domain::{
+    AcceptanceEvaluationAdmissionCause, EvaluationCitationMismatch, EvaluationEligibilityMismatch,
+    EvaluationRootMismatch,
+};
+use admission::{CitationContext, EligibilityContext, SameSessionRefusal};
 mod history;
 pub(crate) use history::AssessedAcceptanceEvaluation;
 mod reroll;
@@ -2846,3 +2951,6 @@ mod same_turn;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) use tests::{AdmissionTransportFixture, admission_transport_fixture};

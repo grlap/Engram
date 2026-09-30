@@ -2705,3 +2705,130 @@ test("work-bound control records observations and rebinds after a stale fence", 
     }
   }
 });
+
+
+test("evaluation admission causes survive the native CLI and host-recorded evidence", async (t) => {
+  const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
+  assert.equal(built.status, 0, built.stderr);
+  for (const caseName of ["eligibility", "source_root", "wrong_run", "beyond_cut", "wrong_source"]) {
+    const engramHome = fixtureHome(`engram-admission-${caseName.replaceAll("_", "-")}-`, t);
+    const clients = [];
+    const actor = `admission-${caseName}`;
+    const word = (session, ...args) => spawnSync(binary,
+      ["--home", engramHome, "work", "--actor-id", session, "--session-id", session, ...args],
+      { cwd: root, encoding: "utf8" });
+    const jsonWord = (session, ...args) => {
+      const result = word(session, ...args, "--json");
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    try {
+      const init = spawnSync(binary, ["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
+      assert.equal(init.status, 0, init.stderr);
+      const policy = spawnSync(binary, ["--home", engramHome, "control-policy", "set-acceptance-evaluation",
+        "--modes", caseName === "eligibility" ? "same-session,independent-session" : "same-session",
+        "--mechanical-basis", "observed", "--authorized-by", "operator", "--idempotency-key", "admission-policy"],
+      { cwd: root, encoding: "utf8" });
+      assert.equal(policy.status, 0, policy.stderr);
+      const bound = ["wrong_run", "beyond_cut", "wrong_source"].includes(caseName);
+      const create = (session, title) => {
+        const added = jsonWord(session, "add", title, "--accept", "the check supports the outcome",
+          ...(bound ? ["--bind", "1=test"] : []));
+        jsonWord(session, "claim", added.work.short_ref);
+        return added.work.short_ref;
+      };
+      const ref = create(actor, "Inspect typed admission");
+      const attachHost = async (session, targetRef) => {
+        const binding = cliWorkFocus(engramHome, session, targetRef).control_binding;
+        const client = new ControlClient(engramHome, session);
+        clients.push(client);
+        const control = ok(await client.request({ operation: "session_bind", external_ref: `local-work:${session}`,
+          title: "Admission check host", assurance: "turn_gated", mediated_effects: ["observe", "mutate_local"],
+          work_binding: binding, capability_map_revision: 1, idempotency_key: "admission-host" }));
+        let turn = 0;
+        const checkpoint = async (revision, check) => {
+          const key = `admission-turn-${++turn}`;
+          const effects = revision ? ["mutate_local"] : ["observe"];
+          const granted = ok(await client.request({ operation: "turn_evaluate", routing_token: control.routing_token,
+            idempotency_key: key, intent_fingerprint: fingerprint(key), purpose: "ordinary", requested_effects: effects,
+            ...(revision ? { resource_intents: [libraryFile] } : {}) }));
+          assert.equal(granted.decision, "grant", JSON.stringify(granted));
+          assert.equal(ok(await client.request({ operation: "turn_begin", routing_token: control.routing_token,
+            grant_id: granted.grant.grant_id, delivery_tokens: [], idempotency_key: `begin-${key}` })).decision, "begin");
+          const source = { workspace_id: "admission-workspace", source_revision: revision };
+          const time = new Date().toISOString();
+          const components = { toolchain: "admission-check", sandbox: "admission-test", workspace_id: source.workspace_id,
+            capability_map_revision: 1 };
+          return ok(await client.request({ operation: "turn_checkpoint", routing_token: control.routing_token,
+            grant_id: granted.grant.grant_id, next_intent: "continue", idempotency_key: `checkpoint-${key}`,
+            ...(revision ? { observations: [{ observation_id: key, action_fingerprint: fingerprint(key), effect: "mutate_local",
+              outcome: "succeeded", source_changed: true, source_basis: source, observed_at: time }] } : {}),
+            ...(check ? {
+              verification_evidence: [{ producer_observation: { kind: "observation_id", observation_id: key }, check_kind: "test",
+                environment: { kind: "index", index: 0 }, summary: "passed host check", refs: ["command:admission-check"] }],
+              environment_evidence: [{ source_basis: source, environment_fingerprint: canonicalFingerprint(components),
+                components, observed_at: time }],
+            } : {}),
+          }));
+        };
+        await checkpoint(null, false);
+        return { client, control, binding, checkpoint };
+      };
+      let citation;
+      let beforeCheck;
+      if (!bound) {
+        jsonWord(actor, "gate", "admission-note", "--work-ref", ref);
+        citation = jsonWord(actor, "show", ref, "--notes", "--gates").notes
+          .find((row) => String(row.family).toLowerCase() === "gates").locator;
+      }
+      if (caseName === "source_root") {
+        const host = await attachHost(actor, ref);
+        ok(await host.client.request({ operation: "named_root_bind", routing_token: host.control.routing_token,
+          claim_id: host.binding.claim_id, claim_fence: host.binding.claim_fence, workspace_id: "C:/database is locked",
+          generation: 1, named_at: new Date().toISOString(), kind: "bound", idempotency_key: "named-admission-root" }));
+      }
+      if (caseName === "wrong_run") {
+        const other = "foreign-admission-runner";
+        const otherRef = create(other, "Evidence belongs to another run");
+        const host = await attachHost(other, otherRef);
+        citation = (await host.checkpoint("admission-R", true)).receipt.verification_evidence[0];
+      }
+      if (caseName === "beyond_cut" || caseName === "wrong_source") {
+        const host = await attachHost(actor, ref);
+        beforeCheck = jsonWord(actor, "show", ref).evidence_basis;
+        citation = (await host.checkpoint("admission-R", true)).receipt.verification_evidence[0];
+        if (caseName === "wrong_source") await host.checkpoint("admission-S", false);
+      }
+      const shown = jsonWord(actor, "show", ref);
+      const cut = caseName === "beyond_cut" ? beforeCheck : shown.evidence_basis;
+      const revision = caseName === "wrong_source" ? "admission-S" : "admission-R";
+      const result = word(actor, "evaluate", ref, "--mode", "same-session", "--acceptance-basis", String(shown.acceptance_basis),
+        "--evidence-basis", String(cut), "--verdict", `1=pass:${bound ? "observed" : "judgment"}`,
+        "--rationale", "1=judge the supplied evidence", "--evidence", `1=${citation}`,
+        ...(caseName === "eligibility" || caseName === "wrong_run" ? [] : ["--source-fingerprint", revision]), "--json");
+      assert.equal(result.status, 1, `${caseName}: ${result.stderr}`);
+      const error = JSON.parse(result.stderr).error;
+      assert.equal(error.code, "acceptance_evaluation_refused");
+      const cause = error.details.cause;
+      assert.equal(cause.kind, bound ? "citation" : caseName);
+      assert.equal(cause.mismatch, ({ eligibility: "same_session_unmarked", source_root: "no_initial_sighting",
+        wrong_run: "not_on_run", beyond_cut: "beyond_cut", wrong_source: "wrong_source" })[caseName]);
+      assert.equal(typeof error.details.remedy, "string");
+      assert.ok(error.reminders.includes(error.details.remedy));
+      assert.ok(error.next.some((command) => command.includes(ref)));
+      if (caseName === "source_root") {
+        assert.equal(cause.workspace_id, "C:/database is locked");
+        assert.equal(cause.declared_revision, revision);
+        assert.doesNotMatch(result.stderr.toLowerCase(), /database is locked/u);
+      }
+      if (bound) {
+        assert.equal(cause.citation, citation);
+        assert.equal(cause.evaluated_cut, cut);
+        assert.equal(cause.requirement.check_kind, "test");
+      }
+    } finally {
+      for (const client of clients) await client.close();
+      removeFixtureHomes(engramHome);
+    }
+  }
+});

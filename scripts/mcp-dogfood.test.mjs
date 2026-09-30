@@ -3458,6 +3458,31 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     const base = { work_ref: ref, mode: "same_session", acceptance_basis: shown.acceptance_basis, evidence_basis: shown.evidence_basis };
     const refused = structuredError(await client.call("evaluate", { ...base, verdicts: verdicts([observation.locator]) }), "acceptance_evaluation_refused");
     assert.match(JSON.stringify(refused), /observation/);
+    assert.equal(refused.details.cause.kind, "citation");
+    assert.equal(refused.details.cause.mismatch, "not_on_run");
+    assert.equal(refused.details.cause.citation, observation.locator);
+    assert.equal(refused.details.cause.evaluated_cut, base.evidence_basis);
+    assert.equal(refused.details.cause.remedy, "read_run_evidence");
+    assert.ok(refused.next.some((command) => command.includes(ref)));
+    const pinned = structuredError(await client.call("evaluate", { ...base, mode: "independent_session", verdicts: verdicts([gate.locator]) }), "acceptance_evaluation_refused");
+    assert.equal(pinned.details.cause.kind, "eligibility");
+    assert.equal(pinned.details.cause.mismatch, "task_pin_mismatch");
+    assert.equal(pinned.details.cause.task_mark, "same_session");
+    const cliPinned = cliWord(engramHome, holder, "evaluate", ref,
+      "--mode", "independent-session", "--acceptance-basis", String(base.acceptance_basis),
+      "--evidence-basis", String(base.evidence_basis), "--verdict", "1=pass:asserted",
+      "--rationale", "1=the gate passed", "--evidence", `1=${gate.locator}`, "--json");
+    assert.equal(cliPinned.status, 1, cliPinned.stderr);
+    const pinError = JSON.parse(cliPinned.stderr).error;
+    assert.equal(pinError.code, pinned.code);
+    assert.equal(pinError.message, pinned.message);
+    assert.deepEqual(pinError.details, pinned.details);
+    const cliCitation = cliWord(engramHome, holder, "evaluate", ref,
+      "--mode", "same-session", "--acceptance-basis", String(base.acceptance_basis),
+      "--evidence-basis", String(base.evidence_basis), "--verdict", "1=pass:asserted",
+      "--rationale", "1=the gate passed", "--evidence", `1=${observation.locator}`, "--json");
+    assert.equal(cliCitation.status, 1, cliCitation.stderr);
+    assert.deepEqual(JSON.parse(cliCitation.stderr).error.details, refused.details);
     const evaluated = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
     assert.equal(evaluated.evaluation.passed, 1);
     assert.equal(evaluated.evaluation.verdicts_total, 1);

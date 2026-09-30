@@ -205,18 +205,31 @@ impl super::super::SqliteStore {
         locator: &str,
         index: &[super::record_windows::WorkRecordIndex],
     ) -> Result<ObjectId, StoreError> {
+        self.resolve_criterion_evidence_classified(project, work, run, locator, index)?
+            .map_err(|failure| StoreError::WorkCriterionLinkInvalid {
+                criterion: (criterion > 0).then_some(criterion),
+                reason: failure.reason,
+            })
+    }
+
+    pub(crate) fn resolve_criterion_evidence_classified(
+        &self,
+        project: &crate::ProjectId,
+        work: WorkId,
+        run: crate::WorkRunId,
+        locator: &str,
+        index: &[super::record_windows::WorkRecordIndex],
+    ) -> Result<Result<ObjectId, CriterionEvidenceRefusal>, StoreError> {
         use super::record_windows::WorkRecordFamily;
-        let refuse = |reason| StoreError::WorkCriterionLinkInvalid {
-            criterion: (criterion > 0).then_some(criterion),
-            reason,
-        };
+        let refuse = |reason, not_on_run| CriterionEvidenceRefusal { reason, not_on_run };
         let (prefix, member) = locator
             .split_once(':')
             .map_or((locator, None), |(p, m)| (p, Some(m)));
         if !(8..=64).contains(&prefix.len()) || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(refuse(
+            return Ok(Err(refuse(
                 "use a note/gate locator of at least eight hex digits; an artifact path or URL is not the recorded evidence identity",
-            ));
+                false,
+            )));
         }
         let prefix = prefix.to_ascii_lowercase();
         let matches: Vec<_> = index
@@ -231,9 +244,10 @@ impl super::super::SqliteStore {
             })
             .collect();
         if matches.len() > 1 {
-            return Err(refuse(
+            return Ok(Err(refuse(
                 "note locator is ambiguous; use the complete locator from show --notes --gates",
-            ));
+                false,
+            )));
         }
         let Some(row) = matches.first() else {
             let kind: Option<String> = self.connection.query_row(
@@ -242,29 +256,34 @@ impl super::super::SqliteStore {
                  WHERE run.work_id = ?1 AND entry.object_id LIKE ?2 LIMIT 1",
                 params![work.0.to_string(), format!("{prefix}%")], |row| row.get(0),
             ).optional()?;
-            return Err(refuse(match kind.as_deref() {
-                Some("work_checkpoint") => {
-                    "this is a checkpoint, not its note evidence; use the note locator from show --notes --gates"
-                }
-                Some("work_event") => {
-                    "this is a history event, not note/gate evidence; use show --notes --gates"
-                }
-                _ => {
-                    "locator is not a note/gate on this item; use this item's show --notes --gates locators"
-                }
-            }));
+            return Ok(Err(refuse(
+                match kind.as_deref() {
+                    Some("work_checkpoint") => {
+                        "this is a checkpoint, not its note evidence; use the note locator from show --notes --gates"
+                    }
+                    Some("work_event") => {
+                        "this is a history event, not note/gate evidence; use show --notes --gates"
+                    }
+                    _ => {
+                        "locator is not a note/gate on this item; use this item's show --notes --gates locators"
+                    }
+                },
+                !matches!(kind.as_deref(), Some("work_checkpoint" | "work_event")),
+            )));
         };
         // Validate canonical content even for a refusal classification.
         self.work_record_content(project, work, row)?;
         if row.address.member.is_some() {
-            return Err(refuse(
+            return Ok(Err(refuse(
                 "this is an inherited record member, not current-run evidence; choose an existing current-run holder note or gate",
-            ));
+                true,
+            )));
         }
         if row.record_family == WorkRecordFamily::Observations {
-            return Err(refuse(
+            return Ok(Err(refuse(
                 "this is a non-holder or pre-claim observation, not run evidence; choose an existing current-run holder note or gate",
-            ));
+                true,
+            )));
         }
         let (current_run, any_run): (bool, bool) = self
             .connection
@@ -275,13 +294,15 @@ impl super::super::SqliteStore {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
         match (current_run, any_run) {
-            (true, _) => Ok(row.address.hash.clone()),
-            (false, true) => Err(refuse(
+            (true, _) => Ok(Ok(row.address.hash.clone())),
+            (false, true) => Ok(Err(refuse(
                 "this evidence belongs to an earlier run, not the current completion; choose a current-run note or gate",
-            )),
-            (false, false) => Err(refuse(
+                true,
+            ))),
+            (false, false) => Ok(Err(refuse(
                 "this is restored evidence, not current-run evidence; choose an existing current-run holder note or gate",
-            )),
+                true,
+            ))),
         }
     }
 
@@ -319,4 +340,10 @@ impl super::super::SqliteStore {
             )
         })))
     }
+}
+
+/// A resolver decision, separate from failures reading the store.
+pub(crate) struct CriterionEvidenceRefusal {
+    pub reason: &'static str,
+    pub not_on_run: bool,
 }

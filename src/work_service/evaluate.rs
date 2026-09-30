@@ -109,24 +109,52 @@ impl LocalWorkService {
             {
                 return Ok(record_id);
             }
-            store
-                .resolve_criterion_evidence(
-                    &self.project_id,
-                    work.work_id,
-                    run_id,
-                    criterion,
-                    value,
-                    &index,
-                )
-                .map_err(|error| match error {
-                    StoreError::WorkCriterionLinkInvalid { reason, .. } => {
-                        StoreError::AcceptanceEvaluationRefused {
+            match store.resolve_criterion_evidence_classified(
+                &self.project_id,
+                work.work_id,
+                run_id,
+                value,
+                &index,
+            )? {
+                Ok(record) => Ok(record),
+                Err(failure) => {
+                    let reason = format!("criterion {criterion} cites {value}: {}", failure.reason);
+                    if failure.not_on_run {
+                        use crate::domain::{
+                            AcceptanceEvaluationAdmissionCause, CitationAdmissionCause,
+                            EvaluationAdmissionRemedy, EvaluationCitationMismatch,
+                        };
+                        Err(StoreError::AcceptanceEvaluationAdmissionRefused {
                             work: work.work_id,
-                            reason: format!("criterion {criterion} cites {value}: {reason}"),
-                        }
+                            reason,
+                            cause: Box::new(AcceptanceEvaluationAdmissionCause::Citation(
+                                Box::new(CitationAdmissionCause {
+                                    mismatch: EvaluationCitationMismatch::NotOnRun,
+                                    criterion,
+                                    citation: value.into(),
+                                    run_id,
+                                    evaluated_cut: input.evidence_basis,
+                                    citation_position: None,
+                                    requirement: work
+                                        .acceptance_bindings
+                                        .iter()
+                                        .find(|binding| binding.criterion == criterion)
+                                        .map(|binding| binding.requirement.clone()),
+                                    checked_revision: None,
+                                    judged_revision: None,
+                                    producer_observation: None,
+                                    remedy: EvaluationAdmissionRemedy::ReadRunEvidence,
+                                }),
+                            )),
+                        })
+                    } else {
+                        Err(StoreError::AcceptanceEvaluationRefused {
+                            work: work.work_id,
+                            reason,
+                        })
                     }
-                    other => other,
-                })
+                }
+            }
         };
         let verdicts = input
             .verdicts

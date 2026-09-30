@@ -145,7 +145,7 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
         )
         .expect_err("the self-asserted policy refuses evaluations");
     assert!(
-        matches!(&self_asserted, StoreError::AcceptanceEvaluationRefused { reason, .. } if reason.contains("does not enable")),
+        matches!(&self_asserted, StoreError::AcceptanceEvaluationAdmissionRefused { reason, .. } if reason.contains("does not enable")),
         "{self_asserted:?}"
     );
 

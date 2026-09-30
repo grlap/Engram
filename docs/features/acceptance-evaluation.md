@@ -650,6 +650,33 @@ with the spaces of the locked-store phrase as `\u0020` escapes, so no field
 spells it and every field still decodes to what was recorded; MCP returns the
 structured values as recorded.
 
+Admission refusals for eligibility, named-root source and citation checks carry
+`AcceptanceEvaluationAdmissionCause` beside their unchanged reason text. CLI
+JSON and MCP use `acceptance_evaluation_refused`, with `details.cause` tagged
+by `kind`: `eligibility`, `source_root` or `citation`. The CLI still exits 1
+and MCP still returns an error. The host-private control transport retains
+`storage_error` for this refusal; it does not gain an evaluation operation.
+
+The deciding guard supplies a typed mismatch and remedy action. Eligibility
+context names the requested mode, current task mark and admitted modes,
+adding the asserted evaluator, parent or mark author only when available.
+Source-root context names the binding, workspace and evaluated cut, with
+reported and declared revisions only when available. A declaration with no
+initial root sighting reports `no_initial_sighting`; it asks the host to
+capture the root before evaluating and makes no prediction about a future
+sighting. Citation context names the criterion, submitted locator or record
+id, active run and evaluated cut, adding the citation position, bound check
+requirement, checked/judged revisions and producer when the deciding rule
+knows them. `not_on_run` makes no claim about evidence on another run.
+
+Words and JSON format navigation and `details.remedy` from the same typed
+context, without parsing the reason. The native CLI guards admission JSON on
+stderr against the locked-store phrase while preserving every decoded field.
+These causes are transient: no evaluation row, schema, admission predicate,
+refusal precedence or completion rule changes. Typed basis movement and
+carried-failure refusals retain their semantics. Re-roll and remaining
+structural admission refusals retain their existing separate paths.
+
 An item with no acceptance criteria has nothing an evaluation could judge, and
 the host refuses to evaluate it. So under an evaluated policy `done` refuses
 such an item before any recovery cause is built, with the error code

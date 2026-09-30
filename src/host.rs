@@ -590,6 +590,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkReleaseWaiverRequired { .. }
         | StoreError::WorkCompletionRefused { .. }
         | StoreError::WorkBoundVerificationRefused { .. }
+        | StoreError::AcceptanceEvaluationAdmissionRefused { .. }
         | StoreError::AcceptanceCriteriaRequired { .. }
         | StoreError::GraphDestinationNotEmpty
         | StoreError::GraphProjectMismatch { .. }
@@ -661,6 +662,25 @@ mod tests {
             .expect_err("removed operation must fail closed");
         assert!(error.contains("obligation_waive"));
         assert!(error.contains("unknown variant"));
+    }
+
+    #[test]
+    fn typed_evaluation_admission_preserves_host_private_error_code() {
+        let cause = serde_json::from_value(serde_json::json!({
+            "kind": "eligibility",
+            "mismatch": "mode_disallowed",
+            "requested_mode": "same_session",
+            "task_mark": null,
+            "admitted_modes": ["independent_session"],
+            "remedy": "request_eligible_evaluation",
+        }))
+        .expect("typed admission cause");
+        let error = StoreError::AcceptanceEvaluationAdmissionRefused {
+            work: crate::domain::WorkId::new(),
+            reason: "unchanged admission reason".into(),
+            cause: Box::new(cause),
+        };
+        assert_eq!(store_error_code(&error), "storage_error");
     }
 
     #[test]

@@ -1,6 +1,8 @@
 //! Boundary-matrix coverage for host-evaluated, core-enforced acceptance.
 //! Each test names the rows of the agreed matrix it exercises.
 
+mod admission;
+pub(crate) use admission::{AdmissionTransportFixture, admission_transport_fixture};
 mod basis_moves;
 mod bound_criteria;
 mod carried_failure;
@@ -158,6 +160,7 @@ fn refusal(result: Result<AcceptanceEvaluationReceipt, StoreError>) -> String {
     match result {
         Err(
             StoreError::AcceptanceEvaluationRefused { reason, .. }
+            | StoreError::AcceptanceEvaluationAdmissionRefused { reason, .. }
             | StoreError::AcceptanceEvaluationBasisMoved { reason, .. },
         ) => reason,
         other => panic!("expected an acceptance evaluation refusal, got {other:?}"),

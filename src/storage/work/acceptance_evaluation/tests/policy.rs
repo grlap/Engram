@@ -96,7 +96,7 @@ fn mode_and_pin_matrix_preserves_admission_and_freshness() {
                     // completion instead uses the self-asserted route.
                     assert!(
                         matches!(admission,
-                            Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
+                            Err(StoreError::AcceptanceEvaluationAdmissionRefused { reason, .. })
                                 if reason == "the project policy does not enable acceptance evaluation; completion stays self-asserted"
                         ),
                         "{cell}"
@@ -106,14 +106,14 @@ fn mode_and_pin_matrix_preserves_admission_and_freshness() {
                         Ok(()) => assert!(admission.is_ok(), "{cell}: {admission:?}"),
                         Err(ModePolicyMismatch::DisallowedMode) => assert!(
                             matches!(admission,
-                                Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
+                                Err(StoreError::AcceptanceEvaluationAdmissionRefused { reason, .. })
                                     if reason.starts_with(&format!("mode {} is not allowed by the project policy; allowed: ", mode.word()))
                             ),
                             "{cell}"
                         ),
                         Err(ModePolicyMismatch::SelectedPinMismatch(selected)) => assert!(
                             matches!(admission,
-                                Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
+                                Err(StoreError::AcceptanceEvaluationAdmissionRefused { reason, .. })
                                     if reason == format!("this task is marked for mode {}; evaluate in that mode", selected.word())
                             ),
                             "{cell}"

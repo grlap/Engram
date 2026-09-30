@@ -179,7 +179,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
     assert!(
         matches!(
             refused.error,
-            StoreError::AcceptanceEvaluationRefused { .. }
+            StoreError::AcceptanceEvaluationAdmissionRefused { .. }
         ),
         "{refused:?}"
     );

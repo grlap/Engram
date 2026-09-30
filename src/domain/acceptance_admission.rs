@@ -1,0 +1,118 @@
+//! Transient, core-decided evaluation admission failures; never stored verdicts.
+
+use serde::{Deserialize, Serialize};
+
+use super::{AcceptanceEvaluationMode, SessionId, VerificationRequirement, WorkRunId};
+use crate::ObjectId;
+
+/// Action selected by the deciding admission rule, not inferred from its prose.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluationAdmissionRemedy {
+    UseSelfAssertedCompletion,
+    RequestEligibleEvaluation,
+    InspectEvaluatorBinding,
+    CaptureRootAndEvaluate,
+    EvaluateNamedRoot,
+    ReadRunEvidence,
+    ReadCurrentCut,
+    RunCurrentCheckAndEvaluate,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluationEligibilityMismatch {
+    EvaluationDisabled,
+    ModeDisallowed,
+    TaskPinMismatch,
+    SameSessionNotExecuting,
+    SubAgentParentNotExecuting,
+    IndependentEvaluatorAffiliated,
+    SubAgentEvaluatorAffiliated,
+    SameSessionUnmarked,
+    MarkAuthorUnrecorded,
+    MarkAuthorAffiliated,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluationRootMismatch {
+    NoInitialSighting,
+    DeclaredWorkspaceMismatch,
+    JudgedSourceMismatch,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvaluationCitationMismatch {
+    NotOnRun,
+    BeyondCut,
+    ObservedBasisRequired,
+    PassedVerificationRequired,
+    ObservedPolicyRequired,
+    PassingGateRequired,
+    BoundVerificationMismatch,
+    WrongSource,
+    SourceMovedAfterCheck,
+    UnverifiableSource,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct EligibilityAdmissionCause {
+    pub mismatch: EvaluationEligibilityMismatch,
+    pub requested_mode: AcceptanceEvaluationMode,
+    pub task_mark: Option<AcceptanceEvaluationMode>,
+    pub admitted_modes: Vec<AcceptanceEvaluationMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluator: Option<SessionId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SessionId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mark_author: Option<SessionId>,
+    pub remedy: EvaluationAdmissionRemedy,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SourceRootAdmissionCause {
+    pub mismatch: EvaluationRootMismatch,
+    pub root_binding: ObjectId,
+    pub workspace_id: String,
+    pub evaluated_cut: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_revision: Option<String>,
+    pub remedy: EvaluationAdmissionRemedy,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CitationAdmissionCause {
+    pub mismatch: EvaluationCitationMismatch,
+    pub criterion: usize,
+    /// Submitted locator or record id, not proof of evidence on another run.
+    pub citation: String,
+    pub run_id: WorkRunId,
+    pub evaluated_cut: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub citation_position: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requirement: Option<VerificationRequirement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub judged_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer_observation: Option<ObjectId>,
+    pub remedy: EvaluationAdmissionRemedy,
+}
+
+/// The family and its deciding context, beside unchanged human refusal text.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AcceptanceEvaluationAdmissionCause {
+    Eligibility(Box<EligibilityAdmissionCause>),
+    SourceRoot(Box<SourceRootAdmissionCause>),
+    Citation(Box<CitationAdmissionCause>),
+}
