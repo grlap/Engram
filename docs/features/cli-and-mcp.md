@@ -796,6 +796,15 @@ Rules that matter:
   `child_obligations_error_class`, and parent navigation retain the successful
   outcome without pretending the remaining count is zero. The diagnostic
   class never contains the underlying error body, path, record id, or actor text.
+- `done --landed … --installed-build FINGERPRINT` records the build installed
+  from the landing as the agent asserts it. Take the full value from the
+  installed executable itself: run `readiness --json` or `doctor --json` by its
+  path after copying it and copy `build_fingerprint`. `--version` shortens each
+  token, and a long-running MCP process reports the build it started with; a
+  shortened value is never completed by hand. `show` and `doctor
+  --check-landings` print it in full beside "asserted, unchecked", or "no
+  installed build recorded"; Engram never compares it with any build. See the
+  [landing record](local-work-system.md#completion-seal-and-report-assembly-claim).
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Ordinary mutation words never ask for fences or
   idempotency keys. Words accept record ids as inputs only for scoped evidence
@@ -1097,7 +1106,8 @@ engram doctor --repair-projections [--json]
 
 # On request only: check each landing the seals record against a local git
 # repository (default: the project file's directory). Reads local objects and
-# remote-tracking refs only; never fetches.
+# remote-tracking refs only; never fetches. Each landing's installed build is
+# printed apart from that answer, in full, as asserted and unchecked.
 engram doctor --check-landings [--repo PATH] [--json]
 
 # Host/operator boundary: activate a new immutable policy version. The

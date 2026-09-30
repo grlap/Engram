@@ -83,15 +83,23 @@ fn a_landing_named_at_done_is_sealed_and_shown() {
     let text = shown.text();
     assert!(
         text.contains(&format!(
-            "landing: {commit} on origin/master, pushed {}, installed build {}",
+            "landing: {commit} on origin/master, pushed {}, installed build {} (asserted, unchecked)",
             named.pushed_at.to_rfc3339(),
             named.installed_build.as_deref().unwrap()
         )),
         "{text}"
     );
+    let mut shown_landing = shown.value["landing"].clone();
     assert_eq!(
-        serde_json::from_value::<CompletionLanding>(shown.value["landing"].clone())
-            .expect("landing JSON"),
+        shown_landing["installed_build_assurance"],
+        "asserted, unchecked"
+    );
+    shown_landing
+        .as_object_mut()
+        .expect("landing object")
+        .remove("installed_build_assurance");
+    assert_eq!(
+        serde_json::from_value::<CompletionLanding>(shown_landing).expect("landing JSON"),
         named
     );
 
@@ -430,4 +438,72 @@ fn a_malformed_landing_is_refused_before_anything_is_recorded() {
     let shown = verbs.show(&work, at(3)).expect("show");
     assert_eq!(shown.value["status"]["work"]["lifecycle"], "open");
     done(&verbs, &work, Some(valid), 4).expect("a valid landing completes");
+}
+
+/// An installed build is the completing agent's word: read back in full and
+/// exactly as stored, beside "asserted, unchecked", whether it is a build's
+/// full fingerprint or one with the right prefix and a wrong remainder; an
+/// absent one reads "no installed build recorded". The words are derived
+/// when read: the stored seal holds only what the agent asserted.
+#[test]
+fn an_installed_build_reads_back_as_stored_and_as_asserted() {
+    let (_directory, verbs, path, _project) = fixture();
+    // A build fingerprint of this very executable, derived when the test runs.
+    let full = crate::build_identity::current()
+        .build_fingerprint
+        .as_ref()
+        .map_or_else(
+            || crate::ObjectId::from_canonical_bytes(b"unmeasured build"),
+            Clone::clone,
+        )
+        .as_str()
+        .to_owned();
+    // The same first twelve characters, then a remainder of another build.
+    let other = crate::ObjectId::from_canonical_bytes(format!("not {full}").as_bytes());
+    let wrong_remainder = format!("{}{}", &full[..12], &other.as_str()[12..]);
+    assert_ne!(wrong_remainder, full);
+    let cases = [
+        ("full", Some(full.clone())),
+        ("wrong remainder", Some(wrong_remainder)),
+        ("absent", None),
+    ];
+    for (index, (label, installed_build)) in cases.iter().enumerate() {
+        let now = i64::try_from(index).expect("small") * 10;
+        let work = add(&verbs, &format!("Land {label}"), None, false, now);
+        claim(&verbs, &work, now + 1);
+        let named = CompletionLanding {
+            installed_build: installed_build.clone(),
+            ..landing("0123456789abcdef0123456789abcdef01234567")
+        };
+        let receipt = done(&verbs, &work, Some(named.clone()), now + 2).expect(label);
+        let shown = verbs.show(&work, at(now + 3)).expect("show");
+        for value in [&receipt.value["landing"], &shown.value["landing"]] {
+            if let Some(build) = installed_build {
+                assert_eq!(value["installed_build"], build.as_str(), "{label}");
+                assert_eq!(
+                    value["installed_build_assurance"], "asserted, unchecked",
+                    "{label}"
+                );
+            } else {
+                assert!(value.get("installed_build").is_none(), "{label}: {value}");
+                assert_eq!(
+                    value["installed_build_assurance"], "no installed build recorded",
+                    "{label}"
+                );
+            }
+        }
+        let text = shown.text();
+        let expected = installed_build.as_deref().map_or_else(
+            || ", no installed build recorded".to_owned(),
+            |build| format!(", installed build {build} (asserted, unchecked)"),
+        );
+        assert!(text.contains(&expected), "{label}: {text}");
+    }
+    // The seals hold the landings as asserted, and no derived words.
+    for seal in stored_seals(&path) {
+        assert!(
+            seal["landing"].get("installed_build_assurance").is_none(),
+            "{seal}"
+        );
+    }
 }

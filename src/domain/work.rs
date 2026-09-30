@@ -1051,7 +1051,26 @@ pub struct CompletionLanding {
     pub installed_build: Option<String>,
 }
 
+/// How a landing's installed build reads: the completing agent's assertion,
+/// which Engram records as stated and never compares with any build.
+pub const INSTALLED_BUILD_ASSERTED: &str = "asserted, unchecked";
+
+/// How a landing that names no installed build reads.
+pub const NO_INSTALLED_BUILD_RECORDED: &str = "no installed build recorded";
+
 impl CompletionLanding {
+    /// What the landing's installed build is worth: asserted and unchecked
+    /// when one is recorded, or the words that say none was. Derived when
+    /// read, so every seal, old ones too, reads the same way.
+    #[must_use]
+    pub fn installed_build_assurance(&self) -> &'static str {
+        if self.installed_build.is_some() {
+            INSTALLED_BUILD_ASSERTED
+        } else {
+            NO_INSTALLED_BUILD_RECORDED
+        }
+    }
+
     /// Checks the landing's shape before anything is recorded.
     ///
     /// # Errors

@@ -508,12 +508,18 @@ pub(super) fn landing_line(
         return format!("landing: {NO_LANDING_RECORDED}");
     };
     // Every stored text passes the terminal text policy: a seal written
-    // around validation must not reach the terminal raw.
-    let installed = landing
-        .installed_build
-        .as_deref()
-        .map(|build| format!(", installed build {}", super::terminal_safe_line(build)))
-        .unwrap_or_default();
+    // around validation must not reach the terminal raw. The installed build
+    // is shown in full with what it is worth: the agent's word, unchecked.
+    let installed = landing.installed_build.as_deref().map_or_else(
+        || format!(", {}", crate::domain::NO_INSTALLED_BUILD_RECORDED),
+        |build| {
+            format!(
+                ", installed build {} ({})",
+                super::terminal_safe_line(build),
+                crate::domain::INSTALLED_BUILD_ASSERTED
+            )
+        },
+    );
     format!(
         "landing: {} on {}/{}, pushed {}{installed}",
         super::terminal_safe_line(&landing.commit),
@@ -523,8 +529,9 @@ pub(super) fn landing_line(
     )
 }
 
-/// The same landing as structured receipt data: the record, the words that
-/// say none was recorded, or why it could not be read.
+/// The same landing as structured receipt data: the record with what its
+/// installed build is worth, the words that say none was recorded, or why it
+/// could not be read.
 pub(super) fn landing_value(
     landing: Option<&crate::domain::CompletionLanding>,
     unavailable: Option<&str>,
@@ -534,7 +541,12 @@ pub(super) fn landing_value(
     }
     landing.map_or_else(
         || serde_json::Value::String(NO_LANDING_RECORDED.into()),
-        |landing| serde_json::json!(landing),
+        |landing| {
+            let mut value = serde_json::json!(landing);
+            value["installed_build_assurance"] =
+                serde_json::Value::String(landing.installed_build_assurance().into());
+            value
+        },
     )
 }
 

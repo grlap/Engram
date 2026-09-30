@@ -1305,6 +1305,7 @@ test("done records a typed landing on CLI and MCP, and show reads it back", asyn
         assert.equal(shown.landing.remote, "origin");
         assert.equal(shown.landing.branch, "master");
         assert.equal(shown.landing.installed_build, build);
+        assert.equal(shown.landing.installed_build_assurance, "asserted, unchecked");
         assertTerseShow(shown);
       }
       const text = cliWord(engramHome, session, "show", ref);
@@ -1353,11 +1354,12 @@ test("doctor checks recorded landings against a local repository only on request
     git("commit", "-q", "--allow-empty", "-m", "landed");
     const landed = git("rev-parse", "HEAD");
     git("update-ref", "refs/remotes/origin/master", landed);
-    const land = (title, commit) => {
+    const land = (title, commit, installedBuild) => {
       const ref = cliJson(engramHome, session, "add", title).work.short_ref;
       cliJson(engramHome, session, "claim", ref);
       cliJson(engramHome, session, "done", ref, "Landed", "--landed", commit, "--remote", "origin",
-        "--branch", "master", "--pushed-at", "2026-09-29T05:00:00Z");
+        "--branch", "master", "--pushed-at", "2026-09-29T05:00:00Z",
+        ...(installedBuild ? ["--installed-build", installedBuild] : []));
       return ref;
     };
     const doctor = (...args) => spawnSync(binary, ["--home", engramHome, ...args], { cwd: root, encoding: "utf8" });
@@ -1396,6 +1398,35 @@ test("doctor checks recorded landings against a local repository only on request
     const text = doctor("doctor", "--check-landings", "--repo", repository);
     assert.notEqual(text.status, 0);
     assert.match(text.stdout, new RegExp(`landing ${absentRef}: commit f{40} absent from this repository`));
+
+    // An installed build is the agent's word, shown in full beside
+    // "asserted, unchecked" and kept apart from Git's answer: a build that is
+    // this doctor's own reads the same as one with its prefix and another
+    // build's remainder, and neither changes the verdict on the commit.
+    const own = JSON.parse(doctor("doctor", "--json").stdout).build_fingerprint;
+    assert.match(own, /^[0-9a-f]{64}$/u);
+    const otherBuild = createHash("sha256").update(`not ${own}`).digest("hex");
+    const wrongRemainder = `${own.slice(0, 12)}${otherBuild.slice(12)}`;
+    const builds = [["Own build", own], ["Wrong remainder", wrongRemainder]];
+    const builtRefs = builds.map(([title, build]) => [land(title, landed, build), build]);
+    const withBuilds = doctor("doctor", "--check-landings", "--repo", repository, "--json");
+    const buildReport = JSON.parse(withBuilds.stdout);
+    for (const [ref, build] of builtRefs) {
+      const entry = buildReport.landings.find(({ work_ref }) => work_ref === ref);
+      assert.deepEqual([entry.status, entry.installed_build, entry.installed_build_assurance],
+        ["verified", build, "asserted, unchecked"]);
+      const shown = cliJson(engramHome, session, "show", ref);
+      assert.deepEqual([shown.landing.installed_build, shown.landing.installed_build_assurance],
+        [build, "asserted, unchecked"]);
+    }
+    const bare = buildReport.landings.find(({ work_ref }) => work_ref === verifiedRef);
+    assert.deepEqual([bare.installed_build, bare.installed_build_assurance], [null, "no installed build recorded"]);
+    const buildText = doctor("doctor", "--check-landings", "--repo", repository).stdout;
+    for (const [, build] of builtRefs) {
+      assert.ok(buildText.split(/\r?\n/u).includes(`  installed build: ${build} (asserted, unchecked)`), buildText);
+    }
+    assert.match(buildText, /^  installed build: no installed build recorded$/mu);
+    assert.doesNotMatch(buildText, /matches|differs/u);
 
     // A directory that is not a repository is refused, with git's exit code.
     const plain = join(engramHome, "plain");

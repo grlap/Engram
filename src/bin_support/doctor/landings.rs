@@ -253,6 +253,21 @@ impl LandingStatus {
     }
 }
 
+/// A landing's installed build in full, with what it is worth, on a line of
+/// its own: it has no part in the Git finding above it.
+fn installed_build_line(landing: &engram::domain::CompletionLanding) -> String {
+    landing.installed_build.as_deref().map_or_else(
+        || format!("installed build: {}", landing.installed_build_assurance()),
+        |build| {
+            format!(
+                "installed build: {} ({})",
+                engram::terminal_error_line(build),
+                landing.installed_build_assurance()
+            )
+        },
+    )
+}
+
 fn unverifiable(run: GitRun) -> LandingStatus {
     LandingStatus::Unverifiable(match run {
         GitRun::Exit(code) => format!("git exited with {code}"),
@@ -487,6 +502,9 @@ pub(crate) fn check_landings(
                 "repository": repository.display().to_string(),
                 "repository_problem": problem,
                 "recorded": recorded.len(),
+                // Git's answer and the installed build are kept apart: the
+                // build is the agent's assertion, never compared with a build,
+                // least of all with the executable running this check.
                 "landings": findings.iter().map(|(recorded, status)| serde_json::json!({
                     "work_ref": recorded.work_ref,
                     "commit": recorded.landing.commit,
@@ -494,6 +512,8 @@ pub(crate) fn check_landings(
                     "branch": recorded.landing.branch,
                     "status": status.word(),
                     "finding": status.line(recorded),
+                    "installed_build": recorded.landing.installed_build,
+                    "installed_build_assurance": recorded.landing.installed_build_assurance(),
                 })).collect::<Vec<_>>(),
             })))?
         );
@@ -508,6 +528,7 @@ pub(crate) fn check_landings(
         }
         for (recorded, status) in &findings {
             println!("{}", status.line(recorded));
+            println!("  {}", installed_build_line(&recorded.landing));
         }
     }
     if let Some(problem) = problem {

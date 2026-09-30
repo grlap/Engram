@@ -458,8 +458,17 @@ completing agent states it at `done`. It holds the commit (40 or 64 lowercase
 hex), the remote and branch it was pushed to, the push time, and the build
 fingerprint of the binary installed from it when one was installed. It is
 asserted provenance only; the host-measured content fingerprint stays the
-freshness identity. `show` prints it on a completed item, and the completed
-item's JSON carries it as one `landing` field; a seal without one reads "no
+freshness identity. The full build value to give `done --installed-build` is
+the `build_fingerprint` that the installed executable itself reports: run
+`readiness --json` or `doctor --json` by the installed executable's path after
+copying it, since a long-running MCP process still reports the build it
+started with. `--version` shortens each token, and a shortened value is never
+completed by hand. `show` prints the landing on a completed item, and the
+completed item's JSON carries it as one `landing` field. The installed build is
+shown in full beside "asserted, unchecked" (JSON `installed_build_assurance`),
+or as "no installed build recorded" when the seal names none; the words are
+derived when read, so old seals read the same way and no seal is rewritten.
+Engram never compares it with any build. A seal without a landing reads "no
 landing recorded", and a seal that could not be read, or a completion restored
 from history, reads "unavailable" with the reason. Seals written before the
 field existed carry none: they are read as stored, with no backfill, and their
@@ -474,7 +483,9 @@ branch's remote-tracking ref. It never fetches, and names an absent commit, a
 commit off the branch, or a remote-tracking ref not present locally; a git call
 that fails, as in a damaged repository, leaves the landing unverifiable, as does
 a commit not found on the branch of a shallow repository, whose cut history may
-hold it.
+hold it. Apart from Git's answer, it prints each landing's installed build as
+`show` does, in full beside "asserted, unchecked"; the build never enters the
+verdict and is never compared with the executable running the check.
 
 Every new seal also declares completion-obligation schema V1 and records the
 exact `(definition, terminal resolution)` pairs applicable at its pre-seal

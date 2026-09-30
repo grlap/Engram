@@ -33,11 +33,18 @@ const INTERNAL_FIELDS = new Set([
 ]);
 
 // A completed item's landing names a commit and a build fingerprint on
-// purpose: it is asserted provenance, shown as recorded, not an identity or
-// integrity field. It may hold only its own fields, the words that say no
-// landing was recorded, or why it is unavailable; everything else keeps the
-// hash ban.
-const LANDING_FIELDS = new Set(["commit", "remote", "branch", "pushed_at", "installed_build"]);
+// purpose: it is asserted provenance, shown as recorded with what its build
+// is worth, not an identity or integrity field. It may hold only its own
+// fields, the words that say no landing was recorded, or why it is
+// unavailable; everything else keeps the hash ban.
+const LANDING_FIELDS = new Set([
+  "commit",
+  "remote",
+  "branch",
+  "pushed_at",
+  "installed_build",
+  "installed_build_assurance",
+]);
 const LANDING_WORDS = /^(?:no landing recorded|unavailable \([^()]*\))$/u;
 
 // The Rust allowlist projection is the primary boundary. This recursive
