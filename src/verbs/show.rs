@@ -380,6 +380,10 @@ pub(super) struct ShowEvaluation {
     /// Why completion would treat the record as absent; omitted when fresh.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) stale: Option<&'static str>,
+    /// The source observation that decided the move the record reads stale
+    /// for, when one did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) stale_observation: Option<crate::work_service::ShownDecidingObservation>,
     /// The evaluated source fingerprint, when the record carries one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) source_fingerprint: Option<String>,
@@ -630,6 +634,9 @@ pub(super) fn show_evaluation(
             .count(),
         criteria: record.verdicts.len(),
         stale: status.stale.map(crate::AcceptanceStaleReason::word),
+        stale_observation: status.stale_observation.as_ref().map(|observation| {
+            crate::work_service::ShownDecidingObservation::new(observation, &identity)
+        }),
         source_fingerprint: record
             .source_basis
             .as_ref()
@@ -689,6 +696,9 @@ fn evaluation_lines(
     }
     if let Some(superseded) = &projected.supersedes {
         lines.push(format!("  supersedes the carried failure {superseded}"));
+    }
+    if let Some(observation) = &projected.stale_observation {
+        lines.push(format!("  {}", observation.line(super::terminal_safe_line)));
     }
     if let Some(carried) = &projected.carried_failure {
         lines.push(carried_failure_line(carried));

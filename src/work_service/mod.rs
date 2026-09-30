@@ -64,6 +64,7 @@ pub(crate) mod blocker_selector;
 mod catalog;
 mod completion;
 mod continuation;
+mod deciding;
 mod evaluate;
 mod evaluation_windows;
 mod focus;
@@ -74,8 +75,10 @@ pub use import::{MAX_WORK_IMPORT_INPUT_BYTES, parse_work_import_input};
 pub(crate) mod identity;
 mod memories;
 mod next;
+mod observation_windows;
 mod operations;
 mod projection;
+pub(crate) use deciding::ShownDecidingObservation;
 pub(crate) use projection::normalize_actor_context;
 mod propose;
 mod record_windows;
@@ -99,6 +102,7 @@ pub(crate) use evaluation_windows::MAX_ROW_VERDICTS;
 pub(crate) use evaluation_windows::{
     WorkEvaluationDetail, WorkEvaluationRow, WorkEvaluationWindow,
 };
+pub(crate) use observation_windows::{WorkObservationRow, WorkObservationWindow};
 pub use operations::*;
 pub(crate) use projection::*;
 pub(crate) use record_windows::{VerificationAssessmentPage, WorkRecordRow, WorkRecordWindow};

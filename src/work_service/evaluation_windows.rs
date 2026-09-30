@@ -66,6 +66,9 @@ pub(crate) struct WorkEvaluationRow {
     pub verdicts: Vec<(usize, &'static str)>,
     pub verdicts_total: usize,
     pub stale: Option<&'static str>,
+    /// The source observation that decided the move the record reads stale
+    /// for, when one did.
+    pub stale_observation: Option<super::ShownDecidingObservation>,
     /// Whether the stale reason was judged: false once the run has ended.
     pub judged: bool,
     pub supersedes: Option<String>,
@@ -333,6 +336,10 @@ fn window_row(
             .collect(),
         verdicts_total: record.verdicts.len(),
         stale: assessed.stale.map(crate::AcceptanceStaleReason::word),
+        stale_observation: assessed
+            .stale_observation
+            .as_ref()
+            .map(|observation| super::ShownDecidingObservation::new(observation, identity)),
         judged: assessed.judged,
         supersedes: record.supersedes.as_ref().map(|id| id.as_str().to_owned()),
         newest: assessed.newest,

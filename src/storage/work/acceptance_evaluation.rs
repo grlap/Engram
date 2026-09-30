@@ -35,6 +35,7 @@ use crate::domain::{
     WorkObligation, WorkPlanningAuthority, WorkTransition,
 };
 use crate::memory::Redactor;
+use crate::storage::DecidingObservation;
 use crate::storage::{CarriedFailureRefusal, EvaluationBasisMove, SqliteStore, StoreError};
 
 /// Canonical object kind and run-feed entry kind of one evaluation.
@@ -95,6 +96,10 @@ pub struct AcceptanceEvaluationStatus {
     pub record: AcceptanceEvaluation,
     /// `None` when fresh; otherwise why completion treats it as absent.
     pub stale: Option<AcceptanceStaleReason>,
+    /// The source observation that decided the move the record reads stale
+    /// for, when an observation decided it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale_observation: Option<DecidingObservation>,
     /// True when the policy requires source freshness and this read could
     /// not measure a fingerprint: the recorded basis is checked against the
     /// fingerprint `done` presents, and this read does not call it stale.
@@ -328,9 +333,11 @@ impl SqliteStore {
                 work: item.work_id,
                 moved: EvaluationBasisMove::SourceChanged,
                 reason: "the named source root changed after the evaluated cut; re-read the run and evaluate its current root".into(),
+                // A root binding moved, not an observed source.
+                observation: None,
             });
         }
-        if let Some(moved) = basis_moved_after(
+        if let Some(BasisMoveFinding { moved, observation }) = basis_moved_after(
             &transaction,
             run_id,
             cut,
@@ -340,6 +347,7 @@ impl SqliteStore {
             return Err(StoreError::AcceptanceEvaluationBasisMoved {
                 work: item.work_id,
                 moved,
+                observation: observation.map(Box::new),
                 reason: match moved {
                     EvaluationBasisMove::CheckRecorded => format!(
                         "a host check was recorded after evidence basis {cut}; {}",
@@ -444,10 +452,12 @@ impl SqliteStore {
             let source = source_fingerprint.map_or(SourceCheck::Unmeasured, |fingerprint| {
                 SourceCheck::AtCompletion(Some(fingerprint))
             });
-            let stale = staleness(connection, &item, run_id, &policy, &record, source)?;
+            let (stale, stale_observation) =
+                staleness_named(connection, &item, run_id, &policy, &record, source)?;
             let carried_failure = carried_failure_on(connection, &item, run_id)?;
             Ok(Some(AcceptanceEvaluationStatus {
                 carried_failure,
+                stale_observation,
                 evaluation: hash,
                 source_checked_at_done: policy.require_source_freshness
                     && record.source_basis.is_some()
@@ -1981,17 +1991,43 @@ fn basis_moved_after(
     position: i64,
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
     root: Option<&NamedEvaluationRoot>,
-) -> Result<Option<EvaluationBasisMove>, StoreError> {
-    let judged =
-        judged_source(connection, run_id, position, declared, root)?.map(|judged| judged.revision);
+) -> Result<Option<BasisMoveFinding>, StoreError> {
+    let judged_source = judged_source(connection, run_id, position, declared, root)?;
+    let judged = judged_source.as_ref().map(|judged| judged.revision.clone());
+    let name = |at: i64, hash: &ObjectId, observation: &ExecutionObservation| DecidingObservation {
+        observation: hash.clone(),
+        position: at,
+        source_changed: observation.source_changed,
+        workspace: observation
+            .source_basis
+            .as_ref()
+            .map(|basis| basis.workspace_id.clone()),
+        revision: observation
+            .source_basis
+            .as_ref()
+            .map(|basis| basis.source_revision.clone()),
+        root_generation: observation
+            .source_basis
+            .as_ref()
+            .and_then(|basis| basis.source_root_generation),
+        reporting_session: observation.session_id.clone(),
+        observed_at: observation.observed_at,
+        recorded_at: observation.recorded_at,
+        evaluated_revision: judged_source.as_ref().map(|judged| judged.revision.clone()),
+        evaluated_revision_declared: judged_source.as_ref().is_some_and(|judged| judged.declared),
+    };
     let mut statement = connection.prepare(
-        "SELECT object_kind, object_id FROM work_feed_entries
+        "SELECT position, object_kind, object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position > ?2
          ORDER BY position",
     )?;
     let rows = statement
         .query_map(params![run_id.0.to_string(), position], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     // Collected first: a report lands its environment records before the
@@ -1999,8 +2035,10 @@ fn basis_moved_after(
     let exempt = same_turn::ExemptChecks::after(connection, run_id, position, declared, root)?;
     let mut seen = std::collections::BTreeSet::new();
     let mut check = false;
-    let mut quiet_move = false;
-    for (kind, stored) in rows {
+    // The newest sighting at another revision than the judged one, while no
+    // later sighting or declared change has put the source back.
+    let mut quiet_move: Option<DecidingObservation> = None;
+    for (at, kind, stored) in rows {
         if !MUTATION_KINDS.contains(&kind.as_str()) {
             continue;
         }
@@ -2021,17 +2059,21 @@ fn basis_moved_after(
                     if let (Some(judged_at), Some(sighting)) =
                         (judged.as_deref(), observation.source_basis.as_ref())
                     {
-                        quiet_move = sighting.source_revision != judged_at;
+                        quiet_move = (sighting.source_revision != judged_at)
+                            .then(|| name(at, &hash, &observation));
                     }
                     continue;
                 }
                 if !judged_revision(declared, &observation) {
-                    return Ok(Some(EvaluationBasisMove::SourceChanged));
+                    return Ok(Some(BasisMoveFinding {
+                        moved: EvaluationBasisMove::SourceChanged,
+                        observation: Some(name(at, &hash, &observation)),
+                    }));
                 }
                 // The reported change left the source at the declared
                 // revision, so any sighting of another revision before it
                 // is older than that change.
-                quiet_move = false;
+                quiet_move = None;
                 seen.insert(hash);
             }
             "work_obligation" => {
@@ -2044,10 +2086,23 @@ fn basis_moved_after(
             _ => check = true,
         }
     }
-    if quiet_move {
-        return Ok(Some(EvaluationBasisMove::SourceChanged));
+    if let Some(observation) = quiet_move {
+        return Ok(Some(BasisMoveFinding {
+            moved: EvaluationBasisMove::SourceChanged,
+            observation: Some(observation),
+        }));
     }
-    Ok(check.then_some(EvaluationBasisMove::CheckRecorded))
+    Ok(check.then_some(BasisMoveFinding {
+        moved: EvaluationBasisMove::CheckRecorded,
+        observation: None,
+    }))
+}
+
+/// A move past an evaluation's cut and, for a source move an observation
+/// decided, that observation.
+struct BasisMoveFinding {
+    moved: EvaluationBasisMove,
+    observation: Option<DecidingObservation>,
 }
 
 /// Whether `observation` sights a source other than the claim's named root:
@@ -2509,6 +2564,53 @@ fn staleness(
     record: &AcceptanceEvaluation,
     source: SourceCheck<'_>,
 ) -> Result<Option<AcceptanceStaleReason>, StoreError> {
+    Ok(staleness_named(connection, item, run_id, policy, record, source)?.0)
+}
+
+/// [`staleness`] together with the source observation that decided a source
+/// move, when the record reads stale for one: such a move reads as
+/// `Mutation`, and the observation is named beside it, never as a cause.
+fn staleness_named(
+    connection: &Connection,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    policy: &AcceptanceEvaluationPolicy,
+    record: &AcceptanceEvaluation,
+    source: SourceCheck<'_>,
+) -> Result<(Option<AcceptanceStaleReason>, Option<DecidingObservation>), StoreError> {
+    if let Some(reason) = staleness_before_move(connection, item, run_id, policy, record)? {
+        return Ok((Some(reason), None));
+    }
+    let evaluated_root = named_root_at_on(connection, run_id, record.evaluated_cut.position)?;
+    if let Some(finding) = basis_moved_after(
+        connection,
+        run_id,
+        record.evaluated_cut.position,
+        record.source_basis.as_ref(),
+        evaluated_root.as_ref(),
+    )? {
+        return Ok((Some(AcceptanceStaleReason::Mutation), finding.observation));
+    }
+    let reason = staleness_after_move(
+        connection,
+        item,
+        run_id,
+        policy,
+        record,
+        source,
+        evaluated_root.as_ref(),
+    )?;
+    Ok((reason, None))
+}
+
+/// The stale reasons judged before a move past the cut.
+fn staleness_before_move(
+    connection: &Connection,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    policy: &AcceptanceEvaluationPolicy,
+    record: &AcceptanceEvaluation,
+) -> Result<Option<AcceptanceStaleReason>, StoreError> {
     if record.run_id != run_id {
         return Ok(Some(AcceptanceStaleReason::Run));
     }
@@ -2522,7 +2624,6 @@ fn staleness(
     if record.named_root_binding.as_ref() != current_root.as_ref().map(|root| &root.event_id) {
         return Ok(Some(AcceptanceStaleReason::Mutation));
     }
-    let evaluated_root = named_root_at_on(connection, run_id, record.evaluated_cut.position)?;
     // Every effective requirement is re-read from the current policy: a
     // strengthened mechanical basis retires asserted passes, and a pinned or
     // disallowed mode retires the whole record.
@@ -2580,25 +2681,31 @@ fn staleness(
             return Ok(Some(AcceptanceStaleReason::Identity));
         }
     }
-    if basis_moved_after(
-        connection,
-        run_id,
-        record.evaluated_cut.position,
-        record.source_basis.as_ref(),
-        evaluated_root.as_ref(),
-    )?
-    .is_some()
-    {
-        return Ok(Some(AcceptanceStaleReason::Mutation));
-    }
+    Ok(None)
+}
+
+/// The stale reasons judged after a move past the cut.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the reasons after a move read the same inputs as the move itself, and the root it was judged at"
+)]
+fn staleness_after_move(
+    connection: &Connection,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    policy: &AcceptanceEvaluationPolicy,
+    record: &AcceptanceEvaluation,
+    source: SourceCheck<'_>,
+    evaluated_root: Option<&NamedEvaluationRoot>,
+) -> Result<Option<AcceptanceStaleReason>, StoreError> {
     let judged = judged_source(
         connection,
         run_id,
         record.evaluated_cut.position,
         record.source_basis.as_ref(),
-        evaluated_root.as_ref(),
+        evaluated_root,
     )?;
-    if let Some(root) = evaluated_root.as_ref() {
+    if let Some(root) = evaluated_root {
         // A declared revision is confirmed by the root's newest sighting
         // through the head, since the host may report it after the cut; an
         // undeclared evaluation judged the sighting at its cut.
@@ -2621,7 +2728,7 @@ fn staleness(
         judged.as_ref(),
         record.evaluated_cut.position,
         passing_citations(&record.verdicts),
-        evaluated_root.as_ref(),
+        evaluated_root,
     )?
     .is_some()
     {

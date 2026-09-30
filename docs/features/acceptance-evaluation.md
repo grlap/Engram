@@ -230,7 +230,23 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   recorded after the cut; re-read `show`, take the check into account, and
   submit again. `acceptance_evaluation_void`: the source changed after the cut
   to a revision the evaluation did not judge; the evaluation is void, so
-  request a new one. The source also counts as changed when the newest
+  request a new one. When a source observation after the cut decided that
+  move, the refusal names it: the message keeps its words and adds one
+  sentence naming the observation's run-feed position, workspace, revision,
+  reporting session and times as recorded, beside the revision the evaluation
+  declared or, without a declaration, the revision it judged at its cut; the
+  structured details add `deciding_observation` beside the unchanged
+  `reason` and `remedy`. The observation named is the first reported change
+  to an undeclared revision, which decides at once, or else the newest
+  sighting at another revision that no later sighting or declared change put
+  back. A check-only move, a named-root rebinding, and any other cause name
+  no observation. In the sentence each host-recorded field is escaped onto
+  one line and cut at 300 bytes with its stored length, and it never spells
+  "database is locked", which a host may read as a locked store, even once
+  its whitespace is collapsed: such a field writes every whitespace character
+  as a visible escape such as `\u{20}`, counted within its bound; the CLI's
+  JSON refusal writes the spaces of that phrase as `\u0020` escapes, so the
+  fields still decode to what was recorded. The source also counts as changed when the newest
   execution observation after the cut that carries a revision shows it at
   another revision than the judged one, even while reporting no change (F3
   below). The one source change that does not count is a change to the
@@ -848,6 +864,26 @@ staleness or sealing changes.
   parent-session label and judged source fingerprint when recorded. While the
   item has an active run, the record is judged against it, so a record of an
   earlier run is stale for that reason. Like `--full`, it may exceed 12 KiB.
+
+When a record reads stale because a source observation after its cut decided
+that the source moved (stale `mutation`, the word unchanged), plain `show`,
+`show --full`, the evaluations window row and the record's detail name that
+observation the same way, one line and a `stale_observation` field, beside
+the evaluated revision, with each host-recorded field cut at 128 bytes and its
+stored length, so that the surface stays within its budget; `show
+--observations` lists the fields whole. A record stale for another cause names
+none.
+
+- **The run's source observations.** `show REF --observations [--after
+  CURSOR]` (MCP `observations: true`, `after`) lists every execution
+  observation of the item's active run, or of its latest run once none is
+  active, those on other workspaces included: run-feed position, record id,
+  whether it reported a change, workspace, revision and root generation when
+  recorded, reporting session as the display label `show` uses, and the
+  observed and recorded times. Rows are selected newest first and shown in
+  run-feed order within the 12 KiB agent budget, with exact counts and a
+  continuation bound to the item, run and read cut. It is exclusive of the
+  other windows, and a read that records nothing.
 
 The newest whole record still decides completion. `show` and `show --full`
 keep their newest-only reads.

@@ -214,6 +214,12 @@ fn append_row_lines(lines: &mut Vec<String>, row: &WorkEvaluationRow, work_ref: 
     if let Some(supersedes) = &row.supersedes {
         lines.push(format!("    supersedes {supersedes}"));
     }
+    if let Some(observation) = &row.stale_observation {
+        lines.push(format!(
+            "    {}",
+            observation.line(super::terminal_safe_line)
+        ));
+    }
 }
 
 fn row_value(row: &WorkEvaluationRow, work_ref: &str) -> Value {
@@ -238,6 +244,9 @@ fn row_value(row: &WorkEvaluationRow, work_ref: &str) -> Value {
     });
     if let Some(supersedes) = &row.supersedes {
         value["supersedes"] = json!(supersedes);
+    }
+    if let Some(observation) = &row.stale_observation {
+        value["stale_observation"] = json!(observation);
     }
     value
 }
@@ -278,6 +287,9 @@ fn detail_receipt(detail: &WorkEvaluationDetail) -> Receipt {
     }
     if let Some(supersedes) = &row.supersedes {
         lines.push(format!("  supersedes {supersedes}"));
+    }
+    if let Some(observation) = &row.stale_observation {
+        lines.push(format!("  {}", observation.line(super::terminal_safe_line)));
     }
     for verdict in &detail.verdicts {
         lines.push(format!(

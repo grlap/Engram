@@ -488,3 +488,46 @@ fn work_cli_memories_takes_the_context_generation_a_peek_prints() {
             )
     ));
 }
+
+#[test]
+fn work_cli_show_takes_the_observations_window_alone() {
+    let parsed = Cli::try_parse_from([
+        "engram",
+        "work",
+        "show",
+        "w-000000000001",
+        "--observations",
+        "--after",
+        "o1-00",
+    ])
+    .expect("parse the observations window and its continuation");
+    assert!(matches!(
+        parsed.command,
+        Command::Work { operation, .. }
+            if matches!(
+                *operation,
+                WorkCommand::Show { observations: true, ref after, .. } if after.as_deref() == Some("o1-00")
+            )
+    ));
+    for other in [
+        "--notes",
+        "--history",
+        "--full",
+        "--evaluations",
+        "--note=0123456789abcdef",
+        "--evaluation=0123456789abcdef0123456789abcdef",
+    ] {
+        assert!(
+            Cli::try_parse_from([
+                "engram",
+                "work",
+                "show",
+                "w-000000000001",
+                "--observations",
+                other,
+            ])
+            .is_err(),
+            "{other}"
+        );
+    }
+}

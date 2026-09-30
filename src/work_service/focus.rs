@@ -28,6 +28,9 @@ pub(crate) struct WorkAuthoredEvaluation {
     pub work_revision: i64,
     pub evaluated_cut: i64,
     pub stale: Option<&'static str>,
+    /// The source observation that decided the move the record reads stale
+    /// for, when one did.
+    pub stale_observation: Option<super::ShownDecidingObservation>,
     pub verdicts: Vec<WorkAuthoredVerdict>,
     /// Record id of the carried failing evaluation this record acknowledged.
     pub supersedes: Option<String>,
@@ -278,6 +281,7 @@ impl LocalWorkService {
         work_ref: &str,
         now: DateTime<Utc>,
     ) -> Result<WorkAuthoredContract, StoreError> {
+        let identity = self.display_identity();
         let store = self.read_store_at(now)?;
         store.work_read_snapshot(|store| {
             let item = store.resolve_work_ref(&self.project_id, work_ref)?;
@@ -292,6 +296,9 @@ impl LocalWorkService {
                         work_revision: status.record.work_revision,
                         evaluated_cut: status.record.evaluated_cut.position,
                         stale: status.stale.map(crate::AcceptanceStaleReason::word),
+                        stale_observation: status.stale_observation.as_ref().map(|observation| {
+                            super::ShownDecidingObservation::new(observation, &identity)
+                        }),
                         verdicts: status
                             .record
                             .verdicts

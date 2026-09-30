@@ -6,6 +6,8 @@
 use super::*;
 use crate::{EvaluationBasisMove, SourceChangeDetection};
 
+mod deciding;
+
 /// The class and stable code of a moved-basis refusal. A host may relay
 /// only the error message to its evaluator, so the message itself must
 /// carry the class's remedy, the same one the MCP details give.

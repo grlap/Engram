@@ -9,9 +9,9 @@
 //! consumed. Completion still consults only the newest record.
 
 use super::{
-    AcceptanceEvaluation, AcceptanceStaleReason, KIND, ObjectId, SourceCheck, SqliteStore,
-    StoreError, WorkId, WorkItem, WorkRunId, latest_on, load_typed_work_object, load_work_item,
-    on_one_snapshot, params, staleness,
+    AcceptanceEvaluation, AcceptanceStaleReason, DecidingObservation, KIND, ObjectId, SourceCheck,
+    SqliteStore, StoreError, WorkId, WorkItem, WorkRunId, latest_on, load_typed_work_object,
+    load_work_item, on_one_snapshot, params, staleness_named,
 };
 use rusqlite::OptionalExtension;
 
@@ -21,6 +21,10 @@ pub(crate) struct AcceptanceEvaluationEntry {
     pub position: i64,
     pub evaluation: ObjectId,
 }
+
+/// The run an item's source observations were read from, and each
+/// observation's run-feed position and record id, in position order.
+pub(crate) type SourceObservationEntries = (WorkRunId, Vec<(i64, ObjectId)>);
 
 /// The run an item's evaluation history covers, and its records.
 #[derive(Clone, Debug)]
@@ -40,6 +44,9 @@ pub(crate) struct AssessedAcceptanceEvaluation {
     pub record: AcceptanceEvaluation,
     /// `None` when fresh or when not judged.
     pub stale: Option<AcceptanceStaleReason>,
+    /// The source observation that decided the move the record reads stale
+    /// for, when an observation decided it.
+    pub stale_observation: Option<DecidingObservation>,
     /// Whether the record was judged at this read: false once its run ended.
     pub judged: bool,
     /// Whether it is the newest record on the history run, the one completion
@@ -126,8 +133,8 @@ impl SqliteStore {
                                 .into(),
                         ));
                     }
-                    let stale = if judged {
-                        staleness(
+                    let (stale, stale_observation) = if judged {
+                        staleness_named(
                             connection,
                             &item,
                             run_id,
@@ -136,7 +143,7 @@ impl SqliteStore {
                             SourceCheck::Unmeasured,
                         )?
                     } else {
-                        None
+                        (None, None)
                     };
                     Ok(AssessedAcceptanceEvaluation {
                         position: entry.position,
@@ -144,6 +151,7 @@ impl SqliteStore {
                         evaluation: entry.evaluation.clone(),
                         record,
                         stale,
+                        stale_observation,
                         judged,
                     })
                 })
@@ -193,10 +201,10 @@ impl SqliteStore {
             };
             let item = load_work_item(connection, work_id)?;
             let history_run = self.history_run(&item)?;
-            let (stale, judged) = match item.active_run_id {
+            let (stale, stale_observation, judged) = match item.active_run_id {
                 Some(run_id) => {
                     let policy = SqliteStore::load_acceptance_evaluation_policy_on(connection)?;
-                    let stale = staleness(
+                    let (stale, stale_observation) = staleness_named(
                         connection,
                         &item,
                         run_id,
@@ -204,9 +212,9 @@ impl SqliteStore {
                         &record,
                         SourceCheck::Unmeasured,
                     )?;
-                    (stale, true)
+                    (stale, stale_observation, true)
                 }
-                None => (None, false),
+                None => (None, None, false),
             };
             let newest = match history_run {
                 Some(run_id) => {
@@ -219,9 +227,72 @@ impl SqliteStore {
                 evaluation: evaluation.clone(),
                 record,
                 stale,
+                stale_observation,
                 judged,
                 newest,
             }))
+        })
+    }
+
+    /// The source observations on the run an item's evaluation history
+    /// covers, each at its run-feed position, in position order: every
+    /// execution observation, whatever workspace reported it. `None` when the
+    /// item has no run.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the item, its runs, or the feed cannot be
+    /// read.
+    pub(crate) fn source_observation_entries(
+        &self,
+        work_id: WorkId,
+    ) -> Result<Option<SourceObservationEntries>, StoreError> {
+        on_one_snapshot(&self.connection, |connection| {
+            let item = load_work_item(connection, work_id)?;
+            let Some(run_id) = self.history_run(&item)? else {
+                return Ok(None);
+            };
+            let rows = connection
+                .prepare(
+                    "SELECT position, object_id FROM work_feed_entries
+                     WHERE feed_kind = 'run_execution' AND feed_id = ?1
+                       AND object_kind = 'execution_observation'
+                     ORDER BY position",
+                )?
+                .query_map(params![run_id.0.to_string()], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            let entries = rows
+                .into_iter()
+                .map(|(position, stored)| {
+                    let observation = ObjectId::from_stored(stored.clone())
+                        .ok_or(StoreError::InvalidStoredKey(stored))?;
+                    Ok((position, observation))
+                })
+                .collect::<Result<Vec<_>, StoreError>>()?;
+            Ok(Some((run_id, entries)))
+        })
+    }
+
+    /// Decodes the selected source observations, keeping each position.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when an observation is missing or invalid.
+    pub(crate) fn source_observations(
+        &self,
+        entries: &[(i64, ObjectId)],
+    ) -> Result<Vec<(i64, ObjectId, crate::domain::ExecutionObservation)>, StoreError> {
+        on_one_snapshot(&self.connection, |connection| {
+            entries
+                .iter()
+                .map(|(position, hash)| {
+                    let observation =
+                        load_typed_work_object(connection, hash, "execution_observation")?;
+                    Ok((*position, hash.clone(), observation))
+                })
+                .collect()
         })
     }
 

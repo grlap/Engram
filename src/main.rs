@@ -566,7 +566,7 @@ enum WorkCommand {
         /// Newest history window, rendered chronologically.
         #[arg(long, conflicts_with = "note")]
         history: bool,
-        /// Item-bound continuation from the same note, history or evaluations window, or of a verification record's assessment with --note.
+        /// Item-bound continuation from the same note, history, evaluations or observations window, or of a verification record's assessment with --note.
         #[arg(long)]
         after: Option<String>,
         /// Complete note body: record-id prefix (8+ hex), or `RECORD_ID:INDEX`.
@@ -581,6 +581,9 @@ enum WorkCommand {
         /// One evaluation record complete, by its full record id.
         #[arg(long, value_name = "RECORD_ID", conflicts_with_all = ["notes", "gates", "history", "after", "note", "full", "evaluations"])]
         evaluation: Option<String>,
+        /// The source observations of the item's run in a bounded window, oldest to newest.
+        #[arg(long, conflicts_with_all = ["notes", "gates", "history", "note", "full", "evaluations", "evaluation"])]
+        observations: bool,
     },
     /// Create work from a title; outcome and acceptance criteria are welcome.
     Add {
@@ -1609,6 +1612,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             full,
             evaluations,
             evaluation,
+            observations,
         } => verbs.show_records(
             &work_ref,
             &engram::verbs::ShowInput {
@@ -1620,6 +1624,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 full,
                 evaluations,
                 evaluation,
+                observations,
             },
             now,
         ),
@@ -2020,16 +2025,13 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         Err(error) => {
             let guidance = verbs.error_guidance(&error);
             if json {
-                eprintln!(
-                    "{}",
-                    serde_json::to_string_pretty(&{
-                        let mut value =
-                            verbs.project_error(&error, store_error_value(&error.error));
-                        value["error"]["reminders"] = serde_json::json!(guidance.reminders);
-                        value["error"]["next"] = serde_json::json!(guidance.next);
-                        value
-                    })?
-                );
+                let text = serde_json::to_string_pretty(&{
+                    let mut value = verbs.project_error(&error, store_error_value(&error.error));
+                    value["error"]["reminders"] = serde_json::json!(guidance.reminders);
+                    value["error"]["next"] = serde_json::json!(guidance.next);
+                    value
+                })?;
+                eprintln!("{}", refusal_stderr_text(&error.error, text));
             } else {
                 emit_work_text_refusal(&verbs.error_message(&error), &guidance);
             }
@@ -2157,12 +2159,22 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
             })
         }
         Err(error) => {
-            eprintln!(
-                "{}",
-                serde_json::to_string_pretty(&store_error_value(&error))?
-            );
+            let text = serde_json::to_string_pretty(&store_error_value(&error))?;
+            eprintln!("{}", refusal_stderr_text(&error, text));
             Ok(ExitCode::FAILURE)
         }
+    }
+}
+
+/// A moved-basis refusal carries host-recorded text in its details; written
+/// to stderr it must never read as a locked store to a host that retries on
+/// that phrase. Every other refusal is written as it is, so a real lock error
+/// still reads as one.
+fn refusal_stderr_text(error: &StoreError, text: String) -> String {
+    if matches!(error, StoreError::AcceptanceEvaluationBasisMoved { .. }) {
+        engram::storage::json_without_locked_store_phrase(&text)
+    } else {
+        text
     }
 }
 

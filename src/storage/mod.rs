@@ -731,6 +731,137 @@ pub enum EvaluationBasisMove {
     SourceChanged,
 }
 
+/// The source observation that decided a source move after an evaluation's
+/// cut, named beside the move so an agent can see what voided the evaluation.
+/// It is never a cause of its own: the move stays the cause. Every field is as
+/// the observation recorded it; `None` means the observation did not record
+/// that field.
+#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
+pub struct DecidingObservation {
+    /// The observation's record id.
+    pub observation: crate::ObjectId,
+    /// Its position on the run feed.
+    pub position: i64,
+    /// Whether the observation reported a source change, as stored.
+    pub source_changed: bool,
+    pub workspace: Option<String>,
+    pub revision: Option<String>,
+    pub root_generation: Option<i64>,
+    /// The session that reported it.
+    pub reporting_session: SessionId,
+    /// When the host observed it; `None` when the host did not say.
+    pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When the store recorded it.
+    pub recorded_at: chrono::DateTime<chrono::Utc>,
+    /// The revision the evaluation declared it judged or, without a
+    /// declaration, the revision it judged at its cut.
+    pub evaluated_revision: Option<String>,
+    /// Whether `evaluated_revision` is the evaluation's own declaration.
+    pub evaluated_revision_declared: bool,
+}
+
+impl DecidingObservation {
+    /// One line naming the observation beside the evaluated revision. Stored
+    /// text is shown with control characters escaped, so the line stays one
+    /// line.
+    #[must_use]
+    pub fn sentence(&self) -> String {
+        let field = |value: Option<&str>| value.map_or_else(|| "not recorded".to_owned(), one_line);
+        format!(
+            "The deciding source observation is at run-feed position {}: workspace {}, revision {}, reported by session {}, observed {} (recorded {}); the evaluation {} revision {}{}.",
+            self.position,
+            field(self.workspace.as_deref()),
+            field(self.revision.as_deref()),
+            one_line(&self.reporting_session.0),
+            self.observed_at
+                .map_or_else(|| "at a time not recorded".to_owned(), |at| at.to_rfc3339()),
+            self.recorded_at.to_rfc3339(),
+            if self.evaluated_revision_declared {
+                "declared"
+            } else {
+                "judged"
+            },
+            self.evaluated_revision
+                .as_deref()
+                .map_or_else(|| "not known".to_owned(), one_line),
+            if self.evaluated_revision_declared {
+                ""
+            } else {
+                " at its cut"
+            },
+        )
+    }
+}
+
+/// Stored text shown in the refusal sentence: control characters escaped, so
+/// the sentence stays one line, and at most this many bytes of it, so the
+/// whole message stays well within what a host relays.
+const MAX_SENTENCE_FIELD_BYTES: usize = 300;
+
+/// A host that relays the refusal treats stderr holding this phrase as a
+/// locked store and retries; stored text must never make the refusal read so.
+const LOCKED_STORE_PHRASE: &str = "database is locked";
+
+fn one_line(value: &str) -> String {
+    // Whether the field could read as the phrase once a renderer lowercases
+    // it and collapses its whitespace, as the CLI's text refusal does. Such a
+    // field writes every whitespace character as a visible escape, which no
+    // normalization joins back into the phrase; the bound below counts those
+    // escapes, so the guard never lengthens the sentence past it.
+    let guard = value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+        .contains(LOCKED_STORE_PHRASE);
+    let mut shown = String::new();
+    for character in value.chars() {
+        let escaped: String = if crate::domain::is_unsafe_rendered_text_char(character) {
+            character.escape_default().collect()
+        } else if guard && character.is_whitespace() {
+            character.escape_unicode().collect()
+        } else {
+            character.to_string()
+        };
+        if shown.len() + escaped.len() > MAX_SENTENCE_FIELD_BYTES {
+            shown.push_str("… (");
+            shown.push_str(&value.len().to_string());
+            shown.push_str(" bytes stored)");
+            return shown;
+        }
+        shown.push_str(&escaped);
+    }
+    shown
+}
+
+/// A serialized JSON refusal in which no string spells the locked-store
+/// phrase, while every string decodes to the same text: the spaces inside the
+/// phrase are written as `\u0020` escapes. Only for a refusal that is not
+/// itself a lock, so that a real lock error still reads as one.
+#[must_use]
+pub fn json_without_locked_store_phrase(json: &str) -> String {
+    let lower = json.to_ascii_lowercase();
+    let mut out = String::with_capacity(json.len());
+    let mut from = 0;
+    while let Some(found) = lower[from..].find(LOCKED_STORE_PHRASE) {
+        let start = from + found;
+        let end = start + LOCKED_STORE_PHRASE.len();
+        out.push_str(&json[from..start]);
+        out.push_str(&json[start..end].replace(' ', "\\u0020"));
+        from = end;
+    }
+    out.push_str(&json[from..]);
+    out
+}
+
+/// The refusal message's addition: one sentence naming the deciding
+/// observation, after the unchanged reason, or nothing.
+fn deciding_observation_suffix(observation: Option<&DecidingObservation>) -> String {
+    observation.map_or_else(String::new, |observation| {
+        format!(" {}", observation.sentence())
+    })
+}
+
 impl EvaluationBasisMove {
     /// What the evaluator does next. The refusal message and the MCP details
     /// both carry this text, because a host may relay only the message.
@@ -915,11 +1046,16 @@ pub enum StoreError {
     /// The run moved past the evidence basis an evaluation read through.
     /// `moved` says whether a re-read and resubmission can still stand or
     /// the evaluation is void.
-    #[error("acceptance evaluation for {work:?} was refused: {reason}")]
+    #[error(
+        "acceptance evaluation for {work:?} was refused: {reason}{}",
+        deciding_observation_suffix(observation.as_deref())
+    )]
     AcceptanceEvaluationBasisMoved {
         work: crate::domain::WorkId,
         moved: EvaluationBasisMove,
         reason: String,
+        /// The source observation that decided a source move, when one did.
+        observation: Option<Box<DecidingObservation>>,
     },
     #[error("local work item {0:?} does not exist")]
     WorkNotFound(crate::domain::WorkId),

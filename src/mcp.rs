@@ -146,6 +146,8 @@ struct ShowArgs {
     evaluations: Option<bool>,
     /// One evaluation record complete, by its full record id from the evaluations window.
     evaluation: Option<String>,
+    /// The source observations of the item's run in a bounded window, oldest to newest; after continues it. Exclusive of the other windows.
+    observations: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -488,6 +490,7 @@ impl McpServer {
                 full: args.full.unwrap_or(false),
                 evaluations: args.evaluations.unwrap_or(false),
                 evaluation: args.evaluation,
+                observations: args.observations.unwrap_or(false),
             },
             Utc::now(),
         ))
@@ -1074,11 +1077,20 @@ pub fn store_error_value(error: &StoreError) -> Value {
             work,
             moved,
             reason,
-        } => json!({
-            "work_id": work,
-            "reason": reason,
-            "remedy": moved.remedy(),
-        }),
+            observation,
+        } => {
+            let mut details = json!({
+                "work_id": work,
+                "reason": reason,
+                "remedy": moved.remedy(),
+            });
+            // Added beside the unchanged fields, only when an observation
+            // decided the move.
+            if let Some(observation) = observation {
+                details["deciding_observation"] = json!(observation);
+            }
+            details
+        }
         _ => Value::Null,
     };
     json!({
@@ -1239,6 +1251,7 @@ mod tests {
             full: None,
             evaluations: None,
             evaluation: None,
+            observations: None,
         };
         let detail = server
             .show(Parameters(args(None)))
@@ -1299,6 +1312,7 @@ mod tests {
             full: None,
             evaluations: None,
             evaluation: None,
+            observations: None,
         };
         let window = server
             .show(Parameters(args(Some(true), None)))

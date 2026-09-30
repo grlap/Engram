@@ -48,6 +48,7 @@ mod memory_recovery;
 mod memory_retirement;
 mod mutation;
 mod next_context;
+mod observation_windows;
 mod receipts;
 mod record_windows;
 mod show;

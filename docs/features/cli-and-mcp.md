@@ -170,7 +170,7 @@ These are the reads that record nothing:
 - `ls` in every form, and MCP `search` (CLI `ls --search`);
 - `show` in every form: plain, `--full`, `--notes` and `--notes --gates`,
   `--history`, `--note LOCATOR`, `--evaluations`, `--evaluation RECORD_ID`,
-  and their continuations;
+  `--observations`, and their continuations;
 - `memories` in every form but one: the listing, a search, a continuation
   page, `KEY --full` and `KEY --full --revision N`;
 - the host's `work core held` and `work core inspect`.
@@ -197,6 +197,7 @@ engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note ID[:INDEX]  # complete immutable note detail
 engram work show REF --evaluations [--after CURSOR]  # the run's evaluation records, oldest to newest
 engram work show REF --evaluation RECORD_ID  # one evaluation record complete
+engram work show REF --observations [--after CURSOR]  # the run's source observations, oldest to newest
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work claim --under PARENT [--ttl SECONDS] [--recover "why"]   # hold the parent's next ready child, chosen in ls --ready order and claimed in one transaction

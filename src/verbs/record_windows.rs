@@ -33,6 +33,10 @@ pub struct ShowInput {
     pub evaluations: bool,
     /// One evaluation record complete, by its full record id.
     pub evaluation: Option<String>,
+    /// The source observations of the item's run in a bounded window,
+    /// oldest to newest within it; `after` continues it.
+    #[serde(default)]
+    pub observations: bool,
 }
 
 impl AgentVerbs {
@@ -48,6 +52,17 @@ impl AgentVerbs {
     ) -> Result<Receipt, VerbError> {
         let other_modes =
             input.notes || input.history || input.gates || input.note.is_some() || input.full;
+        if input.observations {
+            if other_modes || input.evaluations || input.evaluation.is_some() {
+                return Err(VerbError::at(
+                    StoreError::InvalidWork(
+                        "choose --observations with optional --after, alone".into(),
+                    ),
+                    work_ref,
+                ));
+            }
+            return self.show_observations(work_ref, input.after.as_deref(), now);
+        }
         if (input.evaluations && (other_modes || input.evaluation.is_some()))
             || (input.evaluation.is_some() && (other_modes || input.after.is_some()))
         {
@@ -274,6 +289,9 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
         if let Some(superseded) = &evaluation.supersedes {
             lines.push(format!("  supersedes the carried failure {superseded}"));
         }
+        if let Some(observation) = &evaluation.stale_observation {
+            lines.push(format!("  {}", observation.line(super::terminal_safe_line)));
+        }
         let carried = evaluation
             .carried_failure
             .as_ref()
@@ -379,6 +397,9 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
         if let Some(object) = value.as_object_mut() {
             if let Some(superseded) = &evaluation.supersedes {
                 object.insert("supersedes".into(), json!(superseded));
+            }
+            if let Some(observation) = &evaluation.stale_observation {
+                object.insert("stale_observation".into(), json!(observation));
             }
             if let (Some(carried), Some(full)) = (&carried, &evaluation.carried_failure) {
                 let mut carried = json!(carried);
