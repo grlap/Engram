@@ -183,7 +183,14 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
         panic!("completion without an evaluation must be refused: {refused:?}");
     };
     assert_eq!(refusal.code, "missing_acceptance_evaluation");
-    assert!(refusal.remedy.contains("evaluate"), "{}", refusal.remedy);
+    assert!(
+        // The project admits only same-session: the remedy names that mode.
+        refusal
+            .remedy
+            .contains("admits only same-session evaluation: record one in that mode with evaluate"),
+        "{}",
+        refusal.remedy
+    );
     // The recovery command is runnable navigation to the criteria and
     // evidence, not an evaluation template with a pre-filled verdict. The
     // exact string is pinned here; the mcp-dogfood suite parses the emitted
@@ -335,6 +342,18 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
         "a refused failing completion must record no capture"
     );
 
+    // The failure stands until new evidence: a correction precedes the pass.
+    service
+        .work_update(
+            WorkUpdateInput::Evidence {
+                summary: "correction for the failed criterion".into(),
+                refs: Vec::new(),
+                attach: None,
+                idempotency_key: "correction".into(),
+            },
+            at(9),
+        )
+        .expect("correction");
     let passing = service
         .work_evaluate_on(
             &WorkEvaluateInput {

@@ -7,7 +7,9 @@ mod carried_failure;
 mod citation_sources;
 mod corrections;
 mod criteria_required;
+mod mark_author;
 mod named_root;
+mod reroll;
 mod review;
 mod snapshots;
 
@@ -1024,10 +1026,11 @@ fn verdict_structure_and_provenance_are_validated_at_record_time() {
     let store = &mut fixture.store;
     enable(
         store,
-        &[Mode::SameSession, Mode::SubAgent],
+        // Same-session only: the executor may evaluate its unmarked task.
+        &[Mode::SameSession],
         MechanicalBasis::Asserted,
         false,
-        "enable-same-and-sub",
+        "enable-same-only",
         5,
     );
     let work = fixture.work.clone();
@@ -1213,6 +1216,19 @@ fn verdict_structure_and_provenance_are_validated_at_record_time() {
         ),
     ];
     for (index, input) in accepted.into_iter().enumerate() {
+        // A blocking record stands until new evidence: each case follows a
+        // correction.
+        if index > 0 {
+            gate(
+                store,
+                &work,
+                &claim,
+                "runner",
+                &format!("correction-{index}"),
+                &[],
+                9,
+            );
+        }
         let receipt = record(
             store,
             &request(
@@ -1421,7 +1437,7 @@ fn task_mode_selection_constrains_evaluations() {
         ),
     ));
     assert!(
-        same_session.contains("selects mode independent_session"),
+        same_session.contains("marked for mode independent_session"),
         "{same_session}"
     );
     let cleared = revise(
@@ -1437,13 +1453,15 @@ fn task_mode_selection_constrains_evaluations() {
     )
     .expect("clear the pinned mode");
     assert_eq!(cleared.evaluation_mode, None);
-    record(
-        store,
-        &request(
+    // Unmarked again: the executor's own evaluation refuses while another
+    // mode is admitted, and a session that never held the run records.
+    let through = cut(store, &cleared);
+    let pass = |session: &str, mode: Mode| {
+        request(
             &cleared,
-            cut(store, &cleared),
-            "runner",
-            Mode::SameSession,
+            through,
+            session,
+            mode,
             vec![verdict(
                 1,
                 AcceptanceVerdict::Pass,
@@ -1451,9 +1469,15 @@ fn task_mode_selection_constrains_evaluations() {
                 std::slice::from_ref(&note),
             )],
             9,
-        ),
-    )
-    .expect("any allowed mode after clearing");
+        )
+    };
+    let own = refusal(record(store, &pass("runner", Mode::SameSession)));
+    assert!(
+        own.contains("not marked for same-session evaluation"),
+        "{own}"
+    );
+    record(store, &pass("judge", Mode::IndependentSession))
+        .expect("another allowed mode after clearing");
 }
 
 // B02, B13, B15, B16, B19, B22, B25, B26, B28: completion under an evaluated
@@ -1522,6 +1546,19 @@ fn completion_consumes_only_a_fresh_passing_evaluation() {
         ),
     ];
     for (index, (outcome, basis)) in non_passing.into_iter().enumerate() {
+        // A blocking record stands until new evidence: each later one
+        // follows a correction.
+        if index > 0 {
+            gate(
+                store,
+                &work,
+                &claim,
+                "runner",
+                &format!("correction-{index}"),
+                &[],
+                8,
+            );
+        }
         record(
             store,
             &request(
@@ -1561,6 +1598,8 @@ fn completion_consumes_only_a_fresh_passing_evaluation() {
         }
     }
 
+    // The last blocking record stands until new evidence.
+    gate(store, &work, &claim, "runner", "correction", &[], 10);
     let passing = record(
         store,
         &request(
@@ -2399,6 +2438,19 @@ fn a_newer_non_passing_record_blocks_an_older_pass() {
     .into_iter()
     .enumerate()
     {
+        // A blocking record stands until new evidence: each later one
+        // follows a correction.
+        if index > 0 {
+            gate(
+                store,
+                &work,
+                &claim,
+                "runner",
+                &format!("correction-{index}"),
+                &[],
+                7,
+            );
+        }
         record(
             store,
             &request(

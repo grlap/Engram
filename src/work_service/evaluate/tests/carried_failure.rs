@@ -95,6 +95,22 @@ impl Scenario {
         SqliteStore::open(&self.database).expect("store")
     }
 
+    /// The executor records a correction: new evidence after a blocking
+    /// evaluation, which a later one needs before it replaces that one.
+    fn correct(&self, second: i64) {
+        self.service
+            .work_update(
+                WorkUpdateInput::Evidence {
+                    summary: "correction for the failed criterion".into(),
+                    refs: Vec::new(),
+                    attach: None,
+                    idempotency_key: format!("correction-{second}"),
+                },
+                at(second),
+            )
+            .expect("correction");
+    }
+
     fn run(&self) -> WorkRunId {
         self.store()
             .get_work_item(self.root.work_id)
@@ -114,8 +130,14 @@ impl Scenario {
         } else {
             Vec::new()
         };
-        self.service.work_evaluate_on(
+        // The executor's evaluation: a sub-agent recorded from its own child
+        // session under the executor, the executor-affiliated mode an
+        // unmarked task still admits.
+        self.executor_agent().work_evaluate_on(
             &WorkEvaluateInput {
+                mode: "sub_agent".into(),
+                execution_identity: Some("executor-agent".into()),
+                parent_session: Some(self.service.session_id.0.clone()),
                 supersedes: supersedes.map(|id| id.as_str().to_owned()),
                 ..evaluate_input(
                     &self.root.short_ref,
@@ -165,6 +187,39 @@ impl Scenario {
                 )
             },
             at(second),
+        )
+    }
+
+    /// The executor's own same-session attempt, from its own session: what
+    /// the carried-failure rule refuses as self-acknowledgement.
+    fn own_evaluation(
+        &self,
+        verdict_word: &str,
+        supersedes: Option<&ObjectId>,
+        second: i64,
+    ) -> Result<WorkEvaluateResult, StoreError> {
+        self.service.work_evaluate_on(
+            &WorkEvaluateInput {
+                supersedes: supersedes.map(|id| id.as_str().to_owned()),
+                ..evaluate_input(
+                    &self.root.short_ref,
+                    self.revision(),
+                    completion_run_feed_head(&self.service, self.root.work_id),
+                    vec![verdict(1, verdict_word, "judgment", &self.citation)],
+                )
+            },
+            at(second),
+        )
+    }
+
+    /// The executor's sub-agent: a child session of its own, never a holder.
+    fn executor_agent(&self) -> LocalWorkService {
+        LocalWorkService::new(
+            self.database.clone(),
+            self.project.clone(),
+            "executor-agent".into(),
+            SessionId(format!("{}-executor-agent", self.project.0)),
+            Some("protocol-test".into()),
         )
     }
 
@@ -285,6 +340,17 @@ fn assert_nothing_to_supersede(scenario: &Scenario, failed: &ObjectId, second: i
     );
 }
 
+/// A re-roll on the same evidence: the blocking evaluation stands.
+fn assert_reroll_refused(result: Result<WorkEvaluateResult, StoreError>, case: &str) {
+    match result {
+        Err(StoreError::AcceptanceEvaluationRefused { reason, .. }) => assert!(
+            reason.contains("nothing that could change it was recorded"),
+            "{case}: {reason}"
+        ),
+        other => panic!("{case}: a re-roll must be refused, got {other:?}"),
+    }
+}
+
 fn refusal(error: &StoreError) -> Option<(CarriedFailureRefusal, Option<ObjectId>)> {
     match error {
         StoreError::AcceptanceEvaluationCarriedFailure {
@@ -362,7 +428,7 @@ fn an_executor_revision_after_a_failure_is_completable_only_by_naming_it() {
     // The executor naming its own failure is not someone else accepting the
     // revision.
     let self_named = scenario
-        .evaluate("pass", Some(&failed_id), 8)
+        .own_evaluation("pass", Some(&failed_id), 8)
         .expect_err("the executor may not acknowledge its own failure");
     assert_eq!(
         refusal(&self_named),
@@ -429,8 +495,12 @@ fn an_executor_revision_after_a_failure_is_completable_only_by_naming_it() {
 #[test]
 fn a_resent_superseding_evaluation_replays_and_its_attempt_binds_the_name() {
     let scenario = scenario("replay");
+    let agent = scenario.executor_agent();
     let failing = WorkEvaluateInput {
         attempt: Some("the-failure".into()),
+        mode: "sub_agent".into(),
+        execution_identity: Some("executor-agent".into()),
+        parent_session: Some(scenario.service.session_id.0.clone()),
         ..evaluate_input(
             &scenario.root.short_ref,
             scenario.revision(),
@@ -438,13 +508,11 @@ fn a_resent_superseding_evaluation_replays_and_its_attempt_binds_the_name() {
             vec![verdict(1, "fail", "judgment", &[])],
         )
     };
-    let failed = scenario
-        .service
+    let failed = agent
         .work_evaluate_on(&failing, at(4))
         .expect("failing evaluation");
     scenario.revise_by(&scenario.service, "An easier criterion", 5);
-    let added = scenario
-        .service
+    let added = agent
         .work_evaluate_on(
             &WorkEvaluateInput {
                 supersedes: Some(failed.evaluation.as_str().to_owned()),
@@ -799,7 +867,7 @@ fn rewording_back_does_not_undo_a_revision_a_later_failure_judged() {
         Some((CarriedFailureRefusal::Unacknowledged, Some(failed.clone())))
     );
     let self_named = reverted
-        .evaluate("pass", Some(&failed), 9)
+        .own_evaluation("pass", Some(&failed), 9)
         .expect_err("nor acknowledge its own failure");
     assert_eq!(
         refusal(&self_named),
@@ -905,7 +973,7 @@ fn a_failing_evaluation_that_names_the_failure_keeps_it_carried() {
         Some((CarriedFailureRefusal::Unacknowledged, Some(failed.clone())))
     );
     let self_named = scenario
-        .evaluate("pass", Some(&failed), 7)
+        .own_evaluation("pass", Some(&failed), 7)
         .expect_err("the executor may not acknowledge its own failure");
     assert_eq!(
         refusal(&self_named),
@@ -929,7 +997,9 @@ fn a_failing_evaluation_that_names_the_failure_keeps_it_carried() {
     assert_eq!(carried.evaluation, failed);
     assert_eq!(carried.revised_by, CarriedFailureReviser::Executor);
 
-    // Only a reviewer's pass that names it ends the carry, and done seals.
+    // Only a reviewer's pass that names it ends the carry, and done seals;
+    // the needs_human review stands until a correction follows it.
+    scenario.correct(10);
     scenario
         .review("pass", Some(&failed), 10)
         .expect("a reviewer's pass names it");
@@ -1109,8 +1179,15 @@ fn only_a_revision_of_the_judged_criteria_carries_the_failure() {
         "rewording back to the judged criteria ends the carry"
     );
     assert_nothing_to_supersede(&scenario, &failed, 7, "reworded back");
+    // Neither the title edit nor the rewording is new evidence, so the
+    // failure stands until a correction follows it.
+    assert_reroll_refused(
+        scenario.evaluate("pass", None, 8),
+        "retitled and reworded back",
+    );
+    scenario.correct(9);
     scenario
-        .evaluate("pass", None, 8)
+        .evaluate("pass", None, 9)
         .expect("the original criteria evaluate as before");
 }
 
@@ -1151,8 +1228,12 @@ fn a_blocker_after_a_failure_carries_nothing() {
     );
     assert!(scenario.carried().is_none(), "a blocker carries nothing");
     assert_nothing_to_supersede(&scenario, &failed, 6, "blocked and unblocked");
+    // The blocker is bookkeeping, not evidence: the failure stands until a
+    // correction follows it.
+    assert_reroll_refused(scenario.evaluate("pass", None, 7), "blocked and unblocked");
+    scenario.correct(8);
     scenario
-        .evaluate("pass", None, 7)
+        .evaluate("pass", None, 8)
         .expect("the unchanged criteria evaluate as before");
 }
 

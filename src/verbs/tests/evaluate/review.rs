@@ -178,6 +178,64 @@ fn prepare(
     }
 }
 
+/// Like [`prepare`], but `marker`, a session other than the holder, creates
+/// the item marked for same-session evaluation before `verbs` claims it: a
+/// mark the holder's own evaluation may use.
+fn prepare_marked_by(
+    marker: &AgentVerbs,
+    verbs: &AgentVerbs,
+    database: &std::path::Path,
+    project: &ProjectId,
+    title: &str,
+    second: i64,
+) -> Item {
+    let added = marker
+        .add(
+            AddInput {
+                title: title.into(),
+                acceptance: vec!["the change is verified".into()],
+                evaluation_mode: Some("same_session".into()),
+                ..AddInput::default()
+            },
+            at(second),
+        )
+        .expect("add a marked item");
+    let work_ref = added.value["work"]["short_ref"]
+        .as_str()
+        .expect("work ref")
+        .to_owned();
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: work_ref.clone(),
+                ttl_seconds: Some(3_600),
+                recover: None,
+            },
+            at(second + 1),
+        )
+        .expect("claim");
+    verbs
+        .gate(
+            GateInput {
+                work_ref: Some(work_ref.clone()),
+                name: "cargo-test".into(),
+                failed: Vec::new(),
+                evidence_ref: None,
+            },
+            at(second + 2),
+        )
+        .expect("gate");
+    let work = SqliteStore::open(database)
+        .expect("store")
+        .resolve_work_ref(project, &work_ref)
+        .expect("resolve work");
+    Item {
+        work_ref,
+        work_id: work.work_id,
+        run_id: work.active_run_id.expect("active run"),
+    }
+}
+
 fn basis(database: &std::path::Path, item: &Item) -> i64 {
     SqliteStore::open(database)
         .expect("store")
@@ -443,7 +501,9 @@ fn done_show_and_next_disclose_completion_provenance() {
         ],
         5,
     );
-    let item = prepare(&verbs, &database, &project, "Evaluated item", 6);
+    // A peer marked the item for same-session evaluation before the holder
+    // took it, so the holder's own evaluation is admitted.
+    let item = prepare_marked_by(&peer, &verbs, &database, &project, "Evaluated item", 6);
     let hashes = gate_hashes(&database, &item);
     let passing = verbs
         .evaluate(
@@ -622,14 +682,25 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
         .update(
             UpdateInput {
                 work_ref: Some(item.work_ref.clone()),
-                action: UpdateAction::EvaluationMode {
-                    mode: Some("same_session".into()),
+                action: UpdateAction::Revise {
+                    external: None,
+                    clear_external: false,
+                    title: Some("Retitled while evaluated".into()),
+                    outcome: None,
+                    acceptance: None,
+                    bindings: None,
+                    assignee: None,
+                    priority: None,
+                    defer: None,
+                    kind: None,
+                    labels: Vec::new(),
+                    unlabels: Vec::new(),
                 },
             },
             at(6),
         )
-        .expect("pin the mode, which revises the item");
-    let before_pin_replays = snapshot();
+        .expect("retitle the item, which revises it");
+    let before_replays = snapshot();
     for (label, resend, first) in [
         ("explicit", &explicit, &explicit_first),
         ("keyless", &keyless, &keyless_first),
@@ -647,7 +718,7 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
     }
     assert_eq!(
         snapshot(),
-        before_pin_replays,
+        before_replays,
         "word replays after the revision have no effect"
     );
     // Fresh submission on the old basis with a different payload: refused
@@ -661,7 +732,7 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
     );
     assert_eq!(
         snapshot(),
-        before_pin_replays,
+        before_replays,
         "a refused fresh submission through the word has no effect"
     );
     let shown = verbs.show(&item.work_ref, at(8)).expect("show");

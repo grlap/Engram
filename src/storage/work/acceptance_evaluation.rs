@@ -14,21 +14,25 @@ use super::feeds::{
     latest_named_root_sighting_on, load_typed_work_object, replay_operation, request_object,
 };
 use super::planning::{normalize_note_text, persist_operation_result};
-use super::query::{load_work_claim_optional, load_work_item, load_work_run, on_one_snapshot};
+use super::query::{
+    canonical_work_events_for_item, load_work_claim_optional, load_work_item, load_work_run,
+    on_one_snapshot,
+};
 use super::{
-    CanonicalObject, FeedPosition, ObjectId, SCHEMA_VERSION, SessionId,
+    CanonicalObject, DETACH_PROVENANCE_SOURCE, FeedPosition, ObjectId, SCHEMA_VERSION, SessionId,
     WorkCompletionRecoveryCause, WorkId, WorkItem, WorkRunId,
 };
 use crate::domain::{
     AcceptanceBasis, AcceptanceBinding, AcceptanceEvaluation, AcceptanceEvaluationMode,
     AcceptanceEvaluationPolicy, AcceptanceResult, AcceptanceStaleReason, AcceptanceVerdict,
-    AssuranceLevel, CarriedFailure, CarriedFailureReviser, CarriedFailureVerdict, CompletionSeal,
-    CriterionVerdict, CriterionVerdictInput, ExecutionObservation, ExecutionSourceBasis, FeedId,
-    MAX_ACCEPTANCE_EVALUATION_BYTES, MAX_ACCEPTANCE_SOURCE_BASIS_BYTES,
-    MAX_ACCEPTANCE_VERDICT_CITATIONS, MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis,
-    NamedRootBindingEvent, NamedRootBindingKind, ProjectId, RecordAcceptanceEvaluationRequest,
-    SourceRootState, VerificationEvidence, VerificationResult, WorkEvent, WorkEvidence,
-    WorkLifecycle, WorkObligation, WorkPlanningAuthority, WorkTransition,
+    ActorContext, AssuranceLevel, CarriedFailure, CarriedFailureReviser, CarriedFailureVerdict,
+    CompletionSeal, CriterionVerdict, CriterionVerdictInput, ExecutionObservation,
+    ExecutionSourceBasis, FeedId, MAX_ACCEPTANCE_EVALUATION_BYTES,
+    MAX_ACCEPTANCE_SOURCE_BASIS_BYTES, MAX_ACCEPTANCE_VERDICT_CITATIONS,
+    MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis, NamedRootBindingEvent, NamedRootBindingKind,
+    ProjectId, ProvenanceRelation, RecordAcceptanceEvaluationRequest, SourceRootState,
+    VerificationEvidence, VerificationResult, WorkEvent, WorkEvidence, WorkLifecycle,
+    WorkObligation, WorkPlanningAuthority, WorkTransition,
 };
 use crate::memory::Redactor;
 use crate::storage::{CarriedFailureRefusal, EvaluationBasisMove, SqliteStore, StoreError};
@@ -377,6 +381,30 @@ impl SqliteStore {
                 item.work_id,
                 stale.refusal(&item, judged.as_ref(), cut)?,
             ));
+        }
+        // Last, after every structural and basis refusal, which are the more
+        // specific answers: a same-session record needs an eligible mark, or
+        // no other admitted mode.
+        if let Some(reason) = same_session_ineligibility(
+            &transaction,
+            &item,
+            &policy,
+            request.mode,
+            &SessionStanding {
+                evaluator: Some(&evaluator_session),
+                holder: holder.as_ref(),
+                executor: run.executor.as_ref(),
+                history: &history,
+            },
+        )? {
+            return Err(refused(item.work_id, reason));
+        }
+        // And a blocking evaluation stands until something that could change
+        // it lies within this one's basis.
+        if let Some(reason) =
+            reroll::reroll_refusal(&transaction, &item, run_id, cut, named_root.as_ref())?
+        {
+            return Err(refused(item.work_id, reason));
         }
         let receipt = append_evaluation(&transaction, &item, run_id, request, &attempt, verdicts)?;
         transaction.commit()?;
@@ -946,12 +974,203 @@ fn admit_mode(
         return Err(refused(
             item.work_id,
             format!(
-                "this task selects mode {}; evaluate in that mode or revise the task",
+                "this task is marked for mode {}; evaluate in that mode",
                 selected.word()
             ),
         ));
     }
     Ok(())
+}
+
+/// The evaluation a refused same-session evaluator can request instead, in
+/// a mode the project admits: independent where admitted, else a sub-agent
+/// one; `None` where the project admits only same-session.
+fn host_evaluation_words(policy: &AcceptanceEvaluationPolicy) -> Option<&'static str> {
+    if policy.allows(AcceptanceEvaluationMode::IndependentSession) {
+        Some("request an independent evaluation from the host")
+    } else if policy.allows(AcceptanceEvaluationMode::SubAgent) {
+        Some("request a sub-agent evaluation from the host")
+    } else {
+        None
+    }
+}
+
+/// Refusal words for a same-session evaluation of a task no one marked for
+/// it, in a project that admits another mode.
+fn unmarked_same_session(policy: &AcceptanceEvaluationPolicy) -> String {
+    format!(
+        "this task is not marked for same-session evaluation and the project admits another mode: {}; same-session needs the task marked for it by someone other than its executor",
+        host_evaluation_words(policy).unwrap_or("request an evaluation in that mode from the host")
+    )
+}
+
+/// Refusal words for a same-session mark that waives nothing: `why` says
+/// whose or what mark it is. The mark is fixed by having a session that
+/// never held or executed the run clear it and set it again, or, where the project admits
+/// one, by marking the task for another mode and asking the host. Where the
+/// project admits only same-session, clearing the mark alone is enough: an
+/// unmarked task there takes its executor's own evaluation.
+fn ineligible_mark(policy: &AcceptanceEvaluationPolicy, why: &str) -> String {
+    let instead = match host_evaluation_words(policy) {
+        Some(words) => format!(", or have the mark changed to that mode and {words}"),
+        None if policy.admits_only_same_session() => {
+            "; in this project, which admits only same-session, clearing the mark alone lets its executor evaluate".into()
+        }
+        None => String::new(),
+    };
+    format!(
+        "this task's same-session mark {why}, so it cannot waive independent evaluation: have a session that never held or executed this run clear the mark and set it again{instead}"
+    )
+}
+
+/// The sessions around one evaluation of a run: who evaluates, if known,
+/// and who holds, executes or has held it.
+struct SessionStanding<'a> {
+    evaluator: Option<&'a SessionId>,
+    holder: Option<&'a SessionId>,
+    executor: Option<&'a SessionId>,
+    history: &'a [SessionId],
+}
+
+impl SessionStanding<'_> {
+    fn includes(&self, session: &SessionId) -> bool {
+        self.evaluator == Some(session) || self.holds_or_held(session)
+    }
+
+    /// Whether `session` holds or executes the run, or held it earlier.
+    fn holds_or_held(&self, session: &SessionId) -> bool {
+        self.holder == Some(session)
+            || self.executor == Some(session)
+            || self.history.contains(session)
+    }
+}
+
+/// Who set the task's current same-session mark: the session of the
+/// Created or Revised event that turned it on, found by walking the item's
+/// own events in order. Revisions that keep the mark keep its author;
+/// clearing or changing it ends the mark, and setting it again authors a new
+/// one. `None` when the mark's author has no recorded session, or no native
+/// event of the item shows the mark being turned on, as for an item whose
+/// earlier history was restored rather than recorded here, or a successor
+/// whose creation only carried the mark over from the item it was detached
+/// from: the session that detached it did not set the mark.
+fn same_session_mark_author(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<Option<SessionId>, StoreError> {
+    Ok(mark_author(
+        canonical_work_events_for_item(connection, item.work_id)?
+            .into_iter()
+            .map(|event| MarkStep {
+                transition: match event.transition {
+                    WorkTransition::Created { .. } if carried_over(&event.actor) => {
+                        MarkTransition::Other
+                    }
+                    WorkTransition::Created { .. } => MarkTransition::Created,
+                    WorkTransition::Revised { .. } => MarkTransition::Revised,
+                    _ => MarkTransition::Other,
+                },
+                marked: event.work.evaluation_mode == Some(AcceptanceEvaluationMode::SameSession),
+                session: event.actor.session_id,
+            }),
+    ))
+}
+
+/// Whether a creation copied the item from another one, as a detach does,
+/// rather than taking its fields from the creating session.
+fn carried_over(actor: &ActorContext) -> bool {
+    actor.provenance_chain.iter().any(|link| {
+        link.relation == ProvenanceRelation::DerivedFrom && link.source == DETACH_PROVENANCE_SOURCE
+    })
+}
+
+/// How one of an item's events can bear on its evaluation-mode mark.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MarkTransition {
+    Created,
+    Revised,
+    Other,
+}
+
+/// One of an item's events, in order, as the mark's authorship reads it.
+struct MarkStep {
+    transition: MarkTransition,
+    /// Whether the item is marked for same-session after the event.
+    marked: bool,
+    session: Option<SessionId>,
+}
+
+/// The author of the current same-session mark over the item's native
+/// events in order: the session of the Created event that made the item
+/// marked, or of the Revised event whose previous native event showed it
+/// unmarked. A mark first seen on any other step, or on a Revised event with
+/// no native event before it, has no provable author.
+fn mark_author(steps: impl IntoIterator<Item = MarkStep>) -> Option<SessionId> {
+    let mut previously_marked: Option<bool> = None;
+    let mut author: Option<Option<SessionId>> = None;
+    for step in steps {
+        if !step.marked {
+            author = None;
+        } else if author.is_none() {
+            let turned_on = match step.transition {
+                MarkTransition::Created => true,
+                MarkTransition::Revised => previously_marked == Some(false),
+                MarkTransition::Other => false,
+            };
+            author = Some(turned_on.then_some(step.session).flatten());
+        }
+        previously_marked = Some(step.marked);
+    }
+    author.flatten()
+}
+
+/// Why an executor-affiliated evaluation of `item` is not admitted, or
+/// `None` when it is. A same-session one: an unmarked task takes it only
+/// where the project admits no other mode, and a marked one only while the
+/// session that marked it neither evaluates, holds nor executes the run, now
+/// or earlier in it. A sub-agent one must be recorded from a distinct child
+/// session: one recorded from the run's holder, executor or a former holder
+/// is the executor's own evaluation. Identities are asserted: this stops
+/// forgetting, shortcuts and re-rolls, not deliberate forgery.
+fn same_session_ineligibility(
+    connection: &Connection,
+    item: &WorkItem,
+    policy: &AcceptanceEvaluationPolicy,
+    mode: AcceptanceEvaluationMode,
+    standing: &SessionStanding<'_>,
+) -> Result<Option<String>, StoreError> {
+    if mode == AcceptanceEvaluationMode::SubAgent {
+        return Ok(standing
+            .evaluator
+            .is_some_and(|evaluator| standing.holds_or_held(evaluator))
+            .then(|| {
+                format!(
+                    "a sub_agent evaluation must be recorded from a distinct child session with a holder or executor as its parent; this one comes from a session that holds, executes or held the run, which makes it the executor's own evaluation: {}",
+                    host_evaluation_words(policy)
+                        .unwrap_or("record it from the sub-agent's own session")
+                )
+            }));
+    }
+    if mode != AcceptanceEvaluationMode::SameSession {
+        return Ok(None);
+    }
+    Ok(match item.evaluation_mode {
+        None if !policy.admits_only_same_session() => Some(unmarked_same_session(policy)),
+        Some(AcceptanceEvaluationMode::SameSession) => {
+            match same_session_mark_author(connection, item)? {
+                None => Some(ineligible_mark(
+                    policy,
+                    "has no author recorded on this item (it was restored, or carried over by a detach)",
+                )),
+                Some(author) if standing.includes(&author) => Some(ineligible_mark(
+                    policy,
+                    "was set by a session that evaluates, holds or executes its run",
+                )),
+                Some(_) => None,
+            }
+        }
+        _ => None,
+    })
 }
 
 fn admit_identity(
@@ -1752,13 +1971,7 @@ fn basis_moved_after(
             "execution_observation" => {
                 let observation: ExecutionObservation =
                     load_typed_work_object(connection, &hash, "execution_observation")?;
-                if root.is_some_and(|root| {
-                    observation.source_basis.as_ref().is_some_and(|basis| {
-                        basis.workspace_id != root.event.workspace_id
-                            || basis.source_root_generation != Some(root.event.generation)
-                            || basis.source_root_state != Some(SourceRootState::Named)
-                    })
-                }) {
+                if off_named_root(root, &observation) {
                     continue;
                 }
                 if !observation.source_changed {
@@ -1793,6 +2006,20 @@ fn basis_moved_after(
         return Ok(Some(EvaluationBasisMove::SourceChanged));
     }
     Ok(check.then_some(EvaluationBasisMove::CheckRecorded))
+}
+
+/// Whether `observation` sights a source other than the claim's named root:
+/// another workspace, another generation, or a root not in the named state.
+/// A foreign sighting cannot claim the named source moved. Without a named
+/// root nothing is foreign.
+fn off_named_root(root: Option<&NamedEvaluationRoot>, observation: &ExecutionObservation) -> bool {
+    root.is_some_and(|root| {
+        observation.source_basis.as_ref().is_some_and(|basis| {
+            basis.workspace_id != root.event.workspace_id
+                || basis.source_root_generation != Some(root.event.generation)
+                || basis.source_root_state != Some(SourceRootState::Named)
+        })
+    })
 }
 
 /// The revision the run was last seen at, at or before `through`: that of
@@ -2233,6 +2460,34 @@ fn staleness(
     // Independence is a relationship to the run, rechecked when the record
     // is consumed: an evaluator that has since taken the run by handoff or
     // recovery would otherwise consume its own earlier judgment.
+    // An executor-affiliated record is rechecked when consumed as well: a
+    // mark whose author has since taken the run, a task no one marked, or a
+    // sub-agent whose own session has since taken the run no longer admits
+    // it.
+    if matches!(
+        record.mode,
+        AcceptanceEvaluationMode::SameSession | AcceptanceEvaluationMode::SubAgent
+    ) {
+        let claim = load_work_claim_optional(connection, run_id)?;
+        let run = load_work_run(connection, run_id)?;
+        let history = run_holder_history(connection, run_id)?;
+        if same_session_ineligibility(
+            connection,
+            item,
+            policy,
+            record.mode,
+            &SessionStanding {
+                evaluator: record.evaluator.session_id.as_ref(),
+                holder: claim.as_ref().map(|claim| &claim.holder),
+                executor: run.executor.as_ref(),
+                history: &history,
+            },
+        )?
+        .is_some()
+        {
+            return Ok(Some(AcceptanceStaleReason::Policy));
+        }
+    }
     if record.mode == AcceptanceEvaluationMode::IndependentSession {
         let claim = load_work_claim_optional(connection, run_id)?;
         let run = load_work_run(connection, run_id)?;
@@ -2396,6 +2651,7 @@ pub(super) fn blocking_cause(
 
 mod history;
 pub(crate) use history::AssessedAcceptanceEvaluation;
+mod reroll;
 
 #[cfg(test)]
 mod tests;

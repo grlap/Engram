@@ -318,6 +318,19 @@ impl LocalWorkService {
         Ok(format!("auto:{}", object.key().as_str()))
     }
 
+    /// The project's active acceptance-evaluation policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the store or its control policy cannot be
+    /// read.
+    pub(crate) fn acceptance_evaluation_policy(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<crate::domain::AcceptanceEvaluationPolicy, StoreError> {
+        self.store_at(now)?.acceptance_evaluation_policy()
+    }
+
     /// The keyless attempt identity of clearing one named blocker: this
     /// session's clear of that blocker on that item, with the same canonical
     /// intent. It leaves out the item's revision, which the clear itself

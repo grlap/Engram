@@ -1164,3 +1164,76 @@ fn a_citation_whose_producer_ran_outside_the_root_is_refused() {
     evaluate_check(&mut named.fixture.store, &work, &current, "consistent", 12)
         .expect("the consistent B check records");
 }
+
+/// B68: under a named root, a failing evaluation stands through a report of
+/// a change in another workspace, which cannot claim the named source moved;
+/// a change inside the root is new evidence.
+#[test]
+fn a_foreign_report_under_a_named_root_does_not_unlock_a_failure() {
+    let mut fixture = fixture("project-reroll-root");
+    let (work, claim) = (fixture.work.clone(), fixture.claim.clone());
+    let store = &mut fixture.store;
+    // The policy first: a later policy change would end the host's turn.
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-reroll",
+        5,
+    );
+    let mut host = HostSession::bind(store, &work, &claim, 6);
+    host_binds(
+        store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        20,
+        "name-B",
+        20,
+    )
+    .expect("host names B");
+    host.basis = workspace("workspace-B", "R1", Some(9));
+    host.checkpoint(store, true, None, 30);
+    let fail = |store: &mut SqliteStore, key: &str, second: i64| {
+        let mut input = request(
+            &work,
+            cut(store, &work),
+            "runner",
+            Mode::SameSession,
+            vec![verdict(
+                1,
+                AcceptanceVerdict::Fail,
+                AcceptanceBasis::Judgment,
+                &[],
+            )],
+            second,
+        );
+        input.attempt_key = Some(key.into());
+        record(store, &input)
+    };
+    fail(store, "fail", 40).expect("the failing evaluation");
+    // Workspace A has no earlier change, so the report keeps its change flag.
+    checkpoint_basis(
+        &mut host,
+        store,
+        workspace("workspace-A", "A1", None),
+        true,
+        50,
+    )
+    .expect("a foreign report");
+    let refused = fail(store, "after-foreign", 60);
+    assert!(
+        matches!(
+            &refused,
+            Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
+                if reason.contains("nothing that could change it was recorded")
+        ),
+        "{refused:?}"
+    );
+    host.basis = workspace("workspace-B", "R2", Some(9));
+    host.checkpoint(store, true, None, 70);
+    fail(store, "after-change", 80).expect("a change inside the named root is new evidence");
+}

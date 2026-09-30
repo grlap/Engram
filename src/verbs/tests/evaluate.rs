@@ -3,7 +3,9 @@
 mod carried_failure;
 mod criteria_required;
 mod history;
+mod missing_evaluation;
 mod review;
+mod self_waiver;
 
 use super::*;
 use crate::domain::{
@@ -16,6 +18,16 @@ use crate::{
 };
 
 fn enable(database: &std::path::Path, modes: &[AcceptanceEvaluationMode], second: i64) {
+    enable_as(database, modes, "enable-evaluated-completion", second);
+}
+
+/// `enable` under its own idempotency key, for a later policy change.
+fn enable_as(
+    database: &std::path::Path,
+    modes: &[AcceptanceEvaluationMode],
+    key: &str,
+    second: i64,
+) {
     SqliteStore::open(database)
         .expect("store")
         .set_acceptance_evaluation_policy(
@@ -35,7 +47,7 @@ fn enable(database: &std::path::Path, modes: &[AcceptanceEvaluationMode], second
                 provenance_chain: Vec::<ProvenanceLink>::new(),
                 reason: "enable acceptance evaluation for the verbs test".into(),
             },
-            "enable-evaluated-completion",
+            key,
             None,
             at(second),
             &DevelopmentNoopRedactor,
@@ -235,6 +247,44 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         "{}",
         shown.text()
     );
+    // The holder's own mark cannot waive independent evaluation, even where
+    // same-session is the only admitted mode: an evaluation under it
+    // refuses, and the holder clears the mark to evaluate an unmarked task.
+    let self_marked = verbs
+        .evaluate(
+            EvaluateInput {
+                acceptance_basis: acceptance,
+                ..evaluate_input(
+                    &work_ref,
+                    basis(),
+                    vec![
+                        verdict(1, "pass", "asserted", &gate_hash),
+                        verdict(2, "fail", "judgment", &[]),
+                    ],
+                )
+            },
+            at(6),
+        )
+        .expect_err("an evaluation under the holder's own mark refuses");
+    assert!(
+        self_marked
+            .to_string()
+            .contains("same-session mark was set by a session that evaluates, holds or executes"),
+        "{self_marked}"
+    );
+    verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(work_ref.clone()),
+                action: UpdateAction::EvaluationMode { mode: None },
+            },
+            at(6),
+        )
+        .expect("clear the holder's own mark");
+    let acceptance = verbs.show(&work_ref, at(6)).expect("show").value["acceptance_basis"]
+        .as_i64()
+        .expect("basis");
+    assert_eq!(acceptance, 3);
 
     let failing = verbs
         .evaluate(
@@ -303,6 +353,18 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         refused_done.next
     );
 
+    // The failure stands until new evidence: a correction precedes the pass.
+    verbs
+        .note(
+            &NoteInput {
+                status: false,
+                work_ref: Some(work_ref.clone()),
+                text: "correction: the failing criterion is fixed".into(),
+                refs: Vec::new(),
+            },
+            at(10),
+        )
+        .expect("correction note");
     // An identical resend carries the same evidence basis; a resend with a
     // fresh basis is a deliberate re-evaluation and records a new object.
     let passing_basis = basis();

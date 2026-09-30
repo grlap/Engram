@@ -1,5 +1,6 @@
 //! Independent follow-ups for work stranded below a terminal ancestor.
 
+use super::super::DETACH_PROVENANCE_SOURCE;
 use super::super::query::classified_prerequisite_projections;
 use super::super::query::load_root_execution;
 use super::{
@@ -69,7 +70,7 @@ impl SqliteStore {
         let mut actor = request.actor.clone();
         actor.provenance_chain.push(ProvenanceLink {
             relation: ProvenanceRelation::DerivedFrom,
-            source: "work_detach".into(),
+            source: DETACH_PROVENANCE_SOURCE.into(),
             reference: Some(item.work_id.0.to_string()),
         });
         let creation = CreateWorkRequest {

@@ -168,8 +168,9 @@ fn former_holders_are_never_independent_evaluators() {
     )
     .expect("a never-holding session evaluates independently");
     assert_eq!(independent.record.mode, Mode::IndependentSession);
-    // The current holder still evaluates in its own name.
-    record(
+    // The current holder may not evaluate its own unmarked task while the
+    // project admits another mode.
+    let own = record(
         store,
         &request(
             &work,
@@ -180,7 +181,12 @@ fn former_holders_are_never_independent_evaluators() {
             403,
         ),
     )
-    .expect("the current holder evaluates as same_session");
+    .expect_err("the current holder's own evaluation of an unmarked task refuses");
+    assert!(
+        own.to_string()
+            .contains("not marked for same-session evaluation"),
+        "{own}"
+    );
 }
 
 // R9: the evaluation object has an explicit canonical cap and bounded

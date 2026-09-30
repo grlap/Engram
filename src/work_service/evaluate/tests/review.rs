@@ -141,8 +141,8 @@ fn exact_retries_replay_after_a_revision_and_after_completion() {
         .expect("keyless record");
     assert!(!explicit_first.replayed && !keyless_first.replayed);
 
-    // The holder revises the item (pins the mode): the revision moves on.
-    // Verbs and service share the database; the pin is an ordinary revision.
+    // The holder revises the item: the revision moves on. Verbs and service
+    // share the database; a retitling is an ordinary revision.
     let verbs = crate::AgentVerbs::new(
         database.clone(),
         project.clone(),
@@ -154,13 +154,24 @@ fn exact_retries_replay_after_a_revision_and_after_completion() {
         .update(
             crate::UpdateInput {
                 work_ref: Some(work_ref.clone()),
-                action: crate::UpdateAction::EvaluationMode {
-                    mode: Some("same_session".into()),
+                action: crate::UpdateAction::Revise {
+                    external: None,
+                    clear_external: false,
+                    title: Some("Retitled while evaluated".into()),
+                    outcome: None,
+                    acceptance: None,
+                    bindings: None,
+                    assignee: None,
+                    priority: None,
+                    defer: None,
+                    kind: None,
+                    labels: Vec::new(),
+                    unlabels: Vec::new(),
                 },
             },
             at(6),
         )
-        .expect("pin the mode");
+        .expect("retitle the item");
     let revised = SqliteStore::open(&database)
         .expect("store")
         .get_work_item(root.work_id)
@@ -178,7 +189,7 @@ fn exact_retries_replay_after_a_revision_and_after_completion() {
                 .map(|status| status.evaluation),
         )
     };
-    let before_pin_replays = snapshot();
+    let before_replays = snapshot();
     for (label, resend, first) in [
         ("explicit", &explicit, &explicit_first),
         ("keyless", &keyless, &keyless_first),
@@ -197,7 +208,7 @@ fn exact_retries_replay_after_a_revision_and_after_completion() {
     }
     assert_eq!(
         snapshot(),
-        before_pin_replays,
+        before_replays,
         "replays after the revision have no effect"
     );
     let stale = service
@@ -212,13 +223,13 @@ fn exact_retries_replay_after_a_revision_and_after_completion() {
     );
     assert_eq!(
         snapshot(),
-        before_pin_replays,
+        before_replays,
         "a refused fresh submission has no effect"
     );
 
     // A fresh pass on the current revision seals the item; afterwards every
     // exact resend, old or new, still replays and nothing new is admitted.
-    let fresh = submission(revised.revision, None, "fresh pass after the pin");
+    let fresh = submission(revised.revision, None, "fresh pass after the revision");
     let fresh_first = service
         .work_evaluate_on(&fresh, at(9))
         .expect("fresh record on the current revision");

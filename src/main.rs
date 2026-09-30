@@ -2352,10 +2352,12 @@ struct WorkUpdateArgs {
     #[arg(long = "unlabel", value_name = "LABEL")]
     unlabels: Vec<String>,
     /// Pin the acceptance-evaluation mode this task requires: same-session,
-    /// sub-agent, or independent-session.
+    /// sub-agent, or independent-session. A same-session mark set by the
+    /// task's executor waives nothing.
     #[arg(long, value_name = "MODE", conflicts_with = "clear_evaluation_mode")]
     evaluation_mode: Option<String>,
-    /// Return the task to any policy-allowed evaluation mode.
+    /// Return the task to the default evaluation: independent unless the
+    /// policy admits only same-session.
     #[arg(long)]
     clear_evaluation_mode: bool,
     /// Cancel the item and say why.

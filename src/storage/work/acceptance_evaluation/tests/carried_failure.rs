@@ -98,8 +98,9 @@ fn a_host_check_after_the_revision_does_not_end_the_carry() {
         &request(
             &work,
             cut(store, &work),
-            "runner",
-            Mode::SameSession,
+            // A failing independent judgment by a session that never held the run.
+            "judge",
+            Mode::IndependentSession,
             vec![verdict(
                 1,
                 AcceptanceVerdict::Fail,

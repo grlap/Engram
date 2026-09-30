@@ -55,7 +55,7 @@ security ladder; policy expresses compatibility explicitly.
 | Mode | Who evaluates | Identity relation to the completing session | Assurance recorded |
 | --- | --- | --- | --- |
 | `same_session` | the completing session itself, as an explicit continuation | same session id | asserted self-evaluation; distinct from the self-asserted path because a real per-criterion record exists |
-| `sub_agent` | an evaluator spawned under the completing session | same or host-assigned session id, plus a distinct `execution_identity` and a host-attested `parent_session` | asserted; a host channel may later raise it, the core never infers it |
+| `sub_agent` | an evaluator spawned under the completing session | its own host-assigned child session id, never one that holds, executes or held the run, plus a distinct `execution_identity` and a host-attested `parent_session` | asserted; a host channel may later raise it, the core never infers it |
 | `independent_session` | a separate session, possibly a different model or provider | session id differs from the claim holder and from every recorded executor session of the run | asserted independence enforced structurally on session identity |
 
 Model and provider are structured optional metadata on the record
@@ -89,9 +89,92 @@ acceptance_evaluation {
 
 A work item may select its evaluation mode as a revision-controlled planning
 field (`evaluation_mode`, visible in `show`, set with `add`/`update`). When set,
-an evaluation must use exactly that mode; when unset, any policy-allowed mode
-is acceptable. A task cannot select a mode the policy disallows at record time;
-the refusal names the allowed set. Selecting a mode never downgrades the policy.
+an evaluation must use exactly that mode. A task cannot select a mode the policy
+disallows at record time; the refusal names the allowed set. Selecting a mode
+never downgrades the policy.
+
+### Independent by default
+
+Evaluation is independent unless the task is marked otherwise, so that an agent
+cannot close a task on its own judgment by forgetting, by a shortcut, or by
+marking its own task. These rules add no policy field and change no stored
+record; the mode and mark rules are checked when an evaluation is recorded
+and again when completion consumes it on open work, and the failure rule
+when an evaluation is recorded. Sealed completions are not reassessed.
+
+- **Unmarked task.** A task with no mode set refuses a `same_session`
+  evaluation whenever the policy admits another mode. The refusal says to
+  request an independent evaluation from the host, and that same-session needs
+  the task marked for it by someone other than its executor. A project that
+  admits only `same_session` is unchanged: there the completing session
+  evaluates its unmarked task. Other admitted modes keep their own identity
+  rules.
+- **Same-session mark.** A task marked `same_session` admits a same-session
+  evaluation only while the session that set the current mark neither
+  evaluates, holds nor executes the run, now or earlier in it. This holds in
+  every policy, including a same-session-only one. The mark's author is the
+  session of the `Created` or `Revised` event that turned the mark on, read
+  from the item's own events: revisions of other fields, and reasserting the
+  unchanged mark, keep that author; clearing or changing the mark ends it, and
+  setting it again authors a new one. A mark set at creation by the later
+  executor, or by the holder to escape a failed independent evaluation, is
+  refused; a mark set by an operator or a peer is accepted. A mark with no
+  author recorded on the item is refused with a remedy to have a session that
+  never held or executed the run clear it and set it again: its author's
+  session was not recorded, the item's earlier history was restored rather
+  than recorded here, or the item is a detach successor, whose creation
+  carried the mark over without its detaching session setting it. In a project
+  that admits only `same_session`, clearing the mark alone is enough, since
+  the unmarked task then takes its executor's own evaluation. When the mark's
+  author later takes the run, completion no longer consumes an evaluation made
+  under it (`stale (policy)`).
+- **Sub-agent.** A `sub_agent` evaluation recorded from a session that holds
+  or executes the run, or held it earlier, is the executor's own evaluation:
+  it is refused at record time and not consumed at completion, like an
+  unmarked `same_session` one. A `sub_agent` evaluation recorded from a
+  distinct child session, with a holder or executor as its parent session,
+  remains admissible where the policy admits `sub_agent`; if that child
+  session later takes the run, completion no longer consumes it.
+- **A failure stands until new evidence.** When the newest evaluation on the
+  run is blocking (`fail`, `insufficient_evidence` or `needs_human`), a later
+  evaluation records only if evidence of a qualifying kind lies on the run
+  feed after that evaluation's cut and at or before its own. Qualifying kinds
+  are notes, gates, host verification and environment evidence, and an
+  observation that the source changed to a revision other than the one last
+  seen, starting from the source the blocking evaluation judged (its declared
+  revision, or else the run's last sighting at its cut); a reported change
+  that carries no revision qualifies too. Evaluation records, and claim,
+  renewal, handoff, revision, checkpoint and obligation bookkeeping, do not
+  qualify, nor does a repeat sighting of an unchanged source, a reported
+  change that leaves the source at the judged revision, a sighting outside the
+  claim's named source root, or a quiet sighting at another revision without
+  the change flag (which does make the blocking evaluation stale, but a note
+  still has to precede the next one). A flagged change compares with the
+  revision last seen, quiet sightings included, so a change to a revision
+  already sighted since the failure does not count either. A host check counts
+  wherever it ran, as any host check does. The rule holds for any verdict and
+  any evaluator, and also when the blocking evaluation has gone stale for
+  another reason, so a re-roll on the same evidence, or after an edit of the
+  title, the mode or the policy, is refused with a remedy to record the
+  correction first; a correction note followed by a new evaluation replaces
+  the failure. When the item's criteria or their bindings differ from those
+  the blocking evaluation judged, the carried-failure rule (R11 under
+  [Record-time validation](#record-time-validation)) governs instead. An exact
+  resend of a recorded attempt still replays it.
+- **Remedies.** A refusal of a pinned mode says only to evaluate in that mode;
+  it no longer suggests revising the task, which would let the executor choose
+  its own evaluator. `done` without an evaluation first points at requesting
+  an independent evaluation from the host, in host-neutral words; it names a
+  sub-agent evaluation instead for a task marked for one or where the project
+  admits no independent mode, mentions same-session only for a task marked
+  for it or where the project admits no other mode, and never asks for a mode
+  the project does not admit (a mark naming one is reported as such). A
+  `done` refused because an evaluation went stale with reason `policy` gives
+  the same remedy, from the task's current mark and the admitted modes.
+
+**Limit.** Session and actor identities are asserted, not authenticated. These
+rules stop forgetting, shortcuts and re-rolls; they do not stop deliberate
+forgery of another session's identity.
 
 ## The evaluation record
 
@@ -163,9 +246,12 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   than borrowing a matching revision from the named root.
 - **R4 independence.** `independent_session`: the evaluator session differs
   from the claim holder and from every recorded executor session of the run.
-  `sub_agent`: `execution_identity` and `parent_session` are present and the
-  parent equals the current holder or executor session. `same_session`: the
-  evaluator session equals the current holder or executor session.
+  `sub_agent`: `execution_identity` and `parent_session` are present, the
+  parent equals the current holder or executor session, and the evaluator
+  session neither holds nor executes the run and never held it.
+  `same_session`: the evaluator session equals the current holder or
+  executor session, and the task admits it under
+  [Independent by default](#independent-by-default).
 - **R5 pass citations.** Every `pass` carries a non-empty rationale and at
   least one citation. `observed`: each citation is host-minted
   `VerificationEvidence` bound to this run whose result is `passed`.
@@ -309,10 +395,12 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   its brief, and an independent_session evaluator is only as distinct as the
   session id it asserts (a local CLI caller can start a fresh session).
   Engram records the evaluator's session and claims nothing stronger. The
-  check runs when the evaluation is recorded; at `done` the existing identity
-  rule rechecks an independent_session record, while a sub_agent record is
-  not rechecked, so a distinct evaluator that later takes the run keeps the
-  acknowledgment it made. A project whose policy or task pin allows only
+  check runs when the evaluation is recorded; at `done` the identity rule
+  rechecks an independent_session record, and the
+  [Independent by default](#independent-by-default) rules recheck a
+  sub_agent record, so an evaluator that later takes the run no longer
+  supplies a consumable acknowledgment and a distinct session must evaluate
+  again. A project whose policy or task pin allows only
   same_session cannot supersede such a failure until an authorized change
   allows a distinct evaluator or, while no later failing evaluation has named
   it, the criteria are revised back; nothing falls back to
@@ -419,8 +507,10 @@ stale reason named.
   recovery cannot consume its own judgment: the record is stale with reason
   `identity`, and a session that never held the run must evaluate again.
   Holding a different run does not taint independence. `same_session` and
-  `sub_agent` records make no independence claim and survive a later holder
-  change.
+  `sub_agent` records make no independence claim; the
+  [Independent by default](#independent-by-default) rules recheck them at
+  completion instead, and one they no longer admit is stale with reason
+  `policy`.
 - **F8 bound check source.** Every citation of a `pass` on a bound criterion
   is a passed check that ran on the source the evaluation judged, and the
   source had not moved away from it by the cut (R5). The rule is applied
@@ -573,7 +663,7 @@ tests cite the row identifier in a nearby comment.
 | B04 | policy `[sub_agent, independent_session]`; same-session record | refuse at write; nothing appended |
 | B05 | task mode `independent_session`; evaluator session = holder | refuse at write (independence) |
 | B06 | `independent_session` from a distinct session; holder runs `done` | record accepted; seal |
-| B07 | `sub_agent` with `execution_identity` and `parent_session` = holder, same session id | record accepted, recorded `asserted`; receipt does not claim verified independence |
+| B07 | `sub_agent` with `execution_identity` and `parent_session` = holder, from the holder's own session / from a distinct child session | refuse at write, the executor's own evaluation (B63) / record accepted, recorded `asserted`; receipt does not claim verified independence |
 | B08 | mode allowed by policy but different from the task's selected mode | refuse at write naming the selected mode |
 | B09 | port-PR build criterion; `pass` + `observed` citing host-minted `VerificationEvidence(Build, passed)` on this run | accepted; seal |
 | B10 | `pass` + `observed` citing `VerificationEvidence(Build, failed)` | refuse at write ("observed pass requires a passed check") |
@@ -625,6 +715,20 @@ tests cite the row identifier in a nearby comment.
 | B56 | `fail` on a criterion bound to a test, then the executor drops the binding (or `update --accept` repeats the same wording without `--bind`) or binds another kind | the failure is carried although the criterion's text is unchanged; `evaluate` without `--supersedes` is refused `carried_failure_unacknowledged` |
 | B57 | `fail`, the run's executor revises its criteria; the failed record is named by a same_session evaluation, by a sub_agent that shares the executor's or a former holder's session, or by an independent_session evaluator or a sub_agent under its own session | refuse at write `acceptance_evaluation_refused` with `reason: carried_failure_self_acknowledged`, `failed_evaluation`, and a remedy naming an independent_session evaluator, a sub_agent under its own host-issued session, widening the policy, changing or clearing the task pin, or, while no later failing evaluation has named it, revising back; nothing appended / the same / the same / records with `supersedes` |
 | B58 | `fail`, the run's executor revises its criteria, and an evaluator that never held the run names the failure with `fail`; the executor revises again; another such evaluation names it with `needs_human`; or a planner revises in between and the executor rewords back to the original criteria | the failure is still carried as the original record (`carried_failure.evaluation` unchanged, `revised_by: executor`, `judged_criteria` the original ones, and `newest_judged_bindings` those the naming evaluation judged); a revert to the original criteria after a failing evaluation named it stays carried, and so does a second failing review of the reverted criteria; the executor's `same_session` pass without `--supersedes` is refused `carried_failure_unacknowledged`, and naming it `carried_failure_self_acknowledged`; only a passing evaluation from such an evaluator that names it ends the carry, and `done` seals |
+| B59 | a task with no mode set, a policy admitting same_session and another mode; the holder evaluates same_session / a policy admitting only same_session | refuse at write: not marked for same-session, request an independent evaluation from the host, same-session needs a mark by someone other than the executor; nothing appended / records |
+| B60 | a task marked same_session at creation by the session that later executes it, or marked by the holder after a failed independent evaluation; the holder evaluates same_session, in any policy | refuse at write: the mark was set by a session that evaluates, holds or executes the run; clearing the mark leaves an unmarked task, refused as B59 |
+| B61 | a task marked same_session by a peer or operator; the holder revises other fields, then evaluates same_session | records; the mark keeps its author; `done` seals with `evaluated (same_session, …)` |
+| B62 | B61, then the holder releases and the mark's author claims the run | `done` refuses `acceptance_evaluation_stale` (policy); the author's own same_session evaluation refuses at write |
+| B63 | policy admits `sub_agent`; a `sub_agent` evaluation recorded from the holder's own session / from a distinct child session under the holder; then that child session claims the run | refuse at write: recorded from a session that holds, executes or held the run / records, and `done` seals / `done` refuses `acceptance_evaluation_stale` (policy) |
+| B64 | a child marked same_session by the session that later executes it; a peer detaches it after its parent ends; the executor claims the successor and evaluates same_session / a peer then clears the mark and sets it again | refuse at write: the mark has no author recorded on the successor / records |
+| B65 | a `fail`; then an evaluation cut at the same position, at a cut advanced only by the failing record, or by a checkpoint; a failing re-roll; one cut before a later gate / after it | refuse at write ("nothing that could change it was recorded"), nothing appended / records; a later evaluation after that pass needs nothing new |
+| B66 | a `fail`; the host reports a change at the revision already judged / to another revision | refuse at write / records |
+| B67 | an independent `fail`; a title edit, a mode edit and a claim renewal, each followed by an independent pass; then a correction note and a pass | each refused at write; the last records and `done` seals on it |
+| B68 | under a named root, a `fail`; a flagged change reported in another workspace / a change inside the root; then an evaluation | refuse at write / records |
+| B69 | a `fail` declaring the revision it judged ahead of the host's report; the host then reports the change to that revision / to another revision | refuse at write / records |
+| B70 | a newest `insufficient_evidence`, then a newest `needs_human`, each re-rolled without evidence; a policy edit after the `needs_human` | each refused at write |
+| B71 | a `fail`; a quiet sighting at another revision; then a flagged change to that revision; then a flagged change with no revision | refused / refused / records |
+| B72 | an unmarked task's own same_session pass sealed under a same-session-only policy; the policy then admits `independent_session` | a new such evaluation refuses; the seal still validates (doctor healthy) and `show` reads it unchanged |
 
 ## Agent surface
 
@@ -837,7 +941,9 @@ stale under [Freshness](#freshness) and a new acceptance judgment is needed,
 the host obtains a whole new record; it never patches individual verdicts.
 Every verdict in the new record is a fresh judgment of all evidence up to
 its cut. Earlier rationale may be quoted, but never replaces that judgment;
-the core never stitches per-criterion verdicts across records.
+the core never stitches per-criterion verdicts across records. A blocking
+newest record is replaced only on new evidence
+([A failure stands until new evidence](#independent-by-default)).
 
 The host may ask for that judgment in the **same independent evaluator
 session**, including when only evidence has changed, while current policy and

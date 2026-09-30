@@ -3262,7 +3262,6 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     // observation locator refuses; done without, with a changed, and with
     // the matching fingerprint.
     const ref = cliJson(engramHome, holder, "add", "Evaluated over MCP", "--accept", "the build passes").work.short_ref;
-    cliJson(engramHome, holder, "claim", ref);
     // A supplied evaluation_mode reaches the store only through the
     // evaluation_mode action; any other action refuses it before effects.
     const beforeMisroute = receipt(await client.call("show", { work_ref: ref }));
@@ -3284,6 +3283,10 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     assert.match(cliWord(engramHome, holder, "show", ref).stdout, /evaluation mode: same_session/u);
     receipt(await client.call("update", { work_ref: ref, action: "evaluation_mode" }));
     assert.doesNotMatch(cliWord(engramHome, holder, "show", ref).stdout, /evaluation mode:/u);
+    // A peer marks the task for same-session evaluation before the holder
+    // takes it; a mark the holder set itself would not waive independence.
+    cliJson(engramHome, peer, "update", ref, "--evaluation-mode", "same_session");
+    cliJson(engramHome, holder, "claim", ref);
     cliJson(engramHome, holder, "gate", "cargo-test", "--work-ref", ref);
     cliJson(engramHome, peer, "note", ref, "peer observation without holding the run");
     // A refused evaluated completion carries a recovery command the CLI
@@ -3591,7 +3594,8 @@ test("a carried failure over the real transports: shown, refused until another e
     cliJson(engramHome, holder, "gate", "cargo-test");
     const shown = cliJson(engramHome, holder, "show", ref);
     const bases = (read) => ["--acceptance-basis", String(read.acceptance_basis), "--evidence-basis", String(read.evidence_basis)];
-    const failed = cliJson(engramHome, holder, "evaluate", ref, "--mode", "same-session", ...bases(shown),
+    // A session that never held the run records the failure.
+    const failed = cliJson(engramHome, "carried-judge", "evaluate", ref, "--mode", "independent-session", ...bases(shown),
       "--verdict", "1=fail:judgment", "--rationale", "1=it lists one store");
     const failedId = failed.evaluation.hash;
     // The executor rewords the criterion the evaluation failed.
@@ -4675,6 +4679,8 @@ test("evaluation history over MCP: a failing record then a passing one from one 
       return evaluated.evaluation.hash;
     };
     const failed = await evaluate("fail");
+    // The failure stands until new evidence: a correction precedes the pass.
+    receipt(await client.call("note", { work_ref: ref, text: "correction: the build is fixed" }));
     const passed = await evaluate("pass");
 
     // The window lists both records of the run in run-feed order, from the

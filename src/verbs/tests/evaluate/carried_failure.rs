@@ -58,6 +58,7 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
         &database,
         &[
             AcceptanceEvaluationMode::SameSession,
+            AcceptanceEvaluationMode::SubAgent,
             AcceptanceEvaluationMode::IndependentSession,
         ],
         3,
@@ -93,7 +94,12 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
         } else {
             Vec::new()
         };
+        // The holder's own evaluation: a sub-agent under its session, the
+        // executor-affiliated mode an unmarked task still admits.
         EvaluateInput {
+            mode: "sub_agent".into(),
+            execution_identity: Some("agent-evaluator".into()),
+            parent_session: Some("agent".into()),
             acceptance_basis: acceptance,
             supersedes: supersedes.map(str::to_owned),
             ..evaluate_input(
@@ -104,7 +110,15 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
         }
     };
 
-    let failed = verbs
+    // The holder's sub-agent: a child session of its own, never a holder.
+    let agent_child = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "agent-child".into(),
+        SessionId("agent-child".into()),
+        None,
+    );
+    let failed = agent_child
         .evaluate(submission("fail", None), at(5))
         .expect("failing evaluation");
     let failed_id = failed.value["evaluation"]["hash"]
@@ -251,6 +265,8 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
         .evaluate(
             EvaluateInput {
                 mode: "independent_session".into(),
+                execution_identity: None,
+                parent_session: None,
                 ..submission("pass", Some(&failed_id))
             },
             at(9),
@@ -454,14 +470,18 @@ fn full_readback_keeps_the_original_failure_beside_a_failing_review() {
         &database,
         &[
             AcceptanceEvaluationMode::SameSession,
+            AcceptanceEvaluationMode::SubAgent,
             AcceptanceEvaluationMode::IndependentSession,
         ],
         2,
     );
     let submission = |verdict_word: &str, mode: &str, supersedes: Option<&str>| {
         let shown = verbs.show(&work_ref, at(3)).expect("show");
+        let own = mode == "sub_agent";
         EvaluateInput {
             mode: mode.into(),
+            execution_identity: own.then(|| "agent-evaluator".into()),
+            parent_session: own.then(|| "agent".into()),
             acceptance_basis: shown.value["acceptance_basis"]
                 .as_i64()
                 .expect("acceptance basis"),
@@ -475,8 +495,16 @@ fn full_readback_keeps_the_original_failure_beside_a_failing_review() {
             )
         }
     };
-    let failed = verbs
-        .evaluate(submission("fail", "same_session", None), at(4))
+    // The holder's sub-agent: a child session of its own, never a holder.
+    let agent_child = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "agent-child".into(),
+        SessionId("agent-child".into()),
+        None,
+    );
+    let failed = agent_child
+        .evaluate(submission("fail", "sub_agent", None), at(4))
         .expect("failing evaluation");
     let failed_id = failed.value["evaluation"]["hash"]
         .as_str()

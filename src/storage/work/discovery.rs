@@ -220,7 +220,7 @@ impl SqliteStore {
     ) -> Result<Option<(String, String)>, StoreError> {
         self.work_read_snapshot(|store| {
             for link in item.created_by.provenance_chain.iter().rev() {
-                if link.source != "work_detach"
+                if link.source != super::DETACH_PROVENANCE_SOURCE
                     || link.relation != crate::domain::ProvenanceRelation::DerivedFrom
                 {
                     continue;

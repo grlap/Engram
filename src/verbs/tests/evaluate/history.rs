@@ -106,8 +106,20 @@ impl Fixture {
     }
 
     /// Records one evaluation with these verdict words, one per criterion,
-    /// and returns its record id.
+    /// and returns its record id. A correction note precedes it, since a
+    /// blocking record stands until new evidence.
     fn evaluate(&self, acceptance_basis: i64, words: &[&str], second: i64) -> String {
+        self.verbs
+            .note(
+                &NoteInput {
+                    status: false,
+                    work_ref: Some(self.work_ref.clone()),
+                    text: format!("correction before the evaluation at {second}"),
+                    refs: Vec::new(),
+                },
+                at(second),
+            )
+            .expect("correction note");
         let mut input = evaluate_input(
             &self.work_ref,
             self.evidence_basis(),

@@ -562,7 +562,11 @@ fn completion_recovery_reminder_names_each_disposed_child_lifecycle() {
                 .into(),
         };
         assert_eq!(
-            completion_recovery_reminder(&recovery, true),
+            completion_recovery_reminder(
+                &recovery,
+                true,
+                &crate::verbs::handlers::EvaluationRemedy::default()
+            ),
             format!(
                 "required child w-000000000001 \"Disposed child\" is {word} without a completion seal or waiver"
             )
@@ -589,7 +593,11 @@ fn completion_recovery_reminder_names_the_verification_source_remedy() {
         command: "engram work show w-000000000003 --notes --gates".into(),
     };
     assert_eq!(
-        completion_recovery_reminder(&recovery, false),
+        completion_recovery_reminder(
+            &recovery,
+            false,
+            &crate::verbs::handlers::EvaluationRemedy::default()
+        ),
         "w-000000000003 acceptance evaluation is stale (verification_source): a pass on a bound criterion cites a check that ran on another source than the one evaluated, or before a later change to it; run the check on the current source, then evaluate again citing it, declaring the source revision the host reports"
     );
 }

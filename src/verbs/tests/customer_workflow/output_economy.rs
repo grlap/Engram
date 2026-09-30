@@ -285,6 +285,7 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
     reminders.push(crate::verbs::handlers::completion_recovery_reminder(
         &refusal.recovery,
         false,
+        &crate::verbs::handlers::EvaluationRemedy::default(),
     ));
     let compact = crate::verbs::mutation::receipt(
         &view,

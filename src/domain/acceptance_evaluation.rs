@@ -193,6 +193,16 @@ impl AcceptanceEvaluationPolicy {
         self.allowed_modes.contains(&mode)
     }
 
+    /// Whether same-session is the only mode the policy admits.
+    #[must_use]
+    pub fn admits_only_same_session(&self) -> bool {
+        !self.allowed_modes.is_empty()
+            && self
+                .allowed_modes
+                .iter()
+                .all(|mode| *mode == AcceptanceEvaluationMode::SameSession)
+    }
+
     /// Canonical form: deduplicated modes in declaration order. An empty mode
     /// list is the self-asserted policy whatever the other fields say, so it is the
     /// default value: the canonical policy bytes omit it, and the requested,
@@ -439,8 +449,9 @@ pub enum AcceptanceStaleReason {
     /// The source fingerprint presented at completion differs or is missing.
     Source,
     /// The policy or task no longer admits the evaluation: its mode is not
-    /// allowed or pinned differently, or a requirement grew stricter than a
-    /// pass basis the record relies on.
+    /// allowed or pinned differently, a same-session record no longer has an
+    /// eligible mark (or none where another mode is admitted), or a
+    /// requirement grew stricter than a pass basis the record relies on.
     Policy,
     /// A check the evaluation relied on has a newer record after the cut.
     Evidence,

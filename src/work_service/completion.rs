@@ -323,6 +323,10 @@ impl LocalWorkService {
         })?;
         let actor = self.actor("work_complete", "complete ambient local work");
         let claim = self.live_protocol_claim(&basis, &work, now)?;
+        let remedy_modes = CompletionRemedyModes {
+            mark: work.evaluation_mode,
+            admitted: store.acceptance_evaluation_policy()?.allowed_modes,
+        };
         let mut evidence_basis = Self::completion_evidence_basis(&store, &claim, &input.evidence)?;
         let validated_acceptance =
             links::validated_acceptance(&store, &work, &claim, &input, &actor, &evidence_basis);
@@ -336,6 +340,7 @@ impl LocalWorkService {
                     snapshot.recovery,
                     obligation_page,
                     snapshot.required_child_successor,
+                    &remedy_modes,
                 );
                 return Ok(result);
             }
@@ -360,6 +365,7 @@ impl LocalWorkService {
                     snapshot.recovery,
                     obligation_page,
                     snapshot.required_child_successor,
+                    &remedy_modes,
                 ));
             }
             crate::storage::AcceptanceEvaluationReadiness::Ready(evaluation) => {
@@ -418,6 +424,7 @@ impl LocalWorkService {
                     snapshot.recovery,
                     obligation_page,
                     snapshot.required_child_successor,
+                    &remedy_modes,
                 );
                 return Ok(result);
             }

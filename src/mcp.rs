@@ -226,7 +226,9 @@ struct UpdateArgs {
     /// `after`, `drop_after`, `waive`, `reject`, `supersede`, or `detach`.
     action: UpdateActionArg,
     /// For the evaluation-mode action: same-session, sub-agent, or
-    /// independent-session; omit to return the task to any allowed mode.
+    /// independent-session; omit to return the task to the default,
+    /// independent evaluation unless the policy admits only same-session. A
+    /// same-session mark set by the task's executor waives nothing.
     evaluation_mode: Option<String>,
     /// Reason for release, cancel, waive, reject, supersede, or detach. Required
     /// for all but release; a release by a session with neither a contribution

@@ -17,8 +17,10 @@ use super::{
     slug, terminal_safe_actor_label, terminal_safe_multiline, trimmed, validate_priority,
 };
 
+mod completion_remedy;
 mod gates;
 mod update;
+pub(super) use completion_remedy::{EvaluationRemedy, completion_recovery_reminder};
 pub(super) use update::unblock_command;
 
 /// Host context for one agent connection. Authority comes from the host, never
@@ -228,7 +230,9 @@ pub enum UpdateAction {
     /// Pin or clear the acceptance-evaluation mode this task requires.
     EvaluationMode {
         /// `same_session`, `sub_agent`, or `independent_session`; omit to
-        /// return the task to any policy-allowed mode.
+        /// return the task to the default, independent evaluation unless the
+        /// policy admits only same-session. A same-session mark its executor
+        /// sets waives nothing.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
     },
@@ -1671,9 +1675,33 @@ impl AgentVerbs {
             }
             WorkCompleteResult::Refused(refusal) => {
                 let mut guidance = self.guidance(&after, "done", now);
+                // Which remedy a missing evaluation, or one the policy or the
+                // mark no longer admits, has depends on the task's mark and
+                // what the project admits; only those causes read the policy.
+                let evaluation = if matches!(
+                    refusal.recovery.cause,
+                    crate::WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. }
+                        | crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+                            reason: crate::AcceptanceStaleReason::Policy
+                        }
+                ) {
+                    EvaluationRemedy {
+                        mark: (refusal.recovery.item.work_id == after.status.work.work_id)
+                            .then_some(after.status.work.evaluation_mode)
+                            .flatten(),
+                        admitted: self
+                            .service
+                            .acceptance_evaluation_policy(now)
+                            .map_err(|error| VerbError::at(error, &work_ref))?
+                            .allowed_modes,
+                    }
+                } else {
+                    EvaluationRemedy::default()
+                };
                 let mut reminder = completion_recovery_reminder(
                     &refusal.recovery,
                     refusal.recovery.item.work_id != after.status.work.work_id,
+                    &evaluation,
                 );
                 if let Some(resolution) = &child_resolution {
                     reminder.push_str("; ");
@@ -2149,74 +2177,6 @@ pub(super) fn minimal_evaluate_receipt(
         value,
         false,
     )
-}
-
-pub(super) fn completion_recovery_reminder(
-    recovery: &crate::WorkCompletionRecovery,
-    include_title: bool,
-) -> String {
-    let item = &recovery.item;
-    let label = if include_title {
-        format!("{} \"{}\"", item.short_ref, short(&item.title))
-    } else {
-        item.short_ref.clone()
-    };
-    match &recovery.cause {
-        crate::WorkCompletionRecoveryCause::OpenObligation {
-            obligation_id,
-            required_check,
-            ..
-        } => format!(
-            "{label} still owes {required_check:?} for obligation {}",
-            obligation_id.0
-        ),
-        crate::WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => format!(
-            "required child {label} is {} without a completion seal or waiver",
-            lifecycle_word(item.lifecycle)
-        ),
-        crate::WorkCompletionRecoveryCause::MissingContribution { participant } => format!(
-            "{label} is missing the contribution or waiver for participant {}",
-            participant.0
-        ),
-        crate::WorkCompletionRecoveryCause::MissingAcceptance { criterion } => {
-            format!("{label} is missing acceptance for \"{}\"", short(criterion))
-        }
-        crate::WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { criterion } => {
-            format!(
-                "{label} has no acceptance evaluation for \"{}\"; record one with evaluate",
-                short(criterion)
-            )
-        }
-        crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason } => match reason {
-            crate::AcceptanceStaleReason::Source => format!(
-                "{label} acceptance evaluation is stale (source): done must present the host-measured fingerprint that equals the evaluated one; pass --source-fingerprint F, or evaluate again with the current fingerprint"
-            ),
-            crate::AcceptanceStaleReason::Identity => format!(
-                "{label} acceptance evaluation is stale (identity): its independent evaluator has since held this run; a session that never held the run must evaluate again"
-            ),
-            crate::AcceptanceStaleReason::VerificationSource => format!(
-                "{label} acceptance evaluation is stale (verification_source): a pass on a bound criterion cites a check that ran on another source than the one evaluated, or before a later change to it; run the check on the current source, then evaluate again citing it, declaring the source revision the host reports"
-            ),
-            reason => format!(
-                "{label} acceptance evaluation is stale ({}); evaluate again",
-                reason.word()
-            ),
-        },
-        crate::WorkCompletionRecoveryCause::AcceptanceFailed { criterion } => format!(
-            "{label} failed acceptance for \"{}\"; correct the work, then evaluate again",
-            short(criterion)
-        ),
-        crate::WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { criterion } => {
-            format!(
-                "{label} lacks sufficient evidence for \"{}\"; record evidence, then evaluate again",
-                short(criterion)
-            )
-        }
-        crate::WorkCompletionRecoveryCause::AcceptanceNeedsHuman { criterion } => format!(
-            "{label} needs a human decision on \"{}\"; revise the criteria or cancel",
-            short(criterion)
-        ),
-    }
 }
 
 /// Fixed table from one readiness reason to the words an agent needs.

@@ -94,6 +94,8 @@ const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
 pub(in crate::storage) const MAX_WORK_DEPTH: u32 = 4;
 pub(in crate::storage) const MAX_OPEN_WORK_DESCENDANTS: u32 = 255;
 pub(in crate::storage) const MAX_CHILDREN_PER_DECOMPOSITION: usize = 16;
+/// Provenance source a detach puts on the successor it creates.
+pub(in crate::storage) const DETACH_PROVENANCE_SOURCE: &str = "work_detach";
 
 // A checkpoint acknowledges the run feed immediately before its own object and
 // its matching checkpoint event are appended.

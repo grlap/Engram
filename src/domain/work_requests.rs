@@ -141,7 +141,8 @@ pub struct WorkRevisionPatch {
     /// Select the acceptance-evaluation mode this task requires.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation_mode: Option<super::AcceptanceEvaluationMode>,
-    /// Return the task to "any policy-allowed mode".
+    /// Return the task to the default: independent evaluation unless the
+    /// policy admits only same-session.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub clear_evaluation_mode: bool,
 }

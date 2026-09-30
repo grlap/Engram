@@ -271,7 +271,8 @@ pub struct WorkItem {
     #[serde(default)]
     pub superseded_by: Option<WorkId>,
     /// Revision-controlled acceptance-evaluation mode this task selects; when
-    /// absent, any policy-allowed mode is acceptable.
+    /// absent, the evaluation is independent unless the policy admits only
+    /// same-session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation_mode: Option<super::AcceptanceEvaluationMode>,
     /// Criteria bound to typed verification requirements, in position order.

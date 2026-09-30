@@ -293,13 +293,13 @@ fn an_independent_evaluator_who_becomes_the_holder_cannot_consume_its_own_pass()
         &request(
             &sibling,
             cut(store, &sibling),
-            "second",
-            Mode::SameSession,
+            "sibling-judge",
+            Mode::IndependentSession,
             pass_judgment(&sibling_note),
             9,
         ),
     )
-    .expect("second evaluates its own child in same_session");
+    .expect("a session that never held the sibling evaluates it");
     checkpoint_then_complete(
         store,
         &sibling,
@@ -567,6 +567,8 @@ fn seal_evaluation_binding_is_validated_per_relationship() {
         ),
     )
     .expect("a failing record on the same run");
+    // The failure stands until new evidence: a correction precedes the pass.
+    gate(store, &work, &claim_a, "runner", "correction", &[], 7);
     let passing = record(
         store,
         &request(
@@ -1114,6 +1116,9 @@ fn verification_projection_mismatches_refuse_exactly() {
             )
             .expect("restore the projection column");
     }
+    // A blocking record stands until new evidence: each later one follows a
+    // correction.
+    gate(store, &work, &claim, "runner", "correction-41", &[], 41);
     record(store, &fail_citing(cut(store, &work), &failed[0], 41))
         .expect("a consistent failed check backs a fail");
     assert_ne!(
@@ -1121,6 +1126,7 @@ fn verification_projection_mismatches_refuse_exactly() {
         newest_before,
         "a consistent column records a newer evaluation"
     );
+    gate(store, &work, &claim, "runner", "correction-42", &[], 42);
     record(
         store,
         &fail_citing(cut(store, &work), &indeterminate[0], 42),
@@ -1387,6 +1393,9 @@ fn a_seal_binding_an_older_pass_under_a_newer_blocking_evaluation_is_refused() {
             ) => {}
             other => panic!("the blocking verdict must name its own cause: {other:?}"),
         }
+        // The blocking record stands until new evidence: a correction
+        // precedes the pass.
+        gate(store, &work, &claim, "runner", "correction", &[], 10);
         let newest = record(
             store,
             &request(
