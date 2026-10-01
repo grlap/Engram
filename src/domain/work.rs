@@ -37,6 +37,9 @@ pub struct WorkBoundVerificationCause {
     pub producer_observation: ObjectId,
     pub result: VerificationResult,
     pub remedy: BoundVerificationRemedy,
+    /// For a stale mismatch, the source record that decided it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale_source: Option<super::StaleVerificationSource>,
 }
 
 /// The source observation that decided a source move after an evaluation's
@@ -510,6 +513,37 @@ pub struct WorkCompletionRecovery {
     /// Source-specific recovery from the same deciding snapshot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<Box<super::AcceptanceSourceRecoveryCause>>,
+    /// For an open obligation: the newest passed check of its kind recorded
+    /// after it opened and why it does not satisfy it, or that none followed.
+    /// Beside the cause, never inside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_obligation_check: Option<Box<OpenObligationCheck>>,
+}
+
+/// What a completion refusal says about the check an open obligation waits
+/// for, read at the completion cut. Transient refusal context, never stored.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum OpenObligationCheck {
+    /// No passed check of the obligation's kind was recorded after it opened.
+    NoneFollowed,
+    /// The newest passed check of the obligation's kind recorded after it
+    /// opened, and why it does not satisfy it at the completion cut.
+    Newest {
+        /// The verification record.
+        verification: ObjectId,
+        /// Its run-feed position.
+        position: i64,
+        /// The typed matcher's first mismatch, when there is one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mismatch: Option<VerificationEvidenceMismatch>,
+        /// Why the obligation was left out before matching, when it was.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        left_out: Option<String>,
+        /// For a stale mismatch, the source record that decided it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stale_source: Option<super::StaleVerificationSource>,
+    },
 }
 
 /// Aggregate generation that owns the root completion barrier.

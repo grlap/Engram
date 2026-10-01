@@ -84,7 +84,7 @@ mod next;
 mod observation_windows;
 mod operations;
 mod projection;
-pub(crate) use deciding::ShownDecidingObservation;
+pub(crate) use deciding::{ShownDecidingObservation, bounded as bounded_shown_field};
 pub(crate) use projection::normalize_actor_context;
 mod propose;
 mod record_windows;

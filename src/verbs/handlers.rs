@@ -1755,6 +1755,29 @@ impl AgentVerbs {
                 }
                 guidance.reminders.push(reminder);
                 guidance.next = vec![refusal.recovery.command.clone()];
+                // The check an open obligation waits for follows the cause's
+                // unchanged words as its own reminder, with its detail to read.
+                if let (
+                    Some(check),
+                    crate::WorkCompletionRecoveryCause::OpenObligation { required_check, .. },
+                ) = (
+                    refusal.recovery.open_obligation_check.as_deref(),
+                    &refusal.recovery.cause,
+                ) {
+                    guidance.reminders.push(
+                        super::verification_assessment::open_obligation_check_line(
+                            check,
+                            *required_check,
+                        ),
+                    );
+                    if let crate::domain::OpenObligationCheck::Newest { verification, .. } = check {
+                        guidance.next.push(format!(
+                            "engram work show {} --note {}",
+                            refusal.recovery.item.short_ref,
+                            verification.as_str()
+                        ));
+                    }
+                }
                 for reminder in obligation_reminders(&refusal.obligation_page) {
                     if !guidance.reminders.contains(&reminder) {
                         guidance.reminders.push(reminder);

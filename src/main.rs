@@ -2197,6 +2197,7 @@ fn refusal_stderr_text(error: &StoreError, text: String) -> String {
         StoreError::AcceptanceEvaluationBasisMoved { .. }
             | StoreError::WorkCompletionRecoveryRequired { .. }
             | StoreError::AcceptanceEvaluationAdmissionRefused { .. }
+            | StoreError::WorkBoundVerificationRefused { .. }
     ) {
         engram::storage::json_without_locked_store_phrase(&text)
     } else {

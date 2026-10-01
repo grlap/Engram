@@ -280,6 +280,7 @@ fn compact_refusal_keeps_owed_and_omission_signals_without_repeating_its_item() 
             command: format!("engram work done {work_ref} \"…\""),
             deciding_observation: None,
             source: None,
+            open_obligation_check: None,
         },
         required_child_successor: None,
     };

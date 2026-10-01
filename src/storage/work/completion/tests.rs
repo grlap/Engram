@@ -6,6 +6,7 @@ use super::*;
 mod bindings;
 mod named_root;
 mod obligations;
+mod stale_source;
 
 #[test]
 fn criterion_disclosure_empty_links_are_admitted_but_foreign_citations_still_refuse() {

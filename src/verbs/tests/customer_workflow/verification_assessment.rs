@@ -288,3 +288,133 @@ fn after_refuses_on_a_note_without_an_assessment() {
         vec![format!("engram work show '{work_ref}' --note '{plain}'")]
     );
 }
+
+/// A host's real case over the agent words: a flagged change at R1, then a passed
+/// test of R2 the host never reported as a change. The check's detail names
+/// the change it must follow beside its own source, and done's refusal names
+/// the same check, why it does not satisfy the bound criterion, the deciding
+/// change, and the command that reads the check's detail; the cause's own
+/// words are unchanged.
+#[test]
+fn a_stale_check_names_the_change_it_must_follow_in_show_and_done() {
+    let directory = crate::test_support::temp_home().expect("temp home");
+    let database = directory.path().join("work.sqlite3");
+    let project = "unreported-move";
+    let (work_ref, check) = crate::storage::unreported_move_fixture(&database, project, "runner");
+    let verbs = AgentVerbs::new(
+        database,
+        ProjectId(project.into()),
+        "runner".into(),
+        SessionId("runner".into()),
+        None,
+    );
+    let detail = verbs
+        .show_records(
+            &work_ref,
+            &ShowInput {
+                note: Some(check.as_str().to_owned()),
+                ..ShowInput::default()
+            },
+            at(100),
+        )
+        .expect("note detail");
+    let rows = detail.value["note"]["assessment"]["rows"]
+        .as_array()
+        .expect("rows");
+    let stale = rows
+        .iter()
+        .filter(|row| row["mismatch"] == "stale_source_revision")
+        .collect::<Vec<_>>();
+    assert_eq!(stale.len(), 2, "{rows:?}");
+    for row in &stale {
+        let source = &row["stale_source"];
+        assert_eq!(source["decider"], "latest_change", "{row}");
+        assert_eq!(source["workspace"], "workspace-old");
+        assert_eq!(source["revision"], "R1");
+        assert_eq!(source["source_changed"], true);
+        assert_eq!(source["verification_workspace"], "workspace-new");
+        assert_eq!(source["verification_revision"], "R2");
+        assert!(source["position"].is_i64(), "{row}");
+    }
+    let text = detail.text();
+    assert!(
+        text.contains("decided by the run's latest source change at run position ")
+            && text.contains(
+                "a change, workspace workspace-old, revision R1; this check ran on revision R2 in workspace workspace-new"
+            ),
+        "{text}"
+    );
+
+    let refused = verbs
+        .done(
+            DoneInput {
+                work_ref: Some(work_ref.clone()),
+                summary: Some("delivered".into()),
+                ..DoneInput::default()
+            },
+            // Inside the fixture's claim, which the store's own clock set.
+            chrono::Utc
+                .with_ymd_and_hms(2026, 8, 27, 1, 0, 10)
+                .single()
+                .expect("fixture time"),
+        )
+        .expect("a refusal is a receipt");
+    let check_line = refused
+        .reminders
+        .iter()
+        .find(|reminder| {
+            reminder.starts_with("the newest passed test check after that obligation opened")
+        })
+        .unwrap_or_else(|| panic!("{:?}", refused.reminders));
+    assert!(
+        check_line.contains(&format!("({}, at run position ", check.as_str()))
+            && check_line.contains("does not match it: stale source revision; decided by the run's latest source change")
+            && check_line.contains("revision R1; this check ran on revision R2 in workspace workspace-new"),
+        "{check_line}"
+    );
+    // The cause's own words come first, unchanged.
+    assert!(
+        refused
+            .reminders
+            .iter()
+            .any(|reminder| reminder
+                .starts_with(&format!("{work_ref} still owes Test for obligation "))),
+        "{:?}",
+        refused.reminders
+    );
+    let pointer = format!("engram work show {work_ref} --note {}", check.as_str());
+    assert!(refused.next.contains(&pointer), "{:?}", refused.next);
+    let value = serde_json::to_string(&refused.value).expect("JSON");
+    assert!(
+        value.contains("\"open_obligation_check\":{")
+            && value.contains("\"decider\":\"latest_change\""),
+        "{value}"
+    );
+}
+
+/// The terminal line naming a deciding record escapes and bounds host text.
+#[test]
+fn the_deciding_record_line_is_one_terminal_safe_line() {
+    use crate::domain::{StaleSourceDecider, StaleVerificationSource};
+    let hostile = format!("ws\u{1b}[31m\nnext line{}", "y".repeat(300));
+    for decider in [
+        StaleSourceDecider::LatestChange,
+        StaleSourceDecider::RootSighting,
+        StaleSourceDecider::RootBinding,
+    ] {
+        let line =
+            crate::verbs::verification_assessment::stale_source_line(&StaleVerificationSource {
+                decider,
+                position: 7,
+                source_changed: Some(false),
+                workspace: Some(hostile.clone()),
+                revision: Some(hostile.clone()),
+                root_generation: Some(3),
+                verification_workspace: hostile.clone(),
+                verification_revision: "R2".into(),
+            });
+        assert!(!line.contains(['\n', '\u{1b}']), "{line:?}");
+        assert!(line.contains("bytes stored)"), "{line}");
+        assert!(line.len() < 1_500, "{}", line.len());
+    }
+}

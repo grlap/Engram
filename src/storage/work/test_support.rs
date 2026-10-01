@@ -420,6 +420,66 @@ pub(crate) fn verification_note_fixture(
 }
 
 /// A file store at `database` holding one item whose first criterion binds a
+/// test, claimed by `holder`: a flagged source change in workspace-old at R1,
+/// then a passed test of R2 in workspace-new, a move the host never reported
+/// as a change. Returns the item's short ref and the check's record id.
+pub(crate) fn unreported_move_fixture(
+    database: &std::path::Path,
+    project: &str,
+    holder: &str,
+) -> (String, ObjectId) {
+    let mut store = SqliteStore::open(database).expect("store");
+    let mut request = root_request(project, "unreported-move", 1);
+    request.acceptance = vec!["tests pass".into(), "docs written".into()];
+    request.acceptance_bindings = vec![crate::domain::AcceptanceBinding {
+        criterion: 1,
+        requirement: crate::domain::VerificationRequirement {
+            check_kind: crate::domain::VerificationKind::Test,
+            check_fingerprint: None,
+        },
+    }];
+    let work = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("work");
+    let claim = claim(
+        &mut store,
+        &work,
+        holder,
+        "unreported-move-claim",
+        2,
+        36_000,
+    );
+    let unbound = |workspace: &str, revision: &str| crate::domain::ExecutionSourceBasis {
+        workspace_id: workspace.into(),
+        source_revision: revision.into(),
+        source_root_generation: None,
+        source_root_state: None,
+    };
+    source_mutation_from_basis(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "old-change",
+        3,
+        Some(unbound("workspace-old", "R1")),
+        None,
+    );
+    let check = host_verification_from_basis(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "new-test",
+        crate::domain::VerificationKind::Test,
+        crate::domain::VerificationResult::Passed,
+        4,
+        unbound("workspace-new", "R2"),
+    );
+    (work.short_ref, check)
+}
+
+/// A file store at `database` holding one item whose first criterion binds a
 /// test, claimed by `holder`, with `changes` source changes and then
 /// `records` passing tests of the newest revision. Returns the item's short
 /// ref and the verifications' record ids, oldest first.

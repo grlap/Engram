@@ -866,6 +866,46 @@ fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_crit
                 && reason.contains("stale_source_revision"),
             "{reason}"
         );
+        // The refusal names the change the build must follow beside its own
+        // source, after the reason's unchanged words.
+        let change_position = store
+            .work_run_obligations(run_id)
+            .expect("obligations")
+            .iter()
+            .filter(|record| {
+                crate::control::acceptance_binding_criterion(&record.obligation.rule).is_none()
+            })
+            .map(|record| record.obligation.trigger_position.position)
+            .max()
+            .expect("the change's obligation");
+        assert_eq!(
+            cause.stale_source,
+            Some(crate::domain::StaleVerificationSource {
+                decider: crate::domain::StaleSourceDecider::LatestChange,
+                position: change_position,
+                source_changed: Some(true),
+                workspace: Some("workspace-change".into()),
+                revision: Some("revision-after-change".into()),
+                root_generation: None,
+                verification_workspace: "workspace-build-of-the-old-source".into(),
+                verification_revision: "revision-as-it-stands".into(),
+            })
+        );
+        // The reason keeps its words; the record is named beside it.
+        assert!(
+            reason.ends_with("or drop the binding") && !reason.contains("deciding source record"),
+            "{reason}"
+        );
+        let sentence = cause
+            .stale_source
+            .as_ref()
+            .expect("the deciding record")
+            .sentence();
+        assert!(
+            sentence.starts_with("The deciding source record is the run's latest source change at run-feed position")
+                && sentence.ends_with("revision revision-after-change; the check ran on revision revision-as-it-stands in workspace workspace-build-of-the-old-source."),
+            "{sentence}"
+        );
 
         let rebuilt = host_verification_of(
             &mut store,
@@ -1192,7 +1232,7 @@ fn a_source_change_recorded_without_a_revision_is_judged_by_recording_order() {
     };
     assert_eq!(
         judge(&before),
-        Some(VerificationEvidenceMismatch::NotAfterMutation)
+        Some((VerificationEvidenceMismatch::NotAfterMutation, None))
     );
     assert_eq!(judge(&after), None);
 }

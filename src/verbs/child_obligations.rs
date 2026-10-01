@@ -104,6 +104,10 @@ struct DoneRecovery<'a> {
     deciding_observation: Option<crate::work_service::ShownDecidingObservation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<crate::AcceptanceSourceRecoveryCause>,
+    /// For an open obligation, the newest passed check of its kind after it
+    /// opened and why it does not satisfy it, or that none followed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    open_obligation_check: Option<Value>,
 }
 
 #[derive(Serialize)]
@@ -140,6 +144,7 @@ pub(super) fn done_refusal_value(
         command,
         deciding_observation,
         source,
+        open_obligation_check,
     } = recovery;
     // Bounded per field and labelled as show labels sessions, so the receipt
     // stays within the agent budget whatever the host recorded; the storage
@@ -178,6 +183,9 @@ pub(super) fn done_refusal_value(
             source: source
                 .as_deref()
                 .map(crate::work_service::shown_source_recovery),
+            open_obligation_check: open_obligation_check
+                .as_deref()
+                .map(super::verification_assessment::open_obligation_check_value),
         },
     })?)
 }

@@ -754,6 +754,39 @@ pub enum VerificationEvidenceMismatch {
     NotAfterMutation,
 }
 
+/// Which source record decided a `stale_source_revision` mismatch.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StaleSourceDecider {
+    /// The run's latest source change: without a named root, the newest
+    /// flagged change, whose revision the check must carry.
+    LatestChange,
+    /// The active named root's newest sighting, whose revision the check
+    /// must carry.
+    RootSighting,
+    /// The named root's binding: the check or its producer is not of the
+    /// root's workspace and generation, or did not follow the binding.
+    RootBinding,
+}
+
+/// The source record that decided a verification is stale, beside the
+/// verification's own source, as the store recorded both. It is transient
+/// read and refusal context, never stored. `None` means the record did not
+/// carry that field; a binding names no revision and is no observation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StaleVerificationSource {
+    pub decider: StaleSourceDecider,
+    /// The deciding record's run-feed position.
+    pub position: i64,
+    /// For an observation, whether it reported a source change.
+    pub source_changed: Option<bool>,
+    pub workspace: Option<String>,
+    pub revision: Option<String>,
+    pub root_generation: Option<i64>,
+    pub verification_workspace: String,
+    pub verification_revision: String,
+}
+
 const fn default_work_binding_current() -> bool {
     true
 }

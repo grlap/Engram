@@ -943,6 +943,7 @@ pub(super) fn completion_recovery_on(
         command,
         deciding_observation: None,
         source: None,
+        open_obligation_check: None,
     })
 }
 

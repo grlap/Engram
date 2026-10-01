@@ -1923,6 +1923,30 @@ mod tests {
             };
             assert_eq!(cause.mismatch, mismatch);
             assert_eq!(cause.remedy, remedy);
+            // A stale check names the change it must follow, in the typed
+            // cause and as one sentence after the reason; no other does.
+            let reason = details["reason"].as_str().expect("reason");
+            if result == crate::VerificationResult::Passed {
+                let source = cause.stale_source.as_ref().expect("the deciding record");
+                assert_eq!(
+                    source.decider,
+                    crate::domain::StaleSourceDecider::LatestChange
+                );
+                assert_eq!(source.source_changed, Some(true));
+                assert_eq!(details["cause"]["stale_source"]["decider"], "latest_change");
+                assert!(
+                    error["reminders"]
+                        .as_array()
+                        .expect("word reminders")
+                        .iter()
+                        .any(|entry| entry == &json!(source.sentence())),
+                    "{error}"
+                );
+            } else {
+                assert_eq!(cause.stale_source, None);
+                assert!(details["cause"].get("stale_source").is_none());
+                assert!(!reason.contains("deciding source record"), "{reason}");
+            }
             let legacy = StoreError::WorkCompletionRefused {
                 work: fixture.work.work_id,
                 reason: details["reason"].as_str().expect("reason").into(),

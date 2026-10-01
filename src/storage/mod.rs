@@ -122,7 +122,7 @@ pub(crate) use work::test_support::source_mutation_from_basis;
 #[cfg(test)]
 pub(crate) use work::test_support::{
     HostCheck, assessed_verification_fixture, bound_verification_refusal_fixture,
-    stale_deciding_refusal_fixture, verification_note_fixture,
+    stale_deciding_refusal_fixture, unreported_move_fixture, verification_note_fixture,
 };
 
 #[cfg(test)]
@@ -895,6 +895,50 @@ pub fn json_without_locked_store_phrase(json: &str) -> String {
     }
     out.push_str(&json[from..]);
     out
+}
+
+impl crate::domain::StaleVerificationSource {
+    /// One sentence naming the record that decided a stale verification
+    /// beside the check's own source. Each stored field is escaped and
+    /// bounded on its own, so the comparison always survives.
+    #[must_use]
+    pub fn sentence(&self) -> String {
+        use crate::domain::StaleSourceDecider;
+        let field = |value: Option<&str>| value.map_or_else(|| "not recorded".to_owned(), one_line);
+        let kind = if self.source_changed == Some(false) {
+            "a sighting"
+        } else {
+            "a change"
+        };
+        let check = format!(
+            "the check ran on revision {} in workspace {}",
+            one_line(&self.verification_revision),
+            one_line(&self.verification_workspace)
+        );
+        match self.decider {
+            StaleSourceDecider::LatestChange => format!(
+                "The deciding source record is the run's latest source change at run-feed position {}: {kind}, workspace {}, revision {}; {check}.",
+                self.position,
+                field(self.workspace.as_deref()),
+                field(self.revision.as_deref()),
+            ),
+            StaleSourceDecider::RootSighting => format!(
+                "The deciding source record is the named root's newest sighting at run-feed position {}: {kind}, workspace {}, revision {}; {check}.",
+                self.position,
+                field(self.workspace.as_deref()),
+                field(self.revision.as_deref()),
+            ),
+            StaleSourceDecider::RootBinding => format!(
+                "The deciding source record is the named root's binding at run-feed position {}: workspace {}, generation {}; {check}, not of that root's workspace and generation or not after its binding.",
+                self.position,
+                field(self.workspace.as_deref()),
+                self.root_generation.map_or_else(
+                    || "not recorded".to_owned(),
+                    |generation| generation.to_string()
+                ),
+            ),
+        }
+    }
 }
 
 /// The refusal message's addition: one sentence naming the deciding

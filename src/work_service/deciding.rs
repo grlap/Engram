@@ -29,7 +29,7 @@ pub(crate) struct ShownDecidingObservation {
 /// --observations` lists the fields whole.
 const MAX_SHOWN_FIELD_BYTES: usize = 128;
 
-pub(super) fn bounded(value: &str) -> String {
+pub(crate) fn bounded(value: &str) -> String {
     if value.len() <= MAX_SHOWN_FIELD_BYTES {
         return value.to_owned();
     }

@@ -1464,7 +1464,17 @@ reads as matching, as not matching with the matcher's first mismatch (check
 kind, wrong run, stale source revision, not after the mutation, fingerprint,
 result not passed, invalid time or producer), or as left out before matching
 (not yet defined for the record, already closed, foreign or displaced
-workspace, no usable source context), which gets no matcher code. Apart from
+workspace, no usable source context), which gets no matcher code. A stale
+source revision also names the record that decided it, with its run-feed
+position, workspace and revision, beside the check's own source:
+- without a named root, the run's latest flagged source change, which a quiet
+  sighting at another revision never replaces;
+- under a named root, the root's newest sighting, or the binding, for a check
+  that is not of the root's workspace and generation or did not follow it.
+Done's refusal names the same when a bound check is stale. For an open
+obligation, it also names the newest passed check of its kind recorded after
+the obligation opened and why it does not satisfy it, or says that none
+followed. This context is computed when read and never stored. Apart from
 it, each row gives the obligation's recorded end as stored: open, satisfied by
 this record or another, waived or displaced. Rows name the rule and version,
 check kind, whether the rule pins its check, the criterion a binding rule

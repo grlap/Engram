@@ -1972,6 +1972,7 @@ fn bind_acceptance_to_obligations_on(
                         producer_observation: evidence.producer_observation.clone(),
                         result: evidence.result,
                         remedy: crate::domain::BoundVerificationRemedy::RunPassingCheckAfter,
+                        stale_source: None,
                     }),
                     reason: format!(
                         "criterion {} requires {kind} verification and is contradicted by newer verification evidence {newest} that did not pass; record a passing check after it, or drop the binding",
@@ -1991,7 +1992,7 @@ fn bind_acceptance_to_obligations_on(
                     &evidence.producer_observation,
                 )?
                 .position;
-                if let Some(mismatch) = binding_freshness_mismatch(
+                if let Some((mismatch, decider)) = binding_freshness_mismatch(
                     latest_mutation
                         .as_ref()
                         .map(|(position, mutation)| (mutation, *position)),
@@ -2001,6 +2002,16 @@ fn bind_acceptance_to_obligations_on(
                     root.as_ref(),
                 ) {
                     use crate::domain::VerificationEvidenceMismatch as Mismatch;
+                    let stale_source = decider.and_then(|decider| {
+                        assessment::stale_verification_source(
+                            decider,
+                            &evidence,
+                            latest_mutation
+                                .as_ref()
+                                .map(|(position, mutation)| (*position, mutation)),
+                            root.as_ref(),
+                        )
+                    });
                     let cause = match mismatch {
                         Mismatch::StaleSourceRevision
                         | Mismatch::NotAfterMutation
@@ -2020,6 +2031,7 @@ fn bind_acceptance_to_obligations_on(
                             producer_observation: evidence.producer_observation.clone(),
                             result: evidence.result,
                             remedy: crate::domain::BoundVerificationRemedy::RunCurrentCheck,
+                            stale_source,
                         }),
                         reason: format!(
                             "criterion {} requires {kind} verification, and the newest one ({newest}) {cause} ({}); record a passing check of the current source, or drop the binding",
@@ -2071,15 +2083,20 @@ fn binding_freshness_mismatch(
     (producer, producer_position): (&ExecutionObservation, i64),
     requirement: &crate::domain::VerificationRequirement,
     root: Option<&NamedRootContext>,
-) -> Option<crate::domain::VerificationEvidenceMismatch> {
+) -> Option<(
+    crate::domain::VerificationEvidenceMismatch,
+    Option<crate::domain::StaleSourceDecider>,
+)> {
     if root.is_none()
         && let Some((mutation, mutation_position)) = mutation
         && (mutation.source_basis.is_none() || mutation.observed_at.is_none())
     {
-        return (evidence_position <= mutation_position)
-            .then_some(crate::domain::VerificationEvidenceMismatch::NotAfterMutation);
+        return (evidence_position <= mutation_position).then_some((
+            crate::domain::VerificationEvidenceMismatch::NotAfterMutation,
+            None,
+        ));
     }
-    crate::control::match_verification_evidence(&crate::control::VerificationEvidenceMatchInput {
+    crate::control::explain_verification_evidence(&crate::control::VerificationEvidenceMatchInput {
         candidate_kind: crate::domain::WorkEvidenceKind::Verification,
         evidence: Some(evidence),
         producer: Some(producer),
@@ -2221,13 +2238,20 @@ fn recovery_before_untested_waivers(
     cause: WorkCompletionRecoveryCause,
 ) -> Result<CompleteWorkStorageResult, StoreError> {
     transaction.execute_batch(&format!("ROLLBACK TO {UNTESTED_WAIVERS_SAVEPOINT}"))?;
-    let recovery = completion_recovery_snapshot_on(
+    let open_obligation_check = match &cause {
+        WorkCompletionRecoveryCause::OpenObligation { obligation_id, .. } => {
+            assessment::open_obligation_check_on(transaction, run_id, *obligation_id)?
+        }
+        _ => None,
+    };
+    let mut recovery = completion_recovery_snapshot_on(
         transaction,
         item,
         run_id,
         cause,
         StaleRecoveryContext::default(),
     )?;
+    recovery.recovery.open_obligation_check = open_obligation_check.map(Box::new);
     Ok(CompleteWorkStorageResult::Recovery(recovery))
 }
 

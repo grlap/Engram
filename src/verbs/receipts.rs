@@ -447,7 +447,11 @@ impl VerbError {
                 vec![format!("engram work show {target}"), format!("engram work show {target} --notes --gates")],
             ),
             StoreError::WorkBoundVerificationRefused { cause, .. } => (
-                vec![crate::work_service::bound_verification_remedy(cause)],
+                // The record that decided a stale check follows the remedy as
+                // its own reminder; the refusal's message keeps its words.
+                std::iter::once(crate::work_service::bound_verification_remedy(cause))
+                    .chain(cause.stale_source.as_ref().map(crate::domain::StaleVerificationSource::sentence))
+                    .collect(),
                 vec![
                     format!("engram work show {target}"),
                     format!("engram work show {target} --notes --gates"),

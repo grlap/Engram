@@ -4,7 +4,10 @@
 
 use super::*;
 use crate::control::{ObligationAssessment, ObligationSkip};
-use crate::domain::{ExecutionOutcome, VerificationEvidenceMismatch as Mismatch};
+use crate::domain::{
+    ExecutionOutcome, StaleSourceDecider, StaleVerificationSource,
+    VerificationEvidenceMismatch as Mismatch,
+};
 use crate::storage::{
     AssessmentBoundary, RecordedObligationEnd as Recorded, VerificationAssessment,
 };
@@ -143,6 +146,36 @@ fn row_for(
         .collect::<Vec<_>>();
     assert_eq!(rows.len(), 1, "exactly one row is selected");
     (rows[0].assessment, rows[0].recorded)
+}
+
+/// The deciding source record named on the row `pick` selects.
+fn stale_source_for(
+    store: &SqliteStore,
+    claim: &WorkClaim,
+    view: &VerificationAssessment,
+    pick: &Pick<'_>,
+) -> Option<StaleVerificationSource> {
+    let records = store
+        .work_run_obligations(claim.run_id)
+        .expect("obligations");
+    let rows = view
+        .rows
+        .iter()
+        .filter(|row| {
+            let record = records
+                .iter()
+                .find(|record| record.obligation.obligation_id == row.obligation_id)
+                .expect("a row is an obligation of the run");
+            match pick {
+                Pick::Criterion => row.criterion.is_some(),
+                Pick::TriggeredBy(change) => {
+                    row.criterion.is_none() && &record.obligation.triggering_observation == *change
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 1, "exactly one row is selected");
+    rows[0].stale_source.clone()
 }
 
 /// Every row whose obligation this record satisfied reads as a match, and the
@@ -428,6 +461,8 @@ fn a_moved_root_generation_reads_stale_and_earlier_records_keep_their_cut() {
     transaction.commit().expect("commit");
 
     name_root(&mut store, &work, &claim, 10, 7);
+    let binding_position = feed_head(&store.connection, &FeedId::RunExecution(claim.run_id))
+        .expect("run head after the binding");
     let later_change = source_mutation_from_basis(
         &mut store,
         &work,
@@ -456,6 +491,20 @@ fn a_moved_root_generation_reads_stale_and_earlier_records_keep_their_cut() {
             ObligationAssessment::Mismatch(Mismatch::StaleSourceRevision),
             Recorded::Open
         )
+    );
+    // The binding decided it: the check is of the root's older generation.
+    assert_eq!(
+        stale_source_for(&store, &claim, &view, &Pick::TriggeredBy(&later_change)),
+        Some(StaleVerificationSource {
+            decider: StaleSourceDecider::RootBinding,
+            position: binding_position,
+            source_changed: None,
+            workspace: Some("workspace-B".into()),
+            revision: None,
+            root_generation: Some(10),
+            verification_workspace: "workspace-B".into(),
+            verification_revision: "B7".into(),
+        })
     );
     let early_view = assess(&store, &work, &early);
     assert_recorded_satisfaction_matches(&store, &claim, &early, &early_view);
@@ -678,4 +727,102 @@ fn a_waived_obligation_and_a_paged_read() {
         2,
     );
     assert!(!unknown.boundary_found);
+}
+
+/// Under a named root the root's newest sighting decides the revision a check
+/// must carry: a quiet sighting of B6 between a check's producer at B5 and its
+/// record leaves the check stale, decided by that sighting, which is named
+/// beside the check's own source.
+#[test]
+fn a_newer_root_sighting_decides_a_stale_check_and_is_named() {
+    use crate::domain::{
+        ControlWorkBinding, EffectClass, ExecutionObservation, VerificationEvidence,
+    };
+    let (mut store, work, claim, _) = named_work();
+    let rooted = |revision: &str| basis("workspace-B", revision, Some(9));
+    let transaction = begin(&mut store);
+    let binding = ControlWorkBinding {
+        root_execution_id: load_work_run(&transaction, claim.run_id)
+            .expect("run")
+            .root_execution_id,
+        work_id: work.work_id,
+        run_id: claim.run_id,
+        work_revision: claim.accepted_work_revision,
+        claim_id: claim.claim_id,
+        claim_fence: claim.fence,
+    };
+    let mut run_actor = actor("runner");
+    run_actor.run_id = Some(claim.run_id.0.to_string());
+    let observe = |key: &str, revision: &str, second: i64| ExecutionObservation {
+        schema_version: SCHEMA_VERSION,
+        project_id: work.project_id.clone(),
+        binding: binding.clone(),
+        session_id: SessionId("runner".into()),
+        grant_id: format!("grant-{key}"),
+        observation_id: format!("observation-{key}"),
+        action_fingerprint: check_fingerprint("suite"),
+        effect: EffectClass::Observe,
+        outcome: ExecutionOutcome::Succeeded,
+        source_changed: false,
+        reported_source_change: None,
+        obligation_rule_set: active_rule_set_id(&transaction),
+        source_basis: Some(rooted(revision)),
+        observed_at: Some(at(second)),
+        actor: run_actor.clone(),
+        recorded_at: at(second),
+    };
+    let producer =
+        append_control_execution_observation_on(&transaction, &observe("producer", "B5", 5))
+            .expect("producer");
+    let sighting =
+        append_control_execution_observation_on(&transaction, &observe("sighting", "B6", 6))
+            .expect("a newer quiet sighting");
+    let check = append_control_verification_evidence_on(
+        &transaction,
+        &VerificationEvidence {
+            schema_version: SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            binding: binding.clone(),
+            session_id: SessionId("runner".into()),
+            producer_observation: producer,
+            source_basis: rooted("B5"),
+            environment: None,
+            check_kind: VerificationKind::Test,
+            check_fingerprint: check_fingerprint("suite"),
+            result: VerificationResult::Passed,
+            completed_at: at(5),
+            summary: "host observed the older revision".into(),
+            refs: Vec::new(),
+            actor: run_actor.clone(),
+            recorded_at: at(7),
+        },
+    )
+    .expect("verification");
+    transaction.commit().expect("commit");
+
+    let view = assess(&store, &work, &check);
+    assert_eq!(
+        row_for(&store, &claim, &view, &Pick::Criterion),
+        (
+            ObligationAssessment::Mismatch(Mismatch::StaleSourceRevision),
+            Recorded::Open
+        )
+    );
+    let sighting_position =
+        run_feed_position_for_object_on(&store.connection, claim.run_id, &sighting)
+            .expect("sighting position")
+            .position;
+    assert_eq!(
+        stale_source_for(&store, &claim, &view, &Pick::Criterion),
+        Some(StaleVerificationSource {
+            decider: StaleSourceDecider::RootSighting,
+            position: sighting_position,
+            source_changed: Some(false),
+            workspace: Some("workspace-B".into()),
+            revision: Some("B6".into()),
+            root_generation: Some(9),
+            verification_workspace: "workspace-B".into(),
+            verification_revision: "B5".into(),
+        })
+    );
 }

@@ -632,7 +632,17 @@ Rules that matter:
   record's own run-feed position under the current matching rules
   (`label`), as `status` `matches`, `mismatch` with the matcher's first
   `mismatch` code, or `left_out` with its reason, beside the obligation's
-  `recorded` end as stored. At most eight rows are shown, with exact `total`,
+  `recorded` end as stored. A `stale_source_revision` row adds
+  `stale_source`, the record that decided it:
+  - `decider` is one of:
+    - `latest_change`: the run's latest source change;
+    - `root_sighting`: the active named root's newest sighting;
+    - `root_binding`: the root's binding;
+  - its run-feed `position`, `workspace`, `revision`, `root_generation`, and
+    whether it reported a change;
+  - beside them, the check's own `verification_workspace` and
+    `verification_revision`.
+  Text shows it as one line under the row. At most eight rows are shown, with exact `total`,
   `shown`, `earlier` and `omitted` counts; its `continuation` command,
   `show REF --note LOCATOR --after CURSOR` (MCP `note` with `after`), shows the
   rest and refuses once the run has moved on. See the
@@ -1872,7 +1882,10 @@ freshness rule, completion returns `WorkBoundVerificationRefused`. Its
 are unchanged. Native CLI JSON and MCP `error.details` add `cause`, containing
 the one-based `criterion`, `requirement` (check kind and optional command
 fingerprint), `mismatch`, selected `verification`, original `satisfied_by`,
-`producer_observation`, actual `result`, and typed `remedy`.
+`producer_observation`, actual `result`, and typed `remedy`. A
+`stale_source_revision` mismatch adds `cause.stale_source`, the record that
+decided it, in the shape the verification detail uses. A word reminder after
+the remedy names it as one sentence. The message keeps its words.
 The remedy is `run_current_check` for a matcher mismatch or
 `run_passing_check_after` for a non-passing result. `error.details.remedy`
 and the word reminders format that action from the cause, without parsing
@@ -1924,7 +1937,17 @@ receipt. `cause` is a tagged value for `open_obligation`,
 including the exact blocker identity. `item` carries the
 affected full id, short ref, title, and lifecycle-backed state. `command` is
 deliberately a single next command, and the `done` verb exposes exactly that
-one entry in its `next` list. Recovery guidance is not a replayable result: it
+one entry in its `next` list. Beside an `open_obligation` cause, never inside
+it, `recovery.open_obligation_check` names the check the obligation waits for.
+It is read at the completion cut:
+- `none_followed` when no passed check of its kind was recorded after the
+  obligation opened;
+- otherwise `newest`, with that newest passed check's `verification` record
+  and `position`, and its `mismatch` or `left_out` reason. A stale mismatch
+  adds the `stale_source` that decided it.
+A reminder after the cause's unchanged words says the same. For a `newest`
+check, `next` adds `show REF --note RECORD`, which reads that check's
+detail. Recovery guidance is not a replayable result: it
 is rebuilt from a coherent current snapshot so a retry observes a child,
 contribution, obligation, or acceptance barrier that moved. Native `done` and
 the fifteen-tool MCP surface return this as a typed refusal receipt. The JSON

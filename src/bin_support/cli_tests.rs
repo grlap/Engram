@@ -582,4 +582,45 @@ fn receipts_and_recovery_refusals_never_spell_the_locked_store_phrase() {
         serde_json::from_str::<serde_json::Value>(&guarded).unwrap(),
         value
     );
+
+    // A bound check's refusal names the record that decided a stale check,
+    // whose host-recorded text may spell the phrase too.
+    let record = engram::ObjectId::from_canonical_bytes(b"a bound check");
+    let bound = engram::storage::StoreError::WorkBoundVerificationRefused {
+        work: engram::WorkId::new(),
+        reason: "criterion 1 requires test verification".into(),
+        cause: Box::new(engram::domain::WorkBoundVerificationCause {
+            criterion: 1,
+            requirement: engram::domain::VerificationRequirement {
+                check_kind: engram::domain::VerificationKind::Test,
+                check_fingerprint: None,
+            },
+            mismatch: engram::domain::VerificationEvidenceMismatch::StaleSourceRevision,
+            verification: record.clone(),
+            satisfied_by: record.clone(),
+            producer_observation: record,
+            result: engram::domain::VerificationResult::Passed,
+            remedy: engram::domain::BoundVerificationRemedy::RunCurrentCheck,
+            stale_source: Some(engram::domain::StaleVerificationSource {
+                decider: engram::domain::StaleSourceDecider::LatestChange,
+                position: 7,
+                source_changed: Some(true),
+                workspace: Some("C:/work/database is locked".into()),
+                revision: Some("Database Is Locked".into()),
+                root_generation: None,
+                verification_workspace: "C:/work/DATABASE IS LOCKED".into(),
+                verification_revision: "R2".into(),
+            }),
+        }),
+    };
+    let value = engram::store_error_value(&bound);
+    let guarded = super::refusal_stderr_text(&bound, serde_json::to_string_pretty(&value).unwrap());
+    assert!(
+        !guarded.to_lowercase().contains("database is locked"),
+        "{guarded}"
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&guarded).unwrap(),
+        value
+    );
 }

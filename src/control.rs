@@ -16,11 +16,11 @@ use crate::{
         ControlAssurance, ControlDirective, ControlRefusalCode, DirectiveSatisfaction,
         DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
         OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition, ObligationRuleSet,
-        ObservedTurnDecision, ParticipantMembership, SessionPhase, SourceRootState, TaskDelta,
-        TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot,
-        TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState, VerificationEvidence,
-        VerificationEvidenceMismatch, VerificationRequirement, VerificationResult,
-        WorkEvidenceKind, WorkObligation,
+        ObservedTurnDecision, ParticipantMembership, SessionPhase, SourceRootState,
+        StaleSourceDecider, TaskDelta, TurnBeginDecision, TurnBeginSnapshot,
+        TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
+        TurnGrantBasis, TurnGrantState, VerificationEvidence, VerificationEvidenceMismatch,
+        VerificationRequirement, VerificationResult, WorkEvidenceKind, WorkObligation,
     },
     storage::StoreError,
 };
@@ -78,17 +78,38 @@ pub struct NamedRootEvidenceMatch<'a> {
 pub fn match_verification_evidence(
     input: &VerificationEvidenceMatchInput<'_>,
 ) -> Result<(), VerificationEvidenceMismatch> {
+    explain_verification_evidence(input).map_err(|(mismatch, _)| mismatch)
+}
+
+/// [`match_verification_evidence`], with the source record that decided a
+/// `stale_source_revision` mismatch beside it. The decision is the same; the
+/// decider is `Some` exactly when the mismatch is stale.
+///
+/// # Errors
+///
+/// Returns the first typed mismatch, as [`match_verification_evidence`]
+/// does, and for a stale one the record that decided it.
+pub fn explain_verification_evidence(
+    input: &VerificationEvidenceMatchInput<'_>,
+) -> Result<(), (VerificationEvidenceMismatch, Option<StaleSourceDecider>)> {
+    let plain = |mismatch: VerificationEvidenceMismatch| (mismatch, None);
+    let stale = |decider: StaleSourceDecider| {
+        (
+            VerificationEvidenceMismatch::StaleSourceRevision,
+            Some(decider),
+        )
+    };
     if input.candidate_kind != WorkEvidenceKind::Verification {
-        return Err(VerificationEvidenceMismatch::WrongKind);
+        return Err(plain(VerificationEvidenceMismatch::WrongKind));
     }
     let evidence = input
         .evidence
-        .ok_or(VerificationEvidenceMismatch::WrongKind)?;
+        .ok_or(plain(VerificationEvidenceMismatch::WrongKind))?;
     let producer = input
         .producer
-        .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+        .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
     if evidence.check_kind != input.requirement.check_kind {
-        return Err(VerificationEvidenceMismatch::CheckKindMismatch);
+        return Err(plain(VerificationEvidenceMismatch::CheckKindMismatch));
     }
     let mutation = input
         .latest_mutation
@@ -96,11 +117,11 @@ pub fn match_verification_evidence(
             let basis = latest_mutation
                 .source_basis
                 .as_ref()
-                .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+                .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
             let observed_at = latest_mutation
                 .observed_at
-                .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
-            Ok::<_, VerificationEvidenceMismatch>((latest_mutation, position, basis, observed_at))
+                .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
+            Ok((latest_mutation, position, basis, observed_at))
         })
         .transpose()?;
     let same_run = producer.project_id == evidence.project_id
@@ -113,7 +134,7 @@ pub fn match_verification_evidence(
                 && evidence.binding.run_id == latest_mutation.binding.run_id
         });
     if !same_run {
-        return Err(VerificationEvidenceMismatch::WrongRun);
+        return Err(plain(VerificationEvidenceMismatch::WrongRun));
     }
     // Under a named root the newest sighting in the root decides the revision
     // a check must carry. A quiet move after the root's newest known change,
@@ -128,23 +149,23 @@ pub fn match_verification_evidence(
         };
         let producer_position = input
             .producer_position
-            .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+            .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
         if !correct_root(&evidence.source_basis)
             || !producer.source_basis.as_ref().is_some_and(correct_root)
             || input.evidence_position <= root.binding_position
             || producer_position <= root.binding_position
         {
-            return Err(VerificationEvidenceMismatch::StaleSourceRevision);
+            return Err(stale(StaleSourceDecider::RootBinding));
         }
         if let Some((sighting, _)) = root.latest_sighting {
             let basis = sighting
                 .source_basis
                 .as_ref()
-                .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+                .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
             if !correct_root(basis)
                 || evidence.source_basis.source_revision != basis.source_revision
             {
-                return Err(VerificationEvidenceMismatch::StaleSourceRevision);
+                return Err(stale(StaleSourceDecider::RootSighting));
             }
             revision_from_root = true;
         }
@@ -152,7 +173,7 @@ pub fn match_verification_evidence(
             .unknown_change_position
             .is_some_and(|unknown| producer_position <= unknown)
         {
-            return Err(VerificationEvidenceMismatch::NotAfterMutation);
+            return Err(plain(VerificationEvidenceMismatch::NotAfterMutation));
         }
     }
     if let Some((latest_mutation, _, latest_basis, _)) = mutation
@@ -160,7 +181,7 @@ pub fn match_verification_evidence(
             || (!revision_from_root
                 && evidence.source_basis.source_revision != latest_basis.source_revision))
     {
-        return Err(VerificationEvidenceMismatch::StaleSourceRevision);
+        return Err(stale(StaleSourceDecider::LatestChange));
     }
     if evidence.check_fingerprint != producer.action_fingerprint
         || input
@@ -169,10 +190,12 @@ pub fn match_verification_evidence(
             .as_ref()
             .is_some_and(|required| required != &evidence.check_fingerprint)
     {
-        return Err(VerificationEvidenceMismatch::CheckFingerprintMismatch);
+        return Err(plain(
+            VerificationEvidenceMismatch::CheckFingerprintMismatch,
+        ));
     }
     if evidence.result != VerificationResult::Passed {
-        return Err(VerificationEvidenceMismatch::ResultNotPassed);
+        return Err(plain(VerificationEvidenceMismatch::ResultNotPassed));
     }
     if mutation.is_some_and(|(_, latest_mutation_position, _, _)| {
         input.evidence_position <= latest_mutation_position
@@ -181,7 +204,7 @@ pub fn match_verification_evidence(
                     .producer_position
                     .is_none_or(|position| position <= latest_mutation_position))
     }) {
-        return Err(VerificationEvidenceMismatch::NotAfterMutation);
+        return Err(plain(VerificationEvidenceMismatch::NotAfterMutation));
     }
     let actor_matches = evidence.actor.session_id.as_ref() == Some(&evidence.session_id)
         && evidence.actor.run_id.as_deref() == Some(evidence.binding.run_id.0.to_string().as_str())
@@ -193,7 +216,7 @@ pub fn match_verification_evidence(
         && producer.observed_at == Some(evidence.completed_at)
         && producer.recorded_at >= evidence.completed_at;
     if !actor_matches || !times_are_monotone {
-        return Err(VerificationEvidenceMismatch::InvalidTime);
+        return Err(plain(VerificationEvidenceMismatch::InvalidTime));
     }
     Ok(())
 }
@@ -350,12 +373,25 @@ pub fn assess_obligation_satisfaction(
     input: &ObligationSatisfactionInput<'_>,
     obligation: &WorkObligation,
 ) -> ObligationAssessment {
+    explain_obligation_satisfaction(input, obligation).0
+}
+
+/// [`assess_obligation_satisfaction`], with the source record that decided a
+/// `stale_source_revision` mismatch beside it, `Some` exactly then.
+#[must_use]
+pub fn explain_obligation_satisfaction(
+    input: &ObligationSatisfactionInput<'_>,
+    obligation: &WorkObligation,
+) -> (ObligationAssessment, Option<StaleSourceDecider>) {
     let expected_feed = crate::domain::FeedId::RunExecution(input.evidence.binding.run_id);
     if input.evaluated_cut.feed != expected_feed
         || obligation.run_id != input.evidence.binding.run_id
         || obligation.trigger_position.feed != expected_feed
     {
-        return ObligationAssessment::Skipped(ObligationSkip::OtherRun);
+        return (
+            ObligationAssessment::Skipped(ObligationSkip::OtherRun),
+            None,
+        );
     }
     if input.evidence_position > input.evaluated_cut.position
         || obligation.trigger_position.position > input.evaluated_cut.position
@@ -368,7 +404,10 @@ pub fn assess_obligation_satisfaction(
                 .producer_position
                 .is_some_and(|producer| producer <= obligation.trigger_position.position))
     {
-        return ObligationAssessment::Skipped(ObligationSkip::NotYetDefined);
+        return (
+            ObligationAssessment::Skipped(ObligationSkip::NotYetDefined),
+            None,
+        );
     }
     // Under a named root a check of the root's newest sighting stands for the
     // source as it is, so it can account for a change the root holds from
@@ -379,9 +418,12 @@ pub fn assess_obligation_satisfaction(
         })
         && acceptance_binding_criterion(&obligation.rule).is_none()
     {
-        return ObligationAssessment::Skipped(ObligationSkip::NoSourceContext);
+        return (
+            ObligationAssessment::Skipped(ObligationSkip::NoSourceContext),
+            None,
+        );
     }
-    match match_verification_evidence(&VerificationEvidenceMatchInput {
+    match explain_verification_evidence(&VerificationEvidenceMatchInput {
         candidate_kind: WorkEvidenceKind::Verification,
         evidence: Some(input.evidence),
         producer: Some(input.producer),
@@ -391,8 +433,8 @@ pub fn assess_obligation_satisfaction(
         producer_position: input.producer_position,
         requirement: &obligation.requirement,
     }) {
-        Ok(()) => ObligationAssessment::Matches,
-        Err(mismatch) => ObligationAssessment::Mismatch(mismatch),
+        Ok(()) => (ObligationAssessment::Matches, None),
+        Err((mismatch, decider)) => (ObligationAssessment::Mismatch(mismatch), decider),
     }
 }
 

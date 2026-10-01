@@ -568,6 +568,7 @@ fn completion_recovery_reminder_names_each_disposed_child_lifecycle() {
                 .into(),
             deciding_observation: None,
             source: None,
+            open_obligation_check: None,
         };
         assert_eq!(
             completion_recovery_reminder(
@@ -601,6 +602,7 @@ fn completion_recovery_reminder_names_the_verification_source_remedy() {
         command: "engram work show w-000000000003 --notes --gates".into(),
         deciding_observation: None,
         source: None,
+        open_obligation_check: None,
     };
     assert_eq!(
         completion_recovery_reminder(
@@ -632,6 +634,7 @@ fn completion_recovery_reminder_names_the_identity_remedy_for_the_task() {
         command: "engram work show w-000000000004 --notes --gates".into(),
         deciding_observation: None,
         source: None,
+        open_obligation_check: None,
     };
     let cause = "w-000000000004 acceptance evaluation is stale (identity): its independent evaluator has since held this run, or the record lacks a session its mode requires";
     for (remedy, mark, admitted) in [
