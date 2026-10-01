@@ -5,6 +5,7 @@ use crate::domain::{
 };
 use crate::storage::test_support::bind_control_for;
 
+mod characterization;
 mod deciding;
 mod state;
 

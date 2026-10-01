@@ -322,36 +322,37 @@ impl SqliteStore {
             ));
         }
         let named_root = named_root_at_on(&transaction, run_id, cut)?;
-        if let (Some(root), Some(workspace)) = (
+        match assess_named_root_binding(
+            RootPhase::Admission,
+            named_root.as_ref().map(|root| &root.event_id),
+            || Ok(named_root_at_on(&transaction, run_id, head)?.map(|root| root.event_id)),
             named_root.as_ref(),
             request
                 .source_basis
                 .as_ref()
-                .and_then(|basis| basis.workspace_id.as_ref()),
-        ) && workspace != &root.event.workspace_id
-        {
-            return Err(admission::root_refusal(
-                item.work_id,
-                root,
-                cut,
-                EvaluationRootMismatch::DeclaredWorkspaceMismatch,
-                request.source_basis.as_ref(),
-                None,
-                "the evaluation declares a workspace other than the claim's named source root",
-            ));
-        }
-        if named_root_at_on(&transaction, run_id, head)?
-            .as_ref()
-            .map(|root| &root.event_id)
-            != named_root.as_ref().map(|root| &root.event_id)
-        {
-            return Err(StoreError::AcceptanceEvaluationBasisMoved {
-                work: item.work_id,
-                moved: EvaluationBasisMove::SourceChanged,
-                reason: "the named source root changed after the evaluated cut; re-read the run and evaluate its current root".into(),
-                // A root binding moved, not an observed source.
-                observation: None,
-            });
+                .and_then(|basis| basis.workspace_id.as_deref()),
+        )? {
+            RootBinding::Held => {}
+            RootBinding::DeclaredWorkspaceMismatch(root) => {
+                return Err(admission::root_refusal(
+                    item.work_id,
+                    root,
+                    cut,
+                    EvaluationRootMismatch::DeclaredWorkspaceMismatch,
+                    request.source_basis.as_ref(),
+                    None,
+                    "the evaluation declares a workspace other than the claim's named source root",
+                ));
+            }
+            RootBinding::Rebound => {
+                return Err(StoreError::AcceptanceEvaluationBasisMoved {
+                    work: item.work_id,
+                    moved: EvaluationBasisMove::SourceChanged,
+                    reason: "the named source root changed after the evaluated cut; re-read the run and evaluate its current root".into(),
+                    // A root binding moved, not an observed source.
+                    observation: None,
+                });
+            }
         }
         if let Some(BasisMoveFinding { moved, observation }) = basis_moved_after(
             &transaction,
@@ -2296,6 +2297,126 @@ fn judged_source(
     })
 }
 
+/// Which reading of a named root's source an assessment makes, and so how
+/// far along the run feed it reads.
+#[derive(Clone, Copy, Debug)]
+enum RootPhase {
+    /// Recording an evaluation: the root must have been sighted through the
+    /// cut. The judged source must be that sighting, or a revision the
+    /// evaluation declared that the root's newest sighting after the cut does
+    /// not contradict, since the requesting turn may report it after the cut.
+    Admission,
+    /// Consuming a recorded evaluation: a declared revision must be the
+    /// root's newest sighting through the head, since the host may have
+    /// reported it after the cut; an undeclared evaluation must be the
+    /// root's newest sighting through its cut.
+    Consumption,
+}
+
+/// Where a named root's source stands against the source an evaluation
+/// judged, in one phase.
+#[derive(Debug, PartialEq)]
+enum RootSource {
+    /// The root agrees with the judged source.
+    Confirmed,
+    /// The root has no sighting through the cut, so no source is anchored.
+    /// Only admission reads this: consumption never holds a record that was
+    /// admitted without one.
+    NoInitialSighting,
+    /// The root's newest sighting within the phase's horizon is not the
+    /// judged source; `reported` is that sighting's revision, if any.
+    Unconfirmed { reported: Option<String> },
+}
+
+/// Where a named root's binding stands for one evaluation, in one phase.
+enum RootBinding<'a> {
+    /// The evaluation stands on the binding the run holds now.
+    Held,
+    /// Admission only: the evaluation declares a workspace other than this
+    /// named root's.
+    DeclaredWorkspaceMismatch(&'a NamedEvaluationRoot),
+    /// The binding the evaluation stood on is not the one the run holds now.
+    Rebound,
+}
+
+/// The one decision on a named root's binding, used when an evaluation is
+/// recorded and when it is consumed. `evaluated` is the binding at the
+/// evaluation's cut; `current` reads the binding at the head, and is called
+/// only once the declared workspace is settled. Only admission compares a
+/// declared workspace: a recorded evaluation already passed that check, and
+/// consumption must not refuse records it cannot re-admit.
+fn assess_named_root_binding<'a>(
+    phase: RootPhase,
+    evaluated: Option<&ObjectId>,
+    current: impl FnOnce() -> Result<Option<ObjectId>, StoreError>,
+    root: Option<&'a NamedEvaluationRoot>,
+    declared_workspace: Option<&str>,
+) -> Result<RootBinding<'a>, StoreError> {
+    if matches!(phase, RootPhase::Admission)
+        && let (Some(root), Some(workspace)) = (root, declared_workspace)
+        && workspace != root.event.workspace_id
+    {
+        return Ok(RootBinding::DeclaredWorkspaceMismatch(root));
+    }
+    Ok(if evaluated == current()?.as_ref() {
+        RootBinding::Held
+    } else {
+        RootBinding::Rebound
+    })
+}
+
+/// The one assessment of a named root's source, used when an evaluation is
+/// recorded and when it is consumed. Each phase reads only its own horizon.
+fn assess_named_root_source(
+    connection: &Connection,
+    run_id: WorkRunId,
+    cut: i64,
+    root: &NamedEvaluationRoot,
+    judged: Option<&JudgedSource>,
+    phase: RootPhase,
+) -> Result<RootSource, StoreError> {
+    Ok(match phase {
+        RootPhase::Admission => {
+            // A root the host has not yet sighted anchors no evaluation: its
+            // first sighting could show any source.
+            let Some(latest) = revision_seen_through(connection, run_id, cut, Some(root))? else {
+                return Ok(RootSource::NoInitialSighting);
+            };
+            match judged {
+                Some(judged)
+                    if judged.revision == latest
+                        || (judged.declared
+                            && declared_not_contradicted(
+                                connection,
+                                run_id,
+                                cut,
+                                root,
+                                &judged.revision,
+                            )?) =>
+                {
+                    RootSource::Confirmed
+                }
+                _ => RootSource::Unconfirmed {
+                    reported: Some(latest),
+                },
+            }
+        }
+        RootPhase::Consumption => {
+            let declared = judged.is_some_and(|judged| judged.declared);
+            let horizon = if declared { i64::MAX } else { cut };
+            let latest = revision_seen_through(connection, run_id, horizon, Some(root))?;
+            if latest.is_some()
+                && latest.as_deref() == judged.map(|judged| judged.revision.as_str())
+            {
+                RootSource::Confirmed
+            } else {
+                RootSource::Unconfirmed { reported: latest }
+            }
+        }
+    })
+}
+
+/// Admission's reading of the named root, refused in the root family.
 fn require_named_root_judged_source(
     connection: &Connection,
     run_id: WorkRunId,
@@ -2308,10 +2429,16 @@ fn require_named_root_judged_source(
     let Some(root) = root else {
         return Ok(());
     };
-    // A root the host has not yet sighted anchors no evaluation: its first
-    // sighting could show any source.
-    let Some(latest) = revision_seen_through(connection, run_id, through, Some(root))? else {
-        return Err(admission::root_refusal(
+    match assess_named_root_source(
+        connection,
+        run_id,
+        through,
+        root,
+        judged,
+        RootPhase::Admission,
+    )? {
+        RootSource::Confirmed => Ok(()),
+        RootSource::NoInitialSighting => Err(admission::root_refusal(
             work_id,
             root,
             through,
@@ -2319,34 +2446,17 @@ fn require_named_root_judged_source(
             declaration,
             None,
             "the named root has no sighting yet; capture that root, then evaluate it",
-        ));
-    };
-    let Some(judged) = judged else {
-        return Err(admission::root_refusal(
+        )),
+        RootSource::Unconfirmed { reported } => Err(admission::root_refusal(
             work_id,
             root,
             through,
             EvaluationRootMismatch::JudgedSourceMismatch,
             declaration,
-            Some(latest),
+            reported,
             "the evaluated source does not match the named root's newest sighting; capture and evaluate that root",
-        ));
-    };
-    if judged.revision == latest
-        || (judged.declared
-            && declared_not_contradicted(connection, run_id, through, root, &judged.revision)?)
-    {
-        return Ok(());
+        )),
     }
-    Err(admission::root_refusal(
-        work_id,
-        root,
-        through,
-        EvaluationRootMismatch::JudgedSourceMismatch,
-        declaration,
-        Some(latest),
-        "the evaluated source does not match the named root's newest sighting; capture and evaluate that root",
-    ))
 }
 
 /// Whether a revision declared under a named root, other than the one the
@@ -2729,9 +2839,18 @@ fn staleness_before_move(
     {
         return Ok(Some(AcceptanceStaleReason::Revision));
     }
-    let current_root = named_root_at_on(connection, run_id, i64::MAX)?;
-    if record.named_root_binding.as_ref() != current_root.as_ref().map(|root| &root.event_id) {
-        return Ok(Some(AcceptanceStaleReason::Mutation));
+    match assess_named_root_binding(
+        RootPhase::Consumption,
+        record.named_root_binding.as_ref(),
+        || Ok(named_root_at_on(connection, run_id, i64::MAX)?.map(|root| root.event_id)),
+        None,
+        None,
+    )? {
+        RootBinding::Held => {}
+        RootBinding::Rebound => return Ok(Some(AcceptanceStaleReason::Mutation)),
+        RootBinding::DeclaredWorkspaceMismatch(_) => {
+            unreachable!("consumption compares no declared workspace")
+        }
     }
     // Every effective requirement is re-read from the current policy: a
     // strengthened mechanical basis retires asserted passes, and a pinned or
@@ -2846,32 +2965,31 @@ fn staleness_after_move(
         record.source_basis.as_ref(),
         evaluated_root,
     )?;
-    if let Some(root) = evaluated_root {
-        // A declared revision is confirmed by the root's newest sighting
-        // through the head, since the host may report it after the cut; an
-        // undeclared evaluation judged the sighting at its cut.
-        let horizon = if judged.as_ref().is_some_and(|judged| judged.declared) {
-            i64::MAX
+    if let Some(root) = evaluated_root
+        && let RootSource::Unconfirmed { reported } = assess_named_root_source(
+            connection,
+            run_id,
+            record.evaluated_cut.position,
+            root,
+            judged.as_ref(),
+            RootPhase::Consumption,
+        )?
+    {
+        // Consumption's reading of the named root, as the source recovery
+        // names it.
+        let declared = judged.as_ref().is_some_and(|judged| judged.declared);
+        source_context.mismatch = if declared {
+            crate::domain::AcceptanceSourceMismatch::UnconfirmedDeclaration
         } else {
-            record.evaluated_cut.position
+            crate::domain::AcceptanceSourceMismatch::UnconfirmedEvaluatedRevision
         };
-        let latest = revision_seen_through(connection, run_id, horizon, Some(root))?;
-        if latest.is_none()
-            || latest.as_deref() != judged.as_ref().map(|judged| judged.revision.as_str())
-        {
-            source_context.mismatch = if judged.as_ref().is_some_and(|judged| judged.declared) {
-                crate::domain::AcceptanceSourceMismatch::UnconfirmedDeclaration
-            } else {
-                crate::domain::AcceptanceSourceMismatch::UnconfirmedEvaluatedRevision
-            };
-            source_context.remedy = if judged.as_ref().is_some_and(|judged| judged.declared) {
-                crate::domain::AcceptanceSourceRemedy::EndTurnReadAndRetry
-            } else {
-                crate::domain::AcceptanceSourceRemedy::ReadSourceAndEvaluate
-            };
-            source_context.reported_revision = latest;
-            return Ok(refused_source(source_context));
-        }
+        source_context.remedy = if declared {
+            crate::domain::AcceptanceSourceRemedy::EndTurnReadAndRetry
+        } else {
+            crate::domain::AcceptanceSourceRemedy::ReadSourceAndEvaluate
+        };
+        source_context.reported_revision = reported;
+        return Ok(refused_source(source_context));
     }
     if stale_bound_citation(
         connection,
