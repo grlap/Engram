@@ -130,17 +130,40 @@ that warning threshold. Check process activity and possible lock contention
 when investigating a suspected hang. The root-delta checks assert byte and
 operation bounds; elapsed time is diagnostic only.
 
-The ordinary Rust suite includes `tests/source_file_size.rs`, which keeps each
-guarded source family at 2,499 physical lines or fewer: a module file and every
-`.rs` file under its child-module directory, so a module split out of a guarded
-file stays counted. That directory is `MODULE/` unless the family names another
-one, as `src/main.rs` does with `src/bin_support`, where the binary's modules
-live. Blank and comment lines count, and CRLF counts like LF. A
-missing module file, a missing child directory of a family marked as split, or
-any file or directory that cannot be read fails the check. When a file is
-brought under the limit, add its family to the `guarded_families!` list there
-rather than writing another checker. The list also generates one test per
-family, `family::NAME`.
+The ordinary Rust suite includes `tests/source_file_size.rs`, which keeps every
+`.rs` file under `src`, at any depth, at 2,499 physical lines or fewer. Blank
+and comment lines count, and CRLF counts like LF. Every `.rs` file under `src`
+is counted, so a new or growing file cannot pass unlisted. Any file or
+directory there that cannot be read fails the check, and so does a symbolic
+link or junction, which is refused rather than followed. To see every count,
+run the whole-tree test alone:
+
+```bash
+cargo test --test source_file_size -- --exact every_source_file_stays_within_the_limit --nocapture
+```
+
+A file already over the limit passes only as a known exception, listed in
+`tests/source_file_size_exceptions.json` as `{"path": "src/…rs", "max_lines":
+N, "split_item": "…"}`. `max_lines` is the file's current count, which it may
+never exceed, and `split_item` names where the work that splits it is tracked;
+this file is the one place such a reference belongs, and no report prints it.
+The list is checked data, not a baseline to regenerate: a malformed or
+duplicate entry fails every run. The whole-tree test also fails an entry that
+names no file, a file already back within the limit, or a file that shrank
+below its `max_lines`: lower `max_lines` to the new count, so a ceiling only
+ever comes down, and remove the entry in the change that splits the file. The
+list is empty today. A change that
+pushes a file over the limit splits it in the same change rather than adding an
+entry.
+
+The suite also keeps guarded families, for per-file evidence. A family is a
+module file and every `.rs` file under its child-module directory, so a module
+split out of it stays counted with it. That directory is `MODULE/` unless the
+family names another one, as `src/main.rs` does with `src/bin_support`, where
+the binary's modules live. A missing module file or a missing child directory
+of a family marked as split fails the check, and so does a link at either. Families are listed in the
+`guarded_families!` list there, which also generates one test per family,
+`family::NAME`.
 
 For per-file evidence, such as a host-observed check behind a file-size
 criterion, run the one family the criterion covers, for example:
@@ -150,15 +173,16 @@ cargo test --test source_file_size -- --exact family::storage_work_query --nocap
 ```
 
 It prints one line per file of that family, in path order, as
-`PATH: N physical lines (limit 2499)`, and fails naming every file of the
-family over the limit. A family's report must stay within 3 KiB, so a
+`PATH: N physical lines (limit 2499)`, or `(known exception, ceiling N)` for a
+listed exception, and fails naming every file of the family over the limit or
+past its ceiling. A family run checks only its own files, so a stale entry for
+another file does not fail it. A family's report must stay within 3 KiB, so a
 host-observed run of it fits the 4096-byte verification summary with the
 command and result lines. A family that outgrows that budget fails its test,
 naming its printed size. Its children cannot simply be listed as families of
 their own, because the inventory refuses a file guarded by two families; that
 failure means the family description must first learn to divide one module's
-files. For the whole inventory, sorted by path across all families, run the
-whole-tree test alone:
+files. For every family's files, sorted by path, run:
 
 ```bash
 cargo test --test source_file_size -- --exact guarded_source_families_stay_within_the_limit --nocapture
