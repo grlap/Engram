@@ -23,7 +23,7 @@ use crate::{
     storage::StoreError,
 };
 
-const MAX_HOST_CONTROL_FRAME_BYTES: usize = 256 * 1_024;
+pub(crate) const MAX_HOST_CONTROL_FRAME_BYTES: usize = 256 * 1_024;
 const MAX_HOST_CONTROL_OPERATION_BYTES: usize = 64;
 const MAX_HOST_CONTROL_ERROR_DETAIL_BYTES: usize = 384;
 
@@ -110,6 +110,23 @@ pub enum HostControlRequest {
     },
 }
 
+impl HostControlRequest {
+    /// The protocol operation this request names, as a fixed label.
+    #[must_use]
+    pub const fn operation(&self) -> &'static str {
+        match self {
+            Self::SessionBind { .. } => "session_bind",
+            Self::SessionStatus { .. } => "session_status",
+            Self::NamedRootBind { .. } => "named_root_bind",
+            Self::NamedRootRead { .. } => "named_root_read",
+            Self::AcceptanceBindingRead { .. } => "acceptance_binding_read",
+            Self::TurnEvaluate { .. } => "turn_evaluate",
+            Self::TurnBegin { .. } => "turn_begin",
+            Self::TurnCheckpoint { .. } => "turn_checkpoint",
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 enum HostControlResponse {
@@ -190,6 +207,9 @@ impl HostControlServer {
     ) -> Result<Self, StoreError> {
         crate::storage::admit_session_id(&session_id)?;
         let mut store = SqliteStore::open_with_host_path_identity(database, identity)?;
+        crate::phase_trace::control::enter(
+            crate::phase_trace::control::ControlPhase::ConnectionResume,
+        );
         let connection_token = store.resume_control_connection(&session_id, Utc::now())?;
         Ok(Self {
             store,
@@ -402,36 +422,96 @@ impl HostControlServer {
             let Some(frame) = read_control_frame(&mut reader)? else {
                 return Ok(());
             };
-            let response = match frame {
-                Err(()) => HostControlResponse::Error {
-                    error: HostControlErrorBody {
-                        code: "invalid_request",
-                        message: format!(
-                            "host control frame exceeds {MAX_HOST_CONTROL_FRAME_BYTES} bytes"
-                        ),
-                    },
-                },
-                Ok(frame) => match parse_host_control_request(&frame) {
-                    Ok(request) => match self.handle(request) {
-                        Ok(result) => HostControlResponse::Ok { result },
-                        Err(error) => HostControlResponse::Error {
-                            error: HostControlErrorBody {
-                                code: store_error_code(&error),
-                                message: error.to_string(),
-                            },
-                        },
-                    },
-                    Err(error) => HostControlResponse::Error {
-                        error: HostControlErrorBody {
-                            code: "invalid_request",
-                            message: error,
-                        },
-                    },
-                },
+            let response = match parse_frame(frame) {
+                Ok(request) => self.respond(request),
+                Err(refusal) => refusal,
             };
             serde_json::to_writer(&mut writer, &response)?;
             writer.write_all(b"\n")?;
             writer.flush()?;
+        }
+    }
+
+    /// [`Self::serve`] with the opt-in phase trace: the same responses, byte
+    /// for byte, and for each frame, numbered when its first byte arrives,
+    /// a trace of where its time went. Waiting idle for a frame is not part
+    /// of one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when the transport itself cannot read or write,
+    /// after the frame's terminal trace line.
+    pub fn serve_traced(
+        &mut self,
+        mut reader: impl BufRead,
+        mut writer: impl Write,
+        trace: &crate::phase_trace::control::ControlTrace,
+    ) -> std::io::Result<()> {
+        use crate::phase_trace::control::{ControlPhase, Terminal};
+        loop {
+            if reader.fill_buf()?.is_empty() {
+                return Ok(());
+            }
+            trace.begin_frame();
+            let frame = match read_control_frame(&mut reader) {
+                Ok(Some(frame)) => frame,
+                Ok(None) => {
+                    trace.finish(Terminal::Incomplete, None);
+                    return Ok(());
+                }
+                Err(error) => {
+                    trace.finish(Terminal::Incomplete, None);
+                    return Err(error);
+                }
+            };
+            // The frame has been in handler_total since its first byte. The
+            // operation is named before the handler runs, so a frame
+            // that stalls in it says which operation it is.
+            let response = match parse_frame(frame) {
+                Ok(request) => {
+                    trace.set_operation(request.operation());
+                    self.respond(request)
+                }
+                Err(refusal) => {
+                    trace.set_operation("invalid");
+                    refusal
+                }
+            };
+            let outcome = match &response {
+                HostControlResponse::Ok { .. } => "ok",
+                HostControlResponse::Error { error } => error.code,
+            };
+            trace.enter(ControlPhase::ResponseSerialize);
+            let bytes = match serde_json::to_vec(&response) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    trace.finish(Terminal::Incomplete, Some(outcome));
+                    return Err(error.into());
+                }
+            };
+            trace.enter(ControlPhase::ResponseWriteFlush);
+            let written = writer
+                .write_all(&bytes)
+                .and_then(|()| writer.write_all(b"\n"))
+                .and_then(|()| writer.flush());
+            if let Err(error) = written {
+                trace.finish(Terminal::WriteFailed, Some(outcome));
+                return Err(error);
+            }
+            trace.finish(Terminal::Complete, Some(outcome));
+        }
+    }
+
+    /// The response to one parsed request.
+    fn respond(&mut self, request: HostControlRequest) -> HostControlResponse {
+        match self.handle(request) {
+            Ok(result) => HostControlResponse::Ok { result },
+            Err(error) => HostControlResponse::Error {
+                error: HostControlErrorBody {
+                    code: store_error_code(&error),
+                    message: error.to_string(),
+                },
+            },
         }
     }
 
@@ -468,6 +548,23 @@ impl HostControlServer {
             provenance_chain,
             reason: reason.into(),
         }
+    }
+}
+
+/// The request one frame holds, or the response refusing it: an oversize
+/// frame, or one that does not parse.
+fn parse_frame(frame: Result<Vec<u8>, ()>) -> Result<HostControlRequest, HostControlResponse> {
+    let refuse = |message: String| HostControlResponse::Error {
+        error: HostControlErrorBody {
+            code: "invalid_request",
+            message,
+        },
+    };
+    match frame {
+        Err(()) => Err(refuse(format!(
+            "host control frame exceeds {MAX_HOST_CONTROL_FRAME_BYTES} bytes"
+        ))),
+        Ok(frame) => parse_host_control_request(&frame).map_err(refuse),
     }
 }
 
@@ -562,7 +659,9 @@ pub(crate) const fn evaluation_basis_move_code(moved: crate::EvaluationBasisMove
     }
 }
 
-fn store_error_code(error: &StoreError) -> &'static str {
+/// The fixed wire code of a store error.
+#[must_use]
+pub fn store_error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::InvalidControlSession(_) => "invalid_control_session",

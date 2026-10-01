@@ -139,11 +139,31 @@ function canonicalFingerprint(value) {
   return fingerprint(canonicalJson(value));
 }
 
+// The opt-in phase trace: bounded JSON lines on the control process's
+// stderr, keyed by this marker with the process id and frame number.
+const PHASE_TRACE_ENV = "ENGRAM_MCP_PHASE_TRACE";
+const CONTROL_TRACE_KEY = "engram_control_phase_trace";
+
+function controlTraceLines(stderr) {
+  return stderr
+    .split("\n")
+    .filter((line) => line.includes(`"${CONTROL_TRACE_KEY}"`))
+    .map((line) => JSON.parse(line));
+}
+
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
 class ControlClient {
-  constructor(engramHome, sessionId) {
+  constructor(engramHome, sessionId, { phaseTrace = false } = {}) {
     this.pending = [];
     this.buffer = "";
     this.stderr = "";
+    const environment = { ...process.env };
+    if (phaseTrace) environment[PHASE_TRACE_ENV] = "1";
+    else delete environment[PHASE_TRACE_ENV];
     this.child = spawn(
       binary,
       [
@@ -162,11 +182,16 @@ class ControlClient {
         "--source-skill",
         "engram-control-dogfood",
       ],
-      { cwd: root, stdio: ["pipe", "pipe", "pipe"] },
+      { cwd: root, env: environment, stdio: ["pipe", "pipe", "pipe"] },
     );
     this.child.stdout.on("data", (chunk) => this.#receive(chunk));
     this.child.stderr.on("data", (chunk) => {
       this.stderr += chunk.toString("utf8");
+    });
+    // Resolves once the child's stdio has closed, after its last stderr
+    // bytes arrived; "exit" can come before them.
+    this.closed = new Promise((resolvePromise) => {
+      this.child.once("close", () => resolvePromise());
     });
     this.child.on("exit", (code, signal) => {
       const error = new Error(
@@ -3074,4 +3099,196 @@ test("source recovery keeps a judgment through host confirmation and separates f
     if (client) await client.close();
     removeFixtureHomes(engramHome);
   }
+});
+
+test("the opt-in control phase trace numbers every frame and an unset process writes none", async (t) => {
+  const engramHome = fixtureHome("engram-control-phase-trace-", t);
+  const clients = [];
+  let failure;
+  try {
+    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(built.status, 0, built.stderr);
+    const initialized = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "init",
+        "--required-assurance",
+        "advisory",
+        "--authorized-by",
+        "dogfood-bootstrap-operator",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const untraced = new ControlClient(engramHome, "trace-off", { phaseTrace: false });
+    const traced = new ControlClient(engramHome, "trace-on", { phaseTrace: true });
+    clients.push(untraced, traced);
+    const status = { operation: "session_status", routing_token: "dogfood-unknown-token" };
+    // The same frames on each process, interleaved, timed by the client.
+    const timings = { off: [], on: [] };
+    const answers = { off: [], on: [] };
+    const rounds = 20;
+    for (let round = 0; round < rounds; round++) {
+      for (const [name, client] of [["off", untraced], ["on", traced]]) {
+        const started = performance.now();
+        const response = await client.request(status);
+        timings[name].push(performance.now() - started);
+        answers[name].push(response);
+      }
+    }
+    await untraced.close();
+    await traced.close();
+    await untraced.closed;
+    await traced.closed;
+    // The trace changes no response: the answers differ only by the session
+    // each process speaks for.
+    const normalized = (response, session) =>
+      canonicalJson(response).replaceAll(session, "SESSION");
+    assert.deepEqual(
+      answers.on.map((response) => normalized(response, "trace-on")),
+      answers.off.map((response) => normalized(response, "trace-off")),
+    );
+    assert.deepEqual(controlTraceLines(untraced.stderr), [], untraced.stderr);
+    const lines = controlTraceLines(traced.stderr);
+    const startup = lines.filter((line) => line.seq === 0 && line.state !== "in_flight");
+    assert.equal(startup.length, 1, traced.stderr);
+    assert.equal(startup[0].kind, "startup");
+    assert.equal(startup[0].state, "complete");
+    assert.equal(startup[0].pid, traced.child.pid);
+    for (let seq = 1; seq <= rounds; seq++) {
+      const terminal = lines.filter((line) => line.seq === seq && line.state !== "in_flight");
+      assert.equal(terminal.length, 1, `seq ${seq}: ${traced.stderr}`);
+      assert.equal(terminal[0].state, "complete");
+      assert.equal(terminal[0].operation, "session_status");
+      assert.equal(typeof terminal[0].phases.handler_total_ms, "number");
+      assert.equal(typeof terminal[0].phases.response_write_flush_ms, "number");
+    }
+    assert.equal(lines.filter((line) => line.seq > rounds).length, 0);
+    const off = median(timings.off);
+    const on = median(timings.on);
+    t.diagnostic(`session_status over control, interleaved ${rounds} rounds: trace on median=${on.toFixed(2)}ms, trace off median=${off.toFixed(2)}ms`);
+    // A trace that is off does no added work; one that is on stays within
+    // noise of it on this small workload.
+    assert.ok(on < off * 2 + 5, `trace on ${on}ms against off ${off}ms`);
+
+    // A control process whose project cannot be resolved still leaves its
+    // startup record, incomplete, with the phase it stopped in.
+    const refused = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "--project-file",
+        join(engramHome, "missing.engram-project"),
+        "control",
+        "--actor-id",
+        "trace-refused",
+        "--session-id",
+        "trace-refused",
+      ],
+      { cwd: root, encoding: "utf8", env: { ...process.env, [PHASE_TRACE_ENV]: "1" } },
+    );
+    assert.notEqual(refused.status, 0, refused.stderr);
+    const refusedStartup = controlTraceLines(refused.stderr).filter(
+      (line) => line.seq === 0 && line.state !== "in_flight",
+    );
+    assert.equal(refusedStartup.length, 1, refused.stderr);
+    assert.equal(refusedStartup[0].state, "incomplete");
+    assert.equal(refusedStartup[0].outcome, "startup_failed");
+    assert.equal(typeof refusedStartup[0].phases.project_resolve_ms, "number", refused.stderr);
+    assert.equal(refusedStartup[0].phases.connection_open_ms, undefined);
+  } catch (error) {
+    failure = error;
+  } finally {
+    for (const client of clients) {
+      try { await client.close(); } catch { /* already closed */ }
+    }
+    removeFixtureHomes(engramHome);
+  }
+  if (failure) throw failure;
+});
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
+
+test("an opted-in control process whose stderr nobody drains answers every frame and still exits", async (t) => {
+  const engramHome = fixtureHome("engram-control-undrained-", t);
+  let child;
+  let failure;
+  try {
+    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(built.status, 0, built.stderr);
+    const initialized = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "init",
+        "--required-assurance",
+        "advisory",
+        "--authorized-by",
+        "dogfood-bootstrap-operator",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(initialized.status, 0, initialized.stderr);
+    child = spawn(
+      binary,
+      ["--home", engramHome, "control", "--actor-id", "undrained", "--session-id", "undrained"],
+      { cwd: root, env: { ...process.env, [PHASE_TRACE_ENV]: "1" }, stdio: ["pipe", "pipe", "pipe"] },
+    );
+    // Stderr is never read: once its buffer is full the pipe fills, and the
+    // trace's writer blocks on it.
+    child.stderr.pause();
+    const exited = new Promise((resolvePromise) => {
+      child.once("exit", (code, signal) => resolvePromise({ code, signal }));
+    });
+    let buffer = "";
+    const waiting = [];
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      for (let newline = buffer.indexOf("\n"); newline >= 0; newline = buffer.indexOf("\n")) {
+        buffer = buffer.slice(newline + 1);
+        waiting.shift()?.();
+      }
+    });
+    const frame = `${JSON.stringify({ operation: "session_status", routing_token: "undrained" })}\n`;
+    // Far more trace output than a pipe and a stream buffer hold.
+    const frames = 3000;
+    for (let sent = 0; sent < frames; sent += 100) {
+      const answered = Promise.all(
+        Array.from({ length: 100 }, () => new Promise((resolvePromise) => waiting.push(resolvePromise))),
+      );
+      child.stdin.write(frame.repeat(100));
+      await withTimeout(answered, 15000, `frames ${sent}..${sent + 100} answered with stderr undrained`);
+    }
+    // A broken stdout ends the service with an error, whose diagnostic must
+    // not wait on the full stderr: the process exits.
+    child.stdout.destroy();
+    child.stdin.write(frame);
+    const result = await withTimeout(exited, 15000, "exit after stdout broke with stderr undrained");
+    assert.equal(result.signal, null);
+    assert.notEqual(result.code, 0);
+  } catch (error) {
+    failure = error;
+  } finally {
+    if (child && child.exitCode === null) child.kill();
+    removeFixtureHomes(engramHome);
+  }
+  if (failure) throw failure;
 });

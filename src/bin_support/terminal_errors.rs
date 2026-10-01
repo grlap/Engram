@@ -47,10 +47,16 @@ pub(crate) fn emit_work_text_refusal(message: &str, guidance: &Guidance) {
 }
 
 pub(crate) fn emit_host_path_probe_warning(error: &dyn std::fmt::Display) {
-    eprintln!("{}", host_path_probe_warning_line(error));
+    emit_lines(&[host_path_probe_warning_line(error)]);
 }
 
+/// Writes `lines` to stderr. In a control process whose opt-in trace owns
+/// stderr, they go through the trace's bounded queue instead, so an
+/// undrained stderr never blocks the exit.
 fn emit_lines(lines: &[String]) {
+    if engram::phase_trace::control::emit_diagnostic_lines(lines) {
+        return;
+    }
     for line in lines {
         eprintln!("{line}");
     }

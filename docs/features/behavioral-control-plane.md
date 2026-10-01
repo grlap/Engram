@@ -1266,6 +1266,90 @@ host-control alpha can authorize only a declared local-mutation *turn*; it
 cannot authorize an individual tool action, shared/external effects, lifecycle
 transitions, or finalization.
 
+### Opt-in control phase trace
+
+`ENGRAM_MCP_PHASE_TRACE=1` in the environment of `engram control` when it
+starts turns on a phase trace. It shows where startup and each input frame
+spent their time, for a host that diagnoses a slow or expired exchange. A
+process keeps the setting it started with. Unset, nothing is installed and
+nothing is written.
+
+The trace changes no response and adds nothing to stdout. Each record is one
+JSON line on stderr, at most 4,096 bytes with its newline, keyed
+`engram_control_phase_trace` (the format version, now 1).
+
+Every line carries:
+- `pid`, which is diagnostic only, since a host keys records by its own
+  identity for each process it spawned;
+- `seq`;
+- a per-`seq` `ordinal`;
+- `kind`: `startup` or `frame`;
+- `state`.
+
+Numbering:
+- `seq` 0 is startup.
+- `seq` N is the Nth input frame in physical order. It is numbered when its
+  first byte arrives; waiting idle for that byte is not part of a frame.
+- A blank, malformed, unknown-operation or oversize frame takes a number like
+  any other, and an oversize frame's drain is part of its own number.
+- An unterminated last frame takes one; a bare end of input takes none.
+- Frame N is normally answered by the Nth response line. A failed read or
+  write, or a kill, can leave it without one, so a host matches records by
+  `seq` and its own attempt state, never by counting lines.
+
+States:
+- `in_flight`, for progress. A startup or frame still running after one
+  second gets a progress line, then one every two seconds, at most ten. Each
+  names the `phase` in progress, `elapsed_ms` and `phase_elapsed_ms`, and,
+  while a `BEGIN IMMEDIATE` or `COMMIT` runs, that `statement` and its
+  elapsed time. The last one says where execution was last observed, not
+  necessarily where it stayed.
+- `complete`: startup reached ready, or the response's newline was written
+  and flushed. A protocol error is still complete, with its `outcome` code.
+- `write_failed`: writing the response failed.
+- `incomplete`: processing stopped otherwise where the process could say so.
+- At most one terminal line follows the progress lines, and a stale progress
+  line never follows it. A killed process may leave none.
+
+Fields:
+- A frame names its `operation`, the protocol label, or `invalid` for a frame
+  that does not parse, from the moment it is parsed, before its handler
+  runs.
+- A terminal line carries `total_ms` and `phases`, the time of each phase
+  reached. A phase not reached is left out, never shown as zero.
+  - Startup phases: `starting` (from `main` until the command is known),
+    `project_resolve`, `host_path_probe`, `connection_open`,
+    `schema_check`, `host_path_policy`, `policy_history_verify`,
+    `schema_init`, `connection_resume`. A startup that fails ends
+    `incomplete`: with the store error's code when the store cannot open,
+    otherwise `startup_failed` or `invalid_session_id`.
+  - Frame phases: `handler_total`, `response_serialize`,
+    `response_write_flush`. `handler_total` runs from the frame's first byte
+    until its response is ready: reading the rest of it, parsing and
+    handling it. That is wider than the MCP trace's handler time, which
+    begins after the request is parsed.
+- `begin_immediate` and `commit` give count, total and longest time. A
+  `BEGIN IMMEDIATE` call can include a wait for the write lock, and a
+  `COMMIT` can include I/O; neither is pure lock wait.
+- Phases name the instrumented scope, not a proven cause. They nest and are
+  not summed.
+- No line carries a request or response body, an error message, SQL, a path
+  or a token.
+
+Delivery:
+- Lines go through a bounded queue to their own writer thread. A stderr
+  nobody drains drops lines, counted in `dropped_lines`, and never stalls a
+  request; the losses of a killed process are unknown.
+- While the trace is on, the process's own error and warning lines go to
+  stderr through the same queue, after the trace lines, and its exit waits
+  for them only briefly. A stderr nobody drains can then cost those lines
+  too, but never blocks the exit. A panic message is still written directly.
+- Startup is measured from the process's `main`, so a host's own timings
+  cover spawn and the time before it.
+- A host that captures the lines drains stderr independently of stdout. It
+  tolerates other stderr text, gaps and unknown versions, and never lets a
+  trace line decide admission, retry or credit.
+
 ## Delivery sequence
 
 | Phase | Deliverable | Honest control claim |

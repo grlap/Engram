@@ -291,30 +291,21 @@ enum Message {
     Flush(std::sync::mpsc::SyncSender<()>),
 }
 
-/// The server's trace: the handler records awaiting their sends, bounded,
-/// the counters a record reports, and the queue to the thread that writes
-/// records. Writing never happens on a request or send path, so a reader
-/// that stops draining stderr costs dropped lines, never a stalled server.
-pub struct PhaseTrace {
-    pending: Mutex<Pending>,
-    writer: Option<std::sync::mpsc::SyncSender<Message>>,
-    dropped_lines: std::sync::atomic::AtomicU64,
+/// One thread writing record lines to a sink through a bounded queue. A line
+/// the queue cannot take is dropped and counted, never waited for, so a sink
+/// nobody drains costs lines, never a stalled caller.
+pub(crate) struct LineWriter {
+    sender: Option<std::sync::mpsc::SyncSender<Message>>,
+    dropped: std::sync::atomic::AtomicU64,
 }
 
-impl std::fmt::Debug for PhaseTrace {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("PhaseTrace")
-            .field("pending", &self.pending)
-            .finish_non_exhaustive()
-    }
-}
-
-impl PhaseTrace {
-    fn new(sink: Sink, capacity: usize) -> Self {
-        let (writer, queue) = std::sync::mpsc::sync_channel::<Message>(capacity);
+impl LineWriter {
+    /// Starts the writer thread `name`. When the thread cannot start, every
+    /// line is dropped and counted.
+    pub(crate) fn new(sink: Sink, capacity: usize, name: &str) -> Self {
+        let (sender, queue) = std::sync::mpsc::sync_channel::<Message>(capacity);
         let spawned = std::thread::Builder::new()
-            .name("engram-phase-trace".into())
+            .name(name.into())
             .spawn(move || {
                 let mut sink = sink;
                 for message in queue {
@@ -330,9 +321,64 @@ impl PhaseTrace {
                 }
             });
         Self {
+            sender: spawned.is_ok().then_some(sender),
+            dropped: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    /// Queues one line. A full queue, or no writer, drops the line and
+    /// counts it; this never blocks.
+    pub(crate) fn emit(&self, line: String) {
+        let queued = self
+            .sender
+            .as_ref()
+            .is_some_and(|sender| sender.try_send(Message::Line(line)).is_ok());
+        if !queued {
+            self.dropped
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Waits up to `timeout` for the lines queued so far to be written.
+    pub(crate) fn flush(&self, timeout: Duration) {
+        let Some(sender) = self.sender.as_ref() else {
+            return;
+        };
+        let (written, done) = std::sync::mpsc::sync_channel(1);
+        if sender.try_send(Message::Flush(written)).is_ok() {
+            let _ = done.recv_timeout(timeout);
+        }
+    }
+
+    /// Lines dropped so far.
+    pub(crate) fn dropped(&self) -> u64 {
+        self.dropped.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+/// The server's trace: the handler records awaiting their sends, bounded,
+/// the counters a record reports, and the queue to the thread that writes
+/// records. Writing never happens on a request or send path, so a reader
+/// that stops draining stderr costs dropped lines, never a stalled server.
+pub struct PhaseTrace {
+    pending: Mutex<Pending>,
+    lines: LineWriter,
+}
+
+impl std::fmt::Debug for PhaseTrace {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PhaseTrace")
+            .field("pending", &self.pending)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PhaseTrace {
+    fn new(sink: Sink, capacity: usize) -> Self {
+        Self {
             pending: Mutex::new(Pending::default()),
-            writer: spawned.is_ok().then_some(writer),
-            dropped_lines: std::sync::atomic::AtomicU64::new(0),
+            lines: LineWriter::new(sink, capacity, "engram-phase-trace"),
         }
     }
 
@@ -347,34 +393,16 @@ impl PhaseTrace {
         Counters {
             evicted: pending.evicted,
             unmatched_sends: pending.unmatched_sends,
-            dropped_lines: self
-                .dropped_lines
-                .load(std::sync::atomic::Ordering::Relaxed),
+            dropped_lines: self.lines.dropped(),
         }
     }
 
-    /// Queues one record line for the writer. A full queue, or no writer,
-    /// drops the line and counts it; this never blocks.
     fn emit(&self, line: String) {
-        let queued = self
-            .writer
-            .as_ref()
-            .is_some_and(|writer| writer.try_send(Message::Line(line)).is_ok());
-        if !queued {
-            self.dropped_lines
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
+        self.lines.emit(line);
     }
 
-    /// Waits up to `timeout` for the lines queued so far to be written.
     fn flush(&self, timeout: Duration) {
-        let Some(writer) = self.writer.as_ref() else {
-            return;
-        };
-        let (written, done) = std::sync::mpsc::sync_channel(1);
-        if writer.try_send(Message::Flush(written)).is_ok() {
-            let _ = done.recv_timeout(timeout);
-        }
+        self.lines.flush(timeout);
     }
 
     /// A request arrived: an earlier cancel naming its id was for an older
@@ -561,8 +589,7 @@ impl PhaseTrace {
 
     #[cfg(test)]
     fn dropped(&self) -> u64 {
-        self.dropped_lines
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.lines.dropped()
     }
 }
 
@@ -711,6 +738,8 @@ where
         }
     }
 }
+
+pub mod control;
 
 #[cfg(test)]
 mod tests;

@@ -493,7 +493,19 @@ impl SqliteStore {
         path: impl AsRef<Path>,
         identity: Option<HostPathPolicy>,
     ) -> Result<Self, StoreError> {
+        crate::phase_trace::control::enter(
+            crate::phase_trace::control::ControlPhase::ConnectionOpen,
+        );
         let connection = Connection::open(path)?;
+        // A traced control process notes when each BEGIN IMMEDIATE and
+        // COMMIT starts and how long it ran, from its first statement on.
+        if crate::phase_trace::control::active() {
+            connection.trace_v2(
+                rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT
+                    | rusqlite::trace::TraceEventCodes::SQLITE_TRACE_PROFILE,
+                Some(crate::phase_trace::control::sql_event),
+            );
+        }
         Self::from_connection(connection, identity, None)
     }
 
@@ -651,6 +663,8 @@ impl SqliteStore {
         initial_control_policy: Option<InitialControlPolicy>,
         busy_timeout: Duration,
     ) -> Result<Self, StoreError> {
+        use crate::phase_trace::control::{ControlPhase, enter};
+        enter(ControlPhase::SchemaCheck);
         connection.busy_timeout(busy_timeout)?;
         let read_only = connection.is_readonly("main")?;
         let store_has_schema = Self::sqlite_user_schema_exists(&connection)?;
@@ -669,7 +683,9 @@ impl SqliteStore {
         if Self::sqlite_table_exists(&connection, "control_changes")? {
             Self::require_task_local_cursor_schema(&connection)?;
         }
+        enter(ControlPhase::HostPathPolicy);
         Self::preflight_host_path_policy(&connection, host_path_policy)?;
+        enter(ControlPhase::PolicyHistoryVerify);
         Self::preflight_control_policy_schema(&connection)?;
         let control_policy_preexisted = Self::control_policy_preexisted(&connection)?;
         Self::preflight_initial_control_assurance(
@@ -679,6 +695,7 @@ impl SqliteStore {
                 .as_ref()
                 .map(|policy| policy.required_assurance),
         )?;
+        enter(ControlPhase::SchemaInit);
         let core_schema_complete = Self::current_core_schema_is_complete(&connection)?;
         if core_store_exists && !core_schema_complete {
             let issue = Self::current_core_rebuildable_schema_issue(&connection)?

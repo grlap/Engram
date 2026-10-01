@@ -2,7 +2,7 @@
 
 use std::{
     env, fs,
-    io::{self, BufReader, BufWriter, Read},
+    io::{self, Read},
     path::{Path, PathBuf},
     process::ExitCode,
     str::FromStr,
@@ -14,15 +14,14 @@ use engram::domain::AssuranceLevel;
 use engram::{
     ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
     ClaimInput, ClaimUnderInput, ControlAssurance, DevelopmentNoopRedactor, DoneInput, ForgetInput,
-    GateInput, HandoffAction, HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService,
-    LsInput, McpServer, MemoriesInput, NextInput, NoteInput, ObjectId, ObligationRuleDefinition,
-    ObligationRuleSet, ProjectId, RememberInput, SessionId, SqliteStore, StoreError, UpdateAction,
-    UpdateInput, VerificationKind, VerificationRequirement, WaiveWorkObligationRequest,
-    WorkAttributionDefaults, WorkAvailability, WorkCompleteInput, WorkCompleteResult,
-    WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
-    WorkObligationId, WorkProposeInput, WorkUpdateInput, looks_like_work_ref, parse_defer_date,
-    parse_host_path_policy, probe_host_path_policy, project_database_path, store_error_value,
-    validate_session_id_length,
+    GateInput, HandoffAction, HandoffInput, HostPathPolicy, LocalWorkService, LsInput, McpServer,
+    MemoriesInput, NextInput, NoteInput, ObjectId, ObligationRuleDefinition, ObligationRuleSet,
+    ProjectId, RememberInput, SessionId, SqliteStore, StoreError, UpdateAction, UpdateInput,
+    VerificationKind, VerificationRequirement, WaiveWorkObligationRequest, WorkAttributionDefaults,
+    WorkAvailability, WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind,
+    WorkLifecycle, WorkNextQuery, WorkNextSection, WorkObligationId, WorkProposeInput,
+    WorkUpdateInput, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
+    probe_host_path_policy, project_database_path, store_error_value, validate_session_id_length,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -1013,6 +1012,8 @@ enum AuthorityCommand {
 const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
 
 fn main() -> ExitCode {
+    // An opted-in control phase trace measures startup from here.
+    engram::phase_trace::control::mark_process_start();
     // The combined clap command graph is parsed and driven on this named
     // thread because Windows' default main-thread stack is too small for the
     // full CLI enum. Tokio worker futures are not affected; only parse and
@@ -1080,6 +1081,20 @@ async fn run_cli() -> Result<ExitCode> {
     if let Command::Migration { operation } = &cli.command {
         return bin_support::migration::run(operation);
     }
+    // An opted-in control process traces its startup from here on, so a
+    // project or root that fails or stalls still leaves its record.
+    let control_trace = matches!(cli.command, Command::Control { .. })
+        .then(engram::phase_trace::control::ControlTrace::from_env)
+        .flatten()
+        .map(|trace| {
+            trace.install();
+            bin_support::control::ControlStartup(trace)
+        });
+    if let Some(startup) = &control_trace {
+        startup
+            .0
+            .enter(engram::phase_trace::control::ControlPhase::ProjectResolve);
+    }
     let (project_id, database) = match resolve_project(&cli.project_file, cli.home) {
         Ok(project) => project,
         Err(error) => {
@@ -1106,6 +1121,11 @@ async fn run_cli() -> Result<ExitCode> {
     };
     // Only commands that open with host-path identity may probe the project
     // root. Agent work, MCP, graph, backup, restore and import discard it.
+    if let Some(startup) = &control_trace {
+        startup
+            .0
+            .enter(engram::phase_trace::control::ControlPhase::HostPathProbe);
+    }
     let identity = if command_resolves_host_path_identity(&cli.command) {
         resolve_host_path_identity(&cli.project_file, cli.host_path_policy)
     } else {
@@ -1226,7 +1246,7 @@ async fn run_cli() -> Result<ExitCode> {
             session_id,
             actor_context,
             source_skill,
-        } => serve_control(
+        } => bin_support::control::serve_control(
             database,
             identity,
             project_id,
@@ -1234,6 +1254,7 @@ async fn run_cli() -> Result<ExitCode> {
             session_id,
             actor_context,
             source_skill,
+            control_trace.as_ref().map(|startup| &startup.0),
         )?,
         Command::Work {
             actor_id,
@@ -2276,34 +2297,6 @@ fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
         input
     };
     serde_json::from_str(json).with_context(|| format!("invalid {label} JSON"))
-}
-
-fn serve_control(
-    database: PathBuf,
-    identity: Option<HostPathPolicy>,
-    project_id: ProjectId,
-    actor_id: String,
-    session_id: String,
-    actor_context: Option<String>,
-    source_skill: Option<String>,
-) -> Result<()> {
-    validate_session_id_length(&session_id)?;
-    let mut server = HostControlServer::open_with_host_path_identity(
-        database,
-        identity,
-        project_id,
-        actor_id,
-        SessionId(session_id),
-        source_skill,
-    )
-    .context("failed to start Engram host-control service")?
-    .with_actor_context(actor_context);
-    server
-        .serve(
-            BufReader::new(io::stdin().lock()),
-            BufWriter::new(io::stdout().lock()),
-        )
-        .context("Engram host-control stdio service stopped with an error")
 }
 
 /// Resolves the stable project id and its host-local database. The project

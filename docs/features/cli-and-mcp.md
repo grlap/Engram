@@ -1311,6 +1311,12 @@ lazily opened SQLite connection for its lifetime. All fifteen MCP tools use
 that service. A failed operation rolls back before the next call uses the
 connection.
 
+The same variable, `ENGRAM_MCP_PHASE_TRACE=1`, at `engram control` start
+traces the host-private `engram control` transport too. Its records differ
+from the MCP records described next; they and their correlation are
+described under the
+[control phase trace](behavioral-control-plane.md#opt-in-control-phase-trace).
+
 `ENGRAM_MCP_PHASE_TRACE=1` at `engram mcp` start turns on a phase trace for
 diagnosing slow calls. Any other value, or none, leaves the server and its
 transport untouched and writes nothing. With it on, every tool call whose
