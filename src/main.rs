@@ -212,6 +212,11 @@ enum Command {
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long)]
         source_skill: Option<String>,
+        /// List only the read words (next, ls, search, show, memories) and
+        /// refuse every other call, and every writing form of a read word,
+        /// for a host child that must not write.
+        #[arg(long)]
+        read_only: bool,
     },
     /// Serve the host-private behavioral-control protocol as JSON Lines.
     Control {
@@ -1198,9 +1203,15 @@ async fn run_cli() -> Result<ExitCode> {
             session_id,
             actor_context,
             source_skill,
+            read_only,
         } => {
             validate_session_id_length(&session_id)?;
-            serve_mcp(McpServer::new_with_actor_context(
+            let server = if read_only {
+                McpServer::new_read_only_with_actor_context
+            } else {
+                McpServer::new_with_actor_context
+            };
+            serve_mcp(server(
                 database,
                 project_id,
                 actor_id,

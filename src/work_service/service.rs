@@ -121,6 +121,7 @@ impl LocalWorkService {
             source_skill,
             cached_store: OnceLock::new(),
             process_default_session_initialized: OnceLock::new(),
+            read_only: false,
             #[cfg(test)]
             delivery_stage_hook: None,
             #[cfg(test)]
@@ -129,6 +130,15 @@ impl LocalWorkService {
             focus_children_hook: None,
         }
     }
+    /// The same service in read-only mode, for a connection that must not
+    /// write: it never opens or returns the writable connection. Made from a
+    /// service that has not yet opened one.
+    #[must_use]
+    pub fn into_read_only(mut self) -> Self {
+        self.read_only = true;
+        self
+    }
+
     pub(super) fn store_at(
         &self,
         now: DateTime<Utc>,
@@ -192,6 +202,12 @@ impl LocalWorkService {
     }
 
     fn lock_validated_store(&self) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+        // Before opening, and before returning one already open.
+        if self.read_only {
+            return Err(StoreError::InvalidWork(
+                "this connection is read-only and never opens the store for writing".into(),
+            ));
+        }
         if self.cached_store.get().is_none() {
             let opened = SqliteStore::open_unresolved(&self.database)?;
             // A simultaneous first call may win initialization. Dropping this

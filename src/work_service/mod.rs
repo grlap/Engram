@@ -446,6 +446,10 @@ pub struct LocalWorkService {
     source_skill: Option<String>,
     cached_store: OnceLock<Mutex<SqliteStore>>,
     process_default_session_initialized: OnceLock<()>,
+    /// Fixed at construction: a read-only service never opens or returns the
+    /// writable connection, so only the read words, which open the store
+    /// read-only for each call, can run on it.
+    read_only: bool,
     #[cfg(test)]
     delivery_stage_hook: Option<DeliveryStageTestHook>,
     #[cfg(test)]
@@ -465,6 +469,7 @@ impl Clone for LocalWorkService {
             session_id: self.session_id.clone(),
             attribution_defaults: self.attribution_defaults,
             source_skill: self.source_skill.clone(),
+            read_only: self.read_only,
             // A clone is a separate protocol connection. Keeping its SQLite
             // handle independent preserves the real cross-connection CAS and
             // delivery-race semantics exercised by hosts and tests.

@@ -68,7 +68,11 @@ receipt supplies presence facts, never permission to clear recovery state.
    context, not authentication.
 3. **One MCP child per session.** Start
    `engram mcp --actor-id … --session-id … [--actor-context …]` on stdio; it
-   exposes the fourteen words plus `search`. Stateful calls reuse a cached
+   exposes the fourteen words plus `search`. For a child that must not
+   write, add `--read-only`: the server then lists only the read words and
+   refuses every other call, and every writing form of a read word, as a
+   tool error with a stable code (see
+   [read-only mode](features/cli-and-mcp.md#read-only-mode)). Stateful calls reuse a cached
    store connection; each read that records nothing (`next --peek`, `ls`,
    `search`, `show`, and every `memories` form) opens a separate transient
    read-only connection, needs no write access to the database or WAL file,
@@ -129,7 +133,10 @@ cannot settle. Keep the opening of the peek text when truncating it. Only the
 printed command records the listing, and that is a store write; every other
 `memories` form, and the peek, record nothing, so a host that confines a
 read-only agent to reads that record nothing can allow them and either allow
-that one form too or leave the direction standing for that agent. The
+that one form too or leave the direction standing for that agent. `engram mcp
+--read-only` enforces that confinement itself and refuses the printed form, so
+for such a child the direction stays standing: it lists `memories` without
+the generation. The
 direction reports the host's assertion and what is recorded; the record it
 waits for shows that a listing was delivered, not that the agent read or
 applied the notes, so it replaces neither the startup instruction above nor

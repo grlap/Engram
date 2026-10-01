@@ -1240,6 +1240,8 @@ engram work --actor-id codex --session-id session-unique-id next
 engram work --actor-id codex --session-id session-unique-id \
   claim <short-ref>
 engram mcp --actor-id codex --session-id session-unique-id
+# The same identity, for a child that must not write.
+engram mcp --actor-id codex --session-id session-unique-id --read-only
 
 # Host/operator escape hatch: the six-operation JSON protocol from the shell.
 engram work --actor-id codex --session-id session-unique-id \
@@ -1523,6 +1525,41 @@ fourteen words plus `search`.
 | `remember` | Create or explicitly revise an attributed episode under one permanent key; retain history |
 | `memories` | List/search current rows or read one current/historical revision of a live key |
 | `forget` | Append an attributed terminal tombstone; never erase or reuse the key |
+
+#### Read-only mode
+
+`engram mcp --read-only`, with the same identity arguments, serves a host
+child that must not write. It lists only the read words `next`, `ls`,
+`search`, `show` and `memories`, and admits only their reading forms:
+
+- `next` only with `peek` exactly `true`, which stages no delivery and
+  records nothing;
+- `memories` only without `context_generation`: the argument present at all,
+  even as `null`, is refused, because a listing that carries one records it;
+- each tool only with the arguments it declares.
+
+Any other call, a tool that is not a read word, a writing form of a read
+word, or an undeclared argument, is refused before the tool runs, as an MCP
+tool error (`isError: true`) whose JSON reads
+`{"error": {"code": "mcp_read_only_refused", "message": "MCP read-only mode
+refused TOOL: …", "details": {"mode": "read_only", "tool": TOOL,
+"restriction": R}}}`, where `R` is `tool_not_admitted`,
+`argument_not_admitted`, `next_without_peek` or
+`memories_with_context_generation`; the code is stable. The read words open
+the store read-only for each call, and the connection never opens or holds
+the writable one, so nothing it does writes the database or its WAL; SQLite
+may still coordinate through the shared-memory file. A missing or
+uninitialized store refuses and is not created. Ordinary `engram mcp` is
+unchanged: it lists all fifteen tools and marks none of them read-only,
+since `next` and `memories` have writing forms there. The text a read word
+returns may still suggest a writing command; in this mode such a call is
+refused. `initialize` gives a read-only connection its own instructions,
+naming the five read words and their admitted forms.
+
+A read-only child cannot record a memories listing, so when its host passes
+a context generation, the peek's direction to run `memories` with that
+generation never settles: the child lists `memories` without it and reads
+the entries it needs, and the direction stays standing.
 
 Every agent tool result keeps its structured shape and adds two fields.
 `reminders` holds words only, derived by a fixed table from the readiness

@@ -104,7 +104,7 @@ function shortRef(workId) {
 }
 
 class McpClient {
-  constructor(engramHome, sessionId, actorContext, actorId = sessionId) {
+  constructor(engramHome, sessionId, actorContext, actorId = sessionId, extraArgs = []) {
     this.engramHome = engramHome;
     this.nextId = 1;
     this.pending = new Map();
@@ -120,6 +120,7 @@ class McpClient {
       sessionId,
       "--source-skill",
       "engram-dogfood",
+      ...extraArgs,
     ];
     this.args = [...args];
     const environment = { ...process.env };
@@ -1275,6 +1276,53 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
   } finally {
     try { if (client) await client.close(); }
     finally { removeFixtureHomes(engramHome); }
+  }
+});
+
+test("read-only MCP lists the read words and refuses every writing call as a tool error", async (t) => {
+  const engramHome = fixtureHome("engram-read-only-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const ref = cliJson(engramHome, "writer", "add", "Read me").work.short_ref;
+    cliJson(engramHome, "writer", "claim", ref);
+    cliJson(engramHome, "writer", "remember", "a rule to read", "--key", "read-rule");
+    client = new McpClient(engramHome, "reader", undefined, "reader", ["--read-only"]);
+    await client.initialize();
+    assert.deepEqual([...(await client.toolNames())].sort(), ["ls", "memories", "next", "search", "show"]);
+    for (const [name, arguments_] of [
+      ["next", { peek: true }],
+      ["ls", {}],
+      ["search", { query: "Read" }],
+      ["show", { work_ref: ref }],
+      ["memories", {}],
+      ["memories", { query: "read-rule", full: true }],
+    ]) {
+      structured(await client.call(name, arguments_));
+    }
+    const refused = async (name, arguments_, restriction) => {
+      const error = structuredError(await client.call(name, arguments_), "mcp_read_only_refused");
+      assert.equal(error.details.mode, "read_only");
+      assert.equal(error.details.tool, name);
+      assert.equal(error.details.restriction, restriction);
+      assert.match(error.message, /^MCP read-only mode refused /u);
+    };
+    await refused("next", {}, "next_without_peek");
+    await refused("next", { peek: false }, "next_without_peek");
+    await refused("next", { peek: "true" }, "argument_not_admitted");
+    await refused("memories", { context_generation: null }, "memories_with_context_generation");
+    await refused("memories", { context_generation: "fresh" }, "memories_with_context_generation");
+    await refused("ls", { write: true }, "argument_not_admitted");
+    for (const name of ["add", "claim", "update", "gate", "evaluate", "remember", "forget", "note", "done", "handoff", "drop_everything"]) {
+      await refused(name, { title: "x" }, "tool_not_admitted");
+    }
+    // Nothing the read-only connection did reached the store.
+    const shown = cliJson(engramHome, "writer", "show", ref, "--notes");
+    assert.equal(shown.notes.length, 0, JSON.stringify(shown));
+    assert.equal(cliJson(engramHome, "writer", "memories").memories.length, 1);
+  } finally {
+    await client?.close();
+    removeFixtureHomes(engramHome);
   }
 });
 
