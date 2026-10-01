@@ -833,7 +833,7 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
 /// Whether a run's obligations are history: the run completed or a
 /// completion seal binds it. Every reader decides it here.
 pub(super) fn obligations_are_historical(run: &crate::domain::WorkRun) -> bool {
-    run.state == crate::domain::WorkRunState::Completed || run.completion_seal.is_some()
+    run.is_finished()
 }
 
 /// Marks `page` as history: it owes nothing, so it counts no open or

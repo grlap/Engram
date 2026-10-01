@@ -74,6 +74,8 @@ pub use landings::RecordedLanding;
 mod lifecycle;
 mod named_root;
 mod obligation_guidance;
+pub(super) use obligation_guidance::finished_run_cut_on;
+use obligation_guidance::require_expected_obligations_on;
 mod projections;
 mod root_binding;
 
@@ -1025,58 +1027,6 @@ pub(super) fn load_work_obligation_records_on(
     Ok(records)
 }
 
-fn require_expected_obligations_on(
-    connection: &Connection,
-    run_id: WorkRunId,
-    records: &[WorkObligationRecord],
-) -> Result<(), StoreError> {
-    let expected = connection
-        .prepare(
-            "SELECT entry.position, entry.object_id, object.canonical_json
-             FROM work_feed_entries entry
-             JOIN objects object ON object.object_id = entry.object_id
-             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-               AND entry.object_kind = 'execution_observation'
-               AND json_extract(object.canonical_json, '$.source_changed') = 1
-             ORDER BY entry.position",
-        )?
-        .query_map([run_id.0.to_string()], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Vec<u8>>(2)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    for (position, stored_hash, bytes) in expected {
-        let hash = ObjectId::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
-        let observation: ExecutionObservation = CanonicalObject::stored(&hash, bytes)?.decode()?;
-        let rule_set = obligation_rule_set_for_observation_on(connection, &observation)?;
-        for (rule, requirement) in
-            crate::control::evaluate_obligation_rules(&rule_set, &observation)
-        {
-            let matches = records
-                .iter()
-                .filter(|record| {
-                    record.obligation.run_id == run_id
-                        && record.obligation.triggering_observation == hash
-                        && record.obligation.trigger_position.position == position
-                        && record.obligation.rule_set == observation.obligation_rule_set
-                        && record.obligation.rule == rule
-                        && record.obligation.requirement == requirement
-                })
-                .count();
-            if matches != 1 {
-                return Err(StoreError::InvalidWorkProjection(format!(
-                    "run {run_id:?} source mutation {hash} has {matches} matching builtin obligation definitions"
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
 pub(super) fn load_work_obligation_by_id_on(
     connection: &Connection,
     obligation_id: WorkObligationId,
@@ -1471,7 +1421,11 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
             components_json: None,
         },
     )?;
-    satisfy_open_obligations_on(transaction, evidence, &evidence_id)?;
+    // A late check on a finished run neither satisfies nor resolves any of
+    // its obligations: the seal already decided them.
+    if !load_work_run(transaction, evidence.binding.run_id)?.is_finished() {
+        satisfy_open_obligations_on(transaction, evidence, &evidence_id)?;
+    }
     Ok(evidence_id)
 }
 
@@ -1579,8 +1533,12 @@ fn append_control_typed_evidence_on(
         object_kind,
         object,
     )?;
-    let root_changed = expect_root_contributor(&mut root_execution, session_id)
-        | add_root_contribution(&mut root_execution, session_id, object.key());
+    // A late record on a finished run is audit only: it never becomes a
+    // contributor or a contribution of the root, whose sealed accounting
+    // already closed over the run.
+    let root_changed = !run.is_finished()
+        && (expect_root_contributor(&mut root_execution, session_id)
+            | add_root_contribution(&mut root_execution, session_id, object.key()));
     if root_changed {
         root_execution.revision += 1;
         root_execution.updated_at = recorded_at;
@@ -1729,7 +1687,12 @@ pub(in crate::storage) fn append_control_execution_observation_on(
                 "execution observation did not receive a run-feed position".into(),
             )
         })?;
-    append_builtin_obligations_on(transaction, observation, object.key(), &trigger_position)?;
+    // A late observation on a finished run is kept for audit under its
+    // original binding, but it opens no obligation: the run's seal already
+    // froze what it owed, and nobody can act on the run again.
+    if !run.is_finished() {
+        append_builtin_obligations_on(transaction, observation, object.key(), &trigger_position)?;
+    }
     Ok(object.key().clone())
 }
 
@@ -1740,7 +1703,7 @@ pub(super) fn obligation_rule_set_for_observation_on(
     SqliteStore::load_obligation_rule_set_on(connection, &observation.obligation_rule_set)
 }
 
-fn append_builtin_obligations_on(
+pub(super) fn append_builtin_obligations_on(
     transaction: &Transaction<'_>,
     observation: &ExecutionObservation,
     observation_id: &ObjectId,

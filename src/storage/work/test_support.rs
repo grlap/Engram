@@ -1069,9 +1069,12 @@ impl SqliteStore {
             .expect("fixture run is claimed")
     }
 
-    /// A source change a host records late, with the claim it held, against
-    /// a run that has since completed: the shape that opens an obligation
-    /// the run's completion seal never saw.
+    /// A source change a host recorded late, with the claim it held, against
+    /// a run that had since completed, together with the obligation it
+    /// opened there. The write path no longer opens one on a finished run,
+    /// but stores written before it stopped hold such rows, and readers must
+    /// show them as history. So this persists the obligation directly, the
+    /// way the old path did.
     pub(crate) fn append_late_source_change_fixture(
         &mut self,
         work_id: WorkId,
@@ -1083,15 +1086,38 @@ impl SqliteStore {
         let second = (observed_at - at(0)).num_seconds();
         let work = super::query::load_work_item(&self.connection, work_id).expect("fixture work");
         let holder = claim.holder.0.clone();
-        source_mutation(
-            self,
+        let observation = source_mutation_observation(
+            &self.connection,
             &work,
             claim,
             &holder,
             key,
             second,
-            Some(source_revision),
+            Some(crate::domain::ExecutionSourceBasis {
+                workspace_id: format!("workspace-{key}"),
+                source_revision: source_revision.into(),
+                source_root_generation: None,
+                source_root_state: None,
+            }),
+            None,
+        );
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("late change transaction");
+        let late = append_source_mutation_on(&transaction, &observation);
+        let position =
+            super::feeds::run_feed_position_for_object_on(&transaction, claim.run_id, &late)
+                .expect("the late change's run-feed position");
+        super::completion::append_builtin_obligations_on(
+            &transaction,
+            &observation,
+            &late,
+            &position,
         )
+        .expect("persist the obligation the late change opened");
+        transaction.commit().expect("commit the late change");
+        late
     }
 
     /// `append_source_change_fixture` for a host that also says how it

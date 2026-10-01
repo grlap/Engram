@@ -718,6 +718,9 @@ pub(super) fn verify_obligation_rows(
             ));
             continue;
         };
+        if recorded_after_finish_without_obligations(connection, &run_id, position, &hash)? {
+            continue;
+        }
         for (rule, _) in crate::control::evaluate_obligation_rules(&rule_set, &observation) {
             let exists = connection.query_row(
                 "SELECT EXISTS(
@@ -744,6 +747,35 @@ pub(super) fn verify_obligation_rows(
         }
     }
     Ok(())
+}
+
+/// A source change recorded after its run was sealed opens no obligation.
+/// One an older build recorded with obligations is still checked in full; a
+/// run whose seal cannot be read is checked strictly and reported elsewhere.
+fn recorded_after_finish_without_obligations(
+    connection: &Connection,
+    run_id: &str,
+    position: i64,
+    observation: &ObjectId,
+) -> Result<bool, StoreError> {
+    let Ok(parsed) = super::query::parse_work_run_id(run_id) else {
+        return Ok(false);
+    };
+    let Some(cut) = super::completion::finished_run_cut_on(connection, parsed) else {
+        return Ok(false);
+    };
+    if position <= cut {
+        return Ok(false);
+    }
+    let opened = connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM work_run_obligations
+             WHERE run_id = ?1 AND triggering_observation_id = ?2
+         )",
+        params![run_id, observation.as_str()],
+        |row| row.get::<_, bool>(0),
+    )?;
+    Ok(!opened)
 }
 
 pub(super) fn verify_completion_rows(

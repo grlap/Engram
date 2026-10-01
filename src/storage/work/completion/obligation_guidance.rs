@@ -1,11 +1,16 @@
-//! Read-only classification of what completion can do with an open obligation.
+//! Read-only classification of what completion can do with an open obligation,
+//! and the check that each recorded source change holds the obligations its
+//! rules call for.
+
+use rusqlite::Connection;
 
 use super::super::WorkObligationCompletionAction;
 use super::named_root::{ForeignChange, classify_change_on};
 use super::{
-    ExecutionObservation, NamedRootContext, SqliteStore, StoreError, WorkObligation, WorkRunId,
-    latest_source_mutation_on, load_typed_work_object, load_work_claim_optional,
-    named_root_context_on,
+    CanonicalObject, CompletionSeal, ExecutionObservation, FeedId, NamedRootContext, ObjectId,
+    SqliteStore, StoreError, WorkObligation, WorkObligationRecord, WorkRunId,
+    latest_source_mutation_on, load_typed_work_object, load_work_claim_optional, load_work_run,
+    named_root_context_on, obligation_rule_set_for_observation_on,
 };
 
 impl SqliteStore {
@@ -96,4 +101,84 @@ impl SqliteStore {
         }
         Ok(actions)
     }
+}
+
+pub(super) fn require_expected_obligations_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    records: &[WorkObligationRecord],
+) -> Result<(), StoreError> {
+    let expected = connection
+        .prepare(
+            "SELECT entry.position, entry.object_id, object.canonical_json
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.object_kind = 'execution_observation'
+               AND json_extract(object.canonical_json, '$.source_changed') = 1
+             ORDER BY entry.position",
+        )?
+        .query_map([run_id.0.to_string()], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let finished_at = finished_run_cut_on(connection, run_id);
+    for (position, stored_hash, bytes) in expected {
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
+        if finished_at.is_some_and(|cut| position > cut)
+            && !records
+                .iter()
+                .any(|record| record.obligation.triggering_observation == hash)
+        {
+            continue;
+        }
+        let observation: ExecutionObservation = CanonicalObject::stored(&hash, bytes)?.decode()?;
+        let rule_set = obligation_rule_set_for_observation_on(connection, &observation)?;
+        for (rule, requirement) in
+            crate::control::evaluate_obligation_rules(&rule_set, &observation)
+        {
+            let matches = records
+                .iter()
+                .filter(|record| {
+                    record.obligation.run_id == run_id
+                        && record.obligation.triggering_observation == hash
+                        && record.obligation.trigger_position.position == position
+                        && record.obligation.rule_set == observation.obligation_rule_set
+                        && record.obligation.rule == rule
+                        && record.obligation.requirement == requirement
+                })
+                .count();
+            if matches != 1 {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "run {run_id:?} source mutation {hash} has {matches} matching builtin obligation definitions"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The run-feed position at which a finished run was sealed. A source change
+/// recorded after it opens no obligation, so the checks that expect one per
+/// evaluated rule accept none for it, or the full set an older build opened.
+/// A run or seal that cannot be read gives no cut: the checks stay strict, and
+/// the damage is reported where the run or seal is read.
+pub(in crate::storage::work) fn finished_run_cut_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+) -> Option<i64> {
+    let run = load_work_run(connection, run_id).ok()?;
+    if !run.is_finished() {
+        return None;
+    }
+    let seal: CompletionSeal =
+        load_typed_work_object(connection, run.completion_seal.as_ref()?, "completion_seal")
+            .ok()?;
+    (seal.run_id == run_id && seal.completion_cut.feed == FeedId::RunExecution(run_id))
+        .then_some(seal.completion_cut.position)
 }

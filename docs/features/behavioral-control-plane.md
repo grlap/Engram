@@ -642,6 +642,21 @@ newer verifiable state. Under a named root, a change with no source basis
 never becomes the root's newest mutation; a fresh check in the root that ran
 after it accounts for it instead (see [5a](#5a-bind-a-named-source-root)).
 
+A turn begun while its run was live can be checkpointed after the run
+completed, or after a completion seal bound it. Its observations and typed
+evidence are still recorded, under their original grant and run binding,
+with their source-change metadata as recorded, and the checkpoint closes the
+turn and replays exactly. But on a finished run they are audit only: an
+observation opens no obligation, a verification satisfies none, and no record
+becomes a contributor or contribution of the root, whose sealed accounting
+already closed over the run. The checkpoint is never refused for it. One rule
+decides that a run is finished, the same one by which readers show a finished
+run's obligations as history. Obligations an earlier build opened on a
+finished run stay stored and readable as they are. The store's integrity
+checks expect no obligation for a source change recorded after the run's
+completion cut, or the full set an earlier build opened for it; a change
+before the cut still needs every obligation its rules call for.
+
 The stock rule records rather than blocks. The final checkpoint may leave a
 `source_mutation_requires_test` obligation open because no matching passing
 test followed a change. Completion then resolves that obligation as a waiver

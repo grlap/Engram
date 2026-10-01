@@ -636,6 +636,18 @@ pub struct WorkRun {
     pub updated_at: DateTime<Utc>,
 }
 
+impl WorkRun {
+    /// Whether the run has finished: it completed, or a completion seal
+    /// binds it. A record that arrives on a finished run afterwards is kept
+    /// for audit but owes, satisfies and contributes nothing, and readers
+    /// show the run's obligations as history. This is the one place that
+    /// decides it.
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.state == WorkRunState::Completed || self.completion_seal.is_some()
+    }
+}
+
 /// Fenced, expiring responsibility for one work run.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkClaim {
