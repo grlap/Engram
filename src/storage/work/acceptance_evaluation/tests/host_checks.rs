@@ -394,3 +394,182 @@ fn a_late_checkpoint_on_a_completed_run_is_audit_only() {
         report.invalid_work_records
     );
 }
+
+/// A sealed run with one source change a host reported after the seal, which
+/// opened no obligation, read back cleanly. Returns the fixture, the run and
+/// its seal.
+fn sealed_run_with_a_late_change(project: &str) -> (Fixture, WorkRunId, ObjectId) {
+    let mut fixture = fixture(project);
+    let claim = fixture.claim.clone();
+    let mut host = HostSession::bind(&mut fixture.store, &fixture.work.clone(), &claim, 5);
+    let grant = host.grant(&mut fixture.store, &[EffectClass::MutateLocal], true, 20);
+    host.begin(&mut fixture.store, &grant, 21);
+    let current = fixture
+        .store
+        .get_work_item(fixture.work.work_id)
+        .expect("item");
+    checkpoint_then_complete(
+        &mut fixture.store,
+        &current,
+        &claim,
+        "runner",
+        std::slice::from_ref(&fixture.evidence),
+        true,
+        None,
+        "complete-before-late-change",
+        22,
+    )
+    .expect("complete");
+    let late = ExecutionObservationInput {
+        observation_id: host.key("late-change"),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"write src late"),
+        effect: EffectClass::MutateLocal,
+        outcome: ExecutionOutcome::Succeeded,
+        source_changed: true,
+        reported_source_change: None,
+        source_basis: Some(ExecutionSourceBasis {
+            source_revision: "content-revision-late".into(),
+            ..host.basis.clone()
+        }),
+        observed_at: Some(at(23)),
+    };
+    let checkpointed = fixture
+        .store
+        .checkpoint_control_turn_with_evidence(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            &grant.grant_id,
+            TurnNextIntent::Continue,
+            std::slice::from_ref(&late),
+            &[],
+            &[],
+            &host.key("late-checkpoint"),
+            at(24),
+        )
+        .expect("checkpoint the late change");
+    assert!(
+        matches!(
+            checkpointed,
+            ControlTurnCheckpointDecision::Checkpointed { .. }
+        ),
+        "{checkpointed:?}"
+    );
+    let seal = load_work_run(&fixture.store.connection, claim.run_id)
+        .expect("run")
+        .completion_seal
+        .expect("a sealed run");
+    fixture
+        .store
+        .work_run_obligations(claim.run_id)
+        .expect("a late change without an obligation reads cleanly");
+    (fixture, claim.run_id, seal)
+}
+
+// Reading a sealed run's obligations needs the seal's cut to accept a source
+// change reported after it. A seal that is missing or undecodable gives no
+// cut, so the read stays strict and reports the change's missing obligation.
+// A SQLite failure reading the run or its seal is that failure, never a
+// missing obligation that would send an operator after damage that is not
+// there.
+#[test]
+fn a_storage_failure_reading_the_seal_is_reported_as_itself() {
+    let strict = |result: Result<Vec<crate::storage::WorkObligationRecord>, StoreError>| {
+        assert!(
+            matches!(&result, Err(StoreError::InvalidWorkProjection(message)) if message.contains("matching builtin obligation definitions")),
+            "{result:?}"
+        );
+    };
+    let storage = |result: Result<Vec<crate::storage::WorkObligationRecord>, StoreError>| {
+        assert!(matches!(&result, Err(StoreError::Sqlite(_))), "{result:?}");
+    };
+
+    let (fixture, run, seal) = sealed_run_with_a_late_change("project-seal-undecodable");
+    fixture
+        .store
+        .connection
+        .execute(
+            "UPDATE objects SET canonical_json = CAST('not a seal' AS BLOB) WHERE object_id = ?1",
+            [seal.as_str()],
+        )
+        .expect("garble the seal");
+    strict(fixture.store.work_run_obligations(run));
+
+    let (fixture, run, seal) = sealed_run_with_a_late_change("project-seal-missing");
+    fixture
+        .store
+        .connection
+        .execute_batch(&format!(
+            "PRAGMA foreign_keys = OFF;
+             DELETE FROM objects WHERE object_id = '{seal}';
+             PRAGMA foreign_keys = ON;"
+        ))
+        .expect("drop the seal");
+    strict(fixture.store.work_run_obligations(run));
+
+    // A run row whose JSON lacks a field its columns bind fails the run read
+    // with a column type error. That is a damaged row, not a storage failure:
+    // the read stays strict, and doctor reports the damage instead of failing.
+    let (fixture, run, _) = sealed_run_with_a_late_change("project-run-damaged");
+    fixture
+        .store
+        .connection
+        .execute(
+            "UPDATE work_runs SET run_json = CAST(json_remove(run_json, '$.generation') AS BLOB)
+             WHERE run_id = ?1",
+            [run.0.to_string()],
+        )
+        .expect("damage the run row");
+    strict(fixture.store.work_run_obligations(run));
+    let report = fixture
+        .store
+        .verify_all()
+        .expect("doctor reports a damaged run instead of failing");
+    assert!(
+        !report.invalid_work_records.is_empty(),
+        "{:?}",
+        report.invalid_work_records
+    );
+
+    // A seal row whose kind is not UTF-8 text is damaged too, and stays strict.
+    let (fixture, run, seal) = sealed_run_with_a_late_change("project-seal-kind-damaged");
+    fixture
+        .store
+        .connection
+        .execute(
+            "UPDATE objects SET object_kind = CAST(x'80' AS TEXT) WHERE object_id = ?1",
+            [seal.as_str()],
+        )
+        .expect("damage the seal's kind");
+    strict(fixture.store.work_run_obligations(run));
+
+    // Reading the seal's row fails in SQLite itself: a temporary view shadows
+    // the objects table on this connection and raises an error for that row
+    // alone, so every other record still reads. The earlier reads of the run's
+    // feed select observations and obligations by kind, so they never reach
+    // the seal's row.
+    let (fixture, run, seal) = sealed_run_with_a_late_change("project-seal-unreadable");
+    fixture
+        .store
+        .connection
+        .execute_batch(&format!(
+            "CREATE TEMP VIEW objects AS
+             SELECT object_id, object_kind,
+                    CASE WHEN object_id = '{seal}' THEN json('the seal cannot be read')
+                         ELSE canonical_json END AS canonical_json,
+                    created_at
+             FROM main.objects;"
+        ))
+        .expect("shadow the seal's row");
+    storage(fixture.store.work_run_obligations(run));
+
+    // The run itself cannot be read: its table is gone.
+    let (fixture, run, _) = sealed_run_with_a_late_change("project-run-unreadable");
+    fixture
+        .store
+        .connection
+        .execute_batch("ALTER TABLE work_runs RENAME TO work_runs_unreadable")
+        .expect("hide the runs table");
+    storage(fixture.store.work_run_obligations(run));
+}

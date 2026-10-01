@@ -126,7 +126,7 @@ pub(super) fn require_expected_obligations_on(
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let finished_at = finished_run_cut_on(connection, run_id);
+    let finished_at = finished_run_cut_on(connection, run_id)?;
     for (position, stored_hash, bytes) in expected {
         let hash = ObjectId::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
@@ -166,19 +166,50 @@ pub(super) fn require_expected_obligations_on(
 /// The run-feed position at which a finished run was sealed. A source change
 /// recorded after it opens no obligation, so the checks that expect one per
 /// evaluated rule accept none for it, or the full set an older build opened.
-/// A run or seal that cannot be read gives no cut: the checks stay strict, and
-/// the damage is reported where the run or seal is read.
+/// A run or seal that is missing or cannot be decoded gives no cut: the checks
+/// stay strict, and the damage is reported where the run or seal is read. A
+/// SQLite failure while reading either is returned as itself, so it is never
+/// reported as a missing obligation.
 pub(in crate::storage::work) fn finished_run_cut_on(
     connection: &Connection,
     run_id: WorkRunId,
-) -> Option<i64> {
-    let run = load_work_run(connection, run_id).ok()?;
-    if !run.is_finished() {
-        return None;
+) -> Result<Option<i64>, StoreError> {
+    let Some(run) = readable(load_work_run(connection, run_id))? else {
+        return Ok(None);
+    };
+    let Some(seal_id) = run.completion_seal.as_ref().filter(|_| run.is_finished()) else {
+        return Ok(None);
+    };
+    let Some(seal) = readable::<CompletionSeal>(load_typed_work_object(
+        connection,
+        seal_id,
+        "completion_seal",
+    ))?
+    else {
+        return Ok(None);
+    };
+    Ok(
+        (seal.run_id == run_id && seal.completion_cut.feed == FeedId::RunExecution(run_id))
+            .then_some(seal.completion_cut.position),
+    )
+}
+
+/// A read's value, `None` when the record is missing or undecodable, or the
+/// SQLite failure that kept it from being read. A column that holds a value of
+/// the wrong type or range, or text that is not UTF-8, is a damaged row, so it
+/// reads as undecodable. SQLite's own error for malformed JSON in an
+/// expression cannot be told apart from other SQLite failures, so it is
+/// returned as one.
+fn readable<T>(read: Result<T, StoreError>) -> Result<Option<T>, StoreError> {
+    match read {
+        Ok(value) => Ok(Some(value)),
+        Err(StoreError::Sqlite(
+            rusqlite::Error::InvalidColumnType(..)
+            | rusqlite::Error::FromSqlConversionFailure(..)
+            | rusqlite::Error::IntegralValueOutOfRange(..)
+            | rusqlite::Error::Utf8Error(..),
+        )) => Ok(None),
+        Err(error @ StoreError::Sqlite(_)) => Err(error),
+        Err(_) => Ok(None),
     }
-    let seal: CompletionSeal =
-        load_typed_work_object(connection, run.completion_seal.as_ref()?, "completion_seal")
-            .ok()?;
-    (seal.run_id == run_id && seal.completion_cut.feed == FeedId::RunExecution(run_id))
-        .then_some(seal.completion_cut.position)
 }

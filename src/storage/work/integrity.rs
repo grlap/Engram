@@ -751,7 +751,8 @@ pub(super) fn verify_obligation_rows(
 
 /// A source change recorded after its run was sealed opens no obligation.
 /// One an older build recorded with obligations is still checked in full; a
-/// run whose seal cannot be read is checked strictly and reported elsewhere.
+/// run whose seal is missing or undecodable is checked strictly and reported
+/// elsewhere, and a SQLite failure reading it is returned as itself.
 fn recorded_after_finish_without_obligations(
     connection: &Connection,
     run_id: &str,
@@ -761,7 +762,7 @@ fn recorded_after_finish_without_obligations(
     let Ok(parsed) = super::query::parse_work_run_id(run_id) else {
         return Ok(false);
     };
-    let Some(cut) = super::completion::finished_run_cut_on(connection, parsed) else {
+    let Some(cut) = super::completion::finished_run_cut_on(connection, parsed)? else {
         return Ok(false);
     };
     if position <= cut {
