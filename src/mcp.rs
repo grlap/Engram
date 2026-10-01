@@ -1004,6 +1004,14 @@ pub fn store_error_value(error: &StoreError) -> Value {
             candidates,
             more,
         } => ambiguous_work_reference_details(reference, candidates, *more),
+        StoreError::WorkImplicitTargetConflict(conflict) => json!({
+            "operation": conflict.operation,
+            "focused_ref": conflict.focus,
+            "focus_state": conflict.focus_state.as_str(),
+            "held_refs": conflict.held,
+            "more": conflict.more,
+            "remedy": "repeat the word with the intended item named; nothing was recorded",
+        }),
         StoreError::InvalidWork(message)
             if message == PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL =>
         {
@@ -1270,6 +1278,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::RedactionRefused(_) => "redaction_refused",
         StoreError::WorkNotFound(_) => "work_not_found",
         StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
+        StoreError::WorkImplicitTargetConflict(_) => "work_implicit_target_conflict",
         StoreError::InvalidWork(_) => "work_invalid",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",
@@ -1929,6 +1938,33 @@ mod tests {
         assert_eq!(details["candidates"][0]["title"], "Collision candidate");
         assert_eq!(details["candidates"][0]["state"], "open");
         assert_eq!(details["more"], 2);
+    }
+
+    #[test]
+    fn implicit_target_refusal_has_a_stable_code_and_names_both_items() {
+        let error = StoreError::WorkImplicitTargetConflict(Box::new(
+            crate::storage::ImplicitTargetConflict {
+                operation: "note".into(),
+                focus: "w-added".into(),
+                focus_state: crate::storage::ImplicitFocusState::Unclaimed,
+                held: vec!["w-held".into()],
+                more: 2,
+            },
+        ));
+        assert_eq!(error_code(&error), "work_implicit_target_conflict");
+        let value = store_error_value(&error);
+        let details = &value["error"]["details"];
+        assert_eq!(details["operation"], "note");
+        assert_eq!(details["focused_ref"], "w-added");
+        assert_eq!(details["focus_state"], "unclaimed");
+        assert_eq!(details["held_refs"], json!(["w-held"]));
+        assert_eq!(details["more"], 2);
+        let message = value["error"]["message"].as_str().expect("message");
+        assert!(
+            message.contains("w-added") && message.contains("w-held and 2 more"),
+            "{message}"
+        );
+        assert!(message.contains("nothing was recorded"), "{message}");
     }
 
     #[test]

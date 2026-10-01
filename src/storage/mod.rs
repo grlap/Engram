@@ -44,6 +44,59 @@ pub use schema_diagnostics::{
     StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
 };
 
+/// A word that named no item, the focus it would have acted on, and the
+/// items this session holds instead, by short ref.
+#[derive(Debug)]
+pub struct ImplicitTargetConflict {
+    pub operation: String,
+    pub focus: String,
+    /// What can be done on the focus, so the refusal offers a command that
+    /// works there.
+    pub focus_state: ImplicitFocusState,
+    /// At most a few held items; `more` counts the rest.
+    pub held: Vec<String>,
+    pub more: usize,
+}
+
+/// The state of the focus a refused bare word would have acted on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImplicitFocusState {
+    /// Open, and no live claim holds it: this session may claim it.
+    Unclaimed,
+    /// Open, and another session holds it.
+    HeldElsewhere,
+    /// Not open: completed, cancelled, superseded or proposed.
+    NotOpen,
+}
+
+impl ImplicitFocusState {
+    /// The value as the refusal's details spell it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unclaimed => "unclaimed",
+            Self::HeldElsewhere => "held_elsewhere",
+            Self::NotOpen => "not_open",
+        }
+    }
+}
+
+impl std::fmt::Display for ImplicitTargetConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} named no item, and the focus {} is not held by this session, which holds {}",
+            self.operation,
+            self.focus,
+            self.held.join(", ")
+        )?;
+        if self.more > 0 {
+            write!(formatter, " and {} more", self.more)?;
+        }
+        write!(formatter, "; nothing was recorded; name the item")
+    }
+}
+
 pub(crate) const PENDING_HANDOFF_REFUSAL: &str =
     "a live handoff offer blocks this operation; cancel the offer, or let it be accepted or expire";
 
@@ -983,6 +1036,11 @@ pub enum StoreError {
     /// never a named-root state.
     #[error("named-root read refused: {0}")]
     NamedRootReadRefused(String),
+    /// A word named no item while the session's focus is not an item it
+    /// holds and it holds others: it would otherwise act on an item the
+    /// caller did not mean. Nothing was recorded.
+    #[error("{0}")]
+    WorkImplicitTargetConflict(Box<ImplicitTargetConflict>),
     /// A host's read of an item's acceptance bindings was refused for a
     /// typed reason; never an empty result.
     #[error("acceptance binding read refused: {reason}")]

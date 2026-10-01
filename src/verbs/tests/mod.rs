@@ -177,6 +177,7 @@ mod claims;
 mod customer_workflow;
 mod evaluate;
 mod handlers;
+mod implicit_target;
 mod planning;
 mod receipts;
 mod shared;

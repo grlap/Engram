@@ -164,6 +164,24 @@ A bare mutation keeps its existing target, not the item just read. These
 reads do not register a fresh process-default session; registration waits for
 a stateful operation.
 
+`add` and `add --under` do move focus, to the item they create. So a bare
+`note`, `gate`, `evaluate`, `update` or `done` acts on the focus only when
+this session holds it, or holds nothing else. When the focus is an item this
+session does not hold while it holds others, the word is refused with
+`work_implicit_target_conflict`:
+- nothing is recorded;
+- the refusal names the focus and up to three held items, counting the
+  rest;
+- `next` offers the explicit command for each. For the focus it offers only
+  a command its state admits: `details.focus_state` is `unclaimed`,
+  `held_elsewhere` or `not_open`, and the command is a claim where the word
+  needs one, a late `gate --work-ref` on finished work, or `show` where
+  nothing else applies.
+
+Repeating the word with the item named acts as before. A bare `handoff` keeps
+the focus without this check: its recipient accepts an item it does not hold
+yet, and an offer or a cancel already needs the claim.
+
 These are the reads that record nothing:
 
 - `next --peek` (MCP `next` with `peek: true`);
@@ -913,6 +931,9 @@ Rules that matter:
   records the failures as evidence on held open work, or as a late finding on
   completed work selected by focus or `--work-ref`, nothing more. With no
   focus, use `gate NAME --work-ref REF`; no last-completed item is inferred.
+  A bare gate on a completed focus is refused while this session holds other
+  open work, as described under reading and focus above; name it with
+  `--work-ref`.
   Gate names follow the repository's
   [quality gates](../development.md#quality-gates).
   Classification stays your judgment. Record a small in-scope correction's
@@ -1601,7 +1622,9 @@ item when this session holds it; claims on other items are visible through
 through `work_propose:decompose`; adding `--optional` instead records an
 optional child that is shown as such and does not gate parent completion (a
 decomposition admits one through 16 children). Either form then focuses that
-child exactly as a root `add` focuses the new root. On open work, `note`
+child exactly as a root `add` focuses the new root; a bare word that follows
+while this session holds other work is refused, as described under reading
+and focus above. On open work, `note`
 records evidence and then checkpoints the run's current evidence set. On
 completed work, `note` records only attributed late evidence after the frozen
 completion cut; it creates no checkpoint, does not reopen or reseal the run,

@@ -496,6 +496,21 @@ impl VerbError {
             StoreError::WorkReferenceAmbiguous {
                 candidates, more, ..
             } => ambiguous_reference_guidance(candidates, *more),
+            StoreError::WorkImplicitTargetConflict(conflict) => {
+                let crate::storage::ImplicitTargetConflict {
+                    operation,
+                    focus,
+                    focus_state,
+                    held,
+                    ..
+                } = conflict.as_ref();
+                let mut next: Vec<String> = held
+                    .iter()
+                    .map(|work_ref| implicit_target_command(operation, work_ref))
+                    .collect();
+                next.push(implicit_focus_command(operation, focus, *focus_state));
+                (vec![self.error.to_string()], next)
+            }
             StoreError::ProjectMemoryExists(key) => (
                 vec![format!(
                     "project memory {key} already exists; use remember --key {key} --revise to retain its attributed history"
@@ -697,6 +712,44 @@ pub(super) fn append_peek_disclosure(
             context_generation
         ))
     ));
+}
+
+/// The explicit form of `operation` on a held item, offered when a bare word
+/// was refused for an implicit target.
+pub(super) fn implicit_target_command(operation: &str, work_ref: &str) -> String {
+    match operation {
+        "note" => format!("engram work note {work_ref} \"…\""),
+        "gate" => format!("engram work gate NAME --work-ref {work_ref}"),
+        "done" => format!("engram work done {work_ref} \"…\""),
+        "update" => format!("engram work update {work_ref} …"),
+        "evaluate" => format!("engram work evaluate {work_ref} …"),
+        _ => format!("engram work show {work_ref}"),
+    }
+}
+
+/// The command offered for the unheld focus: what `operation` can do there
+/// as it stands, never one its state would refuse.
+pub(super) fn implicit_focus_command(
+    operation: &str,
+    focus: &str,
+    state: crate::storage::ImplicitFocusState,
+) -> String {
+    use crate::storage::ImplicitFocusState as State;
+    match (operation, state) {
+        // Admitted on the focus as it stands: a note on an unheld item is an
+        // observation and on finished work a late finding; a gate on
+        // finished work is a late finding; planning acts on open work nobody
+        // holds; an independent evaluation, on any open work.
+        ("note", _)
+        | ("gate", State::NotOpen)
+        | ("update", State::Unclaimed)
+        | ("evaluate", State::Unclaimed | State::HeldElsewhere) => {
+            implicit_target_command(operation, focus)
+        }
+        // On open work nobody holds, a gate or done needs the claim first.
+        ("gate" | "done", State::Unclaimed) => format!("engram work claim {focus}"),
+        _ => format!("engram work show {focus}"),
+    }
 }
 
 pub(super) fn ambiguous_reference_guidance(

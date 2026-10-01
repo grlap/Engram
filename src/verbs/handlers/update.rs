@@ -53,7 +53,7 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when no action applies or the core refuses it.
     pub fn update(&self, input: UpdateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let view = self.target(input.work_ref.as_deref(), now)?;
+        let view = self.target("update", input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
         let prerequisite_target = match &input.action {
@@ -118,7 +118,7 @@ impl AgentVerbs {
             None
         };
         let after = if result.operation == "detach" {
-            self.target(Some(&result.receipt.work_ref), now)?
+            self.target("update", Some(&result.receipt.work_ref), now)?
         } else {
             self.refreshed(&view, now)?
         };

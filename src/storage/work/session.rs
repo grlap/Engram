@@ -1243,6 +1243,41 @@ impl SqliteStore {
         Ok(held)
     }
 
+    /// The project's work this session holds under a live claim, by work id
+    /// and short ref, in short-ref order, from the claim and item projections
+    /// alone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when a stored work id is invalid.
+    pub fn work_held_refs_in_project(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        holder: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<(WorkId, String)>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT claim.work_id, item.short_ref FROM work_claims claim
+             JOIN work_items item ON item.work_id = claim.work_id
+             WHERE item.project_id = ?1 AND claim.holder_session_id = ?2
+               AND claim.state = 'active' AND claim.expires_at_ms > ?3
+             ORDER BY item.short_ref, claim.work_id",
+        )?;
+        let rows = statement.query_map(
+            params![project_id.0, holder.0, now.timestamp_millis()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )?;
+        let mut held = Vec::new();
+        for row in rows {
+            let (work_id, short_ref) = row?;
+            let work_id = uuid::Uuid::parse_str(&work_id).map(WorkId).map_err(|_| {
+                StoreError::InvalidWorkProjection(format!("claim has invalid work id {work_id}"))
+            })?;
+            held.push((work_id, short_ref));
+        }
+        Ok(held)
+    }
+
     /// Every live claim this session holds on the project's work, each with
     /// the time the session acquired it: the claim event, or the accepted
     /// handoff that gave it the claim. A renewal keeps that time. Rows come in

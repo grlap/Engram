@@ -19,6 +19,7 @@ use super::{
 
 mod completion_remedy;
 mod gates;
+mod targets;
 mod update;
 pub(super) use completion_remedy::{EvaluationRemedy, completion_recovery_reminder};
 pub(super) use update::unblock_command;
@@ -1316,7 +1317,7 @@ impl AgentVerbs {
     /// Returns [`VerbError`] when the item is unknown, held elsewhere, or the
     /// core does not admit claiming.
     pub fn claim(&self, input: ClaimInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let view = self.target(Some(&input.work_ref), now)?;
+        let view = self.target("claim", Some(&input.work_ref), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let target = view.status.work.work_id.0.to_string();
         let _result = self
@@ -1366,7 +1367,7 @@ impl AgentVerbs {
         input: ClaimUnderInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
-        let parent = self.target(Some(&input.under), now)?;
+        let parent = self.target("claim", Some(&input.under), now)?;
         let parent_ref = parent.status.work.short_ref.clone();
         let target = parent.status.work.work_id.0.to_string();
         let result = self
@@ -1388,7 +1389,7 @@ impl AgentVerbs {
         let renewed = selection["renewed"].as_bool().unwrap_or(false);
         let ready = selection["ready_count"].as_u64().unwrap_or(0);
         let position = selection["position"].as_u64();
-        let after = self.target(Some(result.receipt.work_ref.as_str()), now)?;
+        let after = self.target("claim", Some(result.receipt.work_ref.as_str()), now)?;
         let work_ref = after.status.work.short_ref.clone();
         let title = short(&after.status.work.title);
         let held = held_suffix(self.holder(&after, now), now);
@@ -1582,7 +1583,7 @@ impl AgentVerbs {
         if text.is_empty() {
             return Err(StoreError::InvalidWork("note text must not be empty".into()).into());
         }
-        let view = self.target_unfocused(input.work_ref.as_deref(), now)?;
+        let view = self.target_unfocused("note", input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let target = view.status.work.work_id.0.to_string();
         let refs = trimmed(&input.refs);
@@ -1626,7 +1627,7 @@ impl AgentVerbs {
     /// Returns [`VerbError`] when this session does not hold the item, nothing
     /// has been noted, or a lifecycle fence moved.
     pub fn done(&self, input: DoneInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let view = self.target(input.work_ref.as_deref(), now)?;
+        let view = self.target("done", input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
         let target = view.status.work.work_id.0.to_string();
@@ -1900,7 +1901,14 @@ impl AgentVerbs {
                 .into());
             }
         }
-        let view = self.target(input.work_ref.as_deref(), now)?;
+        // A bare handoff keeps the ambient focus without the implicit-target
+        // guard: its recipient accepts an item it does not hold yet, and an
+        // offer or a cancel already needs the claim, so it cannot act on an
+        // item the caller did not mean.
+        let view = match input.work_ref.as_deref() {
+            Some(work_ref) => self.target("handoff", Some(work_ref), now)?,
+            None => self.ambient_focus(now)?,
+        };
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
         let (core, verb) = match input.action {
@@ -1970,47 +1978,6 @@ impl AgentVerbs {
             serde_json::to_value(&result)?,
             false,
         )))
-    }
-
-    fn target(
-        &self,
-        work_ref: Option<&str>,
-        now: DateTime<Utc>,
-    ) -> Result<WorkFocusView, VerbError> {
-        match work_ref {
-            Some(work_ref) => {
-                self.service
-                    .select_work(work_ref, now)
-                    .map_err(|error| VerbError::at(error, work_ref))?;
-                self.service
-                    .inspect_work(work_ref, now)
-                    .map_err(|error| VerbError::at(error, work_ref))
-            }
-            None => self.focused(now)?.ok_or_else(|| {
-                StoreError::InvalidWork(
-                    "this session has no focused work; name the item or claim one first".into(),
-                )
-                .into()
-            }),
-        }
-    }
-
-    /// Resolves a named item without focusing it, for a word a non-holder may
-    /// use (note, gate, evaluate): the service moves focus only for the
-    /// item's live holder, so a peer's word leaves focus, and the claim the
-    /// next host turn binds, where it was.
-    pub(super) fn target_unfocused(
-        &self,
-        work_ref: Option<&str>,
-        now: DateTime<Utc>,
-    ) -> Result<WorkFocusView, VerbError> {
-        match work_ref {
-            Some(work_ref) => self
-                .service
-                .inspect_work(work_ref, now)
-                .map_err(|error| VerbError::at(error, work_ref)),
-            None => self.target(None, now),
-        }
     }
 
     /// Reads the ambient focus without staging or acknowledging deliveries.

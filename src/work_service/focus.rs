@@ -117,6 +117,17 @@ impl LocalWorkService {
         store.work_held_by(&self.session_id, now)
     }
 
+    /// The project's work this session holds under a live claim, by work id
+    /// and short ref, in short-ref order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the store cannot be read.
+    pub fn held_work_refs(&self, now: DateTime<Utc>) -> Result<Vec<(WorkId, String)>, StoreError> {
+        let store = self.store_at(now)?;
+        store.work_held_refs_in_project(&self.project_id, &self.session_id, now)
+    }
+
     /// Every live claim in this project, used only to annotate compact agent
     /// catalog rows without constructing one focus packet per item.
     ///
