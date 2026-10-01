@@ -120,6 +120,7 @@ fn page(kind: VerificationKind, state: WorkObligationState) -> WorkObligationPag
         untested_total: 0,
         displaced_total: 0,
         open_total: Some(usize::from(state == WorkObligationState::Open)),
+        historical: false,
         action_required_total: None,
     }
 }

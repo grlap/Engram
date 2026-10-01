@@ -863,6 +863,13 @@ pub struct WorkObligationPage {
     /// stored: any omission may then hide an open obligation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open_total: Option<usize>,
+    /// The page's run completed or a completion seal binds it: its rows are
+    /// history and owe nothing, so `open_total` is 0 and every item's
+    /// guidance is `none`. A row whose state is `open` here is no longer
+    /// actionable: read live, it was opened after the run finished; in a
+    /// replayed receipt, it is the row as recorded while the run was live.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub historical: bool,
     /// Exact pre-evaluation action count, computed over open rows before page fitting.
     #[serde(skip)]
     pub(crate) action_required_total: Option<usize>,

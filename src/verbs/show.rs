@@ -754,6 +754,10 @@ pub(super) struct ShowReceiptValue {
     /// Agent-safe obligation guidance for the host's evaluation request.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) evaluation_obligations: Option<super::evaluation_guidance::EvaluationObligations>,
+    /// Obligations still stored as open on a run that has finished: history
+    /// read as stored, which owes nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) historical_open_obligations: Option<usize>,
     /// Where a completed item's sealed acceptance came from.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance: Option<serde_json::Value>,
@@ -897,6 +901,27 @@ pub(super) fn source_change_detection_label(
         }
         Some(crate::SourceChangeDetection::WatcherOnly) => "host had file notifications only",
     }
+}
+
+/// How many obligations a historical page shows still stored as open: they
+/// were opened after the run finished, so they are history, not owed work.
+/// `None` on a page of a live run, or when there are none.
+pub(super) fn historical_open_obligations(page: &crate::WorkObligationPage) -> Option<usize> {
+    let open = page
+        .items
+        .iter()
+        .filter(|item| item.state == crate::WorkObligationState::Open)
+        .count();
+    (page.historical && open > 0).then_some(open)
+}
+
+/// The line a historical page adds for obligations still stored as open.
+pub(super) fn historical_obligation_line(page: &crate::WorkObligationPage) -> Option<String> {
+    historical_open_obligations(page).map(|open| {
+        format!(
+            "obligations: historical (run completed); {open} shown still recorded open, opened after the run finished; nothing is owed"
+        )
+    })
 }
 
 /// One line per source change on `page` that no matching passing test
@@ -1231,6 +1256,7 @@ pub(super) fn show_lines(
     }
     lines.extend(untested_change_lines(&view.obligation_page));
     lines.extend(displaced_change_lines(&view.obligation_page));
+    lines.extend(historical_obligation_line(&view.obligation_page));
     let blocker_total = active_blocker_total(view);
     if blocker_total > 0 {
         let omitted = blocker_total - view.blockers.len();
@@ -1461,6 +1487,7 @@ pub(super) fn show_receipt_value(
                 )
             })
             .flatten(),
+        historical_open_obligations: historical_open_obligations(&view.obligation_page),
         // Completed items use one provenance shape. Missing or unreadable
         // completion evidence is unavailable, never inferred self-assertion.
         acceptance: match (

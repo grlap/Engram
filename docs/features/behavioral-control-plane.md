@@ -679,7 +679,12 @@ row is only a verified projection. `work_focus`, nested `work_next.focus`,
 `work_update`, and both completion outcomes use one count- and byte-bounded
 `obligation_page` with explicit omission count, immutable identities, state,
 rule-set identity, rule, requirement, trigger, terminal evidence/resolution,
-and deterministic typed guidance. Generic readiness strings remain separate.
+and deterministic typed guidance. On a run that completed or that a seal binds,
+the page carries `historical: true`: its rows are read as stored, its
+`open_total` is 0 and its guidance is `none`, so an obligation opened there
+after the run finished is history, not owed work (see
+[the obligation page](cli-and-mcp.md#shipped-host-private-turn-channel)). Generic
+readiness strings remain separate.
 A fresh session reconstructs the same summaries from canonical history rather
 than trusting a prior response.
 

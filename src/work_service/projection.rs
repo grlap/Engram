@@ -830,6 +830,68 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
     }
 }
 
+/// Whether a run's obligations are history: the run completed or a
+/// completion seal binds it. Every reader decides it here.
+pub(super) fn obligations_are_historical(run: &crate::domain::WorkRun) -> bool {
+    run.state == crate::domain::WorkRunState::Completed || run.completion_seal.is_some()
+}
+
+/// Marks `page` as history: it owes nothing, so it counts no open or
+/// action-required obligation, classifies none for completion, and gives
+/// every item `none` guidance, while its rows stay as stored.
+fn mark_historical(page: &mut WorkObligationPage) {
+    page.historical = true;
+    page.open_total = Some(0);
+    page.action_required_total = Some(0);
+    for item in &mut page.items {
+        item.guidance = WorkObligationGuidance::None;
+        item.completion_action = None;
+    }
+}
+
+/// A stored receipt's obligation page as a replay shows it now. The receipt
+/// is returned as recorded, but once the run its obligations belong to has
+/// completed or been sealed, its page owes nothing and reads as history.
+/// That run is read from the page's own rows, through their immutable
+/// obligation definitions, never inferred from the item, whose newest run
+/// may be a later one. A page with no rows can still offer owed work: when
+/// its count is positive, or when it has no count, as a page stored before
+/// counts existed may not, and left rows out. Then the run the receipt names
+/// (`run_hint`) decides; otherwise the page is returned as recorded. The
+/// stored receipt is never rewritten.
+pub(super) fn replayed_obligation_page(
+    store: &SqliteStore,
+    run_hint: Option<WorkRunId>,
+    page: &mut WorkObligationPage,
+) -> Result<(), StoreError> {
+    let run_id = match page.items.first() {
+        Some(item) => {
+            let definition: crate::domain::WorkObligation =
+                store.get(&item.definition)?.ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(format!(
+                        "obligation {} has no canonical definition",
+                        item.obligation_id.0
+                    ))
+                })?;
+            Some(definition.run_id)
+        }
+        None if page
+            .open_total
+            .map_or(page.omitted_count > 0, |open| open > 0) =>
+        {
+            run_hint
+        }
+        None => None,
+    };
+    let Some(run_id) = run_id else {
+        return Ok(());
+    };
+    if obligations_are_historical(&store.get_work_run(run_id)?) {
+        mark_historical(page);
+    }
+    Ok(())
+}
+
 pub(super) fn work_obligation_page(
     store: &SqliteStore,
     work_id: WorkId,
@@ -842,7 +904,11 @@ pub(super) fn work_obligation_page(
             ..WorkObligationPage::default()
         });
     };
-    disclosed_work_obligation_page(store, &store.work_run_obligations(run.run_id)?)
+    disclosed_work_obligation_page(
+        store,
+        &store.work_run_obligations(run.run_id)?,
+        obligations_are_historical(&run),
+    )
 }
 
 /// The obligations a refused completion answers with, read from the state
@@ -862,14 +928,37 @@ pub(super) fn work_completion_recovery_page(
         .filter(|record| state.is_none_or(|expected| record.state == expected))
         .cloned()
         .collect();
-    disclosed_work_obligation_page(store, &records)
+    // A refused completion's run is live, so its obligations are owed.
+    disclosed_work_obligation_page(store, &records, false)
 }
 
+/// The obligations a completion seal froze, read back at the seal's cut:
+/// the rows it binds must match its bindings exactly, and any other row on
+/// the run must have been opened after the cut, by an observation recorded
+/// once the run had finished. Those later rows are history the seal never
+/// saw, so they neither break the readback nor join the sealed page.
 pub(super) fn sealed_work_obligation_page(
     store: &SqliteStore,
     seal: &CompletionSeal,
 ) -> Result<WorkObligationPage, StoreError> {
-    let records = store.work_run_obligations(seal.run_id)?;
+    let (records, later): (Vec<_>, Vec<_>) = store
+        .work_run_obligations(seal.run_id)?
+        .into_iter()
+        .partition(|record| {
+            seal.obligations.iter().any(|binding| {
+                binding.obligation_id == record.obligation.obligation_id
+                    && binding.definition == record.definition_id
+            })
+        });
+    if let Some(record) = later.iter().find(|record| {
+        record.obligation.trigger_position.feed != crate::domain::FeedId::RunExecution(seal.run_id)
+            || record.obligation.trigger_position.position <= seal.completion_cut.position
+    }) {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "obligation {} on sealed run {:?} is neither bound by its seal nor opened after its cut",
+            record.obligation.obligation_id.0, seal.run_id
+        )));
+    }
     let mut bindings = records
         .iter()
         .map(|record| {
@@ -899,7 +988,7 @@ pub(super) fn sealed_work_obligation_page(
             seal.run_id
         )));
     }
-    disclosed_work_obligation_page(store, &records)
+    disclosed_work_obligation_page(store, &records, true)
 }
 
 /// The bounded page of `records` alone, for tests of the bounds.
@@ -941,9 +1030,15 @@ fn records_displaced_change(
 /// named root displaced; and counts every such change on the run. It loads
 /// the triggering observation of each such obligation, so a missing one fails
 /// the page whatever the obligation's state.
+///
+/// A `historical` page belongs to a run that completed or that a seal binds:
+/// its rows are read as stored, but none is owed, so it counts no open or
+/// action-required obligation, classifies none for completion, and gives
+/// every item `none` guidance.
 pub(super) fn disclosed_work_obligation_page(
     store: &SqliteStore,
     records: &[crate::storage::WorkObligationRecord],
+    historical: bool,
 ) -> Result<WorkObligationPage, StoreError> {
     let untested_total = records
         .iter()
@@ -967,7 +1062,7 @@ pub(super) fn disclosed_work_obligation_page(
     page.displaced_total = displaced_total;
     let open_records = records
         .iter()
-        .filter(|record| record.state == WorkObligationState::Open)
+        .filter(|record| !historical && record.state == WorkObligationState::Open)
         .collect::<Vec<_>>();
     let actions = if open_records.is_empty() {
         page.action_required_total = Some(0);
@@ -1012,7 +1107,7 @@ pub(super) fn disclosed_work_obligation_page(
         let visible = page
             .items
             .iter()
-            .filter(|item| item.state == WorkObligationState::Open)
+            .filter(|item| !historical && item.state == WorkObligationState::Open)
             .map(|item| open_record_of(item).map(|index| &open_records[index].obligation))
             .collect::<Result<Vec<_>, StoreError>>()?;
         if visible.is_empty() {
@@ -1028,8 +1123,11 @@ pub(super) fn disclosed_work_obligation_page(
     } else {
         Vec::new()
     };
+    if historical {
+        mark_historical(&mut page);
+    }
     for item in &mut page.items {
-        if item.state == WorkObligationState::Open {
+        if !historical && item.state == WorkObligationState::Open {
             if page.action_required_total.is_some() {
                 item.completion_action = Some(actions[open_record_of(item)?]);
             } else {
@@ -1142,6 +1240,7 @@ pub(super) fn count_bounded_work_obligation_page(
         untested_total: 0,
         displaced_total: 0,
         open_total: Some(open_total),
+        historical: false,
         action_required_total: None,
     }
 }

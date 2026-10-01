@@ -129,6 +129,16 @@ impl LocalWorkService {
                             receipt.landing_unavailable = Some(advisory_error_class(&error));
                         }
                     }
+                    // A receipt stored before pages carried their run's
+                    // history reads as history now that its run is sealed.
+                    // Like the reloads above, this is advisory: a page whose
+                    // history cannot be read is returned as recorded, never
+                    // turned into a refusal of a proven completion.
+                    let _advisory = super::projection::replayed_obligation_page(
+                        &store,
+                        Some(receipt.run_id),
+                        &mut receipt.obligation_page,
+                    );
                     return Ok(result);
                 }
                 WorkCompleteResult::Refused(_) => {

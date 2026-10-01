@@ -656,11 +656,19 @@ impl LocalWorkService {
             .map(|run| store.work_run_obligations(run.run_id))
             .transpose()?
             .unwrap_or_default();
-        let obligation_page = disclosed_work_obligation_page(store, &obligation_records)?;
+        let obligation_page = disclosed_work_obligation_page(
+            store,
+            &obligation_records,
+            run.as_ref()
+                .is_some_and(super::projection::obligations_are_historical),
+        )?;
+        // A historical page owes nothing, so it shows no evaluation rows.
         let evaluation_obligation_rows_visible = obligation_page
             .items
             .iter()
-            .filter(|item| item.state == crate::WorkObligationState::Open)
+            .filter(|item| {
+                !obligation_page.historical && item.state == crate::WorkObligationState::Open
+            })
             .count();
         let mut evidence_count = run
             .as_ref()

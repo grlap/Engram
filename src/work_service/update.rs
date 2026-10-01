@@ -161,7 +161,9 @@ impl LocalWorkService {
         // previous transition. A new append revalidates either the live claim
         // or the immutable completed-seal basis inside the same transaction.
         if let Some(result) = attempt.result {
-            return serde_json::from_value(result).map_err(StoreError::from);
+            let mut result: WorkUpdateResult = serde_json::from_value(result)?;
+            replayed_obligation_page(&store, Some(run_id), &mut result.obligation_page)?;
+            return Ok(result);
         }
         let result = self.work_update_result(
             &store,
@@ -230,7 +232,13 @@ impl LocalWorkService {
             now,
         })?;
         if let Some(result) = attempt.result {
-            return serde_json::from_value(result).map_err(StoreError::from);
+            let mut result: WorkNoteResult = serde_json::from_value(result)?;
+            replayed_obligation_page(
+                &store,
+                replayed_run_id(attempt.basis.as_ref(), &result.receipt),
+                &mut result.obligation_page,
+            )?;
+            return Ok(result);
         }
         let basis_matches =
             retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
@@ -657,7 +665,13 @@ impl LocalWorkService {
             }
         }
         if let Some(result) = attempt.result {
-            return serde_json::from_value(result).map_err(StoreError::from);
+            let mut result: WorkUpdateResult = serde_json::from_value(result)?;
+            replayed_obligation_page(
+                &store,
+                replayed_run_id(attempt.basis.as_ref(), &result.receipt),
+                &mut result.obligation_page,
+            )?;
+            return Ok(result);
         }
         let core_receipt = if auto_rejection {
             core_receipt
@@ -1220,3 +1234,51 @@ impl LocalWorkService {
 
 #[cfg(test)]
 mod tests;
+
+/// The run a stored receipt names, which decides a replayed page only when
+/// the page has no rows of its own to name their run. A claim's receipt
+/// names its claimed run in its control binding. Otherwise the run comes
+/// from the attempt's durable basis, but only when that basis focused the
+/// receipt's own item, since an operation such as claiming a parent's next
+/// ready child answers with another item's page. The basis is read through a
+/// minimal, lenient shape, so a receipt the replay returned before can never
+/// fail on it.
+fn replayed_run_id(
+    basis: Option<&serde_json::Value>,
+    receipt: &super::WorkMutationReceipt,
+) -> Option<crate::WorkRunId> {
+    #[derive(serde::Deserialize)]
+    struct Focused {
+        work_id: crate::WorkId,
+        #[serde(default)]
+        active_run_id: Option<crate::WorkRunId>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Claimed {
+        work_id: crate::WorkId,
+        run_id: crate::WorkRunId,
+    }
+    #[derive(serde::Deserialize)]
+    struct Basis {
+        #[serde(default)]
+        focused_work: Option<Focused>,
+        #[serde(default)]
+        claim: Option<Claimed>,
+    }
+    if let Some(binding) = &receipt.control_binding
+        && binding.work_id == receipt.work_id
+    {
+        return Some(binding.run_id);
+    }
+    let basis: Basis = serde_json::from_value(basis?.clone()).ok()?;
+    let focused = basis.focused_work?;
+    if focused.work_id != receipt.work_id {
+        return None;
+    }
+    focused.active_run_id.or_else(|| {
+        basis
+            .claim
+            .filter(|claim| claim.work_id == receipt.work_id)
+            .map(|claim| claim.run_id)
+    })
+}

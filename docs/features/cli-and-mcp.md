@@ -2166,6 +2166,22 @@ items shown, an open obligation was left out, and the agent reminder says more
 obligations are open than shown. Only a page stored before this count existed
 lacks it, and that page keeps its original reminder.
 
+A page whose run completed, or that a completion seal binds, carries
+`historical: true`; the field is absent otherwise. Its rows are history and
+owe nothing. A row whose state is `open` there is no longer actionable: on a
+live read it was opened after the run finished, for example by an observation
+a host recorded late; in a stored receipt replayed after the run finished, it
+is the row as the receipt recorded it while the run was live. `historical`
+alone does not say when a row was opened. Such a page's `open_total` is 0,
+every item's guidance is `{"action": "none"}`, and no reminder, evaluation
+guidance or mutation `obligations.open` count offers it as owed work,
+including a stored receipt replayed after its run finished. `show` says
+"historical (run completed)" and reports how many such rows the bounded page
+shows as `historical_open_obligations`. A completion's sealed page lists only
+the obligations its seal binds, read back at the seal's cut: a row the seal
+does not bind is accepted only when it was opened after that cut, and never
+breaks the readback.
+
 Every new completion seal declares obligation schema V1 and freezes the exact
 definition/resolution id pairs applicable at its dense pre-seal cut. The
 final checkpoint must acknowledge the matching typed verification evidence.

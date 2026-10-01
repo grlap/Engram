@@ -109,7 +109,22 @@ impl LocalWorkService {
             }
         }
         if let Some(result) = attempt.result {
-            let replay: WorkProposeResult = serde_json::from_value(result)?;
+            let mut replay: WorkProposeResult = serde_json::from_value(result)?;
+            // A root's receipt carries its focus page. Once the run its
+            // obligations belong to has finished, that page is history. The
+            // receipt proves the item was created, so a page whose history
+            // cannot be read is returned as recorded rather than refused.
+            // The focus names the run its page was built on, which decides a
+            // page whose rows were all trimmed away; its rows decide otherwise.
+            if let WorkProposeResult::Root { focus, .. } = &mut replay {
+                let run_hint = focus.run.as_ref().map(|run| run.run_id);
+                let _advisory = super::projection::replayed_obligation_page(
+                    &store,
+                    run_hint,
+                    &mut focus.obligation_page,
+                );
+            }
+            fit_replayed_root(&mut replay)?;
             ensure_agent_response_budget(&replay, "work_propose")?;
             return Ok(replay);
         }
@@ -303,3 +318,22 @@ impl LocalWorkService {
 
 #[cfg(test)]
 mod tests;
+
+/// Fits a replayed root's response within the agent budget after its page
+/// was marked as history, which adds a few bytes. Recoverable focus context
+/// is shed, as any focus is fitted, so the history mark stays: restoring the
+/// recorded page would offer a finished run's obligations as owed again.
+pub(super) fn fit_replayed_root(replay: &mut WorkProposeResult) -> Result<(), StoreError> {
+    let overflow = serde_json::to_vec(&*replay)?
+        .len()
+        .saturating_sub(super::MAX_AGENT_WORK_RESPONSE_BYTES);
+    if overflow > 0
+        && let WorkProposeResult::Root { focus, .. } = replay
+    {
+        let focus_bytes = serde_json::to_vec(&**focus)?.len();
+        let reserved = super::MAX_AGENT_WORK_RESPONSE_BYTES
+            .saturating_sub(focus_bytes.saturating_sub(overflow));
+        super::projection::fit_focus_response_reserving(focus, reserved)?;
+    }
+    Ok(())
+}

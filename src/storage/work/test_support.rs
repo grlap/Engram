@@ -1059,6 +1059,41 @@ impl SqliteStore {
         )
     }
 
+    /// The live claim on `work_id`'s active run, for a fixture that keeps
+    /// acting with it after the run finishes.
+    pub(crate) fn claim_fixture(&self, work_id: WorkId) -> crate::domain::WorkClaim {
+        let work = super::query::load_work_item(&self.connection, work_id).expect("fixture work");
+        let run_id = work.active_run_id.expect("fixture work has an active run");
+        super::query::load_work_claim_optional(&self.connection, run_id)
+            .expect("fixture claim read")
+            .expect("fixture run is claimed")
+    }
+
+    /// A source change a host records late, with the claim it held, against
+    /// a run that has since completed: the shape that opens an obligation
+    /// the run's completion seal never saw.
+    pub(crate) fn append_late_source_change_fixture(
+        &mut self,
+        work_id: WorkId,
+        claim: &crate::domain::WorkClaim,
+        key: &str,
+        observed_at: DateTime<Utc>,
+        source_revision: &str,
+    ) -> ObjectId {
+        let second = (observed_at - at(0)).num_seconds();
+        let work = super::query::load_work_item(&self.connection, work_id).expect("fixture work");
+        let holder = claim.holder.0.clone();
+        source_mutation(
+            self,
+            &work,
+            claim,
+            &holder,
+            key,
+            second,
+            Some(source_revision),
+        )
+    }
+
     /// `append_source_change_fixture` for a host that also says how it
     /// established the change.
     pub(crate) fn append_detected_source_change_fixture(

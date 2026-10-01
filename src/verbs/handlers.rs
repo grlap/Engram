@@ -1,16 +1,16 @@
 use crate::domain::normalize_gate_evidence_input;
 
+pub(super) use super::obligation_reminders::obligation_reminders;
 use super::{
     Arc, ChildRequirement, DEFAULT_LIMIT, DateTime, Deserialize, Guidance, Holder,
     LocalWorkService, MAX_AGENT_WORK_RESPONSE_BYTES, MAX_COMPACT_CHANGE_ITEMS, MAX_NEXT_PAGES,
     PathBuf, ProjectId, Receipt, Serialize, SessionId, StoreError, Utc, VerbError,
-    VerificationKind, WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION,
-    WorkAttributionDefaults, WorkAvailability, WorkBlockerKind, WorkChildInput, WorkCompleteInput,
-    WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput, WorkItemKind,
-    WorkLifecycle, WorkNextQuery, WorkNextSection, WorkNextView, WorkObligationPage,
-    WorkObligationState, WorkPrerequisiteState, WorkProposeInput, WorkProposeResult,
-    WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, held_suffix, item_line, json,
-    lifecycle_word, nonempty,
+    WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION, WorkAttributionDefaults,
+    WorkAvailability, WorkBlockerKind, WorkChildInput, WorkCompleteInput, WorkCompleteResult,
+    WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput, WorkItemKind, WorkLifecycle,
+    WorkNextQuery, WorkNextSection, WorkNextView, WorkPrerequisiteState, WorkProposeInput,
+    WorkProposeResult, WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, held_suffix,
+    item_line, json, lifecycle_word, nonempty,
     receipts::{compact_next_lines, compact_next_receipt, compact_next_value, ready_line},
     section_word, short,
     show::{fit_show_receipt, live, show_lines, show_receipt_value},
@@ -2270,62 +2270,6 @@ pub(super) fn reminder_for_reason(
         }),
         other => Some(other.to_owned()),
     }
-}
-
-/// Fixed table from open typed obligations to words. Waiver authority and
-/// identities stay host-private.
-pub(super) fn obligation_reminders(page: &WorkObligationPage) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for item in page
-        .items
-        .iter()
-        .filter(|item| item.state == WorkObligationState::Open)
-    {
-        let words = match item.requirement.check_kind {
-            VerificationKind::Test
-                if crate::control::is_stock_source_change_obligation(
-                    &item.rule,
-                    &item.requirement,
-                ) =>
-            {
-                super::evaluation_guidance::stock_source_change_reminder(item.completion_action)
-            }
-            VerificationKind::Test => {
-                "tests have not run since your last source change — run them; the host records the result"
-            }
-            VerificationKind::Build => {
-                "the build has not run since your last source change — run it; the host records the result"
-            }
-            VerificationKind::Lint => {
-                "lint has not run since your last source change — run it; the host records the result"
-            }
-            VerificationKind::Review => {
-                "a review is still owed for your last source change; the host records the result"
-            }
-            VerificationKind::Acceptance => {
-                "acceptance verification is still owed; the host records the result"
-            }
-        };
-        if !out.iter().any(|existing| existing == words) {
-            out.push(words.into());
-        }
-    }
-    // Only an open obligation the page leaves out is still owed; a completed
-    // item's omitted obligations are all terminal. A page stored before the
-    // open count existed says nothing about what it left out, so any omission
-    // may hide an open one.
-    let open_shown = page
-        .items
-        .iter()
-        .filter(|item| item.state == WorkObligationState::Open)
-        .count();
-    let more_open = page
-        .open_total
-        .map_or(page.omitted_count > 0, |total| total > open_shown);
-    if more_open {
-        out.push("more obligations are open than shown here".into());
-    }
-    out
 }
 
 /// How many lifecycle moves a receipt suggests before deferring to `show`.

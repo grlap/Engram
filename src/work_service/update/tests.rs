@@ -7,6 +7,7 @@ mod read_snapshots;
 mod reject_retry;
 mod release;
 mod renewal;
+mod replay_run;
 mod replayed_pins;
 mod selected_unblock;
 
