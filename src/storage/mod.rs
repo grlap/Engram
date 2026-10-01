@@ -1,6 +1,7 @@
 //! Local SQLite object store and integrity verification.
 
 mod acceptance_binding_read;
+mod acceptance_verification_read;
 mod control_inspection;
 mod control_runtime;
 mod control_support;
@@ -17,6 +18,7 @@ mod task_memory;
 mod work;
 pub(crate) use work::AssessedAcceptanceEvaluation;
 pub(crate) use work::BindingReadRequest;
+pub(crate) use work::VerificationReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
 pub(crate) use work::validate_work_plan;
 pub use work::{
@@ -1090,6 +1092,13 @@ pub enum StoreError {
     #[error("acceptance binding read refused: {reason}")]
     AcceptanceBindingReadRefused {
         refusal: crate::domain::AcceptanceBindingReadRefusal,
+        reason: String,
+    },
+    /// A host's read of one criterion's candidate verifications was refused
+    /// for a typed reason; never an empty result.
+    #[error("acceptance verification read refused: {reason}")]
+    AcceptanceVerificationReadRefused {
+        refusal: crate::domain::AcceptanceVerificationReadRefusal,
         reason: String,
     },
     #[error(

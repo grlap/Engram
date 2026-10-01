@@ -998,3 +998,875 @@ fn a_damaged_association_is_an_error() {
         "{result:?}"
     );
 }
+
+/// A host's read, per acceptance criterion of an item on its active run, of
+/// every host verification of the criterion's bound kind up to a pinned
+/// cut: complete recorded facts in run-feed order, paged with exact counts
+/// and a validated continuation, typed refusals, damage reported as damage,
+/// and no writes. It shares this file's fixtures with the binding read.
+mod candidates {
+    use super::*;
+    use crate::domain::{
+        AcceptanceBinding, AcceptanceVerificationPage,
+        AcceptanceVerificationReadRefusal as Refusal, VerificationRequirement,
+    };
+    use crate::storage::VerificationReadRequest;
+
+    fn read_with(
+        store: &SqliteStore,
+        host: &HostSession,
+        work: &WorkItem,
+        run_id: WorkRunId,
+        run_cut: i64,
+        criterion: usize,
+        after: Option<&str>,
+    ) -> Result<AcceptanceVerificationPage, StoreError> {
+        store.read_acceptance_verifications(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            &VerificationReadRequest {
+                work_id: work.work_id,
+                expected_work_revision: work.revision,
+                run_id,
+                run_cut,
+                criterion,
+                after,
+            },
+        )
+    }
+
+    /// Reads `criterion` at `run_cut` on the item's active run.
+    fn read_at(
+        store: &SqliteStore,
+        host: &HostSession,
+        work: &WorkItem,
+        run_cut: i64,
+        criterion: usize,
+        after: Option<&str>,
+    ) -> Result<AcceptanceVerificationPage, StoreError> {
+        let run = work.active_run_id.expect("active run");
+        read_with(store, host, work, run, run_cut, criterion, after)
+    }
+
+    /// The first page of `criterion` at the run's current head.
+    fn first(
+        store: &SqliteStore,
+        host: &HostSession,
+        work: &WorkItem,
+        criterion: usize,
+    ) -> AcceptanceVerificationPage {
+        read_at(store, host, work, cut(store, work), criterion, None).expect("first page")
+    }
+
+    /// Every candidate of `criterion`, following continuations at one cut.
+    fn all_pages(
+        store: &SqliteStore,
+        host: &HostSession,
+        work: &WorkItem,
+        criterion: usize,
+    ) -> Vec<AcceptanceVerificationPage> {
+        let head = cut(store, work);
+        let mut pages = Vec::new();
+        let mut after: Option<String> = None;
+        loop {
+            let page = read_at(store, host, work, head, criterion, after.as_deref()).expect("page");
+            after.clone_from(&page.continuation);
+            pages.push(page);
+            if after.is_none() {
+                return pages;
+            }
+        }
+    }
+
+    fn refused(result: Result<AcceptanceVerificationPage, StoreError>) -> Refusal {
+        match result {
+            Err(StoreError::AcceptanceVerificationReadRefused { refusal, .. }) => refusal,
+            other => panic!("expected a verification read refusal, got {other:?}"),
+        }
+    }
+
+    fn pinned(
+        criterion: usize,
+        kind: VerificationKind,
+        fingerprint: ObjectId,
+    ) -> AcceptanceBinding {
+        AcceptanceBinding {
+            criterion,
+            requirement: VerificationRequirement {
+                check_kind: kind,
+                check_fingerprint: Some(fingerprint),
+            },
+        }
+    }
+
+    /// One host check on the fixture's run, with a producer outcome that agrees
+    /// with its result, as the checkpoint protocol records them.
+    fn check(
+        fixture: &mut Fixture,
+        work: &WorkItem,
+        key: &str,
+        kind: VerificationKind,
+        result: VerificationResult,
+        second: i64,
+        workspace: Option<&str>,
+    ) -> ObjectId {
+        let claim = fixture.claim.clone();
+        let outcome = match result {
+            VerificationResult::Passed => ExecutionOutcome::Succeeded,
+            VerificationResult::Failed => ExecutionOutcome::Failed,
+            VerificationResult::Indeterminate => ExecutionOutcome::Unknown,
+        };
+        host_verification_with_outcome(
+            &mut fixture.store,
+            work,
+            &claim,
+            "runner",
+            HostCheck {
+                key,
+                kind,
+                outcome,
+                result,
+                summary: &format!("host observed {key}"),
+            },
+            second,
+            ExecutionSourceBasis {
+                workspace_id: workspace.map_or_else(|| format!("workspace-{key}"), str::to_owned),
+                source_revision: format!("revision-{key}"),
+                source_root_generation: None,
+                source_root_state: None,
+            },
+        )
+    }
+
+    fn stored(store: &SqliteStore, id: &ObjectId) -> VerificationEvidence {
+        crate::storage::work::load_typed_work_object(&store.connection, id, "verification_evidence")
+            .expect("stored verification")
+    }
+
+    /// Where `record` sits on `run`'s feed, read straight from the feed table.
+    fn feed_position(store: &SqliteStore, run: WorkRunId, record: &ObjectId) -> i64 {
+        store
+            .connection
+            .query_row(
+                "SELECT position FROM work_feed_entries
+             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_id = ?2",
+                rusqlite::params![run.0.to_string(), record.as_str()],
+                |row| row.get(0),
+            )
+            .expect("feed position")
+    }
+
+    /// A continuation token carrying `cursor`, as the read encodes one.
+    fn forged(prefix: &str, cursor: &serde_json::Value) -> String {
+        let mut token = String::from(prefix);
+        for byte in serde_json::to_vec(cursor).expect("encode cursor") {
+            write!(token, "{byte:02x}").expect("write cursor");
+        }
+        token
+    }
+
+    /// The JSON a continuation carries, decoded from its token.
+    fn cursor_of(token: &str) -> serde_json::Value {
+        let hex = token.strip_prefix("avr1-").expect("verification cursor");
+        let bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("hex"))
+            .collect();
+        serde_json::from_slice(&bytes).expect("cursor json")
+    }
+
+    // Every check of the bound kind on the run, whatever its result, its
+    // fingerprint, its source or when it was recorded, reads in run-feed order
+    // with the complete facts the record holds. Other kinds are left out, two
+    // criteria of one kind read the same candidates, a pinned fingerprint does
+    // not filter, and an unbound criterion reads an empty page that is not a
+    // pass.
+    #[test]
+    fn every_check_of_the_bound_kind_reads_in_feed_order_with_its_recorded_facts() {
+        let mut fixture = fixture("project-verification-read");
+        let claim = fixture.claim.clone();
+        let host = HostSession::bind(&mut fixture.store, &fixture.work.clone(), &claim, 5);
+        let work = fixture.work.clone();
+        // Checks recorded before any criterion was bound, at an older revision.
+        let early = check(
+            &mut fixture,
+            &work,
+            "early",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            6,
+            None,
+        );
+        let unit = check(
+            &mut fixture,
+            &work,
+            "unit",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            7,
+            None,
+        );
+        let unit_fingerprint = stored(&fixture.store, &unit).check_fingerprint;
+        let work = bind(
+            &mut fixture,
+            &work,
+            criteria(5),
+            vec![
+                bound(1, VerificationKind::Test),
+                bound(2, VerificationKind::Lint),
+                bound(3, VerificationKind::Test),
+                pinned(5, VerificationKind::Test, check_fingerprint("never-run")),
+            ],
+            "bind-candidates",
+            10,
+        );
+        let failed = check(
+            &mut fixture,
+            &work,
+            "flaky",
+            VerificationKind::Test,
+            VerificationResult::Failed,
+            11,
+            None,
+        );
+        let lint = check(
+            &mut fixture,
+            &work,
+            "style",
+            VerificationKind::Lint,
+            VerificationResult::Passed,
+            12,
+            None,
+        );
+        let unknown = check(
+            &mut fixture,
+            &work,
+            "unknown",
+            VerificationKind::Test,
+            VerificationResult::Indeterminate,
+            13,
+            None,
+        );
+        // The same command again: an equal fingerprint, a distinct record.
+        let again = check(
+            &mut fixture,
+            &work,
+            "unit",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            14,
+            None,
+        );
+        assert_ne!(again, unit);
+        assert_eq!(
+            stored(&fixture.store, &again).check_fingerprint,
+            unit_fingerprint
+        );
+        let unicode = check(
+            &mut fixture,
+            &work,
+            "unicode",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            15,
+            Some("przestrzeń-✓-工作区"),
+        );
+
+        let head = cut(&fixture.store, &work);
+        let tests = first(&fixture.store, &host, &work, 1);
+        assert_eq!(tests.basis.project_id, work.project_id);
+        assert_eq!(tests.basis.work_id, work.work_id);
+        assert_eq!(tests.basis.work_revision, work.revision);
+        assert_eq!(Some(tests.basis.run_id), work.active_run_id);
+        assert_eq!(tests.basis.run_cut, head);
+        assert_eq!(tests.criterion, 1);
+        assert_eq!(
+            tests
+                .requirement
+                .as_ref()
+                .map(|requirement| requirement.check_kind),
+            Some(VerificationKind::Test)
+        );
+        assert_eq!(
+            (tests.total, tests.earlier, tests.shown, tests.omitted),
+            (6, 0, 6, 0)
+        );
+        assert_eq!(tests.continuation, None);
+        let records: Vec<&ObjectId> = tests.rows.iter().map(|row| &row.record).collect();
+        assert_eq!(
+            records,
+            vec![&early, &unit, &failed, &unknown, &again, &unicode]
+        );
+        let positions: Vec<i64> = tests.rows.iter().map(|row| row.position).collect();
+        assert!(
+            positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "{positions:?}"
+        );
+        for row in &tests.rows {
+            let record = stored(&fixture.store, &row.record);
+            assert_eq!(row.check_kind, record.check_kind);
+            assert_eq!(row.check_fingerprint, record.check_fingerprint);
+            assert_eq!(row.result, record.result);
+            assert_eq!(row.source_basis, record.source_basis);
+            assert_eq!(row.producer.record, record.producer_observation);
+            assert!(row.producer.position < row.position);
+            assert!(row.position <= head);
+            assert_eq!(
+                row.position,
+                feed_position(&fixture.store, claim.run_id, &row.record)
+            );
+            assert_eq!(
+                row.producer.position,
+                feed_position(&fixture.store, claim.run_id, &row.producer.record)
+            );
+        }
+        let results: Vec<VerificationResult> = tests.rows.iter().map(|row| row.result).collect();
+        assert_eq!(
+            results,
+            vec![
+                VerificationResult::Passed,
+                VerificationResult::Passed,
+                VerificationResult::Failed,
+                VerificationResult::Indeterminate,
+                VerificationResult::Passed,
+                VerificationResult::Passed,
+            ]
+        );
+        assert_eq!(tests.rows[2].producer.outcome, ExecutionOutcome::Failed);
+        assert_eq!(tests.rows[3].producer.outcome, ExecutionOutcome::Unknown);
+        assert_eq!(
+            tests.rows[5].source_basis.workspace_id,
+            "przestrzeń-✓-工作区"
+        );
+
+        // Another kind is never a candidate.
+        let lints = first(&fixture.store, &host, &work, 2);
+        assert_eq!(
+            lints.rows.iter().map(|row| &row.record).collect::<Vec<_>>(),
+            vec![&lint]
+        );
+        assert_eq!((lints.total, lints.shown), (1, 1));
+        // Two criteria of one kind read the same candidates.
+        assert_eq!(first(&fixture.store, &host, &work, 3).rows, tests.rows);
+        // An unbound criterion reads an empty page, which is not a pass.
+        let unbound = first(&fixture.store, &host, &work, 4);
+        assert_eq!(unbound.requirement, None);
+        assert_eq!(
+            (
+                unbound.total,
+                unbound.earlier,
+                unbound.shown,
+                unbound.omitted
+            ),
+            (0, 0, 0, 0)
+        );
+        assert!(unbound.rows.is_empty());
+        assert_eq!(unbound.continuation, None);
+        // A pinned fingerprint no check ran under filters nothing: the consumer
+        // judges which candidate applies.
+        let pinned = first(&fixture.store, &host, &work, 5);
+        assert_eq!(
+            pinned
+                .requirement
+                .as_ref()
+                .and_then(|requirement| requirement.check_fingerprint.clone()),
+            Some(check_fingerprint("never-run"))
+        );
+        assert_eq!(pinned.rows, tests.rows);
+    }
+
+    // More candidates than a page holds read once each, in order, across pages
+    // with exact counts. Byte fitting and the refusal of a row too large for a
+    // page are unit-tested beside the read: valid records are bounded well below
+    // a page, and the read refuses a record outside those bounds as damage.
+    #[test]
+    fn candidates_page_in_order_with_exact_counts() {
+        let mut fixture = fixture("project-verification-read-pages");
+        let claim = fixture.claim.clone();
+        let host = HostSession::bind(&mut fixture.store, &fixture.work.clone(), &claim, 5);
+        let work = fixture.work.clone();
+        let work = bind(
+            &mut fixture,
+            &work,
+            criteria(2),
+            vec![
+                bound(1, VerificationKind::Test),
+                bound(2, VerificationKind::Test),
+            ],
+            "bind-pages",
+            10,
+        );
+        let mut recorded = Vec::new();
+        for n in 0..19 {
+            recorded.push(check(
+                &mut fixture,
+                &work,
+                &format!("check-{n}"),
+                VerificationKind::Test,
+                VerificationResult::Passed,
+                11 + n,
+                None,
+            ));
+        }
+        let pages = all_pages(&fixture.store, &host, &work, 1);
+        let mut seen = Vec::new();
+        for page in &pages {
+            assert_eq!(page.total, 19);
+            assert_eq!(page.earlier, seen.len());
+            assert_eq!(page.shown, page.rows.len());
+            assert_eq!(page.omitted, 19 - page.earlier - page.shown);
+            assert_eq!(page.continuation.is_some(), page.omitted > 0);
+            assert!(serde_json::to_vec(page).expect("page bytes").len() <= 16 * 1_024);
+            assert_eq!(page.basis, pages[0].basis);
+            seen.extend(page.rows.iter().map(|row| row.record.clone()));
+        }
+        assert_eq!(seen, recorded);
+        assert_eq!(
+            pages.iter().map(|page| page.shown).collect::<Vec<_>>(),
+            vec![8, 8, 3]
+        );
+        // Each criterion has its own continuation, even over the same candidates.
+        let next = pages[0].continuation.clone().expect("a second page");
+        assert_eq!(cursor_of(&next)["criterion"], 1);
+        assert_eq!(
+            cursor_of(&next)["last_record"],
+            serde_json::json!(recorded[7])
+        );
+        assert_eq!(
+            refused(read_at(
+                &fixture.store,
+                &host,
+                &work,
+                pages[0].basis.run_cut,
+                2,
+                Some(&next)
+            )),
+            Refusal::CursorBasisMismatch
+        );
+    }
+
+    // Each way the item, run, cut, criterion or continuation can fail to hold
+    // refuses with its own typed reason. A check appended after the cut refuses
+    // even a first page at that cut, an append on another item does not move
+    // this basis, and no read writes anything.
+    #[test]
+    fn a_read_refuses_what_does_not_hold_and_writes_nothing() {
+        let mut fixture = fixture("project-verification-read-refusals");
+        let claim = fixture.claim.clone();
+        let host = HostSession::bind(&mut fixture.store, &fixture.work.clone(), &claim, 5);
+        let work = fixture.work.clone();
+        let work = bind(
+            &mut fixture,
+            &work,
+            criteria(3),
+            vec![
+                bound(1, VerificationKind::Test),
+                bound(2, VerificationKind::Lint),
+            ],
+            "bind-refusals",
+            10,
+        );
+        let mut recorded = Vec::new();
+        for n in 0..10 {
+            recorded.push(check(
+                &mut fixture,
+                &work,
+                &format!("refusal-{n}"),
+                VerificationKind::Test,
+                VerificationResult::Passed,
+                11 + n,
+                None,
+            ));
+        }
+        let neighbour = fixture
+            .store
+            .create_work(
+                &root_request("project-verification-read-refusals", "create-neighbour", 30),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("neighbour");
+        let neighbour_claim = super::claim(
+            &mut fixture.store,
+            &neighbour,
+            "neighbour",
+            "claim-neighbour",
+            31,
+            3_600,
+        );
+        let foreign = fixture
+            .store
+            .create_work(
+                &root_request("project-verification-read-elsewhere", "create-foreign", 32),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("foreign");
+        let foreign = super::claim(
+            &mut fixture.store,
+            &foreign,
+            "foreigner",
+            "claim-foreign",
+            33,
+            3_600,
+        );
+        let foreign_work = fixture
+            .store
+            .get_work_item(foreign.work_id)
+            .expect("foreign item");
+
+        let before = database_rows(&fixture.store);
+        let head = cut(&fixture.store, &work);
+        let page = first(&fixture.store, &host, &work, 1);
+        let next = page.continuation.clone().expect("a second page");
+        let second = read_at(&fixture.store, &host, &work, head, 1, Some(&next)).expect("page two");
+        assert_eq!(second.earlier, 8);
+        assert_eq!(second.rows.len(), 2);
+
+        let mut stale = work.clone();
+        stale.revision -= 1;
+        assert_eq!(
+            refused(read_at(&fixture.store, &host, &stale, head, 1, None)),
+            Refusal::WrongRevision
+        );
+        let mut unknown = work.clone();
+        unknown.work_id = WorkId::new();
+        assert_eq!(
+            refused(read_at(&fixture.store, &host, &unknown, head, 1, None)),
+            Refusal::UnknownWork
+        );
+        assert_eq!(
+            refused(read_with(
+                &fixture.store,
+                &host,
+                &foreign_work,
+                foreign.run_id,
+                head,
+                1,
+                None
+            )),
+            Refusal::WrongProject
+        );
+        for run in [WorkRunId::new(), neighbour_claim.run_id] {
+            assert_eq!(
+                refused(read_with(&fixture.store, &host, &work, run, head, 1, None)),
+                Refusal::WrongRun
+            );
+        }
+        for criterion in [0, 4] {
+            assert_eq!(
+                refused(read_at(&fixture.store, &host, &work, head, criterion, None)),
+                Refusal::InvalidCriterion,
+                "criterion {criterion}"
+            );
+        }
+        for wrong_cut in [head - 1, head + 5] {
+            assert_eq!(
+                refused(read_at(&fixture.store, &host, &work, wrong_cut, 1, None)),
+                Refusal::StaleCut,
+                "cut {wrong_cut}"
+            );
+        }
+
+        // Continuations: garbage, a binding read's token and every forged
+        // boundary are refused as invalid; one made for another basis,
+        // criterion or requirement is a mismatch.
+        let pinned = cursor_of(&next);
+        let binding_token = forged(
+            "abr1-",
+            &serde_json::json!({
+                "project_id": work.project_id,
+                "work_id": work.work_id,
+                "work_revision": work.revision,
+                "run_id": claim.run_id,
+                "run_cut": head,
+                "total": 3,
+                "through": 1,
+            }),
+        );
+        for garbage in [
+            String::new(),
+            "avr1-".into(),
+            "avr1-zz".into(),
+            "avr1-0".into(),
+            next.to_uppercase(),
+            binding_token,
+        ] {
+            assert_eq!(
+                refused(read_at(
+                    &fixture.store,
+                    &host,
+                    &work,
+                    head,
+                    1,
+                    Some(&garbage)
+                )),
+                Refusal::InvalidCursor,
+                "{garbage:?}"
+            );
+        }
+        let altered = |key: &str, value: serde_json::Value| {
+            let mut cursor = pinned.clone();
+            cursor[key] = value;
+            forged("avr1-", &cursor)
+        };
+        assert_eq!(
+            read_at(
+                &fixture.store,
+                &host,
+                &work,
+                head,
+                1,
+                Some(&forged("avr1-", &pinned))
+            )
+            .expect("a reconstructed boundary resumes")
+            .rows,
+            second.rows
+        );
+        for (key, value) in [
+            ("last_record", serde_json::json!(recorded[6])),
+            (
+                "last_position",
+                serde_json::json!(pinned["last_position"].as_i64().expect("position") - 1),
+            ),
+            ("through", serde_json::json!(7)),
+            ("total", serde_json::json!(11)),
+            ("fresh", serde_json::json!(true)),
+        ] {
+            assert_eq!(
+                refused(read_at(
+                    &fixture.store,
+                    &host,
+                    &work,
+                    head,
+                    1,
+                    Some(&altered(key, value))
+                )),
+                Refusal::InvalidCursor,
+                "{key}"
+            );
+        }
+        for (key, value) in [
+            ("criterion", serde_json::json!(2)),
+            ("run_cut", serde_json::json!(head - 1)),
+            ("project_id", serde_json::json!("project-elsewhere")),
+            ("requirement", serde_json::json!({ "check_kind": "lint" })),
+        ] {
+            assert_eq!(
+                refused(read_at(
+                    &fixture.store,
+                    &host,
+                    &work,
+                    head,
+                    1,
+                    Some(&altered(key, value))
+                )),
+                Refusal::CursorBasisMismatch,
+                "{key}"
+            );
+        }
+        assert_eq!(
+            refused(read_at(&fixture.store, &host, &stale, head, 1, Some(&next))),
+            Refusal::CursorBasisMismatch
+        );
+        let mut wrong_routing = host.routing_token.clone();
+        wrong_routing.push('x');
+        let credential = fixture.store.read_acceptance_verifications(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &wrong_routing,
+            &VerificationReadRequest {
+                work_id: work.work_id,
+                expected_work_revision: work.revision,
+                run_id: claim.run_id,
+                run_cut: head,
+                criterion: 1,
+                after: None,
+            },
+        );
+        assert!(
+            matches!(
+                credential,
+                Err(ref error)
+                    if !matches!(error, StoreError::AcceptanceVerificationReadRefused { .. })
+            ),
+            "{credential:?}"
+        );
+        assert_eq!(database_rows(&fixture.store), before, "a read wrote");
+
+        // Another item's append leaves this basis whole.
+        evidence(
+            &mut fixture.store,
+            &neighbour,
+            &neighbour_claim,
+            "neighbour",
+            "neighbour-note",
+            40,
+        );
+        read_at(&fixture.store, &host, &work, head, 1, Some(&next))
+            .expect("an unrelated append keeps the cut");
+        // A check after the cut refuses the first page at that cut as well as the
+        // continuation; reading again at the new head counts it.
+        let late = check(
+            &mut fixture,
+            &work,
+            "after-the-cut",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            41,
+            None,
+        );
+        assert_eq!(
+            refused(read_at(&fixture.store, &host, &work, head, 1, None)),
+            Refusal::StaleCut
+        );
+        assert_eq!(
+            refused(read_at(&fixture.store, &host, &work, head, 1, Some(&next))),
+            Refusal::StaleCut
+        );
+        let fresh = all_pages(&fixture.store, &host, &work, 1);
+        assert!(fresh[0].basis.run_cut > head);
+        assert_eq!(fresh[0].total, 11);
+        assert_eq!(
+            fresh
+                .last()
+                .and_then(|page| page.rows.last())
+                .map(|row| &row.record),
+            Some(&late)
+        );
+    }
+
+    /// The records one damage case may break: the candidate, its producer and
+    /// environment, and the root execution they name.
+    struct Damaged {
+        verification: ObjectId,
+        producer: ObjectId,
+        environment: ObjectId,
+        root: String,
+    }
+
+    /// One damage case: the SQL that breaks a record of `Damaged`.
+    type Damage = dyn Fn(&Damaged) -> String;
+
+    /// A store where the SQL `damage` returns broke one record the read
+    /// relies on, read for the bound criterion at the cut before the damage.
+    fn read_damaged(
+        project: &str,
+        damage: impl Fn(&Damaged) -> String,
+    ) -> Result<AcceptanceVerificationPage, StoreError> {
+        let mut fixture = fixture(project);
+        let claim = fixture.claim.clone();
+        let host = HostSession::bind(&mut fixture.store, &fixture.work.clone(), &claim, 5);
+        let work = fixture.work.clone();
+        let work = bind(
+            &mut fixture,
+            &work,
+            criteria(1),
+            vec![bound(1, VerificationKind::Test)],
+            "bind-damaged",
+            10,
+        );
+        let verification = check(
+            &mut fixture,
+            &work,
+            "damaged",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            11,
+            None,
+        );
+        let record = stored(&fixture.store, &verification);
+        let damaged = Damaged {
+            verification,
+            producer: record.producer_observation,
+            environment: record.environment.expect("the check's environment"),
+            root: serde_json::to_value(record.binding.root_execution_id)
+                .expect("root id")
+                .as_str()
+                .expect("root id text")
+                .to_owned(),
+        };
+        let head = cut(&fixture.store, &work);
+        read_at(&fixture.store, &host, &work, head, 1, None).expect("the undamaged read");
+        fixture
+            .store
+            .connection
+            .execute_batch(&format!("PRAGMA foreign_keys = OFF; {}", damage(&damaged)))
+            .expect("damage the store");
+        read_at(&fixture.store, &host, &work, head, 1, None)
+    }
+
+    // A candidate the run's records do not fully vouch for is a damaged store,
+    // never a refusal or a shorter list: a verification without its feed
+    // entry or projection row or disagreeing with its projection; a producer
+    // without its feed entry, recorded as another kind, at the feed's start
+    // or after its verification; and a verification and producer that agree
+    // with each other and their environment but name another root execution.
+    #[test]
+    fn a_damaged_candidate_is_an_error() {
+        let cases: [(&str, &Damage); 8] = [
+            ("unfed", &|d| {
+                format!(
+                    "DELETE FROM work_feed_entries WHERE object_id = '{}'",
+                    d.verification
+                )
+            }),
+            ("unprojected", &|d| {
+                format!(
+                    "DELETE FROM work_run_evidence WHERE evidence_id = '{}'",
+                    d.verification
+                )
+            }),
+            ("projection", &|d| {
+                format!(
+                    "UPDATE work_run_evidence SET verification_result = 'failed' WHERE evidence_id = '{}'",
+                    d.verification
+                )
+            }),
+            ("producer-unfed", &|d| {
+                format!(
+                    "DELETE FROM work_feed_entries WHERE object_id = '{}'",
+                    d.producer
+                )
+            }),
+            ("producer-kind", &|d| {
+                format!(
+                    "UPDATE work_feed_entries SET object_kind = 'work_evidence' WHERE object_id = '{}'",
+                    d.producer
+                )
+            }),
+            ("producer-start", &|d| {
+                format!(
+                    "UPDATE work_feed_entries SET position = 0 WHERE object_id = '{}'",
+                    d.producer
+                )
+            }),
+            ("producer-after", &|d| {
+                format!(
+                    "UPDATE work_feed_entries SET position = position + 1000 WHERE object_id = '{}'",
+                    d.producer
+                )
+            }),
+            ("root", &|d| {
+                format!(
+                    "UPDATE objects
+                     SET canonical_json = CAST(replace(CAST(canonical_json AS TEXT), '{root}', '{other}') AS BLOB)
+                     WHERE object_id IN ('{}', '{}', '{}')",
+                    d.verification,
+                    d.producer,
+                    d.environment,
+                    root = d.root,
+                    other = uuid::Uuid::new_v4(),
+                )
+            }),
+        ];
+        for (case, damage) in cases {
+            let result = read_damaged(&format!("project-verification-read-{case}"), damage);
+            assert!(
+                matches!(result, Err(StoreError::InvalidWorkProjection(_))),
+                "{case}: {result:?}"
+            );
+        }
+    }
+}

@@ -1178,6 +1178,100 @@ again, and reads from the first page each time, or once the run is quiet.
 Wrong credentials keep their codes, and a record that fails its canonical
 association returns a storage error.
 
+### Listing the candidate verifications of a criterion
+
+Beside the binding read, a host lists, for one criterion of an item on its
+active run, every host verification of the criterion's bound kind that the
+run recorded up to the binding read's cut, with the host-private
+`acceptance_verification_read` operation. The binding read names the check
+that closed an obligation; this read lists every check the consumer may
+weigh, and judging which of them applies is the consumer's.
+
+Its request carries `routing_token`, the full `work_id`, the
+`expected_work_revision`, the full `run_id`, the `run_cut`, the one-based
+`criterion` and, for a later page, `after`. The project is the bound
+session's; a request cannot name a project, a kind or a fingerprint, and any
+other field is refused as `invalid_request`, as is a criterion that is not a
+non-negative integer. Any bound host session of the project may read.
+
+Unlike the binding read, this read never captures a cut: `run_cut` must be
+the run's feed head on the first page and on every continuation, so a host
+reads it at the cut of the binding read it pairs with. Each page reads one
+snapshot and checks, in order: that a continuation is well formed; that it
+was made for this project, item, revision, run, cut and criterion; that the
+item exists,
+belongs to the project and is at the expected revision; that the run is the
+item's active run; that `run_cut` is the run's head; that the criterion is
+one of the item's authored criteria; that a continuation names the
+criterion's current requirement; and that a continuation's boundary is the
+candidate at its rank in this snapshot. A page answers with:
+
+- `basis`: `project_id`, `work_id`, `work_revision`, `run_id` and
+  `run_cut`, as the binding read reports them;
+- `criterion`, and its bound `requirement`, `null` for an unbound criterion;
+- `total`, every candidate at the cut; `earlier`, `shown` and `omitted`, the
+  candidates on earlier pages, on this page and after it;
+- `rows`: complete candidates in ascending run-feed position, at most eight
+  to a page and at most 16 KiB of result;
+- `continuation`: `null` when no candidate remains, otherwise a token for
+  the next page.
+
+A candidate is every verification on the run's feed at or before the cut
+whose `check_kind` is the requirement's: passed, failed and indeterminate;
+any fingerprint, including one other than a fingerprint the requirement
+pins; any source revision; and checks recorded before the criterion's latest
+obligation or at an older revision of the item on this run. Two checks with
+equal fingerprints are two candidates. Criteria of one kind list the same
+candidates, each with its own continuation. Each row has the shape of the
+binding read's satisfying `verification`: its full `record` id, `position`,
+`check_kind`, `check_fingerprint`, `result` and complete `source_basis`,
+and its `producer` observation's `record`, `position` and `outcome`, with
+the producer before the verification and both at or before the cut.
+
+An unbound criterion answers with a `null` requirement and zero counts, and
+a bound one without candidates with its requirement and zero counts.
+Neither is a pass. The read computes no freshness, applicability, source
+currency or satisfaction: it lists records as stored.
+
+The run's feed is what the read enumerates, so a damaged store returns a
+storage error, never a shorter list. That covers a verification the run's
+evidence projection holds without its feed entry, one without its
+projection row or disagreeing with it or with its producer, and a
+verification or producer naming another project, item, root execution or
+run. It covers a producer whose feed entry is missing, records another kind
+of object, or does not lie after the feed's start and before its
+verification.
+
+A continuation is a validated position, not a capability: it is checked
+against the current snapshot, and a token that passes every check is a
+read under the current credentials. It carries the basis, the criterion,
+the requirement, the count and the last candidate returned. The read
+writes nothing. Each refusal has its own code, and none is an empty page:
+
+- `acceptance_verification_read_unknown_work`: the store holds no such item;
+- `acceptance_verification_read_wrong_project`: the item is another
+  project's;
+- `acceptance_verification_read_wrong_revision`: the item is at another
+  revision;
+- `acceptance_verification_read_wrong_run`: the run is not the item's active
+  run;
+- `acceptance_verification_read_stale_cut`: the run's feed is not at
+  `run_cut`, on a first page or a continuation; read the bindings and the
+  candidates again;
+- `acceptance_verification_read_invalid_criterion`: the criterion is not one
+  of the item's authored criteria;
+- `acceptance_verification_read_invalid_cursor`: the continuation is not a
+  position this read can resume at, including one from the binding read or
+  one whose boundary or count does not match the snapshot;
+- `acceptance_verification_read_cursor_basis_mismatch`: the continuation was
+  made for another item, revision, run, cut, criterion or requirement;
+- `acceptance_verification_read_page_too_large`: one complete candidate does
+  not fit a page; rows are never clipped.
+
+Any append to the run moves its head, so a host paging a run that is still
+recording may be refused `stale_cut` again and again; an append to another
+item does not. Wrong credentials keep their codes.
+
 ### Evaluation unit and re-evaluation
 
 The evaluation unit is **one item's run at one work revision and its judged

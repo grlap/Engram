@@ -1360,6 +1360,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::NamedRootBindingRefused(_)
         | StoreError::NamedRootReadRefused(_)
         | StoreError::AcceptanceBindingReadRefused { .. }
+        | StoreError::AcceptanceVerificationReadRefused { .. }
         | StoreError::HostPathIdentityUnresolved
         | StoreError::ControlSessionNotBound(_)
         | StoreError::ControlSessionTokenMismatch(_)

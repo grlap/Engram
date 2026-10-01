@@ -2858,7 +2858,7 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
   }
 });
 
-test("a host reads what satisfied each bound criterion in the closed page shape", async (t) => {
+test("a host reads what satisfied each bound criterion and lists its candidates in closed page shapes", async (t) => {
   const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
   assert.equal(built.status, 0, built.stderr);
   const engramHome = fixtureHome("engram-binding-read-", t);
@@ -2941,6 +2941,34 @@ test("a host reads what satisfied each bound criterion in the closed page shape"
     const caller = await client.request({ ...request, run_cut: page.basis.run_cut });
     assert.equal(caller.error.code, "invalid_request", JSON.stringify(caller));
     assert.match(caller.error.message, /run_cut/u);
+
+    // The sibling read lists, at the same cut, every check of the bound kind.
+    const candidates = { operation: "acceptance_verification_read", routing_token: control.routing_token,
+      work_id: binding.work_id, expected_work_revision: revision, run_id: binding.run_id,
+      run_cut: page.basis.run_cut, criterion: 1 };
+    const listed = ok(await client.request(candidates));
+    assert.deepEqual(Object.keys(listed).sort(), ["basis", "continuation", "criterion", "earlier", "omitted",
+      "requirement", "rows", "shown", "total"]);
+    assert.deepEqual(listed.basis, page.basis);
+    assert.equal(listed.criterion, 1);
+    assert.deepEqual(listed.requirement, { check_kind: "test" });
+    assert.deepEqual([listed.total, listed.earlier, listed.shown, listed.omitted, listed.continuation],
+      [1, 0, 1, 0, null]);
+    assert.deepEqual(listed.rows, [satisfaction.verification]);
+    // An unbound criterion lists nothing, which is not a pass.
+    const unbound = ok(await client.request({ ...candidates, criterion: 2 }));
+    assert.deepEqual([unbound.requirement, unbound.total, unbound.rows, unbound.continuation], [null, 0, [], null]);
+    for (const [change, code] of [
+      [{ criterion: 3 }, "acceptance_verification_read_invalid_criterion"],
+      [{ run_cut: page.basis.run_cut + 1 }, "acceptance_verification_read_stale_cut"],
+      [{ after: "abr1-zz" }, "acceptance_verification_read_invalid_cursor"],
+      [{ expected_work_revision: revision + 1 }, "acceptance_verification_read_wrong_revision"],
+    ]) {
+      const refused = await client.request({ ...candidates, ...change });
+      assert.equal(refused.error.code, code, JSON.stringify(refused));
+    }
+    const chosenKind = await client.request({ ...candidates, check_kind: "lint" });
+    assert.equal(chosenKind.error.code, "invalid_request", JSON.stringify(chosenKind));
   } finally {
     if (client) await client.close();
     removeFixtureHomes(engramHome);

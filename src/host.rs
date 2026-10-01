@@ -76,6 +76,20 @@ pub enum HostControlRequest {
         #[serde(default)]
         after: Option<String>,
     },
+    /// Reads, for one criterion of an item on its active run, every host
+    /// verification of the criterion's bound kind on that run up to
+    /// `run_cut`, which must be the run's feed head; `after` continues at
+    /// that cut. It computes no freshness and writes nothing.
+    AcceptanceVerificationRead {
+        routing_token: String,
+        work_id: crate::WorkId,
+        expected_work_revision: i64,
+        run_id: WorkRunId,
+        run_cut: i64,
+        criterion: usize,
+        #[serde(default)]
+        after: Option<String>,
+    },
     TurnEvaluate {
         routing_token: String,
         idempotency_key: String,
@@ -120,6 +134,7 @@ impl HostControlRequest {
             Self::NamedRootBind { .. } => "named_root_bind",
             Self::NamedRootRead { .. } => "named_root_read",
             Self::AcceptanceBindingRead { .. } => "acceptance_binding_read",
+            Self::AcceptanceVerificationRead { .. } => "acceptance_verification_read",
             Self::TurnEvaluate { .. } => "turn_evaluate",
             Self::TurnBegin { .. } => "turn_begin",
             Self::TurnCheckpoint { .. } => "turn_checkpoint",
@@ -333,6 +348,29 @@ impl HostControlServer {
                     work_id,
                     expected_work_revision,
                     run_id,
+                    after: after.as_deref(),
+                },
+            )?)
+            .map_err(StoreError::Json),
+            HostControlRequest::AcceptanceVerificationRead {
+                routing_token,
+                work_id,
+                expected_work_revision,
+                run_id,
+                run_cut,
+                criterion,
+                after,
+            } => serde_json::to_value(self.store.read_acceptance_verifications(
+                &self.project_id,
+                &self.session_id,
+                &self.connection_token,
+                &routing_token,
+                &crate::storage::VerificationReadRequest {
+                    work_id,
+                    expected_work_revision,
+                    run_id,
+                    run_cut,
+                    criterion,
                     after: after.as_deref(),
                 },
             )?)
@@ -668,6 +706,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",
         StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
         StoreError::AcceptanceBindingReadRefused { refusal, .. } => refusal.code(),
+        StoreError::AcceptanceVerificationReadRefused { refusal, .. } => refusal.code(),
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
         StoreError::ControlSessionTokenMismatch(_) => "control_session_token_mismatch",
@@ -923,6 +962,95 @@ mod tests {
             codes
                 .iter()
                 .all(|code| code.starts_with("acceptance_binding_read_"))
+        );
+    }
+
+    #[test]
+    fn acceptance_verification_read_frame_names_its_cut_and_criterion_strictly() {
+        let frame = serde_json::json!({
+            "operation": "acceptance_verification_read",
+            "routing_token": "routing-token",
+            "work_id": uuid::Uuid::new_v4(),
+            "expected_work_revision": 3,
+            "run_id": uuid::Uuid::new_v4(),
+            "run_cut": 12,
+            "criterion": 2,
+        });
+        let parsed = parse_host_control_request(&serde_json::to_vec(&frame).expect("frame"))
+            .expect("a first page names no continuation");
+        assert_eq!(parsed.operation(), "acceptance_verification_read");
+        assert!(matches!(
+            parsed,
+            HostControlRequest::AcceptanceVerificationRead {
+                expected_work_revision: 3,
+                run_cut: 12,
+                criterion: 2,
+                after: None,
+                ..
+            }
+        ));
+        let mut continued = frame.clone();
+        continued["after"] = serde_json::json!("avr1-00");
+        assert!(matches!(
+            parse_host_control_request(&serde_json::to_vec(&continued).expect("frame"))
+                .expect("a continuation"),
+            HostControlRequest::AcceptanceVerificationRead { after: Some(ref token), .. }
+                if token == "avr1-00"
+        ));
+        // The cut and criterion are required; a negative criterion, a
+        // caller-chosen kind and a caller-chosen project are wire errors.
+        let mut negative = frame.clone();
+        negative["criterion"] = serde_json::json!(-1);
+        let error = parse_host_control_request(&serde_json::to_vec(&negative).expect("frame"))
+            .expect_err("a negative criterion");
+        assert!(error.contains("expected usize"), "{error}");
+        for field in ["check_kind", "project_id"] {
+            let mut altered = frame.clone();
+            altered[field] = serde_json::json!("caller-chosen");
+            let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
+                .expect_err("an unknown field");
+            assert!(error.contains(field), "{field}: {error}");
+        }
+        for missing in ["run_cut", "criterion"] {
+            let mut altered = frame.clone();
+            altered
+                .as_object_mut()
+                .expect("frame object")
+                .remove(missing);
+            let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
+                .expect_err("a frame without its cut or criterion");
+            assert!(error.contains(missing), "{missing}: {error}");
+        }
+    }
+
+    #[test]
+    fn acceptance_verification_read_refusals_answer_with_distinct_codes() {
+        use crate::domain::AcceptanceVerificationReadRefusal as Refusal;
+        let refusals = [
+            Refusal::UnknownWork,
+            Refusal::WrongProject,
+            Refusal::WrongRevision,
+            Refusal::WrongRun,
+            Refusal::StaleCut,
+            Refusal::InvalidCriterion,
+            Refusal::InvalidCursor,
+            Refusal::CursorBasisMismatch,
+            Refusal::PageTooLarge,
+        ];
+        let codes: std::collections::BTreeSet<&str> = refusals
+            .iter()
+            .map(|refusal| {
+                store_error_code(&StoreError::AcceptanceVerificationReadRefused {
+                    refusal: *refusal,
+                    reason: "reason".into(),
+                })
+            })
+            .collect();
+        assert_eq!(codes.len(), refusals.len());
+        assert!(
+            codes
+                .iter()
+                .all(|code| code.starts_with("acceptance_verification_read_"))
         );
     }
 
