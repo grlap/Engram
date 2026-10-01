@@ -186,6 +186,58 @@ fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() 
     }
 }
 
+// Criteria keep the order their author typed, so a revision that only
+// reorders them changes the acceptance list and history names it.
+#[test]
+fn a_revision_that_only_reorders_criteria_lists_acceptance_in_history() {
+    let directory = crate::test_support::temp_home().expect("temp");
+    let verbs = AgentVerbs::new(
+        directory.path().join("work.sqlite3"),
+        ProjectId("acceptance-reorder".into()),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let added = verbs
+        .add(
+            AddInput {
+                title: "Reordered item".into(),
+                acceptance: vec!["Write the docs".into(), "Run the tests".into()],
+                ..AddInput::default()
+            },
+            at(0),
+        )
+        .expect("add");
+    let work_ref = added.value["work"]["short_ref"]
+        .as_str()
+        .expect("ref")
+        .to_owned();
+    let reordered = vec!["Run the tests".to_owned(), "Write the docs".to_owned()];
+    verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(work_ref.clone()),
+                action: revise(Some(reordered.clone()), None),
+            },
+            at(1),
+        )
+        .expect("reorder the criteria");
+    let shown = verbs.show(&work_ref, at(2)).expect("show");
+    assert_eq!(
+        shown.value["status"]["work"]["acceptance"],
+        json!(reordered)
+    );
+    let revisions: Vec<&str> = shown.value["history"]["items"]
+        .as_array()
+        .expect("history")
+        .iter()
+        .filter(|row| row["kind"] == "revised")
+        .map(|row| row["summary"].as_str().expect("summary"))
+        .collect();
+    assert_eq!(revisions.len(), 1, "{revisions:?}");
+    assert!(revisions[0].starts_with("acceptance:"), "{revisions:?}");
+}
+
 #[test]
 #[allow(
     clippy::too_many_lines,

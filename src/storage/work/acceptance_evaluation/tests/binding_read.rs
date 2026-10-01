@@ -1869,4 +1869,113 @@ mod candidates {
             );
         }
     }
+
+    // Criteria keep the order their author typed, so a list that is not in
+    // alphabetical order, reordered, moves its bound criterion: both host
+    // reads find it at its new position with its requirement and the
+    // obligation the reorder opened, the old position reads unbound, and the
+    // revision before the reorder is refused by both.
+    #[test]
+    fn both_reads_follow_a_bound_criterion_across_a_reorder() {
+        let mut fixture = fixture("project-reorder-reads");
+        let claim = fixture.claim.clone();
+        let host = HostSession::bind(&mut fixture.store, &fixture.work.clone(), &claim, 5);
+        let work = fixture.work.clone();
+        let typed = vec![
+            "zeta: the tests pass".to_owned(),
+            "alpha: the docs are written".to_owned(),
+            "mid: the changelog names it".to_owned(),
+        ];
+        let work = bind(
+            &mut fixture,
+            &work,
+            typed.clone(),
+            vec![bound(1, VerificationKind::Test)],
+            "bind-before-reorder",
+            10,
+        );
+        assert_eq!(work.acceptance, typed);
+        let passed = check(
+            &mut fixture,
+            &work,
+            "before-reorder",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            11,
+            None,
+        );
+        let before = page(&fixture.store, &host, &work);
+        let original = row(&before, 1)
+            .binding
+            .as_ref()
+            .and_then(|binding| binding.obligation.as_ref())
+            .expect("the original obligation")
+            .clone();
+        assert_eq!(original.state, WorkObligationState::Satisfied);
+        let candidates = first(&fixture.store, &host, &work, 1);
+        assert_eq!(candidates.criterion, 1);
+        assert_eq!(
+            candidates.requirement,
+            Some(bound(1, VerificationKind::Test).requirement)
+        );
+
+        let reordered_list = vec![
+            "mid: the changelog names it".to_owned(),
+            "zeta: the tests pass".to_owned(),
+            "alpha: the docs are written".to_owned(),
+        ];
+        let reordered = bind(
+            &mut fixture,
+            &work,
+            reordered_list.clone(),
+            vec![bound(2, VerificationKind::Test)],
+            "reorder",
+            12,
+        );
+        assert_eq!(reordered.acceptance, reordered_list);
+        assert_eq!(reordered.revision, work.revision + 1);
+
+        let after = page(&fixture.store, &host, &reordered);
+        assert_eq!(after.basis.work_revision, reordered.revision);
+        assert_eq!(row(&after, 1).binding, None);
+        assert_eq!(row(&after, 3).binding, None);
+        let moved = row(&after, 2).binding.as_ref().expect("the moved binding");
+        assert_eq!(
+            moved.requirement,
+            bound(2, VerificationKind::Test).requirement
+        );
+        let reopened = moved.obligation.as_ref().expect("the reopened obligation");
+        assert_ne!(reopened.obligation_id, original.obligation_id);
+        assert_eq!(reopened.state, WorkObligationState::Open);
+        assert_eq!(reopened.work_revision, reordered.revision);
+        assert_eq!(reopened.rule, crate::control::acceptance_binding_rule(2));
+        assert_eq!(reopened.resolution, None);
+
+        let moved_candidates = first(&fixture.store, &host, &reordered, 2);
+        assert_eq!(moved_candidates.basis.work_revision, reordered.revision);
+        assert_eq!(moved_candidates.criterion, 2);
+        assert_eq!(
+            moved_candidates.requirement,
+            Some(bound(2, VerificationKind::Test).requirement)
+        );
+        let recorded: Vec<&ObjectId> = moved_candidates
+            .rows
+            .iter()
+            .map(|row| &row.record)
+            .collect();
+        assert_eq!(recorded, vec![&passed]);
+        let vacated = first(&fixture.store, &host, &reordered, 1);
+        assert_eq!(vacated.requirement, None);
+        assert!(vacated.rows.is_empty(), "{vacated:?}");
+
+        assert_eq!(
+            super::refused(read(&fixture.store, &host, &work, None)),
+            crate::domain::AcceptanceBindingReadRefusal::WrongRevision
+        );
+        let head = cut(&fixture.store, &reordered);
+        assert_eq!(
+            refused(read_at(&fixture.store, &host, &work, head, 2, None)),
+            Refusal::WrongRevision
+        );
+    }
 }
