@@ -496,3 +496,12 @@ After clean acceptance, the implementer records the delivered outcome and uses
 `done` on owned implementation items when their acceptance and obligations are
 satisfied. Review completion does not authorize Git or external actions. The
 `/review-code` children remain read-only, non-nesting leaves throughout.
+
+## 8. Record the landing
+
+When `done` records a landing, copy each value from a command's output; never
+type it. The landed commit comes from `git rev-parse HEAD` run after the push,
+never typed or completed from a short hash. The push time comes from a UTC
+clock read in the same command as the push. The installed build is the
+`build_fingerprint` that `engram readiness --json` reports when run with the
+installed binary.

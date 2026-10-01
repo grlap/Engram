@@ -583,3 +583,9 @@ outside the agreed scope or authority; reviewer leaves remain read-only.
 Do not commit, push, or sync remotes without explicit authority: Greg's word
 or, for commit, push and install only, the standing approval in AGENTS.md
 "Authority and Git".
+
+When `done` records a landing, copy each value from a command's output; never
+type it: the landed commit from `git rev-parse HEAD` run after the push, never
+completed from a short hash; the push time from a UTC clock read in the same
+command as the push; the installed build from the `build_fingerprint` that
+`engram readiness --json` reports when run with the installed binary.
