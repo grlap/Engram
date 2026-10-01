@@ -1417,9 +1417,14 @@ carries SQL, a path, parameters or a request or response body.
 
 `scripts/mcp-dogfood.test.mjs` runs its servers with the trace on and writes
 every record to its log. It prints a call's record beside its soft-threshold
-timing line when the call is slow, or says why there is none: a late record
-is printed when it arrives, and one that never came reads as unavailable at
-close.
+timing line when the call is slow, or says why there is none. A slow call
+whose record has not arrived yet prints `unavailable (record not yet
+received)` at once, and its record follows when it arrives; one that never
+comes reads `unavailable (no record before close)` when the client closes. A
+record in a state that did not time the whole call (`evicted`, `incomplete`
+or `cancelled`) reads `unavailable (record STATE)` followed by its fields, so
+it never passes for a fast call; only `complete` and `send_failed` records
+are printed as the call's timing.
 
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and

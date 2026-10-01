@@ -653,7 +653,10 @@ test("a slow call's phase line names its record when it arrives, or why it never
     await traced.close();
     // Each slow call's lines end with its own record, whether the record
     // came before the response settled or after it; a record that came after
-    // is preceded by the call reading unavailable at its threshold.
+    // is preceded by the call reading unavailable at its threshold. No other
+    // line appears: not one for an id that was never called, and not a
+    // second record for the same id.
+    let expected = 0;
     for (let index = 0; index < 3; index++) {
       const prefix = `MCP phase trace: id=${first + index} `;
       const lines = traced.phaseNotices.filter((line) => line.startsWith(prefix));
@@ -662,7 +665,9 @@ test("a slow call's phase line names its record when it arrives, or why it never
       const record = JSON.parse(lines.at(-1).slice(prefix.length));
       assert.equal(record.id, first + index);
       assert.equal(record.state, "complete");
+      expected += lines.length;
     }
+    assert.equal(traced.phaseNotices.length, expected, traced.phaseNotices.join("\n"));
 
     const untraced = new McpClient(engramHome, "notice-off", undefined, "notice-off", [], { phaseTrace: false, softTimingMs: 0 });
     clients.push(untraced);
