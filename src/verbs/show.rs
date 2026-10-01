@@ -746,6 +746,10 @@ pub(super) struct ShowReceiptValue {
     /// Explicit read-concurrency token, not read-side state or authority.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_basis: Option<i64>,
+    /// The open item's only criterion is still its title placeholder,
+    /// `"<title> is done"`, which no evaluator can judge.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) acceptance_placeholder: bool,
     /// Run-feed position an evaluator passes back as `--evidence-basis`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) evidence_basis: Option<i64>,
@@ -1468,6 +1472,7 @@ pub(super) fn show_receipt_value(
         }),
         acceptance_basis: (work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0)
             .then_some(work.revision),
+        acceptance_placeholder: view.acceptance_placeholder.is_some(),
         evidence_basis: view.evidence_basis,
         acceptance_evaluation: view.acceptance_evaluation.as_ref().map(|status| {
             show_evaluation(

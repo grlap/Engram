@@ -436,16 +436,27 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
             object.insert("evaluation".into(), evaluation);
         }
     }
+    let mut value = json!({ "work": work });
+    if contract.acceptance_placeholder.is_some()
+        && let Some(object) = value.as_object_mut()
+    {
+        object.insert("acceptance_placeholder".into(), json!(true));
+    }
     Receipt::assemble(
         lines,
         Guidance {
-            reminders: Vec::new(),
+            reminders: contract
+                .acceptance_placeholder
+                .as_deref()
+                .map(super::handlers::placeholder_acceptance_reminder)
+                .into_iter()
+                .collect(),
             next: vec![format!(
                 "engram work show {}",
                 super::listing::shell_quote(&contract.short_ref)
             )],
         },
-        json!({ "work": work }),
+        value,
         false,
     )
 }

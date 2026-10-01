@@ -481,7 +481,11 @@ test("add -> claim -> done takes three commands and at most three fields", (t) =
 
     const claimed = agent("claim", ref);
     assert.match(claimed, /^claimed w-[0-9a-f]{12} "Ship the parity test" \(held by you until /u);
-    assert.match(claimed, /reminders:\n\s+- you hold this item but have not noted progress yet/u);
+    // Added without criteria, so the title-placeholder status leads.
+    assert.match(
+      claimed,
+      /reminders:\n\s+- acceptance is only the title placeholder \('Ship the parity test is done'\); set real criteria by revising acceptance with update\n\s+- you hold this item but have not noted progress yet/u,
+    );
     assert.match(claimed, /\nnext:\n(?:.*\n)*\s+engram work done w-/u);
 
     const done = agent("done", "Parity test shipped");

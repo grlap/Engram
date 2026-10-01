@@ -606,6 +606,12 @@ pub struct WorkFocusView {
     /// Whether this open item needs an evaluation before completion.
     #[serde(skip)]
     pub(crate) evaluated_policy: bool,
+    /// The open item's only criterion when it is still the title placeholder
+    /// it was created with, `"<title> is done"`: a sentence no evaluator can
+    /// judge. Observed from the stored list, so it also names a placeholder
+    /// an author typed by hand; agent detail only.
+    #[serde(skip)]
+    pub(crate) acceptance_placeholder: Option<String>,
     /// How many open-obligation advisory rows the safe show renderer retains.
     #[serde(skip)]
     pub(crate) evaluation_obligation_rows_visible: usize,

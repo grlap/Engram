@@ -1524,6 +1524,10 @@ The `add` receipt names defaulted acceptance in both text and JSON reminders:
 which names its field, `set acceptance`. Explicit acceptance produces no such
 reminder; blank criteria are refused. The reminder
 does not duplicate the item title and is included in the final receipt budget.
+Later reads keep the signal: while an open item's only criterion is still its
+creation-title placeholder, `show`, `claim` and `done`'s owed list name it as
+the title placeholder, observed from the stored list (see
+[CLI and MCP](cli-and-mcp.md)).
 `work_update` and `work_handoff` never rebuild this history: their success
 envelopes contain only the operation, compact receipt, one bounded
 `obligation_page`, generic readiness obligations, and `allowed_next`, so

@@ -18,6 +18,9 @@ pub(crate) struct WorkAuthoredContract {
     /// The complete newest acceptance evaluation of an open item under an
     /// evaluated policy: every verdict with its full rationale and citations.
     pub evaluation: Option<WorkAuthoredEvaluation>,
+    /// The open item's only criterion while it is still its creation-title
+    /// placeholder, as ordinary `show` names it.
+    pub acceptance_placeholder: Option<String>,
 }
 
 /// Complete newest evaluation for the `show --full` read.
@@ -338,7 +341,9 @@ impl LocalWorkService {
             } else {
                 None
             };
+            let acceptance_placeholder = super::service::acceptance_placeholder(store, &item)?;
             Ok(WorkAuthoredContract {
+                acceptance_placeholder,
                 short_ref: item.short_ref,
                 revision: item.revision,
                 title: item.title,

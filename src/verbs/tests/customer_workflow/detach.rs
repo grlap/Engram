@@ -39,9 +39,13 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
     let shown = verbs.show(&child, at(5)).expect("show child");
     let command = format!("engram work update {child} --detach \"Continue as independent work\"");
     assert!(shown.text().contains("parent completed"));
+    // The child was added without criteria, so its placeholder status leads.
     assert_eq!(
         shown.value["reminders"],
-        serde_json::json!(["parent completed"])
+        serde_json::json!([
+            "acceptance is only the title placeholder ('Follow-up is done'); set real criteria by revising acceptance with update",
+            "parent completed"
+        ])
     );
     assert_eq!(shown.value["next"][0], command);
     // Reading the child does not steer ambient next away from the completed

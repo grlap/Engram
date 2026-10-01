@@ -54,6 +54,16 @@ impl ArgumentNames {
     }
 }
 
+/// The status `show`, `claim` and `done` give while an item's only criterion
+/// is still its title placeholder: what is observed, since the same sentence
+/// may have been typed by hand. One wording serves CLI and MCP alike.
+pub(super) fn placeholder_acceptance_reminder(placeholder: &str) -> String {
+    format!(
+        "acceptance is only the title placeholder ('{}'); set real criteria by revising acceptance with update",
+        short(placeholder)
+    )
+}
+
 /// `next`: what is ready, what this session holds, and what changed.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct NextInput {
@@ -2081,7 +2091,14 @@ impl AgentVerbs {
             .iter()
             .map(|blocker| short(&blocker.detail))
             .collect::<Vec<_>>();
-        let mut reminders = Vec::new();
+        // First, so a fitter that sheds reminders from the end never reaches it.
+        let mut reminders = view
+            .acceptance_placeholder
+            .as_deref()
+            .filter(|_| matches!(word, "show" | "claim" | "done"))
+            .map(placeholder_acceptance_reminder)
+            .into_iter()
+            .collect::<Vec<_>>();
         if let Some(advisory) = &evaluation_obligations
             && word != "show"
         {

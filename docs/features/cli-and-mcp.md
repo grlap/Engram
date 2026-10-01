@@ -739,6 +739,19 @@ Rules that matter:
   This keeps the signal without repeating the item title; the final receipt
   includes the reminder in its response budget.
   Explicit acceptance suppresses that reminder; blank criteria are refused.
+  Afterwards, while an open item's only criterion is still the placeholder it
+  was created with, `"<title> is done"` with its creation title, and its list
+  has never been revised to other criteria, ordinary `show`, `show --full`,
+  the claim receipt and `done`'s owed list carry one first reminder:
+  `acceptance is only the title placeholder ('<title> is done'); set real
+  criteria by revising acceptance with update`, the same on CLI and MCP, and
+  both `show` reads' JSON says `acceptance_placeholder: true`. It states what
+  the stored list is, so a title rename keeps it and the same sentence typed
+  by hand at creation reads the same. A revision to other criteria drops it
+  for good, even if a later revision restores the sentence; a replacement
+  with the identical text leaves no trace in the store and so keeps it. No
+  evaluator can judge that sentence, so it never changes admission, and
+  budget fitting never sheds it.
   Repeatable `--note TEXT` (MCP `notes: [TEXT, ...]`) records ordered initial
   non-holder observations atomically with creation, at most 16 across the
   complete creation/decomposition batch. Blank or excess notes refuse the

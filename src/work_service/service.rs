@@ -1020,6 +1020,7 @@ impl LocalWorkService {
         } else {
             (None, None)
         };
+        let acceptance_placeholder = acceptance_placeholder(store, &status.work)?;
         let title_stored_bytes = status.work.title.len();
         let title_truncated = matches!(text, FocusText::Full)
             && compact_text(&status.work.title) != status.work.title;
@@ -1044,6 +1045,7 @@ impl LocalWorkService {
                 .map_or(0, |status| status.record.verdicts.len()),
             acceptance_evaluation,
             evaluated_policy,
+            acceptance_placeholder,
             evaluation_obligation_rows_visible,
             evidence_basis,
             acceptance_provenance,
@@ -1268,6 +1270,28 @@ pub(super) fn completed_landing(
         (false, Some(Ok(seal))) => (seal.landing.clone(), None),
         (false, Some(Err(error))) => (None, Some(super::advisory_error_class(error))),
     }
+}
+
+/// The open item's only criterion while it is still the placeholder the item
+/// was created with, `"<creation title> is done"`, and its list has never
+/// been revised to anything else. A title revision keeps it; a revision of
+/// the list to other criteria drops it for good, even if a later revision
+/// restores the sentence. A replacement with the identical text leaves no
+/// trace in the store, so it reads like no revision.
+pub(super) fn acceptance_placeholder(
+    store: &SqliteStore,
+    work: &crate::WorkItem,
+) -> Result<Option<String>, StoreError> {
+    let [criterion] = work.acceptance.as_slice() else {
+        return Ok(None);
+    };
+    // Every placeholder ends so; this keeps real criteria off the store.
+    if work.lifecycle != crate::WorkLifecycle::Open || !criterion.ends_with(" is done") {
+        return Ok(None);
+    }
+    Ok(store
+        .work_creation_placeholder(work.work_id)?
+        .filter(|placeholder| placeholder == criterion))
 }
 
 #[cfg(test)]

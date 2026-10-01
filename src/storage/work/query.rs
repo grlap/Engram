@@ -766,6 +766,60 @@ impl SqliteStore {
         })
     }
 
+    /// The placeholder `"<title> is done"` an item was created with as its
+    /// only criterion, with its creation title, while none of its events
+    /// carries another acceptance list. Events are read without decoding, and
+    /// the history is scanned only for an item created with the placeholder.
+    /// `None` otherwise, and when the first event is not a creation, as for
+    /// restored history.
+    pub(crate) fn work_creation_placeholder(
+        &self,
+        work_id: WorkId,
+    ) -> Result<Option<String>, StoreError> {
+        on_one_snapshot(&self.connection, |connection| {
+            let first = connection
+                .query_row(
+                    "SELECT json_extract(object.canonical_json, '$.transition.kind'),
+                            json_extract(object.canonical_json, '$.work.title'),
+                            json_extract(object.canonical_json, '$.work.acceptance')
+                     FROM work_feed_entries entry
+                     JOIN objects object ON object.object_id = entry.object_id
+                     WHERE entry.feed_kind = 'project' AND entry.object_kind = 'work_event'
+                       AND entry.work_id = ?1
+                     ORDER BY entry.position LIMIT 1",
+                    [work_id.0.to_string()],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let Some((_, title, acceptance)) = first.filter(|(kind, ..)| kind == "created") else {
+                return Ok(None);
+            };
+            let placeholder = format!("{title} is done");
+            let created_with: Vec<String> = serde_json::from_str(&acceptance)?;
+            if created_with != [placeholder.as_str()] {
+                return Ok(None);
+            }
+            let revised = connection.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM work_feed_entries entry
+                     JOIN objects object ON object.object_id = entry.object_id
+                     WHERE entry.feed_kind = 'project' AND entry.object_kind = 'work_event'
+                       AND entry.work_id = ?1
+                       AND json_extract(object.canonical_json, '$.work.acceptance') IS NOT ?2
+                 )",
+                params![work_id.0.to_string(), acceptance],
+                |row| row.get::<_, bool>(0),
+            )?;
+            Ok((!revised).then_some(placeholder))
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn append_test_work_event(&mut self, event: &WorkEvent) -> Result<(), StoreError> {
         let transaction = self.begin_work_mutation()?;
