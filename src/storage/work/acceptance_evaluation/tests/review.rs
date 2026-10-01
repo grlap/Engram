@@ -7,7 +7,7 @@ use crate::domain::{
     OfferWorkHandoffRequest, ReopenWorkRequest,
 };
 
-fn pass_judgment(note: &ObjectId) -> Vec<CriterionVerdictInput> {
+pub(super) fn pass_judgment(note: &ObjectId) -> Vec<CriterionVerdictInput> {
     vec![verdict(
         1,
         AcceptanceVerdict::Pass,
@@ -17,7 +17,7 @@ fn pass_judgment(note: &ObjectId) -> Vec<CriterionVerdictInput> {
 }
 
 /// Same-run handoff from the live holder to `to`; returns the new claim.
-fn handoff(
+pub(super) fn handoff(
     store: &mut SqliteStore,
     work: &WorkItem,
     from: &WorkClaim,

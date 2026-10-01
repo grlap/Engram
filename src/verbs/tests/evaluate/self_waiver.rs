@@ -417,6 +417,61 @@ fn a_sub_agent_evaluation_counts_only_from_its_own_child_session() {
     );
 }
 
+// A stored record without its evaluator's session, which admission never
+// writes, reads stale identity at done. The reminder gives the remedy a
+// missing evaluation of the task gets: a task marked for same-session goes
+// back to its holder, not to an independent evaluator the project refuses.
+#[test]
+fn a_record_without_its_evaluator_is_stale_identity_with_the_tasks_remedy() {
+    let project = project("identity-shape", &[AcceptanceEvaluationMode::SameSession]);
+    let work = project.add(&project.peer, Some("same_session"), 1);
+    project.take(&project.agent, &work, 2);
+    let recorded = project
+        .evaluate(&project.agent, &work, "same_session", "pass", 4)
+        .expect("the holder evaluates under the peer's mark");
+    let id = crate::canonical::ObjectId::from_stored(
+        recorded.value["evaluation"]["hash"]
+            .as_str()
+            .expect("record id")
+            .to_owned(),
+    )
+    .expect("stored record id");
+    // Rewrite the stored record under its id, as an import or edit could.
+    let store = SqliteStore::open(&project.database).expect("store");
+    let mut stored: crate::domain::AcceptanceEvaluation =
+        store.get(&id).expect("read").expect("stored record");
+    drop(store);
+    stored.evaluator.session_id = None;
+    let object =
+        crate::canonical::CanonicalObject::identified(&id, &stored).expect("rewritten record");
+    let changed = rusqlite::Connection::open(&project.database)
+        .expect("open the database")
+        .execute(
+            "UPDATE objects SET canonical_json = ?2 WHERE object_id = ?1",
+            rusqlite::params![id.as_str(), object.bytes()],
+        )
+        .expect("rewrite the stored record");
+    assert_eq!(changed, 1);
+
+    let refused = project.done(&project.agent, &work, 6);
+    assert!(refused.owed, "{}", refused.text());
+    assert_eq!(refused.value["code"], "acceptance_evaluation_stale");
+    let text = refused.text();
+    assert!(
+        text.contains("stale (identity)")
+            && text.contains("or the record lacks a session its mode requires")
+            && text.contains("record one in that mode with evaluate")
+            && !text.contains("request an independent"),
+        "{text}"
+    );
+    // Following it: the holder evaluates again, and done completes.
+    project
+        .evaluate(&project.agent, &work, "same_session", "pass", 7)
+        .expect("a fresh same-session evaluation");
+    let done = project.done(&project.agent, &work, 8);
+    assert!(!done.owed, "{}", done.text());
+}
+
 #[test]
 fn a_mark_a_detach_carries_over_has_no_author_on_the_successor() {
     let project = project("detached", &BOTH);

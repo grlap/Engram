@@ -1718,14 +1718,16 @@ impl AgentVerbs {
             }
             WorkCompleteResult::Refused(refusal) => {
                 let mut guidance = self.guidance(&after, "done", now);
-                // Which remedy a missing evaluation, or one the policy or the
-                // mark no longer admits, has depends on the task's mark and
-                // what the project admits; only those causes read the policy.
+                // Which remedy a missing evaluation, or one the policy, the
+                // mark or the evaluator's identity no longer admits, has
+                // depends on the task's mark and what the project admits;
+                // only those causes read the policy.
                 let evaluation = if matches!(
                     refusal.recovery.cause,
                     crate::WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. }
                         | crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
                             reason: crate::AcceptanceStaleReason::Policy
+                                | crate::AcceptanceStaleReason::Identity
                         }
                 ) {
                     EvaluationRemedy {

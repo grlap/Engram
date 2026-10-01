@@ -456,7 +456,9 @@ pub enum AcceptanceStaleReason {
     /// A check the evaluation relied on has a newer record after the cut.
     Evidence,
     /// An `independent_session` evaluator has since held or executed the
-    /// run, so the record no longer describes an independent judgment.
+    /// run, so the record no longer describes an independent judgment; or
+    /// the record lacks a session its mode requires (the evaluator's in any
+    /// mode, a `sub_agent` record's parent), which admission never records.
     Identity,
     /// A pass on a criterion bound to a typed check cites a check that ran
     /// on another source than the one the evaluation judged, or one the

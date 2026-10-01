@@ -57,8 +57,14 @@ pub(in crate::verbs) fn completion_recovery_reminder(
                 "{label} acceptance evaluation is stale (source): {}",
                 recovery.source.as_deref().map_or("read the current source and request a fresh acceptance evaluation, then retry done", crate::work_service::source_recovery_remedy)
             ),
+            // Two causes share this reason and the refusal does not say which,
+            // so the remedy is the one a missing evaluation of this task gets.
             crate::AcceptanceStaleReason::Identity => format!(
-                "{label} acceptance evaluation is stale (identity): its independent evaluator has since held this run; a session that never held the run must evaluate again"
+                "{label} acceptance evaluation is stale (identity): its independent evaluator has since held this run, or the record lacks a session its mode requires; {}",
+                crate::work_service::missing_evaluation_remedy(
+                    evaluation.mark,
+                    &evaluation.admitted
+                )
             ),
             crate::AcceptanceStaleReason::VerificationSource => format!(
                 "{label} acceptance evaluation is stale (verification_source): a pass on a bound criterion cites a check that ran on another source than the one evaluated, or before a later change to it; run the check on the current source, then evaluate again citing it, declaring the source revision the host reports"

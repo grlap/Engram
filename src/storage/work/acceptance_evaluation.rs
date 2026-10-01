@@ -231,10 +231,9 @@ impl SqliteStore {
     ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
         inspect_work_request(redactor, request, &request.evaluator)?;
         crate::storage::admit_live_actor_session(&request.evaluator)?;
-        let evaluator_session = request
-            .evaluator
-            .session_id
-            .clone()
+        let evaluator_session = IdentityShape::of_request(request)
+            .evaluator()
+            .cloned()
             .ok_or_else(|| refused(request.work_id, "the evaluator must carry a session id"))?;
         validate_request_shape(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -909,7 +908,7 @@ fn validate_request_shape(request: &RecordAcceptanceEvaluationRequest) -> Result
                     .execution_identity
                     .as_deref()
                     .filter(|identity| !identity.trim().is_empty()),
-                request.parent_session.as_ref(),
+                IdentityShape::of_request(request).child_parent(),
             ) else {
                 return Err(refused(
                     work,
@@ -1308,12 +1307,14 @@ fn admit_identity(
             }
         }
         AcceptanceEvaluationMode::SubAgent => {
-            let parent = request.parent_session.as_ref().ok_or_else(|| {
-                refused(
-                    item.work_id,
-                    "sub_agent mode needs the attested parent session",
-                )
-            })?;
+            let parent = IdentityShape::of_request(request)
+                .child_parent()
+                .ok_or_else(|| {
+                    refused(
+                        item.work_id,
+                        "sub_agent mode needs the attested parent session",
+                    )
+                })?;
             if !executing(parent) {
                 return Err(context.refused(
                     EvaluationEligibilityMismatch::SubAgentParentNotExecuting,
@@ -2895,6 +2896,13 @@ fn staleness_before_move(
             return Ok(Some(AcceptanceStaleReason::Policy));
         }
     }
+    // A record without a session its mode requires could not be admitted
+    // today. One that reached the store by import or edit names no evaluator
+    // to judge, so it cannot complete work; the earlier reasons keep their
+    // precedence.
+    if IdentityShape::of_record(record).lacks_required_session() {
+        return Ok(Some(AcceptanceStaleReason::Identity));
+    }
     if record.mode == AcceptanceEvaluationMode::IndependentSession {
         let claim = load_work_claim_optional(connection, run_id)?;
         let run = load_work_run(connection, run_id)?;
@@ -3132,6 +3140,8 @@ use crate::domain::{
 use admission::{CitationContext, EligibilityContext, SameSessionRefusal};
 mod history;
 pub(crate) use history::AssessedAcceptanceEvaluation;
+mod identity_shape;
+use identity_shape::IdentityShape;
 mod reroll;
 mod same_turn;
 

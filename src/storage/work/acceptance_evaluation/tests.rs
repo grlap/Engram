@@ -10,6 +10,7 @@ mod citation_sources;
 mod corrections;
 mod criteria_required;
 mod host_checks;
+mod identity_shape;
 mod mark_author;
 mod named_root;
 mod policy;

@@ -547,7 +547,12 @@ stale reason named.
   `sub_agent` records make no independence claim; the
   [Independent by default](#independent-by-default) rules recheck them at
   completion instead, and one they no longer admit is stale with reason
-  `policy`.
+  `policy`. A record of any mode without its evaluator's session, or a
+  `sub_agent` record without its parent session, is stale with reason
+  `identity` as well, after the `policy` checks: admission never records
+  one, so it can only have reached the store by import or edit, and it never
+  completes work. Presence is all this checks; whether either session is
+  registered is not asked.
 - **F8 bound check source.** Every citation of a `pass` on a bound criterion
   is a passed check that ran on the source the evaluation judged, and the
   source had not moved away from it by the cut (R5). The rule is applied
@@ -627,7 +632,7 @@ Refusals extend the typed recovery causes; each carries one recovery command:
 | Cause | Meaning | Recovery |
 | --- | --- | --- |
 | `MissingAcceptanceEvaluation { criterion }` | no evaluation for this run | record one: `engram work evaluate REF …` (or the host's evaluator) |
-| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`) | re-evaluate against the current state; `source` uses the sibling source context below to select confirmation, measurement or new-evaluation guidance; `identity` needs a session that never held the run; `verification_source` needs the cited check run again on the current source |
+| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`) | re-evaluate against the current state; `source` uses the sibling source context below to select confirmation, measurement or new-evaluation guidance; `identity` needs a fresh evaluation recorded with every session its mode requires, as a missing one would be requested for the task, and from a session that never held the run when the stale record was `independent_session`; `verification_source` needs the cited check run again on the current source |
 | `AcceptanceFailed { criterion }` | newest fresh evaluation has a `fail` | corrective work, then evaluate again |
 | `AcceptanceInsufficientEvidence { criterion }` | newest fresh evaluation has `insufficient_evidence` | record the missing evidence, then evaluate again |
 | `AcceptanceNeedsHuman { criterion }` | a criterion needs a human decision | obtain that decision; only a separately authorized revision (`update REF --accept …`) or cancellation changes the requirement, and a new evaluation follows the decision. No agent override exists. |

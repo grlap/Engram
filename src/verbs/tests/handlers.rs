@@ -612,6 +612,72 @@ fn completion_recovery_reminder_names_the_verification_source_remedy() {
     );
 }
 
+// A stale identity names both of its causes and gives the remedy a missing
+// evaluation of the task would get: a marked same-session task is evaluated
+// again by its holder, which an independent-only remedy would forbid.
+#[test]
+fn completion_recovery_reminder_names_the_identity_remedy_for_the_task() {
+    use crate::domain::AcceptanceEvaluationMode as Mode;
+    let work = WorkId(uuid::Uuid::from_u128(4));
+    let recovery = crate::WorkCompletionRecovery {
+        cause: crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+            reason: crate::AcceptanceStaleReason::Identity,
+        },
+        item: crate::WorkReferenceCandidate {
+            work_id: work,
+            short_ref: "w-000000000004".into(),
+            title: "Evaluated item".into(),
+            lifecycle: WorkLifecycle::Open,
+        },
+        command: "engram work show w-000000000004 --notes --gates".into(),
+        deciding_observation: None,
+        source: None,
+    };
+    let cause = "w-000000000004 acceptance evaluation is stale (identity): its independent evaluator has since held this run, or the record lacks a session its mode requires";
+    for (remedy, mark, admitted) in [
+        (
+            crate::verbs::handlers::EvaluationRemedy {
+                mark: Some(Mode::SameSession),
+                admitted: vec![Mode::SameSession],
+            },
+            Some(Mode::SameSession),
+            vec![Mode::SameSession],
+        ),
+        (
+            crate::verbs::handlers::EvaluationRemedy {
+                mark: None,
+                admitted: vec![Mode::SameSession, Mode::IndependentSession],
+            },
+            None,
+            vec![Mode::SameSession, Mode::IndependentSession],
+        ),
+    ] {
+        assert_eq!(
+            completion_recovery_reminder(&recovery, false, &remedy),
+            format!(
+                "{cause}; {}",
+                crate::work_service::missing_evaluation_remedy(mark, &admitted)
+            )
+        );
+    }
+    // The two remedies differ: the marked task is not sent to an
+    // independent evaluator.
+    assert!(
+        crate::work_service::missing_evaluation_remedy(
+            Some(Mode::SameSession),
+            &[Mode::SameSession]
+        )
+        .contains("record one in that mode with evaluate")
+    );
+    assert!(
+        crate::work_service::missing_evaluation_remedy(
+            None,
+            &[Mode::SameSession, Mode::IndependentSession]
+        )
+        .contains("request an independent acceptance evaluation")
+    );
+}
+
 #[test]
 fn readiness_reasons_become_words() {
     let session = SessionId("peer".into());

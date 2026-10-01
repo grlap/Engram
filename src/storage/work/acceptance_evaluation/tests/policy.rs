@@ -80,6 +80,17 @@ fn mode_and_pin_matrix_preserves_admission_and_freshness() {
                 } else {
                     "judge"
                 });
+                // A sub_agent record carries the parent session and execution
+                // identity admission requires; the other modes carry neither.
+                (evaluation.parent_session, evaluation.execution_identity) =
+                    if mode == Mode::SubAgent {
+                        (
+                            Some(SessionId("runner".into())),
+                            Some("judge-execution".into()),
+                        )
+                    } else {
+                        (None, None)
+                    };
                 let expected = if !membership[index] {
                     Err(ModePolicyMismatch::DisallowedMode)
                 } else if let Some(selected) = pin.filter(|selected| *selected != mode) {
