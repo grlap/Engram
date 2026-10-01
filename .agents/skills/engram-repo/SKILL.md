@@ -587,5 +587,7 @@ or, for commit, push and install only, the standing approval in AGENTS.md
 When `done` records a landing, copy each value from a command's output; never
 type it: the landed commit from `git rev-parse HEAD` run after the push, never
 completed from a short hash; the push time from a UTC clock read in the same
-command as the push; the installed build from the `build_fingerprint` that
+command as the push; the remote and branch from the push command itself, with
+`git rev-parse REMOTE/BRANCH` after the push printing the landed commit; the
+installed build from the `build_fingerprint` that
 `engram readiness --json` reports when run with the installed binary.

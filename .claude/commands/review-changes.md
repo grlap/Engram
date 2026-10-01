@@ -502,6 +502,8 @@ satisfied. Review completion does not authorize Git or external actions. The
 When `done` records a landing, copy each value from a command's output; never
 type it. The landed commit comes from `git rev-parse HEAD` run after the push,
 never typed or completed from a short hash. The push time comes from a UTC
-clock read in the same command as the push. The installed build is the
+clock read in the same command as the push. The remote and branch are the
+ones the push command named; `git rev-parse REMOTE/BRANCH` run after the push
+must print the landed commit. The installed build is the
 `build_fingerprint` that `engram readiness --json` reports when run with the
 installed binary.

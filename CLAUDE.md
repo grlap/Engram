@@ -153,8 +153,9 @@ user profile:
   install/restart split: 'Fable ma racje to dobra regula. W sumie mamy
   system kontroli. Agenci moga podejnowac takie decyzje.'): the lander
   puts it at C:\Users\grzeg\.cargo\bin\engram.exe, renaming the installed
-  binary aside as a backup under C:\Users\grzeg\.engram\backups\, and
-  records its hash. Installing is not deploying: running processes keep
+  binary aside as a backup under C:\Users\grzeg\.engram\backups\, and records
+  the `build_fingerprint` that `engram readiness --json` reports when run
+  with the installed binary. Installing is not deploying: running processes keep
   their build until they restart, and restarting them is Greg's, on the
   restart signal (build hash and reason).
 - Implementers claim their own Engram items and complete them with the
