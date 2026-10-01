@@ -71,8 +71,8 @@ guarded_families! {
         children: None,
         split: true,
     };
-    storage_work_acceptance_evaluation_tests => Family {
-        module: "src/storage/work/acceptance_evaluation/tests",
+    storage_work_acceptance_evaluation => Family {
+        module: "src/storage/work/acceptance_evaluation",
         children: None,
         split: true,
     };

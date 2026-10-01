@@ -396,7 +396,7 @@ has never had a chance to stop one.
   back to the agent's own gate claims. A criterion bound to host verification
   would have no new way to be satisfied, so completion would stay refused
   unless host evidence recorded earlier already covers it
-  (`acceptance_evaluation.rs` 889–901 and 979–986, `completion.rs` 797–804),
+  (`bind_verdicts` in `acceptance_evaluation/citations.rs`, `completion.rs` 797–804),
   or the criterion is revised so it no longer needs host verification, which
   waives its open obligation (`completion.rs` 1890–1939). A
   policy that requires observed evidence rejects asserted mechanical passes,
