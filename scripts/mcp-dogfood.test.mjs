@@ -957,6 +957,9 @@ test("status resume recovers both roles across CLI and MCP process replacement w
     const wrongAction = await client.call("update", { work_ref: x, action: "cancel", clear_external: true, reason: "must not cancel" });
     const wrongActionError = structuredError(wrongAction, "invalid_argument");
     assert.equal(wrongActionError.details.field, "clear_external");
+    // Like every tool error: the reason as the reminder, and no command.
+    assert.deepEqual(wrongActionError.reminders, [wrongActionError.message]);
+    assert.deepEqual(wrongActionError.next, []);
     const mixedAction = cli(coordinator, "coordinator-new", "update", x, "--clear-external", "--release");
     assert.notEqual(mixedAction.status, 0);
     assert.match(mixedAction.stderr, /exactly one action/);

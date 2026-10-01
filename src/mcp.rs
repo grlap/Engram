@@ -1336,12 +1336,17 @@ fn error_code(error: &StoreError) -> &'static str {
     }
 }
 
+/// An argument combination a tool refuses before it runs. Like every agent
+/// tool error it carries `reminders` and `next`: the reason, and no command,
+/// as a verb error with no specific remedy does.
 fn invalid_argument(field: &str, message: &str) -> CallToolResult {
     CallToolResult::structured_error(json!({
         "error": {
             "code": "invalid_argument",
             "message": message,
             "details": { "field": field },
+            "reminders": [message],
+            "next": [],
         }
     }))
 }
@@ -2104,5 +2109,59 @@ mod tests {
         );
         assert!(!message.contains(&giant));
         assert!(format!("{:?}", server.work_service).contains("store_initialized: false"));
+    }
+
+    // Every update argument refused before the tool runs carries the two
+    // fields every agent tool error does: its reason, and no command.
+    #[test]
+    fn invalid_argument_errors_carry_reminders_and_next() {
+        let directory = crate::test_support::temp_home().expect("temporary MCP home");
+        let server = McpServer::new_with_actor_context(
+            directory.path().join("engram.sqlite3"),
+            ProjectId("mcp-invalid-argument".into()),
+            "agent".into(),
+            SessionId("agent".into()),
+            None,
+            None,
+        );
+        for (field, arguments) in [
+            (
+                "external",
+                json!({ "action": "cancel", "external": "planner:x" }),
+            ),
+            (
+                "clear_external",
+                json!({ "action": "cancel", "clear_external": true }),
+            ),
+            (
+                "acceptance",
+                json!({ "action": "release", "acceptance": ["x"] }),
+            ),
+            ("bindings", json!({ "action": "release", "bindings": [] })),
+            (
+                "blocker",
+                json!({ "action": "release", "blocker": "w-000000000001" }),
+            ),
+            (
+                "evaluation_mode",
+                json!({ "action": "revise", "evaluation_mode": "same_session" }),
+            ),
+            (
+                "defer",
+                json!({ "action": "revise", "defer": "not a date" }),
+            ),
+        ] {
+            let mut arguments = arguments;
+            arguments["work_ref"] = json!("w-000000000001");
+            let refused = server.update(Parameters(
+                serde_json::from_value(arguments).expect("update arguments"),
+            ));
+            assert_eq!(refused.is_error, Some(true), "{field}");
+            let error = &refused.structured_content.expect("structured error")["error"];
+            assert_eq!(error["code"], "invalid_argument", "{field}");
+            assert_eq!(error["details"]["field"], field);
+            assert_eq!(error["reminders"], json!([error["message"]]), "{field}");
+            assert_eq!(error["next"], json!([]), "{field}");
+        }
     }
 }
