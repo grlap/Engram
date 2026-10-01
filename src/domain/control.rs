@@ -11,7 +11,8 @@ use crate::ObjectId;
 
 use super::{
     AcceptanceEvaluationPolicy, ActorContext, ChangeCursor, ContextPacket, FeedPosition, ProjectId,
-    RootExecutionId, SessionId, TaskDelta, TaskId, WorkClaimId, WorkId, WorkRunId,
+    RootExecutionId, SessionId, TaskDelta, TaskId, WorkClaimId, WorkClaimState, WorkId, WorkRunId,
+    WorkRunState,
 };
 
 /// Monotonic invalidation epoch for the active project control policy.
@@ -375,6 +376,61 @@ pub enum NamedRootState {
         /// Run-feed position of the release.
         released_at_position: i64,
     },
+}
+
+/// A host's read of one claim's named root on its run, taken from one
+/// snapshot: the run and claim it names, their lifecycle, the named-root
+/// state Engram derives for the claim, the claim's newest recorded root
+/// event, and the run-feed cut all of it was read at. It needs no live
+/// holder and changes nothing.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NamedRootRead {
+    pub project_id: ProjectId,
+    pub work_id: WorkId,
+    pub root_execution_id: RootExecutionId,
+    pub run_id: WorkRunId,
+    pub claim_id: WorkClaimId,
+    pub run: NamedRootReadRun,
+    pub claim: NamedRootReadClaim,
+    pub named_root: NamedRootState,
+    /// The claim's newest recorded root event, bound or ended, at the cut;
+    /// `None` only when the claim never had one. It is kept when the derived
+    /// state is none, so a host can tell an ended or finished root from one
+    /// never named.
+    pub latest_event: Option<NamedRootEventReference>,
+    pub read_cut: FeedPosition,
+}
+
+/// The run's lifecycle as the read saw it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NamedRootReadRun {
+    pub state: WorkRunState,
+    pub generation: i64,
+}
+
+/// The claim's lifecycle as the read saw it. An expired claim still reads
+/// as its stored state: expiry is disclosed, never derived into another state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NamedRootReadClaim {
+    pub state: WorkClaimState,
+    pub holder: SessionId,
+    pub expires_at: DateTime<Utc>,
+    pub revision: i64,
+    pub fence: i64,
+}
+
+/// One recorded `named_root_bind` event, by its real record id and run-feed
+/// position. A read, not a binding receipt.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NamedRootEventReference {
+    pub event: ObjectId,
+    pub position: FeedPosition,
+    pub generation: i64,
+    pub kind: NamedRootBindingKind,
+    pub workspace_id: String,
+    pub named_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_reason: Option<NamedRootEndReason>,
 }
 
 /// Host-observed outcome for one material action performed during a begun

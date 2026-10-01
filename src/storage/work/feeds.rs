@@ -408,7 +408,7 @@ pub(super) fn run_feed_position_for_object_on(
     })
 }
 
-pub(super) fn current_run_feed_cut_on(
+pub(in crate::storage) fn current_run_feed_cut_on(
     connection: &Connection,
     run_id: WorkRunId,
 ) -> Result<FeedPosition, StoreError> {
@@ -543,6 +543,19 @@ pub(in crate::storage) fn latest_named_root_event_on(
     claim_id: WorkClaimId,
     through: i64,
 ) -> Result<Option<(i64, NamedRootBindingEvent)>, StoreError> {
+    Ok(
+        latest_named_root_event_record_on(connection, run_id, claim_id, through)?
+            .map(|(position, _, event)| (position, event)),
+    )
+}
+
+/// The same newest event with the real record id it is stored under.
+pub(in crate::storage) fn latest_named_root_event_record_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    claim_id: WorkClaimId,
+    through: i64,
+) -> Result<Option<(i64, ObjectId, NamedRootBindingEvent)>, StoreError> {
     connection
         .query_row(
             "SELECT entry.position, entry.object_id, object.canonical_json
@@ -566,7 +579,8 @@ pub(in crate::storage) fn latest_named_root_event_on(
         .map(|(position, stored_id, bytes)| {
             let id = ObjectId::from_stored(stored_id.clone())
                 .ok_or(StoreError::InvalidStoredKey(stored_id))?;
-            Ok((position, CanonicalObject::stored(&id, bytes)?.decode()?))
+            let event = CanonicalObject::stored(&id, bytes)?.decode()?;
+            Ok((position, id, event))
         })
         .transpose()
 }

@@ -2930,6 +2930,37 @@ test("source recovery keeps a judgment through host confirmation and separates f
     const sealed = jsonWord("done", ref, "Delivered");
     assert.equal(sealed.work.lifecycle, "completed");
     assert.equal(sealed.acceptance.evaluation, recorded.evaluation.hash);
+    // The host reads the finished claim's named root: none, with the real
+    // bound event still named, in the closed shape it consumes.
+    const rootRead = ok(await client.request({ operation: "named_root_read", routing_token: control.routing_token,
+      run_id: binding.run_id, claim_id: binding.claim_id }));
+    assert.deepEqual(Object.keys(rootRead).sort(), ["claim", "claim_id", "latest_event", "named_root", "project_id",
+      "read_cut", "root_execution_id", "run", "run_id", "work_id"]);
+    assert.equal(rootRead.run_id, binding.run_id);
+    assert.equal(rootRead.claim_id, binding.claim_id);
+    assert.equal(rootRead.work_id, binding.work_id);
+    assert.equal(rootRead.root_execution_id, binding.root_execution_id);
+    assert.deepEqual(rootRead.named_root, { state: "none" });
+    assert.deepEqual(Object.keys(rootRead.run).sort(), ["generation", "state"]);
+    assert.equal(rootRead.run.state, "completed");
+    assert.deepEqual(Object.keys(rootRead.claim).sort(), ["expires_at", "fence", "holder", "revision", "state"]);
+    assert.equal(rootRead.claim.state, "completed");
+    // A bound event carries no end_reason; the cut and positions are closed too.
+    assert.deepEqual(Object.keys(rootRead.latest_event).sort(),
+      ["event", "generation", "kind", "named_at", "position", "workspace_id"]);
+    assert.deepEqual(Object.keys(rootRead.latest_event.position).sort(), ["feed", "position"]);
+    assert.deepEqual(Object.keys(rootRead.read_cut).sort(), ["feed", "position"]);
+    assert.equal(rootRead.latest_event.kind, "bound");
+    assert.equal(rootRead.latest_event.generation, 1);
+    assert.equal(rootRead.latest_event.workspace_id, workspace);
+    assert.match(rootRead.latest_event.event, /^[0-9a-f]{32}$/u);
+    assert.deepEqual(rootRead.latest_event.position.feed, { kind: "run_execution", id: binding.run_id });
+    assert.deepEqual(rootRead.read_cut.feed, rootRead.latest_event.position.feed);
+    assert.ok(rootRead.latest_event.position.position <= rootRead.read_cut.position);
+    const unknownRun = await client.request({ operation: "named_root_read", routing_token: control.routing_token,
+      run_id: "00000000-0000-0000-0000-000000000007", claim_id: binding.claim_id });
+    assert.equal(unknownRun.status, "error", JSON.stringify(unknownRun));
+    assert.equal(unknownRun.error.code, "named_root_read_refused");
     await client.close();
     client = null;
 

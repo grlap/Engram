@@ -382,9 +382,9 @@ pub(super) use completion::{
 };
 pub(crate) use feeds::checkpoint_run_feed_end;
 pub(super) use feeds::{
-    append_memory_capture_to_work_feeds, latest_named_root_event_on,
-    load_control_environment_evidence_on, load_control_execution_observation_on,
-    load_typed_work_object, named_root_state_on,
+    append_memory_capture_to_work_feeds, current_run_feed_cut_on, latest_named_root_event_on,
+    latest_named_root_event_record_on, load_control_environment_evidence_on,
+    load_control_execution_observation_on, load_typed_work_object, named_root_state_on,
 };
 #[cfg(test)]
 use planning::persist_work_item;

@@ -1314,6 +1314,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidTaskProjection(_)
         | StoreError::InvalidControlSession(_)
         | StoreError::NamedRootBindingRefused(_)
+        | StoreError::NamedRootReadRefused(_)
         | StoreError::HostPathIdentityUnresolved
         | StoreError::ControlSessionNotBound(_)
         | StoreError::ControlSessionTokenMismatch(_)

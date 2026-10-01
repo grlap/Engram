@@ -6,6 +6,7 @@ mod control_support;
 mod doctor;
 mod graph_snapshot;
 pub mod migration;
+mod named_root_read;
 mod objects_tasks;
 mod open_schema;
 mod policy_admin;
@@ -976,6 +977,10 @@ pub enum StoreError {
     InvalidControlSession(String),
     #[error("named-root binding refused: {0}")]
     NamedRootBindingRefused(String),
+    /// The requested run and claim are unknown or do not belong together;
+    /// never a named-root state.
+    #[error("named-root read refused: {0}")]
+    NamedRootReadRefused(String),
     #[error(
         "the project root's filesystem identity is unresolved, so path intents are refused; pass --host-path-policy case_fold|case_sensitive or set ENGRAM_HOST_PATH_POLICY"
     )]

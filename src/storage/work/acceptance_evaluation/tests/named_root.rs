@@ -7,6 +7,7 @@ use crate::storage::test_support::bind_control_for;
 
 mod characterization;
 mod deciding;
+mod read;
 mod state;
 
 fn source(workspace: &str, generation: i64) -> ExecutionSourceBasis {

@@ -18,7 +18,7 @@ use crate::{
     ActorContext, ControlAssurance, ControlWorkBinding, EffectClass, EnvironmentEvidenceInput,
     ExecutionObservationInput, HostPathPolicy, NamedRootBindingKind, NamedRootEndReason, ObjectId,
     ProjectId, SessionId, SqliteStore, TurnIntent, TurnPurpose, VerificationEvidenceInput,
-    WorkClaimId,
+    WorkClaimId, WorkRunId,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
     storage::StoreError,
 };
@@ -57,6 +57,13 @@ pub enum HostControlRequest {
         #[serde(default)]
         end_reason: Option<NamedRootEndReason>,
         idempotency_key: String,
+    },
+    /// Reads one claim's named-root lifecycle on its run, for any run and
+    /// claim of the project; it writes nothing and needs no live holder.
+    NamedRootRead {
+        routing_token: String,
+        run_id: WorkRunId,
+        claim_id: WorkClaimId,
     },
     TurnEvaluate {
         routing_token: String,
@@ -267,6 +274,19 @@ impl HostControlServer {
                 )?)
                 .map_err(StoreError::Json)
             }
+            HostControlRequest::NamedRootRead {
+                routing_token,
+                run_id,
+                claim_id,
+            } => serde_json::to_value(self.store.read_named_root(
+                &self.project_id,
+                &self.session_id,
+                &self.connection_token,
+                &routing_token,
+                run_id,
+                claim_id,
+            )?)
+            .map_err(StoreError::Json),
             HostControlRequest::TurnEvaluate {
                 routing_token,
                 idempotency_key,
@@ -517,6 +537,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::InvalidControlSession(_) => "invalid_control_session",
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",
+        StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
         StoreError::ControlSessionTokenMismatch(_) => "control_session_token_mismatch",

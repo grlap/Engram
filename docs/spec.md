@@ -1071,7 +1071,7 @@ A separate host-private transport exposes the §2.7 protocol:
 
 ```text
 session_bind   session_status   turn_evaluate   turn_begin   turn_checkpoint
-named_root_bind
+named_root_bind   named_root_read
 ```
 
 `engram control` ships these as JSON lines, for the built-in

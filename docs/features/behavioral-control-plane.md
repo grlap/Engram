@@ -515,6 +515,39 @@ when to name again. The variant set is closed. A replayed `session_bind`
 reports the state at the replay, and a replayed `turn_begin` returns its
 receipt as stored.
 
+A host reads any claim's root with the host-private `named_root_read`
+operation, including a claim no session is bound to any more, such as one
+whose holder is gone or whose run has finished. Its request carries
+`routing_token`, `run_id` and `claim_id`; it takes no idempotency key, fence
+or cut. Any bound host session of the project may read, whatever its own work
+binding. Engram checks the session's connection and routing token, that the
+run exists, that the claim is that run's and that both belong to the
+project, and then reads, all from one snapshot of the store:
+
+- `project_id`, `work_id`, `root_execution_id`, `run_id` and `claim_id`;
+- `run`: its `state` and `generation`;
+- `claim`: its `state`, `holder`, `expires_at`, `revision` and `fence`, as
+  stored. An expired claim is not reported as ended or released: expiry is
+  disclosed, never derived into another state;
+- `named_root`: the claim's state, derived exactly as above, at the read's
+  cut;
+- `latest_event`: the claim's newest recorded `named_root_bind` event at the
+  cut, bound or ended, by its real record id (`event`), run-feed `position`,
+  `generation`, `kind`, `workspace_id`, `named_at` and, for an ended one,
+  `end_reason`. It stays named when the state is `none` because the root
+  ended or the run finished, so a host tells those from a claim never named,
+  for which it is `null`. It is a read of a recorded event, not a binding
+  receipt;
+- `read_cut`: the run-feed position everything above was read at.
+
+The read writes nothing: it records no event, expires no grant, changes no
+revision and consumes no idempotency key, so a host may repeat it freely. A
+still-bound root whose holder is gone reads `bound`. An unknown run, a claim
+that is not the run's, or a run of another project returns
+`named_root_read_refused`; wrong credentials keep their codes; a record that
+fails its canonical association returns a storage error. A refused or failed
+read is never a `none` state.
+
 A sighting's generation, not its time or feed position, places it against a
 binding at generation g. The sighting is before that binding when its
 `source_root_generation` is absent or smaller than g, and after it otherwise.
@@ -1123,7 +1156,8 @@ true: Engram cannot inspect the host, so it validates only the end's
 structure and, for `explicit_clear`, its reporter. A `session_status` read is
 authoritative only for the claim in that session's own work binding, and a
 claim's absence from one session's `work core held` list says nothing about
-that claim's binding.
+that claim's binding; `named_root_read` reads the state of any claim, the
+claim's newest root event and the cut, whichever session asks.
 
 Hooks are sufficient for `turn_gated` control. `action_gated` control requires
 a runtime wrapper, gateway, or native host integration around tools. MCP alone
@@ -1140,9 +1174,9 @@ fail-mode result; a hung hook is not an acceptable control mechanism.
 ## Planned interfaces
 
 The shipped host channel is `session_bind`, `session_status`,
-`turn_evaluate`, `turn_begin`, `turn_checkpoint` and `named_root_bind`. The
-design named seven more and an eighth was identified since. None is built,
-and no host calls them:
+`turn_evaluate`, `turn_begin`, `turn_checkpoint`, `named_root_bind` and
+`named_root_read`. The design named seven more. None is built, and no host
+calls them:
 
 - **`action_authorize`, `action_begin` and `action_complete` (not built).**
   They would put a single-use grant around each material tool call. A host
@@ -1157,15 +1191,6 @@ and no host calls them:
 - **`delivery_ack` (not built).** It would acknowledge a delivered context page
   without a model turn. Grants no longer carry a page, so there is nothing to
   acknowledge.
-- **A claim-scoped root lifecycle read (not built).** A bounded, read-only
-  read for a host session of the same store, for a claim that is not the
-  session's current binding. One snapshot would return the claim and run
-  lifecycle, the derived root state, the latest root event with its position
-  and generation, and the read cut. It would change nothing, infer no
-  receipt, never report a still-bound root as ended because its holder is
-  gone, and a failed or refused read would be distinct from `none`. Until it
-  exists a host cannot learn the fate of a root whose sessions have all moved
-  to other claims, and keeps such entries under its own bound.
 
 Engram never answers `defer`; a turn is granted or refused.
 
@@ -1190,7 +1215,7 @@ persisted turn decisions and short-lived grants that carry no delivery page,
 begin-time rechecks, canonical execution observations, and canonical checkpoint
 events. A separate `engram control` JSON-lines process
 implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
-`turn_checkpoint` and `named_root_bind`; none is
+`turn_checkpoint`, `named_root_bind` and `named_root_read`; none is
 exposed through agent-facing MCP. Exact retry
 evidence survives process restart, while unbegun authority is invalidated and
 the session returns to `ready`. Each open rotates an internal
