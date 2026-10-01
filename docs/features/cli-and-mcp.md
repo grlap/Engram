@@ -745,7 +745,11 @@ Rules that matter:
   the claim receipt and `done`'s owed list carry one first reminder:
   `acceptance is only the title placeholder ('<title> is done'); set real
   criteria by revising acceptance with update`, the same on CLI and MCP, and
-  both `show` reads' JSON says `acceptance_placeholder: true`. It states what
+  both `show` reads' JSON says `acceptance_placeholder: true`. When `done`
+  completes a child whose open parent is in that state, the success receipt
+  carries the parent's line once, prefixed with the parent's ref (`<parent>:
+  acceptance is only the title placeholder …`), so it never reads as the
+  child's own status. It states what
   the stored list is, so a title rename keeps it and the same sentence typed
   by hand at creation reads the same. A revision to other criteria drops it
   for good, even if a later revision restores the sentence; a replacement

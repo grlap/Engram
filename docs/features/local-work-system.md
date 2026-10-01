@@ -1526,7 +1526,8 @@ reminder; blank criteria are refused. The reminder
 does not duplicate the item title and is included in the final receipt budget.
 Later reads keep the signal: while an open item's only criterion is still its
 creation-title placeholder, `show`, `claim` and `done`'s owed list name it as
-the title placeholder, observed from the stored list (see
+the title placeholder, observed from the stored list, and a child's `done`
+success receipt names its open parent's placeholder under the parent's ref (see
 [CLI and MCP](cli-and-mcp.md)).
 `work_update` and `work_handoff` never rebuild this history: their success
 envelopes contain only the operation, compact receipt, one bounded

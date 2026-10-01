@@ -349,6 +349,102 @@ fn a_title_placeholder_criterion_is_named_on_show_claim_and_done() {
     drop(directory);
 }
 
+// Completing a child points back at its open parent. When the parent's only
+// criterion is still its title placeholder, the child's done receipt says so
+// once, labelled with the parent's ref, so it never reads as the child's own
+// status; a parent with real criteria adds no such line.
+#[test]
+fn a_child_done_receipt_names_the_parent_placeholder_as_the_parents() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let verbs = AgentVerbs::new(
+        directory.path().join("work.sqlite3"),
+        ProjectId("parent-placeholder".into()),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let add = |title: &str, acceptance: &[&str], under: Option<&str>, second: i64| {
+        verbs
+            .add(
+                AddInput {
+                    title: title.into(),
+                    acceptance: acceptance.iter().map(|text| (*text).to_owned()).collect(),
+                    under: under.map(str::to_owned),
+                    ..AddInput::default()
+                },
+                at(second),
+            )
+            .expect("add")
+            .value["work"]["short_ref"]
+            .as_str()
+            .expect("work ref")
+            .to_owned()
+    };
+    let complete = |work_ref: &str, second: i64| {
+        verbs
+            .claim(
+                ClaimInput {
+                    work_ref: work_ref.to_owned(),
+                    ttl_seconds: Some(3_600),
+                    recover: None,
+                },
+                at(second),
+            )
+            .expect("claim the child");
+        let completed = verbs
+            .done(
+                DoneInput {
+                    source_fingerprint: None,
+                    landing: None,
+                    links: Vec::new(),
+                    link_basis: None,
+                    work_ref: Some(work_ref.to_owned()),
+                    summary: Some("delivered".into()),
+                    note: None,
+                },
+                at(second + 1),
+            )
+            .expect("done");
+        assert!(!completed.owed, "{}", completed.text());
+        completed
+    };
+
+    let parent = add("Parent item", &[], None, 1);
+    let child = add("Child item", &["the child is delivered"], Some(&parent), 2);
+    let completed = complete(&child, 3);
+    assert_eq!(
+        placeholder(&completed),
+        vec![format!(
+            "{parent}: acceptance is only the title placeholder ('Parent item is done'); set real criteria by revising acceptance with update"
+        )],
+        "{:?}",
+        completed.reminders
+    );
+    assert!(completed.text().contains(&placeholder(&completed)[0]));
+
+    let real_parent = add("Real parent", &["the parent is delivered"], None, 10);
+    let real_child = add(
+        "Real child",
+        &["the child is delivered"],
+        Some(&real_parent),
+        11,
+    );
+    let completed = complete(&real_child, 12);
+    // The receipt still points back at the open parent, so the parent's
+    // guidance ran; it just has no placeholder to name.
+    assert!(
+        completed
+            .reminders
+            .contains(&format!("{real_parent} \"Real parent\" is still open")),
+        "{:?}",
+        completed.reminders
+    );
+    let none = placeholder(&completed);
+    assert!(none.is_empty(), "{none:?}");
+    drop(verbs);
+    drop(directory);
+}
+
 #[test]
 fn an_unmarked_task_is_sent_to_the_host_for_an_independent_evaluation() {
     let both = [
