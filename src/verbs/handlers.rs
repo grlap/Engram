@@ -2309,16 +2309,6 @@ pub(super) fn detach_command(work_ref: &str) -> String {
     format!("engram work update {work_ref} --detach \"Continue as independent work\"")
 }
 
-/// Fixed table from `allowed_next` tags to literal commands. Only the moves
-/// that change who holds the item or whether it is finished are suggested
-/// (accept, claim, note, done, unblock) — at most [`NEXT_LIFECYCLE_LIMIT`] in
-/// priority order — followed by `engram work show REF` for the rest. The one
-/// planning exception is removing a dead prerequisite that can never
-/// satisfy its edge. Other planning edits and entries the agent cannot run
-/// through the agent words stay in `allowed_next` on the structured receipt.
-/// `unblock` is the exact command that clears the item's only active
-/// blocker, or the read that lists each of several with its own; it is
-/// suggested only while the caller may unblock.
 /// What an observation on open work offers its writer: a read first, never a
 /// nudge to claim. The item's own detail read is the receipt's `full detail`
 /// line, which mutation receipts keep out of `next`, so the first next
@@ -2349,6 +2339,16 @@ fn observation_guidance(guidance: &mut Guidance, work_ref: &str) {
     }
 }
 
+/// Fixed table from `allowed_next` tags to literal commands. Only the moves
+/// that change who holds the item or whether it is finished are suggested
+/// (accept, claim, note, done, unblock) — at most [`NEXT_LIFECYCLE_LIMIT`] in
+/// priority order — followed by `engram work show REF` for the rest. The one
+/// planning exception is removing a dead prerequisite that can never
+/// satisfy its edge. Other planning edits and entries the agent cannot run
+/// through the agent words stay in `allowed_next` on the structured receipt.
+/// `unblock` is the exact command that clears the item's only active
+/// blocker, or the read that lists each of several with its own; it is
+/// suggested only while the caller may unblock.
 pub(super) fn next_commands(
     allowed_next: &[String],
     work_ref: &str,

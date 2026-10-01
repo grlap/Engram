@@ -315,6 +315,159 @@ fn an_observation_note_offers_a_read_first_and_never_a_claim_nudge() {
     );
 }
 
+// The observation guidance holds on the paths around it: a lapsed claim's
+// recovery command moves last with the execution reminder; a blocked item
+// and an exact replay keep it; and the same note repeated after another
+// session claims the item, a new note since a keyless note's replay key
+// includes its claim basis, keeps it too. JSON says what the text says.
+#[test]
+fn observation_guidance_holds_for_recover_blocked_replay_and_a_later_claim() {
+    let agent = agent("observation-edges");
+    let nudge = "unclaimed: claim it before execution";
+    let label = "observation recorded; to execute this item rather than observe it, claim it (the last next command)";
+    let peek = "engram work next --peek";
+    let holder = AgentVerbs::new(
+        agent.database.clone(),
+        ProjectId("observation-edges".into()),
+        "agent".into(),
+        SessionId("other-holder".into()),
+        None,
+    );
+    let observation = |receipt: &Receipt| {
+        assert_eq!(
+            receipt.value["non_holder"],
+            json!(true),
+            "{}",
+            receipt.text()
+        );
+        assert_eq!(receipt.next[0], peek, "{:?}", receipt.next);
+        assert_eq!(receipt.value["next"][0], json!(peek));
+        assert!(
+            !receipt.reminders.iter().any(|line| line == nudge),
+            "{:?}",
+            receipt.reminders
+        );
+        let reminders = receipt.value["reminders"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        assert!(!reminders.contains(&json!(nudge)), "{reminders:?}");
+    };
+
+    // A claim that lapsed: the recovery claim moves last, with the reminder.
+    let lapsed = add(&agent, "Lapsed work", None, 1);
+    holder
+        .claim(
+            ClaimInput {
+                work_ref: lapsed.clone(),
+                ttl_seconds: Some(60),
+                recover: None,
+            },
+            at(2),
+        )
+        .expect("a short claim");
+    let after_lapse = note(&agent, Some(&lapsed), 200).expect("observation after the lapse");
+    observation(&after_lapse);
+    let recover = after_lapse.next.last().expect("a last next command");
+    assert!(
+        recover.starts_with(&format!("engram work claim {lapsed} --recover")),
+        "{:?}",
+        after_lapse.next
+    );
+    assert_eq!(
+        after_lapse.value["next"]
+            .as_array()
+            .and_then(|next| next.last()),
+        Some(&json!(recover))
+    );
+    assert!(
+        after_lapse.reminders.iter().any(|line| line == label),
+        "{:?}",
+        after_lapse.reminders
+    );
+    assert!(
+        after_lapse.value["reminders"]
+            .as_array()
+            .is_some_and(|reminders| reminders.contains(&json!(label)))
+    );
+
+    // A blocked open item keeps the observation guidance.
+    let blocked = add(&agent, "Blocked work", None, 201);
+    agent
+        .verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(blocked.clone()),
+                action: UpdateAction::Blocked {
+                    detail: "waiting on review".into(),
+                },
+            },
+            at(202),
+        )
+        .expect("block");
+    observation(&note(&agent, Some(&blocked), 203).expect("observation on blocked work"));
+
+    // An exact replay of an observation keeps its guidance: the same note
+    // again records nothing new and returns the same evidence.
+    let open = add(&agent, "Open work", None, 204);
+    let same_note = NoteInput {
+        status: false,
+        work_ref: Some(open.clone()),
+        text: "one observed finding".into(),
+        refs: Vec::new(),
+    };
+    let first = agent.verbs.note(&same_note, at(205)).expect("observation");
+    let replay = agent
+        .verbs
+        .note(&same_note, at(206))
+        .expect("the same observation again");
+    assert_eq!(
+        replay.value["evidence"], first.value["evidence"],
+        "a replay"
+    );
+    observation(&first);
+    observation(&replay);
+    assert_eq!(replay.next, first.next);
+    assert_eq!(replay.reminders, first.reminders);
+
+    // The same note after another session claims the item: still an
+    // observation, now with no claim to offer.
+    holder
+        .claim(
+            ClaimInput {
+                work_ref: open.clone(),
+                ttl_seconds: Some(3_600),
+                recover: None,
+            },
+            at(207),
+        )
+        .expect("the other session claims");
+    let later = agent
+        .verbs
+        .note(&same_note, at(208))
+        .expect("the same note after the claim");
+    // A new note, not a replay: its key includes the claim basis.
+    assert_ne!(
+        later.value["evidence"], first.value["evidence"],
+        "a new note"
+    );
+    observation(&later);
+    assert!(
+        !later
+            .next
+            .iter()
+            .any(|command| command.starts_with("engram work claim")),
+        "{:?}",
+        later.next
+    );
+    assert!(
+        !later.reminders.iter().any(|line| line == label),
+        "{:?}",
+        later.reminders
+    );
+    drop(holder);
+}
+
 // A session that holds nothing, or whose claim has expired, keeps the bare
 // observation on the focus: nothing else could be meant.
 #[test]
