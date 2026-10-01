@@ -887,7 +887,13 @@ Rules that matter:
   feeds peers, handoff, and the final report. A non-holder observation feeds
   project/root peers without a checkpoint, claim renewal, or run credit.
   Its immediate receipt marks `non_holder: true` and says
-  `(observation, no run credit)`. A late note feeds peers but remains outside
+  `(observation, no run credit)`. On open work that receipt never nudges its
+  writer to claim: it carries no `claim it before execution` reminder, its
+  first next command is the read `engram work next --peek` (the item's own
+  read is its `full detail` line), and when the item is unclaimed the claim
+  comes last, with a reminder naming it as the way to execute the item rather
+  than observe it. The guidance follows the recorded note, not who holds the
+  item afterwards; a holder's note keeps its own. A late note feeds peers but remains outside
   the frozen seal; never repeat either elsewhere.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run

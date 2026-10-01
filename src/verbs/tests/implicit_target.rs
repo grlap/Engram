@@ -225,6 +225,96 @@ fn a_bare_word_after_add_is_refused_while_another_item_is_held() {
     assert_eq!(bare.value["work"]["short_ref"], json!(held));
 }
 
+// A note by a session that does not hold the item is an observation: its
+// receipt offers a read first and never nudges the writer to claim. On
+// unclaimed work the claim follows last, named as the way to execute the
+// item; on work another session holds, no claim is offered; a holder's note
+// keeps its own guidance. Text and JSON say the same.
+#[test]
+fn an_observation_note_offers_a_read_first_and_never_a_claim_nudge() {
+    let agent = agent("observation-guidance");
+    let nudge = "unclaimed: claim it before execution";
+    let label = "observation recorded; to execute this item rather than observe it, claim it (the last next command)";
+    let unclaimed = add(&agent, "Unclaimed work", None, 1);
+    // The item's detail read is the receipt's full-detail line; the first next
+    // command is the orientation read.
+    let read = |_: &str| "engram work next --peek".to_owned();
+    let detail = |work_ref: &str| format!("engram work show '{work_ref}' --notes");
+
+    let observed = note(&agent, Some(&unclaimed), 2).expect("observation");
+    assert_eq!(observed.value["non_holder"], json!(true));
+    assert_eq!(observed.next[0], read(&unclaimed), "{:?}", observed.next);
+    assert_eq!(observed.value["next"][0], json!(read(&unclaimed)));
+    assert_eq!(observed.value["full_detail"], json!(detail(&unclaimed)));
+    assert_eq!(
+        observed.next.last(),
+        Some(&format!("engram work claim {unclaimed}"))
+    );
+    assert!(
+        !observed.reminders.iter().any(|line| line == nudge),
+        "{:?}",
+        observed.reminders
+    );
+    assert!(
+        observed.reminders.iter().any(|line| line == label),
+        "{:?}",
+        observed.reminders
+    );
+    assert!(!observed.text().contains(nudge), "{}", observed.text());
+    assert!(observed.text().contains(label), "{}", observed.text());
+
+    // On work another session holds, the observer is offered no claim at all.
+    let held = add(&agent, "Held elsewhere", None, 3);
+    let holder = AgentVerbs::new(
+        agent.database.clone(),
+        ProjectId("observation-guidance".into()),
+        "agent".into(),
+        SessionId("other-holder".into()),
+        None,
+    );
+    holder
+        .claim(
+            ClaimInput {
+                work_ref: held.clone(),
+                ttl_seconds: Some(3_600),
+                recover: None,
+            },
+            at(4),
+        )
+        .expect("the other session claims");
+    let watched = note(&agent, Some(&held), 5).expect("observation on held work");
+    assert_eq!(watched.value["non_holder"], json!(true));
+    assert_eq!(watched.next[0], read(&held), "{:?}", watched.next);
+    assert!(
+        !watched
+            .next
+            .iter()
+            .any(|command| command.starts_with("engram work claim")),
+        "{:?}",
+        watched.next
+    );
+    assert!(
+        !watched
+            .reminders
+            .iter()
+            .any(|line| line == nudge || line == label),
+        "{:?}",
+        watched.reminders
+    );
+    drop(holder);
+
+    // A holder's note keeps the holder's guidance.
+    claim(&agent, &unclaimed, 3_600, 6);
+    let own = note(&agent, Some(&unclaimed), 7).expect("holder note");
+    assert_ne!(own.value["non_holder"], json!(true));
+    assert_ne!(own.next[0], read(&unclaimed), "{:?}", own.next);
+    assert!(
+        !own.reminders.iter().any(|line| line == label),
+        "{:?}",
+        own.reminders
+    );
+}
+
 // A session that holds nothing, or whose claim has expired, keeps the bare
 // observation on the focus: nothing else could be meant.
 #[test]

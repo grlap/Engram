@@ -1605,7 +1605,12 @@ impl AgentVerbs {
         }
         .map_err(|error| VerbError::at(error, &work_ref))?;
         let after = self.refreshed(&view, now)?;
-        let guidance = self.guidance(&after, "note", now);
+        let mut guidance = self.guidance(&after, "note", now);
+        // Chosen from the recorded result, not from who holds the item now:
+        // a claim or a replay after the note cannot turn it into execution.
+        if result.non_holder && after.status.work.lifecycle == WorkLifecycle::Open {
+            observation_guidance(&mut guidance, &work_ref);
+        }
         let value = super::mutation::NoteResult::from(&result);
         let observation = if result.non_holder {
             " (observation, no run credit)"
@@ -2306,6 +2311,36 @@ pub(super) fn detach_command(work_ref: &str) -> String {
 /// `unblock` is the exact command that clears the item's only active
 /// blocker, or the read that lists each of several with its own; it is
 /// suggested only while the caller may unblock.
+/// What an observation on open work offers its writer: a read first, never a
+/// nudge to claim. The item's own detail read is the receipt's `full detail`
+/// line, which mutation receipts keep out of `next`, so the first next
+/// command is the orientation read `next --peek`. When the item can be
+/// claimed, the claim follows last, with a reminder naming it as the way to
+/// execute the item rather than observe it.
+fn observation_guidance(guidance: &mut Guidance, work_ref: &str) {
+    guidance
+        .reminders
+        .retain(|reminder| reminder != "unclaimed: claim it before execution");
+    let is_claim = |command: &String| command.starts_with(&format!("engram work claim {work_ref}"));
+    let claims = guidance
+        .next
+        .iter()
+        .filter(|command| is_claim(command))
+        .cloned()
+        .collect::<Vec<_>>();
+    guidance.next.retain(|command| !is_claim(command));
+    let read = "engram work next --peek".to_owned();
+    guidance.next.retain(|command| *command != read);
+    guidance.next.insert(0, read);
+    if !claims.is_empty() {
+        guidance.next.extend(claims);
+        guidance.reminders.push(
+            "observation recorded; to execute this item rather than observe it, claim it (the last next command)"
+                .into(),
+        );
+    }
+}
+
 pub(super) fn next_commands(
     allowed_next: &[String],
     work_ref: &str,
