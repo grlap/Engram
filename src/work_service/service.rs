@@ -219,7 +219,10 @@ impl LocalWorkService {
                 "local work service could not initialize its SQLite connection".into(),
             )
         })?;
-        let store = cached.lock().map_err(|_| {
+        let started = crate::phase_trace::start();
+        let store = cached.lock();
+        crate::phase_trace::finish(crate::phase_trace::Phase::StoreMutexWait, started);
+        let store = store.map_err(|_| {
             StoreError::InvalidWorkProjection(
                 "local work service SQLite connection lock is poisoned".into(),
             )

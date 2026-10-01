@@ -2318,8 +2318,27 @@ fn resolve_project(project_file: &Path, home: Option<PathBuf>) -> Result<(Projec
 }
 
 async fn serve_mcp(server: McpServer) -> Result<()> {
+    // ENGRAM_MCP_PHASE_TRACE=1 at start records each tool call's phases to
+    // stderr; unset, the server and its transport are untouched.
+    let Some(trace) = engram::phase_trace::PhaseTrace::from_env() else {
+        let server = server
+            .serve(stdio())
+            .await
+            .context("failed to start Engram MCP stdio server")?;
+        server
+            .waiting()
+            .await
+            .context("Engram MCP stdio server stopped with an error")?;
+        return Ok(());
+    };
+    let transport = rmcp::transport::IntoTransport::<
+        rmcp::RoleServer,
+        std::io::Error,
+        rmcp::transport::async_rw::TransportAdapterAsyncRW,
+    >::into_transport(stdio());
     let server = server
-        .serve(stdio())
+        .with_phase_trace(Some(std::sync::Arc::clone(&trace)))
+        .serve(engram::phase_trace::TracingTransport::new(transport, trace))
         .await
         .context("failed to start Engram MCP stdio server")?;
     server

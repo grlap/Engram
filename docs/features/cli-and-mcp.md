@@ -1301,6 +1301,66 @@ lazily opened SQLite connection for its lifetime. All fifteen MCP tools use
 that service. A failed operation rolls back before the next call uses the
 connection.
 
+`ENGRAM_MCP_PHASE_TRACE=1` at `engram mcp` start turns on a phase trace for
+diagnosing slow calls. Any other value, or none, leaves the server and its
+transport untouched and writes nothing. With it on, every tool call whose
+handler returns ends in exactly one JSON line on stderr, at most 4 KiB,
+keyed `engram_mcp_phase_trace`; a handler that panics writes none.
+
+The line carries:
+- the call's numeric request `id`, with `correlation` `numeric`. A string id
+  is never echoed: `id` is null and `correlation` is `unavailable`;
+- the `tool` label (`unknown` for an unlisted name);
+- `state`, one of:
+  - `complete`: its response was sent;
+  - `send_failed`: sending the response failed;
+  - `cancelled`: the client sent `notifications/cancelled` for the call
+    before its response was handed to the transport, and no response was
+    sent. rmcp drops such a response while it serves. After the input
+    ends, though, rmcp still sends the responses already queued, a
+    cancelled call's included. So the line is written at close, or at once
+    for a call that settles after close. A cancelled call whose response
+    went out all the same reads `complete`. A cancel arriving after the
+    response was handed over has no effect. Only the client's cancel
+    counts: a server shutdown is not a cancel;
+  - `incomplete`: the transport closed before the response was sent, or the
+    call settled after the close;
+  - `evicted`: more than 256 settled calls waited for their sends, and this
+    one, the oldest, was let go;
+- `cancel_requested`, true when the client cancelled the call before its
+  response was handed over, whatever `state` says;
+- `handler_total_ms`;
+- `count`, `total_ms` and `max_ms` for each of:
+  - `store_open_total`: opening a connection, schema checks included; a read
+    word, `next` with peek included, opens its own read-only connection per
+    call;
+  - `store_mutex_wait`;
+  - `begin_immediate`, including any wait for the write lock;
+  - `commit`, which counts every `COMMIT`, read transactions' included;
+  - `receipt_serialize`;
+- `wire_encode_send_inclusive_ms`, the encode, write and flush of the
+  response together, for `complete` and `send_failed`;
+- the `evicted`, `unmatched_sends` and `dropped_lines` counters.
+
+Records are written by their own thread through a bounded queue, never on a
+request or send path. A host that stops reading stderr therefore costs
+dropped lines, counted in `dropped_lines`, and never a stalled server. Read
+stderr while the trace is on. Close waits up to a second for queued lines;
+lines queued at or after close are best effort, since the process may exit
+before they are written.
+
+Durations are elapsed wall time and overlap where one phase contains another.
+They are not summed, and a fast server record does not prove a fast client.
+`begin_immediate` and `commit` come from SQLite's statement profile, which
+has millisecond granularity, so a short statement reads as 0. The line never
+carries SQL, a path, parameters or a request or response body.
+
+`scripts/mcp-dogfood.test.mjs` runs its servers with the trace on and writes
+every record to its log. It prints a call's record beside its soft-threshold
+timing line when the call is slow, or says why there is none: a late record
+is printed when it arrives, and one that never came reads as unavailable at
+close.
+
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and
 session on the host. Relative project-file paths resolve from the caller's

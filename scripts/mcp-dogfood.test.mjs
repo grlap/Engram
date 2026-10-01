@@ -57,6 +57,23 @@ function timingLine(kind, name, elapsed, bytes) {
   return `MCP timing: ${kind}=${JSON.stringify(name)} elapsed_ms=${elapsed.toFixed(1)} soft_threshold_ms=${SOFT_TIMING_MS} wal_bytes=${bytes ?? "unavailable"} (sampled floor; close may truncate WAL)`;
 }
 
+// The server's opt-in phase trace: one stderr JSON record per tool call,
+// correlated by the call's numeric request id. A bounded number are kept.
+const PHASE_TRACE_ENV = "ENGRAM_MCP_PHASE_TRACE";
+const MAX_PHASE_RECORDS = 256;
+
+/** The line printed beside a slow call: its phase record, or why there is none. */
+function phaseTraceLine(id, record, why = "no record received") {
+  if (record === undefined) return `MCP phase trace: id=${id} unavailable (${why})`;
+  return `MCP phase trace: id=${id} ${JSON.stringify(record)}`;
+}
+
+/** Prints a slow call's phase line and keeps it on the client for tests. */
+function phaseNotice(client, line) {
+  client.phaseNotices?.push(line);
+  console.error(line);
+}
+
 function test(name, body) {
   return nodeTest(name, async (context) => {
     const timing = { started: performance.now(), homes: new Map() };
@@ -104,12 +121,21 @@ function shortRef(workId) {
 }
 
 class McpClient {
-  constructor(engramHome, sessionId, actorContext, actorId = sessionId, extraArgs = []) {
+  constructor(engramHome, sessionId, actorContext, actorId = sessionId, extraArgs = [], { phaseTrace = true, softTimingMs = SOFT_TIMING_MS } = {}) {
     this.engramHome = engramHome;
     this.nextId = 1;
     this.pending = new Map();
     this.stderr = "";
     this.buffer = "";
+    this.stderrBuffer = "";
+    this.phaseTrace = phaseTrace;
+    this.phaseRecords = new Map();
+    this.phaseLines = 0;
+    // Slow calls whose record had not arrived when they settled.
+    this.awaitingPhase = new Set();
+    // The calls at or above this many milliseconds get a phase line.
+    this.softTimingMs = softTimingMs;
+    this.phaseNotices = [];
     const args = [
       "--home",
       engramHome,
@@ -126,27 +152,70 @@ class McpClient {
     const environment = { ...process.env };
     if (actorContext === undefined) delete environment.ENGRAM_ACTOR_CONTEXT;
     else environment.ENGRAM_ACTOR_CONTEXT = actorContext;
+    if (phaseTrace) environment[PHASE_TRACE_ENV] = "1";
+    else delete environment[PHASE_TRACE_ENV];
     this.child = spawn(binary, args, {
       cwd: root,
       env: environment,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    this.child.stderr.on("data", (chunk) => {
-      this.stderr += chunk.toString("utf8");
-    });
+    this.child.stderr.on("data", (chunk) => this.receiveStderr(chunk));
     this.child.stdout.on("data", (chunk) => this.#receive(chunk));
     this.closed = new Promise((resolvePromise) => {
       this.child.once("close", (code, signal) => {
+        this.flushStderr();
         resolvePromise({ code, signal });
       });
     });
-    this.child.on("exit", (code, signal) => {
-      const error = new Error(
-        `MCP server exited code=${code} signal=${signal}: ${this.stderr}`,
-      );
-      for (const { reject } of this.pending.values()) reject(error);
-      this.pending.clear();
-    });
+    this.child.on("exit", (code, signal) => this.serverExited(code, signal));
+  }
+
+  // Stderr may still be draining at exit, so a partial line stays buffered
+  // until close; the message only shows it. Called through the prototype by
+  // the stderr test, as the methods below are.
+  serverExited(code, signal) {
+    const error = new Error(
+      `MCP server exited code=${code} signal=${signal}: ${this.stderr}${this.stderrBuffer}`,
+    );
+    for (const { reject } of this.pending.values()) reject(error);
+    this.pending.clear();
+  }
+
+  // A last stderr fragment with no newline, such as a partial message at
+  // exit, still reaches the diagnostics once stderr has closed.
+  flushStderr() {
+    if (this.stderrBuffer === "") return;
+    this.stderr += this.stderrBuffer;
+    this.stderrBuffer = "";
+  }
+
+  // Phase records are kept apart from other stderr, so error messages stay
+  // readable, and every one is written to the test log; a record split
+  // across chunks is reassembled by line.
+  receiveStderr(chunk) {
+    this.stderrBuffer += chunk.toString("utf8");
+    for (;;) {
+      const newline = this.stderrBuffer.indexOf("\n");
+      if (newline < 0) return;
+      const line = this.stderrBuffer.slice(0, newline + 1);
+      this.stderrBuffer = this.stderrBuffer.slice(newline + 1);
+      let record;
+      if (line.startsWith('{"') && line.includes('"engram_mcp_phase_trace"')) {
+        try { record = JSON.parse(line); } catch { record = undefined; }
+      }
+      if (record === undefined) {
+        this.stderr += line;
+        continue;
+      }
+      this.phaseLines++;
+      console.error(`MCP phase record: ${line.trimEnd()}`);
+      if (record.id === null) continue;
+      this.phaseRecords.set(record.id, record);
+      if (this.phaseRecords.size > MAX_PHASE_RECORDS) {
+        this.phaseRecords.delete(this.phaseRecords.keys().next().value);
+      }
+      if (this.awaitingPhase.delete(record.id)) phaseNotice(this, phaseTraceLine(record.id, record));
+    }
   }
 
   #receive(chunk) {
@@ -218,13 +287,22 @@ class McpClient {
 
   async call(name, arguments_ = {}) {
     const started = performance.now();
+    const id = this.nextId;
     let result;
     let elapsed;
     try {
       result = await this.request("tools/call", { name, arguments: arguments_ });
     } finally {
       elapsed = performance.now() - started;
-      if (elapsed >= SOFT_TIMING_MS) console.error(timingLine("call", name, elapsed, recordWalSample(this.engramHome)));
+      if (elapsed >= this.softTimingMs) {
+        const timing = timingLine("call", name, elapsed, recordWalSample(this.engramHome));
+        if (timing !== undefined) console.error(timing);
+        // The record follows the response on another pipe; print it now if
+        // it is here, or when it arrives, never waiting for it.
+        if (!this.phaseTrace) phaseNotice(this, phaseTraceLine(id, undefined, "trace off"));
+        else if (this.phaseRecords.has(id)) phaseNotice(this, phaseTraceLine(id, this.phaseRecords.get(id)));
+        else this.awaitingPhase.add(id);
+      }
     }
     // Catch the former 14s pathology; precise bounds live in Rust decode/statement-count regressions.
     assert.ok(elapsed < 10000, `${name} took ${elapsed.toFixed(1)}ms; sanity limit is 10000ms`);
@@ -248,6 +326,20 @@ class McpClient {
         clearTimeout(timer);
       }
     };
+    try {
+      // Called through the prototype so the close tests' plain stand-ins work.
+      await McpClient.prototype.closeChecked.call(this, started, waitForClose);
+    } finally {
+      // Slow calls whose record never came read as unavailable, on a failed
+      // close as much as on a clean one.
+      for (const id of this.awaitingPhase) {
+        phaseNotice(this, phaseTraceLine(id, this.phaseRecords.get(id), "no record before close"));
+      }
+      this.awaitingPhase.clear();
+    }
+  }
+
+  async closeChecked(started, waitForClose) {
     // Locked rmcp 3.1.4 may spend 5 s draining responses after stdin EOF.
     // A watchdog at that bound races legitimate drain completion; leave headroom for
     // store close and runtime shutdown under host I/O contention.
@@ -286,6 +378,9 @@ test("MCP close watchdog leaves room beyond the rmcp drain bound", async (t) => 
     }),
     pending: new Map(),
     stderr: "",
+    awaitingPhase: new Set(),
+    phaseRecords: new Map(),
+    phaseNotices: [],
   };
   const checked = assert.doesNotReject(McpClient.prototype.close.call(client));
   t.mock.timers.tick(5001);
@@ -439,6 +534,220 @@ test("compact mutation wire carries one item and shrinks the full-context fixtur
     } finally {
       removeFixtureHomes(engramHome);
     }
+  }
+  if (failure) throw failure;
+});
+
+test("a slow call prints its phase record, or says why there is none", () => {
+  const record = { engram_mcp_phase_trace: 1, id: 7, state: "complete" };
+  assert.equal(phaseTraceLine(7, record), `MCP phase trace: id=7 ${JSON.stringify(record)}`);
+  assert.equal(phaseTraceLine(7, undefined), "MCP phase trace: id=7 unavailable (no record received)");
+  assert.equal(phaseTraceLine(7, undefined, "trace off"), "MCP phase trace: id=7 unavailable (trace off)");
+});
+
+test("a slow call's phase line names its record when it arrives, or why it never did", async (t) => {
+  // A record that never arrived before close reads as unavailable.
+  const closing = {
+    child: { stdin: { destroyed: true, end() {} } },
+    closed: Promise.resolve({ code: 0, signal: null }),
+    pending: new Map(),
+    stderr: "",
+    awaitingPhase: new Set([42]),
+    phaseRecords: new Map(),
+    phaseNotices: [],
+  };
+  await McpClient.prototype.close.call(closing);
+  assert.deepEqual(closing.phaseNotices, ["MCP phase trace: id=42 unavailable (no record before close)"]);
+  // A failed close still says so, and keeps its own failure.
+  const failing = { ...closing, closed: Promise.resolve({ code: 3, signal: null }), awaitingPhase: new Set([43]), phaseNotices: [] };
+  await assert.rejects(McpClient.prototype.close.call(failing), /3/u);
+  assert.deepEqual(failing.phaseNotices, ["MCP phase trace: id=43 unavailable (no record before close)"]);
+
+  // A record split across stderr chunks, with the server's exit between
+  // them, is still read whole once stderr closes, and the slow call it
+  // answers names it rather than reading unavailable.
+  const split = {
+    pending: new Map(),
+    stderr: "",
+    stderrBuffer: "",
+    phaseLines: 0,
+    phaseRecords: new Map(),
+    awaitingPhase: new Set([44]),
+    phaseNotices: [],
+  };
+  const record = JSON.stringify({ engram_mcp_phase_trace: 1, id: 44, state: "complete" });
+  McpClient.prototype.receiveStderr.call(split, Buffer.from(`warning\n${record.slice(0, 20)}`));
+  McpClient.prototype.serverExited.call(split, 0, null);
+  McpClient.prototype.receiveStderr.call(split, Buffer.from(`${record.slice(20)}\n`));
+  McpClient.prototype.flushStderr.call(split);
+  assert.equal(split.stderr, "warning\n");
+  assert.equal(split.phaseLines, 1);
+  assert.deepEqual(split.phaseNotices, [`MCP phase trace: id=44 ${record}`]);
+
+  const engramHome = fixtureHome("engram-mcp-phase-notices-", t);
+  const clients = [];
+  let failure;
+  try {
+    buildAndInit(engramHome);
+    // Every call counts as slow here, so every call gets a phase line.
+    const traced = new McpClient(engramHome, "notice-on", undefined, "notice-on", [], { phaseTrace: true, softTimingMs: 0 });
+    clients.push(traced);
+    await traced.initialize();
+    const first = traced.nextId;
+    const work_ref = receipt(await traced.call("add", { title: "Noticed work", acceptance: ["noticed"] })).work.short_ref;
+    await traced.call("show", { work_ref });
+    await traced.call("show", { work_ref });
+    await traced.close();
+    // Each slow call's line names its own record, whether the record came
+    // before the response settled or after it.
+    assert.equal(traced.phaseNotices.length, 3, traced.phaseNotices.join("\n"));
+    traced.phaseNotices.forEach((line, index) => {
+      const prefix = `MCP phase trace: id=${first + index} `;
+      assert.ok(line.startsWith(prefix), line);
+      const record = JSON.parse(line.slice(prefix.length));
+      assert.equal(record.id, first + index);
+      assert.equal(record.state, "complete");
+    });
+
+    const untraced = new McpClient(engramHome, "notice-off", undefined, "notice-off", [], { phaseTrace: false, softTimingMs: 0 });
+    clients.push(untraced);
+    await untraced.initialize();
+    const id = untraced.nextId;
+    await untraced.call("show", { work_ref });
+    await untraced.close();
+    assert.deepEqual(untraced.phaseNotices, [`MCP phase trace: id=${id} unavailable (trace off)`]);
+  } catch (error) {
+    failure = error;
+  } finally {
+    for (const client of clients) {
+      try { await client.close(); } catch { /* already closed */ }
+    }
+    removeFixtureHomes(engramHome);
+  }
+  if (failure) throw failure;
+});
+
+test("the opt-in phase trace correlates every call and an unset server writes none", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-phase-trace-", t);
+  const clients = [];
+  let failure;
+  // The same calls on each server: one write, one claim, then reads.
+  const workload = async (client) => {
+    await client.initialize();
+    const first = client.nextId;
+    const added = await client.call("add", { title: "Traced work", acceptance: ["traced"] });
+    const work_ref = receipt(added).work.short_ref;
+    await client.call("claim", { work_ref });
+    const elapsed = [];
+    for (let index = 0; index < 10; index++) {
+      const started = performance.now();
+      await client.call("show", { work_ref });
+      elapsed.push(performance.now() - started);
+    }
+    return { first, last: client.nextId - 1, elapsed };
+  };
+  const summary = (values) => {
+    const sorted = [...values].sort((left, right) => left - right);
+    return `median=${sorted[Math.floor(sorted.length / 2)].toFixed(2)}ms max=${sorted.at(-1).toFixed(2)}ms`;
+  };
+  try {
+    buildAndInit(engramHome);
+    const traced = new McpClient(engramHome, "trace-on", undefined, "trace-on", [], { phaseTrace: true });
+    clients.push(traced);
+    const on = await workload(traced);
+    await traced.close();
+    // Every tool call has one complete record, correlated by its id; the
+    // handshake requests have none.
+    assert.equal(traced.phaseLines, on.last - on.first + 1);
+    for (let id = on.first; id <= on.last; id++) {
+      const record = traced.phaseRecords.get(id);
+      assert.ok(record, `no phase record for call ${id}`);
+      assert.equal(record.correlation, "numeric");
+      assert.equal(record.state, "complete");
+      assert.equal(typeof record.handler_total_ms, "number");
+      assert.equal(typeof record.wire_encode_send_inclusive_ms, "number");
+      const line = JSON.stringify(record);
+      assert.ok(Buffer.byteLength(line) <= 4096, line);
+      assert.ok(!line.includes(engramHome) && !line.includes("Traced work"), line);
+      assert.doesNotMatch(line, /\b(?:SELECT|INSERT|UPDATE|DELETE|BEGIN|COMMIT)\b/u);
+    }
+    const write = traced.phaseRecords.get(on.first);
+    assert.equal(write.tool, "add");
+    assert.ok(write.store_open_total.count >= 1, JSON.stringify(write));
+    assert.ok(write.begin_immediate.count >= 1, JSON.stringify(write));
+    assert.ok(write.commit.count >= 1, JSON.stringify(write));
+    assert.equal(traced.phaseRecords.get(on.last).tool, "show");
+    assert.doesNotMatch(traced.stderr, /engram_mcp_phase_trace/u);
+
+    const untraced = new McpClient(engramHome, "trace-off", undefined, "trace-off", [], { phaseTrace: false });
+    clients.push(untraced);
+    const off = await workload(untraced);
+    // The same reads again on two open servers, one traced and one not,
+    // interleaved so neither runs on a colder store or cache than the other.
+    const second = new McpClient(engramHome, "trace-on-again", undefined, "trace-on-again", [], { phaseTrace: true });
+    clients.push(second);
+    await second.initialize();
+    const work_ref = receipt(await second.call("add", { title: "Compared work", acceptance: ["compared"] })).work.short_ref;
+    const interleaved = { on: [], off: [] };
+    for (let index = 0; index < 30; index++) {
+      for (const [side, client] of index % 2 === 0 ? [["on", second], ["off", untraced]] : [["off", untraced], ["on", second]]) {
+        const started = performance.now();
+        await client.call("show", { work_ref });
+        interleaved[side].push(performance.now() - started);
+      }
+    }
+    await second.close();
+    await untraced.close();
+    assert.equal(untraced.phaseLines, 0);
+    assert.doesNotMatch(untraced.stderr, /engram_mcp_phase_trace/u);
+    // A comparison report, not a benchmark. That an unset server adds no
+    // work rests on its structure, not on these numbers: it installs no
+    // wrapper, profile callback, transport or writer thread, and its hooks
+    // only find no accumulator.
+    t.diagnostic(`show over MCP, first runs: trace on ${summary(on.elapsed)}, trace off ${summary(off.elapsed)}; interleaved: trace on ${summary(interleaved.on)}, trace off ${summary(interleaved.off)}`);
+  } catch (error) {
+    failure = error;
+  } finally {
+    for (const client of clients) {
+      try { await client.close(); } catch { /* already closed */ }
+    }
+    removeFixtureHomes(engramHome);
+  }
+  if (failure) throw failure;
+});
+
+test("a client's own stall is not attributed to the server or its send", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-phase-blocked-", t);
+  let client;
+  let failure;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "blocked-client", undefined, "blocked-client", [], { phaseTrace: true });
+    await client.initialize();
+    const work_ref = receipt(await client.call("add", { title: "Stalled reader", acceptance: ["read"] })).work.short_ref;
+    const id = client.nextId;
+    const started = performance.now();
+    const answered = client.request("tools/call", { name: "show", arguments: { work_ref } });
+    // The client's event loop stalls. The request may only leave when the
+    // stall ends, so the server's own phases stay short however long the
+    // client waited.
+    const stall = 1500;
+    const until = performance.now() + stall;
+    while (performance.now() < until) { /* busy client */ }
+    await answered;
+    const elapsed = performance.now() - started;
+    await client.close();
+    const record = client.phaseRecords.get(id);
+    assert.ok(record, `no phase record for call ${id}`);
+    assert.ok(elapsed >= stall, `client elapsed ${elapsed}`);
+    assert.ok(record.handler_total_ms < stall / 2, JSON.stringify(record));
+    assert.ok(record.wire_encode_send_inclusive_ms < stall / 2, JSON.stringify(record));
+    t.diagnostic(`client elapsed ${elapsed.toFixed(1)}ms; server handler ${record.handler_total_ms.toFixed(2)}ms; send ${record.wire_encode_send_inclusive_ms.toFixed(2)}ms`);
+  } catch (error) {
+    failure = error;
+  } finally {
+    try { await client?.close(); } catch { /* already closed */ }
+    removeFixtureHomes(engramHome);
   }
   if (failure) throw failure;
 });

@@ -36,6 +36,17 @@ impl SqliteStore {
         Self::open_with_host_path_identity(path, Some(HostPathPolicy::host_default()))
     }
 
+    /// Times this connection's `BEGIN IMMEDIATE` and `COMMIT` statements
+    /// into the phase trace of the call running them. Only an open inside a
+    /// traced MCP call registers it; the callback records a statement
+    /// category and its duration, never the statement.
+    fn enable_phase_profile(&self) {
+        self.connection.trace_v2(
+            rusqlite::trace::TraceEventCodes::SQLITE_TRACE_PROFILE,
+            Some(crate::phase_trace::sql_profile),
+        );
+    }
+
     /// Opens a local database without asserting the project root's filesystem
     /// identity: work and memory operations proceed against any persisted
     /// policy, and path-bearing control requests fail closed. Agent-facing services
@@ -46,7 +57,25 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when SQLite cannot open or initialize the store.
     pub fn open_unresolved(path: impl AsRef<Path>) -> Result<Self, StoreError> {
-        Self::open_with_host_path_identity(path, None)
+        let started = crate::phase_trace::start();
+        let opened = Self::open_with_host_path_identity(path, None);
+        Self::traced_open(started, opened)
+    }
+
+    /// Records an open inside a traced MCP call, schema checks included, and
+    /// times that connection's statements from then on. Outside a traced
+    /// call it does nothing.
+    fn traced_open(
+        started: Option<std::time::Instant>,
+        opened: Result<Self, StoreError>,
+    ) -> Result<Self, StoreError> {
+        crate::phase_trace::finish(crate::phase_trace::Phase::StoreOpen, started);
+        if let Ok(store) = &opened
+            && crate::phase_trace::active()
+        {
+            store.enable_phase_profile();
+        }
+        opened
     }
 
     /// Opens an existing current store for advisory reads only. The ordinary
@@ -55,6 +84,12 @@ impl SqliteStore {
     /// Never retry a refusal with a writable connection. SQLite may recreate
     /// a shared-memory coordination sidecar, but not write database/WAL bytes.
     pub(crate) fn open_existing_read_only(path: &Path) -> Result<Self, StoreError> {
+        let started = crate::phase_trace::start();
+        let opened = Self::open_existing_read_only_untraced(path);
+        Self::traced_open(started, opened)
+    }
+
+    fn open_existing_read_only_untraced(path: &Path) -> Result<Self, StoreError> {
         let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|error| {
                 // Only a proved absent path is initialization, not permissions,

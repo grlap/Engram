@@ -35,6 +35,8 @@ pub struct McpServer {
     tool_router: ToolRouter<Self>,
     /// Fixed at construction: only the read words, in their reading forms.
     read_only: bool,
+    /// The opt-in phase trace, when enabled at server start.
+    phase_trace: Option<Arc<crate::phase_trace::PhaseTrace>>,
 }
 
 impl McpServer {
@@ -125,7 +127,36 @@ impl McpServer {
             work_service,
             tool_router,
             read_only,
+            phase_trace: None,
         }
+    }
+
+    /// The same server, recording each tool call's phases into `trace`.
+    #[must_use]
+    pub fn with_phase_trace(mut self, trace: Option<Arc<crate::phase_trace::PhaseTrace>>) -> Self {
+        self.phase_trace = trace;
+        self
+    }
+
+    /// One tool call: the read-only admission, then the routed tool.
+    async fn call_tool_untraced(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        // The read-only mode decides on the raw call, before any tool runs.
+        if self.read_only
+            && let Err(restriction) = read_only::admit(&request.name, request.arguments.as_ref())
+        {
+            return Ok(CallToolResult::structured_error(read_only::refusal(
+                &request.name,
+                restriction,
+            ))
+            .into());
+        }
+        self.tool_router
+            .call(ToolCallContext::new(self, request, context))
+            .await
     }
 
     fn verb(&self, outcome: Result<Receipt, VerbError>) -> CallToolResult {
@@ -912,33 +943,37 @@ impl ServerHandler for McpServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        // The read-only mode decides on the raw call, before any tool runs.
-        if self.read_only
-            && let Err(restriction) = read_only::admit(&request.name, request.arguments.as_ref())
-        {
-            return Ok(CallToolResult::structured_error(read_only::refusal(
-                &request.name,
-                restriction,
-            ))
-            .into());
-        }
-        self.tool_router
-            .call(ToolCallContext::new(self, request, context))
-            .await
+        let Some(trace) = self.phase_trace.as_ref() else {
+            return self.call_tool_untraced(request, context).await;
+        };
+        let id = context.id.clone();
+        let tool = request.name.to_string();
+        let started = std::time::Instant::now();
+        let (result, phases) =
+            crate::phase_trace::scoped(self.call_tool_untraced(request, context)).await;
+        trace.handler_settled(id, &tool, started.elapsed(), phases);
+        result
     }
 }
 
 fn verb(outcome: Result<Receipt, VerbError>, words: &AgentVerbs) -> CallToolResult {
-    match outcome {
-        Ok(receipt) => CallToolResult::structured(receipt.value),
+    let value = match outcome {
+        Ok(receipt) => Ok(receipt.value),
         Err(error) => {
             let guidance = words.error_guidance(&error);
             let mut value = words.project_error(&error, store_error_value(&error.error));
             value["error"]["reminders"] = json!(guidance.reminders);
             value["error"]["next"] = json!(guidance.next);
-            CallToolResult::structured_error(value)
+            Err(value)
         }
-    }
+    };
+    let started = crate::phase_trace::start();
+    let result = match value {
+        Ok(value) => CallToolResult::structured(value),
+        Err(value) => CallToolResult::structured_error(value),
+    };
+    crate::phase_trace::finish(crate::phase_trace::Phase::ReceiptSerialize, started);
+    result
 }
 
 /// Stable structured rendering shared by MCP and native JSON/core errors.
