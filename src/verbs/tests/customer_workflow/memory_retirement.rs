@@ -17,6 +17,8 @@ fn remember(
                 expected_revision: None,
                 retires_with: target,
                 clear_retires_with: false,
+                append: false,
+                section: None,
             },
             at(at_ms),
         )
@@ -321,6 +323,8 @@ fn a_clear_needs_a_revise_on_every_route() {
                 expected_revision: None,
                 retires_with: None,
                 clear_retires_with: true,
+                append: false,
+                section: None,
             },
             at(2),
         )
@@ -338,6 +342,8 @@ fn a_clear_needs_a_revise_on_every_route() {
                 expected_revision: None,
                 retires_with: None,
                 clear_retires_with: true,
+                append: false,
+                section: None,
             },
             at(3),
         )
@@ -377,6 +383,8 @@ fn a_full_read_admitted_at_its_limit_still_reads_once_the_target_completes() {
                     expected_revision: None,
                     retires_with: Some(format!("local:{work}")),
                     clear_retires_with: false,
+                    append: false,
+                    section: None,
                 },
                 at(1),
             )
@@ -603,4 +611,48 @@ fn a_historical_version_never_calls_its_completed_target_a_forget_candidate() {
         .unwrap();
     assert_eq!(current.value["retiring_state"]["lifecycle"], "open");
     assert!(!current.text().contains("forget candidate"));
+}
+
+// A partial revise through the verbs: the receipt says what changed, with
+// bounded excerpts, and offers full reads of both revisions; --append and
+// --section together are refused before anything is written.
+#[test]
+fn a_partial_revise_receipt_shows_the_change_and_both_reads() {
+    let (_directory, verbs, _, _) = fixture();
+    remember(&verbs, "running-notes", "First finding.", None, false, 1);
+    let partial = |append: bool, section: Option<&str>, at_ms: i64| {
+        verbs.remember(
+            RememberInput {
+                text: "Second finding.".into(),
+                key: Some("running-notes".into()),
+                revise: true,
+                expected_revision: Some(1),
+                retires_with: None,
+                clear_retires_with: false,
+                append,
+                section: section.map(str::to_owned),
+            },
+            at(at_ms),
+        )
+    };
+    let both = partial(true, Some("notes"), 2).expect_err("append and section together");
+    assert!(both.to_string().contains("alternatives"), "{both}");
+
+    let appended = partial(true, None, 3).expect("append");
+    let text = appended.text();
+    assert!(
+        text.contains("revised project memory running-notes: revision 1 → 2"),
+        "{text}"
+    );
+    assert!(
+        text.contains("changed (append): 14 → 31 bytes; 0 removed and 17 added at byte 14"),
+        "{text}"
+    );
+    assert!(text.contains("  + Second finding."), "{text}");
+    for revision in [1, 2] {
+        let read = format!("engram work memories running-notes --full --revision {revision}");
+        assert!(appended.next.contains(&read), "{:?}", appended.next);
+    }
+    assert_eq!(appended.value["change"]["edit"], "append");
+    assert_eq!(appended.value["change"]["added_bytes"], 17);
 }

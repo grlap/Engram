@@ -542,6 +542,21 @@ impl VerbError {
                 vec![format!("project memory {key} has no revision {revision}; valid revisions are 1..{current}")],
                 vec![format!("engram work memories {key} --full --revision {current}")],
             ),
+            StoreError::ProjectMemorySectionNotFound(missing) => {
+                let super::super::storage::MissingMemorySection { key, revision, section, sections } =
+                    missing.as_ref();
+                (
+                    vec![if sections.is_empty() {
+                        format!("project memory {key} revision {revision} has no sections; add `{section}` with --append and its markers")
+                    } else {
+                        format!(
+                            "project memory {key} revision {revision} has no section `{section}`; its sections are: {}",
+                            sections.join(", ")
+                        )
+                    }],
+                    vec![format!("engram work memories {key} --full --revision {revision}")],
+                )
+            }
             StoreError::ProjectMemoryBindingInvalid => (
                 vec![
                     "the asserted actor/session binding for that project-memory action is absent or inconsistent".into(),

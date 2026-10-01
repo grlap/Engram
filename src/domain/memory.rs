@@ -273,6 +273,52 @@ pub struct RememberProjectMemoryRequest {
     pub created_at: DateTime<Utc>,
 }
 
+/// How a revise builds the new body from the revision it names: the text
+/// replaces the whole body, is appended as a paragraph, or replaces the
+/// interior of one marked section,
+/// `<!-- engram-section NAME -->` … `<!-- /engram-section NAME -->`.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProjectMemoryEdit {
+    #[default]
+    Whole,
+    Append,
+    Section {
+        name: String,
+    },
+}
+
+impl ProjectMemoryEdit {
+    #[must_use]
+    pub fn word(&self) -> &'static str {
+        match self {
+            Self::Whole => "whole",
+            Self::Append => "append",
+            Self::Section { .. } => "section",
+        }
+    }
+}
+
+/// What a revision changed relative to the one it replaced: the one span
+/// that differs, as bounded excerpts of what was removed and what was added,
+/// with exact byte counts and the bytes each excerpt leaves out.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryChange {
+    pub edit: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+    pub before_bytes: usize,
+    pub after_bytes: usize,
+    /// Byte offset where the changed span starts, in both bodies.
+    pub span_start: usize,
+    pub removed: String,
+    pub removed_bytes: usize,
+    pub removed_omitted_bytes: usize,
+    pub added: String,
+    pub added_bytes: usize,
+    pub added_omitted_bytes: usize,
+}
+
 /// Tombstone request for one permanently reserved project-memory key.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ForgetProjectMemoryRequest {
@@ -294,6 +340,9 @@ pub struct ProjectMemoryMutationReceipt {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forgotten_at: Option<DateTime<Utc>>,
     pub duplicate: bool,
+    /// What a revise changed relative to `replaced_revision`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<ProjectMemoryChange>,
 }
 
 /// Compact project-memory row; the full body is available only through a

@@ -763,6 +763,15 @@ enum WorkCommand {
         /// dropped, and record the clear; refused when there is neither.
         #[arg(long, requires = "revise")]
         clear_retires_with: bool,
+        /// With --revise and --expected-revision, append TEXT to that revision
+        /// as a paragraph instead of replacing the body.
+        #[arg(long, requires = "expected_revision", conflicts_with = "section")]
+        append: bool,
+        /// With --revise and --expected-revision, replace only the interior of
+        /// the section marked `<!-- engram-section NAME -->` …
+        /// `<!-- /engram-section NAME -->`; NAME uses a-z, 0-9 and -.
+        #[arg(long, value_name = "NAME", requires = "expected_revision")]
+        section: Option<String>,
     },
     /// List/search project memories, or read one key in full.
     Memories {
@@ -1895,6 +1904,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             expected_revision,
             retires_with,
             clear_retires_with,
+            append,
+            section,
         } => verbs.remember(
             RememberInput {
                 text: text
@@ -1905,6 +1916,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 expected_revision,
                 retires_with,
                 clear_retires_with,
+                append,
+                section,
             },
             now,
         ),

@@ -1011,6 +1011,16 @@ impl CarriedFailureRefusal {
     }
 }
 
+/// A section a partial memory revise named that its basis revision lacks,
+/// with the sections it has.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MissingMemorySection {
+    pub key: String,
+    pub revision: u64,
+    pub section: String,
+    pub sections: Vec<String>,
+}
+
 /// Errors at the immutable storage boundary.
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -1066,6 +1076,11 @@ pub enum StoreError {
         revision: u64,
         current: u64,
     },
+    #[error(
+        "project memory key {:?} revision {} has no section {:?}; its sections are {:?}",
+        .0.key, .0.revision, .0.section, .0.sections
+    )]
+    ProjectMemorySectionNotFound(Box<MissingMemorySection>),
     #[error("project memory key {0:?} is permanently retired")]
     ProjectMemoryRetired(String),
     #[error("project memory key {0:?} was not found")]

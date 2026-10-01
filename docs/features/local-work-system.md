@@ -1968,6 +1968,11 @@ Without a basis the write revises the current head, and its receipt explicitly
 names both the replaced and new revisions. An identical same-actor/session
 body with the same supplied basis replays the original revision, even after a
 later append; without a basis only an identical current revision replays.
+With `--expected-revision N`, `--append` or `--section NAME` builds the new
+body from revision N inside the write, appending a paragraph or replacing one
+marked section and keeping every other byte; the stored revision is still a
+full body, so history, replay and `forget` are unchanged (see
+[CLI and MCP](cli-and-mcp.md)).
 Use `memories KEY --full --revision N` to read one prior attributed version;
 each full read offers bounded previous-version navigation. There is no need
 for a companion key to correct a note. Without `--revise`, an existing live

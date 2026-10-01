@@ -224,7 +224,7 @@ engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-refer
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N] [--landed COMMIT --remote R --branch B --pushed-at RFC3339 [--installed-build FINGERPRINT]]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
-engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N] [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
+engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N [--append | --section NAME]] [--clear-retires-with]]] [--retires-with local:REF|external:PROJECT#REFERENCE]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N] | engram work memories --context-generation GENERATION
 engram work forget KEY
 ```
@@ -1048,6 +1048,24 @@ Rules that matter:
   reads of the key, retaining local canonical history. Snapshots transfer live
   histories, but only the tombstone for forgotten keys. MCP uses `revise`,
   `expected_revision`, and `revision` with the same meanings.
+  A revise can change part of a memory without resending the rest:
+  `--append` (MCP `append: true`) adds the text as a paragraph after a blank
+  line, and `--section NAME` (MCP `section`) replaces only the interior of the
+  section marked by full lines `<!-- engram-section NAME -->` and
+  `<!-- /engram-section NAME -->`, NAME being 1 to 64 bytes of `a-z`, `0-9`
+  and `-`; empty text clears the section. Both require `--revise`, `--key`
+  and `--expected-revision N`, are alternatives, and are built from revision
+  N inside the write, keeping every other byte, CRLF included, so a stale
+  basis conflicts (also when the edit could not be built on it) and an exact
+  retry replays rather than appending twice. A section the basis lacks is
+  refused with `memory_section_not_found`, naming the sections it has; add a
+  new one with `--append` and its markers. Markers must pair, never nest, and
+  never appear in a section's replacement text; an append to a body whose
+  markers pair must keep them paired, and an append to one that only quotes
+  a marker needs its own text to pair. Every revise's receipt shows what changed:
+  `changed (EDIT): B → A bytes; R removed and N added at byte S`, then the
+  removed and added text as bounded excerpts with any bytes left out, and
+  `next` offers full reads of both revisions; its JSON carries `change`.
   `--retires-with local:REF` or `--retires-with external:PROJECT#REFERENCE`
   (MCP `retires_with`) names the item whose resolution makes a workaround
   memory worth reviewing; a revise keeps the current target, and

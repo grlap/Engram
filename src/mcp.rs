@@ -430,6 +430,13 @@ struct RememberArgs {
     /// With revise, remove the retirement target, or acknowledge one a revision
     /// dropped, and record the clear; refused without revise or when there is neither.
     clear_retires_with: Option<bool>,
+    /// With revise and `expected_revision`, append text to that revision as a
+    /// paragraph instead of replacing the body.
+    append: Option<bool>,
+    /// With revise and `expected_revision`, replace only the interior of the
+    /// section marked `<!-- engram-section NAME -->` … `<!-- /engram-section NAME -->`.
+    #[schemars(length(max = 64))]
+    section: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -808,6 +815,8 @@ impl McpServer {
                 expected_revision: args.expected_revision,
                 retires_with: args.retires_with,
                 clear_retires_with: args.clear_retires_with.unwrap_or(false),
+                append: args.append.unwrap_or(false),
+                section: args.section,
             },
             Utc::now(),
         ))
@@ -1012,6 +1021,14 @@ pub fn store_error_value(error: &StoreError) -> Value {
         } => json!({
             "key": key, "revision": revision, "current_revision": current,
             "remedy": format!("read memories {key} --full for history navigation"),
+        }),
+        StoreError::ProjectMemorySectionNotFound(missing) => json!({
+            "key": missing.key, "revision": missing.revision, "section": missing.section,
+            "sections": missing.sections,
+            "remedy": format!(
+                "name one of the existing sections, or add `{}` with append and its markers",
+                missing.section
+            ),
         }),
         StoreError::ProjectMemoryRetired(key) => json!({
             "key": key,
@@ -1307,6 +1324,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::ProjectMemoryExists(_) => "memory_exists",
         StoreError::ProjectMemoryRevisionConflict { .. } => "memory_revision_conflict",
         StoreError::ProjectMemoryRevisionNotFound { .. } => "memory_revision_not_found",
+        StoreError::ProjectMemorySectionNotFound(_) => "memory_section_not_found",
         StoreError::ProjectMemoryRetired(_) => "memory_retired",
         StoreError::ProjectMemoryBindingInvalid => "memory_binding_invalid",
         StoreError::InvalidProjectMemory(_) => "memory_invalid",

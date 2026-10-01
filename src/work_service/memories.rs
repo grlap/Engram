@@ -67,21 +67,58 @@ impl LocalWorkService {
         retiring_target: crate::domain::ProjectMemoryRetiringTargetChange,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
-        self.store_at(now)?.remember_project_memory_with_admission(
-            &RememberProjectMemoryRequest {
-                project_id: self.project_id.clone(),
-                session_id: self.session_id.clone(),
-                key,
-                revise,
-                expected_revision,
-                body,
-                retiring_target,
-                actor: self.actor("remember", "record attributed project memory"),
-                created_at: now,
-            },
-            &DevelopmentNoopRedactor,
-            ensure_project_memory_full_is_admissible,
+        self.revise_project_memory(
+            body,
+            key,
+            revise,
+            expected_revision,
+            retiring_target,
+            &crate::domain::ProjectMemoryEdit::Whole,
+            now,
         )
+    }
+
+    /// Creates or revises one project memory as
+    /// [`Self::remember_project_memory_with_target`] does, with `edit`
+    /// choosing how a revise builds its body: the text replaces it, is
+    /// appended, or replaces one marked section.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed storage refusal as that function does, or when a
+    /// partial edit lacks its basis, names a missing basis revision or
+    /// section, or would leave unpaired section markers.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one call carries the memory's text, key, revise basis, target and edit"
+    )]
+    pub fn revise_project_memory(
+        &self,
+        body: String,
+        key: Option<String>,
+        revise: bool,
+        expected_revision: Option<u64>,
+        retiring_target: crate::domain::ProjectMemoryRetiringTargetChange,
+        edit: &crate::domain::ProjectMemoryEdit,
+        now: DateTime<Utc>,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        self.store_at(now)?
+            .remember_project_memory_edit_with_admission(
+                &RememberProjectMemoryRequest {
+                    project_id: self.project_id.clone(),
+                    session_id: self.session_id.clone(),
+                    key,
+                    revise,
+                    expected_revision,
+                    body,
+                    retiring_target,
+                    actor: self.actor("remember", "record attributed project memory"),
+                    created_at: now,
+                },
+                edit,
+                &DevelopmentNoopRedactor,
+                ensure_project_memory_full_is_admissible,
+            )
     }
 
     /// Lists live project memories without exposing body text.

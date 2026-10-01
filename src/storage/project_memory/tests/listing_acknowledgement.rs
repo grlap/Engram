@@ -331,6 +331,8 @@ fn the_memories_word_answers_while_the_memory_position_is_missing() {
                 expected_revision: None,
                 retires_with: None,
                 clear_retires_with: false,
+                append: false,
+                section: None,
                 text: "a retained note".into(),
                 key: Some("retained".into()),
             },

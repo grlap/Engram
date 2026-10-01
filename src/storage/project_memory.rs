@@ -12,6 +12,7 @@ use super::{
     TransactionBehavior, fts_query, normalize_project_memory_query, params,
 };
 
+mod edit;
 mod history;
 #[cfg(test)]
 mod tests;
@@ -55,6 +56,7 @@ impl SqliteStore {
         self.remember_project_memory_with_admission(request, redactor, |_| Ok(()))
     }
 
+    #[cfg(test)]
     pub(crate) fn remember_project_memory_with_admission<R, A>(
         &mut self,
         request: &RememberProjectMemoryRequest,
@@ -65,11 +67,48 @@ impl SqliteStore {
         R: Redactor,
         A: Fn(&ProjectMemoryFull) -> Result<(), StoreError>,
     {
+        self.remember_project_memory_edit_with_admission(
+            request,
+            &crate::domain::ProjectMemoryEdit::Whole,
+            redactor,
+            admit_full_response,
+        )
+    }
+
+    /// Creates or revises one project memory as
+    /// [`Self::remember_project_memory_with_admission`] does, building a
+    /// revise's body from the revision it names: the request's text replaces
+    /// the whole body, is appended, or replaces one marked section. A partial
+    /// edit names its basis revision, which must be the current one, and is
+    /// assembled in the writer transaction, so an exact retry replays rather
+    /// than appending twice.
+    ///
+    /// # Errors
+    ///
+    /// Refuses as the whole-body path does; a partial edit without `--revise`,
+    /// a key and a positive basis; a basis revision that does not exist; and
+    /// a section the basis lacks or a body whose markers do not pair.
+    pub(crate) fn remember_project_memory_edit_with_admission<R, A>(
+        &mut self,
+        request: &RememberProjectMemoryRequest,
+        edit: &crate::domain::ProjectMemoryEdit,
+        redactor: &R,
+        admit_full_response: A,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError>
+    where
+        R: Redactor,
+        A: Fn(&ProjectMemoryFull) -> Result<(), StoreError>,
+    {
+        let partial = *edit != crate::domain::ProjectMemoryEdit::Whole;
         admit_live_project_memory_sessions(&request.session_id, &request.actor)?;
         validate_project_memory_authorization(&request.session_id, &request.actor)?;
         let actor = validated_project_memory_actor(&request.actor, redactor)?;
         validate_project_memory_authorization(&request.session_id, &actor)?;
-        if request.body.trim().is_empty() {
+        // A section edit may clear its section; the body it builds keeps the
+        // markers, so it is never empty.
+        if request.body.trim().is_empty()
+            && !matches!(edit, crate::domain::ProjectMemoryEdit::Section { .. })
+        {
             return Err(StoreError::InvalidProjectMemory(
                 "memory body must not be empty".into(),
             ));
@@ -112,6 +151,11 @@ impl SqliteStore {
                 "--revise requires --key; --expected-revision requires --revise and a positive revision".into(),
             ));
         }
+        if partial && (!request.revise || request.expected_revision.is_none()) {
+            return Err(StoreError::InvalidProjectMemory(
+                "--append and --section revise a memory: they require --revise, --key and --expected-revision".into(),
+            ));
+        }
         let mut request = request.clone();
         request.actor = actor;
 
@@ -122,6 +166,53 @@ impl SqliteStore {
         let history = lookup_project_memory_history_on(&transaction, &request.project_id, &key)?;
         let existing = history.last();
         let current = history_revision(&history)?;
+        // A partial edit stores the full body it builds from its basis, so
+        // the replay and conflict checks below see what will be stored.
+        if partial {
+            let basis = request.expected_revision.unwrap_or_default();
+            match existing {
+                None => return Err(StoreError::ProjectMemoryNotFound(key)),
+                Some(entry) if entry.assertion.status == MemoryStatus::Tombstoned => {
+                    return Err(StoreError::ProjectMemoryRetired(key));
+                }
+                Some(_) => {}
+            }
+            let version = usize::try_from(basis - 1)
+                .ok()
+                .and_then(|index| history.get(index))
+                .ok_or_else(|| StoreError::ProjectMemoryRevisionNotFound {
+                    key: key.clone(),
+                    revision: basis,
+                    current,
+                })?;
+            let built = edit::assemble(&key, basis, &version.version.body, edit, &request.body)
+                .and_then(|body| {
+                    if body.len() > MAX_PROJECT_MEMORY_BODY_BYTES {
+                        return Err(StoreError::InvalidProjectMemory(format!(
+                            "the revised memory body exceeds {MAX_PROJECT_MEMORY_BODY_BYTES} UTF-8 bytes"
+                        )));
+                    }
+                    Ok(body)
+                });
+            // An edit that cannot be built on a basis that is no longer
+            // current is a stale edit: the writer must read the head again,
+            // not mend an old revision. Building is deterministic, so a
+            // replay never lands here.
+            let body = match built {
+                Err(_) if basis != current => {
+                    return Err(StoreError::ProjectMemoryRevisionConflict {
+                        key,
+                        expected: basis,
+                        current,
+                    });
+                }
+                built => built?,
+            };
+            redactor
+                .inspect(&body)
+                .map_err(StoreError::RedactionRefused)?;
+            request.body = body;
+        }
         // The version a revise builds on: the supplied basis, or the head.
         let basis_version = if request.revise {
             request
@@ -187,6 +278,12 @@ impl SqliteStore {
                     replay_index,
                     current,
                 )))?;
+                // The change is read from the two revisions the replay names,
+                // never from the current head.
+                let change = replay_index
+                    .checked_sub(1)
+                    .and_then(|index| history.get(index))
+                    .map(|before| edit::change(edit, &before.version.body, &replay.version.body));
                 return Ok(ProjectMemoryMutationReceipt {
                     key,
                     revision: replay_revision,
@@ -194,6 +291,7 @@ impl SqliteStore {
                     remembered_at: replay.version.created_at,
                     forgotten_at: None,
                     duplicate: true,
+                    change,
                 });
             }
             if !request.revise {
@@ -279,6 +377,9 @@ impl SqliteStore {
             &request.project_id,
             i64::from(existing.is_none()),
         )?;
+        let change = existing
+            .filter(|_| request.revise)
+            .map(|before| edit::change(edit, &before.version.body, &request.body));
         transaction.commit()?;
         Ok(ProjectMemoryMutationReceipt {
             key,
@@ -287,6 +388,7 @@ impl SqliteStore {
             remembered_at: request.created_at,
             forgotten_at: None,
             duplicate: false,
+            change,
         })
     }
 
@@ -323,6 +425,7 @@ impl SqliteStore {
                 remembered_at: existing.version.created_at,
                 forgotten_at: Some(existing.assertion.created_at),
                 duplicate: true,
+                change: None,
             });
         }
         if existing.assertion.status != MemoryStatus::Active {
@@ -365,6 +468,7 @@ impl SqliteStore {
             remembered_at: existing.version.created_at,
             forgotten_at: Some(request.created_at),
             duplicate: false,
+            change: None,
         })
     }
 

@@ -13,6 +13,7 @@ use crate::*;
 use crate::{ProjectId, domain::ProvenanceLink};
 
 mod listing_acknowledgement;
+mod partial;
 mod retiring;
 mod revisions;
 

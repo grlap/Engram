@@ -332,6 +332,12 @@ pub struct RememberInput {
     pub retires_with: Option<String>,
     #[serde(default)]
     pub clear_retires_with: bool,
+    /// Append the text to the memory as a paragraph instead of replacing it.
+    #[serde(default)]
+    pub append: bool,
+    /// Replace only the interior of this marked section.
+    #[serde(default)]
+    pub section: Option<String>,
 }
 
 /// `memories`: compact list/search or one dedicated full read.
@@ -1439,21 +1445,23 @@ impl AgentVerbs {
     pub fn remember(&self, input: RememberInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let retiring_target =
             parse_retiring_target(input.retires_with.as_deref(), input.clear_retires_with)?;
-        let receipt = self.service.remember_project_memory_with_target(
+        let edit = super::memory_change::edit(input.append, input.section.as_deref())?;
+        let receipt = self.service.revise_project_memory(
             input.text,
             input.key,
             input.revise,
             input.expected_revision,
             retiring_target,
+            &edit,
             now,
         )?;
-        let guidance = Guidance {
+        let (changed, reads) = super::memory_change::lines(&receipt);
+        let mut guidance = Guidance {
             reminders: Vec::new(),
-            next: vec![
-                format!("engram work memories {} --full", receipt.key),
-                "engram work memories".into(),
-            ],
+            next: vec![format!("engram work memories {} --full", receipt.key)],
         };
+        guidance.next.extend(reads);
+        guidance.next.push("engram work memories".into());
         let replay = if receipt.duplicate { " (replayed)" } else { "" };
         let line = match receipt.replaced_revision {
             Some(previous) => format!(
@@ -1465,7 +1473,7 @@ impl AgentVerbs {
                 receipt.key, receipt.revision
             ),
         };
-        let lines = vec![line];
+        let lines = std::iter::once(line).chain(changed).collect();
         Ok(self.finish_mutation(Receipt::assemble(
             lines,
             guidance,
