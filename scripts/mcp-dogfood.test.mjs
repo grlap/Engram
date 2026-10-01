@@ -62,9 +62,20 @@ function timingLine(kind, name, elapsed, bytes) {
 const PHASE_TRACE_ENV = "ENGRAM_MCP_PHASE_TRACE";
 const MAX_PHASE_RECORDS = 256;
 
-/** The line printed beside a slow call: its phase record, or why there is none. */
+// The record states that time a whole call, its response's send included.
+const PHASE_TIMED_STATES = new Set(["complete", "send_failed"]);
+
+/**
+ * The line printed beside a slow call: its phase record, or why there is
+ * none. A record that did not time the whole call, such as an evicted,
+ * incomplete or cancelled one, reads as unavailable, so it never passes for
+ * a fast call; its fields follow for diagnosis.
+ */
 function phaseTraceLine(id, record, why = "no record received") {
   if (record === undefined) return `MCP phase trace: id=${id} unavailable (${why})`;
+  if (!PHASE_TIMED_STATES.has(record.state)) {
+    return `MCP phase trace: id=${id} unavailable (record ${record.state}) ${JSON.stringify(record)}`;
+  }
   return `MCP phase trace: id=${id} ${JSON.stringify(record)}`;
 }
 
@@ -168,6 +179,21 @@ class McpClient {
       });
     });
     this.child.on("exit", (code, signal) => this.serverExited(code, signal));
+  }
+
+  // The phase line beside a slow call's soft-threshold line. The record
+  // follows the response on another pipe: when it is not here yet, the call
+  // reads as unavailable now and its record is printed when it arrives,
+  // never waited for. Called through the prototype by the notice test.
+  slowCallNotice(id) {
+    if (!this.phaseTrace) {
+      phaseNotice(this, phaseTraceLine(id, undefined, "trace off"));
+    } else if (this.phaseRecords.has(id)) {
+      phaseNotice(this, phaseTraceLine(id, this.phaseRecords.get(id)));
+    } else {
+      phaseNotice(this, phaseTraceLine(id, undefined, "record not yet received"));
+      this.awaitingPhase.add(id);
+    }
   }
 
   // Stderr may still be draining at exit, so a partial line stays buffered
@@ -297,11 +323,7 @@ class McpClient {
       if (elapsed >= this.softTimingMs) {
         const timing = timingLine("call", name, elapsed, recordWalSample(this.engramHome));
         if (timing !== undefined) console.error(timing);
-        // The record follows the response on another pipe; print it now if
-        // it is here, or when it arrives, never waiting for it.
-        if (!this.phaseTrace) phaseNotice(this, phaseTraceLine(id, undefined, "trace off"));
-        else if (this.phaseRecords.has(id)) phaseNotice(this, phaseTraceLine(id, this.phaseRecords.get(id)));
-        else this.awaitingPhase.add(id);
+        this.slowCallNotice(id);
       }
     }
     // Catch the former 14s pathology; precise bounds live in Rust decode/statement-count regressions.
@@ -543,6 +565,13 @@ test("a slow call prints its phase record, or says why there is none", () => {
   assert.equal(phaseTraceLine(7, record), `MCP phase trace: id=7 ${JSON.stringify(record)}`);
   assert.equal(phaseTraceLine(7, undefined), "MCP phase trace: id=7 unavailable (no record received)");
   assert.equal(phaseTraceLine(7, undefined, "trace off"), "MCP phase trace: id=7 unavailable (trace off)");
+  const failed = { engram_mcp_phase_trace: 1, id: 7, state: "send_failed" };
+  assert.equal(phaseTraceLine(7, failed), `MCP phase trace: id=7 ${JSON.stringify(failed)}`);
+  // A record that did not time the whole call never passes for a fast one.
+  for (const state of ["evicted", "incomplete", "cancelled"]) {
+    const partial = { engram_mcp_phase_trace: 1, id: 7, state, handler_total_ms: 1 };
+    assert.equal(phaseTraceLine(7, partial), `MCP phase trace: id=7 unavailable (record ${state}) ${JSON.stringify(partial)}`);
+  }
 });
 
 test("a slow call's phase line names its record when it arrives, or why it never did", async (t) => {
@@ -562,6 +591,30 @@ test("a slow call's phase line names its record when it arrives, or why it never
   const failing = { ...closing, closed: Promise.resolve({ code: 3, signal: null }), awaitingPhase: new Set([43]), phaseNotices: [] };
   await assert.rejects(McpClient.prototype.close.call(failing), /3/u);
   assert.deepEqual(failing.phaseNotices, ["MCP phase trace: id=43 unavailable (no record before close)"]);
+
+  // At the threshold, a record not here yet reads unavailable at once and is
+  // printed when it arrives; an evicted record already here reads
+  // unavailable, never as a fast call.
+  const waiting = {
+    phaseTrace: true,
+    pending: new Map(),
+    stderr: "",
+    stderrBuffer: "",
+    phaseLines: 0,
+    phaseRecords: new Map([[46, { engram_mcp_phase_trace: 1, id: 46, state: "evicted", handler_total_ms: 3 }]]),
+    awaitingPhase: new Set(),
+    phaseNotices: [],
+  };
+  McpClient.prototype.slowCallNotice.call(waiting, 45);
+  McpClient.prototype.slowCallNotice.call(waiting, 46);
+  const late = JSON.stringify({ engram_mcp_phase_trace: 1, id: 45, state: "complete" });
+  McpClient.prototype.receiveStderr.call(waiting, Buffer.from(`${late}\n`));
+  assert.deepEqual(waiting.phaseNotices, [
+    "MCP phase trace: id=45 unavailable (record not yet received)",
+    `MCP phase trace: id=46 unavailable (record evicted) ${JSON.stringify(waiting.phaseRecords.get(46))}`,
+    `MCP phase trace: id=45 ${late}`,
+  ]);
+  assert.equal(waiting.awaitingPhase.size, 0);
 
   // A record split across stderr chunks, with the server's exit between
   // them, is still read whole once stderr closes, and the slow call it
@@ -598,16 +651,18 @@ test("a slow call's phase line names its record when it arrives, or why it never
     await traced.call("show", { work_ref });
     await traced.call("show", { work_ref });
     await traced.close();
-    // Each slow call's line names its own record, whether the record came
-    // before the response settled or after it.
-    assert.equal(traced.phaseNotices.length, 3, traced.phaseNotices.join("\n"));
-    traced.phaseNotices.forEach((line, index) => {
+    // Each slow call's lines end with its own record, whether the record
+    // came before the response settled or after it; a record that came after
+    // is preceded by the call reading unavailable at its threshold.
+    for (let index = 0; index < 3; index++) {
       const prefix = `MCP phase trace: id=${first + index} `;
-      assert.ok(line.startsWith(prefix), line);
-      const record = JSON.parse(line.slice(prefix.length));
+      const lines = traced.phaseNotices.filter((line) => line.startsWith(prefix));
+      assert.ok(lines.length === 1 || lines.length === 2, traced.phaseNotices.join("\n"));
+      if (lines.length === 2) assert.equal(lines[0], `${prefix}unavailable (record not yet received)`);
+      const record = JSON.parse(lines.at(-1).slice(prefix.length));
       assert.equal(record.id, first + index);
       assert.equal(record.state, "complete");
-    });
+    }
 
     const untraced = new McpClient(engramHome, "notice-off", undefined, "notice-off", [], { phaseTrace: false, softTimingMs: 0 });
     clients.push(untraced);

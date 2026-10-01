@@ -1351,7 +1351,8 @@ The line carries:
     word, `next` with peek included, opens its own read-only connection per
     call;
   - `store_mutex_wait`;
-  - `begin_immediate`, including any wait for the write lock;
+  - `begin_immediate`, including any wait for the write lock, whether it
+    ends in the lock or in the 5-second busy timeout;
   - `commit`, which counts every `COMMIT`, read transactions' included;
   - `receipt_serialize`;
 - `wire_encode_send_inclusive_ms`, the encode, write and flush of the

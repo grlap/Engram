@@ -896,3 +896,111 @@ fn a_cancelled_call_drained_after_input_ends_reads_complete() {
     assert_eq!(lines[0]["cancel_requested"], true);
     assert_eq!(lines[0]["unmatched_sends"], 1, "only initialize's");
 }
+
+fn verbs_on(database: &std::path::Path, session: &str) -> AgentVerbs {
+    AgentVerbs::new(
+        database.to_path_buf(),
+        ProjectId("phase-trace-timeout".into()),
+        "agent".into(),
+        SessionId(session.into()),
+        Some("phase-trace-test".into()),
+    )
+}
+
+fn try_add(
+    verbs: &AgentVerbs,
+    title: &str,
+    second: i64,
+) -> Result<crate::verbs::Receipt, crate::verbs::VerbError> {
+    verbs.add(
+        AddInput {
+            external: None,
+            notes: Vec::new(),
+            title: title.into(),
+            outcome: None,
+            acceptance: vec![format!("{title} is delivered")],
+            bindings: Vec::new(),
+            under: None,
+            optional: false,
+            priority: None,
+            labels: Vec::new(),
+            assignee: None,
+            kind: None,
+            evaluation_mode: None,
+        },
+        at(second),
+    )
+}
+
+// The trace changes no timeout. A traced and an untraced write, run together
+// against a writer that holds the lock past the store's busy timeout, wait
+// the same bound and are refused the same way. The traced store is opened
+// inside a traced call, as the MCP server's first call opens it, so its
+// connection carries the profile; SQLite profiles a statement that ends in
+// SQLITE_BUSY too, so the timed-out BEGIN IMMEDIATE shows its wait.
+#[test]
+fn a_busy_timeout_is_unchanged_by_the_trace() {
+    let home = crate::test_support::temp_home().expect("temporary home");
+    let database = home.path().join("engram.sqlite3");
+    let traced_verbs = verbs_on(&database, "phase-trace-traced");
+    let untraced_verbs = verbs_on(&database, "phase-trace-untraced");
+    let (opened, warmed) = block_on(scoped(async {
+        try_add(&traced_verbs, "Opens the traced store", 1)
+    }));
+    opened.expect("first traced write");
+    // The positive control: the traced connection is profiled.
+    assert_eq!(warmed.store_open.count, 1, "{warmed:?}");
+    assert!(warmed.begin_immediate.count >= 1, "{warmed:?}");
+    assert!(warmed.commit.count >= 1, "{warmed:?}");
+    try_add(&untraced_verbs, "Opens the untraced store", 2).expect("first untraced write");
+    let blocker = rusqlite::Connection::open(&database).expect("second connection");
+    blocker
+        .execute_batch("BEGIN IMMEDIATE")
+        .expect("hold the write lock");
+    let ((traced, phases, traced_elapsed), (untraced, untraced_elapsed)) =
+        std::thread::scope(|scope| {
+            let traced = scope.spawn(|| {
+                let started = Instant::now();
+                let (result, phases) = block_on(scoped(async {
+                    try_add(&traced_verbs, "Times out traced", 3)
+                }));
+                (result, phases, started.elapsed())
+            });
+            let untraced = scope.spawn(|| {
+                let started = Instant::now();
+                let result = try_add(&untraced_verbs, "Times out untraced", 4);
+                (result, started.elapsed())
+            });
+            (
+                traced.join().expect("traced writer"),
+                untraced.join().expect("untraced writer"),
+            )
+        });
+    blocker
+        .execute_batch("COMMIT")
+        .expect("release the write lock");
+    let traced = traced.expect_err("the traced write times out");
+    let untraced = untraced.expect_err("the untraced write times out");
+    assert_eq!(traced.error.to_string(), untraced.error.to_string());
+    assert_eq!(
+        format!("{:?}", traced.guidance()),
+        format!("{:?}", untraced.guidance())
+    );
+    // Both waited the store's busy timeout, and about equally long.
+    let bound = Duration::from_secs(4);
+    assert!(traced_elapsed >= bound, "{traced_elapsed:?}");
+    assert!(untraced_elapsed >= bound, "{untraced_elapsed:?}");
+    let difference = traced_elapsed.abs_diff(untraced_elapsed);
+    assert!(
+        difference < Duration::from_secs(2),
+        "traced {traced_elapsed:?}, untraced {untraced_elapsed:?}"
+    );
+    assert_eq!(
+        phases.store_open.count, 0,
+        "the cached connection: {phases:?}"
+    );
+    assert!(phases.begin_immediate.count >= 1, "{phases:?}");
+    assert!(phases.begin_immediate.max >= bound, "{phases:?}");
+    // Every connection closes before the home goes: locals drop in reverse
+    // order, the blocker and both stores first, the home last.
+}
