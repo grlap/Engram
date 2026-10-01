@@ -40,6 +40,16 @@ impl Restriction {
         }
     }
 
+    /// The read the caller can make instead, as every error's `next` gives
+    /// one; arguments a read word does not declare have no fixed one.
+    fn next(self) -> &'static [&'static str] {
+        match self {
+            Self::ToolNotAdmitted | Self::NextWithoutPeek => &["engram work next --peek"],
+            Self::MemoriesWithContextGeneration => &["engram work memories"],
+            Self::ArgumentNotAdmitted => &[],
+        }
+    }
+
     fn reason(self) -> &'static str {
         match self {
             Self::ToolNotAdmitted => {
@@ -91,7 +101,8 @@ fn declares<T: DeserializeOwned>(arguments: &Map<String, Value>) -> bool {
     serde_json::from_value::<T>(Value::Object(arguments.clone())).is_ok()
 }
 
-/// The refusal a host reads: an MCP tool error whose JSON names the mode.
+/// The refusal a host reads: an MCP tool error whose JSON names the mode and,
+/// like every other tool error, carries `reminders` and `next`.
 pub(super) fn refusal(name: &str, restriction: Restriction) -> Value {
     json!({
         "error": {
@@ -102,6 +113,8 @@ pub(super) fn refusal(name: &str, restriction: Restriction) -> Value {
                 "tool": name,
                 "restriction": restriction.word(),
             },
+            "reminders": [format!("this connection is read-only: {}", restriction.reason())],
+            "next": restriction.next(),
         },
     })
 }
@@ -274,6 +287,34 @@ mod tests {
         let result = CallToolResult::structured_error(value.clone());
         assert_eq!(result.is_error, Some(true));
         assert_eq!(result.structured_content, Some(value));
+        // Like every tool error, each refusal carries its reminders and the
+        // read the caller can make instead.
+        for (restriction, next) in [
+            (
+                Restriction::ToolNotAdmitted,
+                json!(["engram work next --peek"]),
+            ),
+            (
+                Restriction::NextWithoutPeek,
+                json!(["engram work next --peek"]),
+            ),
+            (
+                Restriction::MemoriesWithContextGeneration,
+                json!(["engram work memories"]),
+            ),
+            (Restriction::ArgumentNotAdmitted, json!([])),
+        ] {
+            let error = &refusal("anything", restriction)["error"];
+            assert_eq!(
+                error["reminders"],
+                json!([format!(
+                    "this connection is read-only: {}",
+                    restriction.reason()
+                )]),
+                "{restriction:?}"
+            );
+            assert_eq!(error["next"], next, "{restriction:?}");
+        }
     }
 
     fn servers(name: &str) -> (crate::test_support::TempHome, McpServer, McpServer, String) {
@@ -425,6 +466,7 @@ mod tests {
             )
         };
         let before = bytes();
+        // The reads answer, so an unchanged store is not merely a refused one.
         for result in [
             reader.next(Parameters(
                 serde_json::from_value(json!({ "peek": true })).expect("next"),
@@ -439,12 +481,13 @@ mod tests {
             reader.memories(Parameters(
                 serde_json::from_value(json!({})).expect("memories"),
             )),
-            reader.note(Parameters(
-                serde_json::from_value(json!({ "text": "must not land" })).expect("note"),
-            )),
         ] {
-            let _ = result;
+            assert_ne!(result.is_error, Some(true), "{result:?}");
         }
+        let note = reader.note(Parameters(
+            serde_json::from_value(json!({ "text": "must not land" })).expect("note"),
+        ));
+        assert_eq!(note.is_error, Some(true), "{note:?}");
         assert_eq!(bytes(), before, "the database and WAL bytes are unchanged");
         drop(writer);
     }

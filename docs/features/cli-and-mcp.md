@@ -1543,9 +1543,13 @@ word, or an undeclared argument, is refused before the tool runs, as an MCP
 tool error (`isError: true`) whose JSON reads
 `{"error": {"code": "mcp_read_only_refused", "message": "MCP read-only mode
 refused TOOL: …", "details": {"mode": "read_only", "tool": TOOL,
-"restriction": R}}}`, where `R` is `tool_not_admitted`,
-`argument_not_admitted`, `next_without_peek` or
-`memories_with_context_generation`; the code is stable. The read words open
+"restriction": R}, "reminders": […], "next": […]}}`, where `R` is
+`tool_not_admitted`, `argument_not_admitted`, `next_without_peek` or
+`memories_with_context_generation`; the code is stable. Like every tool
+error, it carries `reminders`, one line naming the restriction, and `next`,
+the read to make instead: `engram work next --peek` after a tool that is not
+a read word or a `next` without the peek, `engram work memories` after a
+listing with a generation, and nothing after undeclared arguments. The read words open
 the store read-only for each call, and the connection never opens or holds
 the writable one, so nothing it does writes the database or its WAL; SQLite
 may still coordinate through the shared-memory file. A missing or

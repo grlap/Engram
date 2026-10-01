@@ -1306,6 +1306,16 @@ test("read-only MCP lists the read words and refuses every writing call as a too
       assert.equal(error.details.tool, name);
       assert.equal(error.details.restriction, restriction);
       assert.match(error.message, /^MCP read-only mode refused /u);
+      // Like every tool error: reminders in words, and the read to make instead.
+      assert.equal(error.reminders.length, 1);
+      assert.match(error.reminders[0], /^this connection is read-only: /u);
+      const instead = {
+        tool_not_admitted: ["engram work next --peek"],
+        next_without_peek: ["engram work next --peek"],
+        memories_with_context_generation: ["engram work memories"],
+        argument_not_admitted: [],
+      };
+      assert.deepEqual(error.next, instead[restriction]);
     };
     await refused("next", {}, "next_without_peek");
     await refused("next", { peek: false }, "next_without_peek");
