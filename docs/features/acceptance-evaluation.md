@@ -702,7 +702,18 @@ capture the root before evaluating and makes no prediction about a future
 sighting. Citation context names the criterion, submitted locator or record
 id, active run and evaluated cut, adding the citation position, bound check
 requirement, checked/judged revisions and producer when the deciding rule
-knows them. `not_on_run` makes no claim about evidence on another run.
+knows them. `not_on_run` makes no claim about evidence on another run. When
+the deciding fault is the verdict's basis, not a cited record,
+(`observed_basis_required` on a bound criterion, `observed_policy_required`
+under an observed mechanical policy), the citation is empty and no position is
+given: none of the cited records was at fault, and a valid passed
+verification is never named as the offender. The `read_run_evidence` remedy,
+the one the basis faults, `not_on_run`, `passed_verification_required`,
+`passing_gate_required` and `bound_verification_mismatch` give, states the
+admissible pass for a bound criterion: basis `observed`, every citation a
+passed host-minted verification of the bound kind, matching any pinned check,
+cited by its full record id. `beyond_cut` and the wrong-source family keep
+their own remedies.
 
 Words and JSON format navigation and `details.remedy` from the same typed
 context, without parsing the reason. The native CLI guards admission JSON on

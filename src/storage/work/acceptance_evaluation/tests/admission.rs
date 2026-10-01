@@ -41,7 +41,10 @@ pub(crate) fn admission_transport_fixture(
         "transport-policy",
         second + 1,
     );
-    if matches!(case, "wrong_run" | "beyond_cut" | "wrong_source") {
+    if matches!(
+        case,
+        "wrong_run" | "beyond_cut" | "wrong_source" | "wrong_basis"
+    ) {
         work = revise(
             store,
             &work,
@@ -146,6 +149,22 @@ pub(crate) fn admission_transport_fixture(
                 ("citation", "beyond_cut")
             }
         }
+        // A valid passed check of the bound kind, cited under the wrong
+        // basis: the basis is the fault, and no citation is named.
+        "wrong_basis" => {
+            citation = host_verification(
+                store,
+                &work,
+                &claim,
+                "runner",
+                "transport-test",
+                VerificationKind::Test,
+                VerificationResult::Passed,
+                second + 3,
+            );
+            basis = cut(store, &work);
+            ("citation", "observed_basis_required")
+        }
         _ => panic!("unknown transport fixture"),
     };
     let input = crate::WorkEvaluateInput {
@@ -156,7 +175,7 @@ pub(crate) fn admission_transport_fixture(
         verdicts: vec![crate::WorkCriterionVerdictInput {
             criterion: 1,
             verdict: "pass".into(),
-            basis: if family == "citation" {
+            basis: if family == "citation" && case != "wrong_basis" {
                 "observed"
             } else {
                 "judgment"

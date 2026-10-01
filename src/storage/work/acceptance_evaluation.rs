@@ -1384,7 +1384,7 @@ fn bind_verdicts(
             && input.verdict == AcceptanceVerdict::Pass
             && input.basis != AcceptanceBasis::Observed
         {
-            return Err(CitationContext { item, run_id, cut, criterion: index + 1, citation: input.evidence.first().map_or("", ObjectId::as_str), position: None }.refused(
+            return Err(CitationContext { item, run_id, cut, criterion: index + 1, citation: "", position: None }.basis_refused(
                 EvaluationCitationMismatch::ObservedBasisRequired,
                 format!(
                     "criterion {} is bound to {} verification: a pass needs an observed basis citing host-minted verification evidence of that kind with a passed result, never judgment or an asserted gate",
@@ -1480,7 +1480,7 @@ fn admit_pass_citation(
         },
         AcceptanceBasis::Asserted => {
             if policy.mechanical_basis == MechanicalBasis::Observed {
-                return Err(context.refused(
+                return Err(context.basis_refused(
                     EvaluationCitationMismatch::ObservedPolicyRequired,
                     format!(
                         "criterion {position}: the project policy requires observed check evidence for a mechanical pass; agent gate records are not observed builds"

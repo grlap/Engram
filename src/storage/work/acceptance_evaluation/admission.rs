@@ -121,6 +121,22 @@ impl CitationContext<'_> {
             AcceptanceEvaluationAdmissionCause::Citation(Box::new(self.cause(mismatch))),
         )
     }
+
+    /// A refusal whose deciding fault is the verdict's basis, not any record
+    /// it cites: the cause names no citation, so a valid one is never read
+    /// as the offender.
+    pub fn basis_refused(
+        &self,
+        mismatch: EvaluationCitationMismatch,
+        reason: impl Into<String>,
+    ) -> StoreError {
+        CitationContext {
+            citation: "",
+            position: None,
+            ..*self
+        }
+        .refused(mismatch, reason)
+    }
 }
 
 pub(super) fn root_refusal(

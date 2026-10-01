@@ -400,3 +400,220 @@ fn a_bound_criterion_passes_only_on_observed_verification_of_its_kind() {
     assert!(accepted.record.all_pass());
     assert_eq!(accepted.record.verdicts[0].evidence, vec![test]);
 }
+
+/// The citation context of an admission refusal, with its reason.
+fn citation_refusal(
+    result: Result<AcceptanceEvaluationReceipt, StoreError>,
+) -> (String, crate::domain::CitationAdmissionCause) {
+    match result {
+        Err(StoreError::AcceptanceEvaluationAdmissionRefused { reason, cause, .. }) => match *cause
+        {
+            crate::domain::AcceptanceEvaluationAdmissionCause::Citation(context) => {
+                (reason, *context)
+            }
+            other => panic!("expected a citation cause, got {other:?}"),
+        },
+        other => panic!("expected an admission refusal, got {other:?}"),
+    }
+}
+
+// A refusal names the deciding fault. A pass on a bound criterion with the
+// wrong basis names no citation, even when its first citation is a valid
+// passed verification of the bound kind; an observed pass that also cites a
+// note names the note, in whichever order they were submitted; and the
+// remedy states the admissible pass.
+#[test]
+fn a_bound_criterion_refusal_never_names_a_valid_verification_as_its_fault() {
+    let mut fixture = fixture("project-bound-attribution");
+    let claim = fixture.claim.clone();
+    let work = revise(
+        &mut fixture.store,
+        &fixture.work,
+        &claim,
+        WorkRevisionPatch {
+            acceptance: Some(vec!["run tests".into(), "write docs".into()]),
+            acceptance_bindings: Some(vec![crate::domain::AcceptanceBinding {
+                criterion: 1,
+                requirement: crate::domain::VerificationRequirement {
+                    check_kind: VerificationKind::Test,
+                    check_fingerprint: None,
+                },
+            }]),
+            ..empty_patch()
+        },
+        "bind-criterion",
+        5,
+    )
+    .expect("bind the first criterion");
+    enable(
+        &mut fixture.store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-bound-attribution",
+        6,
+    );
+    let note = fixture.evidence.clone();
+    let test = host_verification(
+        &mut fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "test-check",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        7,
+    );
+    let docs = verdict(
+        2,
+        AcceptanceVerdict::Pass,
+        AcceptanceBasis::Judgment,
+        std::slice::from_ref(&note),
+    );
+    let submit = |store: &mut SqliteStore, first: CriterionVerdictInput, second: i64| {
+        let through = cut(store, &work);
+        record(
+            store,
+            &request(
+                &work,
+                through,
+                "runner",
+                Mode::SameSession,
+                vec![first, docs.clone()],
+                second,
+            ),
+        )
+    };
+    let admissible = "a pass on a criterion bound to a check uses basis observed, and every citation of it is a passed host-minted verification of the bound kind, matching any pinned check, cited by its full record id";
+
+    // Wrong basis, with the valid verification submitted first, then with a
+    // note alone: the basis decides, and no citation is named.
+    for (case, evidence) in [
+        ("valid verification first", vec![test.clone(), note.clone()]),
+        ("note only", vec![note.clone()]),
+    ] {
+        let (reason, cause) = citation_refusal(submit(
+            &mut fixture.store,
+            CriterionVerdictInput {
+                criterion: 1,
+                verdict: AcceptanceVerdict::Pass,
+                basis: AcceptanceBasis::Judgment,
+                rationale: "criterion 1: pass".into(),
+                evidence,
+            },
+            8,
+        ));
+        assert_eq!(
+            cause.mismatch,
+            crate::domain::EvaluationCitationMismatch::ObservedBasisRequired,
+            "{case}"
+        );
+        assert_eq!(cause.citation, "", "{case}: no citation was at fault");
+        assert_eq!(cause.citation_position, None, "{case}");
+        assert_eq!(cause.criterion, 1, "{case}");
+        assert!(
+            reason.contains("criterion 1 is bound to test verification"),
+            "{case}: {reason}"
+        );
+        let remedy = crate::work_service::evaluation_admission_remedy(
+            &crate::domain::AcceptanceEvaluationAdmissionCause::Citation(Box::new(cause)),
+        );
+        assert!(remedy.ends_with(admissible), "{case}: {remedy}");
+    }
+
+    // Observed, with a note beside the valid verification: the note is the
+    // fault, whichever comes first.
+    for (case, evidence) in [
+        ("verification first", vec![test.clone(), note.clone()]),
+        ("note first", vec![note.clone(), test.clone()]),
+    ] {
+        let (_, cause) = citation_refusal(submit(
+            &mut fixture.store,
+            CriterionVerdictInput {
+                criterion: 1,
+                verdict: AcceptanceVerdict::Pass,
+                basis: AcceptanceBasis::Observed,
+                rationale: "criterion 1: pass".into(),
+                evidence,
+            },
+            9,
+        ));
+        assert_eq!(
+            cause.mismatch,
+            crate::domain::EvaluationCitationMismatch::PassedVerificationRequired,
+            "{case}"
+        );
+        assert_eq!(cause.citation, note.as_str(), "{case}: the note is named");
+    }
+
+    // A verdict that does not pass carries no basis requirement: a judgment
+    // on the bound criterion citing the note is admitted.
+    let admitted = submit(
+        &mut fixture.store,
+        CriterionVerdictInput {
+            criterion: 1,
+            verdict: AcceptanceVerdict::InsufficientEvidence,
+            basis: AcceptanceBasis::Judgment,
+            rationale: "criterion 1: insufficient evidence".into(),
+            evidence: vec![note.clone()],
+        },
+        10,
+    )
+    .expect("a non-pass verdict needs no observed basis");
+    assert!(!admitted.record.all_pass());
+}
+
+// Under an observed mechanical policy an asserted pass is refused for its
+// basis: the cause names no citation, even when the cited record is a valid
+// passed verification.
+#[test]
+fn an_asserted_pass_under_an_observed_policy_names_no_citation() {
+    let mut fixture = fixture("project-observed-policy-attribution");
+    let claim = fixture.claim.clone();
+    let work = fixture.work.clone();
+    enable(
+        &mut fixture.store,
+        &[Mode::SameSession],
+        MechanicalBasis::Observed,
+        false,
+        "enable-observed-policy",
+        5,
+    );
+    let test = host_verification(
+        &mut fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "test-check",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        6,
+    );
+    let through = cut(&fixture.store, &work);
+    let (reason, cause) = citation_refusal(record(
+        &mut fixture.store,
+        &request(
+            &work,
+            through,
+            "runner",
+            Mode::SameSession,
+            vec![verdict(
+                1,
+                AcceptanceVerdict::Pass,
+                AcceptanceBasis::Asserted,
+                std::slice::from_ref(&test),
+            )],
+            7,
+        ),
+    ));
+    assert_eq!(
+        cause.mismatch,
+        crate::domain::EvaluationCitationMismatch::ObservedPolicyRequired
+    );
+    assert_eq!(cause.citation, "");
+    assert_eq!(cause.citation_position, None);
+    assert!(
+        reason.contains("the project policy requires observed check evidence"),
+        "{reason}"
+    );
+}

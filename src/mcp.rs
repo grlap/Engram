@@ -1723,6 +1723,7 @@ mod tests {
             "wrong_run",
             "beyond_cut",
             "wrong_source",
+            "wrong_basis",
         ] {
             let fixture: crate::storage::AdmissionTransportFixture =
                 crate::storage::admission_transport_fixture(case, Utc::now());
@@ -1779,6 +1780,15 @@ mod tests {
                 serde_json::from_value(error["details"]["cause"].clone()).unwrap();
             let remedy = crate::work_service::evaluation_admission_remedy(&cause);
             assert_eq!(error["details"]["remedy"], remedy);
+            if case == "wrong_basis" {
+                // The basis is the fault: the valid check it cites is not
+                // named, and the remedy states the admissible pass.
+                assert_eq!(error["details"]["cause"]["citation"], "", "{case}");
+                assert!(
+                    remedy.contains("uses basis observed, and every citation of it is a passed host-minted verification"),
+                    "{remedy}"
+                );
+            }
             assert!(
                 error["reminders"]
                     .as_array()

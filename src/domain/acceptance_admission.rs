@@ -92,6 +92,9 @@ pub struct CitationAdmissionCause {
     pub mismatch: EvaluationCitationMismatch,
     pub criterion: usize,
     /// Submitted locator or record id, not proof of evidence on another run.
+    /// Empty when the deciding fault is the verdict's basis
+    /// (`observed_basis_required`, `observed_policy_required`): no citation
+    /// was at fault.
     pub citation: String,
     pub run_id: WorkRunId,
     pub evaluated_cut: i64,

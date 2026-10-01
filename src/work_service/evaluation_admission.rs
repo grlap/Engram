@@ -24,7 +24,7 @@ pub(crate) fn evaluation_admission_remedy(cause: &AcceptanceEvaluationAdmissionC
         EvaluationAdmissionRemedy::InspectEvaluatorBinding => "inspect the evaluator's session and parent binding; submit from a session eligible for the selected mode".into(),
         EvaluationAdmissionRemedy::CaptureRootAndEvaluate => "end the turn so the host can capture the named root, read the run again, then evaluate that root; a declaration alone does not supply an initial sighting".into(),
         EvaluationAdmissionRemedy::EvaluateNamedRoot => "read the named root and its reported source, then evaluate that root with a matching source declaration".into(),
-        EvaluationAdmissionRemedy::ReadRunEvidence => "read this run's show --notes --gates and cite its own admissible evidence; a bound pass needs matching passed host verification".into(),
+        EvaluationAdmissionRemedy::ReadRunEvidence => "read this run's show --notes --gates and cite its own admissible evidence; a pass on a criterion bound to a check uses basis observed, and every citation of it is a passed host-minted verification of the bound kind, matching any pinned check, cited by its full record id".into(),
         EvaluationAdmissionRemedy::ReadCurrentCut => "read show again for the evidence cut that includes the citation, then judge that evidence and submit with that cut".into(),
         EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate => "run the required check on the current named root or run source, have the host record it, then evaluate again citing that check within the evaluated cut".into(),
     }
