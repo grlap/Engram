@@ -4,6 +4,7 @@
 mod admission;
 pub(crate) use admission::{AdmissionTransportFixture, admission_transport_fixture};
 mod basis_moves;
+mod binding_read;
 mod bound_criteria;
 mod carried_failure;
 mod citation_sources;

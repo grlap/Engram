@@ -1,5 +1,6 @@
 //! Local SQLite object store and integrity verification.
 
+mod acceptance_binding_read;
 mod control_inspection;
 mod control_runtime;
 mod control_support;
@@ -15,6 +16,7 @@ mod schema_diagnostics;
 mod task_memory;
 mod work;
 pub(crate) use work::AssessedAcceptanceEvaluation;
+pub(crate) use work::BindingReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
 pub(crate) use work::validate_work_plan;
 pub use work::{
@@ -981,6 +983,13 @@ pub enum StoreError {
     /// never a named-root state.
     #[error("named-root read refused: {0}")]
     NamedRootReadRefused(String),
+    /// A host's read of an item's acceptance bindings was refused for a
+    /// typed reason; never an empty result.
+    #[error("acceptance binding read refused: {reason}")]
+    AcceptanceBindingReadRefused {
+        refusal: crate::domain::AcceptanceBindingReadRefusal,
+        reason: String,
+    },
     #[error(
         "the project root's filesystem identity is unresolved, so path intents are refused; pass --host-path-policy case_fold|case_sensitive or set ENGRAM_HOST_PATH_POLICY"
     )]

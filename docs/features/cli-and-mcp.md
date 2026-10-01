@@ -1906,6 +1906,7 @@ principal. The shipped operations are:
 | `turn_checkpoint` | Atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
 | `named_root_bind` | Append a claim's named source-root event, `bound` or `ended`, to the project, root and run feeds |
 | `named_root_read` | None. Read one claim's named root on its run, for any run and claim of the project: identities, run and claim lifecycle, the derived `named_root` state, the newest root event by its real id, and the run-feed cut, from one snapshot |
+| `acceptance_binding_read` | None. Read, for one item on its active run, what satisfied each bound criterion: the obligation completion selects, its recorded resolution, and the original verification with its producer, in pages pinned to the run-feed cut the first page captures; see [Reading what satisfied a bound criterion](acceptance-evaluation.md#reading-what-satisfied-a-bound-criterion) |
 
 The `named_root` state, `none`, `bound` or `unbound_by_release`, is the
 authoritative read a host uses to decide when to name a root again; see

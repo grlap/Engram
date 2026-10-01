@@ -65,6 +65,17 @@ pub enum HostControlRequest {
         run_id: WorkRunId,
         claim_id: WorkClaimId,
     },
+    /// Reads, for one item on its active run, what satisfied each bound
+    /// acceptance criterion: the first page captures the run's feed head as
+    /// its cut, and `after` continues at that cut. It writes nothing.
+    AcceptanceBindingRead {
+        routing_token: String,
+        work_id: crate::WorkId,
+        expected_work_revision: i64,
+        run_id: WorkRunId,
+        #[serde(default)]
+        after: Option<String>,
+    },
     TurnEvaluate {
         routing_token: String,
         idempotency_key: String,
@@ -285,6 +296,25 @@ impl HostControlServer {
                 &routing_token,
                 run_id,
                 claim_id,
+            )?)
+            .map_err(StoreError::Json),
+            HostControlRequest::AcceptanceBindingRead {
+                routing_token,
+                work_id,
+                expected_work_revision,
+                run_id,
+                after,
+            } => serde_json::to_value(self.store.read_acceptance_bindings(
+                &self.project_id,
+                &self.session_id,
+                &self.connection_token,
+                &routing_token,
+                &crate::storage::BindingReadRequest {
+                    work_id,
+                    expected_work_revision,
+                    run_id,
+                    after: after.as_deref(),
+                },
             )?)
             .map_err(StoreError::Json),
             HostControlRequest::TurnEvaluate {
@@ -538,6 +568,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::InvalidControlSession(_) => "invalid_control_session",
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",
         StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
+        StoreError::AcceptanceBindingReadRefused { refusal, .. } => refusal.code(),
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
         StoreError::ControlSessionTokenMismatch(_) => "control_session_token_mismatch",
@@ -729,6 +760,70 @@ mod tests {
         let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
             .expect_err("a path alias cannot stand in for the host workspace identity");
         assert!(error.contains("source_path"));
+    }
+
+    #[test]
+    fn acceptance_binding_read_frame_takes_no_caller_cut() {
+        let frame = serde_json::json!({
+            "operation": "acceptance_binding_read",
+            "routing_token": "routing-token",
+            "work_id": uuid::Uuid::new_v4(),
+            "expected_work_revision": 3,
+            "run_id": uuid::Uuid::new_v4(),
+        });
+        let parsed = parse_host_control_request(&serde_json::to_vec(&frame).expect("frame"))
+            .expect("a first page names no continuation");
+        assert!(matches!(
+            parsed,
+            HostControlRequest::AcceptanceBindingRead {
+                expected_work_revision: 3,
+                after: None,
+                ..
+            }
+        ));
+        let mut continued = frame.clone();
+        continued["after"] = serde_json::json!("abr1-00");
+        assert!(matches!(
+            parse_host_control_request(&serde_json::to_vec(&continued).expect("frame"))
+                .expect("a continuation"),
+            HostControlRequest::AcceptanceBindingRead { after: Some(ref token), .. }
+                if token == "abr1-00"
+        ));
+        let mut cut = frame;
+        cut["run_cut"] = serde_json::json!(12);
+        let error = parse_host_control_request(&serde_json::to_vec(&cut).expect("frame"))
+            .expect_err("the first page captures the cut; a caller cannot name one");
+        assert!(error.contains("run_cut"), "{error}");
+    }
+
+    #[test]
+    fn acceptance_binding_read_refusals_answer_with_distinct_codes() {
+        use crate::domain::AcceptanceBindingReadRefusal as Refusal;
+        let refusals = [
+            Refusal::UnknownWork,
+            Refusal::WrongProject,
+            Refusal::WrongRevision,
+            Refusal::WrongRun,
+            Refusal::StaleCut,
+            Refusal::InvalidCursor,
+            Refusal::CursorBasisMismatch,
+            Refusal::PageTooLarge,
+        ];
+        let codes: std::collections::BTreeSet<&str> = refusals
+            .iter()
+            .map(|refusal| {
+                store_error_code(&StoreError::AcceptanceBindingReadRefused {
+                    refusal: *refusal,
+                    reason: "reason".into(),
+                })
+            })
+            .collect();
+        assert_eq!(codes.len(), refusals.len());
+        assert!(
+            codes
+                .iter()
+                .all(|code| code.starts_with("acceptance_binding_read_"))
+        );
     }
 
     #[test]

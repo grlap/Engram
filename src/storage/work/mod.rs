@@ -11,6 +11,9 @@ pub(crate) use acceptance_evaluation::attempt_identity as acceptance_attempt_ide
 pub use acceptance_evaluation::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
 };
+mod binding_read;
+pub(crate) use binding_read::BindingReadRequest;
+pub(in crate::storage) use binding_read::read_acceptance_bindings_on;
 mod child_resolution;
 pub(crate) use child_resolution::RequiredChildSuccessor;
 mod completion;

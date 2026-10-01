@@ -1882,6 +1882,23 @@ pub(super) fn open_binding_obligations_on(
     Ok(definitions)
 }
 
+/// The obligation that answers for `binding` on a run: the newest, by
+/// trigger position, opened for its criterion and requirement. One a
+/// revision opened again supersedes the record an earlier sentence
+/// satisfied.
+pub(super) fn binding_obligation<'a>(
+    records: &'a [WorkObligationRecord],
+    binding: &crate::domain::AcceptanceBinding,
+) -> Option<&'a WorkObligationRecord> {
+    let rule = binding_rule(binding.criterion);
+    records
+        .iter()
+        .filter(|record| {
+            record.obligation.rule == rule && record.obligation.requirement == binding.requirement
+        })
+        .max_by_key(|record| record.obligation.trigger_position.position)
+}
+
 /// Holds each bound criterion to its obligation at the completion cut. The
 /// obligation is resolved there, or completion refused before this; a
 /// satisfied one is contradicted when the newest verification of its kind at
@@ -1920,16 +1937,7 @@ fn bind_acceptance_to_obligations_on(
                 item.work_id.0
             )));
         };
-        let rule = binding_rule(binding.criterion);
-        // The newest obligation speaks for the binding: one a revision opened
-        // again supersedes the record an earlier sentence satisfied.
-        let newest = records
-            .iter()
-            .filter(|record| {
-                record.obligation.rule == rule
-                    && record.obligation.requirement == binding.requirement
-            })
-            .max_by_key(|record| record.obligation.trigger_position.position);
+        let newest = binding_obligation(&records, binding);
         let Some(record) = newest.filter(|record| record.state == WorkObligationState::Satisfied)
         else {
             // Waived by an authority the obligation path admitted; the seal

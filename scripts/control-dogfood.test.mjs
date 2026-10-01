@@ -2833,6 +2833,95 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
   }
 });
 
+test("a host reads what satisfied each bound criterion in the closed page shape", async (t) => {
+  const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });
+  assert.equal(built.status, 0, built.stderr);
+  const engramHome = fixtureHome("engram-binding-read-", t);
+  const actor = "binding-read-runner";
+  const jsonWord = (...args) => {
+    const result = spawnSync(binary, ["--home", engramHome, "work", "--actor-id", actor, "--session-id", actor,
+      ...args, "--json"], { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  let client;
+  try {
+    const init = spawnSync(binary, ["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
+    assert.equal(init.status, 0, init.stderr);
+    const ref = jsonWord("add", "Read bound evidence", "--accept", "1. the tests pass", "--accept", "2. the docs say so",
+      "--bind", "1=test").work.short_ref;
+    const revision = jsonWord("claim", ref).work.revision;
+    const binding = cliWorkFocus(engramHome, actor, ref).control_binding;
+    client = new ControlClient(engramHome, actor);
+    const control = ok(await client.request({ operation: "session_bind", external_ref: `local-work:${actor}`,
+      title: "Binding read host", assurance: "turn_gated", mediated_effects: ["observe", "mutate_local"],
+      work_binding: binding, capability_map_revision: 1, idempotency_key: "binding-read-host" }));
+    const key = "binding-read-check";
+    const granted = ok(await client.request({ operation: "turn_evaluate", routing_token: control.routing_token,
+      idempotency_key: key, intent_fingerprint: fingerprint(key), purpose: "ordinary",
+      requested_effects: ["mutate_local"], resource_intents: [libraryFile] }));
+    assert.equal(granted.decision, "grant", JSON.stringify(granted));
+    assert.equal(ok(await client.request({ operation: "turn_begin", routing_token: control.routing_token,
+      grant_id: granted.grant.grant_id, delivery_tokens: [], idempotency_key: `begin-${key}` })).decision, "begin");
+    const source = { workspace_id: "binding-read-workspace", source_revision: "binding-read-R1" };
+    const time = new Date().toISOString();
+    const components = { toolchain: "binding-read-check", sandbox: "binding-read-test",
+      workspace_id: source.workspace_id, capability_map_revision: 1 };
+    const checked = ok(await client.request({ operation: "turn_checkpoint", routing_token: control.routing_token,
+      grant_id: granted.grant.grant_id, next_intent: "continue", idempotency_key: `checkpoint-${key}`,
+      observations: [{ observation_id: key, action_fingerprint: fingerprint(key), effect: "mutate_local",
+        outcome: "succeeded", source_changed: true, source_basis: source, observed_at: time }],
+      verification_evidence: [{ producer_observation: { kind: "observation_id", observation_id: key },
+        check_kind: "test", environment: { kind: "index", index: 0 }, summary: "passed host check",
+        refs: ["command:binding-read-check"] }],
+      environment_evidence: [{ source_basis: source, environment_fingerprint: canonicalFingerprint(components),
+        components, observed_at: time }] }));
+    const verification = checked.receipt.verification_evidence[0];
+    const request = { operation: "acceptance_binding_read", routing_token: control.routing_token,
+      work_id: binding.work_id, expected_work_revision: revision, run_id: binding.run_id };
+    const page = ok(await client.request(request));
+    assert.deepEqual(Object.keys(page).sort(),
+      ["basis", "continuation", "earlier", "omitted", "rows", "shown", "total"]);
+    assert.deepEqual(Object.keys(page.basis).sort(), ["project_id", "run_cut", "run_id", "work_id", "work_revision"]);
+    assert.equal(page.basis.work_id, binding.work_id);
+    assert.equal(page.basis.run_id, binding.run_id);
+    assert.equal(page.basis.work_revision, revision);
+    assert.equal(Number.isInteger(page.basis.run_cut), true);
+    assert.deepEqual([page.total, page.earlier, page.shown, page.omitted, page.continuation], [2, 0, 2, 0, null]);
+    assert.deepEqual(page.rows.map((row) => Object.keys(row).sort()), [["binding", "criterion"], ["binding", "criterion"]]);
+    assert.deepEqual(page.rows[1], { criterion: 2, binding: null });
+    const bound = page.rows[0].binding;
+    assert.deepEqual(Object.keys(bound).sort(), ["obligation", "requirement"]);
+    assert.deepEqual(bound.requirement, { check_kind: "test" });
+    assert.deepEqual(Object.keys(bound.obligation).sort(), ["definition", "definition_position", "obligation_id",
+      "resolution", "rule", "state", "trigger_position", "triggering_observation", "work_revision"]);
+    assert.equal(bound.obligation.state, "satisfied");
+    assert.deepEqual(Object.keys(bound.obligation.resolution).sort(), ["kind", "position", "record", "satisfaction"]);
+    assert.equal(bound.obligation.resolution.kind, "satisfied");
+    const satisfaction = bound.obligation.resolution.satisfaction;
+    assert.deepEqual(Object.keys(satisfaction).sort(), ["evaluated_cut", "verification"]);
+    assert.deepEqual(Object.keys(satisfaction.verification).sort(), ["check_fingerprint", "check_kind", "position",
+      "producer", "record", "result", "source_basis"]);
+    assert.equal(satisfaction.verification.record, verification);
+    assert.equal(satisfaction.verification.result, "passed");
+    assert.deepEqual(satisfaction.verification.source_basis, source);
+    assert.deepEqual(Object.keys(satisfaction.verification.producer).sort(), ["outcome", "position", "record"]);
+    assert.equal(satisfaction.verification.producer.outcome, "succeeded");
+    assert.ok(satisfaction.verification.position <= page.basis.run_cut);
+    // Each refusal answers with its own code, distinct from an empty page.
+    const stale = await client.request({ ...request, expected_work_revision: revision + 1 });
+    assert.equal(stale.error.code, "acceptance_binding_read_wrong_revision", JSON.stringify(stale));
+    const cursor = await client.request({ ...request, after: "abr1-zz" });
+    assert.equal(cursor.error.code, "acceptance_binding_read_invalid_cursor", JSON.stringify(cursor));
+    const caller = await client.request({ ...request, run_cut: page.basis.run_cut });
+    assert.equal(caller.error.code, "invalid_request", JSON.stringify(caller));
+    assert.match(caller.error.message, /run_cut/u);
+  } finally {
+    if (client) await client.close();
+    removeFixtureHomes(engramHome);
+  }
+});
+
 // B77/B78 and B21/B22: native completion consumes host reports, not promises.
 test("source recovery keeps a judgment through host confirmation and separates fingerprint remedies", async (t) => {
   const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], { cwd: root, encoding: "utf8" });

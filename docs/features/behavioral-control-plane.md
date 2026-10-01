@@ -1174,9 +1174,9 @@ fail-mode result; a hung hook is not an acceptable control mechanism.
 ## Planned interfaces
 
 The shipped host channel is `session_bind`, `session_status`,
-`turn_evaluate`, `turn_begin`, `turn_checkpoint`, `named_root_bind` and
-`named_root_read`. The design named seven more. None is built, and no host
-calls them:
+`turn_evaluate`, `turn_begin`, `turn_checkpoint`, `named_root_bind`,
+`named_root_read` and `acceptance_binding_read`. The design named seven
+more. None is built, and no host calls them:
 
 - **`action_authorize`, `action_begin` and `action_complete` (not built).**
   They would put a single-use grant around each material tool call. A host
@@ -1215,8 +1215,8 @@ persisted turn decisions and short-lived grants that carry no delivery page,
 begin-time rechecks, canonical execution observations, and canonical checkpoint
 events. A separate `engram control` JSON-lines process
 implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
-`turn_checkpoint`, `named_root_bind` and `named_root_read`; none is
-exposed through agent-facing MCP. Exact retry
+`turn_checkpoint`, `named_root_bind`, `named_root_read` and
+`acceptance_binding_read`; none is exposed through agent-facing MCP. Exact retry
 evidence survives process restart, while unbegun authority is invalidated and
 the session returns to `ready`. Each open rotates an internal
 connection generation so a still-running predecessor is fenced. Begun grants

@@ -1093,6 +1093,91 @@ process:
   assurance, so this needs the host channel for the pilot project; lowering the
   assurance to dodge that prerequisite is not the plan.
 
+### Reading what satisfied a bound criterion
+
+A host reads, for one item on its active run, the evidence that satisfied
+each bound criterion with the host-private `acceptance_binding_read`
+operation on the [host control channel](../spec.md#83-host-control-channel).
+Its request carries `routing_token`, the full `work_id`, the
+`expected_work_revision`, the full `run_id` and, for a later page, `after`.
+It takes no cut, idempotency key, fence or note text; a request naming any
+other field, such as `run_cut`, is refused as `invalid_request`. Any bound
+host session of the project may read, whatever its own work binding.
+
+The first page captures the run's feed head as its cut. Each page then
+reads one snapshot and checks, in order: that a continuation is one this
+read issued and was issued for this project, item, revision and run; that
+the item exists, belongs to the project and is at the expected revision;
+that the run is the item's active run; and that a continuation's pinned cut
+is still the run's head. A page answers with:
+
+- `basis`: `project_id`, `work_id`, `work_revision`, `run_id` and
+  `run_cut`, the cut every page of the read is pinned to;
+- `total`, the item's authored criteria; `earlier`, the rows on earlier
+  pages; `shown`, the rows on this page; and `omitted`, the rows after it;
+- `rows`: complete rows in ascending one-based criterion order, at most
+  eight to a page and at most 16 KiB of result;
+- `continuation`: `null` when no row remains, otherwise an opaque token for
+  the next page.
+
+Each row names its `criterion` and its `binding`, `null` for a criterion
+bound to no verification. A bound criterion's binding carries its
+`requirement` and the `obligation` that answers for it: the newest one the
+run opened for that criterion and requirement, as completion selects it.
+`obligation` is `null` when the run's feed holds no obligation for the
+binding, which says nothing of a waiver or a pass. Creation, claim and
+revision open one for every binding of an item with an active run, so in a
+healthy store this marks a record never opened, not one lost: an obligation
+or resolution on the run's feed without its projection row is a damaged
+store, and the read returns a storage error rather than `null` or an older
+obligation. An obligation carries its `obligation_id`, its record id
+as `definition`, the `work_revision` that opened it, its `rule`, its
+`triggering_observation`, its `trigger_position` and `definition_position`,
+its `state` at the cut, and its `resolution`, `null` exactly while it is
+open. A revision that leaves the criterion and its binding unchanged keeps
+the older obligation; one that rewrites the criterion, changes its
+requirement or drops and re-adds the binding opens a new one.
+
+A resolution carries its `record`, its `position` and its `kind`:
+`satisfied`, `waived` or `displaced`. A waiver's reason and authority are
+not part of this read. A satisfied resolution's `satisfaction` names the
+`evaluated_cut` it was judged at and the `verification` that closed it: its
+full `record` id, `position`, `check_kind`, `check_fingerprint`, `result`
+and complete `source_basis`, and its `producer` observation's `record`,
+`position` and `outcome`. Every position is on the basis run's feed and at
+or before the cut.
+
+This is the record as stored, not an assessment. A satisfied obligation
+names the check that closed it even after a newer check failed or the
+source moved; the read neither looks for the newest applicable check nor
+judges freshness or pass admission. A host that also reads the latest checks
+does so separately, validating that read against the same basis or starting
+again. Prose in notes or evidence never associates a criterion with a
+record.
+
+The read writes nothing, so a host may repeat it freely. Each refusal has
+its own code, and none is an empty page:
+
+- `acceptance_binding_read_unknown_work`: the store holds no such item;
+- `acceptance_binding_read_wrong_project`: the item is another project's;
+- `acceptance_binding_read_wrong_revision`: the item is at another revision;
+- `acceptance_binding_read_wrong_run`: the run is not the item's active run;
+- `acceptance_binding_read_stale_cut`: the run's feed moved past a
+  continuation's cut; read again from the first page;
+- `acceptance_binding_read_invalid_cursor`: the continuation is not one
+  this read issued;
+- `acceptance_binding_read_cursor_basis_mismatch`: the continuation was
+  issued for another item, revision or run;
+- `acceptance_binding_read_page_too_large`: one complete row does not fit a
+  page; rows are never clipped.
+
+An append to another item does not move
+the basis; a revision of the item or any append to its run does, so a host
+paging a run that is still recording may be refused `stale_cut` again and
+again, and reads from the first page each time, or once the run is quiet.
+Wrong credentials keep their codes, and a record that fails its canonical
+association returns a storage error.
+
 ### Evaluation unit and re-evaluation
 
 The evaluation unit is **one item's run at one work revision and its judged

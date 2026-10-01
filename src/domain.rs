@@ -1,6 +1,7 @@
 //! Domain records shared by storage, context assembly, and tracker adapters.
 
 mod acceptance_admission;
+mod acceptance_binding_read;
 mod acceptance_evaluation;
 mod acceptance_source_recovery;
 mod control;
@@ -19,6 +20,7 @@ pub use crate::schema::{
     CONTROL_SCHEMA_VERSION, OBLIGATION_RULE_SET_SCHEMA_VERSION, SCHEMA_VERSION,
 };
 pub use acceptance_admission::*;
+pub use acceptance_binding_read::*;
 pub use acceptance_evaluation::*;
 pub use acceptance_source_recovery::*;
 pub use control::*;

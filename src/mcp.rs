@@ -1315,6 +1315,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidControlSession(_)
         | StoreError::NamedRootBindingRefused(_)
         | StoreError::NamedRootReadRefused(_)
+        | StoreError::AcceptanceBindingReadRefused { .. }
         | StoreError::HostPathIdentityUnresolved
         | StoreError::ControlSessionNotBound(_)
         | StoreError::ControlSessionTokenMismatch(_)
