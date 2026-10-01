@@ -95,7 +95,7 @@ fn phoenix_catalog_count_uses_the_same_filters_and_deduplicated_mine_union() {
         )
         .expect("past last");
     assert_eq!(total, 4);
-    assert!(exhausted.items.is_empty());
+    assert!(exhausted.items.is_empty(), "{:?}", exhausted.items);
     let (_, total, _) = store
         .query_work_catalog_listing(&project, at(310), &query)
         .expect("claims expired");
@@ -111,7 +111,7 @@ fn phoenix_catalog_count_uses_the_same_filters_and_deduplicated_mine_union() {
         )
         .expect("no matching label");
     assert_eq!(total, 0);
-    assert!(empty.items.is_empty());
+    assert!(empty.items.is_empty(), "{:?}", empty.items);
     assert!(store.verify_all().expect("integrity").is_healthy());
 }
 
@@ -202,8 +202,8 @@ fn phoenix_catalog_count_page_and_holders_share_one_snapshot() {
         .query_work_catalog_listing(&item.project_id, at(3), &query)
         .expect("later list");
     assert_eq!(total, 0);
-    assert!(page.items.is_empty());
-    assert!(holders.is_empty());
+    assert!(page.items.is_empty(), "{:?}", page.items);
+    assert!(holders.is_empty(), "{holders:?}");
     assert!(store.verify_all().expect("integrity").is_healthy());
 }
 

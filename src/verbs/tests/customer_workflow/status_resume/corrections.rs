@@ -181,7 +181,8 @@ fn status_correction_late_status_is_advisory_outside_the_seal() {
         "Late advisory: awaiting downstream publication"
     );
     assert_eq!(seal(), before);
-    assert!(store.live_work_claims(&project, at(4)).unwrap().is_empty());
+    let observed = store.live_work_claims(&project, at(4)).unwrap();
+    assert!(observed.is_empty(), "{observed:?}");
     assert!(store.verify_all().unwrap().is_healthy());
 }
 

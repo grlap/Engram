@@ -1381,7 +1381,11 @@ fn a_change_in_the_root_before_its_binding_is_satisfied_by_a_later_check() {
         7,
     )
     .expect("the B check completes the work");
-    assert!(seal.foreign_workspace_changes.is_empty());
+    assert!(
+        seal.foreign_workspace_changes.is_empty(),
+        "{:?}",
+        seal.foreign_workspace_changes
+    );
     let report = store.verify_all().expect("doctor");
     assert!(report.is_healthy(), "{report:?}");
 }
@@ -2438,7 +2442,11 @@ fn done_waives_untested_changes_the_root_gives_no_other_disposition() {
         11,
     )
     .expect("the untested changes are waived and the work completes");
-    assert!(seal.foreign_workspace_changes.is_empty());
+    assert!(
+        seal.foreign_workspace_changes.is_empty(),
+        "{:?}",
+        seal.foreign_workspace_changes
+    );
     let records = store
         .work_run_obligations(claim.run_id)
         .expect("terminal obligations");

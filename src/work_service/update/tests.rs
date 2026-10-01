@@ -617,12 +617,10 @@ fn explicit_update_target_wins_after_same_session_focus_change() {
             .collect::<Vec<_>>(),
         vec![prerequisite.work_id]
     );
-    assert!(
-        store
-            .work_prerequisites(other.work_id)
-            .expect("other prerequisites")
-            .is_empty()
-    );
+    let observed = store
+        .work_prerequisites(other.work_id)
+        .expect("other prerequisites");
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

@@ -326,7 +326,8 @@ fn a_bare_unblock_keeps_its_meaning_for_one_blocker_and_refuses_for_two() {
         .service
         .work_update_on(Some(&fixture.target()), bare.clone(), at(2))
         .expect("bare unblock clears the only blocker");
-    assert!(fixture.active().is_empty());
+    let observed = fixture.active();
+    assert!(observed.is_empty(), "{observed:?}");
 
     fixture.block(WorkBlockerKind::Manual, "One of two", 3);
     fixture.block(WorkBlockerKind::Manual, "Two of two", 4);

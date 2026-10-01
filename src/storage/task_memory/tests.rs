@@ -299,26 +299,22 @@ fn private_task_scratch_never_enters_the_peer_feed() {
             .len(),
         1
     );
-    assert!(
-        store
-            .search_memories(
-                &request.project_id,
-                Some(task_id),
-                None,
-                &SessionId("agent-b".into()),
-                "agent-b",
-                None,
-                20,
-            )
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        store
-            .control_changes_since(task_id, ChangeCursor::default(), 20)
-            .unwrap()
-            .is_empty()
-    );
+    let observed = store
+        .search_memories(
+            &request.project_id,
+            Some(task_id),
+            None,
+            &SessionId("agent-b".into()),
+            "agent-b",
+            None,
+            20,
+        )
+        .unwrap();
+    assert!(observed.is_empty(), "{observed:?}");
+    let observed = store
+        .control_changes_since(task_id, ChangeCursor::default(), 20)
+        .unwrap();
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]
@@ -406,20 +402,18 @@ fn task_delta_show_and_private_scope_survive_restart() {
             ),
             Err(StoreError::MemoryAccessDenied(_))
         ));
-        assert!(
-            store
-                .search_memories(
-                    &project,
-                    Some(task_id),
-                    None,
-                    &session_b,
-                    "eval-b",
-                    Some("hypothesis Z"),
-                    20,
-                )
-                .unwrap()
-                .is_empty()
-        );
+        let observed = store
+            .search_memories(
+                &project,
+                Some(task_id),
+                None,
+                &session_b,
+                "eval-b",
+                Some("hypothesis Z"),
+                20,
+            )
+            .unwrap();
+        assert!(observed.is_empty(), "{observed:?}");
         (
             task_id,
             first_receipt,
@@ -448,7 +442,11 @@ fn task_delta_show_and_private_scope_survive_restart() {
         )
         .unwrap();
     assert_eq!(shown.version.actor.session_id, Some(session_a));
-    assert!(!shown.version.classification_reason.is_empty());
+    assert!(
+        !shown.version.classification_reason.is_empty(),
+        "{:?}",
+        shown.version.classification_reason
+    );
     assert!(matches!(
         reopened.show_memory(
             &private_hash,
@@ -556,20 +554,18 @@ fn generic_memory_search_excludes_terminal_head_statuses() {
                 .expect("rebuilt terminal status"),
             status_name
         );
-        assert!(
-            store
-                .search_memories(
-                    &request.project_id,
-                    Some(task_id),
-                    None,
-                    &SessionId("agent-b".into()),
-                    "agent-b",
-                    Some("terminal visibility"),
-                    20,
-                )
-                .expect("search terminal head")
-                .is_empty()
-        );
+        let observed = store
+            .search_memories(
+                &request.project_id,
+                Some(task_id),
+                None,
+                &SessionId("agent-b".into()),
+                "agent-b",
+                Some("terminal visibility"),
+                20,
+            )
+            .expect("search terminal head");
+        assert!(observed.is_empty(), "{observed:?}");
     }
 }
 

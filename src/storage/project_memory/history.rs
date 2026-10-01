@@ -38,7 +38,7 @@ pub(in crate::storage) fn project_memory_history_on(
             .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let version: MemoryVersion =
             SqliteStore::get_typed_object_on(connection, &hash, "memory_version")?
-                .ok_or_else(&invalid)?;
+                .ok_or_else(invalid)?;
         if version.project_key.as_deref() != Some(key)
             || !matches!(&version.scope, Scope::Project { project } if project == project_id)
         {
@@ -62,7 +62,7 @@ pub(in crate::storage) fn project_memory_history_on(
                 &assertion_id,
                 "memory_assertion_event",
             )?
-            .ok_or_else(&invalid)?;
+            .ok_or_else(invalid)?;
             validate_keyed_project_memory_shape(&version, &assertion)?;
             if assertion.memory_id != version.memory_id
                 || assertion.version != hash
@@ -85,7 +85,7 @@ pub(in crate::storage) fn project_memory_history_on(
         if active.is_none() && !(version.source_snapshot.is_some() && terminal.is_some()) {
             return Err(invalid());
         }
-        let assertion = terminal.or(active).ok_or_else(&invalid)?;
+        let assertion = terminal.or(active).ok_or_else(invalid)?;
         match version.parents.as_slice() {
             [] => roots.push(hash.clone()),
             [parent] => {
@@ -117,7 +117,7 @@ pub(in crate::storage) fn project_memory_history_on(
         if !seen.insert(hash.clone()) {
             return Err(invalid());
         }
-        let entry = versions.remove(&hash).ok_or_else(&invalid)?;
+        let entry = versions.remove(&hash).ok_or_else(invalid)?;
         if let Some(previous) = history.last()
             && (entry.version.memory_id != previous.version.memory_id
                 || entry.version.created_at < previous.version.created_at

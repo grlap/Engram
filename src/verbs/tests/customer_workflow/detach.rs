@@ -124,12 +124,10 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
             .next
             .contains(&format!("engram work show {child}"))
     );
-    assert!(
-        shown_successor.value["notes"]
-            .as_array()
-            .expect("new root notes")
-            .is_empty()
-    );
+    let observed = shown_successor.value["notes"]
+        .as_array()
+        .expect("new root notes");
+    assert!(observed.is_empty(), "{observed:?}");
     // Only the live child catalog and its advisory group change; the parent's
     // own state/history/notes do not.
     parent_before["children"][0]["lifecycle"] = serde_json::json!("superseded");

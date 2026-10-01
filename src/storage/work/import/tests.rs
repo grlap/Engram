@@ -57,7 +57,7 @@ fn import_preview_guard_and_refresh_preserve_authored_work() {
         .unwrap();
     let work = store.get_work_item(receipt.work_id).unwrap();
     assert_eq!(work.title, "Authored local title");
-    assert!(work.acceptance.is_empty());
+    assert!(work.acceptance.is_empty(), "{:?}", work.acceptance);
     assert_eq!(work.origin, WorkOrigin::Imported);
     assert_eq!(work.lifecycle, crate::WorkLifecycle::Open);
     assert_eq!(work.assigned_to, None);

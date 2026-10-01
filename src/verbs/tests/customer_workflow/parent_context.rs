@@ -99,7 +99,8 @@ fn show_parent_context_survives_acceptance_and_note_trimming() {
             .unwrap()
             > 0
     );
-    assert!(fitted.value["notes"].as_array().unwrap().is_empty());
+    let observed = fitted.value["notes"].as_array().unwrap();
+    assert!(observed.is_empty(), "{observed:?}");
     assert_eq!(fitted.value["notes_omitted"], 1);
     assert!(emitted_receipt_bytes(&fitted) < budget);
     assert!(serde_json::to_vec(&fitted.value).unwrap().len() < budget);

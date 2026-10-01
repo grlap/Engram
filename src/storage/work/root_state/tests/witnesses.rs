@@ -103,7 +103,7 @@ fn rebind_events(store: &SqliteStore, old: &ObjectId, new: &ObjectId) {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert!(!ids.is_empty());
+    assert!(!ids.is_empty(), "{ids:?}");
     for id in ids {
         let id = ObjectId::from_stored(id).unwrap();
         let mut event: WorkEvent =

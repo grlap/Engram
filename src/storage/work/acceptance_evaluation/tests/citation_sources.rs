@@ -192,7 +192,8 @@ fn a_pass_citing_a_check_of_an_older_revision_is_refused_and_a_rerun_seals() {
         20,
     ));
     host.basis.source_revision = "revision-e".into();
-    assert!(host.checkpoint(store, true, None, 30).is_empty());
+    let checkpointed = host.checkpoint(store, true, None, 30);
+    assert!(checkpointed.is_empty(), "{checkpointed:?}");
 
     let before = cut(store, &work);
     let before_database = test_database_shape_snapshot(&store.connection).expect("snapshot");

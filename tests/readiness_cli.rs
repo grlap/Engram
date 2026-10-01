@@ -187,12 +187,8 @@ fn readiness_is_not_a_work_history_audit() {
     assert_eq!(output.status.code(), Some(1));
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["healthy"], false);
-    assert!(
-        !value["invalid"]["work_records"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
+    let observed = value["invalid"]["work_records"].as_array().unwrap();
+    assert!(!observed.is_empty(), "{observed:?}");
 }
 
 #[test]

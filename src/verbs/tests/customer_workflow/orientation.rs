@@ -35,7 +35,7 @@ fn traverse(verbs: &AgentVerbs, value: &Value, expected: &[String]) {
     while let Some(next) = command {
         let receipt = follow(verbs, &next);
         let rows = receipt.value["items"].as_array().unwrap();
-        assert!(!rows.is_empty());
+        assert!(!rows.is_empty(), "{rows:?}");
         collected.extend(
             rows.iter()
                 .map(|row| row["ref"].as_str().unwrap().to_owned()),
@@ -111,7 +111,8 @@ fn orientation_bounds_ready_and_executes_continuation_without_losing_candidates(
                 at(100),
             )
             .unwrap();
-        assert!(receipt.value["held"].as_array().unwrap().is_empty());
+        let observed = receipt.value["held"].as_array().unwrap();
+        assert!(observed.is_empty(), "{observed:?}");
         assert_eq!(receipt.value["assigned"][0]["ref"], expected[0]);
         let text = receipt.text();
         assert!(text.find("held by you").unwrap() < text.find("assigned (").unwrap());

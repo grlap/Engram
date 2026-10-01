@@ -569,7 +569,8 @@ fn the_detail_refuses_another_items_record_and_the_modes_stay_exclusive() {
         )
         .expect("empty window");
     assert_eq!(empty.value["evaluations_window"]["total"], 0);
-    assert!(rows(&empty).is_empty());
+    let observed = rows(&empty);
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 /// A title longer than the agent budget is compacted in the window, with its

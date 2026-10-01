@@ -436,7 +436,11 @@ fn revising_the_acceptance_waives_the_bindings_it_drops_and_opens_the_ones_it_ad
         "revise-drop",
         3,
     );
-    assert!(revised.acceptance_bindings.is_empty());
+    assert!(
+        revised.acceptance_bindings.is_empty(),
+        "{:?}",
+        revised.acceptance_bindings
+    );
     let after_drop = store.work_run_obligations(run_id).expect("obligations");
     assert_eq!(after_drop.len(), 1);
     assert_eq!(after_drop[0].state, WorkObligationState::Waived);
@@ -606,12 +610,10 @@ fn a_bound_child_opens_its_obligations_when_the_parent_is_decomposed() {
             "acceptance_criterion_requires_verification:2 Review",
         ]
     );
-    assert!(
-        store
-            .work_run_obligations(run_of("Plain"))
-            .expect("obligations")
-            .is_empty()
-    );
+    let plain_obligations = store
+        .work_run_obligations(run_of("Plain"))
+        .expect("obligations");
+    assert!(plain_obligations.is_empty(), "{plain_obligations:?}");
     assert!(store.verify_all().expect("doctor").is_healthy());
 }
 
@@ -819,7 +821,11 @@ fn reordering_a_bound_criterion_owes_its_verification_again() {
     );
     assert_eq!(unbound.revision, revised.revision + 1);
     assert_eq!(unbound.acceptance, vec!["run tests", "write docs"]);
-    assert!(unbound.acceptance_bindings.is_empty());
+    assert!(
+        unbound.acceptance_bindings.is_empty(),
+        "{:?}",
+        unbound.acceptance_bindings
+    );
 }
 
 #[test]

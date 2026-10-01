@@ -327,7 +327,8 @@ mod tests {
             probe_host_path_policy(&directory.path().join(".engram-project")),
             Err(HostPathProbeError::Unsettled(_))
         ));
-        assert!(listing(directory.path()).is_empty());
+        let observed = listing(directory.path());
+        assert!(observed.is_empty(), "{observed:?}");
     }
 
     /// A scripted filesystem: lookups answer in turn from `identities`, and

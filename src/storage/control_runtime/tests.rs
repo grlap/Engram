@@ -864,7 +864,11 @@ fn turn_gated_mutation_allows_empty_resource_intents_without_lease_basis() {
         grant.basis.requested_effects,
         vec![EffectClass::MutateLocal]
     );
-    assert!(grant.basis.resource_intents.is_empty());
+    assert!(
+        grant.basis.resource_intents.is_empty(),
+        "{:?}",
+        grant.basis.resource_intents
+    );
     let value = serde_json::to_value(&grant).unwrap();
     assert!(value["basis"].as_object().unwrap().get("leases").is_none());
     assert!(store.verify_all().unwrap().is_healthy());

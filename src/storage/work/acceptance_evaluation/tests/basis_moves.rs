@@ -1355,7 +1355,8 @@ fn a_repeated_revision_keeps_what_the_host_said_and_is_read_as_no_change() {
         stored[0].reported_source_change,
         Some(SourceChangeDetection::AssumedMissingBaseline)
     );
-    assert!(entries_after(store, &work, read, "work_obligation").is_empty());
+    let late_obligations = entries_after(store, &work, read, "work_obligation");
+    assert!(late_obligations.is_empty(), "{late_obligations:?}");
 }
 
 #[test]
@@ -1420,8 +1421,10 @@ fn a_report_that_contradicts_itself_is_refused_and_stores_nothing() {
         };
         assert!(message.contains(why), "{message}");
         assert!(message.contains(detection.as_str()), "{message}");
-        assert!(observations_after(store, &work, read).is_empty());
-        assert!(entries_after(store, &work, read, "work_obligation").is_empty());
+        let late_observations = observations_after(store, &work, read);
+        assert!(late_observations.is_empty(), "{late_observations:?}");
+        let late_obligations = entries_after(store, &work, read, "work_obligation");
+        assert!(late_obligations.is_empty(), "{late_obligations:?}");
     }
 }
 

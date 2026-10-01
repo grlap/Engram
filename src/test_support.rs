@@ -868,6 +868,6 @@ fn fixture_removal_retries_transient_errors_and_returns_persistent_failure() {
     )
     .unwrap_err();
     assert_eq!(refusals, 1);
-    assert!(refusal_pauses.is_empty());
+    assert!(refusal_pauses.is_empty(), "{refusal_pauses:?}");
     assert_refused(&error);
 }

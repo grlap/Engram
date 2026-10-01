@@ -637,7 +637,11 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         )
         .expect("capture private work memory");
     assert!(matches!(private.scope, Scope::Agent { work: Some(work), .. } if work == root.work_id));
-    assert!(private.work_positions.is_empty());
+    assert!(
+        private.work_positions.is_empty(),
+        "{:?}",
+        private.work_positions
+    );
 
     store
         .show_memory(

@@ -37,7 +37,7 @@ fn run(cwd: &Path, home: &Path, project_file: Option<&Path>, args: &[&str], json
 
 fn refused(output: &Output) -> Value {
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
+    assert!(output.stdout.is_empty(), "{:?}", output.stdout);
     let value: Value = serde_json::from_slice(&output.stderr).expect("one typed refusal on stderr");
     assert_eq!(value["error"]["code"], "project_resolution_failed");
     assert_eq!(value["error"]["reminders"], serde_json::json!([]));
@@ -111,7 +111,7 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
         );
         let text = run(&cwd, &home, None, args, false);
         assert_eq!(text.status.code(), Some(1));
-        assert!(text.stdout.is_empty());
+        assert!(text.stdout.is_empty(), "{:?}", text.stdout);
         let text = String::from_utf8(text.stderr).unwrap();
         assert_text_details(&text, &value);
         assert!(text.contains("next:\n  engram --project-file "));

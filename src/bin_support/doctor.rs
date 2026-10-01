@@ -777,7 +777,7 @@ mod tests {
         assert_eq!(json_report.value["code"], "corrupt_store");
         assert_eq!(json_report.value["phase"], "verification");
         let findings = json_report.value["findings"].as_array().unwrap();
-        assert!(!findings.is_empty());
+        assert!(!findings.is_empty(), "{findings:?}");
         assert!(findings.iter().all(serde_json::Value::is_string));
         assert!(
             findings

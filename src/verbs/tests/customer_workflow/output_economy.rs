@@ -371,7 +371,8 @@ fn a_new_item_focus_page_counts_zero_open_obligations() {
         serde_json::to_value(&view.obligation_page).unwrap()["open_total"],
         json!(0)
     );
-    assert!(crate::verbs::handlers::obligation_reminders(&view.obligation_page).is_empty());
+    let observed = crate::verbs::handlers::obligation_reminders(&view.obligation_page);
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

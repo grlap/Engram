@@ -79,7 +79,7 @@ fn traverse(verbs: &AgentVerbs, work: &str, history: bool, time: i64) -> Vec<ser
             }
             break;
         }
-        assert!(!rows.is_empty());
+        assert!(!rows.is_empty(), "{rows:?}");
         assert!(newest_first.len() as u64 <= meta["total"].as_u64().unwrap());
         assert_eq!(receipt.text().matches(" --after ").count(), 1);
     }
@@ -389,7 +389,7 @@ fn record_windows_refuse_wrong_kind_item_anchor_read_cut_and_note_locator() {
             .unwrap()
             .is_healthy()
     );
-    assert!(!project.0.is_empty());
+    assert!(!project.0.is_empty(), "{:?}", project.0);
 }
 
 #[test]

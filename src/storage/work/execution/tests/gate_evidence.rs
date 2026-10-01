@@ -473,12 +473,10 @@ fn late_finding_marker_is_reserved_for_completed_work_evidence() {
         Err(StoreError::InvalidWorkProjection(message))
             if message.contains("reserved for evidence on completed work")
     ));
-    assert!(
-        store
-            .work_run_evidence(claim.run_id)
-            .expect("open run evidence")
-            .is_empty()
-    );
+    let observed = store
+        .work_run_evidence(claim.run_id)
+        .expect("open run evidence");
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

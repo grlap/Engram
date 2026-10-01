@@ -142,7 +142,11 @@ fn required_successor_resolution_agrees_in_show_listing_and_completion_without_w
         )
         .unwrap();
     let unchanged: crate::CompletionSeal = store.get(&successor_hash).unwrap().unwrap();
-    assert!(unchanged.required_child_resolutions.is_empty());
+    assert!(
+        unchanged.required_child_resolutions.is_empty(),
+        "{:?}",
+        unchanged.required_child_resolutions
+    );
     assert!(
         !serde_json::to_value(&unchanged)
             .unwrap()
@@ -172,7 +176,11 @@ fn required_successor_resolution_agrees_in_show_listing_and_completion_without_w
         .completion_seal
         .unwrap();
     let seal: crate::CompletionSeal = store.get(&hash).unwrap().unwrap();
-    assert!(seal.required_child_waivers.is_empty());
+    assert!(
+        seal.required_child_waivers.is_empty(),
+        "{:?}",
+        seal.required_child_waivers
+    );
     assert_eq!(seal.required_child_seals.len(), 4);
     assert_eq!(seal.required_child_resolutions.len(), 1);
     let crate::RequiredChildResolution::ResolvedBySuccessor {
@@ -490,6 +498,10 @@ fn required_successor_resolution_preserves_explicit_waiver_accounting() {
         .unwrap();
     let seal: crate::CompletionSeal = store.get(&hash).unwrap().unwrap();
     assert_eq!(seal.required_child_waivers.len(), 1);
-    assert!(seal.required_child_resolutions.is_empty());
+    assert!(
+        seal.required_child_resolutions.is_empty(),
+        "{:?}",
+        seal.required_child_resolutions
+    );
     assert!(store.verify_all().unwrap().is_healthy());
 }

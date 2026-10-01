@@ -133,7 +133,8 @@ fn criterion_links_reuse_holder_note_and_gate_with_frozen_readback_and_replay() 
         .unwrap()
         .unwrap();
     assert_eq!(seal.acceptance[0].evidence[0].as_str(), ids[0]);
-    assert!(seal.acceptance[1].evidence.is_empty());
+    let observed = &seal.acceptance[1].evidence;
+    assert!(observed.is_empty(), "{observed:?}");
     assert_eq!(seal.acceptance[2].evidence[0].as_str(), ids[1]);
     let sealed_objects = store.work_run_evidence(run.run_id).unwrap();
     assert_eq!(
@@ -267,7 +268,7 @@ fn criterion_links_many_bindings_keep_exact_omissions_in_both_twins() {
         assert_eq!(facts["unlinked_positions"], json!([40]));
         assert_eq!(facts["link_count"], 39);
         let rows = facts["links"].as_array().unwrap();
-        assert!(!rows.is_empty());
+        assert!(!rows.is_empty(), "{rows:?}");
         assert_eq!(
             rows.len() as u64 + facts["links_omitted"].as_u64().unwrap(),
             39
@@ -303,7 +304,8 @@ fn criterion_links_many_bindings_keep_exact_omissions_in_both_twins() {
             .sum::<usize>(),
         39
     );
-    assert!(seal.acceptance[39].evidence.is_empty());
+    let observed = &seal.acceptance[39].evidence;
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

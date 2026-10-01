@@ -77,7 +77,7 @@ fn done_without_criteria_is_refused_by_name_until_criteria_are_added_and_evaluat
             &DevelopmentNoopRedactor,
         )
         .expect("create an item without criteria");
-    assert!(item.acceptance.is_empty());
+    assert!(item.acceptance.is_empty(), "{:?}", item.acceptance);
     let work_ref = item.short_ref.clone();
     enable(&database, &[AcceptanceEvaluationMode::SameSession], 1);
     verbs

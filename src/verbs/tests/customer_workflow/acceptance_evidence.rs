@@ -260,7 +260,7 @@ fn criterion_disclosure_words_keep_work_evidence_separate_and_frozen() {
     let hash: ObjectId = serde_json::from_value(done.value["seal"].clone()).unwrap();
     let store = SqliteStore::open(&path).unwrap();
     let seal: crate::CompletionSeal = store.get(&hash).unwrap().unwrap();
-    assert!(!seal.evidence.is_empty());
+    assert!(!seal.evidence.is_empty(), "{:?}", seal.evidence);
     assert!(
         seal.acceptance
             .iter()
@@ -829,7 +829,8 @@ fn criterion_disclosure_zero_criteria_emit_nothing_and_omissions_merge_exactly()
         unlinked_positions: Vec::new(),
     };
     let page = AcceptanceEvidence::new(&zero);
-    assert!(page.lines().is_empty());
+    let observed = page.lines();
+    assert!(observed.is_empty(), "{observed:?}");
     let unchanged = page.append(&base).unwrap();
     assert_eq!(unchanged.text(), base.text());
     assert_eq!(unchanged.value, base.value);

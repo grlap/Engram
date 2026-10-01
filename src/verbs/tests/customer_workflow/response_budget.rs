@@ -29,7 +29,7 @@ fn show_window_measures_compact_json_and_gains_rows_against_pretty() {
         .show_with_notes(&work, true, at(100))
         .expect("notes window");
     let notes = page.value["notes"].as_array().expect("notes");
-    assert!(!notes.is_empty());
+    assert!(!notes.is_empty(), "{notes:?}");
     assert_eq!(page.value["notes_omitted"], bodies.len() - notes.len());
     assert_eq!(
         notes.last().unwrap()["summary"],
@@ -676,7 +676,7 @@ fn verbose_next_fits_a_large_ready_catalog_without_truncating_changes() {
         page.text()
     );
     let positions = change_positions(&page.value);
-    assert!(!positions.is_empty());
+    assert!(!positions.is_empty(), "{positions:?}");
     assert!(
         positions.windows(2).all(|pair| pair[1] == pair[0] + 1),
         "staged change page stays dense: {positions:?}"
@@ -912,7 +912,7 @@ fn verbose_next_omits_an_oversized_focused_title_without_lying_none() {
         "trim-step Focus counts stay in omissions: {trim_focus:?}"
     );
     let positions = change_positions(&page.value);
-    assert!(!positions.is_empty());
+    assert!(!positions.is_empty(), "{positions:?}");
     assert!(
         positions.windows(2).all(|pair| pair[1] == pair[0] + 1),
         "staged change page stays dense: {positions:?}"
@@ -996,7 +996,7 @@ fn verbose_next_sheds_held_rows_without_popping_staged_changes() {
         "{page_text}"
     );
     let positions = change_positions(&page.value);
-    assert!(!positions.is_empty());
+    assert!(!positions.is_empty(), "{positions:?}");
     assert!(
         positions.windows(2).all(|pair| pair[1] == pair[0] + 1),
         "staged change page stays dense: {positions:?}"

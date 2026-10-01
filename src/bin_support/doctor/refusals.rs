@@ -427,7 +427,10 @@ mod tests {
                         value["running"]["schema_reference"]
                     );
                 }
-                _ => assert!(!value["findings"].as_array().unwrap().is_empty()),
+                _ => {
+                    let listed_findings = value["findings"].as_array().unwrap();
+                    assert!(!listed_findings.is_empty(), "{listed_findings:?}");
+                }
             }
         }
     }

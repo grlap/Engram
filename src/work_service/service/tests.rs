@@ -797,14 +797,12 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         matches!(tampered_replay, Err(StoreError::InvalidWorkProjection(_))),
         "unexpected tampered replay result: {tampered_replay:?}"
     );
-    assert!(
-        !SqliteStore::open(&database)
-            .expect("doctor store")
-            .verify_all()
-            .expect("doctor")
-            .invalid_work_records
-            .is_empty()
-    );
+    let observed = SqliteStore::open(&database)
+        .expect("doctor store")
+        .verify_all()
+        .expect("doctor")
+        .invalid_work_records;
+    assert!(!observed.is_empty(), "{observed:?}");
     let repair = rusqlite::Connection::open(&database).expect("repair store");
     repair
         .execute(

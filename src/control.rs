@@ -1514,7 +1514,8 @@ mod tests {
         assert_eq!(rules[0].0.rule_id, "source_mutation_requires_test");
         assert_eq!(rules[0].1.check_kind, VerificationKind::Test);
         assert_eq!(rules[0].1.check_fingerprint, None);
-        assert!(evaluate_obligation_rules(&builtin_obligation_rule_set(), &producer).is_empty());
+        let producer_rules = evaluate_obligation_rules(&builtin_obligation_rule_set(), &producer);
+        assert!(producer_rules.is_empty(), "{producer_rules:?}");
         let requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
             check_fingerprint: Some(evidence.check_fingerprint.clone()),

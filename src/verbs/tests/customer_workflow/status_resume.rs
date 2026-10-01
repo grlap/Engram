@@ -406,12 +406,8 @@ fn status_resume_snapshot_roundtrips_linkage_and_status_without_authority() {
         )
         .unwrap();
     assert_eq!(window.value["notes"][0]["kind"], "status");
-    assert!(
-        destination
-            .live_work_claims(&project, at(5))
-            .unwrap()
-            .is_empty()
-    );
+    let observed = destination.live_work_claims(&project, at(5)).unwrap();
+    assert!(observed.is_empty(), "{observed:?}");
     assert!(destination.verify_all().unwrap().is_healthy());
 }
 

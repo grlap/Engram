@@ -1362,7 +1362,7 @@ mod candidates {
             ),
             (0, 0, 0, 0)
         );
-        assert!(unbound.rows.is_empty());
+        assert!(unbound.rows.is_empty(), "{:?}", unbound.rows);
         assert_eq!(unbound.continuation, None);
         // A pinned fingerprint no check ran under filters nothing: the consumer
         // judges which candidate applies.

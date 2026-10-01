@@ -174,7 +174,8 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
         )
         .unwrap();
     assert_eq!(resaved.document.body.memories, saved.document.body.memories);
-    assert!(destination.verify_all().unwrap().invalid_objects.is_empty());
+    let observed = destination.verify_all().unwrap().invalid_objects;
+    assert!(observed.is_empty(), "{observed:?}");
     let mut corrupt_store = SqliteStore::open(directory.path().join("corrupt.db")).unwrap();
     let before = crate::storage::test_database_shape_snapshot(&corrupt_store.connection);
     for mutate in 0..6 {
@@ -237,7 +238,8 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
             &DevelopmentNoopRedactor,
         )
         .unwrap();
-    assert!(forgotten.document.body.memories[0].history.is_empty());
+    let observed = &forgotten.document.body.memories[0].history;
+    assert!(observed.is_empty(), "{observed:?}");
     assert_eq!(memory_state(&source), after_forget);
     assert_eq!(forgotten.document.body.summary.secret_ref_bodies, 0);
     assert!(matches!(

@@ -348,7 +348,8 @@ fn invalid_memory_revision_parent_refuses_reads_and_doctor_does_not_accept_the_h
         ),
         Err(StoreError::InvalidMemoryProjection(_))
     ));
-    assert!(!store.verify_all().unwrap().invalid_objects.is_empty());
+    let observed = store.verify_all().unwrap().invalid_objects;
+    assert!(!observed.is_empty(), "{observed:?}");
     assert_eq!(
         crate::storage::test_database_shape_snapshot(&store.connection),
         before
@@ -485,7 +486,8 @@ fn memory_revisions_retain_attribution_replay_basis_and_rebuild_the_current_head
             .unwrap(),
         full
     );
-    assert!(store.verify_all().unwrap().invalid_objects.is_empty());
+    let observed = store.verify_all().unwrap().invalid_objects;
+    assert!(observed.is_empty(), "{observed:?}");
     let rows = store
         .project_memories(
             &first.project_id,
@@ -497,19 +499,17 @@ fn memory_revisions_retain_attribution_replay_basis_and_rebuild_the_current_head
         .unwrap();
     assert_eq!(rows.memories.len(), 1);
     assert_eq!(rows.memories[0].revision, 3);
-    assert!(
-        store
-            .project_memories(
-                &first.project_id,
-                &first.session_id,
-                &first.actor,
-                Some("original"),
-                None
-            )
-            .unwrap()
-            .memories
-            .is_empty()
-    );
+    let observed = store
+        .project_memories(
+            &first.project_id,
+            &first.session_id,
+            &first.actor,
+            Some("original"),
+            None,
+        )
+        .unwrap()
+        .memories;
+    assert!(observed.is_empty(), "{observed:?}");
     store
         .forget_project_memory(
             &ForgetProjectMemoryRequest {

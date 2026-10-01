@@ -246,7 +246,8 @@ fn guidance_cost(fixture: &Fixture, verbs: &AgentVerbs, second: i64) -> [usize; 
         measured_queries(&fixture.store.connection, || {
             fixture.store.waivable_required_children(&fixture.root, 8)
         });
-    assert!(waivable.expect("waivable").is_empty());
+    let waivable = waivable.expect("waivable");
+    assert!(waivable.is_empty(), "{waivable:?}");
     let (shown, show_count) = measured(|| verbs.show(&fixture.root.short_ref, now));
     assert!(
         shown.expect("show").value["allowed_next"]

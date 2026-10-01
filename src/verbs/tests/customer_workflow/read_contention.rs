@@ -101,7 +101,7 @@ fn read_contention_explicit_reads_preserve_focus_and_staged_delivery_under_write
                 "Requested committed item"
             );
         }
-        assert!(!receipt.next.is_empty());
+        assert!(!receipt.next.is_empty(), "{:?}", receipt.next);
         assert!(receipt.next.iter().all(|command| command.contains(&target)));
         assert!(!writer_is_unlocked(&inspect));
         assert_eq!(

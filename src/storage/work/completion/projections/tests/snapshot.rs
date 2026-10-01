@@ -124,27 +124,27 @@ fn integrity_entry_points_begin_before_the_first_read_and_reuse_savepoints() {
     let store = SqliteStore::open_in_memory().unwrap();
     let checks: [fn(&SqliteStore); 5] = [
         |store| assert!(store.verify_all().unwrap().is_healthy()),
-        |store| assert!(store.verify_work_projections().unwrap().1.is_empty()),
+        |store| {
+            let (_, problems) = store.verify_work_projections().unwrap();
+            assert!(problems.is_empty(), "{problems:?}");
+        },
         |store| {
             SqliteStore::verify_control_policy_history(&store.connection).unwrap();
         },
         |store| {
-            assert!(
-                SqliteStore::diagnose_control_policy_records_on(&store.connection)
-                    .unwrap()
-                    .invalid_control_records
-                    .is_empty()
-            );
+            let invalid = SqliteStore::diagnose_control_policy_records_on(&store.connection)
+                .unwrap()
+                .invalid_control_records;
+            assert!(invalid.is_empty(), "{invalid:?}");
         },
         |store| {
-            assert!(
+            let saved_problems =
                 crate::storage::graph_snapshot::verify_work_graph_snapshot_saved_events_on(
-                    &store.connection
+                    &store.connection,
                 )
                 .unwrap()
-                .1
-                .is_empty()
-            );
+                .1;
+            assert!(saved_problems.is_empty(), "{saved_problems:?}");
         },
     ];
     for check in checks {

@@ -201,7 +201,7 @@ fn task_local_cursors_stay_dense_across_interleaved_tasks() {
         let changes = store
             .control_changes_since(task_id, ChangeCursor(0), 100)
             .expect("task-local changes");
-        assert!(!changes.is_empty());
+        assert!(!changes.is_empty(), "{changes:?}");
         assert!(changes.iter().enumerate().all(|(offset, change)| {
             change.cursor.0 == i64::try_from(offset).expect("small test offset") + 1
         }));

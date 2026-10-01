@@ -119,15 +119,13 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
             .result,
     )
     .expect("checkpoint hash");
-    assert!(
-        SqliteStore::open(&database)
-            .expect("store")
-            .get::<WorkCheckpoint>(&empty)
-            .expect("read checkpoint")
-            .expect("canonical checkpoint")
-            .evidence
-            .is_empty()
-    );
+    let observed = SqliteStore::open(&database)
+        .expect("store")
+        .get::<WorkCheckpoint>(&empty)
+        .expect("read checkpoint")
+        .expect("canonical checkpoint")
+        .evidence;
+    assert!(observed.is_empty(), "{observed:?}");
 
     // Omitted acceptance asserts every criterion with the server note.
     let completed = service

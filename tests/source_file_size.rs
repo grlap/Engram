@@ -485,7 +485,8 @@ fn the_limit_admits_2499_lines_and_refuses_2500() {
     let at_limit = physical_lines("line\n".repeat(2_499).as_bytes());
     let over = physical_lines("line\n".repeat(2_500).as_bytes());
     assert_eq!((at_limit, over), (2_499, 2_500));
-    assert!(over_limit(&[("at.rs".into(), at_limit)], &[]).is_empty());
+    let at_limit_refusals = over_limit(&[("at.rs".into(), at_limit)], &[]);
+    assert!(at_limit_refusals.is_empty(), "{at_limit_refusals:?}");
     assert_eq!(
         over_limit(&[("over.rs".into(), over)], &[]),
         ["over.rs: 2500 lines (limit 2499)"]

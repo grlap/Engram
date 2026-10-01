@@ -1383,12 +1383,10 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
     );
     let terminal_cut =
         current_run_feed_cut_on(&store.connection, run.run_id).expect("terminal run-feed cut");
-    assert!(
-        store
-            .open_work_obligations_at_cut(run.run_id, &terminal_cut)
-            .expect("derive terminal obligation state")
-            .is_empty()
-    );
+    let open_at_cut = store
+        .open_work_obligations_at_cut(run.run_id, &terminal_cut)
+        .expect("derive terminal obligation state");
+    assert!(open_at_cut.is_empty(), "{open_at_cut:?}");
     let report = store.verify_all().expect("obligation integrity report");
     assert!(report.is_healthy(), "{report:?}");
     let target = terminal

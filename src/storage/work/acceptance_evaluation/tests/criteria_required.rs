@@ -16,7 +16,7 @@ fn criteria_less(project: &str) -> Fixture {
     let work = store
         .create_work(&request, &DevelopmentNoopRedactor)
         .expect("create work without acceptance criteria");
-    assert!(work.acceptance.is_empty());
+    assert!(work.acceptance.is_empty(), "{:?}", work.acceptance);
     let claim = claim(
         &mut store,
         &work,
@@ -147,7 +147,11 @@ fn an_item_without_criteria_still_completes_under_a_self_asserted_policy() {
 #[test]
 fn a_recovery_cause_naming_an_absent_criterion_stays_a_projection_error() {
     let fixture = fixture("project-criteria-absent-cause");
-    assert!(!fixture.work.acceptance.is_empty());
+    assert!(
+        !fixture.work.acceptance.is_empty(),
+        "{:?}",
+        fixture.work.acceptance
+    );
     let error = fixture
         .store
         .work_completion_recovery(

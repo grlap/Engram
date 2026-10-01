@@ -328,7 +328,8 @@ fn secret_ref_count_includes_live_history_and_excludes_retired_bodies() {
         )
         .unwrap();
     assert_eq!(retired.document.body.summary.secret_ref_bodies, 0);
-    assert!(retired.document.body.memories[0].history.is_empty());
+    let observed = &retired.document.body.memories[0].history;
+    assert!(observed.is_empty(), "{observed:?}");
     assert_eq!(
         restored.work_graph_snapshot_save_audits(&project).unwrap()[1].secret_ref_bodies,
         Some(0)
@@ -610,12 +611,10 @@ fn widening_reason_is_required_to_be_meaningful_before_audit() {
         ),
         Err(StoreError::InvalidWork(message)) if message.contains("widening reason")
     ));
-    assert!(
-        store
-            .work_graph_snapshot_save_audits(&project)
-            .expect("save audit query")
-            .is_empty()
-    );
+    let observed = store
+        .work_graph_snapshot_save_audits(&project)
+        .expect("save audit query");
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]
@@ -644,12 +643,10 @@ fn snapshot_audit_attribution_is_bounded_and_safe_for_diagnostics() {
                 if message.contains("actor id") && message.contains("without control or format characters")
         ));
     }
-    assert!(
-        store
-            .work_graph_snapshot_save_audits(&project)
-            .expect("save audit query")
-            .is_empty()
-    );
+    let observed = store
+        .work_graph_snapshot_save_audits(&project)
+        .expect("save audit query");
+    assert!(observed.is_empty(), "{observed:?}");
     let mut long_actor = actor("save-session");
     long_actor.actor_id = "x".repeat(300);
     store

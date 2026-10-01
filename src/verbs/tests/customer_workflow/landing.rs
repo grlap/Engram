@@ -357,7 +357,8 @@ fn a_completion_without_a_landing_reads_no_landing_recorded() {
     assert!(seal.landing.is_none());
     assert_eq!(serde_json::to_value(&seal).expect("seal JSON"), seals[0]);
     let store = SqliteStore::open(&path).expect("store");
-    assert!(store.recorded_landings().expect("recorded").is_empty());
+    let observed = store.recorded_landings().expect("recorded");
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

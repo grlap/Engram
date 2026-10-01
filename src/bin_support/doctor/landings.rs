@@ -631,7 +631,7 @@ mod tests {
                 if reason == "git's output stayed open past the time bound"),
             "{ran:?} {printed:?}"
         );
-        assert!(printed.is_empty());
+        assert!(printed.is_empty(), "{printed:?}");
         assert!(
             started.elapsed() < Duration::from_secs(10),
             "{:?}",
@@ -650,7 +650,7 @@ mod tests {
         let started = Instant::now();
         let (ran, printed) = run_reading_within(command, Duration::from_secs(1));
         assert_eq!(ran, GitRun::TimedOut);
-        assert!(printed.is_empty());
+        assert!(printed.is_empty(), "{printed:?}");
         assert!(
             started.elapsed() < Duration::from_secs(10),
             "{:?}",

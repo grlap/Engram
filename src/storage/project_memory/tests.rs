@@ -288,20 +288,18 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
         .expect("list");
     assert_eq!(list.memories.len(), 1);
     assert_eq!(list.memories[0].first_line, "Alpha beta");
-    assert!(
-        store
-            .search_memories(
-                &project,
-                None,
-                None,
-                &session,
-                "project-memory-agent",
-                Some("observation"),
-                20,
-            )
-            .expect("generic search excludes dedicated project memories")
-            .is_empty()
-    );
+    let observed = store
+        .search_memories(
+            &project,
+            None,
+            None,
+            &session,
+            "project-memory-agent",
+            Some("observation"),
+            20,
+        )
+        .expect("generic search excludes dedicated project memories");
+    assert!(observed.is_empty(), "{observed:?}");
     assert_project_memory_advertisement_contract(&mut store, &project, &session);
 
     assert!(matches!(
@@ -362,27 +360,23 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
         store.remember_project_memory(&request, &DevelopmentNoopRedactor),
         Err(StoreError::ProjectMemoryRetired(_))
     ));
-    assert!(
-        store
-            .search_memories(
-                &project,
-                None,
-                None,
-                &session,
-                "project-memory-agent",
-                Some("observation"),
-                20,
-            )
-            .expect("forgotten project memory is excluded from generic search")
-            .is_empty()
-    );
-    assert!(
-        store
-            .project_memories(&project, &session, &actor(&session.0), None, None)
-            .expect("forgotten project memory is excluded from dedicated listing")
-            .memories
-            .is_empty()
-    );
+    let observed = store
+        .search_memories(
+            &project,
+            None,
+            None,
+            &session,
+            "project-memory-agent",
+            Some("observation"),
+            20,
+        )
+        .expect("forgotten project memory is excluded from generic search");
+    assert!(observed.is_empty(), "{observed:?}");
+    let observed = store
+        .project_memories(&project, &session, &actor(&session.0), None, None)
+        .expect("forgotten project memory is excluded from dedicated listing")
+        .memories;
+    assert!(observed.is_empty(), "{observed:?}");
     assert_eq!(
         store
             .project_memory_advertisement(&project, &session, None)
@@ -606,7 +600,8 @@ fn a_memory_holding_a_lone_underscore_verifies_and_stays_searchable() {
     assert_eq!(found("space _ digits"), ["separator-rule"]);
     assert_eq!(found("engram_check"), ["separator-rule"]);
     // An underscore inside a fragment still keeps its words together, in order.
-    assert!(found("check_engram").is_empty());
+    let observed = found("check_engram");
+    assert!(observed.is_empty(), "{observed:?}");
     for query in ["_", "___", "--", "::"] {
         assert!(
             found(query).is_empty(),
@@ -795,20 +790,18 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
         store.project_memory_full(&project, &session, &actor(&session.0), key, None),
         Err(StoreError::ProjectMemoryRetired(retired)) if retired == key
     ));
-    assert!(
-        store
-            .search_memories(
-                &project,
-                None,
-                None,
-                &session,
-                "project-memory-agent",
-                Some("terminal rebuild"),
-                20,
-            )
-            .expect("tombstoned memory stays hidden")
-            .is_empty()
-    );
+    let observed = store
+        .search_memories(
+            &project,
+            None,
+            None,
+            &session,
+            "project-memory-agent",
+            Some("terminal rebuild"),
+            20,
+        )
+        .expect("tombstoned memory stays hidden");
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

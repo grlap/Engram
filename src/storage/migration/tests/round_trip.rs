@@ -359,7 +359,8 @@ fn the_report_counts_only_rows_the_published_store_holds() {
         published["work_observations"],
         source_rows["work_observations"]
     );
-    assert!(published["project_memory_advertisements"].is_empty());
+    let observed = &published["project_memory_advertisements"];
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

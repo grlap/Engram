@@ -234,14 +234,12 @@ fn failing_gate_evidence_does_not_create_a_completion_barrier() {
         .expect("read completion seal")
         .expect("canonical completion seal");
     assert!(seal.evidence.contains(&gate_evidence));
-    assert!(seal.obligations.is_empty());
-    assert!(
-        store
-            .completion_root_execution(&completed.seal)
-            .unwrap()
-            .waivers
-            .is_empty()
-    );
+    assert!(seal.obligations.is_empty(), "{:?}", seal.obligations);
+    let observed = store
+        .completion_root_execution(&completed.seal)
+        .unwrap()
+        .waivers;
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

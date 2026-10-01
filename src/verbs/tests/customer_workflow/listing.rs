@@ -50,7 +50,7 @@ fn listing_continuation_enumerates_the_exact_byte_bounded_direct_child_set() {
         loop {
             let receipt = verbs.ls(&input, at(100)).unwrap();
             let rows = receipt.value["items"].as_array().unwrap();
-            assert!(!rows.is_empty());
+            assert!(!rows.is_empty(), "{rows:?}");
             assert_eq!(receipt.value["total"], expected.len());
             assert_eq!(receipt.value["shown_before"], collected.len());
             assert_eq!(receipt.value["limit"], 1000);

@@ -183,13 +183,15 @@ fn a_bound_plan_root_keeps_its_normalized_binding_through_admission_and_replay()
     assert_eq!(child.acceptance_bindings[0].criterion, 2);
     // An unbound root stays unbound and owes nothing.
     let other = load_work_item(&store.connection, receipt.tasks[3].work_id).expect("other root");
-    assert!(other.acceptance_bindings.is_empty());
     assert!(
-        store
-            .work_run_obligations(other.active_run_id.expect("other run"))
-            .expect("other obligations")
-            .is_empty()
+        other.acceptance_bindings.is_empty(),
+        "{:?}",
+        other.acceptance_bindings
     );
+    let observed = store
+        .work_run_obligations(other.active_run_id.expect("other run"))
+        .expect("other obligations");
+    assert!(observed.is_empty(), "{observed:?}");
     assert!(store.verify_all().expect("doctor").is_healthy());
 
     // A keyed replay returns the same receipt, writes nothing, and the root

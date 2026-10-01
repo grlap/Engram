@@ -210,14 +210,12 @@ fn show_omits_an_oversized_detach_reason_whole_and_preserves_origin_navigation()
             at(8),
         )
         .unwrap();
-    assert!(!original.value["children"].as_array().unwrap().is_empty());
-    assert!(
-        !original.value["history"]["items"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
-    assert!(!original.value["notes"].as_array().unwrap().is_empty());
+    let observed = original.value["children"].as_array().unwrap();
+    assert!(!observed.is_empty(), "{observed:?}");
+    let observed = original.value["history"]["items"].as_array().unwrap();
+    assert!(!observed.is_empty(), "{observed:?}");
+    let observed = original.value["notes"].as_array().unwrap();
+    assert!(!observed.is_empty(), "{observed:?}");
     let shown = verbs.show(successor, at(8)).unwrap();
     assert_eq!(
         shown.value["detached_from"],

@@ -399,7 +399,8 @@ fn assert_schema_refusal_cli_without_mutation(fixture_sql: &str, expected_code: 
         if expected_code == "different_build_schema" {
             assert_unknown_schema_refusal(&report, database, &text_result, &json_result);
         } else {
-            assert!(!report["findings"].as_array().unwrap().is_empty());
+            let observed = report["findings"].as_array().unwrap();
+            assert!(!observed.is_empty(), "{observed:?}");
         }
         let text = String::from_utf8(text_result.stdout).unwrap();
         for (key, value) in report.as_object().unwrap() {
@@ -603,7 +604,10 @@ fn doctor_cli_refusals_are_json_and_leave_the_store_unchanged() {
                     report["running"]["schema_reference"]
                 );
             }
-            _ => assert!(!report["findings"].as_array().unwrap().is_empty()),
+            _ => {
+                let listed_findings = report["findings"].as_array().unwrap();
+                assert!(!listed_findings.is_empty(), "{listed_findings:?}");
+            }
         }
         let refused_text = run(home, &["doctor"]);
         assert!(!refused_text.status.success());

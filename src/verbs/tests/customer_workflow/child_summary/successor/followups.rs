@@ -168,7 +168,11 @@ fn restored_parent_without_a_run_agrees_with_successor_completion() {
         .unwrap();
     let seal: crate::CompletionSeal = store.get(&hash).unwrap().unwrap();
     assert_eq!(seal.required_child_resolutions.len(), 1);
-    assert!(seal.required_child_waivers.is_empty());
+    assert!(
+        seal.required_child_waivers.is_empty(),
+        "{:?}",
+        seal.required_child_waivers
+    );
     assert!(store.verify_all().unwrap().is_healthy());
 }
 
@@ -211,7 +215,11 @@ fn two_required_children_consolidate_into_one_successor_seal() {
         .unwrap();
     assert_eq!(seal.required_child_seals, vec![successor_hash.clone()]);
     assert_eq!(seal.required_child_resolutions.len(), 2);
-    assert!(seal.required_child_waivers.is_empty());
+    assert!(
+        seal.required_child_waivers.is_empty(),
+        "{:?}",
+        seal.required_child_waivers
+    );
     let mut originals = std::collections::HashSet::new();
     let mut supersessions = std::collections::HashSet::new();
     for resolution in &seal.required_child_resolutions {

@@ -89,7 +89,8 @@ fn status_resume_assignment_preserves_wait_after_release_or_expiry_without_renew
                     at(now),
                 )
                 .unwrap();
-            assert!(next.value["held"].as_array().unwrap().is_empty());
+            let observed = next.value["held"].as_array().unwrap();
+            assert!(observed.is_empty(), "{observed:?}");
             let row = next.value["assigned"]
                 .as_array()
                 .unwrap()

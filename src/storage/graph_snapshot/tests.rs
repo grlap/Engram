@@ -586,7 +586,11 @@ fn consecutive_idle_saves_keep_body_cut_digest_and_order() {
     assert_eq!(recent_audits, audits[1..]);
     let integrity = store.verify_all().expect("integrity after save audits");
     assert_eq!(integrity.checked_graph_snapshot_audits, 3);
-    assert!(integrity.invalid_graph_snapshot_audits.is_empty());
+    assert!(
+        integrity.invalid_graph_snapshot_audits.is_empty(),
+        "{:?}",
+        integrity.invalid_graph_snapshot_audits
+    );
     assert_eq!(
         store
             .work_feed_head(&crate::FeedId::Project(project))
@@ -635,7 +639,11 @@ fn unkeyed_project_scope_memory_does_not_enter_the_keyed_snapshot_section() {
             &DevelopmentNoopRedactor,
         )
         .expect("save ignores non-keyed project memory");
-    assert!(snapshot.document.body.memories.is_empty());
+    assert!(
+        snapshot.document.body.memories.is_empty(),
+        "{:?}",
+        snapshot.document.body.memories
+    );
     assert_eq!(snapshot.document.body.summary.section_counts.memories, 0);
     assert_eq!(snapshot.document.body.summary.as_of.project_memory, 0);
 }
@@ -680,12 +688,10 @@ fn save_refuses_work_projection_that_disagrees_with_canonical_feed_history() {
         Err(StoreError::InvalidWorkProjection(message))
             if message.contains("work integrity verification")
     ));
-    assert!(
-        store
-            .work_graph_snapshot_save_audits(&project)
-            .expect("save audit query")
-            .is_empty()
-    );
+    let observed = store
+        .work_graph_snapshot_save_audits(&project)
+        .expect("save audit query");
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]
@@ -730,12 +736,10 @@ fn save_refuses_project_memory_state_position_drift() {
         Err(StoreError::InvalidMemoryProjection(message))
             if message.contains("canonical history")
     ));
-    assert!(
-        store
-            .work_graph_snapshot_save_audits(&project)
-            .expect("save audit query")
-            .is_empty()
-    );
+    let observed = store
+        .work_graph_snapshot_save_audits(&project)
+        .expect("save audit query");
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]
@@ -780,12 +784,10 @@ fn save_refuses_project_memory_head_projection_drift() {
         Err(StoreError::InvalidMemoryProjection(message))
             if message.contains("canonical objects")
     ));
-    assert!(
-        store
-            .work_graph_snapshot_save_audits(&project)
-            .expect("save audit query")
-            .is_empty()
-    );
+    let observed = store
+        .work_graph_snapshot_save_audits(&project)
+        .expect("save audit query");
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]
@@ -910,7 +912,7 @@ fn save_refuses_a_document_that_the_loader_would_reject_before_audit() {
         .recent_work_graph_snapshot_save_audits(&project, 8)
         .expect("read disclosure audit");
     assert_eq!(count, 0);
-    assert!(audits.is_empty());
+    assert!(audits.is_empty(), "{audits:?}");
 }
 
 #[test]
@@ -1245,7 +1247,7 @@ fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
         .recent_work_graph_snapshot_load_audits(&project, 8)
         .expect("dry-run audit query");
     assert_eq!(audit_count, 0);
-    assert!(audits.is_empty());
+    assert!(audits.is_empty(), "{audits:?}");
 
     let loaded = restored
         .load_work_graph_snapshot(

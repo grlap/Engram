@@ -27,11 +27,10 @@ fn criterion_disclosure_empty_links_are_admitted_but_foreign_citations_still_ref
         note: "asserted independently of evidence".into(),
     };
     let basis = vec![first.key().clone()];
-    assert!(
-        validate_acceptance(&work, &basis, &[result.clone()], AssuranceLevel::Asserted).unwrap()[0]
-            .evidence
-            .is_empty()
-    );
+    let observed = &validate_acceptance(&work, &basis, &[result.clone()], AssuranceLevel::Asserted)
+        .unwrap()[0]
+        .evidence;
+    assert!(observed.is_empty(), "{observed:?}");
     result.evidence = basis.clone();
     assert_eq!(
         validate_acceptance(&work, &basis, &[result.clone()], AssuranceLevel::Asserted).unwrap()[0]

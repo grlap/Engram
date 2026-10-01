@@ -123,12 +123,10 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
         .expect("checkpoint");
     assert_eq!(checkpoint.work_id, target.work_id);
     assert_eq!(checkpoint.evidence, evidence);
-    assert!(
-        store
-            .work_run_evidence(other.active_run_id.expect("other run"))
-            .expect("other evidence")
-            .is_empty()
-    );
+    let observed = store
+        .work_run_evidence(other.active_run_id.expect("other run"))
+        .expect("other evidence");
+    assert!(observed.is_empty(), "{observed:?}");
 
     verbs
         .done(
@@ -863,23 +861,20 @@ fn displaced_changes_are_named_and_the_rest_counted() {
     assert_eq!(displaced_change_lines(&colliding).len(), 2);
     // An untested change is not a displaced one, and a page without a named
     // root discloses none.
-    assert!(
-        displaced_change_lines(&page(VerificationKind::Test, WorkObligationState::Waived))
-            .is_empty()
-    );
+    let observed =
+        displaced_change_lines(&page(VerificationKind::Test, WorkObligationState::Waived));
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]
 fn untested_changes_are_named_and_the_rest_counted() {
     use crate::verbs::show::{untested_change_lines, untested_changes_omitted};
     // A tested change discloses nothing.
-    assert!(
-        untested_change_lines(&page(
-            VerificationKind::Test,
-            WorkObligationState::Satisfied
-        ))
-        .is_empty()
-    );
+    let observed = untested_change_lines(&page(
+        VerificationKind::Test,
+        WorkObligationState::Satisfied,
+    ));
+    assert!(observed.is_empty(), "{observed:?}");
     let mut untested = page(VerificationKind::Test, WorkObligationState::Waived);
     untested.items[0].untested_change = Some(crate::UntestedSourceChange {
         observation_id: "write-lib".into(),
@@ -891,7 +886,8 @@ fn untested_changes_are_named_and_the_rest_counted() {
     untested.untested_total = 3;
     assert_eq!(untested_changes_omitted(&untested), 2);
     // Every omitted obligation is terminal, so nothing more is open.
-    assert!(obligation_reminders(&untested).is_empty());
+    let observed = obligation_reminders(&untested);
+    assert!(observed.is_empty(), "{observed:?}");
     assert_eq!(
         untested_change_lines(&untested),
         vec![
@@ -1010,13 +1006,11 @@ fn open_test_obligation_becomes_the_test_reminder() {
                 .to_owned()
         ]
     );
-    assert!(
-        obligation_reminders(&page(
-            VerificationKind::Test,
-            WorkObligationState::Satisfied
-        ))
-        .is_empty()
-    );
+    let observed = obligation_reminders(&page(
+        VerificationKind::Test,
+        WorkObligationState::Satisfied,
+    ));
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 /// The exact clear command guidance passes through for an only blocker.
@@ -1118,17 +1112,15 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
         ),
         vec!["engram work next"]
     );
-    assert!(
-        next_commands(
-            &["work_focus".into()],
-            "w-0123456789ab",
-            "next",
-            None,
-            false,
-            &[],
-        )
-        .is_empty()
+    let observed = next_commands(
+        &["work_focus".into()],
+        "w-0123456789ab",
+        "next",
+        None,
+        false,
+        &[],
     );
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

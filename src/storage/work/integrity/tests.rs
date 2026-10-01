@@ -60,13 +60,8 @@ fn scoped_mutation_ignores_unrelated_corruption_but_refuses_its_target() {
             &DevelopmentNoopRedactor,
         )
         .expect("healthy scoped mutation");
-    assert!(
-        !store
-            .verify_all()
-            .expect("doctor")
-            .invalid_work_records
-            .is_empty()
-    );
+    let observed = store.verify_all().expect("doctor").invalid_work_records;
+    assert!(!observed.is_empty(), "{observed:?}");
     let project_feed = FeedId::Project(healthy.project_id.clone());
     let head_before = store
         .work_feed_head(&project_feed)

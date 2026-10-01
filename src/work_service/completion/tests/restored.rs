@@ -262,12 +262,10 @@ fn restored_completed_child_is_bound_into_a_new_parent_seal() {
         .expect("restored child completion");
     assert_eq!(record.work_id, child.work_id);
     assert!(record.history.completion.is_some());
-    assert!(
-        store
-            .restored_work_evidence(root.work_id)
-            .expect("restored evidence")
-            .is_empty()
-    );
+    let observed = store
+        .restored_work_evidence(root.work_id)
+        .expect("restored evidence");
+    assert!(observed.is_empty(), "{observed:?}");
     let native_evidence = store
         .work_run_evidence(seal.run_id)
         .expect("native run evidence");
@@ -397,12 +395,10 @@ fn restored_completed_item_reopens_into_a_fresh_native_run() {
             .expect("fresh run evidence")
             .contains(&late_note_hash)
     );
-    assert!(
-        store
-            .restored_work_evidence(root.work_id)
-            .expect("restored evidence")
-            .is_empty()
-    );
+    let observed = store
+        .restored_work_evidence(root.work_id)
+        .expect("restored evidence");
+    assert!(observed.is_empty(), "{observed:?}");
     assert!(
         store
             .verify_all()

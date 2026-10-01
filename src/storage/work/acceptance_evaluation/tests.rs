@@ -1740,7 +1740,7 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
     // run last saw it is not a change.
     host.basis.source_revision = "content-revision-2".into();
     let none = host.checkpoint(store, true, None, 30);
-    assert!(none.is_empty());
+    assert!(none.is_empty(), "{none:?}");
     assert!(matches!(
         recovery_cause(complete_evaluated(
             store,

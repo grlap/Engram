@@ -45,13 +45,11 @@ fn revision_kind_and_label_deltas_preserve_unmentioned_labels() {
         .expect("latest revised event");
     assert_eq!(latest.work.kind, WorkItemKind::Bug);
     assert_eq!(latest.work.labels, revised.labels);
-    assert!(
-        store
-            .verify_all()
-            .expect("metadata integrity")
-            .invalid_work_records
-            .is_empty()
-    );
+    let observed = store
+        .verify_all()
+        .expect("metadata integrity")
+        .invalid_work_records;
+    assert!(observed.is_empty(), "{observed:?}");
 }
 
 #[test]

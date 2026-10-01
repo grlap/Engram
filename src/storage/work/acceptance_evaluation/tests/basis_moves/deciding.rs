@@ -470,7 +470,7 @@ fn the_observations_window_pages_every_observation_once() {
     let mut receipt = first;
     loop {
         let rows = receipt.value["observations"].as_array().expect("rows");
-        assert!(!rows.is_empty());
+        assert!(!rows.is_empty(), "{rows:?}");
         let positions = rows
             .iter()
             .map(|row| row["run_position"].as_i64().expect("position"))

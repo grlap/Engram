@@ -303,7 +303,7 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
     let parents = input
         .tasks
         .iter()
-        .map(|task| task.parent_key.as_deref().map(&resolve).transpose())
+        .map(|task| task.parent_key.as_deref().map(resolve).transpose())
         .collect::<Result<Vec<_>, _>>()?;
     let mut depths = Vec::new();
     for index in 0..input.tasks.len() {

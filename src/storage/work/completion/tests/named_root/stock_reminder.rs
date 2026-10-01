@@ -334,7 +334,8 @@ fn an_unlocated_change_asks_for_the_credited_check_until_one_clears_it() {
         obligation(&case.store, &case.claim, &Pick::TriggeredBy(&change)).0,
         WorkObligationState::Satisfied
     );
-    assert!(case.stock_reminders(12).is_empty());
+    let observed = case.stock_reminders(12);
+    assert!(observed.is_empty(), "{observed:?}");
     let receipt = case.done(13);
     assert!(!receipt.owed, "{:?}", receipt.reminders);
     assert_eq!(case.lifecycle(), crate::WorkLifecycle::Completed);

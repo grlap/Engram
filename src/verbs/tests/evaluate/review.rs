@@ -451,7 +451,8 @@ fn evaluate_accepts_the_locators_show_prints_and_refuses_observations() {
             );
             assert_eq!(cause.citation, rejected);
             assert_eq!(cause.evaluated_cut, head_before_refusals);
-            assert!(!refused.guidance().next.is_empty());
+            let observed = refused.guidance().next;
+            assert!(!observed.is_empty(), "{observed:?}");
         }
         let message = refused.to_string();
         assert!(

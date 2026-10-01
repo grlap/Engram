@@ -333,7 +333,11 @@ fn compact_next_trims_every_advisory_section_instead_of_failing() {
     assert_eq!(compact_omitted(&fitted, "memories"), 0);
     assert!(fitted.memories.is_none());
     assert!(fitted.focus.is_some());
-    assert!(!fitted.guidance.next.is_empty());
+    assert!(
+        !fitted.guidance.next.is_empty(),
+        "{:?}",
+        fitted.guidance.next
+    );
     assert!(
         fitted
             .ready
@@ -386,7 +390,8 @@ fn compact_next_sheds_labels_in_navigation_priority_order() {
     assert_eq!(compact_omitted(&fitted, "ready"), 0);
     assert_eq!(fitted.ready.len(), 2);
     assert_eq!(fitted.ready[0].labels, vec!["first"]);
-    assert!(fitted.ready[1].labels.is_empty());
+    let observed = &fitted.ready[1].labels;
+    assert!(observed.is_empty(), "{observed:?}");
     assert_eq!(fitted.ready[1].labels_omitted, Some(1));
     assert_eq!(fitted.ready[1].title, last_ready_title);
     assert_eq!(fitted.held[0].labels, vec!["held"]);
@@ -428,7 +433,8 @@ fn compact_label_shed_restores_and_continues_to_a_reducing_row() {
     let mut fitted = receipt;
 
     assert!(shed_compact_labels(&mut fitted, threshold).expect("later label shed"));
-    assert!(fitted.ready[0].labels.is_empty());
+    let observed = &fitted.ready[0].labels;
+    assert!(observed.is_empty(), "{observed:?}");
     assert_eq!(fitted.ready[0].labels_omitted, Some(1));
     assert_eq!(fitted.ready[1].labels, vec!["x"]);
     assert_eq!(fitted.ready[1].labels_omitted, None);

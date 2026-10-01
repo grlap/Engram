@@ -306,7 +306,11 @@ fn cancelled_required_child_blocks_completion_until_an_attributed_waiver() {
         9,
     )
     .expect("complete with explicit waiver");
-    assert!(seal.required_child_seals.is_empty());
+    assert!(
+        seal.required_child_seals.is_empty(),
+        "{:?}",
+        seal.required_child_seals
+    );
     assert_eq!(seal.required_child_waivers, vec![waiver]);
 }
 
@@ -770,7 +774,11 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
             root_seal.obligation_schema_version,
             COMPLETION_OBLIGATION_SCHEMA_VERSION
         );
-        assert!(root_seal.obligations.is_empty());
+        assert!(
+            root_seal.obligations.is_empty(),
+            "{:?}",
+            root_seal.obligations
+        );
         assert_eq!(
             store
                 .get_work_item(optional.work_id)

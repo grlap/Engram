@@ -250,19 +250,23 @@ fn a_title_placeholder_criterion_is_named_on_show_claim_and_done() {
             at(10),
         )
         .expect("show --full");
-    assert!(placeholder(&full).is_empty());
+    let full_placeholder = placeholder(&full);
+    assert!(full_placeholder.is_empty(), "{full_placeholder:?}");
     assert!(full.value.get("acceptance_placeholder").is_none());
     // An item with real criteria never shows it; the sentence typed by hand
     // reads as what it is.
     let real = add("Real item", &["the change is delivered"], None, 11);
-    assert!(placeholder(&show(&real, 12)).is_empty());
+    let real_placeholder = placeholder(&show(&real, 12));
+    assert!(real_placeholder.is_empty(), "{real_placeholder:?}");
     // Only the list an item was created with counts: a later revision to the
     // placeholder sentence is a revised list, not the creation placeholder.
     revise(&real, None, Some("Real item is done"), 12);
-    assert!(placeholder(&show(&real, 12)).is_empty());
+    let revised_placeholder = placeholder(&show(&real, 12));
+    assert!(revised_placeholder.is_empty(), "{revised_placeholder:?}");
     // A criterion that only ends like one is not another title's placeholder.
     let other = add("Other item", &["the build is done"], None, 13);
-    assert!(placeholder(&show(&other, 13)).is_empty());
+    let other_placeholder = placeholder(&show(&other, 13));
+    assert!(other_placeholder.is_empty(), "{other_placeholder:?}");
     let typed = add("Typed item", &["Typed item is done"], None, 13);
     assert_eq!(placeholder(&show(&typed, 14)).len(), 1);
     let mcp = AgentVerbs::new(

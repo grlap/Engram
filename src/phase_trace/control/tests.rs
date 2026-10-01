@@ -352,7 +352,7 @@ fn a_failed_write_and_a_torn_frame_each_end_in_their_state() {
         &trace,
     );
     assert!(torn.is_err());
-    assert!(output.is_empty());
+    assert!(output.is_empty(), "{output:?}");
 
     let lines = written(&trace, &captured);
     let first = terminal(&lines, 1);
@@ -375,7 +375,7 @@ fn unset_installs_nothing() {
     server
         .serve(Cursor::new(b"{}\n".to_vec()), &mut output)
         .expect("serve");
-    assert!(!output.is_empty());
+    assert!(!output.is_empty(), "{output:?}");
 }
 
 // A line names fixed labels only: no request text reaches it, and every
