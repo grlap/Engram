@@ -8,7 +8,7 @@ use super::feeds::{
     append_to_work_feeds, inspect_work_request, load_typed_work_object, replay_operation,
     validate_work_source_snapshot,
 };
-use super::planning::{create_root_on, normalize_strings, persist_operation_result};
+use super::planning::{create_root_on, normalize_acceptance_criteria, persist_operation_result};
 use super::query::{latest_restored_record, load_work_item, parse_work_id};
 use crate::domain::{
     ActorContext, ChildRequirement, CreateWorkRequest, ProjectId, SCHEMA_VERSION, WorkId,
@@ -497,7 +497,7 @@ fn preview_on(
             .as_ref()
             .and_then(|item| item.source_snapshot_id.clone()),
         draft: input.draft.clone().map(|mut draft| {
-            draft.acceptance = normalize_strings(&draft.acceptance);
+            draft.acceptance = normalize_acceptance_criteria(&draft.acceptance);
             draft
         }),
         preview_token: token.key().clone(),

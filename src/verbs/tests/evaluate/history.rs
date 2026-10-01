@@ -442,7 +442,7 @@ fn many_verdicts_are_bounded_in_the_row_and_complete_in_the_detail() {
         .clone();
     assert_eq!(verdicts.len(), criteria);
     assert_eq!(detail.value["evaluation"]["verdicts_omitted"], 0);
-    // The stored acceptance list is normalized (sorted), and verdicts follow
+    // The stored acceptance list keeps the order typed, and verdicts follow
     // its positions.
     let contract = fixture
         .verbs

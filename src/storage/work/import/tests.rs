@@ -377,7 +377,9 @@ fn import_summary_decodes_only_the_latest_native_capture() {
     let preview = store
         .preview_work_import(&project, &original, at(1))
         .unwrap();
-    assert_eq!(preview.draft.as_ref().unwrap().acceptance, ["A", "Z"]);
+    // The preview shows the criteria as apply stores them: in the order
+    // typed, without the repeat.
+    assert_eq!(preview.draft.as_ref().unwrap().acceptance, ["Z", "A"]);
     let receipt = store
         .apply_work_import(
             &project,

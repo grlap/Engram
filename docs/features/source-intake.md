@@ -70,8 +70,8 @@ For first intake, `draft` must contain an authored local `title` and
 actually authored. No array means zero criteria. Blank criteria are refused;
 Engram never manufactures a criterion from the title. Draft fields must be
 trimmed, nonblank prose of at most 8192 UTF-8 bytes each, with at most 64
-criteria. Preview shows the sorted, deduplicated criteria that ordinary
-canonical planning will store. No normalization invents a criterion.
+criteria. Preview shows the criteria that ordinary canonical planning will
+store: in the order given, without repeats. No normalization invents a criterion.
 
 First apply atomically stores the snapshot and creates an Open, unassigned,
 unclaimed task root at priority 2. Its origin is `imported` and its

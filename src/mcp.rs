@@ -257,8 +257,8 @@ struct AddArgs {
     title: String,
     /// Defaults to the title.
     outcome: Option<String>,
-    /// Acceptance criteria `done` is checked against; defaults to one
-    /// criterion "<title> is done".
+    /// Acceptance criteria `done` is checked against, kept in the order given
+    /// without repeats; defaults to one criterion "<title> is done".
     acceptance: Option<Vec<String>>,
     /// Bind criteria to typed host verification, as `POSITION=KIND[:FINGERPRINT]`
     /// (kind: test, build, lint, review or acceptance; positions count the
@@ -340,8 +340,9 @@ struct UpdateArgs {
     blocker: Option<String>,
     title: Option<String>,
     outcome: Option<String>,
-    /// Replace the whole acceptance list for revise. Omission preserves it;
-    /// an empty list or blank criterion is refused.
+    /// Replace the whole acceptance list for revise, kept in the order given;
+    /// reordering a bound criterion owes its verification again. Omission
+    /// preserves it; an empty list or blank criterion is refused.
     acceptance: Option<Vec<String>>,
     /// Replace the criteria bound to typed host verification for revise, as
     /// `POSITION=KIND[:FINGERPRINT]`. Positions count the acceptance list as

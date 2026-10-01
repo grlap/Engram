@@ -3527,7 +3527,7 @@ test("Phoenix planning revisions and exact list counts through MCP", async (t) =
     receipt(await client.call("add", { title: "Searchable second" }));
     receipt(await client.call("update", { work_ref: first.short_ref, action: "revise", acceptance: [" B ", "A", "A"] }));
     let shown = receipt(await client.call("show", { work_ref: first.short_ref }));
-    assert.deepEqual(shown.status.work.acceptance, ["A", "B"]);
+    assert.deepEqual(shown.status.work.acceptance, ["B", "A"]);
     assert.equal(shown.status.work.title, "Searchable first");
     assert.ok(shown.history.items.some(({ kind, summary }) => kind === "revised" && summary.startsWith("acceptance:")));
     for (const acceptance of [[], [""], ["good", " "]]) {
@@ -3535,7 +3535,7 @@ test("Phoenix planning revisions and exact list counts through MCP", async (t) =
     }
     receipt(await client.call("update", { work_ref: first.short_ref, action: "revise", title: "Searchable renamed" }));
     shown = receipt(await client.call("show", { work_ref: first.short_ref }));
-    assert.deepEqual(shown.status.work.acceptance, ["A", "B"]);
+    assert.deepEqual(shown.status.work.acceptance, ["B", "A"]);
     const listed = receipt(await client.call("ls", { limit: 1 }));
     assert.equal(listed.total, 2);
     assert.equal(listed.items.length, 1);

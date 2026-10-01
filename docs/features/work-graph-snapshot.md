@@ -258,7 +258,9 @@ outcomes, acceptance, details, summaries, gate names, failure labels, refs,
 reasons, actor ids, actor contexts, memory bodies — must already be normalized
 and free of unsafe control/format characters (carried prose admits newlines
 and tabs), while gates, actor attribution, and memory
-bodies also pass their live count and byte bounds. One failing field refuses
+bodies also pass their live count and byte bounds. Labels and history refs
+must be sorted and unique; acceptance keeps the order its author typed and must only
+be unique. One failing field refuses
 the whole file as corrupt, because records are stored as written and nothing
 is normalized on load. A refused
 load leaves the destination exactly as it found it. The configured Redactor

@@ -365,7 +365,7 @@ fn validate_snapshot_item_shape(item: &crate::WorkGraphSnapshotItem) -> Result<(
     }
     validate_text(&item.title, "work title")?;
     validate_text(&item.outcome, "work outcome")?;
-    validate_string_set(&item.acceptance, "acceptance")?;
+    validate_acceptance(&item.acceptance)?;
     validate_string_set(&item.labels, "labels")?;
     if !(0..=4).contains(&item.priority) {
         return Err(corrupt("work priority is outside 0 through 4"));
@@ -1143,6 +1143,19 @@ fn validate_string_set(values: &[String], label: &str) -> Result<(), StoreError>
     normalized.dedup();
     if normalized != values {
         return Err(corrupt(format!("{label} are not sorted and unique")));
+    }
+    Ok(())
+}
+
+/// Acceptance keeps the order its author typed, so only uniqueness is
+/// checked; a list stored sorted by an earlier build passes too.
+fn validate_acceptance(values: &[String]) -> Result<(), StoreError> {
+    let mut seen = std::collections::HashSet::with_capacity(values.len());
+    for value in values {
+        validate_text(value, "acceptance")?;
+        if !seen.insert(value.as_str()) {
+            return Err(corrupt("acceptance repeats a criterion".to_owned()));
+        }
     }
     Ok(())
 }

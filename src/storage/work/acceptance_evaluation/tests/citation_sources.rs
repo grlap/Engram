@@ -27,7 +27,7 @@ fn bound_fixture_of(
         &fixture.work,
         &fixture.claim,
         WorkRevisionPatch {
-            // Stored criteria are sorted, so the bound one stays first.
+            // Criteria keep the order typed, so the bound one stays first.
             acceptance: Some(vec!["run the tests".into(), "write the docs".into()]),
             acceptance_bindings: Some(vec![AcceptanceBinding {
                 criterion: 1,

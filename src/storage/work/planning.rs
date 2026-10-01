@@ -574,7 +574,7 @@ impl SqliteStore {
             // Positions name the list that was replaced; nothing is carried
             // over to a list they were never authored against.
             (Some(acceptance), None) => {
-                item.acceptance = normalize_strings(acceptance);
+                item.acceptance = normalize_acceptance_criteria(acceptance);
                 item.acceptance_bindings.clear();
             }
             // Bindings alone name the stored list, as `show` numbers it.
@@ -1355,38 +1355,55 @@ pub(super) fn normalize_strings(values: &[String]) -> Vec<String> {
     normalized
 }
 
-/// Normalizes an acceptance list as `normalize_strings` does — trimmed,
-/// deduplicated and sorted, which is the order `show` numbers — and carries
-/// each binding from the position it was authored at, in the list as typed,
-/// to the position its criterion holds in the stored order.
+/// An acceptance list in the order its author typed it: each criterion
+/// trimmed, blanks dropped, and a criterion that repeats an earlier one after
+/// trimming dropped in favour of the first. Stored position N is the Nth
+/// criterion kept, which is the order `show` numbers.
+pub(in crate::storage) fn normalize_acceptance_criteria(values: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::with_capacity(values.len());
+    values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty() && seen.insert(*value))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Normalizes an acceptance list as [`normalize_acceptance_criteria`] does
+/// and carries each binding from the position it was authored at, in the
+/// list as typed with blanks counted, to the position its criterion holds
+/// once stored; a binding on a repeated criterion lands on its first
+/// occurrence.
 ///
 /// # Errors
 ///
 /// Returns [`StoreError::InvalidWork`] when a binding names no criterion of
-/// the list as typed, or a criterion twice.
+/// the list as typed, names a blank one, or binds a criterion twice.
 pub(in crate::storage) fn normalize_acceptance(
     values: &[String],
     bindings: &[crate::domain::AcceptanceBinding],
 ) -> Result<(Vec<String>, Vec<crate::domain::AcceptanceBinding>), StoreError> {
-    let authored = values
-        .iter()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
-    let stored = normalize_strings(values);
+    let stored = normalize_acceptance_criteria(values);
     let mut carried = Vec::with_capacity(bindings.len());
     for binding in bindings {
-        let text = binding
+        let typed = binding
             .criterion
             .checked_sub(1)
-            .and_then(|index| authored.get(index))
+            .and_then(|index| values.get(index))
             .ok_or_else(|| {
                 StoreError::InvalidWork(format!(
                     "a binding names criterion {}, but the acceptance list has {} criteria numbered from 1",
                     binding.criterion,
-                    authored.len()
+                    values.len()
                 ))
             })?;
+        let text = typed.trim();
+        if text.is_empty() {
+            return Err(StoreError::InvalidWork(format!(
+                "a binding names criterion {}, which is blank",
+                binding.criterion
+            )));
+        }
         let position = stored
             .iter()
             .position(|criterion| criterion == text)

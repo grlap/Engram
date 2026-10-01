@@ -737,6 +737,91 @@ fn rewriting_a_bound_criterion_owes_its_verification_again() {
     assert!(store.verify_all().expect("doctor").is_healthy());
 }
 
+// Criteria keep the order typed, so a revision that only reorders them is a
+// real revision, and a bound criterion that moves owes its verification
+// again at its new position: obligations are keyed by position. The pass
+// recorded at the old position stays as history.
+#[test]
+fn reordering_a_bound_criterion_owes_its_verification_again() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-reordered-criterion");
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-reordered", 2, 300);
+    host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-before-reorder",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        3,
+    );
+
+    let revised = revise_bound(
+        &mut store,
+        &work,
+        &claim,
+        Some(vec!["write docs", "run tests"]),
+        Some(vec![bound(2, VerificationKind::Test)]),
+        "reorder-bound-criterion",
+        4,
+    );
+    assert_eq!(
+        revised.revision,
+        work.revision + 1,
+        "a reorder is a revision"
+    );
+    assert_eq!(revised.acceptance, vec!["write docs", "run tests"]);
+    assert_eq!(
+        revised.acceptance_bindings,
+        vec![bound(2, VerificationKind::Test)]
+    );
+    let after = store.work_run_obligations(run_id).expect("obligations");
+    let rules = after
+        .iter()
+        .map(|record| (record.obligation.rule.rule_id.as_str(), record.state))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rules,
+        vec![
+            (
+                "acceptance_criterion_requires_verification:1",
+                WorkObligationState::Satisfied
+            ),
+            (
+                "acceptance_criterion_requires_verification:2",
+                WorkObligationState::Open
+            ),
+        ]
+    );
+    let reopened = after
+        .iter()
+        .find(|record| record.state == WorkObligationState::Open)
+        .expect("the moved criterion owes its verification again");
+    assert_eq!(reopened.obligation.work_revision, revised.revision);
+    assert!(store.verify_all().expect("doctor").is_healthy());
+
+    // An unbound list that only reorders is a revision too, stored as typed.
+    let claim = store
+        .current_work_claim(revised.work_id)
+        .expect("claim")
+        .expect("live claim");
+    let unbound = revise_bound(
+        &mut store,
+        &revised,
+        &claim,
+        Some(vec!["run tests", "write docs"]),
+        None,
+        "reorder-unbound",
+        5,
+    );
+    assert_eq!(unbound.revision, revised.revision + 1);
+    assert_eq!(unbound.acceptance, vec!["run tests", "write docs"]);
+    assert!(unbound.acceptance_bindings.is_empty());
+}
+
 #[test]
 fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_criterion() {
     for creation in [Creation::Add, Creation::Plan] {
@@ -1238,40 +1323,85 @@ fn a_source_change_recorded_without_a_revision_is_judged_by_recording_order() {
 }
 
 #[test]
-fn a_binding_follows_its_criterion_into_the_stored_order() {
+fn a_binding_names_its_criterion_in_the_order_typed() {
     let directory = crate::test_support::temp_home().expect("temporary directory");
     let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
-    // The list is stored sorted, as `show` numbers it; the binding was
-    // authored against the list as typed and lands on the same criterion.
-    let mut request = root_request("project-bound-order", "create-reordered-work", 1);
-    request.acceptance = vec!["zeta: tests pass".into(), "alpha: docs updated".into()];
-    request.acceptance_bindings = vec![bound(1, VerificationKind::Test)];
+    // The list is stored in the order typed, trimmed, without its blank and
+    // without a repeat of an earlier criterion. Bindings count the list as
+    // typed, its blank included: position 3 is "alpha", and position 4, a
+    // repeat, lands on the first "zeta".
+    let mut request = root_request("project-bound-order", "create-typed-order-work", 1);
+    request.acceptance = vec![
+        "zeta: tests pass".into(),
+        "  ".into(),
+        "alpha: docs updated".into(),
+        "  zeta: tests pass ".into(),
+    ];
+    request.acceptance_bindings = vec![
+        bound(3, VerificationKind::Build),
+        bound(4, VerificationKind::Test),
+    ];
     let work = store
         .create_work(&request, &DevelopmentNoopRedactor)
-        .expect("create reordered work");
+        .expect("create typed-order work");
     assert_eq!(
         work.acceptance,
-        vec!["alpha: docs updated", "zeta: tests pass"]
+        vec!["zeta: tests pass", "alpha: docs updated"]
     );
-    assert_eq!(work.acceptance_bindings.len(), 1);
-    assert_eq!(work.acceptance_bindings[0].criterion, 2);
+    let bound_to = work
+        .acceptance_bindings
+        .iter()
+        .map(|binding| (binding.criterion, binding.requirement.check_kind))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        bound_to,
+        vec![(1, VerificationKind::Test), (2, VerificationKind::Build)]
+    );
     let opened = store
         .work_run_obligations(work.active_run_id.expect("active run"))
-        .expect("obligations");
+        .expect("obligations")
+        .into_iter()
+        .map(|record| record.obligation.rule.rule_id)
+        .collect::<Vec<_>>();
     assert_eq!(
-        opened[0].obligation.rule.rule_id,
-        "acceptance_criterion_requires_verification:2"
+        opened,
+        vec![
+            "acceptance_criterion_requires_verification:1",
+            "acceptance_criterion_requires_verification:2",
+        ]
     );
-    // A position past the list as typed refuses before any effect.
-    request.idempotency_key = "create-overbound-work".into();
-    request.acceptance_bindings = vec![bound(3, VerificationKind::Test)];
-    let refused = store
-        .create_work(&request, &DevelopmentNoopRedactor)
-        .expect_err("a binding past the list");
-    assert!(
-        matches!(&refused, StoreError::InvalidWork(reason) if reason.contains("names criterion 3")),
-        "{refused:?}"
-    );
+    // Each refuses before any effect: a binding on the blank, one past the
+    // list as typed, and bindings on a criterion and its repeat.
+    for (key, bindings, refusal) in [
+        (
+            "create-blank-bound-work",
+            vec![bound(2, VerificationKind::Test)],
+            "names criterion 2, which is blank",
+        ),
+        (
+            "create-overbound-work",
+            vec![bound(5, VerificationKind::Test)],
+            "names criterion 5",
+        ),
+        (
+            "create-twice-bound-work",
+            vec![
+                bound(1, VerificationKind::Test),
+                bound(4, VerificationKind::Build),
+            ],
+            "criterion 1 is bound twice",
+        ),
+    ] {
+        request.idempotency_key = key.into();
+        request.acceptance_bindings = bindings;
+        let refused = store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect_err(key);
+        assert!(
+            matches!(&refused, StoreError::InvalidWork(reason) if reason.contains(refusal)),
+            "{key}: {refused:?}"
+        );
+    }
 }
 
 /// A stored obligation whose requirement names an environment, with a value

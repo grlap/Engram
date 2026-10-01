@@ -660,9 +660,10 @@ Rules that matter:
   never a record id: no evidence could match one, so the id of a stored
   record is refused where the binding is authored, whatever its shape.
   Positions follow the call: with `--accept` in the same call
-  they count the acceptance list as typed and are carried to the stored
-  order; `--bind` alone on `update` counts the stored list, as `show` numbers
-  it. `show` marks each bound criterion `[requires host KIND verification]`
+  they count the acceptance list as typed, blanks included, and a binding on
+  a repeated criterion lands on its first occurrence; a binding on a blank is
+  refused. `--bind` alone on `update` counts the stored list, as `show`
+  numbers it. `show` marks each bound criterion `[requires host KIND verification]`
   and counts bound criteria behind a clipped list. A bound criterion opens a
   typed obligation on the item's run, so `done` refuses until the host has
   minted passing verification evidence of that kind (recorded through the
@@ -679,10 +680,15 @@ Rules that matter:
   the bindings and the receipt says so; a dropped binding's obligation is
   waived in the revising actor's name, a new one opens from that revision,
   and a criterion rewritten under an unchanged binding owes its verification
-  again.
+  again. Obligations are keyed by position, so reordering a bound criterion
+  owes its verification again too.
 - `update REF --accept "criterion"...` replaces the whole acceptance list in
   one attributed revision. Omission preserves it; empty lists and any blank
-  criterion are refused. The core trims, sorts, and deduplicates criteria.
+  criterion are refused. The core trims criteria and drops a repeat of an
+  earlier one, keeping the order given, so stored position N is the Nth
+  criterion kept. A revision that only reorders the list is a real revision:
+  it carries a failed evaluation like any other change to the criteria.
+  Revisions stored sorted by an earlier build read as stored.
   History names the supplied fields, and prior canonical criteria remain in
   history. Completed work is immutable; `note` is the late-finding path.
 - `ls` prints `showing X of N` and returns exact `total` and `omitted` counts

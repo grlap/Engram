@@ -58,23 +58,24 @@ fn a_bound_plan_task_opens_its_obligation_and_a_record_id_pin_is_refused() {
     };
     let mut store = SqliteStore::open_in_memory().expect("store");
     let mut bound = request();
-    // Typed order: the bound criterion is second as typed and first as stored.
+    // Typed order is kept: the bound criterion is second as typed and as
+    // stored, though it sorts first.
     bound.plan.tasks[2].acceptance = vec!["write docs".into(), "run tests".into()];
     bound.plan.tasks[2].bindings = vec![bind(None)];
     let receipt = store
         .propose_work_plan(&bound, &DevelopmentNoopRedactor)
         .expect("plan with a bound child task");
     let child = load_work_item(&store.connection, receipt.tasks[2].work_id).expect("child");
-    assert_eq!(child.acceptance, vec!["run tests", "write docs"]);
+    assert_eq!(child.acceptance, vec!["write docs", "run tests"]);
     assert_eq!(child.acceptance_bindings.len(), 1);
-    assert_eq!(child.acceptance_bindings[0].criterion, 1);
+    assert_eq!(child.acceptance_bindings[0].criterion, 2);
     let owed = store
         .work_run_obligations(child.active_run_id.expect("child run"))
         .expect("obligations");
     assert_eq!(owed.len(), 1);
     assert_eq!(
         owed[0].obligation.rule.rule_id,
-        "acceptance_criterion_requires_verification:1"
+        "acceptance_criterion_requires_verification:2"
     );
     assert!(store.verify_all().expect("doctor").is_healthy());
 
@@ -143,7 +144,8 @@ fn a_bound_plan_root_keeps_its_normalized_binding_through_admission_and_replay()
     let mut store = SqliteStore::open_in_memory().expect("store");
     let mut plan = request();
     // The root's list as typed repeats and pads a criterion: stored, it is
-    // ["a", "z"], and the binding authored at position 3 follows "z" to 2.
+    // ["z", "a"], and the binding authored at position 3, the repeat, lands
+    // on the first "z".
     plan.plan.tasks[1].acceptance = vec!["z".into(), " a ".into(), "z".into()];
     plan.plan.tasks[1].bindings = vec![test_binding(3, None)];
     // A bound child keeps its binding beside it.
@@ -154,11 +156,11 @@ fn a_bound_plan_root_keeps_its_normalized_binding_through_admission_and_replay()
         .expect("plan with a bound root");
     let root = load_work_item(&store.connection, receipt.tasks[1].work_id).expect("root");
     assert_eq!(root.parent_id, None);
-    assert_eq!(root.acceptance, vec!["a", "z"]);
+    assert_eq!(root.acceptance, vec!["z", "a"]);
     assert_eq!(
         root.acceptance_bindings,
         vec![crate::domain::AcceptanceBinding {
-            criterion: 2,
+            criterion: 1,
             requirement: crate::domain::VerificationRequirement {
                 check_kind: crate::domain::VerificationKind::Test,
                 check_fingerprint: None,
@@ -173,12 +175,12 @@ fn a_bound_plan_root_keeps_its_normalized_binding_through_admission_and_replay()
     assert_eq!(owed.len(), 1);
     assert_eq!(
         owed[0].obligation.rule.rule_id,
-        "acceptance_criterion_requires_verification:2"
+        "acceptance_criterion_requires_verification:1"
     );
     let child = load_work_item(&store.connection, receipt.tasks[2].work_id).expect("child");
-    assert_eq!(child.acceptance, vec!["run tests", "write docs"]);
+    assert_eq!(child.acceptance, vec!["write docs", "run tests"]);
     assert_eq!(child.acceptance_bindings.len(), 1);
-    assert_eq!(child.acceptance_bindings[0].criterion, 1);
+    assert_eq!(child.acceptance_bindings[0].criterion, 2);
     // An unbound root stays unbound and owes nothing.
     let other = load_work_item(&store.connection, receipt.tasks[3].work_id).expect("other root");
     assert!(other.acceptance_bindings.is_empty());

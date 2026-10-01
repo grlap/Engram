@@ -113,7 +113,8 @@ fn a_plan_root_binding_reads_back_through_show_and_core_inspect_before_and_after
     let directory = test_support::temp_home().expect("temp");
     let home = directory.path();
     assert!(run(home, &["init"]).status.success());
-    // The root's bound criterion is second as typed and first as stored.
+    // The root's bound criterion is second as typed and as stored, though it
+    // sorts first.
     let input = json!({"kind":"plan", "plan": {
         "idempotency_key":"bound-plan",
         "tasks":[
@@ -154,7 +155,7 @@ fn a_plan_root_binding_reads_back_through_show_and_core_inspect_before_and_after
             inspected["status"]["work"]["acceptance_bindings"].clone(),
         )
     };
-    let root_binding = json!([{"criterion":1,"requirement":{"check_kind":"test"}}]);
+    let root_binding = json!([{"criterion":2,"requirement":{"check_kind":"test"}}]);
     let child_binding = json!([{"criterion":1,"requirement":{"check_kind":"lint"}}]);
     for pass in ["admitted", "replayed"] {
         if pass == "replayed" {

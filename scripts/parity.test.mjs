@@ -361,14 +361,14 @@ test("Phoenix update --accept replaces criteria and ls reports exact totals", (t
     const first = json("add", "Planning first", "--accept", "Original").work.short_ref;
     json("add", "Planning second");
     json("update", first, "--accept", "B", "--accept", "A");
-    assert.deepEqual(json("show", first).status.work.acceptance, ["A", "B"]);
+    assert.deepEqual(json("show", first).status.work.acceptance, ["B", "A"]);
     assert.ok(json("show", first).history.items.some(({ kind, summary }) => kind === "revised" && summary.startsWith("acceptance:")));
     json("update", first, "--title", "Planning renamed");
-    assert.deepEqual(json("show", first).status.work.acceptance, ["A", "B"]);
+    assert.deepEqual(json("show", first).status.work.acceptance, ["B", "A"]);
     for (const args of [["--accept"], ["--accept", ""], ["--accept", "good", "--accept", " "]]) {
       const refused = run([...context, "update", first, ...args, "--json"]);
       assert.notEqual(refused.status, 0, refused.stdout);
-      assert.deepEqual(json("show", first).status.work.acceptance, ["A", "B"]);
+      assert.deepEqual(json("show", first).status.work.acceptance, ["B", "A"]);
     }
     const listed = json("ls", "--limit", "1");
     assert.equal(listed.total, 2);

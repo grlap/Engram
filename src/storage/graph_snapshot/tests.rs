@@ -133,6 +133,112 @@ fn snapshot_carries_the_pinned_evaluation_mode() {
     assert!(destination.verify_all().expect("verify").is_healthy());
 }
 
+// Criteria keep the order typed: a snapshot saves and loads a list that does
+// not sort, and a list an earlier build stored sorted, each unchanged. Only a
+// repeated criterion is refused.
+#[test]
+fn snapshot_keeps_the_typed_order_of_acceptance() {
+    let directory = crate::test_support::temp_home().expect("tempdir");
+    let project = ProjectId("snapshot-typed-acceptance".into());
+    let mut source =
+        SqliteStore::open(directory.path().join("typed-source.db")).expect("source store");
+    let mut create = |acceptance: &[&str], key: &str| {
+        let mut request = CreateWorkRequest {
+            acceptance: acceptance.iter().map(|text| (*text).to_owned()).collect(),
+            ..root_create_request(&project, key)
+        };
+        request.title = key.into();
+        source
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect("create root")
+    };
+    let typed = create(&["zeta holds", "alpha holds"], "typed-order");
+    let sorted = create(&["alpha holds", "zeta holds"], "sorted-order");
+    assert_eq!(typed.acceptance, vec!["zeta holds", "alpha holds"]);
+    let saved = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("saver"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save a typed-order list");
+    let mut destination = SqliteStore::open_in_memory().expect("destination");
+    destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor("loader"),
+            &snapshot_bytes(&saved.document),
+            false,
+            at(3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("load a typed-order list");
+    for original in [&typed, &sorted] {
+        assert_eq!(
+            destination
+                .get_work_item(original.work_id)
+                .expect("restored item")
+                .acceptance,
+            original.acceptance
+        );
+    }
+
+    let mut repeated = saved.document.clone();
+    let item = repeated
+        .body
+        .items
+        .iter_mut()
+        .find(|item| item.work_id == typed.work_id)
+        .expect("exported item");
+    item.acceptance.push("zeta holds".into());
+    rebind_snapshot_body(&mut repeated);
+    let refused = SqliteStore::open_in_memory()
+        .expect("second destination")
+        .load_work_graph_snapshot(
+            &project,
+            &actor("loader"),
+            &snapshot_bytes(&repeated),
+            false,
+            at(4),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("a repeated criterion");
+    assert!(
+        refused
+            .to_string()
+            .contains("acceptance repeats a criterion"),
+        "{refused}"
+    );
+}
+
+fn root_create_request(project: &ProjectId, key: &str) -> CreateWorkRequest {
+    CreateWorkRequest {
+        acceptance_bindings: Vec::new(),
+        evaluation_mode: None,
+        external_ref: None,
+        notes: Vec::new(),
+        project_id: project.clone(),
+        parent_id: None,
+        child_requirement: ChildRequirement::Required,
+        title: key.into(),
+        outcome: "the snapshot preserves planning state".into(),
+        acceptance: Vec::new(),
+        kind: WorkItemKind::Feature,
+        priority: 1,
+        labels: Vec::new(),
+        assigned_to: None,
+        deferred_until: None,
+        origin: WorkOrigin::Local,
+        source_snapshot_id: None,
+        actor: actor("planner-session"),
+        idempotency_key: key.into(),
+        created_at: at(1),
+    }
+}
+
 fn create_root(
     store: &mut SqliteStore,
     project: &ProjectId,

@@ -601,8 +601,9 @@ enum WorkCommand {
         /// Defaults to the title.
         #[arg(long)]
         outcome: Option<String>,
-        /// Acceptance criterion `done` is checked against; repeatable.
-        /// Defaults to one criterion "<title> is done".
+        /// Acceptance criterion `done` is checked against; repeatable, kept in
+        /// the order given without repeats. Defaults to one criterion
+        /// "<title> is done".
         #[arg(long = "accept", value_name = "CRITERION")]
         acceptance: Vec<String>,
         /// Bind a criterion to typed host verification: POSITION=KIND[:FINGERPRINT],
@@ -2392,7 +2393,9 @@ struct WorkUpdateArgs {
     /// Replace the work kind.
     #[arg(long, value_enum)]
     kind: Option<WorkKindArg>,
-    /// Replace the whole acceptance list; repeat for multiple criteria.
+    /// Replace the whole acceptance list, kept in the order given; repeat for
+    /// multiple criteria. Reordering a bound criterion owes its verification
+    /// again.
     #[arg(long = "accept", value_name = "CRITERION", action = ArgAction::Append, num_args = 1)]
     acceptance: Option<Vec<String>>,
     /// Replace the criteria bound to typed host verification, as
