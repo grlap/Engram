@@ -691,3 +691,66 @@ fn completed_show_advertises_late_note_without_hijacking_done_navigation() {
         vec!["engram work next"]
     );
 }
+
+// The acceptance-basis hint follows done's link rule: under a self-asserted
+// policy the basis goes with --link-basis and --link; under an evaluated
+// policy done takes no link and the basis goes to evaluate.
+#[test]
+fn show_names_the_acceptance_basis_for_the_route_the_policy_admits() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let database = directory.path().join("engram.sqlite3");
+    let verbs = AgentVerbs::new(
+        database.clone(),
+        ProjectId("show-basis-hint".into()),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let added = verbs
+        .add(
+            AddInput {
+                title: "Hinted item".into(),
+                acceptance: vec!["tests pass".into()],
+                ..AddInput::default()
+            },
+            at(0),
+        )
+        .expect("add");
+    let work_ref = added.value["work"]["short_ref"]
+        .as_str()
+        .expect("work ref")
+        .to_owned();
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: work_ref.clone(),
+                ttl_seconds: Some(3_600),
+                recover: None,
+            },
+            at(1),
+        )
+        .expect("claim");
+    let self_asserted = verbs.show(&work_ref, at(2)).expect("show").text();
+    assert!(
+        self_asserted.contains("acceptance basis: 1 (pass --link-basis with --link)"),
+        "{self_asserted}"
+    );
+    assert!(
+        !self_asserted.contains("done takes no --link"),
+        "{self_asserted}"
+    );
+
+    super::evaluate::enable(
+        &database,
+        &[crate::domain::AcceptanceEvaluationMode::SameSession],
+        3,
+    );
+    let evaluated = verbs.show(&work_ref, at(4)).expect("show").text();
+    assert!(
+        evaluated.contains(
+            "acceptance basis: 1 (evaluated: done takes no --link; pass --acceptance-basis with evaluate)"
+        ),
+        "{evaluated}"
+    );
+    assert!(!evaluated.contains("--link-basis"), "{evaluated}");
+}

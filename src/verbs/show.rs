@@ -1185,10 +1185,19 @@ pub(super) fn show_lines(
         lines.push("acceptance:".into());
     }
     if work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0 {
-        lines.push(format!(
-            "  acceptance basis: {} (pass --link-basis with --link)",
-            work.revision
-        ));
+        // Under an evaluated policy done refuses explicit links and seals the
+        // evaluation's citations; the basis is what evaluate takes.
+        lines.push(if view.evaluated_policy {
+            format!(
+                "  acceptance basis: {} (evaluated: done takes no --link; pass --acceptance-basis with evaluate)",
+                work.revision
+            )
+        } else {
+            format!(
+                "  acceptance basis: {} (pass --link-basis with --link)",
+                work.revision
+            )
+        });
         if let Some(position) = view.evidence_basis {
             lines.push(format!(
                 "  evidence basis: {position} (pass --evidence-basis with evaluate)"
