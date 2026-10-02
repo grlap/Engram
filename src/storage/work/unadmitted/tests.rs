@@ -16,7 +16,9 @@ use crate::domain::{
 };
 use crate::storage::test_support::{TestControlBinding, bind_control_for};
 
+mod accounting;
 mod doctor;
+mod matching;
 mod readers;
 mod refusals;
 
@@ -34,12 +36,14 @@ pub(super) fn fixture() -> Fixture {
     fixture_on(SqliteStore::open_in_memory().expect("store"))
 }
 
-pub(super) fn fixture_on(mut store: SqliteStore) -> Fixture {
+pub(super) fn fixture_on(store: SqliteStore) -> Fixture {
+    fixture_of(store, &root_request("project-a", "observed-work", 1))
+}
+
+/// [`fixture_on`] for the item `request` creates.
+pub(super) fn fixture_of(mut store: SqliteStore, request: &CreateWorkRequest) -> Fixture {
     let work = store
-        .create_work(
-            &root_request("project-a", "observed-work", 1),
-            &DevelopmentNoopRedactor,
-        )
+        .create_work(request, &DevelopmentNoopRedactor)
         .expect("work");
     let claim = claim(&mut store, &work, "runner", "observed-claim", 2, 300);
     let host = bind_control_for(
@@ -464,29 +468,4 @@ fn a_report_after_the_claim_expired_is_history_and_renews_nothing() {
         .expect("a claim");
     assert_eq!(claim_after.expires_at, fixture.claim.expires_at);
     assert_eq!(claim_after.fence, fixture.claim.fence);
-}
-
-#[test]
-fn accounting_is_refused_in_this_build_with_nothing_recorded() {
-    let mut fixture = fixture();
-    let before = footprint(&fixture.store);
-    let mut input = inter_turn_change(&fixture, "account");
-    input.policy_basis = ObservationPolicyBasis::AccountIfEligible {
-        project_policy_epoch: ProjectPolicyEpoch(1),
-        policy: crate::ObjectId::from_canonical_bytes(b"policy"),
-        obligation_rule_set: crate::ObjectId::from_canonical_bytes(b"rules"),
-    };
-    let refused = observe(&mut fixture, input, 7).expect_err("refused");
-    assert!(matches!(
-        refused,
-        StoreError::ExecutionObservationAccountingUnavailable
-    ));
-    assert_eq!(
-        crate::host::store_error_code(&refused),
-        "execution_observation_accounting_unavailable"
-    );
-    assert_eq!(footprint(&fixture.store), before);
-    // The refusal reserved nothing: the key records the audit-only report.
-    let audit = inter_turn_change(&fixture, "account");
-    observe(&mut fixture, audit, 8).expect("the key was never committed");
 }

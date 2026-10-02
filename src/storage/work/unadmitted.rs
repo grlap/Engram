@@ -20,6 +20,11 @@ use crate::domain::{
 };
 use crate::storage::{SqliteStore, StoreError};
 
+mod accounting;
+pub(in crate::storage) use accounting::{
+    decide_accounting_on, open_unadmitted_obligations_on, opened_obligations_of_on,
+};
+
 #[cfg(test)]
 mod tests;
 
@@ -271,9 +276,14 @@ pub(in crate::storage) fn check_source_root_at_cut_on(
 }
 
 /// Whether a stored record still is what its request and the store's history
-/// at its capture cut admit: its own shape, the only accounting this build
-/// records, the claim epoch event it names, its root basis and every root
-/// generation it states, and a cut before its own run-feed position.
+/// at its capture cut admit: its own shape, the claim epoch event it names,
+/// its root basis and every root generation it states, and a cut before its
+/// own run-feed position. An audit-only request records `explicit_audit`.
+/// Under `account_if_eligible` the named policy version must hold the named
+/// epoch and rule set, and the accounting must be the one the
+/// store's history just before the record's own position decides; so a new
+/// change, which the stored record anchors to itself without an id, is
+/// consistent only where that history decides a new change.
 ///
 /// # Errors
 ///
@@ -288,16 +298,33 @@ pub(in crate::storage) fn unadmitted_observation_is_consistent_on(
     };
     if observation.validate_recorded_shape().is_err()
         || observation.admission != ObservationAdmission::Unadmitted
-        || !matches!(
-            observation.policy_basis,
-            ObservationPolicyBasis::AuditOnly {}
-        )
-        || observation.accounting
-            != (ObservationAccounting::AuditOnly {
-                reason: ObservationAuditReason::ExplicitAudit,
-            })
     {
         return Ok(false);
+    }
+    match &observation.policy_basis {
+        ObservationPolicyBasis::AuditOnly {} => {
+            if observation.accounting
+                != (ObservationAccounting::AuditOnly {
+                    reason: ObservationAuditReason::ExplicitAudit,
+                })
+            {
+                return Ok(false);
+            }
+        }
+        ObservationPolicyBasis::AccountIfEligible {
+            project_policy_epoch,
+            policy,
+            obligation_rule_set,
+        } => {
+            if !policy_basis_is_coherent_on(
+                connection,
+                *project_policy_epoch,
+                policy,
+                obligation_rule_set,
+            )? {
+                return Ok(false);
+            }
+        }
     }
     let binding = &observation.binding;
     let cut = observation.root_basis.capture_run_cut;
@@ -309,9 +336,9 @@ pub(in crate::storage) fn unadmitted_observation_is_consistent_on(
             |row| row.get(0),
         )
         .optional()?;
-    if own_position.is_none_or(|position| cut >= position) {
+    let Some(own_position) = own_position.filter(|position| cut < *position) else {
         return Ok(false);
-    }
+    };
     let epoch_holds = connection
         .query_row(
             "SELECT object.canonical_json FROM work_feed_entries entry
@@ -363,6 +390,21 @@ pub(in crate::storage) fn unadmitted_observation_is_consistent_on(
                 check_source_root_at_cut_on(connection, binding, basis, cut, "source basis")?;
             }
         }
+        if matches!(
+            observation.policy_basis,
+            ObservationPolicyBasis::AccountIfEligible { .. }
+        ) && decide_accounting_on(
+            connection,
+            binding,
+            &observation.root_basis,
+            observation.occurrence.source_change(),
+            own_position - 1,
+        )? != observation.accounting
+        {
+            return Err(mismatch(
+                "the accounting is not what the history before the record decides",
+            ));
+        }
         Ok(())
     };
     match history_holds() {
@@ -370,6 +412,31 @@ pub(in crate::storage) fn unadmitted_observation_is_consistent_on(
         Err(StoreError::ExecutionObservationBasisMismatch(_)) => Ok(false),
         Err(error) => Err(error),
     }
+}
+
+/// Whether the named policy version holds `epoch` and `rule_set`. Which
+/// version was current is the write path's check, against the policy it
+/// reads in the recording transaction; policy activation is not ordered on
+/// the run feed, so doctor holds the record to a coherent basis.
+fn policy_basis_is_coherent_on(
+    connection: &Connection,
+    epoch: crate::domain::ProjectPolicyEpoch,
+    policy: &ObjectId,
+    rule_set: &ObjectId,
+) -> Result<bool, StoreError> {
+    let stored: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT policy_json FROM control_policy_versions
+             WHERE policy_id = ?1 AND policy_epoch = ?2",
+            params![policy.as_str(), epoch.0],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(stored.is_some_and(|bytes| {
+        serde_json::from_slice::<crate::domain::ControlPolicy>(&bytes).is_ok_and(|named| {
+            named.policy_epoch == epoch && named.obligation_rule_set == *rule_set
+        })
+    }))
 }
 
 /// Stores `observation` and places it on its project, root and run feeds.

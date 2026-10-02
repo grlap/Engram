@@ -11,8 +11,8 @@ use super::execution::{
 use super::feeds::{
     append_to_work_feeds, append_work_event, checkpoint_feed_end, current_run_feed_cut_on,
     expire_handoff_offers, inspect_work_request, latest_claim_release_on,
-    latest_named_root_binding_on, latest_named_root_sighting_on, latest_source_mutation_in_on,
-    latest_source_mutation_on, latest_unlocated_source_change_on, load_handoff_offer_projection,
+    latest_named_root_binding_on, latest_named_root_sighting_on, latest_source_mutation_on,
+    latest_unlocated_source_change_on, load_handoff_offer_projection, load_source_observation_on,
     load_typed_work_object, named_root_event_on, replay_operation, request_object,
     run_feed_position_for_object_on, verify_anchored_memory_feeds,
 };
@@ -48,16 +48,15 @@ use crate::{
         AcceptanceResult, COMPLETION_ENVIRONMENT_SCHEMA_VERSION,
         COMPLETION_OBLIGATION_SCHEMA_VERSION, ChildRequirement, CompleteWorkRequest,
         CompletionObligationBinding, CompletionSeal, ControlWorkBinding, DisposeWorkRequest,
-        EnvironmentEvidence, ExecutionObservation, ExecutionSourceBasis, FeedId, FeedPosition,
-        MemoryAssertionEvent, MemoryVersion, NamedRootBindingEvent, NamedRootBindingKind,
-        OpenWorkObligation, ReopenWorkRequest, RequiredChildWaiver, RootExecution, RootExecutionId,
-        RootExecutionState, SCHEMA_VERSION, SessionId, VerificationEvidence,
-        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkBlocker, WorkCheckpoint,
-        WorkClaim, WorkClaimId, WorkClaimState, WorkCompletionRecoveryCause, WorkDisposition,
-        WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffState, WorkId,
-        WorkItem, WorkLifecycle, WorkObligation, WorkObligationId, WorkObligationResolution,
-        WorkObligationResolutionEvent, WorkObligationState, WorkRun, WorkRunId, WorkRunState,
-        WorkTransition,
+        EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition, MemoryAssertionEvent,
+        MemoryVersion, NamedRootBindingEvent, NamedRootBindingKind, OpenWorkObligation,
+        ReopenWorkRequest, RequiredChildWaiver, RootExecution, RootExecutionId, RootExecutionState,
+        SCHEMA_VERSION, SessionId, VerificationEvidence, WaiveRequiredChildRequest,
+        WaiveWorkObligationRequest, WorkBlocker, WorkCheckpoint, WorkClaim, WorkClaimId,
+        WorkClaimState, WorkCompletionRecoveryCause, WorkDisposition, WorkEvent, WorkEvidence,
+        WorkEvidenceKind, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
+        WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
+        WorkObligationState, WorkRun, WorkRunId, WorkRunState, WorkTransition,
     },
     memory::Redactor,
 };
@@ -78,6 +77,8 @@ pub(crate) use obligation_guidance::criteria_without_evidence_link;
 pub(super) use obligation_guidance::finished_run_cut_on;
 use obligation_guidance::require_expected_obligations_on;
 mod projections;
+mod repeat;
+pub(in crate::storage) use repeat::{newest_change_repeated_on, source_revision_repeats_on};
 mod root_binding;
 
 use named_root::{
@@ -1153,11 +1154,7 @@ fn load_work_obligation_record_on(
             })
             && trigger_entry_matches("work_event")?
     } else {
-        let trigger = load_typed_work_object::<ExecutionObservation>(
-            connection,
-            &obligation.triggering_observation,
-            "execution_observation",
-        )?;
+        let trigger = load_source_observation_on(connection, &obligation.triggering_observation)?;
         trigger.source_changed
             && trigger.project_id == obligation.project_id
             && trigger.binding.root_execution_id == obligation.root_execution_id
@@ -1165,7 +1162,11 @@ fn load_work_obligation_record_on(
             && trigger.binding.run_id == obligation.run_id
             && trigger.binding.work_revision == obligation.work_revision
             && trigger.recorded_at == obligation.opened_at
-            && trigger_entry_matches("execution_observation")?
+            && trigger_entry_matches(if trigger.admitted {
+                "execution_observation"
+            } else {
+                super::UNADMITTED_OBSERVATION_KIND
+            })?
     };
     if !trigger_matches
         || definition_position
@@ -1340,11 +1341,8 @@ fn validate_obligation_resolution_projection(
                     obligation.obligation_id.0
                 )));
             }
-            let trigger: ExecutionObservation = load_typed_work_object(
-                connection,
-                &obligation.triggering_observation,
-                "execution_observation",
-            )?;
+            let trigger =
+                load_source_observation_on(connection, &obligation.triggering_observation)?;
             let root = named_root_context_on(
                 connection,
                 obligation.run_id,
@@ -1570,87 +1568,6 @@ fn append_control_typed_evidence_on(
     Ok(object.key().clone())
 }
 
-/// Whether a reported source change leaves the source where the run already
-/// saw it. Such a report changed nothing: the revision, not the host's flag,
-/// decides a source change.
-///
-/// The report repeats only when its revision equals the revision of the
-/// newest recorded source change, the row test-obligation satisfaction and
-/// evaluation freshness key on, and no host record on the run since that
-/// change saw any other revision: no execution observation, and no
-/// environment evidence, which reports its own source basis. Verification
-/// evidence is left out: it copies its producer observation's basis, which the
-/// run already holds at the producer's own position, and a late verification
-/// of an earlier producer would carry a revision seen before the change. The
-/// first condition keeps a repeat from re-anchoring obligations. The second
-/// keeps a move that only records claiming no change carried (a check run
-/// after someone else's edit, an environment capture) from hiding the next
-/// change, whether it moves on, reverts, or goes away and comes back: the
-/// content in between is content an evaluation may have judged. When the
-/// newest recorded change carries no revision, or the run has none, or the
-/// report carries no revision, this answers `false` and the host's flag
-/// stands, so a later change with a revision can re-anchor obligations that a
-/// revision-less change left waiver-only. Without a named root, the content
-/// fingerprint compares across workspaces. Once the host names a root, only
-/// that workspace and generation can anchor source freshness.
-pub(in crate::storage) fn source_revision_repeats_on(
-    connection: &Connection,
-    run_id: WorkRunId,
-    claim_id: WorkClaimId,
-    basis: Option<&ExecutionSourceBasis>,
-) -> Result<bool, StoreError> {
-    let Some(basis) = basis else {
-        return Ok(false);
-    };
-    // Under a named root a report is compared within its own workspace: a
-    // sighting in the root with the root's newest change, any other with the
-    // newest change the host recorded in that workspace.
-    let root = named_root_context_on(connection, run_id, claim_id, i64::MAX)?;
-    let newest = match &root {
-        Some(root)
-            if basis.workspace_id == root.binding.workspace_id
-                && basis.source_root_generation == Some(root.binding.generation) =>
-        {
-            root.latest_mutation.clone()
-        }
-        Some(_) => {
-            latest_source_mutation_in_on(connection, run_id, Some(&basis.workspace_id), i64::MAX)?
-        }
-        None => latest_source_mutation_on(connection, run_id, i64::MAX)?,
-    };
-    let Some((change_position, newest_change)) = newest else {
-        return Ok(false);
-    };
-    if newest_change
-        .source_basis
-        .is_none_or(|recorded| recorded.source_revision != basis.source_revision)
-    {
-        return Ok(false);
-    }
-    let moved_since: bool = connection.query_row(
-        "SELECT EXISTS (
-             SELECT 1 FROM work_feed_entries entry
-             JOIN objects object ON object.object_id = entry.object_id
-             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-               AND entry.position > ?2
-               AND entry.object_kind IN ('execution_observation', 'environment_evidence')
-               AND json_extract(object.canonical_json, '$.source_basis.source_revision')
-                   IS NOT NULL
-               AND json_extract(object.canonical_json, '$.source_basis.source_revision')
-                   != ?3
-               AND (?4 IS NULL OR json_extract(object.canonical_json, '$.source_basis.workspace_id') = ?4)
-         )",
-        params![
-            run_id.0.to_string(),
-            change_position,
-            basis.source_revision,
-            root.as_ref().map(|_| basis.workspace_id.as_str())
-        ],
-        |row| row.get(0),
-    )?;
-    Ok(!moved_since)
-}
-
 pub(in crate::storage) fn append_control_execution_observation_on(
     transaction: &Transaction<'_>,
     observation: &ExecutionObservation,
@@ -1692,28 +1609,35 @@ pub(in crate::storage) fn append_control_execution_observation_on(
     // original binding, but it opens no obligation: the run's seal already
     // froze what it owed, and nobody can act on the run again.
     if !run.is_finished() {
-        append_builtin_obligations_on(transaction, observation, object.key(), &trigger_position)?;
+        append_builtin_obligations_on(
+            transaction,
+            &crate::domain::SourceObservation::admitted(object.key().clone(), observation),
+            &trigger_position,
+        )?;
     }
     Ok(object.key().clone())
 }
 
 pub(super) fn obligation_rule_set_for_observation_on(
     connection: &Connection,
-    observation: &ExecutionObservation,
+    observation: &crate::domain::SourceObservation,
 ) -> Result<crate::domain::ObligationRuleSet, StoreError> {
     SqliteStore::load_obligation_rule_set_on(connection, &observation.obligation_rule_set)
 }
 
-pub(super) fn append_builtin_obligations_on(
+/// Opens the obligations `observation`'s rule set asks of it, triggered by
+/// the source record itself at `trigger_position`.
+pub(in crate::storage::work) fn append_builtin_obligations_on(
     transaction: &Transaction<'_>,
-    observation: &ExecutionObservation,
-    observation_id: &ObjectId,
+    observation: &crate::domain::SourceObservation,
     trigger_position: &FeedPosition,
 ) -> Result<Vec<ObjectId>, StoreError> {
     let item = load_work_item(transaction, observation.binding.work_id)?;
     let mut definitions = Vec::new();
     let rule_set = obligation_rule_set_for_observation_on(transaction, observation)?;
-    for (rule, requirement) in crate::control::evaluate_obligation_rules(&rule_set, observation) {
+    for (rule, requirement) in
+        crate::control::evaluate_obligation_rules(&rule_set, observation.source_changed)
+    {
         let obligation = WorkObligation {
             schema_version: SCHEMA_VERSION,
             obligation_id: WorkObligationId::new(),
@@ -1725,7 +1649,7 @@ pub(super) fn append_builtin_obligations_on(
             work_revision: observation.binding.work_revision,
             rule_set: observation.obligation_rule_set.clone(),
             rule,
-            triggering_observation: observation_id.clone(),
+            triggering_observation: observation.record.clone(),
             trigger_position: trigger_position.clone(),
             requirement,
             opened_at: observation.recorded_at,
@@ -1909,6 +1833,13 @@ fn bind_acceptance_to_obligations_on(
     } else {
         latest_source_mutation_on(connection, run_id, cut.position)?
     };
+    let measured = assessment::measured_sighting_on(
+        connection,
+        run_id,
+        latest_mutation.as_ref(),
+        root.as_ref(),
+        cut.position,
+    )?;
     for binding in &item.acceptance_bindings {
         let Some(index) = binding.criterion.checked_sub(1) else {
             return Err(StoreError::InvalidWorkProjection(format!(
@@ -1963,6 +1894,16 @@ fn bind_acceptance_to_obligations_on(
                     &evidence.producer_observation,
                 )?
                 .position;
+                // The floors of every unadmitted change on the run hold too,
+                // not only the latest change's.
+                let barrier = assessment::unadmitted_barrier(
+                    connection,
+                    run_id,
+                    (producer_position, position),
+                    evidence.completed_at,
+                    cut.position,
+                    root.as_ref(),
+                )?;
                 if let Some((mismatch, decider)) = binding_freshness_mismatch(
                     latest_mutation
                         .as_ref()
@@ -1971,7 +1912,12 @@ fn bind_acceptance_to_obligations_on(
                     (&producer, producer_position),
                     &binding.requirement,
                     root.as_ref(),
-                ) {
+                    measured
+                        .as_ref()
+                        .map(|(position, basis)| (basis, *position)),
+                )
+                .or_else(|| barrier.map(|mismatch| (mismatch, None)))
+                {
                     use crate::domain::VerificationEvidenceMismatch as Mismatch;
                     let stale_source = decider.and_then(|decider| {
                         assessment::stale_verification_source(
@@ -1981,6 +1927,9 @@ fn bind_acceptance_to_obligations_on(
                                 .as_ref()
                                 .map(|(position, mutation)| (*position, mutation)),
                             root.as_ref(),
+                            measured
+                                .as_ref()
+                                .map(|(position, basis)| (*position, basis)),
                         )
                     });
                     let cause = match mismatch {
@@ -2049,11 +1998,12 @@ fn bind_acceptance_to_obligations_on(
 /// would refuse every verification forever; recording order is then all that
 /// can be said, and it is what is asked.
 fn binding_freshness_mismatch(
-    mutation: Option<(&ExecutionObservation, i64)>,
+    mutation: Option<(&crate::domain::SourceObservation, i64)>,
     (evidence, evidence_position): (&VerificationEvidence, i64),
     (producer, producer_position): (&ExecutionObservation, i64),
     requirement: &crate::domain::VerificationRequirement,
     root: Option<&NamedRootContext>,
+    measured_sighting: Option<(&crate::domain::ExecutionSourceBasis, i64)>,
 ) -> Option<(
     crate::domain::VerificationEvidenceMismatch,
     Option<crate::domain::StaleSourceDecider>,
@@ -2075,6 +2025,7 @@ fn binding_freshness_mismatch(
         named_root: root.map(NamedRootContext::match_input),
         evidence_position,
         producer_position: Some(producer_position),
+        measured_sighting,
         requirement,
     })
     .err()

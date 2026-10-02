@@ -16,8 +16,8 @@ use crate::{
         ControlAssurance, ControlDirective, ControlRefusalCode, DirectiveSatisfaction,
         DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
         OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition, ObligationRuleSet,
-        ObservedTurnDecision, ParticipantMembership, SessionPhase, SourceRootState,
-        StaleSourceDecider, TaskDelta, TurnBeginDecision, TurnBeginSnapshot,
+        ObservedTurnDecision, ParticipantMembership, SessionPhase, SourceObservation,
+        SourceRootState, StaleSourceDecider, TaskDelta, TurnBeginDecision, TurnBeginSnapshot,
         TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
         TurnGrantBasis, TurnGrantState, VerificationEvidence, VerificationEvidenceMismatch,
         VerificationRequirement, VerificationResult, WorkEvidenceKind, WorkObligation,
@@ -38,15 +38,22 @@ pub struct VerificationEvidenceMatchInput<'a> {
     /// run-feed position, or `None` when the run observed no mutation: then
     /// the verification is of the run's source as it stands, and the checks
     /// that compare it with a mutation do not apply.
-    pub latest_mutation: Option<(&'a ExecutionObservation, i64)>,
+    pub latest_mutation: Option<(&'a SourceObservation, i64)>,
     /// The claim's active named root at this cut. Without one, historical
     /// cross-workspace content matching retains its original behavior.
     pub named_root: Option<NamedRootEvidenceMatch<'a>>,
     pub evidence_position: i64,
     /// The run-feed position of the check's producer observation. Under a
     /// named root the check itself, not only its later verification record,
-    /// must follow the binding and any change whose root is unknown.
+    /// must follow the binding and any change whose root is unknown, and
+    /// after an unadmitted change it must follow that change.
     pub producer_position: Option<i64>,
+    /// When the latest change is an unadmitted record and no named root
+    /// holds: the newest measured sighting at the cut in that change's
+    /// workspace, with its run-feed position. Its revision, not the
+    /// unadmitted record's, is the one a check must carry. `None` keeps the
+    /// change's own revision.
+    pub measured_sighting: Option<(&'a crate::domain::ExecutionSourceBasis, i64)>,
     pub requirement: &'a VerificationRequirement,
 }
 
@@ -56,7 +63,7 @@ pub struct NamedRootEvidenceMatch<'a> {
     pub workspace_id: &'a str,
     pub generation: i64,
     pub binding_position: i64,
-    pub latest_sighting: Option<(&'a ExecutionObservation, i64)>,
+    pub latest_sighting: Option<(&'a SourceObservation, i64)>,
     pub unknown_change_position: Option<i64>,
 }
 
@@ -176,12 +183,31 @@ pub fn explain_verification_evidence(
             return Err(plain(VerificationEvidenceMismatch::NotAfterMutation));
         }
     }
-    if let Some((latest_mutation, _, latest_basis, _)) = mutation
-        && (!latest_mutation.source_changed
-            || (!revision_from_root
-                && evidence.source_basis.source_revision != latest_basis.source_revision))
-    {
-        return Err(stale(StaleSourceDecider::LatestChange));
+    // An unadmitted change records where the source was when the host saw
+    // it, which may be older than sightings recorded since. Without a named
+    // root the newest measured sighting decides the revision instead, so a
+    // late report of an old revision asks for a check after it without
+    // pinning that revision.
+    let measured = input
+        .measured_sighting
+        .filter(|_| !revision_from_root && mutation.is_some_and(|(change, ..)| !change.admitted));
+    if let Some((latest_mutation, _, latest_basis, _)) = mutation {
+        if !latest_mutation.source_changed {
+            return Err(stale(StaleSourceDecider::LatestChange));
+        }
+        if !revision_from_root {
+            match measured {
+                Some((sighting, _))
+                    if evidence.source_basis.source_revision != sighting.source_revision =>
+                {
+                    return Err(stale(StaleSourceDecider::MeasuredSighting));
+                }
+                None if evidence.source_basis.source_revision != latest_basis.source_revision => {
+                    return Err(stale(StaleSourceDecider::LatestChange));
+                }
+                _ => {}
+            }
+        }
     }
     if evidence.check_fingerprint != producer.action_fingerprint
         || input
@@ -197,9 +223,9 @@ pub fn explain_verification_evidence(
     if evidence.result != VerificationResult::Passed {
         return Err(plain(VerificationEvidenceMismatch::ResultNotPassed));
     }
-    if mutation.is_some_and(|(_, latest_mutation_position, _, _)| {
+    if mutation.is_some_and(|(latest_mutation, latest_mutation_position, _, _)| {
         input.evidence_position <= latest_mutation_position
-            || (input.named_root.is_some()
+            || ((input.named_root.is_some() || !latest_mutation.admitted)
                 && input
                     .producer_position
                     .is_none_or(|position| position <= latest_mutation_position))
@@ -210,9 +236,12 @@ pub fn explain_verification_evidence(
         && evidence.actor.run_id.as_deref() == Some(evidence.binding.run_id.0.to_string().as_str())
         && producer.actor.session_id.as_ref() == Some(&producer.session_id)
         && producer.actor.run_id.as_deref() == Some(producer.binding.run_id.0.to_string().as_str());
-    let times_are_monotone = mutation
-        .is_none_or(|(_, _, _, latest_observed_at)| evidence.completed_at >= latest_observed_at)
-        && evidence.completed_at <= evidence.recorded_at
+    // A check completed before an unadmitted change was recorded may be an
+    // old result whose records arrived late: it cannot follow that change.
+    let times_are_monotone = mutation.is_none_or(|(latest_mutation, _, _, latest_observed_at)| {
+        evidence.completed_at >= latest_observed_at
+            && (latest_mutation.admitted || evidence.completed_at >= latest_mutation.recorded_at)
+    }) && evidence.completed_at <= evidence.recorded_at
         && producer.observed_at == Some(evidence.completed_at)
         && producer.recorded_at >= evidence.completed_at;
     if !actor_matches || !times_are_monotone {
@@ -299,17 +328,18 @@ pub fn acceptance_binding_criterion(rule: &BuiltinObligationRuleRef) -> Option<u
         .ok()
 }
 
-/// Evaluates one exact immutable rule set against one host observation.
+/// Evaluates one exact immutable rule set against one host source record,
+/// read as a change or not.
 #[must_use]
 pub fn evaluate_obligation_rules(
     rule_set: &ObligationRuleSet,
-    observation: &ExecutionObservation,
+    source_changed: bool,
 ) -> Vec<(BuiltinObligationRuleRef, VerificationRequirement)> {
     rule_set
         .rules
         .iter()
         .filter(|definition| match definition.trigger {
-            BuiltinObligationTrigger::SourceChanged => observation.source_changed,
+            BuiltinObligationTrigger::SourceChanged => source_changed,
             BuiltinObligationTrigger::Unknown => false,
         })
         .map(|definition| (definition.rule.clone(), definition.requirement.clone()))
@@ -325,12 +355,19 @@ pub struct ObligationSatisfactionInput<'a> {
     /// `None` when the run observed none. A builtin rule is triggered by a
     /// mutation and is never satisfied without one; a binding's obligation
     /// is satisfied by verification of the source as it stands.
-    pub latest_mutation: Option<(&'a ExecutionObservation, i64)>,
+    pub latest_mutation: Option<(&'a SourceObservation, i64)>,
     pub named_root: Option<NamedRootEvidenceMatch<'a>>,
     pub evidence_position: i64,
     /// The run-feed position of `producer`; see
     /// [`VerificationEvidenceMatchInput::producer_position`].
     pub producer_position: Option<i64>,
+    /// See [`VerificationEvidenceMatchInput::measured_sighting`].
+    pub measured_sighting: Option<(&'a crate::domain::ExecutionSourceBasis, i64)>,
+    /// The source record that triggered the obligation, when a source change
+    /// did. A check accounts for an unadmitted trigger only when its producer
+    /// and its record follow the trigger and it completed no earlier than
+    /// the trigger was recorded.
+    pub trigger: Option<&'a SourceObservation>,
     pub evaluated_cut: &'a crate::domain::FeedPosition,
 }
 
@@ -423,19 +460,39 @@ pub fn explain_obligation_satisfaction(
             None,
         );
     }
-    match explain_verification_evidence(&VerificationEvidenceMatchInput {
-        candidate_kind: WorkEvidenceKind::Verification,
-        evidence: Some(input.evidence),
-        producer: Some(input.producer),
-        latest_mutation: input.latest_mutation,
-        named_root: input.named_root,
-        evidence_position: input.evidence_position,
-        producer_position: input.producer_position,
-        requirement: &obligation.requirement,
-    }) {
-        Ok(()) => (ObligationAssessment::Matches, None),
-        Err((mismatch, decider)) => (ObligationAssessment::Mismatch(mismatch), decider),
+    if let Err((mismatch, decider)) =
+        explain_verification_evidence(&VerificationEvidenceMatchInput {
+            candidate_kind: WorkEvidenceKind::Verification,
+            evidence: Some(input.evidence),
+            producer: Some(input.producer),
+            latest_mutation: input.latest_mutation,
+            named_root: input.named_root,
+            evidence_position: input.evidence_position,
+            producer_position: input.producer_position,
+            measured_sighting: input.measured_sighting,
+            requirement: &obligation.requirement,
+        })
+    {
+        return (ObligationAssessment::Mismatch(mismatch), decider);
     }
+    if let Some(trigger) = input.trigger.filter(|trigger| !trigger.admitted) {
+        if input
+            .producer_position
+            .is_none_or(|producer| producer <= obligation.trigger_position.position)
+        {
+            return (
+                ObligationAssessment::Mismatch(VerificationEvidenceMismatch::NotAfterMutation),
+                None,
+            );
+        }
+        if input.evidence.completed_at < trigger.recorded_at {
+            return (
+                ObligationAssessment::Mismatch(VerificationEvidenceMismatch::InvalidTime),
+                None,
+            );
+        }
+    }
+    (ObligationAssessment::Matches, None)
 }
 
 /// Minimum host assurance that may mediate one material effect class.
@@ -1509,12 +1566,20 @@ mod tests {
             actor,
             recorded_at: verification_time,
         };
-        let rules = evaluate_obligation_rules(&builtin_obligation_rule_set(), &latest_mutation);
+        let latest_mutation = crate::domain::SourceObservation::admitted(
+            ObjectId::from_canonical_bytes(b"latest mutation"),
+            &latest_mutation,
+        );
+        let rules = evaluate_obligation_rules(
+            &builtin_obligation_rule_set(),
+            latest_mutation.source_changed,
+        );
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].0.rule_id, "source_mutation_requires_test");
         assert_eq!(rules[0].1.check_kind, VerificationKind::Test);
         assert_eq!(rules[0].1.check_fingerprint, None);
-        let producer_rules = evaluate_obligation_rules(&builtin_obligation_rule_set(), &producer);
+        let producer_rules =
+            evaluate_obligation_rules(&builtin_obligation_rule_set(), producer.source_changed);
         assert!(producer_rules.is_empty(), "{producer_rules:?}");
         let requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
@@ -1528,6 +1593,7 @@ mod tests {
             named_root: None,
             evidence_position: 4,
             producer_position: None,
+            measured_sighting: None,
             requirement: &requirement,
         };
         assert_eq!(match_verification_evidence(&exact), Ok(()));
@@ -1577,6 +1643,7 @@ mod tests {
             named_root: None,
             evidence_position: 4,
             producer_position: None,
+            measured_sighting: None,
             requirement: &requirement,
         };
         assert_eq!(
@@ -1614,6 +1681,8 @@ mod tests {
             named_root: None,
             evidence_position: 4,
             producer_position: None,
+            measured_sighting: None,
+            trigger: None,
             evaluated_cut: &cut,
         };
         let assess = |input: &ObligationSatisfactionInput<'_>, obligation| {

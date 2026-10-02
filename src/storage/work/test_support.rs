@@ -1111,8 +1111,7 @@ impl SqliteStore {
                 .expect("the late change's run-feed position");
         super::completion::append_builtin_obligations_on(
             &transaction,
-            &observation,
-            &late,
+            &crate::domain::SourceObservation::admitted(late.clone(), &observation),
             &position,
         )
         .expect("persist the obligation the late change opened");

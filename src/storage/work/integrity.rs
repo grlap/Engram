@@ -682,36 +682,34 @@ pub(super) fn verify_obligation_rows(
         }
     }
     let expected = connection
-        .prepare(
-            "SELECT entry.feed_id, entry.position, entry.object_id, object.canonical_json
+        .prepare(&format!(
+            "SELECT entry.feed_id, entry.position, entry.object_id
              FROM work_feed_entries entry
              JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'run_execution'
-               AND entry.object_kind = 'execution_observation'
-               AND json_extract(object.canonical_json, '$.source_changed') = 1
+               AND {} AND {}
              ORDER BY entry.feed_id, entry.position",
-        )?
+            super::feeds::SOURCE_RECORD_SQL,
+            super::feeds::SOURCE_CHANGED_SQL
+        ))?
         .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
                 row.get::<_, String>(2)?,
-                row.get::<_, Vec<u8>>(3)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     // Each finished run's cut is read once, however many source changes it
     // holds; the rows arrive grouped by run.
     let mut cuts: HashMap<String, Option<i64>> = HashMap::new();
-    for (run_id, position, stored_hash, bytes) in expected {
+    for (run_id, position, stored_hash) in expected {
         *checked += 1;
         let Some(hash) = ObjectId::from_stored(stored_hash.clone()) else {
             invalid.push(format!("work_obligation_trigger:{run_id}:{position}"));
             continue;
         };
-        let Ok(observation) = CanonicalObject::stored(&hash, bytes)
-            .and_then(|object| object.decode::<ExecutionObservation>())
-        else {
+        let Ok(observation) = super::feeds::load_source_observation_on(connection, &hash) else {
             invalid.push(format!("work_obligation_trigger:{run_id}:{position}"));
             continue;
         };
@@ -731,7 +729,9 @@ pub(super) fn verify_obligation_rows(
         if recorded_after_finish_without_obligations(connection, &run_id, cut, position, &hash)? {
             continue;
         }
-        for (rule, _) in crate::control::evaluate_obligation_rules(&rule_set, &observation) {
+        for (rule, _) in
+            crate::control::evaluate_obligation_rules(&rule_set, observation.source_changed)
+        {
             let exists = connection.query_row(
                 "SELECT EXISTS(
                      SELECT 1 FROM work_run_obligations

@@ -866,3 +866,280 @@ fn a_late_record_of_a_check_stands_through_sightings_of_its_revision() {
     )
     .expect("a pass on the late record of the build records");
 }
+
+/// An accounted inter-turn change the host observed without admission, in
+/// the evaluated workspace, to `revision`, recorded at `second` by the
+/// holder's host session.
+fn unadmitted_change(
+    store: &mut SqliteStore,
+    host: &HostSession,
+    claim: &WorkClaim,
+    revision: &str,
+    key: &str,
+    second: i64,
+) -> crate::domain::ExecutionObservationReceipt {
+    use crate::domain::{
+        ExecutionObserveInput, MeasuredBaseline, MeasuredSighting, NamedRootState,
+        ObservationCausality, ObservationPolicyBasis, ObservationRootBasis, ObservedInterval,
+        ObservedOccurrence, ObservedSourceChange,
+    };
+    let run = load_work_run(&store.connection, claim.run_id).expect("run");
+    let policy = SqliteStore::load_active_control_policy(&store.connection).expect("policy");
+    let workspace = host.basis.workspace_id.clone();
+    let input = ExecutionObserveInput {
+        idempotency_key: key.into(),
+        binding: crate::domain::ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: claim.work_id,
+            run_id: claim.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        },
+        root_basis: ObservationRootBasis {
+            capture_run_cut: store
+                .work_feed_head(&FeedId::RunExecution(claim.run_id))
+                .expect("run head"),
+            latest_event: None,
+            state: NamedRootState::NoRoot,
+        },
+        observed_interval: ObservedInterval {
+            from: at(second - 2),
+            through: at(second - 1),
+        },
+        occurrence: ObservedOccurrence::InterTurnChange {
+            source_change: ObservedSourceChange::ContentComparison {
+                workspace_id: workspace.clone(),
+                baseline: MeasuredBaseline {
+                    workspace_id: workspace.clone(),
+                    source_revision: "revision-before".into(),
+                    observed_at: at(second - 2),
+                },
+                sighting: MeasuredSighting {
+                    source_basis: ExecutionSourceBasis {
+                        workspace_id: workspace,
+                        source_revision: revision.into(),
+                        source_root_generation: None,
+                        source_root_state: None,
+                    },
+                    observed_at: at(second - 1),
+                },
+            },
+        },
+        causality: ObservationCausality::Unknown {},
+        policy_basis: ObservationPolicyBasis::AccountIfEligible {
+            project_policy_epoch: policy.epoch,
+            policy: policy.policy_id,
+            obligation_rule_set: policy.obligation_rule_set,
+        },
+    };
+    store
+        .record_unadmitted_execution_observation(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            &actor(&host.session_id.0),
+            input,
+            at(second),
+        )
+        .expect("accounted unadmitted change")
+}
+
+// A check recorded before an accounted unadmitted change does not follow it,
+// even when the change reports the revision the check ran on: the report
+// may describe the source from before the check. A check after it carries
+// the criterion.
+#[test]
+fn an_unadmitted_change_after_a_check_retires_it_whatever_revision_it_reports() {
+    let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-unadmitted", false);
+    let store = &mut fixture.store;
+    let note = fixture.evidence.clone();
+    let at_d = one_check(host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        20,
+    ));
+    let change = unadmitted_change(store, &host, &claim, "revision-d", "late-report", 30);
+    assert!(matches!(
+        change.accounting,
+        crate::domain::ObservationAccounting::SourceChange { .. }
+    ));
+    let refused = refusal(record(
+        store,
+        &evaluation(store, &work, std::slice::from_ref(&at_d), &note, None, 35),
+    ));
+    assert!(
+        refused.contains(&format!(
+            "{at_d} ran on source revision revision-d, but the run accounted unadmitted source change unadmitted:{}",
+            change.observation
+        )),
+        "{refused}"
+    );
+    let fresh = one_check(host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        40,
+    ));
+    record(
+        store,
+        &evaluation(store, &work, std::slice::from_ref(&fresh), &note, None, 45),
+    )
+    .expect("a pass on a check after the change records");
+}
+
+// A check whose records arrive after an accounted unadmitted change but that
+// completed before the change was recorded may be an old result: it does
+// not carry the criterion.
+#[test]
+fn a_check_completed_before_an_unadmitted_change_was_recorded_does_not_follow_it() {
+    let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-cached", false);
+    let store = &mut fixture.store;
+    let note = fixture.evidence.clone();
+    let change = unadmitted_change(store, &host, &claim, "revision-d", "late-report", 40);
+    let cached = one_check(host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        20,
+    ));
+    let refused = refusal(record(
+        store,
+        &evaluation(store, &work, std::slice::from_ref(&cached), &note, None, 45),
+    ));
+    assert!(
+        refused.contains(&format!(
+            "but the run accounted unadmitted source change unadmitted:{}",
+            change.observation
+        )),
+        "{refused}"
+    );
+}
+
+/// Environment evidence alone, of the evaluated workspace at `revision`, as
+/// a host records the environment a check ran in: a measured sighting with
+/// no producer observation beside it.
+fn environment_sighting(
+    store: &mut SqliteStore,
+    host: &HostSession,
+    claim: &WorkClaim,
+    revision: &str,
+    second: i64,
+) {
+    use crate::domain::{EnvironmentComponents, EnvironmentEvidence};
+    let run = load_work_run(&store.connection, claim.run_id).expect("run");
+    let components = EnvironmentComponents {
+        toolchain: "rustc-test".into(),
+        sandbox: None,
+        workspace_id: host.basis.workspace_id.clone(),
+        capability_map_revision: 1,
+    };
+    let mut run_actor = actor(&claim.holder.0);
+    run_actor.run_id = Some(run.run_id.0.to_string());
+    let transaction = store
+        .connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .expect("transaction");
+    crate::storage::work::completion::append_control_environment_evidence_on(
+        &transaction,
+        &EnvironmentEvidence {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            project_id: host.project_id.clone(),
+            binding: crate::domain::ControlWorkBinding {
+                root_execution_id: run.root_execution_id,
+                work_id: claim.work_id,
+                run_id: claim.run_id,
+                work_revision: claim.accepted_work_revision,
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+            },
+            session_id: claim.holder.clone(),
+            source_basis: ExecutionSourceBasis {
+                source_revision: revision.into(),
+                ..host.basis.clone()
+            },
+            environment_fingerprint: CanonicalObject::freeze(&components)
+                .expect("freeze")
+                .key()
+                .clone(),
+            components: Some(components),
+            observed_at: at(second),
+            actor: run_actor.clone(),
+            recorded_at: at(second),
+        },
+    )
+    .expect("environment evidence");
+    transaction.commit().expect("commit");
+}
+
+// After an unadmitted change, the newest measured sighting decides where the
+// source is, environment evidence included, as it does for obligations: a
+// check that followed the change is stale once the environment is seen at
+// another revision.
+#[test]
+fn after_an_unadmitted_change_a_later_environment_sighting_retires_a_check() {
+    let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-environment", false);
+    let store = &mut fixture.store;
+    let note = fixture.evidence.clone();
+    unadmitted_change(store, &host, &claim, "revision-u", "late-report", 30);
+    let fresh = one_check(host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        40,
+    ));
+    environment_sighting(store, &host, &claim, "revision-e", 45);
+    let refused = refusal(record(
+        store,
+        &evaluation(store, &work, std::slice::from_ref(&fresh), &note, None, 50),
+    ));
+    assert!(refused.contains("revision revision-e"), "{refused}");
+}
+
+// An accounted unadmitted change after an evaluation's cut is a barrier the
+// evaluation's cited checks did not follow, even when it reports the revision
+// the evaluation declared: the recorded evaluation goes stale, a fresh check
+// does not revive it, and a new submission that keeps the pre-change cut is
+// refused.
+#[test]
+fn an_unadmitted_change_after_the_cut_retires_an_evaluation_that_declared_its_revision() {
+    let (mut fixture, work, claim, mut host) = bound_fixture("project-citation-post-cut", false);
+    let store = &mut fixture.store;
+    let note = fixture.evidence.clone();
+    let at_d = one_check(host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        20,
+    ));
+    let recorded = evaluation(
+        store,
+        &work,
+        std::slice::from_ref(&at_d),
+        &note,
+        Some(declared("revision-d", None)),
+        25,
+    );
+    let mut resubmitted = recorded.clone();
+    resubmitted.attempt_key = Some("resubmitted-at-the-old-cut".into());
+    record(store, &recorded).expect("a pass on the check records");
+    let change = unadmitted_change(store, &host, &claim, "revision-d", "late-report", 30);
+    assert!(matches!(
+        change.accounting,
+        crate::domain::ObservationAccounting::SourceChange { .. }
+    ));
+    one_check(host.checkpoint(
+        store,
+        false,
+        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+        40,
+    ));
+    let status = store
+        .acceptance_evaluation_status(work.work_id, None)
+        .expect("status read")
+        .expect("an evaluation");
+    assert!(status.stale.is_some(), "{status:?}");
+    refusal(record(store, &resubmitted));
+}

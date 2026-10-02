@@ -767,6 +767,10 @@ pub enum StaleSourceDecider {
     /// The named root's binding: the check or its producer is not of the
     /// root's workspace and generation, or did not follow the binding.
     RootBinding,
+    /// Without a named root, after an unadmitted change: the newest measured
+    /// sighting in that change's workspace, whose revision the check must
+    /// carry.
+    MeasuredSighting,
 }
 
 /// The source record that decided a verification is stale, beside the

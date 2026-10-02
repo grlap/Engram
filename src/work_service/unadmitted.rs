@@ -90,7 +90,7 @@ pub(crate) const fn accounting_words(accounting: &ObservationAccounting) -> &'st
     match accounting {
         ObservationAccounting::SourceChange { .. } => "accounted as a source change",
         ObservationAccounting::Repeat { .. } => "accounted as a repeat of an earlier change",
-        ObservationAccounting::NoSourceChange => "no source change accounted",
+        ObservationAccounting::NoSourceChange {} => "no source change accounted",
         ObservationAccounting::AuditOnly { reason } => match reason {
             ObservationAuditReason::ExplicitAudit => "audit only",
             ObservationAuditReason::FinishedRun => "audit only: the run had finished",

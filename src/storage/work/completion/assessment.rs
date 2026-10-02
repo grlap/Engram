@@ -8,8 +8,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use super::super::feeds::{
-    current_run_feed_cut_on, latest_source_mutation_on, load_typed_work_object,
-    run_feed_position_for_object_on,
+    current_run_feed_cut_on, latest_source_mutation_on, load_source_observation_on,
+    load_typed_work_object, newest_measured_sighting_on, run_feed_position_for_object_on,
+    unadmitted_barrier_on,
 };
 use super::named_root::{NamedRootContext, named_root_context_on, obligation_matches_named_root};
 use super::{
@@ -21,23 +22,45 @@ use crate::control::{
     acceptance_binding_criterion, explain_obligation_satisfaction,
 };
 use crate::domain::{
-    BuiltinObligationRuleRef, ExecutionObservation, FeedPosition, StaleSourceDecider,
-    StaleVerificationSource, VerificationEvidence, VerificationKind, WorkId, WorkObligation,
-    WorkObligationId, WorkObligationResolution, WorkRunId,
+    BuiltinObligationRuleRef, ExecutionObservation, ExecutionSourceBasis, FeedPosition,
+    SourceObservation, StaleSourceDecider, StaleVerificationSource, VerificationEvidence,
+    VerificationKind, WorkId, WorkObligation, WorkObligationId, WorkObligationResolution,
+    WorkRunId,
 };
+
+/// The newest measured sighting that decides the revision a check must carry
+/// at `cut` when the latest change is an unadmitted record and no named root
+/// holds, in that change's workspace; `None` otherwise, and then the change
+/// or the root decides as before.
+pub(super) fn measured_sighting_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    latest_mutation: Option<&(i64, SourceObservation)>,
+    root: Option<&NamedRootContext>,
+    cut: i64,
+) -> Result<Option<(i64, ExecutionSourceBasis)>, StoreError> {
+    let Some(basis) = latest_mutation
+        .filter(|(_, change)| root.is_none() && !change.admitted)
+        .and_then(|(_, change)| change.source_basis.as_ref())
+    else {
+        return Ok(None);
+    };
+    newest_measured_sighting_on(connection, run_id, &basis.workspace_id, cut)
+}
 
 /// The record `decider` names for `evidence`, as the store held it at the
 /// cut the decision read: the latest change, the named root's newest
-/// sighting, or the root's binding, beside the verification's own source.
-/// `None` only when the named record is absent from the context, which a
-/// decision from the same context never produces.
+/// sighting, the root's binding, or the newest measured sighting, beside the
+/// verification's own source. `None` only when the named record is absent
+/// from the context, which a decision from the same context never produces.
 pub(super) fn stale_verification_source(
     decider: StaleSourceDecider,
     evidence: &VerificationEvidence,
-    latest_mutation: Option<(i64, &ExecutionObservation)>,
+    latest_mutation: Option<(i64, &SourceObservation)>,
     root: Option<&NamedRootContext>,
+    measured: Option<(i64, &ExecutionSourceBasis)>,
 ) -> Option<StaleVerificationSource> {
-    let observed = |position: i64, observation: &ExecutionObservation| {
+    let observed = |position: i64, observation: &SourceObservation| {
         let basis = observation.source_basis.as_ref();
         (
             position,
@@ -63,6 +86,15 @@ pub(super) fn stale_verification_source(
                 Some(root.binding.generation),
             )
         }),
+        StaleSourceDecider::MeasuredSighting => measured.map(|(position, basis)| {
+            (
+                position,
+                None,
+                Some(basis.workspace_id.clone()),
+                Some(basis.source_revision.clone()),
+                basis.source_root_generation,
+            )
+        }),
     }?;
     Some(StaleVerificationSource {
         decider,
@@ -85,7 +117,8 @@ pub(super) struct VerificationAtCut {
     producer_position: i64,
     cut: FeedPosition,
     root: Option<NamedRootContext>,
-    latest_mutation: Option<(i64, ExecutionObservation)>,
+    latest_mutation: Option<(i64, SourceObservation)>,
+    measured: Option<(i64, ExecutionSourceBasis)>,
 }
 
 impl VerificationAtCut {
@@ -108,6 +141,13 @@ impl VerificationAtCut {
         } else {
             latest_source_mutation_on(connection, run_id, cut.position)?
         };
+        let measured = measured_sighting_on(
+            connection,
+            run_id,
+            latest_mutation.as_ref(),
+            root.as_ref(),
+            cut.position,
+        )?;
         let producer = load_typed_work_object::<ExecutionObservation>(
             connection,
             &evidence.producer_observation,
@@ -124,6 +164,7 @@ impl VerificationAtCut {
             cut,
             root,
             latest_mutation,
+            measured,
         })
     }
 
@@ -151,7 +192,15 @@ impl VerificationAtCut {
                 None,
             ));
         }
-        let (assessment, decider) = explain_obligation_satisfaction(
+        let trigger = if acceptance_binding_criterion(&obligation.rule).is_none() {
+            Some(load_source_observation_on(
+                connection,
+                &obligation.triggering_observation,
+            )?)
+        } else {
+            None
+        };
+        let (mut assessment, decider) = explain_obligation_satisfaction(
             &ObligationSatisfactionInput {
                 evidence: &self.evidence,
                 producer: &self.producer,
@@ -162,10 +211,25 @@ impl VerificationAtCut {
                 named_root: self.root.as_ref().map(NamedRootContext::match_input),
                 evidence_position: self.evidence_position,
                 producer_position: Some(self.producer_position),
+                measured_sighting: self
+                    .measured
+                    .as_ref()
+                    .map(|(position, basis)| (basis, *position)),
+                trigger: trigger.as_ref(),
                 evaluated_cut: &self.cut,
             },
             obligation,
         );
+        // A binding's obligation names no source change, so the floors of the
+        // unadmitted changes on the run are held here, whichever change is
+        // the latest: a check that does not follow one of them carries no
+        // bound criterion.
+        if assessment == ObligationAssessment::Matches
+            && acceptance_binding_criterion(&obligation.rule).is_some()
+            && let Some(mismatch) = self.unadmitted_barrier_on(connection)?
+        {
+            assessment = ObligationAssessment::Mismatch(mismatch);
+        }
         let stale = decider.and_then(|decider| {
             stale_verification_source(
                 decider,
@@ -174,10 +238,60 @@ impl VerificationAtCut {
                     .as_ref()
                     .map(|(position, mutation)| (*position, mutation)),
                 self.root.as_ref(),
+                self.measured
+                    .as_ref()
+                    .map(|(position, basis)| (*position, basis)),
             )
         });
         Ok((assessment, stale))
     }
+}
+
+impl VerificationAtCut {
+    /// The mismatch an accounted unadmitted change at or before this cut
+    /// gives the record when the check does not follow it: not after the
+    /// change, or completed before the change was recorded.
+    fn unadmitted_barrier_on(
+        &self,
+        connection: &Connection,
+    ) -> Result<Option<crate::domain::VerificationEvidenceMismatch>, StoreError> {
+        unadmitted_barrier(
+            connection,
+            self.evidence.binding.run_id,
+            (self.producer_position, self.evidence_position),
+            self.evidence.completed_at,
+            self.cut.position,
+            self.root.as_ref(),
+        )
+    }
+}
+
+/// [`unadmitted_barrier_on`] as a matcher mismatch, under the claim's named
+/// root when one is bound.
+pub(super) fn unadmitted_barrier(
+    connection: &Connection,
+    run_id: WorkRunId,
+    positions: (i64, i64),
+    completed_at: chrono::DateTime<chrono::Utc>,
+    cut: i64,
+    root: Option<&NamedRootContext>,
+) -> Result<Option<crate::domain::VerificationEvidenceMismatch>, StoreError> {
+    use crate::domain::VerificationEvidenceMismatch as Mismatch;
+    Ok(unadmitted_barrier_on(
+        connection,
+        run_id,
+        positions,
+        completed_at,
+        cut,
+        root.map(|root| (root.binding.workspace_id.as_str(), root.binding.generation)),
+    )?
+    .map(|(_, follows)| {
+        if follows {
+            Mismatch::InvalidTime
+        } else {
+            Mismatch::NotAfterMutation
+        }
+    }))
 }
 
 /// What the store holds about one obligation's end, whatever a reconstruction

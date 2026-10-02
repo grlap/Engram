@@ -426,6 +426,9 @@ pub(super) use schema::{
     owns_schema_object, preflight_schema, repair_rebuildable_schema_on,
     require_work_schema_version, schema_version,
 };
+pub(in crate::storage) use unadmitted::{
+    decide_accounting_on, open_unadmitted_obligations_on, opened_obligations_of_on,
+};
 
 #[derive(Debug)]
 pub(crate) struct WorkProtocolAttempt {

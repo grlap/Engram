@@ -722,14 +722,17 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             )
             .expect("typed run-feed position")
     };
+    let observation_view =
+        crate::domain::SourceObservation::admitted(observation_id.clone(), &observation);
     let verification_match = VerificationEvidenceMatchInput {
         candidate_kind: WorkEvidenceKind::Verification,
         evidence: Some(&verification),
         producer: Some(&producer),
-        latest_mutation: Some((&observation, run_positions(observation_id))),
+        latest_mutation: Some((&observation_view, run_positions(observation_id))),
         named_root: None,
         evidence_position: run_positions(verification_hash),
         producer_position: None,
+        measured_sighting: None,
         requirement: &crate::domain::VerificationRequirement {
             check_kind: crate::domain::VerificationKind::Test,
             check_fingerprint: Some(producer.action_fingerprint.clone()),
@@ -794,8 +797,10 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         .as_mut()
         .expect("mutation source basis")
         .source_revision = "content-revision-2".into();
+    let later_view =
+        crate::domain::SourceObservation::admitted(observation_id.clone(), &later_mutation);
     let stale_match = VerificationEvidenceMatchInput {
-        latest_mutation: Some((&later_mutation, run_positions(verification_hash) + 1)),
+        latest_mutation: Some((&later_view, run_positions(verification_hash) + 1)),
         evidence_position: run_positions(verification_hash),
         ..verification_match
     };

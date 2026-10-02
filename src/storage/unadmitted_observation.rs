@@ -54,12 +54,21 @@ impl<'a> ExecutionObserveIntent<'a> {
     }
 }
 
-/// The receipt a stored observation answers with, rebuilt from the record.
+/// The receipt a stored observation answers with, rebuilt from the record and
+/// the obligations it opened. A new change names the record itself as its
+/// anchor, which the stored record cannot carry.
 fn receipt_of(
     observation: &UnadmittedExecutionObservation,
     observation_id: crate::ObjectId,
     position: crate::domain::FeedPosition,
+    opened_obligations: Vec<crate::ObjectId>,
 ) -> ExecutionObservationReceipt {
+    let accounting = match &observation.accounting {
+        ObservationAccounting::SourceChange { .. } => ObservationAccounting::SourceChange {
+            source_change: Some(observation_id.clone()),
+        },
+        other => other.clone(),
+    };
     ExecutionObservationReceipt {
         decision: ExecutionObservationDecision::Recorded,
         observation: observation_id,
@@ -69,8 +78,8 @@ fn receipt_of(
         admission: ObservationAdmission::Unadmitted,
         causality: observation.causality.clone(),
         policy_basis: observation.policy_basis.clone(),
-        accounting: observation.accounting.clone(),
-        opened_obligations: Vec::new(),
+        accounting,
+        opened_obligations,
         observed_checks: observation
             .occurrence
             .checks()
@@ -140,6 +149,11 @@ pub(super) fn execution_observe_row_matches(
         &observation.observing_session,
         &input,
     ))?;
+    let opened = work::opened_obligations_of_on(
+        connection,
+        observation.binding.run_id,
+        &receipt.observation,
+    )?;
     let expected = receipt_of(
         &observation,
         receipt.observation.clone(),
@@ -147,6 +161,7 @@ pub(super) fn execution_observe_row_matches(
             feed: crate::domain::FeedId::RunExecution(observation.binding.run_id),
             position,
         },
+        opened,
     );
     Ok(observation.observing_session.0 == session_id
         && intent.key().as_str() == intent_hash
@@ -162,8 +177,9 @@ impl SqliteStore {
     /// The control session's own refusals for a superseded connection, an
     /// unbound session or a mismatched project or routing token;
     /// [`StoreError::ExecutionObservationInvalid`] for a malformed or
-    /// oversized request; [`StoreError::ExecutionObservationAccountingUnavailable`]
-    /// when accounting is asked for; [`StoreError::ExecutionObservationBasisMismatch`]
+    /// oversized request; [`StoreError::ExecutionObservationPolicyBasisMismatch`]
+    /// when accounting names another policy than the project's current one;
+    /// [`StoreError::ExecutionObservationBasisMismatch`]
     /// when the binding, cut or root basis is not what the store holds;
     /// [`StoreError::ControlOperationIdempotencyConflict`] when the key was
     /// used for a different request. A refusal records nothing.
@@ -204,11 +220,24 @@ impl SqliteStore {
             .validate_shape(now)
             .map_err(StoreError::ExecutionObservationInvalid)?;
         let idempotency_key = input.idempotency_key.clone();
-        if matches!(
-            input.policy_basis,
-            ObservationPolicyBasis::AccountIfEligible { .. }
-        ) {
-            return Err(StoreError::ExecutionObservationAccountingUnavailable);
+        if let ObservationPolicyBasis::AccountIfEligible {
+            project_policy_epoch,
+            policy,
+            obligation_rule_set,
+        } = &input.policy_basis
+        {
+            let active = Self::load_active_control_policy(&transaction)?;
+            if active.epoch != *project_policy_epoch
+                || active.policy_id != *policy
+                || active.obligation_rule_set != *obligation_rule_set
+            {
+                return Err(StoreError::ExecutionObservationPolicyBasisMismatch(
+                    format!(
+                        "the project's current policy is epoch {} policy {} with obligation rule set {}",
+                        active.epoch.0, active.policy_id, active.obligation_rule_set
+                    ),
+                ));
+            }
         }
         let cut = input.root_basis.capture_run_cut;
         let claim_epoch_event =
@@ -237,8 +266,17 @@ impl SqliteStore {
                 )?;
             }
         }
-        let accounting = ObservationAccounting::AuditOnly {
-            reason: ObservationAuditReason::ExplicitAudit,
+        let accounting = match &input.policy_basis {
+            ObservationPolicyBasis::AuditOnly {} => ObservationAccounting::AuditOnly {
+                reason: ObservationAuditReason::ExplicitAudit,
+            },
+            ObservationPolicyBasis::AccountIfEligible { .. } => work::decide_accounting_on(
+                &transaction,
+                &input.binding,
+                &input.root_basis,
+                occurrence.source_change(),
+                work::current_run_feed_cut_on(&transaction, input.binding.run_id)?.position,
+            )?,
         };
         let observation = UnadmittedExecutionObservation {
             schema_version: UNADMITTED_EXECUTION_OBSERVATION_SCHEMA_VERSION,
@@ -258,7 +296,13 @@ impl SqliteStore {
         };
         let (observation_id, position) =
             work::append_unadmitted_observation_on(&transaction, &observation)?;
-        let receipt = receipt_of(&observation, observation_id, position);
+        let opened = work::open_unadmitted_obligations_on(
+            &transaction,
+            &observation_id,
+            &observation,
+            &position,
+        )?;
+        let receipt = receipt_of(&observation, observation_id, position, opened);
         let receipt_bytes = crate::canonical::canonical_bytes(&receipt)?;
         if receipt_bytes.len() > MAX_EXECUTION_OBSERVE_RESULT_BYTES {
             return Err(StoreError::ExecutionObservationInvalid(format!(

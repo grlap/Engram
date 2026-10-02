@@ -3,13 +3,14 @@
 //! another workspace are displaced or kept open.
 
 use super::{
-    CompletionObligationBinding, Connection, DateTime, ExecutionObservation, NamedRootBindingEvent,
-    NamedRootBindingKind, ObjectId, SCHEMA_VERSION, StoreError, Transaction, Utc, WorkClaimId,
-    WorkItem, WorkObligation, WorkObligationResolution, WorkObligationResolutionEvent,
-    WorkObligationState, WorkRunId, append_obligation_resolution_on, latest_claim_release_on,
-    latest_named_root_binding_on, latest_named_root_sighting_on, latest_unlocated_source_change_on,
+    CompletionObligationBinding, Connection, DateTime, NamedRootBindingEvent, NamedRootBindingKind,
+    ObjectId, SCHEMA_VERSION, StoreError, Transaction, Utc, WorkClaimId, WorkItem, WorkObligation,
+    WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkRunId,
+    append_obligation_resolution_on, latest_claim_release_on, latest_named_root_binding_on,
+    latest_named_root_sighting_on, latest_unlocated_source_change_on, load_source_observation_on,
     load_typed_work_object, load_work_obligation_records_on, named_root_event_on,
 };
+use crate::domain::SourceObservation;
 
 /// How the active root accounts for a source change that no check in the root
 /// verified. The class depends only on where and when the change was sighted,
@@ -47,7 +48,7 @@ pub(super) enum ForeignChange {
 pub(super) fn classify_change_on(
     connection: &Connection,
     root: Option<&NamedRootContext>,
-    change: &ExecutionObservation,
+    change: &SourceObservation,
     change_position: i64,
 ) -> Result<ForeignChange, StoreError> {
     let Some(basis) = change.source_basis.as_ref() else {
@@ -110,7 +111,7 @@ pub(super) fn classify_change_on(
 /// run-feed position; `None` for a change stating no named generation.
 fn stated_root_on(
     connection: &Connection,
-    change: &ExecutionObservation,
+    change: &SourceObservation,
     change_position: i64,
 ) -> Result<Option<String>, StoreError> {
     let Some(basis) = change.source_basis.as_ref() else {
@@ -154,7 +155,7 @@ fn stated_root_on(
 pub(super) fn displaces_on(
     connection: &Connection,
     root: &NamedRootContext,
-    change: &ExecutionObservation,
+    change: &SourceObservation,
     change_position: i64,
 ) -> Result<bool, StoreError> {
     Ok(
@@ -200,8 +201,8 @@ pub(super) struct NamedRootContext {
     pub(super) binding_position: i64,
     pub(super) binding_id: ObjectId,
     pub(super) binding: NamedRootBindingEvent,
-    pub(super) latest_sighting: Option<(i64, ExecutionObservation)>,
-    pub(super) latest_mutation: Option<(i64, ExecutionObservation)>,
+    pub(super) latest_sighting: Option<(i64, SourceObservation)>,
+    pub(super) latest_mutation: Option<(i64, SourceObservation)>,
     pub(super) unknown_change_position: Option<i64>,
 }
 
@@ -274,11 +275,7 @@ pub(super) fn obligation_matches_named_root(
     if crate::control::acceptance_binding_criterion(&obligation.rule).is_some() {
         return Ok(true);
     }
-    let trigger: ExecutionObservation = load_typed_work_object(
-        connection,
-        &obligation.triggering_observation,
-        "execution_observation",
-    )?;
+    let trigger = load_source_observation_on(connection, &obligation.triggering_observation)?;
     // A change the root accounts for itself, an unbound one, or with no root a
     // change no earlier root left foreign or unlocated, can be satisfied by a
     // check; a displaced or foreign one never is. See [`classify_change_on`].
@@ -326,11 +323,8 @@ pub(super) fn resolve_source_change_obligations_on(
             &record.obligation.rule,
             &record.obligation.requirement,
         );
-        let change = load_typed_work_object::<ExecutionObservation>(
-            transaction,
-            &record.obligation.triggering_observation,
-            "execution_observation",
-        )?;
+        let change =
+            load_source_observation_on(transaction, &record.obligation.triggering_observation)?;
         let class = classify_change_on(
             transaction,
             root.as_ref(),
@@ -374,7 +368,7 @@ pub(super) fn resolve_source_change_obligations_on(
                 waived_by: actor.actor_id.clone(),
                 reason: format!(
                     "completed at revision {} with no matching passing test after source change {} ({revision})",
-                    item.revision, change.observation_id
+                    item.revision, change.label
                 ),
             }),
             actor: actor.clone(),
@@ -401,11 +395,8 @@ pub(super) fn refuse_unresolved_named_root_changes_on(
         ) {
             continue;
         }
-        let change: ExecutionObservation = load_typed_work_object(
-            connection,
-            &record.obligation.triggering_observation,
-            "execution_observation",
-        )?;
+        let change =
+            load_source_observation_on(connection, &record.obligation.triggering_observation)?;
         let class = classify_change_on(
             connection,
             root.as_ref(),
@@ -416,16 +407,16 @@ pub(super) fn refuse_unresolved_named_root_changes_on(
             (ForeignChange::Open, Some(basis)) => {
                 format!(
                     "source change {} was captured in foreign workspace {} while a named root was bound; a named-root check cannot satisfy it, so an explicit human waiver is required",
-                    change.observation_id, basis.workspace_id
+                    change.label, basis.workspace_id
                 )
             }
             (ForeignChange::Unlocated, _) if root.is_some() => format!(
                 "source change {} has unknown workspace and was recorded while a named root was bound; run a fresh check in the named root or record an explicit human waiver",
-                change.observation_id
+                change.label
             ),
             (ForeignChange::Unlocated, _) => format!(
                 "source change {} has unknown workspace and was recorded while a named root was bound; name a root and run a fresh check in it, or record an explicit human waiver",
-                change.observation_id
+                change.label
             ),
             _ => continue,
         };

@@ -10,17 +10,19 @@
 use rusqlite::{Connection, params};
 
 use super::{
-    AcceptanceEvaluation, ExecutionObservation, NamedEvaluationRoot, ObjectId, StoreError,
-    WorkItem, WorkRunId, citation_position, judged_bindings, judged_source, latest_on,
-    load_typed_work_object, named_root_at_on, off_named_root,
+    AcceptanceEvaluation, NamedEvaluationRoot, ObjectId, StoreError, WorkItem, WorkRunId,
+    citation_position, judged_bindings, judged_source, latest_on, named_root_at_on, off_named_root,
 };
+use crate::storage::work::UNADMITTED_OBSERVATION_KIND;
+use crate::storage::work::feeds::source_observation_if_accounted_on;
 
 /// Run-feed kinds that record evidence for or against a verdict: notes and
 /// gates, host verification and environment evidence, and observations of
-/// the source. Evaluation records and the claim, renewal, handoff, revision,
-/// checkpoint and obligation bookkeeping are left out.
-const EVIDENCE_KINDS: &str =
-    "'work_evidence', 'verification_evidence', 'environment_evidence', 'execution_observation'";
+/// the source, admitted or accounted. Evaluation records and the claim,
+/// renewal, handoff, revision, checkpoint and obligation bookkeeping are left
+/// out.
+const EVIDENCE_KINDS: &str = "'work_evidence', 'verification_evidence', 'environment_evidence',
+     'execution_observation', 'unadmitted_execution_observation'";
 
 /// Why an evaluation cut at `cut` may not replace the newest evaluation on
 /// the run, or `None` when it may: the newest one passes, judged other
@@ -113,13 +115,15 @@ fn new_evidence_between(
     // The revision last seen, read once the first observation needs it.
     let mut seen: Option<Option<String>> = None;
     for (kind, stored) in rows {
-        if kind != "execution_observation" {
+        if kind != "execution_observation" && kind != UNADMITTED_OBSERVATION_KIND {
             return Ok(true);
         }
         let hash =
             ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
-        let observation: ExecutionObservation =
-            load_typed_work_object(connection, &hash, "execution_observation")?;
+        // An unadmitted record that was not accounted is no evidence.
+        let Some(observation) = source_observation_if_accounted_on(connection, &hash)? else {
+            continue;
+        };
         if off_named_root(root, &observation) {
             continue;
         }

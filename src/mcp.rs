@@ -1380,7 +1380,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::NamedRootReadRefused(_)
         | StoreError::ExecutionObservationInvalid(_)
         | StoreError::ExecutionObservationBasisMismatch(_)
-        | StoreError::ExecutionObservationAccountingUnavailable
+        | StoreError::ExecutionObservationPolicyBasisMismatch(_)
         | StoreError::AcceptanceBindingReadRefused { .. }
         | StoreError::AcceptanceVerificationReadRefused { .. }
         | StoreError::HostPathIdentityUnresolved

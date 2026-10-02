@@ -7,10 +7,10 @@ use rusqlite::Connection;
 use super::super::WorkObligationCompletionAction;
 use super::named_root::{ForeignChange, classify_change_on};
 use super::{
-    CanonicalObject, CompletionSeal, ExecutionObservation, FeedId, NamedRootContext, ObjectId,
-    SqliteStore, StoreError, WorkObligation, WorkObligationRecord, WorkRunId,
-    latest_source_mutation_on, load_typed_work_object, load_work_claim_optional, load_work_run,
-    named_root_context_on, obligation_rule_set_for_observation_on,
+    CompletionSeal, FeedId, NamedRootContext, ObjectId, SqliteStore, StoreError, WorkObligation,
+    WorkObligationRecord, WorkRunId, latest_source_mutation_on, load_typed_work_object,
+    load_work_claim_optional, load_work_run, named_root_context_on,
+    obligation_rule_set_for_observation_on,
 };
 
 /// One-based positions of the criteria a self-asserted completion would seal
@@ -86,10 +86,9 @@ impl SqliteStore {
                 actions.push(WorkObligationCompletionAction::CheckOrWaiver);
                 continue;
             }
-            let change: ExecutionObservation = load_typed_work_object(
+            let change = super::super::feeds::load_source_observation_on(
                 &self.connection,
                 &obligation.triggering_observation,
-                "execution_observation",
             )?;
             let class = classify_change_on(
                 &self.connection,
@@ -130,25 +129,22 @@ pub(super) fn require_expected_obligations_on(
     records: &[WorkObligationRecord],
 ) -> Result<(), StoreError> {
     let expected = connection
-        .prepare(
-            "SELECT entry.position, entry.object_id, object.canonical_json
+        .prepare(&format!(
+            "SELECT entry.position, entry.object_id
              FROM work_feed_entries entry
              JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-               AND entry.object_kind = 'execution_observation'
-               AND json_extract(object.canonical_json, '$.source_changed') = 1
+               AND {} AND {}
              ORDER BY entry.position",
-        )?
+            super::super::feeds::SOURCE_RECORD_SQL,
+            super::super::feeds::SOURCE_CHANGED_SQL
+        ))?
         .query_map([run_id.0.to_string()], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Vec<u8>>(2)?,
-            ))
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let finished_at = finished_run_cut_on(connection, run_id)?;
-    for (position, stored_hash, bytes) in expected {
+    for (position, stored_hash) in expected {
         let hash = ObjectId::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         if finished_at.is_some_and(|cut| position > cut)
@@ -158,10 +154,10 @@ pub(super) fn require_expected_obligations_on(
         {
             continue;
         }
-        let observation: ExecutionObservation = CanonicalObject::stored(&hash, bytes)?.decode()?;
+        let observation = super::super::feeds::load_source_observation_on(connection, &hash)?;
         let rule_set = obligation_rule_set_for_observation_on(connection, &observation)?;
         for (rule, requirement) in
-            crate::control::evaluate_obligation_rules(&rule_set, &observation)
+            crate::control::evaluate_obligation_rules(&rule_set, observation.source_changed)
         {
             let matches = records
                 .iter()

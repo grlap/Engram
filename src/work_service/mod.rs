@@ -1816,14 +1816,7 @@ fn untested_change_summary(
     obligation: &crate::WorkObligation,
     waived_by: &str,
 ) -> Result<(&'static str, String), StoreError> {
-    let change: ExecutionObservation =
-        store
-            .get(&obligation.triggering_observation)?
-            .ok_or_else(|| {
-                StoreError::InvalidWorkProjection(
-                    "waived source-change obligation has no canonical change observation".into(),
-                )
-            })?;
+    let change = store.source_observation(&obligation.triggering_observation)?;
     let revision = change.source_basis.map_or_else(
         || "no recorded source revision".to_owned(),
         |basis| format!("source revision {}", basis.source_revision),
@@ -1837,7 +1830,7 @@ fn untested_change_summary(
         "untested_source_change",
         format!(
             "{said}{} ({revision}); waiver attributed to {}",
-            change.observation_id,
+            change.label,
             compact_text(waived_by)
         ),
     ))

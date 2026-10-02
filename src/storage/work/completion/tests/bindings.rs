@@ -1314,10 +1314,14 @@ fn a_source_change_recorded_without_a_revision_is_judged_by_recording_order() {
         )
         .expect("producer observation");
         super::super::binding_freshness_mismatch(
-            Some((&mutation, position(&change))),
+            Some((
+                &crate::domain::SourceObservation::admitted(change.clone(), &mutation),
+                position(&change),
+            )),
             (&evidence, position(hash)),
             (&producer, position(&evidence.producer_observation)),
             &bound(1, VerificationKind::Build).requirement,
+            None,
             None,
         )
     };

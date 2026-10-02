@@ -489,10 +489,22 @@ pub enum ObservationAuditReason {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ObservationAccounting {
-    SourceChange { source_change: ObjectId },
-    Repeat { source_change: ObjectId },
-    NoSourceChange,
-    AuditOnly { reason: ObservationAuditReason },
+    /// A new change, the anchor later repeats point at. The receipt names
+    /// the record itself; the stored record leaves the id out, since a record
+    /// cannot carry its own id, and its absence means "this record".
+    SourceChange {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_change: Option<ObjectId>,
+    },
+    /// The same revision as the anchor, with no other revision between.
+    Repeat {
+        source_change: ObjectId,
+    },
+    /// No change was reported; nothing is cleared and freshness stays.
+    NoSourceChange {},
+    AuditOnly {
+        reason: ObservationAuditReason,
+    },
 }
 
 /// The body of one `execution_observe` request, past its routing token.

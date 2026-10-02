@@ -941,6 +941,12 @@ impl crate::domain::StaleVerificationSource {
                     |generation| generation.to_string()
                 ),
             ),
+            StaleSourceDecider::MeasuredSighting => format!(
+                "The deciding source record is the newest measured sighting after an unadmitted change, at run-feed position {}: workspace {}, revision {}; {check}.",
+                self.position,
+                field(self.workspace.as_deref()),
+                field(self.revision.as_deref()),
+            ),
         }
     }
 }
@@ -1107,12 +1113,11 @@ pub enum StoreError {
     /// store's history does not hold; nothing was recorded.
     #[error("execution observation basis does not match the store: {0}")]
     ExecutionObservationBasisMismatch(String),
-    /// An `execution_observe` request asked for source-change accounting,
-    /// which this build does not perform yet; nothing was recorded.
-    #[error(
-        "execution observation accounting is not available in this build; send policy_basis audit_only"
-    )]
-    ExecutionObservationAccountingUnavailable,
+    /// An `execution_observe` request asked for source-change accounting
+    /// under a policy basis that is not the project's current policy epoch,
+    /// policy and obligation rule set; nothing was recorded.
+    #[error("execution observation policy basis is not the project's current policy: {0}")]
+    ExecutionObservationPolicyBasisMismatch(String),
     /// A word named no item while the session's focus is not an item it
     /// holds and it holds others: it would otherwise act on an item the
     /// caller did not mean. Nothing was recorded.

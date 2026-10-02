@@ -1143,13 +1143,7 @@ pub(super) fn disclosed_work_obligation_page(
         if !stock && !displaced {
             continue;
         }
-        let change: crate::domain::ExecutionObservation =
-            store.get(&item.triggering_observation)?.ok_or_else(|| {
-                StoreError::InvalidWorkProjection(format!(
-                    "source-change obligation {} has no canonical change observation",
-                    item.obligation_id.0
-                ))
-            })?;
+        let change = store.source_observation(&item.triggering_observation)?;
         if stock {
             item.reported_source_change = change.reported_source_change;
         }
@@ -1161,7 +1155,7 @@ pub(super) fn disclosed_work_obligation_page(
                 ))
             })?;
             item.displaced_change = Some(super::DisplacedSourceChange {
-                observation_id: compact_text(&change.observation_id),
+                observation_id: compact_text(&change.label),
                 workspace_id: compact_text(&basis.workspace_id),
                 source_revision: compact_text(&basis.source_revision),
             });
@@ -1171,7 +1165,7 @@ pub(super) fn disclosed_work_obligation_page(
             continue;
         }
         item.untested_change = Some(super::UntestedSourceChange {
-            observation_id: compact_text(&change.observation_id),
+            observation_id: compact_text(&change.label),
             source_revision: change
                 .source_basis
                 .map(|basis| compact_text(&basis.source_revision)),

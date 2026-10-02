@@ -583,6 +583,24 @@ bound requires a fresh check in the claim's active named root or a waiver,
 even after that root ended, was released or was renamed. Neither the
 evaluator nor the core infers workspace identity from a path string.
 
+A host may also report a source change it observed without admission
+([Record execution observed without
+admission](behavioral-control-plane.md#5b-record-execution-observed-without-admission)).
+Accounted as a new change or a repeat, such a record is a source record like
+a turn's observation in F3, F8 and the judged source. As a barrier it also
+retires a cited check that does not follow it: one whose producer was
+recorded before the change, or that completed before the change was
+recorded, whatever revision the change reports, since the report may
+describe the source from before the check. For the same reason an
+accounted unadmitted change after the cut voids the evaluation even when it
+reports the declared revision: the F3 exception for a change to the declared
+revision covers a turn's own change only. When the run's latest change is
+unadmitted and no root is named, the judged revision and the revision a cited
+check must still match are those of the newest measured sighting in that
+change's workspace, environment evidence included, the selection the
+obligation matcher uses. Audit-only records and the checks nested in an
+unadmitted record are never sightings.
+
 What does **not** invalidate an evaluation: holder notes and their checkpoints,
 gate records for checks the passing verdicts did not cite, non-holder
 observations, the completion attempt's own capture and checkpoint, and

@@ -5,9 +5,13 @@
 use super::{
     AcceptanceVerdict, Citation, Connection, CriterionVerdict, EvaluationRootMismatch,
     ExecutionObservation, ExecutionSourceBasis, NamedRootBindingEvent, NamedRootBindingKind,
-    ObjectId, OptionalExtension, SourceRootState, StoreError, WorkId, WorkItem, WorkRunId,
-    admission, citation_position, classify_citation, latest_named_root_binding_on,
+    ObjectId, OptionalExtension, SourceObservation, SourceRootState, StoreError, WorkId, WorkItem,
+    WorkRunId, admission, citation_position, classify_citation, latest_named_root_binding_on,
     latest_named_root_sighting_on, load_typed_work_object, load_work_claim_optional, params,
+};
+use crate::storage::work::feeds::{
+    SOURCE_CHANGED_SQL, SOURCE_RECORD_SQL, latest_source_mutation_on, newest_measured_sighting_on,
+    source_basis_sql, unadmitted_barrier_on,
 };
 
 pub(super) struct NamedEvaluationRoot {
@@ -44,7 +48,7 @@ pub(super) fn named_root_at_on(
 /// root nothing is foreign.
 pub(super) fn off_named_root(
     root: Option<&NamedEvaluationRoot>,
-    observation: &ExecutionObservation,
+    observation: &SourceObservation,
 ) -> bool {
     root.is_some_and(|root| {
         observation.source_basis.as_ref().is_some_and(|basis| {
@@ -56,9 +60,12 @@ pub(super) fn off_named_root(
 }
 
 /// The revision the run was last seen at, at or before `through`: that of
-/// the newest execution observation there that carries one. Verification
+/// the newest source record there that carries one. Verification
 /// and environment records are left out: they carry the basis of the check
-/// they describe, not where the source was when they were recorded.
+/// they describe, not where the source was when they were recorded. After an
+/// unadmitted change, without a named root, the newest measured sighting in
+/// its workspace decides instead, as it does for the checks that follow it
+/// (see [`measured_after_unadmitted`]).
 pub(super) fn revision_seen_through(
     connection: &Connection,
     run_id: WorkRunId,
@@ -76,17 +83,22 @@ pub(super) fn revision_seen_through(
         )?
         .and_then(|(_, observation)| observation.source_basis.map(|basis| basis.source_revision)));
     }
+    if let Some(measured) = measured_after_unadmitted(connection, run_id, through)? {
+        return Ok(Some(measured));
+    }
+    let revision = source_basis_sql("source_revision");
     Ok(connection
         .query_row(
-            "SELECT json_extract(object.canonical_json, '$.source_basis.source_revision')
-             FROM work_feed_entries entry
-             JOIN objects object ON object.object_id = entry.object_id
-             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-               AND entry.position <= ?2
-               AND entry.object_kind = 'execution_observation'
-               AND json_extract(object.canonical_json, '$.source_basis.source_revision')
-                   IS NOT NULL
-             ORDER BY entry.position DESC LIMIT 1",
+            &format!(
+                "SELECT {revision}
+                 FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
+                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+                   AND entry.position <= ?2
+                   AND {SOURCE_RECORD_SQL}
+                   AND {revision} IS NOT NULL
+                 ORDER BY entry.position DESC LIMIT 1"
+            ),
             params![run_id.0.to_string(), through],
             |row| row.get::<_, String>(0),
         )
@@ -377,6 +389,10 @@ pub(super) enum Moved {
     /// It reported a change that carries no revision, which may have moved
     /// the source anywhere.
     Unrevised,
+    /// It accounted an unadmitted source change, named by its label, that
+    /// the check did not follow: its producer was recorded before the change,
+    /// or it completed before the change was recorded.
+    Unadmitted(String),
 }
 
 impl StaleCitation {
@@ -424,6 +440,11 @@ impl StaleCitation {
                 let moved = match moved {
                     Moved::To(seen) => format!("was last seen at revision {seen}"),
                     Moved::Unrevised => "reported a source change without a revision".to_owned(),
+                    Moved::Unadmitted(label) => {
+                        format!(
+                            "accounted unadmitted source change {label}, which the check did not follow,"
+                        )
+                    }
                 };
                 format!(
                     "criterion {criterion} is bound to {kind} verification, and {citation} ran on source revision {checked}, but the run {moved} after it, before evidence basis {cut}; run the check on the current source, then evaluate again citing it"
@@ -538,8 +559,8 @@ pub(super) fn stale_bound_citation<'a>(
 
 /// Whether the run left `checked`, the revision `producer` ran the check
 /// `citation` on, between that check and `through`, inclusive, read as F3
-/// reads the source after a cut. The newest execution observation there
-/// that carries a revision decides where the source is, whatever change it
+/// reads the source after a cut. The newest source record there that
+/// carries a revision decides where the source is, whatever change it
 /// reports: the revision fingerprints the full content, so a move and its
 /// revert leave the check standing. A reported change that carries no
 /// revision may have moved the source anywhere, and no later sighting
@@ -559,39 +580,66 @@ fn moved_after_check(
             "verification evidence {citation} names producer observation {producer}, which is not on its run feed"
         ))
     })?;
+    let recorded = citation_position(connection, run_id, citation)?.unwrap_or(i64::MAX);
+    let check = load_typed_work_object::<super::VerificationEvidence>(
+        connection,
+        citation,
+        "verification_evidence",
+    )?;
+    if let Some((change, _)) = unadmitted_barrier_on(
+        connection,
+        run_id,
+        (ran, recorded),
+        check.completed_at,
+        through,
+        root.map(|root| (root.event.workspace_id.as_str(), root.event.generation)),
+    )? {
+        return Ok(Some(Moved::Unadmitted(change.label)));
+    }
     let run = run_id.0.to_string();
+    let (revision, workspace, generation, state) = (
+        source_basis_sql("source_revision"),
+        source_basis_sql("workspace_id"),
+        source_basis_sql("source_root_generation"),
+        source_basis_sql("source_root_state"),
+    );
     let unrevised: bool = connection.query_row(
-        "SELECT EXISTS(
-             SELECT 1 FROM work_feed_entries entry
-             JOIN objects object ON object.object_id = entry.object_id
-             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-               AND entry.position > ?2 AND entry.position <= ?3
-               AND entry.object_kind = 'execution_observation'
-               AND json_extract(object.canonical_json, '$.source_basis.source_revision') IS NULL
-               AND json_extract(object.canonical_json, '$.source_changed') = 1
-         )",
+        &format!(
+            "SELECT EXISTS(
+                 SELECT 1 FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
+                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+                   AND entry.position > ?2 AND entry.position <= ?3
+                   AND {SOURCE_RECORD_SQL} AND {SOURCE_CHANGED_SQL}
+                   AND {revision} IS NULL
+             )"
+        ),
         params![run, ran, through],
         |row| row.get(0),
     )?;
     if unrevised {
         return Ok(Some(Moved::Unrevised));
     }
+    if root.is_none()
+        && let Some(measured) = measured_after_unadmitted(connection, run_id, through)?
+    {
+        return Ok((measured != checked).then_some(Moved::To(measured)));
+    }
     let newest: Option<String> = connection
         .query_row(
-            "SELECT json_extract(object.canonical_json, '$.source_basis.source_revision')
-             FROM work_feed_entries entry
-             JOIN objects object ON object.object_id = entry.object_id
-             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-               AND entry.position > ?2 AND entry.position <= ?3
-               AND entry.object_kind = 'execution_observation'
-               AND json_extract(object.canonical_json, '$.source_basis.source_revision')
-                   IS NOT NULL
-               AND (?4 IS NULL OR (
-                   json_extract(object.canonical_json, '$.source_basis.workspace_id') = ?4
-                   AND json_extract(object.canonical_json, '$.source_basis.source_root_generation') = ?5
-                   AND json_extract(object.canonical_json, '$.source_basis.source_root_state') = 'named'
-               ))
-             ORDER BY entry.position DESC LIMIT 1",
+            &format!(
+                "SELECT {revision}
+                 FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
+                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+                   AND entry.position > ?2 AND entry.position <= ?3
+                   AND {SOURCE_RECORD_SQL}
+                   AND {revision} IS NOT NULL
+                   AND (?4 IS NULL OR (
+                       {workspace} = ?4 AND {generation} = ?5 AND {state} = 'named'
+                   ))
+                 ORDER BY entry.position DESC LIMIT 1"
+            ),
             params![
                 run,
                 ran,
@@ -605,11 +653,35 @@ fn moved_after_check(
     Ok(newest.filter(|revision| revision != checked).map(Moved::To))
 }
 
+/// When the run's latest change at `through` is an unadmitted record with a
+/// measured sighting: the revision of the newest measured sighting there in
+/// that change's workspace (an admitted observation, environment evidence or
+/// an accounted unadmitted sighting), the selection the obligation matcher
+/// uses; the change itself is one, so there always is one. `None` otherwise,
+/// and the ordinary source-record reading applies. Only for a run without a
+/// named root: under one the root's newest sighting decides.
+fn measured_after_unadmitted(
+    connection: &Connection,
+    run_id: WorkRunId,
+    through: i64,
+) -> Result<Option<String>, StoreError> {
+    let Some((_, latest)) = latest_source_mutation_on(connection, run_id, through)? else {
+        return Ok(None);
+    };
+    let Some(basis) = latest.source_basis.filter(|_| !latest.admitted) else {
+        return Ok(None);
+    };
+    Ok(
+        newest_measured_sighting_on(connection, run_id, &basis.workspace_id, through)?
+            .map(|(_, sighting)| sighting.source_revision),
+    )
+}
+
 /// Whether a source change left the source at the revision the evaluation
 /// declared it judged, in the declared workspace when one was named.
 pub(super) fn judged_revision(
     declared: Option<&crate::domain::AcceptanceSourceBasis>,
-    observation: &ExecutionObservation,
+    observation: &SourceObservation,
 ) -> bool {
     let (Some(declared), Some(basis)) = (declared, observation.source_basis.as_ref()) else {
         return false;

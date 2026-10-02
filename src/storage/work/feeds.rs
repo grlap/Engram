@@ -22,8 +22,8 @@ use crate::{
     domain::{
         ActorContext, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
         MemoryAssertionEvent, MemoryVersion, NamedRootBindingEvent, SCHEMA_VERSION, SessionId,
-        WorkClaimId, WorkHandoffOffer, WorkHandoffState, WorkId, WorkRunId, WorkSourceSnapshot,
-        WorkTransition,
+        SourceObservation, WorkClaimId, WorkHandoffOffer, WorkHandoffState, WorkId, WorkRunId,
+        WorkSourceSnapshot, WorkTransition,
     },
     memory::Redactor,
 };
@@ -32,6 +32,19 @@ use crate::{
 mod tests;
 
 impl SqliteStore {
+    /// The source record stored as `record`, read as accounting reads it.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidWorkProjection`] when it is missing or is no
+    /// source record; other [`StoreError`] values when it cannot be read.
+    pub(crate) fn source_observation(
+        &self,
+        record: &ObjectId,
+    ) -> Result<SourceObservation, StoreError> {
+        load_source_observation_on(&self.connection, record)
+    }
+
     /// Orders note families in their shared dense root feed, never by the
     /// caller-asserted observation timestamp.
     pub(crate) fn work_root_object_position(
@@ -679,11 +692,101 @@ pub(super) fn named_root_event_on(
         .optional()?)
 }
 
+/// SQL over `entry` and `object` that is true for a source record of either
+/// kind: an admitted turn's observation, or an unadmitted record accounted as a
+/// new change or a repeat. An audit-only record, or one that reported no
+/// change, is never a source record.
+pub(in crate::storage) const SOURCE_RECORD_SQL: &str = "(entry.object_kind = 'execution_observation'
+     OR (entry.object_kind = 'unadmitted_execution_observation'
+         AND json_extract(object.canonical_json, '$.accounting.kind') IN ('source_change', 'repeat')))";
+
+/// SQL that is true for a source record read as a change.
+pub(in crate::storage) const SOURCE_CHANGED_SQL: &str = "(CASE entry.object_kind
+     WHEN 'execution_observation' THEN json_extract(object.canonical_json, '$.source_changed') = 1
+     ELSE json_extract(object.canonical_json, '$.accounting.kind') = 'source_change' END)";
+
+/// SQL for one field of a host record's source basis: an unadmitted record's
+/// closing sighting, or the `source_basis` an admitted observation or
+/// environment evidence carries; NULL when the record carries none.
+pub(in crate::storage) fn source_basis_sql(field: &str) -> String {
+    format!(
+        "(CASE entry.object_kind
+             WHEN 'unadmitted_execution_observation'
+                 THEN json_extract(object.canonical_json,
+                     '$.occurrence.source_change.sighting.source_basis.{field}')
+             ELSE json_extract(object.canonical_json, '$.source_basis.{field}') END)"
+    )
+}
+
+/// The source record stored as `record`, read as accounting reads it.
+///
+/// # Errors
+///
+/// [`StoreError::InvalidWorkProjection`] when the record is neither an
+/// admitted observation nor an accounted unadmitted one; other
+/// [`StoreError`] values when it cannot be read.
+pub(in crate::storage) fn load_source_observation_on(
+    connection: &Connection,
+    record: &ObjectId,
+) -> Result<SourceObservation, StoreError> {
+    source_observation_if_accounted_on(connection, record)?.ok_or_else(|| {
+        StoreError::InvalidWorkProjection(format!(
+            "unadmitted record {record} was not accounted as a source record"
+        ))
+    })
+}
+
+/// The record stored as `record` read as accounting reads it, or `None` for
+/// an unadmitted record accounting did not read as a source record.
+///
+/// # Errors
+///
+/// [`StoreError::InvalidWorkProjection`] when the record is missing or of
+/// neither kind; other [`StoreError`] values when it cannot be read.
+pub(in crate::storage) fn source_observation_if_accounted_on(
+    connection: &Connection,
+    record: &ObjectId,
+) -> Result<Option<SourceObservation>, StoreError> {
+    let (kind, bytes): (String, Vec<u8>) = connection
+        .query_row(
+            "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
+            [record.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(format!("source record {record} is missing"))
+        })?;
+    let object = CanonicalObject::stored(record, bytes)?;
+    match kind.as_str() {
+        "execution_observation" => Ok(Some(SourceObservation::admitted(
+            record.clone(),
+            &object.decode::<ExecutionObservation>()?,
+        ))),
+        super::UNADMITTED_OBSERVATION_KIND => Ok(SourceObservation::unadmitted(
+            record.clone(),
+            &object.decode::<crate::domain::UnadmittedExecutionObservation>()?,
+        )),
+        other => Err(StoreError::InvalidWorkProjection(format!(
+            "record {record} of kind {other} is not a source record"
+        ))),
+    }
+}
+
+fn source_observation_row(
+    connection: &Connection,
+    (position, stored): (i64, String),
+) -> Result<(i64, SourceObservation), StoreError> {
+    let record =
+        ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+    Ok((position, load_source_observation_on(connection, &record)?))
+}
+
 pub(super) fn latest_source_mutation_on(
     connection: &Connection,
     run_id: WorkRunId,
     through: i64,
-) -> Result<Option<(i64, ExecutionObservation)>, StoreError> {
+) -> Result<Option<(i64, SourceObservation)>, StoreError> {
     latest_source_mutation_in_on(connection, run_id, None, through)
 }
 
@@ -694,36 +797,25 @@ pub(super) fn latest_source_mutation_in_on(
     run_id: WorkRunId,
     workspace: Option<&str>,
     through: i64,
-) -> Result<Option<(i64, ExecutionObservation)>, StoreError> {
-    let stored = connection
+) -> Result<Option<(i64, SourceObservation)>, StoreError> {
+    let workspace_sql = source_basis_sql("workspace_id");
+    let row = connection
         .query_row(
-            "SELECT entry.position, entry.object_id, object.canonical_json
-             FROM work_feed_entries entry
-             JOIN objects object ON object.object_id = entry.object_id
-             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-               AND entry.position <= ?2
-               AND entry.object_kind = 'execution_observation'
-               AND json_extract(object.canonical_json, '$.source_changed') = 1
-               AND (?3 IS NULL
-                    OR json_extract(object.canonical_json, '$.source_basis.workspace_id') = ?3)
-             ORDER BY entry.position DESC LIMIT 1",
+            &format!(
+                "SELECT entry.position, entry.object_id
+                 FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
+                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+                   AND entry.position <= ?2
+                   AND {SOURCE_RECORD_SQL} AND {SOURCE_CHANGED_SQL}
+                   AND (?3 IS NULL OR {workspace_sql} = ?3)
+                 ORDER BY entry.position DESC LIMIT 1"
+            ),
             params![run_id.0.to_string(), through, workspace],
-            |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                ))
-            },
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()?;
-    stored
-        .map(|(position, stored_hash, bytes)| {
-            let hash = ObjectId::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
-            let observation = CanonicalObject::stored(&hash, bytes)?.decode()?;
-            Ok((position, observation))
-        })
+    row.map(|row| source_observation_row(connection, row))
         .transpose()
 }
 
@@ -737,19 +829,26 @@ pub(super) fn latest_named_root_sighting_on(
     generation: i64,
     through: i64,
     changed_only: bool,
-) -> Result<Option<(i64, ExecutionObservation)>, StoreError> {
+) -> Result<Option<(i64, SourceObservation)>, StoreError> {
+    let (workspace_sql, generation_sql, state_sql) = (
+        source_basis_sql("workspace_id"),
+        source_basis_sql("source_root_generation"),
+        source_basis_sql("source_root_state"),
+    );
     let row = connection
         .query_row(
-            "SELECT entry.position, entry.object_id, object.canonical_json
-         FROM work_feed_entries entry
-         JOIN objects object ON object.object_id = entry.object_id
-         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-           AND entry.position <= ?2 AND entry.object_kind = 'execution_observation'
-           AND json_extract(object.canonical_json, '$.source_basis.workspace_id') = ?3
-           AND json_extract(object.canonical_json, '$.source_basis.source_root_generation') = ?4
-           AND json_extract(object.canonical_json, '$.source_basis.source_root_state') = 'named'
-           AND (?5 = 0 OR json_extract(object.canonical_json, '$.source_changed') = 1)
-         ORDER BY entry.position DESC LIMIT 1",
+            &format!(
+                "SELECT entry.position, entry.object_id
+                 FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
+                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+                   AND entry.position <= ?2 AND {SOURCE_RECORD_SQL}
+                   AND {workspace_sql} = ?3
+                   AND {generation_sql} = ?4
+                   AND {state_sql} = 'named'
+                   AND (?5 = 0 OR {SOURCE_CHANGED_SQL})
+                 ORDER BY entry.position DESC LIMIT 1"
+            ),
             params![
                 run_id.0.to_string(),
                 through,
@@ -757,21 +856,118 @@ pub(super) fn latest_named_root_sighting_on(
                 generation,
                 changed_only
             ],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    row.map(|row| source_observation_row(connection, row))
+        .transpose()
+}
+
+/// The newest measured sighting on the run at or before `through` in
+/// `workspace`, with its run-feed position: an admitted observation, quiet or
+/// not (a check's producer among them), environment evidence, or an accounted
+/// unadmitted source record. An audit-only record, one that reported no
+/// change, and every check nested in an unadmitted record never count.
+pub(super) fn newest_measured_sighting_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    workspace: &str,
+    through: i64,
+) -> Result<Option<(i64, crate::domain::ExecutionSourceBasis)>, StoreError> {
+    let (workspace_sql, revision_sql) = (
+        source_basis_sql("workspace_id"),
+        source_basis_sql("source_revision"),
+    );
+    let row = connection
+        .query_row(
+            &format!(
+                "SELECT entry.position, entry.object_kind, entry.object_id
+                 FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
+                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+                   AND entry.position <= ?2
+                   AND (entry.object_kind = 'environment_evidence' OR {SOURCE_RECORD_SQL})
+                   AND {workspace_sql} = ?3 AND {revision_sql} IS NOT NULL
+                 ORDER BY entry.position DESC LIMIT 1"
+            ),
+            params![run_id.0.to_string(), through, workspace],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, String>(2)?,
                 ))
             },
         )
         .optional()?;
-    row.map(|(position, stored, bytes)| {
-        let id =
+    let Some((position, kind, stored)) = row else {
+        return Ok(None);
+    };
+    let record =
+        ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+    let basis = if kind == "environment_evidence" {
+        Some(
+            load_typed_work_object::<EnvironmentEvidence>(
+                connection,
+                &record,
+                "environment_evidence",
+            )?
+            .source_basis,
+        )
+    } else {
+        load_source_observation_on(connection, &record)?.source_basis
+    };
+    Ok(basis.map(|basis| (position, basis)))
+}
+
+/// The first accounted unadmitted change on the run at or before `through`
+/// that a check does not follow, with whether only its time failed: a check
+/// follows such a change only when its producer (at `producer_position`) and
+/// its record (at `evidence_position`) are both after the change and it
+/// completed no earlier than the change was recorded. Under a named root
+/// (`root`: workspace and generation) a change sighted outside that root does
+/// not count; a watcher-only change, which carries no located source, always
+/// counts, since nothing shows it was elsewhere. `None` when the check follows
+/// every one.
+pub(in crate::storage) fn unadmitted_barrier_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    (producer_position, evidence_position): (i64, i64),
+    completed_at: DateTime<Utc>,
+    through: i64,
+    root: Option<(&str, i64)>,
+) -> Result<Option<(SourceObservation, bool)>, StoreError> {
+    let changes = connection
+        .prepare(
+            "SELECT entry.position, entry.object_id FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.position <= ?2
+               AND entry.object_kind = 'unadmitted_execution_observation'
+               AND json_extract(object.canonical_json, '$.accounting.kind') = 'source_change'
+             ORDER BY entry.position",
+        )?
+        .query_map(params![run_id.0.to_string(), through], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (position, stored) in changes {
+        let record =
             ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
-        Ok((position, CanonicalObject::stored(&id, bytes)?.decode()?))
-    })
-    .transpose()
+        let change = load_source_observation_on(connection, &record)?;
+        if let (Some(basis), Some((workspace, generation))) = (change.source_basis.as_ref(), root)
+            && (basis.workspace_id != workspace
+                || basis.source_root_generation != Some(generation)
+                || basis.source_root_state != Some(crate::domain::SourceRootState::Named))
+        {
+            continue;
+        }
+        let follows = producer_position > position && evidence_position > position;
+        if !follows || completed_at < change.recorded_at {
+            return Ok(Some((change, follows)));
+        }
+    }
+    Ok(None)
 }
 
 /// An unlocated source change after the name cannot be attributed safely to
@@ -782,16 +978,18 @@ pub(super) fn latest_unlocated_source_change_on(
     binding_position: i64,
     through: i64,
 ) -> Result<Option<i64>, StoreError> {
+    let workspace_sql = source_basis_sql("workspace_id");
     connection
         .query_row(
-            "SELECT entry.position FROM work_feed_entries entry
-         JOIN objects object ON object.object_id = entry.object_id
-         WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
-           AND entry.position > ?2 AND entry.position <= ?3
-           AND entry.object_kind = 'execution_observation'
-           AND json_extract(object.canonical_json, '$.source_changed') = 1
-           AND json_extract(object.canonical_json, '$.source_basis.workspace_id') IS NULL
-         ORDER BY entry.position DESC LIMIT 1",
+            &format!(
+                "SELECT entry.position FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
+                 WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+                   AND entry.position > ?2 AND entry.position <= ?3
+                   AND {SOURCE_RECORD_SQL} AND {SOURCE_CHANGED_SQL}
+                   AND {workspace_sql} IS NULL
+                 ORDER BY entry.position DESC LIMIT 1"
+            ),
             params![run_id.0.to_string(), binding_position, through],
             |row| row.get(0),
         )

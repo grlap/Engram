@@ -12,6 +12,7 @@ use super::completion::feed_head;
 use super::feeds::{
     append_to_work_feeds, inspect_work_request, latest_named_root_binding_on,
     latest_named_root_sighting_on, load_typed_work_object, replay_operation, request_object,
+    source_observation_if_accounted_on,
 };
 use super::planning::{normalize_note_text, persist_operation_result};
 use super::query::{
@@ -30,9 +31,9 @@ use crate::domain::{
     ExecutionSourceBasis, FeedId, MAX_ACCEPTANCE_EVALUATION_BYTES,
     MAX_ACCEPTANCE_SOURCE_BASIS_BYTES, MAX_ACCEPTANCE_VERDICT_CITATIONS,
     MAX_EXECUTION_IDENTITY_BYTES, MechanicalBasis, NamedRootBindingEvent, NamedRootBindingKind,
-    ProjectId, ProvenanceRelation, RecordAcceptanceEvaluationRequest, SourceRootState,
-    VerificationEvidence, VerificationResult, WorkEvent, WorkEvidence, WorkLifecycle,
-    WorkObligation, WorkPlanningAuthority, WorkTransition,
+    ProjectId, ProvenanceRelation, RecordAcceptanceEvaluationRequest, SourceObservation,
+    SourceRootState, VerificationEvidence, VerificationResult, WorkEvent, WorkEvidence,
+    WorkLifecycle, WorkObligation, WorkPlanningAuthority, WorkTransition,
 };
 use crate::memory::Redactor;
 use crate::storage::{CarriedFailureRefusal, EvaluationBasisMove, SqliteStore, StoreError};
@@ -47,6 +48,7 @@ const MAX_ATTEMPT_KEY_BYTES: usize = 256;
 /// later notes, gates, observations, and evaluations never appear here.
 const MUTATION_KINDS: &[&str] = &[
     "execution_observation",
+    super::UNADMITTED_OBSERVATION_KIND,
     "verification_evidence",
     "environment_evidence",
     "work_obligation",
@@ -1341,8 +1343,8 @@ fn basis_moved_after(
 ) -> Result<Option<BasisMoveFinding>, StoreError> {
     let judged_source = judged_source(connection, run_id, position, declared, root)?;
     let judged = judged_source.as_ref().map(|judged| judged.revision.clone());
-    let name = |at: i64, hash: &ObjectId, observation: &ExecutionObservation| DecidingObservation {
-        observation: hash.clone(),
+    let name = |at: i64, observation: &SourceObservation| DecidingObservation {
+        observation: observation.record.clone(),
         position: at,
         source_changed: observation.source_changed,
         workspace: observation
@@ -1357,7 +1359,7 @@ fn basis_moved_after(
             .source_basis
             .as_ref()
             .and_then(|basis| basis.source_root_generation),
-        reporting_session: observation.session_id.clone(),
+        reporting_session: observation.reporting_session.clone(),
         observed_at: observation.observed_at,
         recorded_at: observation.recorded_at,
         evaluated_revision: judged_source.as_ref().map(|judged| judged.revision.clone()),
@@ -1395,9 +1397,13 @@ fn basis_moved_after(
             continue;
         }
         match kind.as_str() {
-            "execution_observation" => {
-                let observation: ExecutionObservation =
-                    load_typed_work_object(connection, &hash, "execution_observation")?;
+            "execution_observation" | super::UNADMITTED_OBSERVATION_KIND => {
+                // An unadmitted record that was not accounted describes no
+                // source the run is held to.
+                let Some(observation) = source_observation_if_accounted_on(connection, &hash)?
+                else {
+                    continue;
+                };
                 if off_named_root(root, &observation) {
                     continue;
                 }
@@ -1406,15 +1412,18 @@ fn basis_moved_after(
                     if let (Some(judged_at), Some(sighting)) =
                         (judged.as_deref(), observation.source_basis.as_ref())
                     {
-                        quiet_move = (sighting.source_revision != judged_at)
-                            .then(|| name(at, &hash, &observation));
+                        quiet_move =
+                            (sighting.source_revision != judged_at).then(|| name(at, &observation));
                     }
                     continue;
                 }
-                if !judged_revision(declared, &observation) {
+                // An unadmitted change is a barrier the evaluation's checks
+                // did not follow, whatever revision it reports: it may describe
+                // the source from before them.
+                if !observation.admitted || !judged_revision(declared, &observation) {
                     return Ok(Some(BasisMoveFinding {
                         moved: EvaluationBasisMove::SourceChanged,
-                        observation: Some(name(at, &hash, &observation)),
+                        observation: Some(name(at, &observation)),
                     }));
                 }
                 // The reported change left the source at the declared

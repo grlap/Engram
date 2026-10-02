@@ -802,8 +802,8 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
         StoreError::ExecutionObservationInvalid(_) => "execution_observation_invalid",
         StoreError::ExecutionObservationBasisMismatch(_) => "execution_observation_basis_mismatch",
-        StoreError::ExecutionObservationAccountingUnavailable => {
-            "execution_observation_accounting_unavailable"
+        StoreError::ExecutionObservationPolicyBasisMismatch(_) => {
+            "execution_observation_policy_basis_mismatch"
         }
         StoreError::AcceptanceBindingReadRefused { refusal, .. } => refusal.code(),
         StoreError::AcceptanceVerificationReadRefused { refusal, .. } => refusal.code(),
@@ -1236,8 +1236,8 @@ mod tests {
                 "execution_observation_basis_mismatch",
             ),
             (
-                StoreError::ExecutionObservationAccountingUnavailable,
-                "execution_observation_accounting_unavailable",
+                StoreError::ExecutionObservationPolicyBasisMismatch("policy".into()),
+                "execution_observation_policy_basis_mismatch",
             ),
         ] {
             assert_eq!(store_error_code(&error), code);

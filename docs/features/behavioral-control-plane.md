@@ -823,30 +823,89 @@ depth (including inside `root_basis.state` and `claimed_actor`) or an
 unknown variant is refused as `invalid_request`; a decoded request that
 breaks a rule above, an asserted actor with any assurance but `asserted` or
 an oversized field, and a receipt over 16 KiB are refused as
-`execution_observation_invalid`; and a binding, cut or root basis the store
-does not hold as `execution_observation_basis_mismatch`. Each refusal
-records nothing. The same key with any changed fact returns
+`execution_observation_invalid`; a binding, cut or root basis the store
+does not hold as `execution_observation_basis_mismatch`; and an
+`account_if_eligible` basis that does not name the project's current policy
+epoch, policy and obligation rule set as
+`execution_observation_policy_basis_mismatch`. Each refusal records
+nothing. The same key with any changed fact returns
 `control_operation_idempotency_conflict`; an identical retry, including one
 over a new connection for the same session, returns the original receipt.
 
-This build records `audit_only` requests only. `account_if_eligible` is
-refused with `execution_observation_accounting_unavailable`, recording
-nothing: source-change accounting from these records is not built yet, and a
-host must not send it.
+An `audit_only` request is kept as a fact and accounts for nothing
+(`{"kind": "audit_only", "reason": "explicit_audit"}`). An
+`account_if_eligible` request is decided on the store's history just before
+the record's own run-feed position, never renewing the claim or creating a
+grant. The lifecycle decides first: a run finished by then keeps it as
+`audit_only` with reason `finished_run`; a binding that is no longer the
+run's newest claim epoch (a newer claim or fence, a released claim, or an
+item revised or moved to another run) as `historical_binding`, while an
+epoch that merely expired still accounts; and a named-root state or newest
+root event that changed since the capture cut as `root_basis_moved`. Then a
+request with no reported change, `source_change: null` or a standalone
+`observed_check`, is `no_source_change`: it clears nothing and moves no
+freshness, and the sources of the checks it carries never count as sightings
+of the source. A measured change whose revision equals that of the newest
+change recorded in its workspace, recorded under the same claim, with no
+other revision seen in that workspace since (the run's repeat rule, scoped
+to the workspace, and to the named root when one is bound), is a `repeat`
+naming that change in `source_change`; it opens nothing. A revision seen in
+another workspace in between does not make it a new change, but a change
+with no located source in between does, since nothing shows it was
+elsewhere. A watcher-only change carries no revision
+and no located source, so, like a turn's watcher-only change, it is
+unlocated (the workspace it names is kept for display) and is never a
+repeat, and a change that returns to an earlier revision after
+another one (A, then B, then A) is a new change. Any other change is a
+`source_change`: it accounts at its own position even when other records
+arrived since the capture, opens the selected rule set's obligations
+triggered by the record at that position, moves source freshness, and is
+classified against the claim's named root like a turn's change. The stored
+record anchors a new change to itself by leaving the id out; the receipt
+names the record's own id.
+
+An unadmitted change records where the source was when the host saw it,
+which may be older than sightings recorded since, so it is a barrier rather
+than a pin. A check accounts for an obligation it triggered, and for the
+run's latest change when that change is unadmitted, only when the check's
+producer and its verification are both recorded after the change and the
+check completed no earlier than the change was recorded: an old result whose
+records arrive late does not count. Without a named root, the revision such a
+check must carry is that of the newest measured sighting at the assessment
+cut in the change's workspace (an admitted observation, quiet or not and a
+check's own producer among them, environment evidence, or an accounted
+unadmitted sighting), not the change's own; audit-only records and checks
+nested in an unadmitted record never count. Under a named root the root's
+newest sighting decides as before. So a late report of an old revision asks
+for a fresh check without moving the source back, and checks run before it
+may need rerunning. A bound criterion names no source change, so its
+check is held to the floors of every accounted unadmitted change on the run
+at the cut, a watcher-only one included (under a named root, every one not
+sighted outside it), whichever change is the latest: when its binding's obligation is
+satisfied, when completion checks the newest check of its kind, and when an
+evaluation cites it ([F8](acceptance-evaluation.md#freshness)). After an
+unadmitted change, an evaluation's judged revision and the revision a cited
+check must still match are read from the same newest measured sighting. These rest on the host's asserted
+measurements and times; they do not prove unseen filesystem state or
+physical order.
 
 The receipt says `decision: "recorded"` and carries the `observation` record
 id, its run-feed `position`, the `observing_session`, the `binding`,
 `admission: "unadmitted"`, the `causality`, the `policy_basis`, the
-`accounting` (`{"kind": "audit_only", "reason": "explicit_audit"}`), the
-`opened_obligations` (none) and, for each check, its `host_check_id` with
-`credit: "uncredited"`. The record sits on the project, root and run feeds.
+`accounting`, the `opened_obligations` (the definition ids of the
+obligations a new change opened, otherwise none) and, for each check, its
+`host_check_id` with `credit: "uncredited"`. The record sits on the project, root and run feeds.
 A peer's `next` shows it as `unadmitted_observation`, leading with its cause
 (`cause unknown` or `unverified cause`), its uncredited checks and its
 accounting; `show REF --observations` lists it as an unadmitted observation
 with its window, its cause, and every check as `observed check, uncredited`.
 No check in it can satisfy an obligation, mint verification evidence, count
 as a gate, be cited by an evaluation or linked at completion, or enter a
-seal's tested set.
+seal's tested set. Doctor and migration import hold an accounted record to
+the accounting its history decides: the named policy version must hold the
+named epoch and rule set, the accounting is decided again on the history
+before the record's position, and a new change must hold exactly the
+obligations its rule set calls for.
 
 ## Freshness without constant revocation
 

@@ -201,6 +201,12 @@ pub(super) fn stale_source_line(source: &StaleVerificationSource) -> String {
                 |generation| generation.to_string()
             ),
         ),
+        StaleSourceDecider::MeasuredSighting => format!(
+            "decided by the newest measured sighting after an unadmitted change at run position {}: workspace {}, revision {}; {check}",
+            source.position,
+            field(source.workspace.as_ref()),
+            field(source.revision.as_ref()),
+        ),
     }
 }
 
