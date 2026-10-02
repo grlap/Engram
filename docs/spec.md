@@ -1260,12 +1260,27 @@ authority. Both are separate from a later live multi-writer `Sync` backend.
 
 ### 9.3 Provenance across a mutable source
 
-An import creates immutable `source_snapshot` evidence and a local work
-revision. The local item then evolves independently. An explicit refresh
-creates another snapshot and a proposed revision; it never overwrites local
-priority, graph edges, claims, evidence, or completion. Memories derived from
-mutable external state cite the relevant snapshot id so their basis remains
-reproducible after the source changes or disappears.
+An import stores an immutable source snapshot and creates a local root from
+the caller's explicitly authored draft, citing the snapshot's minted id.
+External status and owner remain source facts, not local lifecycle or
+assignment. The local item then evolves independently.
+
+For an existing source key, an explicit refresh with a changed snapshot
+records an attributed, immutable source-change notice. It captures the new
+snapshot, original citation and local basis seen at capture; it applies no
+local revision and leaves priority, acceptance, graph edges, claims, evidence
+and completion intact. Notices enter the project and root feeds, never run
+evidence, and are not completion obligations. An already cited or previously
+notified snapshot creates no duplicate notice.
+
+The earlier proposed-local-revision model is deliberately superseded:
+accepting such a proposal would synchronize external planning into locally
+owned work. There is no accept-proposal command. Any local change is a
+separate authored revision through `work update`, as the shipped
+[source-intake contract](features/source-intake.md) describes. A notice records
+divergence at capture, not current external state or proof of reconciliation.
+Memories derived from mutable external state cite the relevant snapshot id
+so their basis remains reproducible after the source changes or disappears.
 
 ### 9.4 Adapters & phasing
 
