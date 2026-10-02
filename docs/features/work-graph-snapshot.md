@@ -253,12 +253,23 @@ newest lifecycle transition is disposal must have that terminal lifecycle;
 an older layer or a disposal followed by reopening cannot supply missing
 proof. Any other pairing is a corrupt file. A supersession target may itself
 be disposed later; target liveness is an admission rule, not a perpetual
-snapshot constraint. Every carried text field — titles,
-outcomes, acceptance, details, summaries, gate names, failure labels, refs,
-reasons, actor ids, actor contexts, memory bodies — must already be normalized
-and free of unsafe control/format characters (carried prose admits newlines
-and tabs), while gates, actor attribution, and memory
-bodies also pass their live count and byte bounds. Labels and history refs
+snapshot constraint. A snapshot accepts exactly the text the store holds, byte
+for byte: every carried prose field — titles, outcomes, acceptance, details,
+summaries, refs, reasons — must be non-empty and carry no leading or trailing
+whitespace, as every writer of those fields stores it, and is otherwise carried
+unchanged, terminal controls and format characters included. Terminal safety
+belongs to rendering, which escapes those characters on every read, so save
+and load never refuse text an ordinary write admitted. A memory body keeps the
+whitespace its author wrote and must only be non-blank within its live byte
+bound. Gate history passes the stored gate rules: a non-empty bounded name,
+bounded failure labels in strictly sorted order, a bounded reference, and a
+pass exactly when no failure is recorded. A work-history record's actor needs
+a non-empty actor id and session binding and valid attribution provenance; a
+project-memory version or tombstone actor is held to the attribution
+`remember` and `forget` admit (non-blank, bounded actor, kind, reason and
+session fields and bounded provenance), so a dry run refuses whatever the real
+load would.
+Labels and history refs
 must be sorted and unique; acceptance keeps the order its author typed and must only
 be unique. One failing field refuses
 the whole file as corrupt, because records are stored as written and nothing
@@ -451,7 +462,10 @@ components. The writer does not promise full verbatim-path semantics.
 `--out` chooses another file under the same rules. `--stdout` bypasses file
 publication and emits the artifact JSON directly; it is the explicit pipe form,
 because stdout is a
-disclosure boundary and the default must not cross one. Both words use the
+disclosure boundary and the default must not cross one. In the file and on
+stdout alike, every terminal control or format character inside a string is
+written as a JSON `\u` escape, so the output is inert in a terminal; escaping
+changes no value, since load re-derives the body's canonical bytes. Both words use the
 ordinary `ENGRAM_HOME` / project-file resolution and the same asserted
 attribution as `engram work`. The verbs are deliberately neither
 `import`/`export`, which belong to the designed external-intake and

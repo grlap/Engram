@@ -475,6 +475,26 @@ fn validate_snapshot_audit_actor_shape(actor: &ActorContext) -> Result<(), Strin
     Ok(())
 }
 
+/// The shape every actor a store already holds has: what the work write path
+/// enforces, a non-blank actor and session binding and a valid attribution
+/// context. A historical actor is carried as stored; terminal safety is the
+/// renderer's job, and only the operator who saves or loads a snapshot is held
+/// to the stricter audit shape above.
+fn validate_historical_actor_shape(actor: &ActorContext) -> Result<(), String> {
+    actor
+        .validate_attribution_context()
+        .map_err(str::to_owned)?;
+    if actor.actor_id.trim().is_empty()
+        || actor
+            .session_id
+            .as_ref()
+            .is_none_or(|session| session.0.trim().is_empty())
+    {
+        return Err("a historical actor needs a non-empty actor and session binding".into());
+    }
+    Ok(())
+}
+
 fn validate_snapshot_audit_text(value: &str, label: &str) -> Result<(), String> {
     if value.trim().is_empty()
         || value.len() > MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES

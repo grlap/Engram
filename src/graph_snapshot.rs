@@ -15,6 +15,7 @@ use crate::{
     WorkOrigin, WorkSourceSnapshot, storage::StoreError,
 };
 
+mod container;
 pub(crate) mod json_input;
 
 /// Current pre-release work-graph snapshot schema.

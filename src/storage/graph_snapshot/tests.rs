@@ -3,6 +3,7 @@ use chrono::{Duration, TimeZone};
 mod audit_validation;
 mod input_validation;
 mod memory_revisions;
+mod persisted_text;
 mod redaction;
 mod restored_identity;
 
@@ -882,37 +883,6 @@ fn initial_note_order_survives_snapshot_recreation() {
         .expect("load");
     assert_eq!(read_notes(&destination), notes);
     assert!(destination.verify_all().expect("verify").is_healthy());
-}
-
-#[test]
-fn save_refuses_a_document_that_the_loader_would_reject_before_audit() {
-    let mut store = SqliteStore::open_in_memory().expect("store");
-    let project = ProjectId("snapshot-self-validation".into());
-    create_root(
-        &mut store,
-        &project,
-        "Unsafe\u{202e}title",
-        "unsafe-history-shape",
-    );
-
-    let error = store
-        .save_work_graph_snapshot(
-            &project,
-            &actor("save-session"),
-            None,
-            WorkGraphSnapshotDestinationKind::Stdout,
-            at(3),
-            &DevelopmentNoopRedactor,
-        )
-        .expect_err("save must not disclose a snapshot its loader rejects");
-    assert!(
-        matches!(error, StoreError::InvalidGraphSnapshot(message) if message.contains("work title"))
-    );
-    let (count, audits) = store
-        .recent_work_graph_snapshot_save_audits(&project, 8)
-        .expect("read disclosure audit");
-    assert_eq!(count, 0);
-    assert!(audits.is_empty(), "{audits:?}");
 }
 
 #[test]

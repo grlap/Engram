@@ -87,8 +87,7 @@ fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
                 destination_kind,
                 chrono::Utc::now(),
             )?;
-            let mut bytes = serde_json::to_vec_pretty(&export.document)?;
-            bytes.push(b'\n');
+            let bytes = export.document.container_bytes()?;
 
             // All notices are deliberately delayed until the disclosure audit
             // above has committed. A failed audit therefore prints no bytes.

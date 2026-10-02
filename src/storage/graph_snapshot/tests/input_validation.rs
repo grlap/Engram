@@ -642,14 +642,16 @@ fn load_refuses_incompatible_and_corrupt_documents_without_partial_state() {
     else {
         panic!("source save must contain a native history layer");
     };
+    // A gate that claims to pass while naming a failure is inconsistent in
+    // any build; spacing alone is a stored shape the gate contract keeps.
     history.notes.push(crate::WorkGraphSnapshotNote {
         evidence_kind: crate::WorkEvidenceKind::Generic,
-        summary: "invalid unnormalized gate".into(),
+        summary: "inconsistent gate".into(),
         refs: Vec::new(),
         gate: Some(crate::WorkGraphSnapshotGate {
-            name: " Cargo Test ".into(),
+            name: "cargo-test".into(),
             passed: true,
-            failed: Vec::new(),
+            failed: vec!["a failure".into()],
             evidence_ref: None,
         }),
         actor: actor("gate-session"),

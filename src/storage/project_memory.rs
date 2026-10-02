@@ -855,7 +855,12 @@ fn validated_project_memory_actor<R: Redactor>(
     Ok(validated)
 }
 
-fn validate_project_memory_actor_shape(actor: &ActorContext) -> Result<(), StoreError> {
+/// The attribution every stored project-memory version, assertion and
+/// tombstone carries: what remember and forget admit, and what a snapshot of
+/// those records must therefore hold.
+pub(in crate::storage) fn validate_project_memory_actor_shape(
+    actor: &ActorContext,
+) -> Result<(), StoreError> {
     actor.validate_attribution_context().map_err(|detail| {
         StoreError::InvalidProjectMemory(format!(
             "project-memory attribution has invalid actor context: {detail}"

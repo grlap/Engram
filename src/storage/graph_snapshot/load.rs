@@ -16,10 +16,7 @@ use crate::{
     WorkGraphSnapshotLoadedEvent, WorkGraphSnapshotMemoryState, WorkGraphSnapshotRecordPayload,
     WorkGraphSnapshotRedactedCounts, WorkGraphSnapshotText, WorkId, WorkItem, WorkLifecycle,
     WorkOrigin, WorkSourceSnapshot,
-    domain::{
-        MAX_PROJECT_MEMORY_BODY_BYTES, MemoryAssertionEvent, SourceSnapshot,
-        normalize_gate_evidence_input,
-    },
+    domain::{MAX_PROJECT_MEMORY_BODY_BYTES, MemoryAssertionEvent, SourceSnapshot},
     graph_snapshot::preflight_work_graph_snapshot_build,
     parse_work_graph_snapshot_document, work_graph_snapshot_format_fingerprint,
 };
@@ -818,18 +815,17 @@ fn validate_history(
             if note.evidence_kind != crate::WorkEvidenceKind::Generic {
                 return Err(corrupt("typed gate is not generic work evidence"));
             }
-            let normalized = normalize_gate_evidence_input(
+            // A stored gate is checked against the stored-gate contract, not
+            // re-normalized as live input: an older build stored what it
+            // stored.
+            crate::domain::validate_stored_gate_evidence_fields(
                 &gate.name,
                 &gate.failed,
                 gate.evidence_ref.as_deref(),
             )
-            .map_err(|_| corrupt("gate fields do not satisfy the live input contract"))?;
-            if normalized.name != gate.name
-                || normalized.failed != gate.failed
-                || normalized.evidence_ref != gate.evidence_ref
-                || gate.passed != gate.failed.is_empty()
-            {
-                return Err(corrupt("gate fields are not canonical and consistent"));
+            .map_err(corrupt)?;
+            if gate.passed != gate.failed.is_empty() {
+                return Err(corrupt("gate fields are not consistent"));
             }
         }
     }
@@ -1043,11 +1039,18 @@ fn validate_memories(document: &WorkGraphSnapshotDocument) -> Result<(), StoreEr
                         "retired project memory must carry no version bodies",
                     ));
                 }
-                validate_actor(actor)?;
+                validate_memory_actor(actor)?;
             }
         }
     }
     Ok(())
+}
+
+/// A project-memory record's actor, held to the attribution remember and
+/// forget admit, so a dry run refuses whatever the real load would.
+fn validate_memory_actor(actor: &ActorContext) -> Result<(), StoreError> {
+    super::super::project_memory::validate_project_memory_actor_shape(actor)
+        .map_err(|error| corrupt(error.to_string()))
 }
 
 /// A clear marker records the removal of a target in force, as the live store
@@ -1093,7 +1096,7 @@ fn validate_memory_body(
     actor: &ActorContext,
     widened: bool,
 ) -> Result<(), StoreError> {
-    validate_actor(actor)?;
+    validate_memory_actor(actor)?;
     match body {
         WorkGraphSnapshotText::Present { value } => {
             if sensitivity == Sensitivity::Restricted && !widened {
@@ -1101,7 +1104,11 @@ fn validate_memory_body(
                     "restricted memory plaintext requires a widened snapshot",
                 ));
             }
-            validate_text(value, "project-memory body")?;
+            // A memory body keeps the whitespace its author wrote; the writer
+            // refuses only a blank one.
+            if value.trim().is_empty() {
+                return Err(corrupt("project-memory body is blank"));
+            }
             if value.len() > MAX_PROJECT_MEMORY_BODY_BYTES {
                 return Err(corrupt("project-memory body exceeds the live limit"));
             }
@@ -1116,20 +1123,18 @@ fn validate_memory_body(
     Ok(())
 }
 
+/// A historical record's actor, checked for the shape the store guarantees.
 fn validate_actor(actor: &ActorContext) -> Result<(), StoreError> {
-    validate_snapshot_audit_actor_shape(actor).map_err(corrupt)
+    super::validate_historical_actor_shape(actor).map_err(corrupt)
 }
 
+/// Persisted prose as every writer of these fields stores it: trimmed and
+/// non-empty. The bytes are carried exactly as stored, controls included;
+/// terminal safety belongs to rendering, which escapes them on every read,
+/// so a snapshot never refuses text the store already holds.
 fn validate_text(value: &str, label: &str) -> Result<(), StoreError> {
-    if value.is_empty()
-        || value.trim() != value
-        || value
-            .chars()
-            .any(|ch| ch != '\n' && ch != '\t' && crate::domain::is_unsafe_rendered_text_char(ch))
-    {
-        return Err(corrupt(format!(
-            "{label} is empty, unnormalized, or unsafe"
-        )));
+    if value.is_empty() || value.trim() != value {
+        return Err(corrupt(format!("{label} is empty or unnormalized")));
     }
     Ok(())
 }

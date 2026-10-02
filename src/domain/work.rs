@@ -859,7 +859,9 @@ impl GateEvidenceRecord {
     }
 }
 
-fn validate_stored_gate_evidence_fields(
+/// The shape a stored gate keeps: bounded, non-empty fields and strictly
+/// sorted failures, without re-running live input normalization.
+pub(crate) fn validate_stored_gate_evidence_fields(
     name: &str,
     failed: &[String],
     evidence_ref: Option<&str>,
