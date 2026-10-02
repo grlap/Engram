@@ -1222,7 +1222,11 @@ async fn run_cli() -> Result<ExitCode> {
         Command::Backup {
             operation: Some(operation),
             ..
-        } => bin_support::backup_target::run(&database, &project_id, operation)?,
+        } => {
+            if !bin_support::backup_target::run(&database, &project_id, operation)? {
+                return Ok(ExitCode::FAILURE);
+            }
+        }
         Command::Restore { from, replace } => restore(&database, &from, replace)?,
         Command::Graph {
             actor_id,

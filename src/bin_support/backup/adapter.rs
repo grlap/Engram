@@ -99,6 +99,8 @@ pub(crate) enum AdapterError {
     CopyInvalid { path: PathBuf, reason: String },
     #[error("{} took longer than its deadline of {deadline:?}", path.display())]
     Deadline { path: PathBuf, deadline: Duration },
+    #[error("preparing {} took longer than the capture's deadline", path.display())]
+    PrepareDeadline { path: PathBuf },
     #[error("{} could not be read or written: {source}", path.display())]
     Io {
         path: PathBuf,
@@ -122,6 +124,7 @@ impl AdapterError {
             Self::Exists { .. } => "backup_copy_exists",
             Self::CopyInvalid { .. } => "backup_copy_invalid",
             Self::Deadline { .. } => "backup_transport_deadline",
+            Self::PrepareDeadline { .. } => "backup_capture_deadline",
             Self::Io { .. } => "backup_io",
         }
     }

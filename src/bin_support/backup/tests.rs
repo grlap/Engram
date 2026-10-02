@@ -1035,3 +1035,17 @@ fn a_cleanup_that_fails_is_reported_beside_the_failure() {
     assert!(text.contains("could not be removed"), "{text}");
     assert!(stuck.is_dir());
 }
+
+#[test]
+fn preparing_stops_at_its_deadline_and_leaves_no_stored_file() {
+    let fixture = fixture();
+    let adapter = adapter(&fixture.root, &plenty);
+    let bytes = incompressible(1 << 20);
+    let (path, capture) = artifact(fixture.home.path(), "late", &bytes, 10);
+    let error = adapter
+        .prepare_until(&path, &capture, uuid::Uuid::now_v7(), Instant::now())
+        .unwrap_err();
+    assert_eq!(error.code(), "backup_capture_deadline", "{error}");
+    // Only the staged copy is left in its stage.
+    assert_eq!(names(path.parent().unwrap()), ["store.db"]);
+}

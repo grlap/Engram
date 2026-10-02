@@ -1437,6 +1437,58 @@ removed, and a lock file that cannot be opened or locked, is `backup_io`.
 `show` on a clean home prints that no target is configured. See
 [off-host backup](off-host-backup.md#configuration).
 
+`backup push [--kind store] [--json]` is an operator word too. For each
+configured kind it takes the kind's push lock and brings the copy at its
+target up to date, in the steps of [off-host backup](off-host-backup.md#push).
+It first resolves an attempt an earlier push left pending: a copy the target
+confirms becomes the newest receipt, one that never arrived is dropped and
+only its own recorded files are removed, and one recorded for another target
+identity is set aside as history with nothing at either target touched. It
+then captures a verified store copy into a local stage under the home. The
+upload is skipped only when the newest receipt names the configured target's
+identity and the capture's format identity and SHA-256, and the target
+confirms that copy now; the capture's start is then recorded as the time the
+store's content was last observed in it. Otherwise the attempt is recorded as
+pending, with its complete manifest, target identity and data file names,
+before the gzip copy is put and read back, and its receipt then becomes the
+newest. The stage is removed at the end, and a stage a push could not remove
+is removed by the next one before it captures: only a directory a capture
+created, never a link, and in it only the files a push writes.
+
+Capture and transport have separate deadlines, `--capture-deadline-secs`
+(900 by default, for the local copy and the compressed file prepared from
+it) and `--transport-deadline-secs` (1800 by default, for every request to
+the target together). A request to the target runs on a worker thread, and
+one with no time left is not started; when its deadline passes, the push
+records the failure with the attempt still pending, keeps the push lock, and
+ends its process with exit 1, which is how a request stalled inside the
+operating system is cancelled; the lock is released only by that end. Push is therefore a
+CLI process by design and must not be run in-process inside a long-lived
+server. A read stuck in the kernel on a hung share can delay that process
+exit, as it would delay any process's end. A copy the target completed after
+the deadline is found by the next push and recorded as confirmed.
+
+Push exits 0 when it uploaded a copy, found the store unchanged, found no
+target configured (it says so and creates nothing) or found another push
+holding the lock (it says so and captures nothing). It exits 1 when it failed,
+and prints the typed code: `backup_stage_no_space`,
+`backup_stage_space_unknown` and `backup_capture_deadline` from the capture,
+a store refusal such as `store_not_initialized`, `backup_target_unreachable`,
+`backup_target_no_space`, `backup_target_space_unknown`,
+`backup_copy_invalid`, `backup_copy_exists` and `backup_io` from the put,
+`backup_target_unconfirmed` when the target cannot say whether it holds an
+unchanged copy, `backup_pending_unresolved` when it cannot say what became of
+a pending attempt, `backup_transport_deadline`, and
+`backup_record_unreadable` for records this build cannot use. A failed push
+leaves the previous receipt and the previous copy at the target as they were,
+advances no time, and records the attempt's start, end, outcome, code and
+message as the last attempt. `--json` prints the project and, per kind, the
+outcome (`uploaded`, `unchanged`, `not_configured`, `busy` or `failed`), the
+code and message, the target identity, the newest receipt with its manifest,
+the time the content was last observed in that copy, the copies it
+recovered, dropped, set aside or left pending, warnings and the elapsed
+milliseconds.
+
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence
 attribution contract.

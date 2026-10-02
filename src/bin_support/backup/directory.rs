@@ -78,14 +78,32 @@ impl<'a> DirectoryAdapter<'a> {
         self
     }
 
-    /// Compresses a captured `artifact` into the local stage beside it and
-    /// returns the attempt the caller records before `put`, with its complete
-    /// manifest, and the stored file `put` takes.
+    /// [`Self::prepare_until`] with time enough for any test artifact.
+    #[cfg(test)]
     pub(crate) fn prepare(
         &self,
         artifact: &Path,
         capture: &CaptureManifest,
         attempt_id: uuid::Uuid,
+    ) -> Result<(Attempt, PathBuf), AdapterError> {
+        self.prepare_until(
+            artifact,
+            capture,
+            attempt_id,
+            Instant::now() + Duration::from_secs(3600),
+        )
+    }
+
+    /// Compresses a captured `artifact` into the local stage beside it and
+    /// returns the attempt the caller records before `put`, with its complete
+    /// manifest, and the stored file `put` takes. The compression stops at
+    /// `until`, checked between reads, and then removes its stored file.
+    pub(crate) fn prepare_until(
+        &self,
+        artifact: &Path,
+        capture: &CaptureManifest,
+        attempt_id: uuid::Uuid,
+        until: Instant,
     ) -> Result<(Attempt, PathBuf), AdapterError> {
         let copy = copy_name(capture.capture_started_at, attempt_id);
         let stored = artifact.with_file_name(data_name(&copy));
@@ -93,7 +111,10 @@ impl<'a> DirectoryAdapter<'a> {
             let path = path.to_path_buf();
             move |source| AdapterError::Io { path, source }
         };
-        let mut input = BufReader::new(File::open(artifact).map_err(io_at(artifact))?);
+        let mut input = UntilReader {
+            inner: BufReader::new(File::open(artifact).map_err(io_at(artifact))?),
+            until,
+        };
         let output = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -108,10 +129,23 @@ impl<'a> DirectoryAdapter<'a> {
                 .map_err(io::IntoInnerError::into_error)?;
             file.sync_all()
         })();
+        let written = written.and_then(|()| {
+            if Instant::now() >= until {
+                Err(io::Error::new(io::ErrorKind::TimedOut, "past the deadline"))
+            } else {
+                Ok(())
+            }
+        });
         if let Err(source) = written {
-            let error = AdapterError::Io {
-                path: stored.clone(),
-                source,
+            let error = if source.kind() == io::ErrorKind::TimedOut {
+                AdapterError::PrepareDeadline {
+                    path: stored.clone(),
+                }
+            } else {
+                AdapterError::Io {
+                    path: stored.clone(),
+                    source,
+                }
             };
             return Err(with_cleanup(error, &stored));
         }
@@ -675,6 +709,22 @@ impl BackupAdapter for DirectoryAdapter<'_> {
                 })
         })();
         written.map_err(|error| with_cleanup(error, destination))
+    }
+}
+
+/// A reader that fails as timed out once `until` has passed, checked before
+/// each read.
+struct UntilReader<R> {
+    inner: R,
+    until: Instant,
+}
+
+impl<R: Read> Read for UntilReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if Instant::now() >= self.until {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "past the deadline"));
+        }
+        self.inner.read(buffer)
     }
 }
 

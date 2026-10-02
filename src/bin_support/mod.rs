@@ -5,7 +5,7 @@ pub(crate) mod attribution;
     not(test),
     expect(
         dead_code,
-        reason = "no operator word calls the adapter until `backup push`"
+        reason = "listing and getting copies serve restore, which no word calls yet"
     )
 )]
 pub(crate) mod backup;

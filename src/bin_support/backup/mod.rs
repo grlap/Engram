@@ -5,6 +5,7 @@
 
 pub(crate) mod adapter;
 pub(crate) mod directory;
+pub(crate) mod push;
 
 #[cfg(test)]
 mod tests;

@@ -1,8 +1,11 @@
-//! The operator `backup target` words: set, show and clear a project's
-//! backup targets. They read and write only the records under the Engram
-//! home and never open the store.
+//! The operator `backup target` words, which set, show and clear a project's
+//! backup targets and read and write only the records under the Engram home,
+//! and `backup push`, which brings each configured kind's copy up to date.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::{Result, anyhow};
 use chrono::Utc;
@@ -18,14 +21,36 @@ use engram::{
 };
 use serde_json::json;
 
-use super::graph::engram_home_and_project_digest;
+use super::{
+    backup::push::{
+        DEFAULT_CAPTURE_DEADLINE, DEFAULT_TRANSPORT_DEADLINE, KindReport, Outcome, PushSettings,
+        push,
+    },
+    graph::engram_home_and_project_digest,
+};
 
-/// The words that manage backup records rather than write a copy.
+/// The words that manage backup targets and push copies to them.
 #[derive(clap::Subcommand, Debug)]
 pub(crate) enum BackupCommand {
     /// Configure, show or clear where this project's copies go.
     #[command(subcommand)]
     Target(TargetCommand),
+    /// Capture the store and bring the copy at each configured target up to
+    /// date. Exits 0 when nothing is configured or another push is running,
+    /// and 1 when a push failed.
+    Push {
+        /// Push only this kind; every configured kind by default.
+        #[arg(long, value_enum)]
+        kind: Option<KindArg>,
+        #[arg(long)]
+        json: bool,
+        /// Seconds the capture may take.
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_CAPTURE_DEADLINE.as_secs())]
+        capture_deadline_secs: u64,
+        /// Seconds the requests to the target may take together.
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_TRANSPORT_DEADLINE.as_secs())]
+        transport_deadline_secs: u64,
+    },
 }
 
 /// The target words.
@@ -94,9 +119,47 @@ impl From<AdapterArg> for AdapterKind {
     }
 }
 
-pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) -> Result<()> {
+/// Runs a backup word. Returns whether it succeeded; a push that failed has
+/// already printed its report.
+pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) -> Result<bool> {
     let (home, _) = engram_home_and_project_digest(database)?;
-    let BackupCommand::Target(command) = command;
+    let command = match command {
+        BackupCommand::Target(command) => command,
+        BackupCommand::Push {
+            kind,
+            json,
+            capture_deadline_secs,
+            transport_deadline_secs,
+        } => {
+            let settings = PushSettings::new(
+                Duration::from_secs(capture_deadline_secs),
+                Duration::from_secs(transport_deadline_secs),
+            );
+            let kinds = kind.map_or_else(|| CopyKind::ALL.to_vec(), |kind| vec![kind.into()]);
+            let mut reports = Vec::new();
+            let mut abandoned = None;
+            for kind in kinds {
+                let run = push(home, project, kind, &settings);
+                reports.push(run.report);
+                if run.abandoned.is_some() {
+                    // No further kind is pushed while a worker may still run.
+                    abandoned = run.abandoned;
+                    break;
+                }
+            }
+            print_push(project, &reports, json)?;
+            if let Some(abandoned) = abandoned {
+                // A request to the target passed its deadline and may still be
+                // running. Ending the process is what stops it, and the push
+                // lock is held until then.
+                let _held = abandoned;
+                std::process::exit(1);
+            }
+            return Ok(reports
+                .iter()
+                .all(|report| report.outcome != Outcome::Failed));
+        }
+    };
     match command {
         TargetCommand::Set {
             kind,
@@ -156,6 +219,59 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
             } else {
                 println!("No {} backup target was configured.", kind.as_str());
             }
+        }
+    }
+    Ok(true)
+}
+
+fn print_push(project: &ProjectId, reports: &[KindReport], json: bool) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "project": project.0,
+                "kinds": reports,
+            }))?
+        );
+        return Ok(());
+    }
+    for report in reports {
+        let kind = report.kind.as_str();
+        match report.outcome {
+            Outcome::NotConfigured => {
+                println!("No {kind} backup target is configured for this project.");
+            }
+            Outcome::Busy => println!("{kind}: another push is running; nothing was done."),
+            Outcome::Uploaded | Outcome::Unchanged => {
+                let verb = if report.outcome == Outcome::Uploaded {
+                    "copy put and read back"
+                } else {
+                    "unchanged; the newest copy was confirmed"
+                };
+                let copy = report
+                    .receipt
+                    .as_ref()
+                    .map_or("", |receipt| receipt.manifest.copy.as_str());
+                println!("{kind}: {verb}: {copy}");
+            }
+            Outcome::Failed => println!(
+                "{kind}: push failed: {}: {}",
+                report.code.as_deref().unwrap_or("backup_io"),
+                report.message.as_deref().unwrap_or("")
+            ),
+        }
+        for (label, copy) in [
+            ("recovered pending copy", &report.recovered),
+            ("dropped pending attempt", &report.dropped),
+            ("set aside attempt for another target", &report.set_aside),
+            ("attempt left pending", &report.pending),
+        ] {
+            if let Some(copy) = copy {
+                println!("  {label}: {copy}");
+            }
+        }
+        for warning in &report.warnings {
+            println!("  warning: {warning}");
         }
     }
     Ok(())
