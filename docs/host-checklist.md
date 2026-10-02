@@ -19,6 +19,101 @@ their work: TermAl today, an external planner and coordinator tomorrow. The
 base tier below is the whole integration for an advisory pilot. Nothing in
 it requires the host to mediate turns or actions.
 
+## Before upgrading: cut over each store
+
+Installing a build does not make an existing store usable by that build.
+Running consumers keep their loaded executable until they restart. Inventory
+every live project store and every consumer of each store before upgrading;
+a successful check on one project says nothing about another.
+
+First classify the changeset, then run the new build's
+[`readiness --json`](features/host-readiness.md) for each store, using its
+explicit absolute home and project file. Readiness checks schema and policy
+admission; it cannot decide whether a changed derivation needs rebuilding.
+
+| Change | Required action for each existing store |
+| --- | --- |
+| No durable-row or projection change, and readiness reports ready | Replace the executable, retaining the old binary as a backup. Existing consumers continue on their loaded build until their restart. |
+| Only the derivation or schema of a declared rebuildable projection changes | Treat the store as requiring explicit projection repair, even if readiness reports ready. Quiesce its consumers, repair with the new build, and restart every consumer of that store on the new build. |
+| Existing durable rows change shape or meaning, or the new build retires a schema object | Follow [full-store migration](features/full-store-migration.md) for every live store, including the named import conversion, whatever readiness reports. A `different_build_schema` refusal requires that migration too. |
+
+A `projection_repair_required` result takes the repair path even when no
+projection change was expected. Any other readiness refusal stops the upgrade
+for that store: follow [readiness refusals](features/host-readiness.md#refusals),
+without silently initializing, repairing or retrying until it opens.
+
+The host operator owns the cutover: identify and quiesce all consumers of the
+selected store, including long-lived MCP children, host control processes,
+agents and CLI activity; then restart every consumer against the selected
+store with the new executable after verification. Installation does not
+restart those processes. For this repository, consult
+[Authority and Git](../AGENTS.md#authority-and-git) for installation and
+restart authority. Engram's coordinator sends TermAl restart requests to the
+Advisor with the build fingerprint and reason. Agents keep working while
+that request is pending: do not hold a landing window, stop consumers or
+pause proactively. The interruption happens when Greg performs the reset;
+recover mailboxes, gates and reviews afterward, and recover or rerun work
+the reset interrupted.
+
+Until the actual cutover, stores awaiting repair or migration keep serving
+their existing older consumers. Do not start new-build consumers on those stores or
+restart an old consumer onto the new binary prematurely. Other stores may
+be cut over separately; if the host reset affects several stores, coordinate
+all of their consumers in that reset.
+
+Once the installed executable is replaced, every process launched from that
+path uses the new build: CLI words, startup `next --peek` hooks and new MCP
+children alike. For every store not yet cut over, whether awaiting repair
+or migration, route those interim launches
+explicitly to the retained old executable. If the host cannot do that, refuse
+the new-build launches for that store and disclose the access gap; do not
+assume ordinary open will refuse a same-schema change to projection
+derivation or durable-row shape or meaning. Existing old
+consumers keep working. A `projection_repair_required` refusal during this
+interval is not permission to repair early: keep repair inside the authorized,
+quiesced cutover. Migration likewise stays in its coordinated window.
+Readiness probes with the new build remain read-only.
+
+For a projection repair at the coordinated cutover:
+
+1. Quiesce that store's consumers and prevent automatic reconnection. With
+   the old build, record the readiness and `doctor --json` receipts, and
+   selected work-item and project-memory ids, bodies, attribution and feed
+   positions for semantic read-back. Retain the old executable and a verified,
+   consistent pre-repair backup made with the build that still opens the
+   store; the new build may refuse it before repair. Keep a private copy of
+   the new executable fixed throughout repair.
+2. Run that executable explicitly for **each** selected store:
+
+   ```text
+   NEW_ENGRAM --home ABSOLUTE_HOME --project-file PROJECT_FILE doctor --repair-projections
+   NEW_ENGRAM --home ABSOLUTE_HOME --project-file PROJECT_FILE readiness --json
+   ```
+
+   Substitute the executable and project paths for that store. Ordinary open
+   never repairs automatically; repair rebuilds only declared rebuildable
+   objects and verifies integrity before commit. A durable-schema refusal
+   calls for migration, not initialization or a repair retry.
+3. Check the repair result and read back the retained pre-cutover baselines
+   before resuming ordinary writes, accounting for the expected new build,
+   schema and documented projection or delivery resets. If semantic read-back
+   differs or is incomplete,
+   preserve the repaired store as evidence before considering rollback.
+4. Reconnect every consumer of that store on the new build, verify its build
+   and store identity, and resume ordinary writes only after cutover
+   acceptance.
+
+Repair that changes projection DDL is one-way **in place**: older builds
+refuse the repaired store. A same-schema derivation repair still needs the
+explicit rebuild and consumer cutover, although an older build can open it.
+If an older build reports `projection_repair_required` after cutover, do not
+run repair with that build: it could revert the projection in place.
+Restoring the pre-repair backup with the old build is the rollback, not an
+in-place downgrade. Restore requires fresh quiescence and replaces the
+captured store state; it does not merge later writes. Keep ordinary writes
+stopped through read-back and acceptance. Once writes resume, reconcile any
+later discrepancy instead of restoring over new work.
+
 ## Base tier — advisory
 
 Use [`engram readiness --json`](features/host-readiness.md) for fast, scoped
@@ -365,11 +460,12 @@ Do not experiment on live work or repair an unexpected store automatically.
 
 ## Version story
 
-There is exactly one: a store written by a different build is refused
-generically before mutation, and `session_bind` carries the host's
+Ordinary opening refuses incompatible store schemas before mutation, and
+`session_bind` carries the host's
 `capability_map_revision`. Engram negotiates no protocol features or
-versions; a host pins the build it ships with and re-initializes stores
-through the recreation path in [development](development.md).
+versions; a host pins the build it ships with and follows the
+[per-store cutover](#before-upgrading-cut-over-each-store) above for an
+existing store. Initialization is for a new store, not an upgrade remedy.
 `session_bind` belongs to the optional host-private control channel; the
 advisory MCP-and-hooks recipe does not require that channel.
 
