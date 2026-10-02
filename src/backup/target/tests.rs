@@ -10,7 +10,8 @@ use super::*;
 use crate::backup::{
     CaptureManifest,
     record::{
-        Acknowledgement, AttemptOutcome, Encoding, OffHost, STORED_FORMAT_VERSION, StoredManifest,
+        Acknowledgement, AttemptOutcome, CopyConfirmed, CopyMissing, CopyRef, Encoding, OffHost,
+        STORED_FORMAT_VERSION, StoredManifest,
     },
 };
 use crate::test_support::temp_home;
@@ -505,6 +506,15 @@ fn full_state(own: &ObjectId, identity: &ObjectId) -> TargetState {
             code: Some("backup_target_unreachable".into()),
             message: Some("the target cannot be reached".into()),
         }),
+        last_confirmation: Some(CopyConfirmed {
+            copy: CopyRef::of(&receipt(identity, 20)),
+            at: at(25),
+        }),
+        missing_copy: Some(CopyMissing {
+            copy: CopyRef::of(&receipt(identity, 20)),
+            at: at(26),
+            reason: "the stored file is not at the target".into(),
+        }),
         receipts: vec![receipt(identity, 10), receipt(identity, 20)],
         set_aside: vec![attempt(identity, 5)],
     }
@@ -715,6 +725,8 @@ fn a_state_missing_any_field_is_refused_rather_than_read_as_empty() {
         "observed_equal_at",
         "pending",
         "last_attempt",
+        "last_confirmation",
+        "missing_copy",
         "receipts",
         "set_aside",
     ] {
@@ -748,6 +760,8 @@ fn a_state_missing_any_field_is_refused_rather_than_read_as_empty() {
         "observed_equal_at",
         "pending",
         "last_attempt",
+        "last_confirmation",
+        "missing_copy",
     ] {
         empty[field] = serde_json::Value::Null;
     }
@@ -774,4 +788,82 @@ fn target_set_refuses_rather_than_discards_a_state_it_cannot_read_at_all() {
     assert_eq!(error.code(), "backup_io", "{error}");
     assert!(paths.state.is_dir());
     assert_eq!(std::fs::read(&paths.config).unwrap(), config);
+}
+
+#[test]
+fn evidence_that_names_another_copy_than_the_newest_receipt_s_is_refused() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let view = set_target(home.path(), &project(), &request(), at(0)).unwrap();
+    let lock = PushLock::try_acquire(&paths).unwrap();
+    let older = CopyRef::of(&receipt(&view.identity, 10));
+    let cases: Vec<(&str, TargetState)> = vec![
+        ("confirmation of an older copy", {
+            let mut state = full_state(&view.identity, &view.identity);
+            state.last_confirmation.as_mut().unwrap().copy = older.clone();
+            state
+        }),
+        ("missing finding about an older copy", {
+            let mut state = full_state(&view.identity, &view.identity);
+            state.missing_copy.as_mut().unwrap().copy = older.clone();
+            state
+        }),
+        ("evidence with no newest receipt", {
+            let mut state = full_state(&view.identity, &view.identity);
+            state.newest_receipt = None;
+            state
+        }),
+    ];
+    for (label, state) in cases {
+        write_state(&paths, &lock, &state).unwrap();
+        let error = read_for_push(&paths, &project(), CopyKind::Store, &lock).unwrap_err();
+        assert_eq!(error.code(), "backup_record_unreadable", "{label}: {error}");
+        assert!(
+            error.to_string().contains("newest receipt"),
+            "{label}: {error}"
+        );
+    }
+    // Evidence that names the newest receipt's copy is read back as written.
+    let good = full_state(&view.identity, &view.identity);
+    write_state(&paths, &lock, &good).unwrap();
+    assert_eq!(
+        read_for_push(&paths, &project(), CopyKind::Store, &lock)
+            .unwrap()
+            .unwrap()
+            .state,
+        good
+    );
+}
+
+#[test]
+fn recording_a_receipt_confirms_it_and_clears_an_earlier_missing_finding() {
+    let identity = ObjectId::from_canonical_bytes(b"a target");
+    let mut state = TargetState::empty(identity.clone());
+    let first = receipt(&identity, 10);
+    state.record_receipt(first.clone(), at(9));
+    assert_eq!(state.newest_receipt.as_ref(), Some(&first));
+    assert_eq!(state.observed_equal_at, Some(at(9)));
+    assert_eq!(
+        state.last_confirmation,
+        Some(CopyConfirmed {
+            copy: CopyRef::of(&first),
+            at: first.at,
+        })
+    );
+    state.mark_newest_missing(at(30), "gone".into());
+    assert_eq!(
+        state.missing_copy.as_ref().unwrap().copy,
+        CopyRef::of(&first)
+    );
+    // The last confirmation stays as recorded beside the finding.
+    assert_eq!(state.last_confirmation.as_ref().unwrap().at, first.at);
+    state.confirm_newest(at(40));
+    assert_eq!(state.missing_copy, None);
+    assert_eq!(state.last_confirmation.as_ref().unwrap().at, at(40));
+    state.mark_newest_missing(at(50), "gone".into());
+    let second = receipt(&identity, 60);
+    state.record_receipt(second.clone(), at(59));
+    assert_eq!(state.missing_copy, None);
+    assert_eq!(state.last_confirmation.unwrap().copy, CopyRef::of(&second));
+    assert_eq!(state.receipts, [first, second]);
 }

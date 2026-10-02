@@ -1448,7 +1448,10 @@ then captures a verified store copy into a local stage under the home. The
 upload is skipped only when the newest receipt names the configured target's
 identity and the capture's format identity and SHA-256, and the target
 confirms that copy now; the capture's start is then recorded as the time the
-store's content was last observed in it. Otherwise the attempt is recorded as
+store's content was last observed in it, and the confirmation's time as the
+copy's last confirmation. When the target reports that copy missing, the
+finding is recorded before a replacement is prepared, so it stands even if the
+replacement fails. Otherwise the attempt is recorded as
 pending, with its complete manifest, target identity and data file names,
 before the gzip copy is put and read back, and its receipt then becomes the
 newest. Once that receipt is recorded, and only after a push that did not

@@ -10,7 +10,7 @@ use engram::{
     LocalWorkService, ObjectId, ProjectId, SessionId, SqliteStore,
     backup::{
         CopyKind,
-        record::{Attempt, AttemptOutcome},
+        record::{Attempt, AttemptOutcome, CopyConfirmed, CopyRef},
         target::{
             AdapterKind, PushLock, RecordPaths, TargetRequest, TargetState, TargetView,
             read_for_push, set_target, write_state,
@@ -205,6 +205,15 @@ fn a_push_puts_a_copy_and_records_its_receipt_then_confirms_an_unchanged_store()
         state.observed_equal_at,
         Some(receipt.manifest.capture.capture_started_at)
     );
+    // The upload is the copy's first confirmation, of this very copy.
+    assert_eq!(
+        state.last_confirmation,
+        Some(CopyConfirmed {
+            copy: CopyRef::of(&receipt),
+            at: receipt.at,
+        })
+    );
+    assert_eq!(state.missing_copy, None);
     let last = state.last_attempt.clone().unwrap();
     assert_eq!(last.outcome, AttemptOutcome::Uploaded);
     assert_eq!((last.code, last.message), (None, None));
@@ -231,6 +240,11 @@ fn a_push_puts_a_copy_and_records_its_receipt_then_confirms_an_unchanged_store()
     assert_eq!(after.newest_receipt.as_ref(), Some(&receipt));
     assert_eq!(after.receipts, std::slice::from_ref(&receipt));
     assert!(after.observed_equal_at > state.observed_equal_at);
+    // The equal capture's confirmation is recorded for the same copy.
+    let confirmed = after.last_confirmation.clone().unwrap();
+    assert_eq!(confirmed.copy, CopyRef::of(&receipt));
+    assert!(confirmed.at > receipt.at);
+    assert_eq!(after.missing_copy, None);
     assert_eq!(
         after.last_attempt.unwrap().outcome,
         AttemptOutcome::Unchanged
@@ -265,6 +279,8 @@ fn a_pending_copy_that_arrived_is_recorded_as_confirmed_without_being_put_again(
     });
     state.newest_receipt = None;
     state.observed_equal_at = None;
+    state.last_confirmation = None;
+    state.missing_copy = None;
     state.receipts.clear();
     fixture.write(&state);
     // The source changes before the next push.
@@ -285,6 +301,12 @@ fn a_pending_copy_that_arrived_is_recorded_as_confirmed_without_being_put_again(
     let after = fixture.state();
     assert_eq!(after.receipts[0].manifest, receipt.manifest);
     assert_eq!(after.receipts[0].target_identity, receipt.target_identity);
+    // Recovered and confirmed, then replaced by the changed store's copy:
+    // the confirmation follows the newest receipt.
+    assert_eq!(
+        after.last_confirmation.as_ref().unwrap().copy,
+        CopyRef::of(after.newest_receipt.as_ref().unwrap())
+    );
     // The changed store was then captured and put as a copy of its own.
     assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
     assert_eq!(after.receipts.len(), 2);
@@ -714,6 +736,8 @@ fn a_confirmed_recovery_stands_when_the_capture_after_it_fails() {
     });
     state.newest_receipt = None;
     state.observed_equal_at = None;
+    state.last_confirmation = None;
+    state.missing_copy = None;
     state.receipts.clear();
     fixture.write(&state);
 
@@ -724,7 +748,14 @@ fn a_confirmed_recovery_stands_when_the_capture_after_it_fails() {
     assert_eq!(run.report.code.as_deref(), Some("backup_stage_no_space"));
     assert_eq!(run.report.recovered.as_deref(), Some(copy.as_str()));
     let after = fixture.state();
-    assert_eq!(after.newest_receipt.unwrap().manifest, receipt.manifest);
+    // The recovered copy is the newest, confirmed now, with no finding.
+    let recovered = after.newest_receipt.clone().unwrap();
+    assert_eq!(recovered.manifest, receipt.manifest);
+    assert_eq!(
+        after.last_confirmation.as_ref().unwrap().copy,
+        CopyRef::of(&recovered)
+    );
+    assert_eq!(after.missing_copy, None);
     assert_eq!(after.pending, None);
     assert_eq!(
         after.observed_equal_at,
@@ -917,4 +948,47 @@ fn a_retention_removal_past_the_deadline_is_a_warning_and_holds_the_lock() {
         .map(|receipt| receipt.manifest.copy)
         .collect();
     assert_eq!(ledger, [c2]);
+}
+
+#[test]
+fn a_missing_newest_copy_is_recorded_before_its_replacement_so_a_failed_replacement_leaves_it() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let lost = fixture.state().newest_receipt.unwrap();
+    fs::remove_file(
+        fixture
+            .project_dir(&fixture.copies)
+            .join(data(&lost.manifest.copy)),
+    )
+    .unwrap();
+    // The same store again: the confirmation finds the copy missing, and the
+    // replacement then fails for want of room at the target.
+    let mut full = settings();
+    full.target_free_space = |_| Ok(0);
+    let run = fixture.push_with(&full);
+    assert_eq!(run.report.outcome, Outcome::Failed, "{:?}", run.report);
+    assert_eq!(run.report.code.as_deref(), Some("backup_target_no_space"));
+    let state = fixture.state();
+    // The earlier receipt stays the newest and is recorded as missing.
+    assert_eq!(state.newest_receipt.as_ref(), Some(&lost));
+    let missing = state.missing_copy.clone().expect("the finding is recorded");
+    assert_eq!(missing.copy, CopyRef::of(&lost));
+    assert!(
+        missing.reason.contains("not at the target"),
+        "{}",
+        missing.reason
+    );
+    assert!(missing.at > lost.at);
+    // Its last confirmation stays as it was.
+    assert_eq!(state.last_confirmation.unwrap().at, lost.at);
+
+    // A push that replaces it records the new copy, confirmed, and the
+    // finding about the old one is gone.
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
+    let state = fixture.state();
+    let newest = state.newest_receipt.unwrap();
+    assert_ne!(newest.manifest.copy, lost.manifest.copy);
+    assert_eq!(state.missing_copy, None);
+    assert_eq!(state.last_confirmation.unwrap().copy, CopyRef::of(&newest));
 }

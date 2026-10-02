@@ -351,8 +351,9 @@ the attempt stays pending until a later push resolves it. A failed push
 exits 1 and leaves the previous confirmed copy and its receipt untouched.
 
 The recorded state holds the newest receipt with its manifest, the time the
-store was last observed equal to that copy, a pending attempt if there is
-one, the last attempt, the receipts whose copies this home has not removed,
+store was last observed equal to that copy, the target's last confirmation
+of that copy and any finding that the target no longer holds it, each naming
+the copy it concerns, a pending attempt if there is one, the last attempt, the receipts whose copies this home has not removed,
 which retention counts, the pending attempts set aside because they were
 recorded for another target identity, and, in a restored home, the restore
 record described below. When the state is lost, nothing is guessed from a

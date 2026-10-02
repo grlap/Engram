@@ -18,7 +18,7 @@ use thiserror::Error;
 
 use super::{
     CopyKind,
-    record::{Attempt, BackupReceipt, LastAttempt},
+    record::{Attempt, BackupReceipt, CopyConfirmed, CopyMissing, CopyRef, LastAttempt},
 };
 use crate::{CanonicalObject, ObjectId, ProjectId};
 
@@ -138,6 +138,15 @@ pub struct TargetState {
     /// The last push, with its outcome.
     #[serde(deserialize_with = "Option::deserialize")]
     pub last_attempt: Option<LastAttempt>,
+    /// When the target last confirmed the newest receipt's copy, by reading
+    /// it back in full. It names that copy.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub last_confirmation: Option<CopyConfirmed>,
+    /// A finding that the target no longer holds the newest receipt's copy,
+    /// recorded until a later confirmation or a new receipt. It names that
+    /// copy.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub missing_copy: Option<CopyMissing>,
     /// The receipts this home recorded whose copies it has not removed,
     /// oldest first, each naming the target identity that issued it.
     pub receipts: Vec<BackupReceipt>,
@@ -157,9 +166,76 @@ impl TargetState {
             observed_equal_at: None,
             pending: None,
             last_attempt: None,
+            last_confirmation: None,
+            missing_copy: None,
             receipts: Vec::new(),
             set_aside: Vec::new(),
         }
+    }
+
+    /// Records `receipt` as the newest: the copy the target just confirmed,
+    /// at the receipt's time, whose content the store was observed to hold at
+    /// `observed_at`. It joins the ledger, and any missing finding, which
+    /// named an earlier copy, is cleared.
+    pub fn record_receipt(&mut self, receipt: BackupReceipt, observed_at: DateTime<Utc>) {
+        self.last_confirmation = Some(CopyConfirmed {
+            copy: CopyRef::of(&receipt),
+            at: receipt.at,
+        });
+        self.missing_copy = None;
+        self.observed_equal_at = Some(observed_at);
+        self.receipts.push(receipt.clone());
+        self.newest_receipt = Some(receipt);
+    }
+
+    /// Records that the target confirmed the newest receipt's copy at `at`,
+    /// which ends any missing finding about it. Does nothing without a newest
+    /// receipt.
+    pub fn confirm_newest(&mut self, at: DateTime<Utc>) {
+        if let Some(newest) = &self.newest_receipt {
+            self.last_confirmation = Some(CopyConfirmed {
+                copy: CopyRef::of(newest),
+                at,
+            });
+            self.missing_copy = None;
+        }
+    }
+
+    /// Records that the target no longer holds the newest receipt's copy. The
+    /// last confirmation stays as recorded. Does nothing without a newest
+    /// receipt.
+    pub fn mark_newest_missing(&mut self, at: DateTime<Utc>, reason: String) {
+        if let Some(newest) = &self.newest_receipt {
+            self.missing_copy = Some(CopyMissing {
+                copy: CopyRef::of(newest),
+                at,
+                reason,
+            });
+        }
+    }
+
+    /// Why the confirmation or missing finding does not belong to the newest
+    /// receipt, if it does not: each may only name that receipt's copy.
+    fn evidence_problem(&self) -> Option<String> {
+        let newest = self.newest_receipt.as_ref().map(CopyRef::of);
+        let names_newest = |copy: &CopyRef| newest.as_ref() == Some(copy);
+        if let Some(confirmed) = &self.last_confirmation
+            && !names_newest(&confirmed.copy)
+        {
+            return Some(format!(
+                "its last confirmation names the copy {}, which is not the newest receipt's",
+                confirmed.copy.copy
+            ));
+        }
+        if let Some(missing) = &self.missing_copy
+            && !names_newest(&missing.copy)
+        {
+            return Some(format!(
+                "its missing finding names the copy {}, which is not the newest receipt's",
+                missing.copy.copy
+            ));
+        }
+        None
     }
 }
 
@@ -387,11 +463,11 @@ pub fn set_target(
     // refuses and changes nothing.
     let state = match fs::read(&paths.state) {
         Ok(bytes) => match parse_record::<TargetState>(&paths.state, &bytes) {
-            Ok(earlier) => TargetState {
+            Ok(earlier) if earlier.evidence_problem().is_none() => TargetState {
                 target_identity: identity.clone(),
                 ..earlier
             },
-            Err(_) => TargetState::empty(identity.clone()),
+            Ok(_) | Err(_) => TargetState::empty(identity.clone()),
         },
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             TargetState::empty(identity.clone())
@@ -576,6 +652,12 @@ fn read_records(
         return Err(TargetError::Unreadable {
             path: paths.state.clone(),
             reason: "it was recorded for another target than the configured one; `engram backup target set` writes both anew".into(),
+        });
+    }
+    if let Some(problem) = state.as_ref().and_then(TargetState::evidence_problem) {
+        return Err(TargetError::Unreadable {
+            path: paths.state.clone(),
+            reason: format!("{problem}; `engram backup target set` writes it anew"),
         });
     }
     Ok((Some((config, identity)), state))

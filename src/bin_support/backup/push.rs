@@ -423,47 +423,52 @@ impl Push<'_> {
 
         // Step 6: skip the upload only for the same bytes, in the same
         // format, at the same target, confirmed there now.
-        if let Some(newest) = &state.newest_receipt {
+        let equal_copy = state.newest_receipt.as_ref().and_then(|newest| {
             let capture = &self.stage.as_ref().expect("captured above").0.manifest;
-            if newest.target_identity == self.target.identity
+            (newest.target_identity == self.target.identity
                 && newest.manifest.capture.format_identity == capture.format_identity
-                && newest.sha256 == capture.sha256
-            {
-                let target = self.target.clone();
-                let manifest = newest.manifest.clone();
-                let confirmation = self
-                    .transport
-                    .run(move |left| target.adapter(left).confirm(&target.project, &manifest))
-                    .map_err(|worker| {
-                        Failure::deadline(
-                            worker,
-                            self.settings.transport_deadline,
-                            "the confirmation of the newest copy",
-                        )
-                    })?;
-                #[cfg(test)]
-                if let Some(hook) = &self.settings.after_confirm {
-                    hook();
+                && newest.sha256 == capture.sha256)
+                .then(|| newest.manifest.clone())
+        });
+        if let Some(manifest) = equal_copy {
+            let copy = manifest.copy.clone();
+            let target = self.target.clone();
+            let confirmation = self
+                .transport
+                .run(move |left| target.adapter(left).confirm(&target.project, &manifest))
+                .map_err(|worker| {
+                    Failure::deadline(
+                        worker,
+                        self.settings.transport_deadline,
+                        "the confirmation of the newest copy",
+                    )
+                })?;
+            #[cfg(test)]
+            if let Some(hook) = &self.settings.after_confirm {
+                hook();
+            }
+            match confirmation {
+                Confirmation::Confirmed => {
+                    state.observed_equal_at = Some(captured_at);
+                    state.confirm_newest(Utc::now());
+                    return Ok(AttemptOutcome::Unchanged);
                 }
-                match confirmation {
-                    Confirmation::Confirmed => {
-                        state.observed_equal_at = Some(captured_at);
-                        return Ok(AttemptOutcome::Unchanged);
-                    }
-                    Confirmation::Unknown { reason } => {
-                        return Err(Failure::new(
-                            "backup_target_unconfirmed",
-                            format!(
-                                "the target could not say whether it holds the newest copy: {reason}"
-                            ),
-                        ));
-                    }
-                    Confirmation::Missing { reason } => {
-                        self.report.warnings.push(format!(
-                            "the newest copy {} is no longer at the target ({reason}); a new one is put",
-                            newest.manifest.copy
-                        ));
-                    }
+                Confirmation::Unknown { reason } => {
+                    return Err(Failure::new(
+                        "backup_target_unconfirmed",
+                        format!(
+                            "the target could not say whether it holds the newest copy: {reason}"
+                        ),
+                    ));
+                }
+                Confirmation::Missing { reason } => {
+                    // Recorded before a replacement is prepared, so the
+                    // copy stops qualifying even if the replacement fails.
+                    state.mark_newest_missing(Utc::now(), reason.clone());
+                    self.save(state)?;
+                    self.report.warnings.push(format!(
+                        "the newest copy {copy} is no longer at the target ({reason}); a new one is put"
+                    ));
                 }
             }
         }
@@ -514,9 +519,7 @@ impl Push<'_> {
         {
             self.put_done = true;
         }
-        state.observed_equal_at = Some(captured_at);
-        state.receipts.push(receipt.clone());
-        state.newest_receipt = Some(receipt);
+        state.record_receipt(receipt, captured_at);
         state.pending = None;
         self.report.pending = None;
         Ok(AttemptOutcome::Uploaded)
@@ -654,9 +657,7 @@ impl Push<'_> {
             self.report.dropped = Some(pending.manifest.copy.clone());
         } else {
             let receipt = receipt_for(&pending, &self.target.identity);
-            state.observed_equal_at = Some(pending.manifest.capture.capture_started_at);
-            state.receipts.push(receipt.clone());
-            state.newest_receipt = Some(receipt);
+            state.record_receipt(receipt, pending.manifest.capture.capture_started_at);
             self.report.recovered = Some(pending.manifest.copy.clone());
         }
         state.pending = None;

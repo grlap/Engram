@@ -78,6 +78,44 @@ pub struct Attempt {
     pub temporary_data_file: String,
 }
 
+/// Names one stored copy: its name at the target and the identity of the
+/// target it was put for.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CopyRef {
+    pub copy: String,
+    pub target_identity: ObjectId,
+}
+
+impl CopyRef {
+    /// The copy a receipt names.
+    #[must_use]
+    pub fn of(receipt: &BackupReceipt) -> Self {
+        Self {
+            copy: receipt.manifest.copy.clone(),
+            target_identity: receipt.target_identity.clone(),
+        }
+    }
+}
+
+/// The target's last confirmation that it holds a copy, read back in full.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CopyConfirmed {
+    pub copy: CopyRef,
+    pub at: DateTime<Utc>,
+}
+
+/// A finding that the target no longer holds a copy, or holds other bytes
+/// under its name.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CopyMissing {
+    pub copy: CopyRef,
+    pub at: DateTime<Utc>,
+    pub reason: String,
+}
+
 /// How a push ended.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
