@@ -544,22 +544,34 @@ home is confirmed.
 **From a `store` copy**, for a replacement machine after the origin is lost
 or retired:
 
-1. Install Engram. The manifest names the build that captured the copy and
-   its source revision, unless that is `unavailable`; the current build serves when it accepts
-   the copy's schema and its own full check of the copy passes.
-2. Set `ENGRAM_HOME` to an empty home, check out the project, and run
+1. Retire the origin first. Stop every consumer of the origin store, and
+   make sure nothing will open it for writing again: no host, no scheduled
+   push, no agent session. Two stores that both accept writes diverge, and
+   restore cannot see that happening; its only trace would be a newer copy
+   at the target that this home did not record. This is why restore asks
+   for the operator's statement in step 4.
+2. Install Engram. The manifest names the build that captured the copy and
+   its source revision, unless that is `unavailable`; the current build
+   serves when it accepts the copy's format and its own full check of the
+   copy passes.
+3. Set `ENGRAM_HOME` to an empty home, check out the project, and run
    `engram backup target set` for the target that holds the copies.
-3. `engram backup list`, then
-   `engram backup restore <copy> --origin-retired-by <operator>`. Under
-   the push lock it checks that the local disk has room for the stored file
-   and the uncompressed copy the manifest declares, fetches the copy into a
+4. Run `engram backup list` to see the copies, each with its capture time,
+   SHA-256, cut, format, capturing build and host, then
+   `engram backup restore <copy> --origin-retired-by <operator>`. Restore
+   fetches the copy from the configured target itself; it takes no local
+   file. `engram backup fetch <copy> --out <file>` is a separate, standalone
+   checked extraction for an operator who wants the file. Under the push
+   lock restore checks that the local disk has room for the stored file and
+   the uncompressed copy the manifest declares, fetches the copy into a
    staging file beside the store, decompresses no more than the declared
    length and checks the result against its manifest. It then runs the full
    check a backup gets on the staged copy, records a pending restore under
    `backup-records`, moves the copy into place with a rename that never
    replaces anything, checks the installed store and marks the record
-   completed. It never replaces an existing store.
-4. Run `engram doctor` and `engram readiness`. Both resolve the project
+   completed. It never replaces an existing store, and it refuses a copy
+   whose manifest or whose rows name another project.
+5. Run `engram doctor` and `engram readiness`. Both resolve the project
    root's path identity, which restore itself does not: a store restored
    onto an operating system with different path rules is refused here. Start
    the host, with new sessions, only after both pass.
@@ -567,69 +579,92 @@ or retired:
 **A restore that stops.** The staging file is named
 `.backup-restore-<id>.staging`, which store open, `doctor` and `readiness`
 never take for a store; neither `doctor` nor `readiness` creates a store
-beside it. A restore that stops before the move leaves no store and its
-record pending, and a retry of the same copy finishes it while another copy
-is refused. A no-replace rename within one directory is all or nothing for
-a process that stops, so a restore that stops after the move leaves the
-whole copy in place with its record pending. A retry of the same copy then
-completes the record when `engram.db` holds the recorded SHA-256 and nothing
-beside it but what a read leaves, an empty `-wal` and an `-shm`; a `-wal`
-with any bytes, a `-journal` or other bytes mean something wrote to it, and
-the retry refuses it as an existing store, naming what did not match.
-`backup status` and `doctor` show a pending record from the moment it is
-written.
+beside it. A restore that stops before it writes its pending record leaves
+no record, and may leave its staging file. One that stops after the record
+and before the move leaves no store and the record pending; a retry of the
+same copy finishes it, and another copy is refused while it is pending. A
+no-replace rename within one directory is all or nothing for a process that
+stops, so a restore that stops after the move leaves the whole copy in
+place with its record pending. A retry of the same copy then completes the
+record when `engram.db` holds the recorded SHA-256 and, of the store's own
+`-wal`, `-shm` and `-journal` files, at most what a read leaves: an empty
+`-wal` and an `-shm`. A `-wal` with any bytes, a `-journal` or other bytes
+in `engram.db` mean something wrote to it, and the retry refuses it as an
+existing store, naming what did not match. `backup status` and `doctor`
+show a pending record from the moment it is written.
 
 **What restore does with live authority.** A `store` copy holds the claims,
-grants, control sessions and delivery state that were live at its cut.
-Restore changes no row, so the restored store equals the copy, and it does
-three things about that authority:
+grants, begun turns, control sessions and delivery state that were live at
+its cut. Restore changes no row, so the restored store equals the copy. It
+never renews, resets or revives authority, and it never uses this machine's
+clock to extend or end any of it: the clock only decides what the report
+calls unexpired. Restore does three things about that authority:
 
 - It requires the operator's statement that the origin store will never run
   again (`--origin-retired-by`). Nothing in this mode prevents a second
-  writer, and its only sign of one is a newer copy at the target that this
-  home did not record, so this is the one precondition Engram cannot check.
-  The statement
-  is asserted context: restore prints it and writes it, with the copy's
-  digest and origin host name, to this home's recorded state, and `status`
-  and `doctor` show it from then on.
-- It prints how many claims and grants in the copy have not yet expired by
-  this machine's clock, and when the last one does.
-- It resets nothing. A restored claim or grant can be used only by a caller
-  that presents the old session's identity, which is the same asserted
-  boundary the origin had. A new session cannot use one: an item that is
-  still held refuses a new claim until the old claim lapses at its own
-  expiry (one hour unless its holder asked for longer), and is then
-  recovered the ordinary way. Grants live for seconds.
+  writer, so this is the one precondition Engram cannot check. The
+  statement is asserted context: restore prints it and writes it, with the
+  copy's digest and origin host name, to this home's recorded state, and
+  `status` and `doctor` show it from then on.
+- It reports, read from the checked copy with one reading of this machine's
+  clock, how many active claims and how many issued grants have not yet
+  expired, when the last of each expires, and, separately, how many begun
+  turns are still open, not yet checkpointed.
+- It resets nothing, and what it restores ends only as the origin's would
+  have:
+  - A restored claim stays held until its recorded expiry (one hour by
+    default; its holder may have asked for another lifetime). Until then a
+    new session's claim of the item is refused (`work_claim_held`); after
+    it, the item is recovered the ordinary way, with
+    `engram work claim <ref> --recover "<reason>"`.
+  - A restored issued grant expires at its recorded time, seconds after it
+    was issued, or sooner, when a control connection is opened for its
+    session; either way it is then unusable.
+  - A restored begun turn has no clock end: a grant's expiry does not close
+    a turn that began under it. It stays open until a caller acting as its
+    session checkpoints it, and no other session can close it today. It
+    does not keep a new session from the work: once the old claim expires,
+    the item is recovered as above.
+
+  Who can use what restore keeps is the same asserted boundary the origin
+  had: the session id, and nothing more. A caller that asserts a restored
+  session's id can use and renew its claim, as on the origin. Opening the
+  control transport with that id reconnects the session under a new
+  connection token, which also ends its issued grants, and the session's
+  routing token is in the copy, so that caller can also checkpoint the
+  session's begun turn. Nothing in the restored store keeps a reused session
+  id out. This is why the host must give its sessions identities the
+  restored store has not seen.
 
 The preconditions before any consumer starts are therefore: every consumer
 of the origin is stopped for good, the new machine's clock is right, and the
-host gives its sessions identities the restored store has not seen. No
-copied grant or session token is reconnected. A reset of live authority at
-restore would be a new store operation and is not part of this design.
-Moving a store to a machine with different path rules, and refusing a
-second writer, are `portable`'s.
+host gives its sessions identities the restored store has not seen. A reset
+of live authority at restore would be a new store operation and is not part
+of this design. Moving a store to a machine with different path rules, and
+refusing a second writer, are `portable`'s.
 
-When the running build does not accept the copy's schema, or its full check
+When the running build does not accept the copy's format, or its full check
 of the copy fails, `backup restore` refuses and leaves the fetched file in
-place. The refusal names both ways on: install the build at the manifest's
-source revision and restore with it, or run `engram migration export` on the
-fetched file and `engram migration import` with a build that still names
-every conversion since ([full store migration](full-store-migration.md)).
+place, naming its path. The refusal names the ways on: install the build at
+the manifest's source revision and restore with it, which it names only
+when that revision is not `unavailable`, or run `engram migration export`
+on the fetched file and `engram migration import` with a build that still
+names every conversion since ([full store migration](full-store-migration.md)).
 Engram records the capturing build's fingerprint, the format identity and
 the source revision; it does not keep the executable at the target and does
 not claim that a revision rebuilds to the same binary. When neither a
 compatible executable nor a supported conversion can be obtained, recovery
 is unavailable, and the bytes remain at the target.
 
-**From a `graph` copy:**
+**From a `graph` copy** (planned: the `graph` kind is not shipped):
 
 1. `engram init` on an empty home with the project's control policy, which
    the file never carries, and apply its obligation rule set and
    acceptance-evaluation policy again. Run `engram backup target set` for
    the target that holds the copies.
-2. `engram backup fetch <copy> --out <file>`, which decompresses the copy
-   when it is stored compressed and checks the file against its manifest,
-   then `engram graph load <file> --dry-run`, then
+2. `engram backup fetch <copy> --out <file> --kind graph`, which
+   decompresses the copy when it is stored compressed and checks the file
+   against its manifest, then `engram graph load <file> --dry-run`, then
    `engram graph load <file>` (shipped).
 3. Run `engram doctor`.
 
@@ -644,12 +679,14 @@ unavailable, and the bytes remain at the target.
 Each test runs against homes and targets under the repository's `target/`
 folder.
 
-- **Store equality.** Export the rows of a quiescent source store. Push a
-  `store` copy to a directory target. Change the source. Run
-  `backup restore` into a second, clean home. The restored file's digest
-  equals the manifest's, `doctor` reports it healthy, and its exported rows
-  equal the rows exported before the push and differ from the changed
-  source.
+- **Store equality.** Export the rows of a quiescent source store, whose
+  write-ahead log holds no frames. Push a `store` copy to a directory
+  target. Change the source. Run `backup restore` into a second, clean
+  home. The restored file's SHA-256 equals the manifest's, checked before
+  `doctor` or any claim opens it; `doctor` reports it healthy; and its
+  exported rows, compared as parsed JSON with only the export header's
+  `exported_at` left out, equal the rows exported before the push and
+  differ from the changed source's.
 - **Graph surface.** Push a `graph` copy, change the source, fetch and load
   into a clean initialized home. A graph save of the restored store has the
   same items, blockers, sources and memories as the pushed file and carries
@@ -741,10 +778,11 @@ folder.
   created. For a `graph` capture, work and memory changes made
   during it leave a body whose two positions describe one state.
 - **Restore and authority.** `backup restore` without `--origin-retired-by`
-  is refused. With it, the output names the unexpired claims and the last
-  expiry, the restored store's rows are unchanged, `status` shows the
-  statement, and a new session's claim on a still-held item is refused
-  until the old claim's expiry.
+  is refused. With it, the output names the unexpired claims and issued
+  grants with the last expiry of each, and the begun turns apart; the
+  restored store's rows are unchanged; `status` shows the statement; and a
+  new session's claim on a still-held item is refused until the old claim's
+  expiry, then recovered with `--recover`.
 - **Stored compressed.** The file at a `directory` target is a gzip file;
   for a compressible fixture it is smaller than the artifact, and an
   artifact that does not compress still makes the round trip.

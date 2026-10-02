@@ -206,9 +206,10 @@ impl Homes {
         self.engram(home, &args)
     }
 
-    /// Every line of a store's export after its header, which carries the
-    /// export time.
-    fn exported_rows(&self, database: &Path, name: &str) -> Vec<String> {
+    /// Every line of a store's export, parsed, the header without its export
+    /// time, which is the only part that differs between two exports of the
+    /// same rows.
+    fn exported_rows(&self, database: &Path, name: &str) -> Vec<Value> {
         let out = self.path(name);
         let output = Command::new(env!("CARGO_BIN_EXE_engram"))
             .args(["migration", "export", "--database"])
@@ -218,12 +219,25 @@ impl Homes {
             .output()
             .unwrap();
         assert!(output.status.success(), "{}", text(&output.stderr));
-        fs::read_to_string(&out)
-            .unwrap()
-            .lines()
-            .skip(1)
-            .map(str::to_owned)
+        let text = fs::read_to_string(&out).unwrap();
+        let mut lines = text.lines();
+        let mut header: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+        let export = header["engram_export"].as_object_mut().unwrap();
+        assert!(export.remove("exported_at").is_some(), "{header}");
+        std::iter::once(header)
+            .chain(lines.map(|line| serde_json::from_str(line).unwrap()))
             .collect()
+    }
+
+    /// Asserts that no write-ahead log beside the home's store holds frames.
+    fn assert_quiescent(&self, home: &str) {
+        let wal = PathBuf::from(format!("{}-wal", self.database(home).display()));
+        let frames = match fs::metadata(&wal) {
+            Ok(metadata) => metadata.len(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(error) => panic!("{} cannot be examined: {error}", wal.display()),
+        };
+        assert_eq!(frames, 0, "{} holds frames", wal.display());
     }
 
     /// The files beside where the store goes, by name.
@@ -255,7 +269,8 @@ fn a_clean_home_restores_a_checked_copy_reports_its_live_authority_and_changes_n
     homes.held_item("Held for long", "origin-session-long", 7200);
     let shorter = homes.held_item("Held for less long", "origin-session-shorter", 3600);
     homes.set_target("origin");
-    // The rows of the quiescent origin, before the push and before it changes.
+    // The rows of the origin before the push and before it changes; the
+    // store-equality test also asserts the origin is quiescent here.
     let pushed_rows = homes.exported_rows(&homes.database("origin"), "pushed.jsonl");
     homes.succeeded("origin", &["backup", "push"]);
     let manifest = homes.newest_manifest("origin");
@@ -708,4 +723,47 @@ fn doctor_takes_a_store_link_that_leads_nowhere_for_no_store_and_creates_none() 
         assert_eq!(value["code"], "store_not_initialized", "{word:?}: {value}");
     }
     assert!(!nowhere.exists());
+}
+
+#[test]
+fn a_restored_store_equals_the_pushed_copy_byte_for_byte_and_row_for_row_and_doctor_finds_it_healthy()
+ {
+    let homes = Homes::new();
+    homes.succeeded("origin", &["init"]);
+    homes.held_item("Held at the push", "origin-session", 7200);
+    homes.set_target("origin");
+    // The source is quiescent: every process that opened it has ended and
+    // closed it, and no write-ahead log holds frames, so the export and the
+    // copy describe the same state.
+    homes.assert_quiescent("origin");
+    let pushed_rows = homes.exported_rows(&homes.database("origin"), "equality-pushed.jsonl");
+    homes.assert_quiescent("origin");
+    homes.succeeded("origin", &["backup", "push"]);
+    let manifest = homes.newest_manifest("origin");
+    let copy = manifest["copy"].as_str().unwrap();
+    // The source changes after the push.
+    homes.held_item("Added after the push", "origin-session-later", 7200);
+    let changed_rows = homes.exported_rows(&homes.database("origin"), "equality-changed.jsonl");
+    assert_ne!(pushed_rows, changed_rows, "the source must have changed");
+
+    homes.set_target("clean");
+    homes.succeeded(
+        "clean",
+        &["backup", "restore", copy, "--origin-retired-by", "greg"],
+    );
+    let database = homes.database("clean");
+    // First, before doctor or any claim opens it: the restored file is the
+    // copy's bytes.
+    assert_eq!(
+        sha256(&fs::read(&database).unwrap()),
+        manifest["capture"]["sha256"].as_str().unwrap()
+    );
+    let doctor = homes.succeeded("clean", &["doctor", "--json"]);
+    let report: Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    assert_eq!(report["healthy"], true, "{report}");
+    // Its rows, everything but the export header's time, are the rows
+    // exported before the push, not the changed source's.
+    let restored_rows = homes.exported_rows(&database, "equality-restored.jsonl");
+    assert_eq!(restored_rows, pushed_rows);
+    assert_ne!(restored_rows, changed_rows);
 }
