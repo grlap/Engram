@@ -51,6 +51,19 @@ fn receipt(output: &Output, ready: bool) -> Value {
     assert_eq!(value["mutation_enabled"], false);
     assert!(value.get("healthy").is_none());
     assert!(value.get("build").is_some(), "{value}");
+    // The source revision: a commit id, that id with `+dirty`, or
+    // `unavailable`, exactly as this build recorded it.
+    let revision = value["build"]["source_revision"].as_str().unwrap();
+    assert_eq!(revision, env!("ENGRAM_SOURCE_REVISION"), "{value}");
+    let commit = revision.strip_suffix("+dirty").unwrap_or(revision);
+    assert!(
+        revision == "unavailable"
+            || (commit.len() == 40
+                && commit
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))),
+        "{revision}"
+    );
     assert!(value.get("build_fingerprint").is_some(), "{value}");
     if !ready {
         for field in ["code", "phase", "reason", "remedy"] {

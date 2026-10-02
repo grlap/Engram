@@ -19,6 +19,10 @@ pub struct BuildComponents {
     pub schema_reference: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<&'static str>,
+    /// The commit the executable was built from, `+dirty` when tracked files
+    /// differed from it, or `unavailable`. Recovery information, not proof
+    /// that the revision rebuilds to the same executable.
+    pub source_revision: String,
 }
 
 /// A comparable diagnostic token with its independently inspectable inputs.
@@ -52,12 +56,32 @@ pub fn current() -> &'static BuildIdentity {
             executable_sha256,
             schema: schema_reference.is_none().then_some("unavailable"),
             schema_reference,
+            source_revision: source_revision().into(),
         };
         BuildIdentity {
             build_fingerprint: fingerprint(&build).ok(),
             build,
         }
     })
+}
+
+/// The source revision recorded when this executable was built: a commit id,
+/// that id followed by `+dirty`, or `unavailable`.
+#[must_use]
+pub const fn source_revision() -> &'static str {
+    env!("ENGRAM_SOURCE_REVISION")
+}
+
+/// A source revision shortened for display, keeping its `+dirty` marker.
+#[must_use]
+pub fn short_revision(revision: &str) -> String {
+    if revision == "unavailable" {
+        return revision.to_owned();
+    }
+    match revision.split_once('+') {
+        Some((commit, marker)) => format!("{}+{marker}", short_hash(Some(commit))),
+        None => short_hash(Some(revision)).to_owned(),
+    }
 }
 
 fn executable_digest() -> io::Result<String> {
@@ -74,7 +98,7 @@ pub fn version() -> &'static str {
     VERSION.get_or_init(|| {
         let identity = current();
         format!(
-            "{} build {} (exe {}, schema {})",
+            "{} build {} (exe {}, schema {}, rev {})",
             identity.build.package_version,
             short_hash(identity.build_fingerprint.as_ref().map(ObjectId::as_str)),
             short_hash(identity.build.executable_sha256.as_deref()),
@@ -85,6 +109,7 @@ pub fn version() -> &'static str {
                     .as_ref()
                     .map(ObjectId::as_str)
             ),
+            short_revision(&identity.build.source_revision),
         )
     })
 }
@@ -113,7 +138,7 @@ mod tests {
             fingerprint(build).unwrap(),
             fingerprint(&build.clone()).unwrap()
         );
-        for component in 0..3 {
+        for component in 0..4 {
             let mut changed = build.clone();
             match component {
                 0 => changed.package_version.push_str("-different"),
@@ -121,6 +146,7 @@ mod tests {
                     changed.executable_sha256 =
                         Some(format!("{:x}", Sha256::digest(b"different executable")));
                 }
+                2 => changed.source_revision.push_str("+different"),
                 _ => {
                     changed.schema_reference = Some(
                         CanonicalObject::freeze(&"different schema")
@@ -143,6 +169,7 @@ mod tests {
             executable: Some("unavailable"),
             schema_reference: None,
             schema: Some("unavailable"),
+            source_revision: "unavailable".into(),
         };
         let value = serde_json::to_value(&build).unwrap();
         assert!(value["executable_sha256"].is_null());

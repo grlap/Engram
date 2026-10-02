@@ -1184,7 +1184,8 @@ changing state. The host retains its own quiescence and ownership fences;
 neither all-false presence nor a refusal authorizes clearing state.
 
 `engram --version` prints `engram VERSION build FP12 (exe EXE12, schema
-SCHEMA12)`. Agent `next` ends its terminal text with one diagnostic line:
+SCHEMA12, rev REV)`, where `REV` is the source revision's first twelve hex
+digits, keeping a `+dirty` marker, or `unavailable`. Agent `next` ends its terminal text with one diagnostic line:
 `build: FP12; read cut: project POSITION observed_at INSTANT`, followed by
 `context_generation GENERATION` when supplied. Its structured CLI/MCP receipt
 and core `work_next` carry one `build_fingerprint`, `read_cut` containing
@@ -1210,13 +1211,26 @@ Every `doctor --json` mode and `readiness --json` includes `build` and
 object contains `package_version`, `executable_sha256` (SHA-256 of the running
 executable's bytes), and `schema_reference` (SHA-256 of the RFC 8785 canonical
 ordered, whitespace-normalized SQLite definitions used by ordinary schema
-admission). The fingerprint hashes the RFC 8785 canonical build object. These
-values are captured once per process: at MCP startup, or when a short-lived
-CLI process emits diagnostics. Agent words other than `next` do not compute
-identity. There is no Git metadata, build script, capability catalog, or
-persisted last-writer row.
-Equal inputs produce equal fingerprints; different executable bytes or schema
-definitions distinguish builds even when their package versions agree.
+admission), and `source_revision`: the commit the executable was built from,
+that commit followed by `+dirty` when tracked files differed from it at build
+time, or `unavailable` when the build could not determine it (no Git, no
+checkout of this package, or a failed probe; the build itself never fails for
+it). The build script records it, read-only, and reruns when a tracked file,
+the index or the checked-out commit changes; after a failed probe it reruns
+when `PATH` or the checkout's Git entry changes. Because the revision is part
+of the executable, a commit or the first edit after one rebuilds it, so even
+a documentation-only change gives a new executable and fingerprint. The fingerprint hashes the
+RFC 8785 canonical build object, so the revision is part of it. These values
+are captured once per process: at MCP startup, or when a short-lived CLI
+process emits diagnostics. Agent words other than `next` do not compute
+identity. There is no capability catalog or persisted last-writer row.
+The source revision is recovery information: it names where to look for the
+source, not proof that checking it out rebuilds the same executable. A
+`+dirty` revision names its base commit plus changes that no commit records,
+so the base alone does not hold them.
+Equal inputs produce equal fingerprints; different executable bytes, schema
+definitions or source revisions distinguish builds even when their package
+versions agree.
 
 An unreadable executable is explicitly `executable_sha256: null` with
 `executable: "unavailable"`; an unavailable in-memory schema reference likewise

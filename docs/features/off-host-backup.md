@@ -302,7 +302,8 @@ target configured it says so and exits 0.
    qualifies that the restore below cannot load.
 5. Write the manifest: project digest, kind, cut, capture start time, bytes,
    digest, format identity, the fingerprint of the build that captured and
-   checked the copy, that build's source revision when it is known, and the
+   checked the copy, that build's source revision (`unavailable` when the
+   build could not determine it), and the
    host name as asserted context. The cut is read from the finished staged
    copy, not from the live store. These identities are separate fields and
    are never merged into one.
@@ -517,8 +518,8 @@ home is confirmed.
 **From a `store` copy**, for a replacement machine after the origin is lost
 or retired:
 
-1. Install Engram. The manifest names the build that captured the copy and,
-   when known, its source revision; the current build serves when it accepts
+1. Install Engram. The manifest names the build that captured the copy and
+   its source revision, unless that is `unavailable`; the current build serves when it accepts
    the copy's schema and its own full check of the copy passes.
 2. Set `ENGRAM_HOME` to an empty home, check out the project, and run
    `engram backup target set` for the target that holds the copies.
@@ -750,11 +751,11 @@ a second writer, and the only one this mode gives.
   Incremental copies arrive with the portable object tree.
 - A `directory` target's place off the machine is asserted, not verified.
 - Copies are not encrypted by Engram.
-- The build identity carries no source revision today. Until it does, a
-  manifest names only the build fingerprint and format identity, and finding
-  the matching source is manual. A recorded revision is recovery
-  information, not proof that the build can be reproduced; when the code
-  remote is also the backup target, losing that remote loses both.
+- A manifest's source revision is recovery information, not proof that the
+  build can be reproduced. A `+dirty` revision names its base commit plus
+  changes no commit records, and an `unavailable` one leaves finding the
+  source manual. When the code remote is also the backup target, losing that
+  remote loses both.
 - Neither kind backs up the host's own state, such as its sessions and
   mailboxes.
 

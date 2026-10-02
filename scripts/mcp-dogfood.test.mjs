@@ -3306,7 +3306,10 @@ test("running build identity agrees across version, CLI next, doctor and retaine
     assert.match(identity.build_fingerprint, /^[0-9a-f]{64}$/u);
     const version = spawnSync(binary, ["--version"], { cwd: root, encoding: "utf8" });
     assert.equal(version.status, 0, version.stderr);
-    assert.equal(version.stdout.trim(), `engram ${identity.build.package_version} build ${identity.build_fingerprint.slice(0, 12)} (exe ${identity.build.executable_sha256.slice(0, 12)}, schema ${identity.build.schema_reference.slice(0, 12)})`);
+    assert.match(identity.build.source_revision, /^(?:unavailable|[0-9a-f]{40}(?:\+dirty)?)$/u);
+    const [commit, marker] = identity.build.source_revision.split("+");
+    const revision = commit === "unavailable" ? commit : `${commit.slice(0, 12)}${marker ? `+${marker}` : ""}`;
+    assert.equal(version.stdout.trim(), `engram ${identity.build.package_version} build ${identity.build_fingerprint.slice(0, 12)} (exe ${identity.build.executable_sha256.slice(0, 12)}, schema ${identity.build.schema_reference.slice(0, 12)}, rev ${revision})`);
     client = new McpClient(engramHome, "build-reader");
     await client.initialize();
     for (const verbose of [false, true, false]) {

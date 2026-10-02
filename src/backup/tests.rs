@@ -205,7 +205,16 @@ fn capture_manifest_names_each_identity_and_the_copy_s_own_cut() {
         manifest.build_fingerprint,
         crate::build_identity::current().build_fingerprint
     );
-    assert_eq!(manifest.source_revision, None);
+    // The manifest carries exactly the revision the build reports.
+    assert_eq!(
+        manifest.source_revision.as_deref(),
+        Some(
+            crate::build_identity::current()
+                .build
+                .source_revision
+                .as_str()
+        )
+    );
     assert_eq!(manifest.host_name.as_deref(), Some("test-host"));
     let copy_began = copy_began.lock().unwrap().unwrap();
     assert!(started <= manifest.capture_started_at);

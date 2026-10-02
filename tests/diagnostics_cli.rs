@@ -166,6 +166,7 @@ fn version_next_and_doctor_share_runtime_identity_across_processes() {
         "package_version": env!("CARGO_PKG_VERSION"),
         "executable_sha256": format!("{:x}", Sha256::digest(executable)),
         "schema_reference": running_schema_reference().unwrap(),
+        "source_revision": env!("ENGRAM_SOURCE_REVISION"),
     });
     let fingerprint = CanonicalObject::freeze(&build).unwrap().key().clone();
     assert_eq!(doctor["build"], build);
@@ -176,11 +177,12 @@ fn version_next_and_doctor_share_runtime_identity_across_processes() {
     assert_eq!(
         String::from_utf8(version.stdout).unwrap().trim(),
         format!(
-            "engram {} build {} (exe {}, schema {})",
+            "engram {} build {} (exe {}, schema {}, rev {})",
             env!("CARGO_PKG_VERSION"),
             &fingerprint.as_str()[..12],
             &build["executable_sha256"].as_str().unwrap()[..12],
             &build["schema_reference"].as_str().unwrap()[..12],
+            engram::build_identity::short_revision(env!("ENGRAM_SOURCE_REVISION")),
         )
     );
     for verbose in [false, true] {

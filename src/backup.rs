@@ -54,7 +54,8 @@ pub struct CaptureManifest {
     pub format_identity: ObjectId,
     /// The fingerprint of the build that captured and checked the copy.
     pub build_fingerprint: Option<ObjectId>,
-    /// The source revision of that build, when the build knows it.
+    /// The source revision of that build: a commit id, that id followed by
+    /// `+dirty`, or `unavailable` when the build could not determine it.
     pub source_revision: Option<String>,
     /// The capturing host's name, as asserted context.
     pub host_name: Option<String>,
@@ -390,7 +391,7 @@ fn capture_into(
         sha256: copy.file_sha256,
         format_identity: copy.schema_reference,
         build_fingerprint: identity.build_fingerprint,
-        source_revision: None,
+        source_revision: Some(crate::build_identity::source_revision().to_owned()),
         host_name: options.host_name.clone(),
     })
 }
