@@ -450,6 +450,7 @@ fn remove_attempt(attempt: &Path) -> Result<(), (PathBuf, io::Error)> {
 pub mod freshness;
 pub mod record;
 pub mod reminder;
+pub mod restore;
 pub mod status;
 pub mod target;
 

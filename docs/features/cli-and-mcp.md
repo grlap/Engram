@@ -1176,6 +1176,9 @@ words above never require it.
 For host enablement, use [`readiness --json`](host-readiness.md) for scoped
 existing-store/schema/policy checks. Keep `doctor --json` as a separate explicit
 full audit; readiness is not full-store health and never returns `healthy`.
+Like readiness, `doctor` examines an existing store and never creates one:
+without an `engram.db` it refuses with `store_not_initialized`, whatever
+else stands in the project directory, such as a restore's staging file.
 
 For missing-session reconciliation evidence, use
 [`control-session-inspect`](control-session-inspection.md). It reads exact
@@ -1356,6 +1359,8 @@ engram backup target clear --kind store
 # Read the copies a target holds, from any home that configured it.
 engram backup list [--kind store] [--json]
 engram backup fetch <copy> --out <file> [--kind store] [--json]
+# Install one onto a home that has no store for the project.
+engram backup restore <copy> --origin-retired-by <operator> [--json]
 
 # Deterministic planning/history disclosure. The default path is
 # <home>/snapshots/<project>/graph-<work-cut>-<memory-cut>-<first-12-body-digest>.json.
@@ -1575,7 +1580,8 @@ lowercase code of at most 64 bytes reads `unrecognised code`. See
 manifests of the copies the configured target holds for this project, with
 each copy's name, capture start, uncompressed and stored sizes, SHA-256,
 cut, format identity, capturing build, source revision and host, and names
-the manifests it could not use. `backup fetch COPY --out FILE [--kind store]
+the manifests it could not use and the copies whose manifest names another
+project (`foreign` in JSON). `backup fetch COPY --out FILE [--kind store]
 [--json] [--deadline-secs N]` writes that copy to FILE, which must not exist
 (`backup_copy_exists`). Before it creates anything it checks that the local
 disk has room for the stored file and the uncompressed copy together
@@ -1583,20 +1589,64 @@ disk has room for the stored file and the uncompressed copy together
 cannot be measured) and that the stored file is the length its manifest
 declares; it then decodes no more than the declared length and checks the
 result against the manifest's SHA-256 (`backup_copy_invalid` otherwise). A
-copy the target does not hold is `backup_copy_unknown`. The copy is decoded
-into a hidden file beside FILE and linked to FILE, without replacing
-anything, only once it is checked, so FILE never holds a partial or
-unchecked copy; only a process that ends in the middle can leave that hidden
-`.FILE.PID.fetching` file. Both words read
+copy the target does not hold is `backup_copy_unknown`, and one whose
+manifest names another project is `backup_project_mismatch`. The copy is
+decoded into a hidden file beside FILE and renamed to FILE, without
+replacing anything and without needing hard links, only once it is checked,
+so FILE never holds a partial or unchecked copy. That hidden
+`.FILE.PID.fetching` file is left only by a process that ends in the middle
+or by a removal that fails, and the refusal then names it. Both words read
 only the target's records under the home and the target itself, never open
 or create a store, and so work in a home that has only configured the
 target; without one they refuse with `backup_not_configured`. Their
 requests to the target run under one deadline, thirty minutes by default,
 and a request stalled past it ends the process with exit 1. Their `--json`
 receipts carry `schema_version` 1; under `--json` a refusal is also printed
-on standard output as a JSON object with `code` and `message`. `backup
-restore`, which installs a fetched copy as this home's store, is not yet
-shipped; see [off-host backup](off-host-backup.md#restore).
+on standard output as a JSON object with `code` and `message`.
+
+`backup restore COPY --origin-retired-by NAME [--json]
+[--deadline-secs N]` installs one `store` copy from the configured target as
+this home's store. It refuses without a non-blank statement that the origin
+store will never run again (`backup_restore_origin_unstated`), while a push
+holds the lock (`backup_push_running`), and when `engram.db` or any of its
+`-wal`, `-shm` or `-journal` files already stands in
+`<home>/projects/<project digest>/` (`backup_restore_store_exists`); it never
+replaces one. Holding the push lock throughout, it fetches the copy as
+`fetch` does into a `.backup-restore-<id>.staging` file beside the store, a
+name that store open, `doctor` and `readiness` never take for a store. A copy
+whose manifest names another project, or whose store holds rows of another
+project, is refused as `backup_project_mismatch`. When this build does not
+accept the copy's format identity (`backup_restore_format_unaccepted`), or
+the copy fails the full check a backup gets (`backup_restore_check_failed`),
+restore refuses, leaves the fetched file in place, prints its path and names
+both ways on: the build at the manifest's source revision, unless that is
+`unavailable`, or `migration export` on that file and `migration import`
+with a build that still names every conversion since. Otherwise it records a
+pending restore in `<home>/backup-records/<project digest>/store.restore.json`
+(the copy, its SHA-256, the origin host and the statement), moves the copy
+into place with a rename that never replaces anything, checks the installed
+store and marks the record completed. A restore stopped before the move is
+finished by a retry of the same copy, and another copy is refused while it is
+pending (`backup_restore_pending_other`). A restore stopped after the move is
+completed by a retry of the same copy only when `engram.db` holds the
+recorded SHA-256 with no `-journal` and no `-wal` that holds any bytes (an
+empty `-wal` and an `-shm`, which a read leaves, are allowed); it then prints
+`completed an interrupted restore`, and any other store is refused as
+`backup_restore_store_exists`, naming what did not match. A completed record
+whose store is gone is kept as `store.restore-<completion time, UTC>Z.json`
+before a new restore records its own. Restore changes no row. It prints,
+read from the checked copy with one clock reading, the number of unexpired
+active claims and of unexpired issued grants with when the last of each
+expires, and the number of begun turns; a restored claim serves only its old
+session, so an item still held refuses a new session's claim
+(`work_claim_held`) until that claim expires and is then recovered the
+ordinary way. `backup status` and `doctor` show the record as `restore:
+pending since ...` or `restore: restored ...`, and in JSON as a `restore`
+field with `state` `pending`, `restored` or `unreadable`, without contacting
+the target. The `--json` receipt carries `schema_version` 1, the copy,
+store, bytes, SHA-256, origin host and statement, `completed_interrupted`,
+`kept_record` and `authority`; a refusal under `--json` is printed as for
+`fetch`. See [off-host backup](off-host-backup.md#restore).
 
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence

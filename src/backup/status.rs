@@ -14,6 +14,7 @@ use super::{
         AcceptedFormats, Collected, CutUnavailable, KindRecords, Mode, Reason, collect, kind_reason,
     },
     record::{Acknowledgement, LastAttempt},
+    restore::{RestoreRecord, RestoreRecords, RestoreState, read_restore_record},
     target::{AdapterKind, Statement},
 };
 use crate::{ObjectId, ProjectId, WorkGraphSnapshotCut};
@@ -41,6 +42,42 @@ pub struct BackupStatus {
     /// When the status was evaluated.
     pub as_of: DateTime<Utc>,
     pub kinds: Vec<KindStatus>,
+    /// The restore this home recorded, if any.
+    pub restore: Option<RestoreStatus>,
+}
+
+/// A restore recorded under the home: pending, restored, or a record that
+/// cannot be used.
+#[derive(Clone, Debug, Serialize)]
+pub struct RestoreStatus {
+    /// `pending`, `restored` or `unreadable`.
+    pub state: &'static str,
+    pub record: Option<RestoreRecord>,
+    /// What made the record unusable, for an unreadable one.
+    pub unreadable: Option<String>,
+}
+
+impl RestoreStatus {
+    /// The status of what the home records about a restore.
+    #[must_use]
+    pub fn of(records: RestoreRecords) -> Option<Self> {
+        match records {
+            RestoreRecords::None => None,
+            RestoreRecords::Recorded(record) => Some(Self {
+                state: match record.state {
+                    RestoreState::Pending => "pending",
+                    RestoreState::Completed => "restored",
+                },
+                record: Some(*record),
+                unreadable: None,
+            }),
+            RestoreRecords::Unreadable { path, reason } => Some(Self {
+                state: "unreadable",
+                record: None,
+                unreadable: Some(format!("{}: {reason}", path.display())),
+            }),
+        }
+    }
 }
 
 /// The mode and, for each kind that qualifies, its off-host assurance and
@@ -164,8 +201,11 @@ impl RunningBuild {
 #[must_use]
 pub fn backup_status(home: &Path, project: &ProjectId, database: &Path) -> BackupStatus {
     let collected = collect(home, project, database);
+    let restore = RestoreStatus::of(read_restore_record(home, project));
     let running = RunningBuild::current();
-    build_status(&collected, &running, Utc::now())
+    let mut status = build_status(&collected, &running, Utc::now());
+    status.restore = restore;
+    status
 }
 
 /// The status of `collected` evidence for a build at `now`.
@@ -218,6 +258,7 @@ pub fn build_status(
         running_build: running.fingerprint.clone(),
         as_of: now,
         kinds,
+        restore: None,
     }
 }
 
@@ -331,7 +372,40 @@ pub fn render_status(status: &BackupStatus) -> String {
     for kind in &status.kinds {
         render_kind(&mut text, kind, status);
     }
+    if let Some(restore) = &status.restore {
+        let _ = writeln!(text, "{}", restore_line(restore));
+    }
     text
+}
+
+/// The one line that reports a recorded restore.
+#[must_use]
+pub fn restore_line(restore: &RestoreStatus) -> String {
+    let Some(record) = &restore.record else {
+        return format!(
+            "restore: unreadable record: {}",
+            restore.unreadable.as_deref().unwrap_or("")
+        );
+    };
+    let origin = format!(
+        "{} (sha256 {}) from host {}; origin retired by {} at {} (asserted)",
+        record.copy,
+        record.sha256,
+        record.origin_host.as_deref().unwrap_or("unknown"),
+        record.origin_retired.by,
+        record.origin_retired.at.to_rfc3339()
+    );
+    match (record.state, record.completed_at) {
+        (RestoreState::Completed, Some(at)) => {
+            format!("restore: restored {origin}; completed {}", at.to_rfc3339())
+        }
+        _ => format!(
+            "restore: pending since {}: {origin}; run `engram backup restore {} --origin-retired-by {}` again to finish it",
+            record.pending_at.to_rfc3339(),
+            record.copy,
+            record.origin_retired.by
+        ),
+    }
 }
 
 /// The one line that names the mode, always with its off-host assurance.

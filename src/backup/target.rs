@@ -650,7 +650,7 @@ pub fn write_state(
 }
 
 /// Checks that `lock` is the push lock of the kind `paths` name.
-fn held(paths: &RecordPaths, lock: &PushLock) -> Result<(), TargetError> {
+pub(super) fn held(paths: &RecordPaths, lock: &PushLock) -> Result<(), TargetError> {
     if lock.path == paths.lock {
         Ok(())
     } else {
@@ -814,7 +814,7 @@ fn parse_record<T: DeserializeOwned>(path: &Path, bytes: &[u8]) -> Result<T, Tar
 
 /// Replaces `path` whole: a new sibling file is written, synced and closed,
 /// then renamed over it.
-fn write_record<T: Serialize>(path: &Path, record: &T) -> io::Result<()> {
+pub(super) fn write_record<T: Serialize>(path: &Path, record: &T) -> io::Result<()> {
     let mut bytes = serde_json::to_vec_pretty(record).map_err(io::Error::other)?;
     bytes.push(b'\n');
     let name = path

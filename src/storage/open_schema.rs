@@ -20,7 +20,9 @@ use super::{
 #[cfg(test)]
 use super::{building_schema_reference, fail_cold_schema_after_ddl};
 
+mod restore_copy;
 mod store_copy;
+pub use restore_copy::{LiveAuthority, RestoreCopyReport, installed_sidecar_problem};
 pub(crate) use store_copy::CopyProbePoint;
 pub use store_copy::{CopyInterrupt, VerifiedStoreCopy};
 
@@ -466,6 +468,15 @@ impl SqliteStore {
                 )));
             }
         }
+        Self::verify_copy_bytes(path, interrupt)
+    }
+
+    /// Hashes the file at `path` and checks the store its bytes hold, opened
+    /// immutable, so only the main file is read.
+    fn verify_copy_bytes(
+        path: &Path,
+        interrupt: Option<&CopyInterrupt>,
+    ) -> Result<(BackupManifest, Self), StoreError> {
         let unreadable = |error: std::io::Error| {
             StoreError::InvalidWork(format!("cannot read backup {}: {error}", path.display()))
         };

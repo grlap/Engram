@@ -894,9 +894,18 @@ fn a_copy_of_one_project_is_never_taken_for_another_s() {
     ));
     let page = adapter.list(&other, None).unwrap();
     assert_eq!(page.manifests, Vec::new());
+    assert_eq!(page.unreadable, Vec::<String>::new());
+    assert_eq!(page.foreign, std::slice::from_ref(&attempt.manifest.copy));
+    let listing = super::fetch::Listing {
+        manifests: page.manifests,
+        unreadable: page.unreadable,
+        foreign: page.foreign,
+    };
+    let refusal = super::fetch::named(listing, &attempt.manifest.copy, &other).unwrap_err();
     assert_eq!(
-        page.unreadable,
-        [format!("{}.manifest.json", attempt.manifest.copy)]
+        refusal.code, "backup_project_mismatch",
+        "{}",
+        refusal.message
     );
     let restored = fixture.home.path().join("restored.db");
     let error = adapter

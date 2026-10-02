@@ -56,6 +56,8 @@ pub(crate) struct Listing {
     pub manifests: Vec<StoredManifest>,
     /// Names of manifest files the target holds that could not be used.
     pub unreadable: Vec<String>,
+    /// Copies whose manifest names another project.
+    pub foreign: Vec<String>,
 }
 
 /// Why a list or fetch stopped, with its stable code.
@@ -150,16 +152,7 @@ pub(crate) fn fetch(
     let mut fetched = run(settings.deadline, move |left| {
         let started = Instant::now();
         let listing = list_all(&target.adapter(left), &target.project)?;
-        let manifest = listing
-            .manifests
-            .into_iter()
-            .find(|manifest| manifest.copy == copy)
-            .ok_or_else(|| {
-                ReadFailure::new(
-                    "backup_copy_unknown",
-                    format!("the target holds no usable copy named {copy}"),
-                )
-            })?;
+        let manifest = named(listing, &copy, &target.project)?;
         let decode_left = left
             .saturating_sub(started.elapsed())
             .saturating_sub(DECODE_MARGIN);
@@ -201,6 +194,35 @@ pub(super) fn removing(mut failure: ReadFailure, staging: &Path) -> ReadFailure 
         );
     }
     failure
+}
+
+/// The manifest of copy `copy` in `listing`. A copy whose manifest names
+/// another project is refused as such, and one the listing does not hold as
+/// unknown.
+pub(super) fn named(
+    listing: Listing,
+    copy: &str,
+    project: &ProjectId,
+) -> Result<StoredManifest, ReadFailure> {
+    if listing.foreign.iter().any(|foreign| foreign == copy) {
+        return Err(ReadFailure::new(
+            "backup_project_mismatch",
+            format!(
+                "the manifest of copy {copy} names another project than {}",
+                project.0
+            ),
+        ));
+    }
+    listing
+        .manifests
+        .into_iter()
+        .find(|manifest| manifest.copy == copy)
+        .ok_or_else(|| {
+            ReadFailure::new(
+                "backup_copy_unknown",
+                format!("the target holds no usable copy named {copy}"),
+            )
+        })
 }
 
 fn exists(out: &Path) -> ReadFailure {
@@ -261,6 +283,7 @@ pub(super) fn list_all(
         let page = adapter.list(project, cursor.as_deref())?;
         listing.manifests.extend(page.manifests);
         listing.unreadable.extend(page.unreadable);
+        listing.foreign.extend(page.foreign);
         match page.next {
             Some(next) => cursor = Some(next),
             None => return Ok(listing),

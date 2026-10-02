@@ -45,6 +45,8 @@ pub(crate) struct ManifestPage {
     pub manifests: Vec<StoredManifest>,
     /// Names of manifest files that could not be used, left untouched.
     pub unreadable: Vec<String>,
+    /// Copies whose manifest is readable but names another project.
+    pub foreign: Vec<String>,
     /// Where the next page starts, if there is one.
     pub next: Option<String>,
 }

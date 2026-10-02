@@ -8,6 +8,7 @@ pub(crate) mod check;
 pub(crate) mod directory;
 pub(crate) mod fetch;
 pub(crate) mod push;
+pub(crate) mod restore;
 
 #[cfg(test)]
 mod tests;

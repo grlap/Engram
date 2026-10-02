@@ -24,6 +24,21 @@ pub(crate) fn doctor(
     repair_projections: bool,
     landing_repository: Option<&Path>,
 ) -> Result<()> {
+    // Doctor examines an existing store and never creates one, in every mode
+    // that opens it: a project directory that holds only other files, such as
+    // a restore's staging file, has no store, and neither does a link that
+    // leads nowhere. Policy recovery and projection repair refuse a missing
+    // file in their own words.
+    if !recover_policy && !repair_projections && store_missing(database) {
+        return refuse(
+            database,
+            project_id,
+            &engram::StoreError::StoreNotInitialized,
+            json,
+            Phase::Open,
+            &BackupBlock::read(database, project_id),
+        );
+    }
     if let Some(repository) = landing_repository {
         return landings::check_landings(database, identity, project_id, repository, json);
     }
@@ -180,6 +195,11 @@ impl BackupBlock {
             ),
         }
     }
+}
+
+/// Whether nothing stands at `database` once links are followed.
+fn store_missing(database: &Path) -> bool {
+    matches!(std::fs::metadata(database), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
 }
 
 /// Reports a refusal with the backup block beside it: inside the JSON

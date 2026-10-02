@@ -17,8 +17,9 @@
 > pending attempts, deadlines and retention, and `engram backup status
 > [--json] [--check-target]` with the freshness rule and the
 > `local_backed_up` mode it reports, the backup block of `engram doctor`,
-> the `next` reminder, and `engram backup list` and `engram backup fetch`.
-> `backup restore` and the `graph` kind are not shipped. The [shipped inventory](../shipped.md) stays the record of what
+> the `next` reminder, `engram backup list` and `engram backup fetch`, and
+> `engram backup restore` of a `store` copy. The `graph` kind is not
+> shipped. The [shipped inventory](../shipped.md) stays the record of what
 > exists.
 
 Today every Engram store lives on one machine. `engram backup` writes its
@@ -549,18 +550,34 @@ or retired:
 2. Set `ENGRAM_HOME` to an empty home, check out the project, and run
    `engram backup target set` for the target that holds the copies.
 3. `engram backup list`, then
-   `engram backup restore <copy> --origin-retired-by <operator>`. It checks
-   that the local disk has room for the stored file and the uncompressed
-   copy the manifest declares, fetches the copy, decompresses no more than
-   the declared length, checks the result against its manifest, and then
-   does
-   what the shipped `engram restore --from <file>` does: it verifies the
-   file, installs it without replacing anything and verifies the installed
-   store. It never replaces an existing store.
+   `engram backup restore <copy> --origin-retired-by <operator>`. Under
+   the push lock it checks that the local disk has room for the stored file
+   and the uncompressed copy the manifest declares, fetches the copy into a
+   staging file beside the store, decompresses no more than the declared
+   length and checks the result against its manifest. It then runs the full
+   check a backup gets on the staged copy, records a pending restore under
+   `backup-records`, moves the copy into place with a rename that never
+   replaces anything, checks the installed store and marks the record
+   completed. It never replaces an existing store.
 4. Run `engram doctor` and `engram readiness`. Both resolve the project
    root's path identity, which restore itself does not: a store restored
    onto an operating system with different path rules is refused here. Start
    the host, with new sessions, only after both pass.
+
+**A restore that stops.** The staging file is named
+`.backup-restore-<id>.staging`, which store open, `doctor` and `readiness`
+never take for a store; neither `doctor` nor `readiness` creates a store
+beside it. A restore that stops before the move leaves no store and its
+record pending, and a retry of the same copy finishes it while another copy
+is refused. A no-replace rename within one directory is all or nothing for
+a process that stops, so a restore that stops after the move leaves the
+whole copy in place with its record pending. A retry of the same copy then
+completes the record when `engram.db` holds the recorded SHA-256 and nothing
+beside it but what a read leaves, an empty `-wal` and an `-shm`; a `-wal`
+with any bytes, a `-journal` or other bytes mean something wrote to it, and
+the retry refuses it as an existing store, naming what did not match.
+`backup status` and `doctor` show a pending record from the moment it is
+written.
 
 **What restore does with live authority.** A `store` copy holds the claims,
 grants, control sessions and delivery state that were live at its cut.

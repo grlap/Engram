@@ -1,7 +1,8 @@
 //! The operator `backup target` words, which set, show and clear a project's
 //! backup targets and read and write only the records under the Engram home;
 //! `backup push`, which brings each configured kind's copy up to date; and
-//! `backup list` and `backup fetch`, which read the copies a target holds.
+//! `backup list` and `backup fetch`, which read the copies a target holds;
+//! and `backup restore`, which installs one onto a home without a store.
 
 use std::{
     path::{Path, PathBuf},
@@ -31,6 +32,7 @@ use super::{
         DEFAULT_CAPTURE_DEADLINE, DEFAULT_TRANSPORT_DEADLINE, KindReport, Outcome, PushSettings,
         push,
     },
+    backup::restore::{RestoreSettings, Restored, report_text, restore},
     graph::engram_home_and_project_digest,
 };
 
@@ -93,6 +95,21 @@ pub(crate) enum BackupCommand {
         out: PathBuf,
         #[arg(long, value_enum, default_value = "store")]
         kind: KindArg,
+        #[arg(long)]
+        json: bool,
+        /// Seconds the requests to the target may take together.
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_READ_DEADLINE.as_secs())]
+        deadline_secs: u64,
+    },
+    /// Install one `store` copy from the configured target onto this home,
+    /// which must hold no store for the project. Changes no row of the copy.
+    Restore {
+        /// The copy's name, as `backup list` prints it.
+        copy: String,
+        /// The operator who states that the origin store will never run
+        /// again; recorded as asserted context.
+        #[arg(long, value_name = "NAME")]
+        origin_retired_by: Option<String>,
         #[arg(long)]
         json: bool,
         /// Seconds the requests to the target may take together.
@@ -285,6 +302,24 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
                     manifest.capture.sha256
                 );
             }
+            return Ok(true);
+        }
+        BackupCommand::Restore {
+            copy,
+            origin_retired_by,
+            json,
+            deadline_secs,
+        } => {
+            let run = restore(
+                home,
+                project,
+                database,
+                &copy,
+                origin_retired_by.as_deref(),
+                &RestoreSettings::new(ReadSettings::new(Duration::from_secs(deadline_secs))),
+            );
+            let restored = finish(run.outcome, run.abandoned.is_some(), json)?;
+            print_restored(&restored, json)?;
             return Ok(true);
         }
     };
@@ -520,6 +555,30 @@ fn finish<T>(
     }
 }
 
+fn print_restored(restored: &Restored, json: bool) -> Result<()> {
+    let authority = &restored.report.authority;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "schema_version": READ_SCHEMA_VERSION,
+                "copy": restored.copy,
+                "store": restored.store.display().to_string(),
+                "bytes": restored.bytes,
+                "sha256": restored.sha256,
+                "origin_host": restored.origin_host,
+                "origin_retired_by": restored.origin_retired_by,
+                "completed_interrupted": restored.completed_interrupted,
+                "kept_record": restored.kept_record.as_ref().map(|path| path.display().to_string()),
+                "authority": authority,
+            }))?
+        );
+        return Ok(());
+    }
+    print!("{}", report_text(restored));
+    Ok(())
+}
+
 fn print_listing(kind: CopyKind, listing: &Listing, json: bool) -> Result<()> {
     if json {
         println!(
@@ -529,6 +588,7 @@ fn print_listing(kind: CopyKind, listing: &Listing, json: bool) -> Result<()> {
                 "kind": kind.as_str(),
                 "copies": listing.manifests,
                 "unreadable": listing.unreadable,
+                "foreign": listing.foreign,
             }))?
         );
         return Ok(());
@@ -564,6 +624,9 @@ fn print_listing(kind: CopyKind, listing: &Listing, json: bool) -> Result<()> {
     }
     for name in &listing.unreadable {
         println!("unreadable manifest: {name}");
+    }
+    for copy in &listing.foreign {
+        println!("manifest of another project: {copy}");
     }
     Ok(())
 }

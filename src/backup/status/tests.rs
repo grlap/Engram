@@ -400,3 +400,68 @@ fn an_unreadable_store_cut_is_said_once_and_an_unnamed_running_build_is_not_comp
         .unwrap();
     assert_eq!(copy.store_moved, None);
 }
+
+#[test]
+fn a_recorded_restore_is_shown_pending_restored_or_unreadable_after_the_kinds() {
+    use crate::backup::restore::{RestoreRecord, RestoreRecords, RestoreState};
+    let record = RestoreRecord {
+        format_version: RECORD_FORMAT_VERSION,
+        project: "status-project".into(),
+        copy: "20261001T000000Z-copy".into(),
+        sha256: "cd".repeat(32),
+        origin_host: Some("old-host".into()),
+        origin_retired: Statement {
+            by: "greg".into(),
+            at: at(1),
+        },
+        staging: "staging".into(),
+        state: RestoreState::Pending,
+        pending_at: at(2),
+        completed_at: None,
+    };
+    assert!(RestoreStatus::of(RestoreRecords::None).is_none());
+
+    let mut status = build_status(&collected(configured()), &running(b"build"), at(3));
+    assert!(status.restore.is_none());
+    status.restore = RestoreStatus::of(RestoreRecords::Recorded(Box::new(record.clone())));
+    let pending = status.restore.as_ref().unwrap();
+    assert_eq!(pending.state, "pending");
+    let text = render_status(&status);
+    let last = text.lines().last().unwrap();
+    assert_eq!(
+        last,
+        format!(
+            "restore: pending since {}: 20261001T000000Z-copy (sha256 {}) from host old-host; origin retired by greg at {} (asserted); run `engram backup restore 20261001T000000Z-copy --origin-retired-by greg` again to finish it",
+            at(2).to_rfc3339(),
+            "cd".repeat(32),
+            at(1).to_rfc3339()
+        )
+    );
+    let value = serde_json::to_value(&status).unwrap();
+    assert_eq!(value["restore"]["state"], "pending");
+    assert_eq!(value["restore"]["record"]["copy"], "20261001T000000Z-copy");
+
+    let mut completed = record;
+    completed.state = RestoreState::Completed;
+    completed.completed_at = Some(at(3));
+    status.restore = RestoreStatus::of(RestoreRecords::Recorded(Box::new(completed)));
+    let text = render_status(&status);
+    assert!(
+        text.lines()
+            .last()
+            .unwrap()
+            .starts_with("restore: restored 20261001T000000Z-copy (sha256 ")
+            && text.ends_with(&format!("; completed {}\n", at(3).to_rfc3339())),
+        "{text}"
+    );
+
+    status.restore = RestoreStatus::of(RestoreRecords::Unreadable {
+        path: "store.restore.json".into(),
+        reason: "it is not JSON".into(),
+    });
+    assert_eq!(status.restore.as_ref().unwrap().state, "unreadable");
+    assert!(
+        render_status(&status)
+            .ends_with("restore: unreadable record: store.restore.json: it is not JSON\n")
+    );
+}

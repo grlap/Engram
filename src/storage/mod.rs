@@ -13,7 +13,9 @@ mod objects_tasks;
 mod open_schema;
 #[cfg(test)]
 pub(crate) use open_schema::CopyProbePoint;
-pub use open_schema::{CopyInterrupt, VerifiedStoreCopy};
+pub use open_schema::{
+    CopyInterrupt, LiveAuthority, RestoreCopyReport, VerifiedStoreCopy, installed_sidecar_problem,
+};
 mod policy_admin;
 mod project_memory;
 mod schema_diagnostics;

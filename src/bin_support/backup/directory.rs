@@ -623,11 +623,12 @@ impl BackupAdapter for DirectoryAdapter<'_> {
         };
         for copy in copies {
             match read_manifest(&directory.join(manifest_name(&copy))) {
-                Ok(Some(manifest))
-                    if manifest.copy == copy
-                        && manifest.capture.project_digest == engram::project_digest(project) =>
-                {
-                    page.manifests.push(manifest);
+                Ok(Some(manifest)) if manifest.copy == copy => {
+                    if manifest.capture.project_digest == engram::project_digest(project) {
+                        page.manifests.push(manifest);
+                    } else {
+                        page.foreign.push(copy);
+                    }
                 }
                 _ => page.unreadable.push(manifest_name(&copy)),
             }
