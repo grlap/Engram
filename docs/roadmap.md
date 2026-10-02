@@ -99,18 +99,44 @@ involved. Every fallback
 becomes a missing-primitive finding. The broader replacement claim — off-host
 durability through the selected mode's restore path, plus control binding —
 is declared only after that dogfood passes without an unmodeled workflow.
-Accepted risk while the dogfood runs: manual backup/restore exists, but
-backups stay host-local unless copied off-host by hand, `doctor` reports no
-backup freshness, and nothing runs automatically — so there is no off-host
-recovery guarantee, and losing the active host can lose local work state.
-The designed `local_backed_up` reports a verified copy at a configured
-target, and always says on what the off-host part rests. For a directory
-target that is the operator's assertion, shown as unverified. Only the Git
-adapter observes a remote's own acknowledgement; it carries the graph kind
-only, and an acknowledgement is not evidence of the provider's durability.
+Accepted risk while the dogfood runs: losing the active host loses local
+work state unless an off-host copy of the store exists.
+[Off-host backup](features/off-host-backup.md) narrows that risk, but only
+for a project whose operator has configured a target: until then its mode
+stays `local` and the risk applies in full. As of 2026-10-02 no live store
+on the dogfood host has a target configured, so for the dogfood the risk
+has not changed yet. Once a target is configured, `engram backup push`
+copies the whole store, verified and gzip-compressed, to that directory
+target whenever the host's trigger runs it.
+`backup status` and `doctor` report `local_backed_up` only while the
+freshness rule holds, and always say on what the off-host part rests;
+`next` reminds of a `local` mode or a failed push. `engram backup restore`
+installs a copy onto a clean home. Together these protect against losing
+the active host's store, and against damage to it that the full check of
+each copy detects, provided a qualifying copy sits at a target that really
+leaves the machine. They do not protect against:
+
+- an off-host claim that is false: for a directory target it is the
+  operator's assertion, shown as unverified;
+- losing work recorded after the newest copy's cut;
+- damage the full check cannot see, such as wrong rows that still decode,
+  once retention (three copies by default) has removed every copy taken
+  before it;
+- a copy that no obtainable build can restore: a restore needs a build that
+  accepts the copy's format, or a migration path from it;
+- a host that never runs its trigger, since Engram schedules no push of its
+  own;
+- a second writer: nothing detects one, so the origin must be retired
+  before a restore, and sessions after a restore need identities the
+  restored store has not seen, while its live claims stay held until they
+  expire.
+
+Neither the graph copy kind nor the Git adapter, the only adapter that
+observes a remote's own acknowledgement, is shipped; and an acknowledgement
+would not be evidence of the provider's durability.
 The shipped
-[work-graph snapshot](features/work-graph-snapshot.md) is the first artifact
-on that path: one deterministic file that recreates a store on a build whose
+[work-graph snapshot](features/work-graph-snapshot.md) remains a manual
+path: one deterministic file that recreates a store on a build whose
 snapshot format matches and moves a project between machines by hand; it
 reduces the risk only once a copy leaves the host.
 
@@ -121,9 +147,10 @@ reduces the risk only once a copy leaves the host.
 - Post-publication retention compaction
 - Budget tuning from retrieval decision logs
 - Optional configured external backup automation, designed in
-  [off-host backup](features/off-host-backup.md): first a verified full-store
-  copy at a configured target, then the shipped work-graph snapshot as a
-  second copy kind, with `doctor` freshness reporting for `local_backed_up`
+  [off-host backup](features/off-host-backup.md): the verified full-store
+  copy at a directory target, with `doctor` freshness reporting for
+  `local_backed_up` and restore, is shipped; still planned are the
+  work-graph snapshot as a second copy kind and the Git adapter
 
 ## V2+ — widen the loop
 
