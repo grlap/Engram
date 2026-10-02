@@ -259,10 +259,16 @@ One bounded command does all the work, for each configured kind. With no
 target configured it says so and exits 0.
 
 1. Take the push lock for this project and kind: an exclusive lock that the
-   operating system holds for the process and releases when it exits. A push
-   that cannot take it exits 0 and says that another push is running. There
-   is no takeover by age: a push ends by its own deadlines, and only the end
-   of its process frees the lock.
+   operating system holds for the process. A push that cannot take it exits 0
+   and says that another push is running. Releasing it unlocks the lock file
+   explicitly before closing it, so once the unlock succeeds a child process
+   that inherited the file before it executed another program does not keep
+   the lock. An unlock that fails is reported on standard error, and the lock
+   then stays held until every inherited reference closes. A push that ends
+   abnormally before its release leaves the lock to the operating system in
+   the same way. There is no takeover by age: a push ends by its own
+   deadlines, and only its release or the end of everything holding the lock
+   frees it.
 2. Resolve a pending attempt, if the state records one, in this order.
    First reconcile that attempt's own files at the target, and only those:
    when its data file was renamed into place and its manifest was not

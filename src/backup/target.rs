@@ -356,14 +356,36 @@ impl RecordPaths {
     }
 }
 
-/// The exclusive push lock for one project and kind. The operating system
-/// holds it for the process and releases it when the guard is dropped or the
-/// process ends; there is no takeover by age. The lock file itself is never
+/// The exclusive push lock for one project and kind. Dropping the guard
+/// releases it: the file is unlocked explicitly before it closes, so once the
+/// unlock succeeds a child process that inherited the file before it executed
+/// another program does not keep the lock. An unlock that fails is reported
+/// on standard error; closing the file is then the only cleanup, and the lock
+/// stays held until every inherited reference to it closes too. A holder that
+/// ends abnormally before that release, killed or aborted, leaves the lock to
+/// the operating system in the same way: it may stay held while an inherited
+/// reference remains, in a child that has not yet executed another program or
+/// exited. There is no takeover by age. The lock file itself is never
 /// removed, so every process locks the same file.
 #[derive(Debug)]
 pub struct PushLock {
-    _file: File,
+    file: File,
     path: PathBuf,
+}
+
+impl Drop for PushLock {
+    fn drop(&mut self) {
+        // Closing alone would leave the lock to any child that inherited the
+        // file and has not yet executed another program.
+        if let Err(error) = self.file.unlock() {
+            // Reporting must not panic while the guard drops.
+            let _ = writeln!(
+                std::io::stderr().lock(),
+                "warning: the push lock {} could not be unlocked: {error}",
+                self.path.display()
+            );
+        }
+    }
 }
 
 impl PushLock {
@@ -390,7 +412,7 @@ impl PushLock {
             })?;
         match file.try_lock() {
             Ok(()) => Ok(Self {
-                _file: file,
+                file,
                 path: paths.lock.clone(),
             }),
             Err(fs::TryLockError::WouldBlock) => Err(TargetError::PushRunning {

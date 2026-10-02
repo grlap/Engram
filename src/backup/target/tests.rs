@@ -917,3 +917,65 @@ fn a_recorded_cut_with_a_negative_position_is_refused() {
         );
     }
 }
+
+/// A child that shares the push lock's open file must not keep the lock once
+/// its holder releases it. A child spawned between fork and exec holds such a
+/// reference; so does the child here, which waits on its input holding the
+/// inherited file. The holder releases meanwhile, a new holder then acquires
+/// at once, and the child's later exit leaves that new holder's lock in
+/// place. Nothing retries the acquisition.
+///
+/// This crate allows no unsafe code, so the test cannot pause a forked child
+/// between fork and exec itself. It keeps the lock's descriptor open across
+/// the child's exec instead: the child then holds the same open file
+/// description a child between fork and exec holds, until it exits. That the
+/// fork-to-exec window exists is shown by the platform sources, not by this
+/// test.
+#[cfg(unix)]
+#[test]
+fn a_released_lock_is_free_while_a_child_shares_the_inherited_lock_file() {
+    use std::{io::Write, process::Stdio};
+
+    use nix::fcntl::{FcntlArg, FdFlag, fcntl};
+
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let held = PushLock::try_acquire(&paths).expect("the first holder takes the lock");
+    // While close-on-exec is off, a child another test thread spawns inherits
+    // the description too; that is harmless, since the explicit unlock
+    // releases the description's lock whatever references remain, and no
+    // other test uses this lock file.
+    fcntl(&held.file, FcntlArg::F_SETFD(FdFlag::empty()))
+        .expect("let a child inherit the lock's file");
+    let child = Command::new("sh")
+        .args(["-c", "read line; exec true"])
+        .stdin(Stdio::piped())
+        .spawn();
+    // The child has its copy once spawning returns; close the window.
+    fcntl(&held.file, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).expect("close-on-exec again");
+    let mut child = child.expect("the child starts, holding the inherited lock file");
+
+    drop(held);
+    let next = match PushLock::try_acquire(&paths) {
+        Ok(next) => next,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("a released lock must be free while a child shares it: {error}");
+        }
+    };
+
+    let mut stdin = child.stdin.take().expect("the child's input");
+    stdin.write_all(b"go\n").expect("let the child go on");
+    drop(stdin);
+    let status = child.wait().expect("the child ends");
+    assert!(status.success(), "{status:?}");
+    assert!(
+        matches!(
+            PushLock::try_acquire(&paths),
+            Err(TargetError::PushRunning { .. })
+        ),
+        "the child's exit leaves the new holder's lock in place"
+    );
+    drop(next);
+}
