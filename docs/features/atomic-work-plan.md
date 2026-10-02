@@ -1,5 +1,10 @@
 # Atomic work plans
 
+> Normative references: [spec §2.6](../spec.md#26-local-work-graph--execution)
+> and [spec §9](../spec.md#9-local-work-reports--external-systems).
+> Related briefs: [local work system](local-work-system.md) and
+> [CLI & MCP](cli-and-mcp.md).
+
 Use one `work core propose` call to create a complete local plan. The plan can
 contain several new roots, nested children, and prerequisites. Engram creates
 all tasks and edges in one SQLite transaction, or creates none of them.
