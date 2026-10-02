@@ -4,6 +4,7 @@
 //! agents work against local immutable records, while a frozen report crosses
 //! the external tracker boundary only through a receipted adapter call.
 
+pub mod backup;
 pub mod build_identity;
 pub mod canonical;
 pub mod control;
@@ -98,6 +99,7 @@ pub use mcp::{McpServer, store_error_value};
 pub use memory::{DevelopmentNoopRedactor, Redactor};
 pub use project::{
     HostPathProbeError, parse_host_path_policy, probe_host_path_policy, project_database_path,
+    project_digest,
 };
 pub use storage::{
     AcceptanceEvaluationPolicyUpdateReceipt, AcceptanceEvaluationReceipt,

@@ -11,6 +11,9 @@ pub mod migration;
 mod named_root_read;
 mod objects_tasks;
 mod open_schema;
+#[cfg(test)]
+pub(crate) use open_schema::CopyProbePoint;
+pub use open_schema::{CopyInterrupt, VerifiedStoreCopy};
 mod policy_admin;
 mod project_memory;
 mod schema_diagnostics;

@@ -15,11 +15,16 @@ use crate::{HostPathPolicy, ProjectId};
 /// caller's platform-specific Engram data directory.
 #[must_use]
 pub fn project_database_path(engram_home: &Path, project_id: &ProjectId) -> PathBuf {
-    let digest = Sha256::digest(project_id.0.as_bytes());
     engram_home
         .join("projects")
-        .join(format!("{digest:x}"))
+        .join(project_digest(project_id))
         .join("engram.db")
+}
+
+/// The opaque name a project's directories carry below the Engram home.
+#[must_use]
+pub fn project_digest(project_id: &ProjectId) -> String {
+    format!("{:x}", Sha256::digest(project_id.0.as_bytes()))
 }
 
 /// Why the project root's filesystem identity could not be probed.

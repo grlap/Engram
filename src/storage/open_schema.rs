@@ -20,6 +20,10 @@ use super::{
 #[cfg(test)]
 use super::{building_schema_reference, fail_cold_schema_after_ddl};
 
+mod store_copy;
+pub(crate) use store_copy::CopyProbePoint;
+pub use store_copy::{CopyInterrupt, VerifiedStoreCopy};
+
 #[cfg(test)]
 mod tests;
 
@@ -90,8 +94,16 @@ impl SqliteStore {
     }
 
     fn open_existing_read_only_untraced(path: &Path) -> Result<Self, StoreError> {
-        let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|error| {
+        let connection = Self::open_existing_read_only_connection(path)?;
+        connection.pragma_update(None, "query_only", true)?;
+        Self::from_connection(connection, None, None)
+    }
+
+    /// A read-only SQLite connection to an existing store file, not yet
+    /// admitted. A missing file is an uninitialized store.
+    fn open_existing_read_only_connection(path: &Path) -> Result<Connection, StoreError> {
+        Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(
+            |error| {
                 // Only a proved absent path is initialization, not permissions,
                 // recovery, or another CANTOPEN cause. Never create a directory.
                 if matches!(std::fs::metadata(path), Err(ref io) if io.kind() == std::io::ErrorKind::NotFound) {
@@ -99,9 +111,8 @@ impl SqliteStore {
                 } else {
                     StoreError::Sqlite(error)
                 }
-            })?;
-        connection.pragma_update(None, "query_only", true)?;
-        Self::from_connection(connection, None, None)
+            },
+        )
     }
 
     /// Checks existing-store admission and current policy for host enablement.
@@ -426,6 +437,17 @@ impl SqliteStore {
     /// Returns [`StoreError`] when the path is not an existing regular file,
     /// cannot be opened read-only as a current store, or fails verification.
     pub fn verify_backup(path: &Path) -> Result<BackupManifest, StoreError> {
+        Self::verify_copy_file(path, None).map(|(manifest, _)| manifest)
+    }
+
+    /// Checks one copy file as [`Self::verify_backup`] describes and returns
+    /// the immutable store it was checked through, so the caller can read
+    /// more from exactly those bytes. `interrupt` bounds the hashing and
+    /// every SQLite step of the check.
+    fn verify_copy_file(
+        path: &Path,
+        interrupt: Option<&CopyInterrupt>,
+    ) -> Result<(BackupManifest, Self), StoreError> {
         if !path.is_file() {
             return Err(StoreError::InvalidWork(format!(
                 "backup {} is not an existing file",
@@ -444,20 +466,46 @@ impl SqliteStore {
                 )));
             }
         }
-        let bytes = std::fs::read(path).map_err(|error| {
+        let unreadable = |error: std::io::Error| {
             StoreError::InvalidWork(format!("cannot read backup {}: {error}", path.display()))
-        })?;
-        let digest = <sha2::Sha256 as sha2::Digest>::digest(&bytes);
+        };
+        let mut file = std::fs::File::open(path).map_err(unreadable)?;
+        let mut digest = <sha2::Sha256 as sha2::Digest>::new();
+        let mut buffer = vec![0_u8; 1 << 20];
+        let mut file_bytes = 0_u64;
+        loop {
+            if interrupt.is_some_and(CopyInterrupt::hash_chunk_expired) {
+                return Err(StoreError::InvalidWork(format!(
+                    "the check of {} passed its deadline",
+                    path.display()
+                )));
+            }
+            let read = match std::io::Read::read(&mut file, &mut buffer) {
+                Ok(read) => read,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(unreadable(error)),
+            };
+            if read == 0 {
+                break;
+            }
+            sha2::Digest::update(&mut digest, &buffer[..read]);
+            file_bytes += read as u64;
+        }
+        drop(file);
+        let digest = sha2::Digest::finalize(digest);
         // `immutable=1` reads exactly the hashed bytes: no shared-memory or log
         // file is consulted or created, so a read-only directory works too.
-        let immutable = || {
-            Connection::open_with_flags(
-                immutable_uri(path)?,
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-            )
-            .map_err(StoreError::from)
-        };
-        let store = Self::from_connection(immutable()?, None, None)?;
+        let connection = Connection::open_with_flags(
+            immutable_uri(path)?,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        )?;
+        if let Some(interrupt) = interrupt {
+            interrupt.install(&connection, CopyProbePoint::Admit)?;
+        }
+        let store = Self::from_connection(connection, None, None)?;
+        if let Some(interrupt) = interrupt {
+            interrupt.install(&store.connection, CopyProbePoint::Scan)?;
+        }
         let report = store.verify_all()?;
         if !report.is_healthy() {
             return Err(StoreError::InvalidWork(format!(
@@ -469,15 +517,16 @@ impl SqliteStore {
                 report.invalid_work_records.len()
             )));
         }
-        Ok(BackupManifest {
+        let manifest = BackupManifest {
             path: path.to_path_buf(),
             file_sha256: format!("{digest:x}"),
-            file_bytes: bytes.len() as u64,
+            file_bytes,
             checked_objects: report.checked_objects,
             checked_control_records: report.checked_control_records,
             checked_work_records: report.checked_work_records,
             created_at: Utc::now(),
-        })
+        };
+        Ok((manifest, store))
     }
 
     /// Opens or creates a local database with the project root's resolved
