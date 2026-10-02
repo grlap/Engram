@@ -623,6 +623,22 @@ fn held(paths: &RecordPaths, lock: &PushLock) -> Result<(), TargetError> {
     }
 }
 
+/// Reads one kind's configuration, its derived identity and its state
+/// without taking the lock, for a reader that records nothing. Without a
+/// configured target the answer is `None`.
+///
+/// # Errors
+///
+/// Refuses a record this build cannot use, as the target words do.
+pub fn read_kind_records(
+    paths: &RecordPaths,
+    project: &ProjectId,
+    kind: CopyKind,
+) -> Result<Option<(TargetConfig, ObjectId, Option<TargetState>)>, TargetError> {
+    let (config, state) = read_records(paths, project, kind)?;
+    Ok(config.map(|(config, identity)| (config, identity, state)))
+}
+
 /// A kind's usable configuration with its derived identity, and its state.
 type Records = (Option<(TargetConfig, ObjectId)>, Option<TargetState>);
 

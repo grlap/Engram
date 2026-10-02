@@ -1577,5 +1577,32 @@ fn inspect_serialized_strings<R: Redactor>(redactor: &R, value: &Value) -> Resul
     }
 }
 
+impl SqliteStore {
+    /// The project's current cut, the work-feed head and the project-memory
+    /// change position, read together in one read transaction. The store is
+    /// opened read-only and admitted as every reader admits it, so a store
+    /// this build cannot use is refused rather than read; SQLite may recreate
+    /// its shared-memory sidecar, but no database or log bytes are written.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a missing store as uninitialized, a store this build cannot
+    /// use, and a read that fails.
+    pub fn read_backup_cut(
+        database: &std::path::Path,
+        project_id: &ProjectId,
+    ) -> Result<WorkGraphSnapshotCut, StoreError> {
+        let store = Self::open_existing_read_only(database)?;
+        let transaction = store.connection.unchecked_transaction()?;
+        let work_feed = store.work_feed_head(&crate::FeedId::Project(project_id.clone()))?;
+        let (_, project_memory) = project_memory_state_on(&store.connection, project_id)?;
+        transaction.commit()?;
+        Ok(WorkGraphSnapshotCut {
+            work_feed,
+            project_memory,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests;

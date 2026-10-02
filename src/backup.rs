@@ -447,6 +447,7 @@ fn remove_attempt(attempt: &Path) -> Result<(), (PathBuf, io::Error)> {
     }
 }
 
+pub mod freshness;
 pub mod record;
 pub mod target;
 
