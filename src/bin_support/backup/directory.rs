@@ -376,6 +376,35 @@ impl<'a> DirectoryAdapter<'a> {
         }
     }
 
+    /// Removes one confirmed copy this home put for this target, beyond the
+    /// retention count: its manifest first, so no manifest is left without
+    /// its copy, then its data.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a copy made for another project or target identity, and
+    /// returns the first removal that failed.
+    pub(crate) fn remove_copy(
+        &self,
+        project: &ProjectId,
+        manifest: &StoredManifest,
+    ) -> Result<(), AdapterError> {
+        self.check_manifest(project, manifest)?;
+        self.reachable()
+            .map_err(|reason| AdapterError::Unreachable {
+                path: self.root.clone(),
+                reason,
+            })?;
+        let files = self.files(project, &manifest.copy);
+        for path in [&files.manifest, &files.data] {
+            remove_with_retry(path).map_err(|source| AdapterError::Io {
+                path: path.clone(),
+                source,
+            })?;
+        }
+        Ok(())
+    }
+
     /// Removes every file of an attempt this home recorded and then found
     /// abandoned, and nothing else.
     ///

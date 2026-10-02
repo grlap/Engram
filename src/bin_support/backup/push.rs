@@ -68,6 +68,9 @@ pub(crate) struct PushSettings {
     /// Makes every state write after the put fail.
     #[cfg(test)]
     pub fail_save_after_put: bool,
+    /// Runs on the transport worker just before a retention removal.
+    #[cfg(test)]
+    pub before_remove: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl PushSettings {
@@ -83,6 +86,8 @@ impl PushSettings {
             after_confirm: None,
             #[cfg(test)]
             fail_save_after_put: false,
+            #[cfg(test)]
+            before_remove: None,
         }
     }
 }
@@ -125,6 +130,8 @@ pub(crate) struct KindReport {
     pub set_aside: Option<String>,
     /// The copy of the attempt left pending for the next push.
     pub pending: Option<String>,
+    /// The copies retention removed from the target.
+    pub removed: Vec<String>,
     /// What went wrong without failing the push.
     pub warnings: Vec<String>,
     pub elapsed_ms: u64,
@@ -144,6 +151,7 @@ impl KindReport {
             dropped: None,
             set_aside: None,
             pending: None,
+            removed: Vec::new(),
             warnings: Vec::new(),
             elapsed_ms: 0,
         }
@@ -334,6 +342,7 @@ fn push_kind(home: &Path, project: &ProjectId, kind: CopyKind, settings: &PushSe
         started_at: Utc::now(),
         report: KindReport::new(kind, Outcome::Failed),
         stage: None,
+        keep: usize::try_from(records.config.keep).unwrap_or(usize::MAX),
         saved: records.state.clone(),
         #[cfg(test)]
         put_done: false,
@@ -362,6 +371,8 @@ struct Push<'a> {
     /// The local stage this push owns: the capture and, once prepared, the
     /// stored file beside it.
     stage: Option<(StoreCapture, Option<PathBuf>)>,
+    /// How many copies the target keeps.
+    keep: usize,
     /// The state as last written, which is what the report shows.
     saved: TargetState,
     /// Whether the put returned, so a test can fail the write after it.
@@ -722,18 +733,26 @@ impl Push<'_> {
                 AttemptOutcome::Failed
             }
         };
-        if let Err(failure) = self.save(state) {
-            if outcome == AttemptOutcome::Failed {
-                self.report.warnings.push(format!(
-                    "the failed attempt could not be recorded: {}",
-                    failure.message
-                ));
-            } else {
-                // The copy is at the target, but nothing here says so: the
-                // attempt stays pending in the earlier state for the next push.
-                self.report.outcome = Outcome::Failed;
-                self.report.code = Some(failure.code);
-                self.report.message = Some(failure.message);
+        match self.save(state) {
+            Ok(()) if outcome != AttemptOutcome::Failed => {
+                // Step 7, only once the receipt is recorded.
+                abandoned = self.retain(state);
+            }
+            Ok(()) => {}
+            Err(failure) => {
+                if outcome == AttemptOutcome::Failed {
+                    self.report.warnings.push(format!(
+                        "the failed attempt could not be recorded: {}",
+                        failure.message
+                    ));
+                } else {
+                    // The copy is at the target, but nothing here says so: the
+                    // attempt stays pending in the earlier state for the next
+                    // push.
+                    self.report.outcome = Outcome::Failed;
+                    self.report.code = Some(failure.code);
+                    self.report.message = Some(failure.message);
+                }
             }
         }
         // The report shows what is recorded, which a failed write leaves at
@@ -746,6 +765,72 @@ impl Push<'_> {
             .as_ref()
             .map(|attempt| attempt.manifest.copy.clone());
         (self.report, abandoned)
+    }
+}
+
+impl Push<'_> {
+    /// Step 7: removes from the target the copies beyond the retention count,
+    /// oldest first. Only copies whose receipts this home recorded for the
+    /// current target identity count, and the newest is never removed, so a
+    /// copy from another home or an earlier identity is never touched. A
+    /// failed removal is a warning, and the copy stays in the ledger for a
+    /// later push. Returns the worker of a removal that passed the transport
+    /// deadline.
+    fn retain(&mut self, state: &mut TargetState) -> Option<JoinHandle<()>> {
+        let newest = state.newest_receipt.as_ref()?.manifest.copy.clone();
+        let own: Vec<_> = state
+            .receipts
+            .iter()
+            .filter(|receipt| receipt.target_identity == self.target.identity)
+            .collect();
+        let excess = own.len().saturating_sub(self.keep);
+        let doomed: Vec<_> = own
+            .into_iter()
+            .filter(|receipt| receipt.manifest.copy != newest)
+            .take(excess)
+            .map(|receipt| receipt.manifest.clone())
+            .collect();
+        let mut abandoned = None;
+        let mut removed = Vec::new();
+        for manifest in doomed {
+            let copy = manifest.copy.clone();
+            let target = self.target.clone();
+            #[cfg(test)]
+            let before_remove = self.settings.before_remove.clone();
+            match self.transport.run(move |left| {
+                #[cfg(test)]
+                if let Some(hook) = before_remove {
+                    hook();
+                }
+                target.adapter(left).remove_copy(&target.project, &manifest)
+            }) {
+                Ok(Ok(())) => removed.push(copy),
+                Ok(Err(error)) => self.report.warnings.push(format!(
+                    "the copy {copy} beyond the retention count could not be removed: {error}"
+                )),
+                Err(worker) => {
+                    self.report.warnings.push(format!(
+                        "removing the copy {copy} passed the transport deadline; it is retried by a later push"
+                    ));
+                    abandoned = worker;
+                    break;
+                }
+            }
+        }
+        if !removed.is_empty() {
+            state
+                .receipts
+                .retain(|receipt| !removed.contains(&receipt.manifest.copy));
+            if let Err(failure) = self.save(state) {
+                self.report.warnings.push(format!(
+                    "the removal of {} copies could not be recorded: {}",
+                    removed.len(),
+                    failure.message
+                ));
+            }
+        }
+        self.report.removed = removed;
+        abandoned
     }
 }
 

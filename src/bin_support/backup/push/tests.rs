@@ -45,6 +45,10 @@ impl Fixture {
     }
 
     fn set(&self, root: &Path, authorized_by: &str) -> TargetView {
+        self.set_keeping(root, authorized_by, 3)
+    }
+
+    fn set_keeping(&self, root: &Path, authorized_by: &str, keep: u32) -> TargetView {
         set_target(
             self.home(),
             &self.project,
@@ -55,7 +59,7 @@ impl Fixture {
                 disclosure_authorized_by: authorized_by.into(),
                 off_host_asserted_by: Some("greg".into()),
                 window_hours: 24,
-                keep: 3,
+                keep,
             },
             Utc::now(),
         )
@@ -726,4 +730,191 @@ fn a_confirmed_recovery_stands_when_the_capture_after_it_fails() {
         after.observed_equal_at,
         Some(receipt.manifest.capture.capture_started_at)
     );
+}
+
+/// The copy names of this project's copies at `root`, each with its data and
+/// manifest present.
+fn copies(fixture: &Fixture, root: &Path) -> Vec<String> {
+    let names = fixture.files(root);
+    let mut copies: Vec<String> = names
+        .iter()
+        .filter_map(|name| name.strip_suffix(".manifest.json"))
+        .filter(|copy| names.contains(&data(copy)))
+        .map(str::to_owned)
+        .collect();
+    copies.sort();
+    copies
+}
+
+/// Pushes a changed store and returns the copy it put.
+fn push_change(fixture: &Fixture, label: &str) -> String {
+    fixture.change(label);
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
+    run.report.receipt.unwrap().manifest.copy
+}
+
+#[test]
+fn retention_removes_the_oldest_of_this_home_s_copies_for_the_current_target_only() {
+    let fixture = fixture();
+    let first = fixture.set_keeping(&fixture.copies, "greg", 2);
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Uploaded);
+    let c1 = run.report.receipt.unwrap().manifest.copy;
+    let c2 = push_change(&fixture, "second");
+    // A copy another home put in the same directory, older than all of ours.
+    let foreign = copy_name(Utc::now() - chrono::Duration::days(1), uuid::Uuid::now_v7());
+    let directory = fixture.project_dir(&fixture.copies);
+    fs::write(directory.join(data(&foreign)), b"another home").unwrap();
+    fs::write(directory.join(manifest(&foreign)), b"{}").unwrap();
+
+    // A third copy is one beyond the count of two: the oldest of ours goes.
+    fixture.change("third");
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
+    let c3 = run.report.receipt.clone().unwrap().manifest.copy;
+    assert_eq!(run.report.removed, std::slice::from_ref(&c1));
+    let mut expected = vec![c2.clone(), c3.clone(), foreign.clone()];
+    expected.sort();
+    assert_eq!(copies(&fixture, &fixture.copies), expected);
+    let ledger: Vec<_> = fixture
+        .state()
+        .receipts
+        .into_iter()
+        .map(|receipt| receipt.manifest.copy)
+        .collect();
+    assert_eq!(ledger, [c2.clone(), c3.clone()]);
+
+    // A new identity of the same directory, keeping one copy: the copies
+    // made for the earlier identity are never counted or removed, and the
+    // newest copy is never removed.
+    let second = fixture.set_keeping(&fixture.copies, "ann", 1);
+    assert_ne!(second.identity, first.identity);
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
+    let c4 = run.report.receipt.clone().unwrap().manifest.copy;
+    assert_eq!(run.report.removed, Vec::<String>::new());
+    let c5 = push_change(&fixture, "fifth");
+    let mut expected = vec![c2, c3, c5.clone(), foreign];
+    expected.sort();
+    assert_eq!(copies(&fixture, &fixture.copies), expected);
+    assert!(!copies(&fixture, &fixture.copies).contains(&c4));
+    assert_eq!(fixture.state().newest_receipt.unwrap().manifest.copy, c5);
+}
+
+#[test]
+fn a_failed_push_removes_nothing_and_a_failed_removal_is_a_warning() {
+    let fixture = fixture();
+    fixture.set_keeping(&fixture.copies, "greg", 3);
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let c2 = push_change(&fixture, "second");
+    let c3 = push_change(&fixture, "third");
+    let c1 = fixture.state().receipts[0].manifest.copy.clone();
+    // The operator lowers the count to one by hand; the retention count is
+    // not part of the target's identity.
+    let paths = fixture.paths();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(&paths.config).unwrap()).unwrap();
+    config["keep"] = serde_json::json!(1);
+    fs::write(&paths.config, serde_json::to_vec(&config).unwrap()).unwrap();
+
+    // A push that fails removes nothing.
+    fixture.change("fourth");
+    let mut cramped = settings();
+    cramped.stage_free_space = |_| Ok(0);
+    let run = fixture.push_with(&cramped);
+    assert_eq!(run.report.outcome, Outcome::Failed);
+    assert_eq!(run.report.removed, Vec::<String>::new());
+    assert_eq!(
+        copies(&fixture, &fixture.copies),
+        [c1.clone(), c2.clone(), c3.clone()]
+    );
+
+    // The next push succeeds; the oldest copy cannot be removed, which is a
+    // warning, and it stays in the ledger for a later push.
+    let directory = fixture.project_dir(&fixture.copies);
+    fs::remove_file(directory.join(data(&c1))).unwrap();
+    fs::create_dir(directory.join(data(&c1))).unwrap();
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
+    let c4 = run.report.receipt.clone().unwrap().manifest.copy;
+    assert_eq!(run.report.removed, [c2.clone(), c3.clone()]);
+    assert!(
+        run.report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains(&c1)),
+        "{:?}",
+        run.report.warnings
+    );
+    assert_eq!(copies(&fixture, &fixture.copies), std::slice::from_ref(&c4));
+    let ledger: Vec<_> = fixture
+        .state()
+        .receipts
+        .into_iter()
+        .map(|receipt| receipt.manifest.copy)
+        .collect();
+    assert_eq!(ledger, [c1.clone(), c4]);
+    fs::remove_dir(directory.join(data(&c1))).unwrap();
+}
+
+#[test]
+fn a_retention_removal_past_the_deadline_is_a_warning_and_holds_the_lock() {
+    let fixture = fixture();
+    fixture.set_keeping(&fixture.copies, "greg", 1);
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let c1 = fixture.state().newest_receipt.unwrap().manifest.copy;
+    fixture.change("second");
+    let (release, held) = mpsc::channel::<()>();
+    let held = Arc::new(Mutex::new(held));
+    let mut hurried = settings();
+    hurried.transport_deadline = Duration::from_secs(2);
+    hurried.before_remove = Some(Arc::new(move || {
+        let _ = held.lock().unwrap().recv();
+    }));
+
+    let run = fixture.push_with(&hurried);
+    // The push itself succeeded: its receipt was recorded before retention.
+    assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
+    assert_eq!(run.report.code, None);
+    let c2 = run.report.receipt.clone().unwrap().manifest.copy;
+    assert_eq!(run.report.removed, Vec::<String>::new());
+    assert!(
+        run.report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains(&c1) && warning.contains("deadline")),
+        "{:?}",
+        run.report.warnings
+    );
+    let abandoned = run.abandoned.expect("the removal passed its deadline");
+    // The lock stays held while the removal may still run.
+    let error = PushLock::try_acquire(&fixture.paths()).unwrap_err();
+    assert_eq!(error.code(), "backup_push_running", "{error}");
+    let recorded: TargetState =
+        serde_json::from_slice(&fs::read(&fixture.paths().state).unwrap()).unwrap();
+    assert_eq!(recorded.newest_receipt.unwrap().manifest.copy, c2);
+    let ledger: Vec<_> = recorded
+        .receipts
+        .iter()
+        .map(|receipt| receipt.manifest.copy.clone())
+        .collect();
+    assert_eq!(ledger, [c1.clone(), c2.clone()]);
+    release.send(()).unwrap();
+    abandoned.worker.join().unwrap();
+    drop(abandoned.lock);
+
+    // The removal finished after the deadline; the next push finds the copy
+    // gone and drops it from the ledger.
+    let next = fixture.push();
+    assert_eq!(next.report.outcome, Outcome::Unchanged, "{:?}", next.report);
+    assert_eq!(next.report.removed, [c1]);
+    assert_eq!(copies(&fixture, &fixture.copies), std::slice::from_ref(&c2));
+    let ledger: Vec<_> = fixture
+        .state()
+        .receipts
+        .into_iter()
+        .map(|receipt| receipt.manifest.copy)
+        .collect();
+    assert_eq!(ledger, [c2]);
 }

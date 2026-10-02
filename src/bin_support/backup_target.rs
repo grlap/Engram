@@ -148,16 +148,17 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
                 }
             }
             print_push(project, &reports, json)?;
+            let succeeded = reports
+                .iter()
+                .all(|report| report.outcome != Outcome::Failed);
             if let Some(abandoned) = abandoned {
                 // A request to the target passed its deadline and may still be
                 // running. Ending the process is what stops it, and the push
                 // lock is held until then.
                 let _held = abandoned;
-                std::process::exit(1);
+                std::process::exit(i32::from(!succeeded));
             }
-            return Ok(reports
-                .iter()
-                .all(|report| report.outcome != Outcome::Failed));
+            return Ok(succeeded);
         }
     };
     match command {
@@ -269,6 +270,9 @@ fn print_push(project: &ProjectId, reports: &[KindReport], json: bool) -> Result
             if let Some(copy) = copy {
                 println!("  {label}: {copy}");
             }
+        }
+        for copy in &report.removed {
+            println!("  removed beyond the retention count: {copy}");
         }
         for warning in &report.warnings {
             println!("  warning: {warning}");

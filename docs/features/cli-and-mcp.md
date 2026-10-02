@@ -1451,7 +1451,15 @@ confirms that copy now; the capture's start is then recorded as the time the
 store's content was last observed in it. Otherwise the attempt is recorded as
 pending, with its complete manifest, target identity and data file names,
 before the gzip copy is put and read back, and its receipt then becomes the
-newest. The stage is removed at the end, and a stage a push could not remove
+newest. Once that receipt is recorded, and only after a push that did not
+fail, copies beyond the target's retention count (`--keep`, three by default)
+are removed from the target, oldest first, after the last attempt is
+recorded, so its end time does not include them. Only copies whose receipts this
+home recorded for the current target identity count, and the newest copy is
+never removed, so a copy another home put there, or one made for an earlier
+identity of the target, is never touched. A removal that fails is a warning,
+and that copy stays recorded for a later push to remove; `--json` lists the
+removed copies. The stage is removed at the end, and a stage a push could not remove
 is removed by the next one before it captures: only a directory a capture
 created, never a link, and in it only the files a push writes.
 
@@ -1459,10 +1467,14 @@ Capture and transport have separate deadlines, `--capture-deadline-secs`
 (900 by default, for the local copy and the compressed file prepared from
 it) and `--transport-deadline-secs` (1800 by default, for every request to
 the target together). A request to the target runs on a worker thread, and
-one with no time left is not started; when its deadline passes, the push
-records the failure with the attempt still pending, keeps the push lock, and
-ends its process with exit 1, which is how a request stalled inside the
-operating system is cancelled; the lock is released only by that end. Push is therefore a
+one with no time left is not started. When a request before the receipt,
+resolving a pending attempt, confirming the newest copy or the put, passes
+its deadline, the push records the failure with the attempt still pending,
+keeps the push lock, and ends its process with exit 1, which is how a
+request stalled inside the operating system is cancelled; the lock is
+released only by that end. A retention removal that passes the deadline
+comes after the receipt is recorded: it is a warning, and the process ends
+the same way but with the push's own exit code. Push is therefore a
 CLI process by design and must not be run in-process inside a long-lived
 server. A read stuck in the kernel on a hung share can delay that process
 exit, as it would delay any process's end. A copy the target completed after
@@ -1470,7 +1482,9 @@ the deadline is found by the next push and recorded as confirmed.
 
 Push exits 0 when it uploaded a copy, found the store unchanged, found no
 target configured (it says so and creates nothing) or found another push
-holding the lock (it says so and captures nothing). It exits 1 when it failed,
+holding the lock (it says so and captures nothing); a removal for retention
+that passes the transport deadline is a warning, and the process then ends
+with that exit code too. It exits 1 when it failed,
 and prints the typed code: `backup_stage_no_space`,
 `backup_stage_space_unknown` and `backup_capture_deadline` from the capture,
 a store refusal such as `store_not_initialized`, `backup_target_unreachable`,
@@ -1486,8 +1500,8 @@ message as the last attempt. `--json` prints the project and, per kind, the
 outcome (`uploaded`, `unchanged`, `not_configured`, `busy` or `failed`), the
 code and message, the target identity, the newest receipt with its manifest,
 the time the content was last observed in that copy, the copies it
-recovered, dropped, set aside or left pending, warnings and the elapsed
-milliseconds.
+recovered, dropped, set aside or left pending, the copies retention removed,
+warnings and the elapsed milliseconds.
 
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence

@@ -12,10 +12,12 @@
 > Status: design. Nothing in this brief is shipped except the commands it
 > names as shipped: `engram backup`, `engram restore`, `engram graph save`,
 > `engram graph load` and `engram migration export` / `import`, and of this
-> design so far the `engram backup target` words for the `store` kind at a
-> `directory` target, the store capture, and the `directory` adapter, which
-> no command calls yet. The [shipped inventory](../shipped.md) stays the
-> record of what exists.
+> design so far, for the `store` kind at a `directory` target, the
+> `engram backup target` words and `engram backup push` with its capture,
+> pending attempts, deadlines and retention. Backup status, the
+> `local_backed_up` mode, restore from a target and the `graph` kind are not
+> shipped. The [shipped inventory](../shipped.md) stays the record of what
+> exists.
 
 Today every Engram store lives on one machine. `engram backup` writes its
 copy under the same home as the store, in `backups/`, and `engram graph
