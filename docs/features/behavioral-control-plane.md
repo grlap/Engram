@@ -525,7 +525,10 @@ run exists, that the claim is that run's and that both belong to the
 project, and then reads, all from one snapshot of the store:
 
 - `project_id`, `work_id`, `root_execution_id`, `run_id` and `claim_id`;
-- `run`: its `state` and `generation`;
+- `run`: its `state` and `generation`. `state` is the `WorkRunState` wire
+  value: `open`, `claimed`, `active`, `completed` or `cancelled`. A `claimed`
+  or `active` run is the normal in-progress case. `run.state` is distinct
+  from the work item's lifecycle and is never an alias of it;
 - `claim`: its `state`, `holder`, `expires_at`, `revision` and `fence`, as
   stored. An expired claim is not reported as ended or released: expiry is
   disclosed, never derived into another state;
