@@ -21,10 +21,13 @@ For each session, the target architecture determines whether required context
 and peer deltas were host-confirmed as delivered, ownership is current,
 previous effects are reconciled, and lifecycle barriers are satisfied. Today a
 grant carries no context: agents read work context and peer changes through
-`next`, and a typed refusal directive handles the unsafe tail. At the
-strongest integration level, the host also requests a single-use grant
-immediately before every declared material action and records its outcome
-before the next turn.
+`next`, and a typed refusal directive handles the unsafe tail. The
+strongest integration level is designed and deferred
+([action gates](features/action-gates.md)): there the host also requests a
+single-use grant immediately before every declared material action and
+reports its outcome, which may arrive after the turn has ended. An effect
+whose outcome is unresolved blocks overlapping writes and completion, not
+every later turn.
 
 Engram derives a bounded, deterministic ready-work view, but it does not
 supervise processes. The host or model selects among allowed candidates; the
@@ -96,7 +99,8 @@ cross-host team sync remains later (see
   drift.
 - **Control requires mediation.** Engram decides; the host enforces. Turn
   grants are bounded, checkpointed, and invalidated by relevant policy or
-  ownership changes; action grants are planned. An agent never
+  ownership changes; action grants are designed and deferred
+  ([action gates](features/action-gates.md)). An agent never
   self-authorizes through MCP. See the
   [behavioral control plane](features/behavioral-control-plane.md).
 

@@ -2327,8 +2327,9 @@ reads and tracks work, but path-bearing control requests are refused with
 known 8.3 aliases) follow the running operating system. `doctor` reports the
 persisted and resolved policy.
 
-Action authorization/begin/completion, standalone delivery acknowledgement,
-heartbeat, and independent exit remain planned protocol operations.
+Standalone delivery acknowledgement, heartbeat, and independent exit are not
+built. Action authorization, begin and completion are designed and deferred:
+see [action gates](action-gates.md#when-to-build-it).
 
 Hooks can integrate the shipped turn boundary. Full action gating needs a wrapper,
 gateway, or native host integration around every declared material tool. If a

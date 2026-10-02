@@ -290,7 +290,8 @@ the agent can still edit files or run tools without asking it.
 For hosts that need execution control, a separate private API can admit
 model turns and check fenced work claims. Resource intents are not locks and
 reserve no resources. The host must enforce the control decisions and coordinate
-resource ownership separately. Per-tool action gating is not yet available.
+resource ownership separately. Per-tool action gating is not available; it is
+[designed and deferred](docs/features/action-gates.md).
 
 See the [host checklist](docs/host-checklist.md) for setup and the
 [control-plane guide](docs/features/behavioral-control-plane.md) for the

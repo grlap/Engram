@@ -46,9 +46,11 @@ knowledge graph or process scheduler.**
   change feed, explicit handoffs, and a finalization barrier.
 - Optional sequential cross-machine portability with scheduled durable push,
   explicit handoff/restore, divergence refusal, and no live-authority transfer.
-- Host-enforced turn admission and material-action authorization: context,
+- Host-enforced turn admission: context,
   peer-delta, checkpoint, and finalization obligations are protocol
-  preconditions rather than optional agent habits.
+  preconditions rather than optional agent habits. Authorization of each
+  material action is designed and deferred
+  ([action gates](features/action-gates.md)).
 - An optional polished final report per completed root, published only under a
   separately authorized durable receipt.
 - Bounded, predictable context cost: memory never crowds out the work it is
@@ -1022,7 +1024,7 @@ engram report show <root-ref>                engram report publish <root-ref> # 
 
 # control diagnostics and recovery (§2.7)
 engram control status                       engram control explain <decision-id>
-engram action reconcile <action-id>
+engram action reconcile <action-id>         # proposed with action gates; not built
 
 # optional external adapters (§9)
 engram import preview <adapter> <ref>        engram import apply <snapshot>
@@ -1032,6 +1034,14 @@ engram export preview <adapter> <work-ref>   engram export apply <intent>
 engram graph save [--out FILE | --stdout] [--include-restricted --reason "<why>"]
 engram graph load FILE [--dry-run]
 ```
+
+`engram action reconcile` is a proposed operator command and is not built.
+Action checks are designed and deferred
+([action gates](features/action-gates.md)). In that design the host reports
+an outcome and continues an unknown one with the `action_reconcile`
+operation; the command would be the operator's route for an attributed
+decision on an action whose effect stays unknown, and its own syntax is not
+designed.
 
 ### 8.2 Agent-facing MCP server
 
@@ -1216,7 +1226,8 @@ a checkpoint before the next turn.
 Action gating is not built. An `action_gated` host would additionally
 intercept every declared material capability, obtain and begin a matching
 single-use action grant, and record its outcome even if the model turn later
-fails.
+fails. That design is the [action gates](features/action-gates.md) brief, and
+it is deferred.
 
 Hooks can satisfy `turn_gated` conformance. `action_gated` conformance needs
 native mediation around the declared tools; MCP alone remains `advisory`.
@@ -1406,7 +1417,7 @@ evaluation harness:
 
 | Phase | Contents |
 | --- | --- |
-| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts (not built); deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
+| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts (designed and deferred, not part of v1: [action gates](features/action-gates.md)); deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
 | **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction; completed-work retention compaction; budget and ready-ranking tuning; optional configured external backup automation. |
 | **v2+** | Optional live cross-host `Sync`/team backend; real GitHub/Jira/proprietary source and publication adapters; optional embeddings; comments/link-backs; real Redactor/DLP; Postgres/service `Store`; Signer-based attestation; envelope encryption for crypto-shredding. |
 

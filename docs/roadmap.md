@@ -13,9 +13,10 @@ candidates.**
 
 Control ships progressively: first observe/replay with every decision allowed,
 then repair the work/cursor/completion prerequisites, then mediate
-freshness, and only then enable a replay-proven refusal set and action gates.
+freshness, and only then enable a replay-proven refusal set.
 This keeps false refusals and hook latency measurable before Engram can block
-work.
+work. Action gates are designed and deferred, not part of this progression:
+see [action gates](features/action-gates.md#when-to-build-it).
 
 Current milestone: agents use fourteen words — `next`, `ls`, `show`, `add`,
 `claim`, `update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`,
@@ -149,6 +150,7 @@ reduces the risk only once a copy leaves the host.
 | Environment requirements on obligations (none can name an environment today) | Acceptance needs signed attestation, component predicates, or environment families; a requirement must name environment content, not a record of one run — [execution pipeline](features/execution-pipeline.md) |
 | External intake system (enrichment, planning, sufficiency check) | The manual import → execute → publish loop has closed several times and the manual steps are the bottleneck — [execution pipeline](features/execution-pipeline.md) |
 | General obligation rule language beyond the shipped policy-selected typed rule sets | More projects need triggers, conditions, evidence kinds, blocking phases, and waiver authority that cannot be represented by the bounded V1 schema — [execution pipeline](features/execution-pipeline.md) |
+| Per-action gates and `action_gated` assurance | The operator explicitly reverses the decision of 2026-09-26 that the host will not block dangerous operations — [action gates](features/action-gates.md) |
 
 ## Open decisions
 

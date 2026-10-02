@@ -485,8 +485,10 @@ refused with `grant_scope_mismatch`. A freshly bound session is `ready`, and
 its first turn is granted at once.
 An empty resource_intents list remains valid. Control sessions bind directly
 by project and external reference, without starting a compatibility task.
-Action gating, organizational-authority mediation, and
-action-outcome reconciliation are planned and fail closed today; see the
+Action gating and action-outcome reconciliation are designed and deferred
+([action gates](features/action-gates.md#when-to-build-it)), and
+organizational-authority mediation is not built; all three fail closed
+today. See the
 [behavioral control plane](features/behavioral-control-plane.md).
 
 ## External planner as a work source

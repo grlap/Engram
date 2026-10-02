@@ -1326,9 +1326,12 @@ a runtime wrapper, gateway, or native host integration around tools. MCP alone
 is agent-facing and therefore advisory unless the host itself invokes a
 separate, non-agent-exposed control channel and enforces its decisions.
 
-Mandatory hot-path mediation also creates a latency contract: target p99 is
-under 10 ms for an uncached local allow and under 1 ms for a client-side check
-inside a live scoped grant. The target runtime is one long-lived host-local
+Mandatory hot-path mediation also creates a latency contract. For turn
+mediation the target p99 is under 10 ms for an uncached local allow. For
+action mediation, which is designed and deferred, the budget is the one in
+[action gates](action-gates.md#budget-and-repair); it replaces the earlier
+figure of under 1 ms for a client-side check inside a live scoped grant. The
+target runtime is one long-lived host-local
 `engram serve` process per project store with thin hook clients, not a fresh
 SQLite/process startup per tool call. Deadlines always produce an explicit
 fail-mode result; a hung hook is not an acceptable control mechanism.
@@ -1347,7 +1350,10 @@ more. None is built, and no host calls them:
   action's outcome. An action whose outcome is unknown would never be replayed
   blindly. Filesystem effects would add a handle-bound check that the path
   still resolves to what was authorized. This is what `action_gated` assurance
-  would mean; today every effect is decided once per turn.
+  would mean; today every effect is decided once per turn. The
+  [action gates](action-gates.md) brief is their design, and adds
+  `action_status` and `action_reconcile` to them. It is deferred, and
+  it says under what condition it would be taken up.
 - **`control_bootstrap`, `session_heartbeat` and `session_exit` (not
   built).** They would give a session an explicit lifecycle around binding.
   Today `session_bind` starts it and the turn report's `exit` intent ends it.
@@ -1528,7 +1534,11 @@ Delivery:
 Phase 2's pre-turn packet/delta delivery, compaction re-delivery and recovery
 grants, and phase 5's recovery grants, are dropped: turn grants carry no
 delivery page, and there are no recovery turns (see the
-[turn gate assessment](turn-gate-assessment.md)).
+[turn gate assessment](turn-gate-assessment.md)). Phase 4's action
+authorization, begin and outcome mediator, and with it the `action_gated`
+claim, is designed and deferred: it is not scheduled, and
+[action gates](action-gates.md#when-to-build-it) says under what condition
+it would be.
 
 The current implementation deliberately process-tests a narrow
 `observe`/`communicate` lifecycle plus turn-gated local-mutation turns while

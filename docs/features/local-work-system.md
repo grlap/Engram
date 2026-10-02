@@ -2254,7 +2254,8 @@ Until action outcomes are linked to `WorkRun`, V1 accepts only a
 **zero-linked-state** completion-drain attestation. Its historical resource-lease
 field remains empty; removing the lease engine does not fabricate a drain.
 An agent cannot complete by supplying arbitrary action ids or lease names.
-Later host enforcement may bind exact reconciled action outcomes.
+Binding exact reconciled action outcomes belongs to the deferred
+[action gates](action-gates.md) design.
 
 ## Behavioral-control integration
 

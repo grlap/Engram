@@ -9,7 +9,8 @@ references another.
 
 | Brief | One line |
 | --- | --- |
-| [Behavioral control plane](behavioral-control-plane.md) | Shipped host-private turn admission channel with exact bounded delivery, checkpoints, and restart recovery; enforcement depends on the embedding host and action gating remains planned |
+| [Behavioral control plane](behavioral-control-plane.md) | Shipped host-private turn admission channel with exact bounded delivery, checkpoints, and restart recovery; enforcement depends on the embedding host, and action gating is designed and deferred |
+| [Action gates](action-gates.md) | Design only, deferred: a grant around each declared material action, what a host would have to close to claim `action_gated`, and why nothing is built |
 | [Typed memory model](typed-memory-model.md) | Kind × authority × delivery axes over immutable versions under minted ids |
 | [Context packets](context-packets.md) | Budgeted retrieval, reproducible hashes, ordered peer deltas, visible review pressure |
 | [Write policy & review](write-policy-and-review.md) | Origin × authority promotion matrix; distillation proposes, never writes; review lifecycle |
@@ -24,7 +25,7 @@ references another.
 | [Source intake](source-intake.md) | Explicit file preview/apply, authored local work, and immutable source-change notices |
 | [Execution pipeline](execution-pipeline.md) | Layer map from external ticket to report, including shipped WorkRun-bound environment evidence, obligations, and completion gating |
 | [Security & trust](security-and-trust.md) | Asserted runtime identity with assurance levels; sensitivity labels; redaction; purge realism |
-| [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing local-work tools and host-private turn channel over one core; material action mediation remains planned |
+| [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing local-work tools and host-private turn channel over one core; material action mediation is deferred |
 | [Host readiness](host-readiness.md) | Scoped read-only enablement checks, separate from the explicit full-store doctor audit |
 | [Control session inspection](control-session-inspection.md) | Scoped read-only session/grant presence evidence for host-fenced reconciliation, not clearance to reset state |
 | [Turn gate assessment](turn-gate-assessment.md) | One-page summary of what the turn gate does with TermAl: the questions asked, live-store counts, visible refusals, and the keep/simplify/remove decision for each part |
