@@ -700,6 +700,9 @@ pub(super) fn verify_obligation_rows(
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    // Each finished run's cut is read once, however many source changes it
+    // holds; the rows arrive grouped by run.
+    let mut cuts: HashMap<String, Option<i64>> = HashMap::new();
     for (run_id, position, stored_hash, bytes) in expected {
         *checked += 1;
         let Some(hash) = ObjectId::from_stored(stored_hash.clone()) else {
@@ -718,7 +721,14 @@ pub(super) fn verify_obligation_rows(
             ));
             continue;
         };
-        if recorded_after_finish_without_obligations(connection, &run_id, position, &hash)? {
+        let cut = if let Some(cut) = cuts.get(&run_id) {
+            *cut
+        } else {
+            let cut = finished_run_cut(connection, &run_id)?;
+            cuts.insert(run_id.clone(), cut);
+            cut
+        };
+        if recorded_after_finish_without_obligations(connection, &run_id, cut, position, &hash)? {
             continue;
         }
         for (rule, _) in crate::control::evaluate_obligation_rules(&rule_set, &observation) {
@@ -749,20 +759,30 @@ pub(super) fn verify_obligation_rows(
     Ok(())
 }
 
-/// A source change recorded after its run was sealed opens no obligation.
-/// One an older build recorded with obligations is still checked in full; a
-/// run whose seal is missing or undecodable is checked strictly and reported
-/// elsewhere, and a SQLite failure reading it is returned as itself.
+/// The cut at which the run named by a feed id was sealed, if it is finished.
+/// A run whose seal is missing or undecodable has none, so its changes are
+/// checked strictly and the damage is reported elsewhere; a SQLite failure
+/// reading it is returned as itself.
+fn finished_run_cut(connection: &Connection, run_id: &str) -> Result<Option<i64>, StoreError> {
+    #[cfg(test)]
+    super::DOCTOR_FINISHED_RUN_CUT_READS.with(|count| count.set(count.get() + 1));
+    let Ok(parsed) = super::query::parse_work_run_id(run_id) else {
+        return Ok(None);
+    };
+    super::completion::finished_run_cut_on(connection, parsed)
+}
+
+/// A source change recorded after its run was sealed at `cut` opens no
+/// obligation. One an older build recorded with obligations is still checked
+/// in full, and a run without a cut is checked strictly.
 fn recorded_after_finish_without_obligations(
     connection: &Connection,
     run_id: &str,
+    cut: Option<i64>,
     position: i64,
     observation: &ObjectId,
 ) -> Result<bool, StoreError> {
-    let Ok(parsed) = super::query::parse_work_run_id(run_id) else {
-        return Ok(false);
-    };
-    let Some(cut) = super::completion::finished_run_cut_on(connection, parsed)? else {
+    let Some(cut) = cut else {
         return Ok(false);
     };
     if position <= cut {

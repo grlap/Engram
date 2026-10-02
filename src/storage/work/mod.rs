@@ -338,6 +338,19 @@ thread_local! {
     static WORK_EVENT_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
     static WORK_ITEM_PROJECTION_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
     static WORK_CATALOG_COUNT_QUERIES: Cell<usize> = const { Cell::new(0) };
+    static DOCTOR_FINISHED_RUN_CUT_READS: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_doctor_finished_run_cut_reads() {
+    DOCTOR_FINISHED_RUN_CUT_READS.with(|count| count.set(0));
+}
+
+/// How many times doctor's source-change obligation check read a finished
+/// run's completion cut since the last reset.
+#[cfg(test)]
+pub(crate) fn doctor_finished_run_cut_reads() -> usize {
+    DOCTOR_FINISHED_RUN_CUT_READS.with(Cell::get)
 }
 
 #[cfg(test)]

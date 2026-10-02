@@ -395,7 +395,7 @@ fn a_late_checkpoint_on_a_completed_run_is_audit_only() {
     );
 }
 
-/// A sealed run with one source change a host reported after the seal, which
+/// A sealed run with two source changes a host reported after the seal, which
 /// opened no obligation, read back cleanly. Returns the fixture, the run and
 /// its seal.
 fn sealed_run_with_a_late_change(project: &str) -> (Fixture, WorkRunId, ObjectId) {
@@ -420,19 +420,22 @@ fn sealed_run_with_a_late_change(project: &str) -> (Fixture, WorkRunId, ObjectId
         22,
     )
     .expect("complete");
-    let late = ExecutionObservationInput {
-        observation_id: host.key("late-change"),
-        action_fingerprint: ObjectId::from_canonical_bytes(b"write src late"),
-        effect: EffectClass::MutateLocal,
-        outcome: ExecutionOutcome::Succeeded,
-        source_changed: true,
-        reported_source_change: None,
-        source_basis: Some(ExecutionSourceBasis {
-            source_revision: "content-revision-late".into(),
-            ..host.basis.clone()
-        }),
-        observed_at: Some(at(23)),
-    };
+    let late: Vec<ExecutionObservationInput> = ["late-change", "later-change"]
+        .into_iter()
+        .map(|change| ExecutionObservationInput {
+            observation_id: host.key(change),
+            action_fingerprint: ObjectId::from_canonical_bytes(change.as_bytes()),
+            effect: EffectClass::MutateLocal,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: true,
+            reported_source_change: None,
+            source_basis: Some(ExecutionSourceBasis {
+                source_revision: format!("content-revision-{change}"),
+                ..host.basis.clone()
+            }),
+            observed_at: Some(at(23)),
+        })
+        .collect();
     let checkpointed = fixture
         .store
         .checkpoint_control_turn_with_evidence(
@@ -442,7 +445,7 @@ fn sealed_run_with_a_late_change(project: &str) -> (Fixture, WorkRunId, ObjectId
             &host.routing_token,
             &grant.grant_id,
             TurnNextIntent::Continue,
-            std::slice::from_ref(&late),
+            &late,
             &[],
             &[],
             &host.key("late-checkpoint"),
@@ -572,4 +575,51 @@ fn a_storage_failure_reading_the_seal_is_reported_as_itself() {
         .execute_batch("ALTER TABLE work_runs RENAME TO work_runs_unreadable")
         .expect("hide the runs table");
     storage(fixture.store.work_run_obligations(run));
+}
+
+// Doctor checks every source change against the obligations it should have
+// opened, and for a finished run that needs the run's sealed cut. It reads
+// that cut once per run, not once per change, and the report is the same:
+// the late change without an obligation is accepted.
+#[test]
+fn doctor_reads_a_finished_runs_cut_once_however_many_changes_it_holds() {
+    let (fixture, run, _) = sealed_run_with_a_late_change("project-doctor-cut-once");
+    let changes_per_run: Vec<(String, i64)> = fixture
+        .store
+        .connection
+        .prepare(
+            "SELECT entry.feed_id, COUNT(*)
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_id = entry.object_id
+             WHERE entry.feed_kind = 'run_execution'
+               AND entry.object_kind = 'execution_observation'
+               AND json_extract(object.canonical_json, '$.source_changed') = 1
+             GROUP BY entry.feed_id",
+        )
+        .expect("count source changes")
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("source change rows")
+        .collect::<Result<_, _>>()
+        .expect("source changes");
+    let on_this_run = changes_per_run
+        .iter()
+        .find(|(feed, _)| *feed == run.0.to_string())
+        .map_or(0, |(_, count)| *count);
+    assert!(
+        on_this_run >= 2,
+        "the sealed run holds two changes after its seal: {changes_per_run:?}"
+    );
+
+    crate::storage::work::reset_doctor_finished_run_cut_reads();
+    let report = fixture.store.verify_all().expect("integrity report");
+    assert!(
+        report.invalid_work_records.is_empty(),
+        "{:?}",
+        report.invalid_work_records
+    );
+    assert_eq!(
+        crate::storage::work::doctor_finished_run_cut_reads(),
+        changes_per_run.len(),
+        "one cut read per run with source changes: {changes_per_run:?}"
+    );
 }
