@@ -13,8 +13,9 @@
 > names as shipped: `engram backup`, `engram restore`, `engram graph save`,
 > `engram graph load` and `engram migration export` / `import`, and of this
 > design so far the `engram backup target` words for the `store` kind at a
-> `directory` target. The [shipped inventory](../shipped.md) stays the record
-> of what exists.
+> `directory` target, the store capture, and the `directory` adapter, which
+> no command calls yet. The [shipped inventory](../shipped.md) stays the
+> record of what exists.
 
 Today every Engram store lives on one machine. `engram backup` writes its
 copy under the same home as the store, in `backups/`, and `engram graph
@@ -71,10 +72,10 @@ of the `BackupAdapter` port in
 
 | Request | Meaning |
 | --- | --- |
-| `put(project, manifest, artifact)` | Store one immutable copy; answer with a receipt or an error |
+| `put(project, manifest, artifact)` | Store one immutable copy; answer with a receipt or an error. The `directory` adapter takes the recorded attempt, which carries the complete manifest, and the stored file it prepared in the local stage |
 | `confirm(project, manifest)` | Say whether the target holds exactly that copy: confirmed, missing, or unknown |
 | `list(project, cursor)` | The manifests of the copies the target holds for this project |
-| `get(project, copy)` | Return one copy, which the caller writes to a local file |
+| `get(project, copy)` | Return one copy. The `directory` adapter writes it to a new local file the caller names, decoded and checked against its manifest, and removes that file on any failure |
 
 **A target is a disclosure decision.** Whatever a kind carries is readable
 at its target, so configuring or changing a target is the operator's
@@ -112,30 +113,47 @@ The `directory` adapter fits another machine's share, a network drive, a
 removable disk or a folder that a sync client replicates. It stores each
 artifact gzip-compressed, because a folder that uploads sends every new copy
 whole: this repository's 400 MB store copy is 73 MB compressed. No ratio is
-promised; an artifact that does not compress is stored all the same. A copy
-is still compared by the content fingerprint of its uncompressed bytes; the
-manifest also records that the stored file is gzip. The adapter compresses
-in the local stage, writes the stored file under a temporary name that
-carries the attempt's id, renames it without replacing anything, reads it
-back, decompresses it and compares the length and content fingerprint of the
-result with the manifest's, and writes the manifest last in the same way.
-Every `confirm` does that same read: under its deadline it decompresses the
-stored file and compares length and fingerprint. A look at names and sizes
-can show that a copy is missing, but it never confirms one, because a file
-of the same size with other content would pass. The stored file is an
-ordinary gzip file, so a copy can be recovered by hand with standard tools.
-A data file without its manifest is not a copy. The pending attempt records
-the temporary name and the final name of its data file. When a push was
-cut off after the rename and before the manifest, the next push reconciles
-that recorded attempt before it confirms anything, as step 2 of
-[Push](#push) says: if the file's content matches the recorded manifest,
-the manifest is written and the copy is complete; if not, the file is
-removed as part of that abandoned attempt. The adapter removes only files of attempts that
-this home recorded and then resolved as abandoned; it never deletes other
-files in the directory because they look orphaned. It uses plain file operations and accepts network paths and cloud
-folders on purpose; the link and placeholder refusals of `graph save --out`
-protect a disclosure default and do not apply to a path the operator
-configured as a target.
+promised; an artifact that does not compress is stored all the same. A copy is
+still compared by the content fingerprint of its uncompressed bytes; the
+manifest also records that the stored file is gzip. The adapter compresses in
+the local stage, writes the stored file under a temporary name that carries
+the attempt's id, renames it without replacing anything, reads it back,
+decompresses it and compares the length and content fingerprint of the result
+with the manifest's, and writes the manifest last in the same way. Every
+`confirm` does that same read: under its deadline it decompresses the stored
+file and compares length and fingerprint. Decompression writes no more than
+the length the manifest declares and reads at most one byte beyond it, in
+memory, to find a file that would decode to more, which is refused. The
+deadline is checked between chunks of the read, so a read that stalls inside
+one chunk, as on a hung network share, is not interrupted by the adapter; a
+push bounds that from outside. A stored file that holds other bytes, or is not
+a gzip of the copy, or has more after its gzip stream, makes the copy missing;
+a target that cannot be reached or read makes the answer unknown. Every
+request checks that the manifest describes this project's copy; `put`,
+`confirm` and a push's reconciliation also check that it was made for the
+target's current identity, while `get` returns a copy made for an earlier
+identity, which a restore after configuring the target again needs. The move
+into place is not forced to disk at the target, so a power loss there can
+still lose a copy that was acknowledged; the next `confirm` then finds it
+missing. A `put` to a configured directory that cannot be reached is refused
+with `backup_target_unreachable`: the adapter creates only the project's
+folder inside it and never recreates the directory itself, which could land
+the copy on this machine. A look at names and sizes can show that a copy is
+missing, but it never confirms one, because a file of the same size with other
+content would pass. The stored file is an ordinary gzip file, so a copy can be
+recovered by hand with standard tools. A data file without its manifest is not
+a copy. The pending attempt records the temporary name and the final name of
+its data file. When a push was cut off after the rename and before the
+manifest, the next push reconciles that recorded attempt before it confirms
+anything, as step 2 of [Push](#push) says: if the file's content matches the
+recorded manifest, the manifest is written and the copy is complete; if not,
+the file is removed as part of that abandoned attempt. The adapter removes
+only files of attempts that this home recorded and then resolved as abandoned;
+it never deletes other files in the directory because they look orphaned. It
+uses plain file operations and accepts network paths and cloud folders on
+purpose; the link and placeholder refusals of `graph save --out` protect a
+disclosure default and do not apply to a path the operator configured as a
+target.
 
 The `git-ref` adapter writes commits to `refs/engram/backup/<project digest>`
 in a scratch repository under `ENGRAM_HOME` and pushes that ref, never a

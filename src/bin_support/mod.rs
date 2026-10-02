@@ -1,6 +1,14 @@
 //! Operator command families dispatched from the clap graph in `main.rs`.
 
 pub(crate) mod attribution;
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "no operator word calls the adapter until `backup push`"
+    )
+)]
+pub(crate) mod backup;
 pub(crate) mod backup_target;
 pub(crate) mod control;
 pub(crate) mod control_session_inspect;
