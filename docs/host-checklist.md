@@ -250,6 +250,69 @@ version actually read before work resumed. A peer reminder or a test that
 starts with the target key does not demonstrate independent discovery. This
 check requires neither a new agent word nor turn-gated control.
 
+## Off-host backup
+
+Engram copies a project's store to an off-host target only when something
+runs `engram backup push`; it schedules nothing itself. The host owns that
+trigger. See [off-host backup](features/off-host-backup.md) for the design
+and [the status receipt](features/cli-and-mcp.md#the-backup-status---json-receipt)
+for the fields named here.
+
+1. **Push at three moments, per project.** Run `engram backup push --json`
+   for each project when the host starts, about every hour while the project
+   has an active session, and when its last session ends. Keep the interval
+   well below the target's `window_hours` (24 by default), or the copy stops
+   qualifying between pushes. Run it as its own
+   CLI process, never inside a long-lived server: a request to the target
+   that stalls past its deadline ends that process, which is how it is
+   stopped.
+2. **A push may be put off.** When pushing now would disturb something that
+   matters more, such as the timing-sensitive stages of a running full gate,
+   push later. Nothing is lost: the next push captures the store as it then
+   is, and the kind's freshness window, not the push schedule, decides
+   whether the copy still qualifies.
+3. **Read the exit code; do not retry in a loop.**
+
+   | Exit | Outcome in the JSON report | What it means |
+   | --- | --- | --- |
+   | 0 | `not_configured` | No target is configured for the kind; nothing was done. |
+   | 0 | `busy` | Another push holds the kind's lock; nothing was done. |
+   | 0 | `uploaded` | A copy was put, read back and its receipt recorded. |
+   | 0 | `unchanged` | The store equals the newest copy, which the target confirmed. |
+   | 1 | `failed` | The push failed; its typed `code` and `message` say why. The earlier receipt stands, and `backup status` says whether its copy still qualifies. |
+   | 1 | no report on standard output | The command was refused before it pushed anything, for example without a home or a resolvable project; the reason is on standard error. |
+
+   Any other exit code is a usage error. A failed or interrupted push needs
+   no retry loop: the next scheduled push first resolves any attempt an
+   earlier one left pending, then captures again. Keep and show a failed
+   push's own report, its `code`, `message` and `warnings`: `backup status`
+   shows a failure only when the push could record it as the kind's last
+   attempt. A push refused before it takes the kind's lock records nothing,
+   and one whose state cannot be written says so in its `warnings` and
+   leaves the earlier last attempt in place.
+4. **Show the status from `engram backup status --json`.** Read the receipt
+   rather than parsing the text. Always show `durability.mode` together with
+   `durability.off_host`, each entry's `kind`, `off_host` and `restores`;
+   never show the mode alone, because `local_backed_up` means only what the
+   off-host text says (for a directory target, "off-host asserted; not
+   verified"). Show `kinds[].target.last_attempt`, the last attempt recorded,
+   when its `outcome` is `failed`, with its `code` and `message`, even while
+   the mode reads `local_backed_up`: an earlier copy can still qualify after
+   a failed push.
+   Show `restore` when it is not null. Plain `backup status` contacts no
+   target; `--check-target` asks the target and is a separate, slower call.
+5. **After a restore, give sessions identities the restored store has not
+   seen.** A restored store keeps the origin's claims, grants, begun turns
+   and session rows unchanged, and the only boundary on them is the asserted
+   session id. A session that reuses an old id can use and renew its claim,
+   reconnect its control session and checkpoint its begun turn. A new
+   session cannot claim an item still held in the copy until that claim's
+   recorded expiry, and then recovers it with
+   `engram work claim <ref> --recover "<reason>"`. A restored begun turn has
+   no clock end: it stays open until a caller acting as its session
+   checkpoints it. Engram resets none of this; see
+   [restore](features/off-host-backup.md#restore).
+
 ## Claude Code as the host (no TermAl)
 
 MADE can use this advisory recipe when it launches `claude` directly. No
