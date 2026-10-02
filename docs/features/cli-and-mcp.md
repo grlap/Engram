@@ -1543,6 +1543,31 @@ never the time the store's content was observed in it, so an old copy that
 is confirmed again still reads `backup_stale`. A check stalled inside the
 operating system past its deadline ends the process, which still exits 0.
 
+`engram doctor` prints the same block as `backup status`, in text after its
+own lines and in JSON as a `backup` field holding the status object, beside
+the store's health and apart from it: a stale, missing or unconfigured
+backup never changes `healthy` or the exit code, and the block stands on a
+refused store too. It reads only the recorded evidence and contacts no
+target. For a store outside an Engram home's `<home>/projects/<project
+digest>/engram.db` layout it reads `backup: not read (...)`, and in JSON
+`{"unavailable": "backup_store_outside_home", "reason": ...}`. `engram
+readiness` carries no backup field and reads the same with or without a
+target.
+
+`next` and `next --peek`, on the CLI and through MCP, add one reminder line
+when a target is configured and the mode is `local`, or when a kind's last
+push failed, and nothing when no target is configured or all is well:
+`backup: mode local (store: REASON); see engram backup status`, or `backup:
+the last store push failed: CODE; an earlier copy still qualifies (store
+copy: off-host asserted; not verified); see engram backup status`, or both
+parts in one line. It reads only the recorded state under the home, never
+the store or a target, and reads nothing more when no kind has a
+configuration file. It stands right after the direction to list memories,
+ahead of every other reminder, and neither the reminder count limit nor byte
+fitting sheds or shortens it. A recorded failure code that is not a plain
+lowercase code of at most 64 bytes reads `unrecognised code`. See
+[off-host backup](off-host-backup.md#what-the-operator-sees).
+
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence
 attribution contract.

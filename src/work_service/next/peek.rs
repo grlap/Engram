@@ -118,6 +118,7 @@ impl LocalWorkService {
                 omissions,
                 // There must be no capability for the outer renderer to ack.
                 memory_advertisement: None,
+                backup_reminder: None,
             })
         })
     }

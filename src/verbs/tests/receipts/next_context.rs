@@ -22,6 +22,7 @@ fn context_receipt() -> CompactNextReceipt {
         note_session_id: None,
     };
     CompactNextReceipt {
+        backup_reminder: None,
         focus_evaluation: None,
         evaluation_obligations: None,
         ready_navigation: None,
@@ -284,5 +285,58 @@ fn pilot_correction_missing_identity_keeps_body_and_complete_controls_guidance()
                 .any(|line| line == crate::verbs::next_context::CLIPPED_STATUS_REMINDER),
             !complete
         );
+    }
+}
+
+/// A backup reminder longer than the compact reminder width, which stays
+/// whole.
+fn long_backup_reminder() -> String {
+    format!(
+        "backup: mode local ({}); see engram backup status",
+        ["store: backup_confirmation_expired"; 4].join(", ")
+    )
+}
+
+#[test]
+fn the_backup_reminder_follows_the_direction_and_survives_an_impossible_budget() {
+    let backup = long_backup_reminder();
+    for recovering in [true, false] {
+        let mut compact = if recovering {
+            recovering_receipt()
+        } else {
+            context_receipt()
+        };
+        compact.backup_reminder = Some(backup.clone());
+        compact.guidance.reminders = vec!["one".into(), "two".into()];
+        let expected = if recovering {
+            vec![memory_recovery_direction(&compact), backup.clone()]
+        } else {
+            vec![backup.clone()]
+        };
+        let fitted = fit_compact_next_to(compact, 1).unwrap();
+        assert_eq!(
+            fitted.guidance.reminders, expected,
+            "recovering {recovering}"
+        );
+        let value = compact_next_value(&fitted);
+        assert_eq!(value["reminders"], json!(expected));
+    }
+}
+
+#[test]
+fn the_backup_reminder_is_kept_by_the_reminder_count_limit() {
+    let mut compact = recovering_receipt();
+    compact.discovery = WorkDiscoveryView::default();
+    compact.backup_reminder = Some(long_backup_reminder());
+    compact.guidance.reminders = (0..MAX_COMPACT_REMINDER_ITEMS)
+        .map(|index| format!("reminder {index}"))
+        .collect();
+    let direction = memory_recovery_direction(&compact);
+    for _ in 0..2 {
+        crate::verbs::next_context::refresh_guidance(&mut compact);
+        assert_eq!(compact.guidance.reminders.len(), MAX_COMPACT_REMINDER_ITEMS);
+        assert_eq!(compact.guidance.reminders[0], direction);
+        assert_eq!(compact.guidance.reminders[1], long_backup_reminder());
+        assert_eq!(compact.guidance.reminders[2], "reminder 0");
     }
 }

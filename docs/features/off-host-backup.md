@@ -16,14 +16,15 @@
 > `engram backup target` words, `engram backup push` with its capture,
 > pending attempts, deadlines and retention, and `engram backup status
 > [--json] [--check-target]` with the freshness rule and the
-> `local_backed_up` mode it reports. The doctor block, the `next` reminder,
-> restore from a target and the `graph` kind are not shipped. The [shipped inventory](../shipped.md) stays the record of what
+> `local_backed_up` mode it reports, the backup block of `engram doctor` and
+> the `next` reminder. Restore from a target and the `graph` kind are not
+> shipped. The [shipped inventory](../shipped.md) stays the record of what
 > exists.
 
 Today every Engram store lives on one machine. `engram backup` writes its
 copy under the same home as the store, in `backups/`, and `engram graph
 save` writes its file under that home too, so losing the machine loses all
-work state. `doctor` says nothing about
+work state. Before this design, `doctor` said nothing about
 copies. This brief designs the missing part: a copy that reaches a configured
 target outside the store's home, a record of what that target confirmed, and
 an exact rule for when Engram may report `local_backed_up` instead of `local`.
@@ -496,7 +497,10 @@ while an earlier confirmed copy still qualifies. This is the read a host
 uses for its own display.
 
 `engram doctor` prints the same block, in text and JSON, from the recorded
-evidence. It does not contact the target: checking a `directory` target
+evidence, on a healthy store and on a refused one alike. A store outside an
+Engram home's `<home>/projects/<project digest>/engram.db` layout has no
+home whose records name it, and doctor says so with `backup: not read`
+rather than printing nothing. It does not contact the target: checking a `directory` target
 means reading and decompressing the whole stored file, about 73 MB read and
 400 MB decompressed for this repository's store today, and that cost
 belongs to a command the operator asks for. `status --check-target` asks
@@ -515,7 +519,13 @@ backup never makes a healthy store unhealthy, and `readiness` is unchanged.
 `next` and `next --peek` add one reminder line when a target is configured
 and the mode is `local`, or when the last attempt failed. They add nothing
 when no target is configured or when all is well. They read only the
-recorded state. A stale backup never refuses or delays a word.
+recorded state, and read nothing more when no kind has a configuration
+file; a state file alone configures nothing. The line names the mode with
+each kind's reason, or the failed push with its code and the earlier copy
+that still qualifies with its off-host text, and ends with `see engram
+backup status`. It follows the direction to list memories, ahead of every
+other reminder, and no output budget sheds or shortens it. A stale backup
+never refuses or delays a word.
 
 ## Restore
 

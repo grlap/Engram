@@ -21,6 +21,21 @@ pub fn project_database_path(engram_home: &Path, project_id: &ProjectId) -> Path
         .join("engram.db")
 }
 
+/// The Engram home that holds `database` as `project_id`'s store, when the
+/// path has exactly the layout [`project_database_path`] gives it; `None` for
+/// any other path, which then names no home to read.
+#[must_use]
+pub fn project_home_of(database: &Path, project_id: &ProjectId) -> Option<PathBuf> {
+    let digest_directory = database.parent()?;
+    let projects = digest_directory.parent()?;
+    let home = projects.parent()?;
+    let digest = project_digest(project_id);
+    (database.file_name() == Some(std::ffi::OsStr::new("engram.db"))
+        && digest_directory.file_name() == Some(std::ffi::OsStr::new(&digest))
+        && projects.file_name() == Some(std::ffi::OsStr::new("projects")))
+    .then(|| home.to_path_buf())
+}
+
 /// The opaque name a project's directories carry below the Engram home.
 #[must_use]
 pub fn project_digest(project_id: &ProjectId) -> String {
@@ -491,5 +506,26 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(first.file_name().unwrap(), "engram.db");
         assert!(!first.to_string_lossy().contains("project-stable-id"));
+    }
+
+    #[test]
+    fn a_store_names_its_home_only_in_the_home_layout() {
+        let home = Path::new("/host-local-engram");
+        let project = ProjectId("project-stable-id".into());
+        let database = project_database_path(home, &project);
+        assert_eq!(project_home_of(&database, &project).as_deref(), Some(home));
+        // Another project's digest, another file name, another parent name
+        // and a bare file all name no home.
+        assert_eq!(project_home_of(&database, &ProjectId("other".into())), None);
+        assert_eq!(
+            project_home_of(&database.with_file_name("other.db"), &project),
+            None
+        );
+        let elsewhere = home
+            .join("stores")
+            .join(project_digest(&project))
+            .join("engram.db");
+        assert_eq!(project_home_of(&elsewhere, &project), None);
+        assert_eq!(project_home_of(Path::new("engram.db"), &project), None);
     }
 }

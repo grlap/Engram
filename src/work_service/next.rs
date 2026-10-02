@@ -18,6 +18,14 @@ struct NextAdvisory {
 mod peek;
 
 impl LocalWorkService {
+    /// The agent reminder about this project's backups, read from the records
+    /// under the Engram home that holds this store; `None` when the store is
+    /// not in a home layout, no target is configured or all is well.
+    pub(crate) fn backup_reminder(&self) -> Option<String> {
+        let home = crate::project_home_of(&self.database, &self.project_id)?;
+        crate::backup::reminder::backup_reminder(&home, &self.project_id)
+    }
+
     /// Returns current focus, ready candidates, and the next bounded project delta.
     ///
     /// # Errors
@@ -262,6 +270,7 @@ impl LocalWorkService {
                 .flatten(),
             omissions,
             memory_advertisement: None,
+            backup_reminder: None,
             peek: None,
         };
         if fit_core {

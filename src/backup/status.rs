@@ -227,7 +227,7 @@ const fn restores(kind: CopyKind) -> &'static str {
     }
 }
 
-const fn off_host_text(adapter: AdapterKind) -> &'static str {
+pub(crate) const fn off_host_text(adapter: AdapterKind) -> &'static str {
     match adapter {
         AdapterKind::Directory => DIRECTORY_OFF_HOST,
     }

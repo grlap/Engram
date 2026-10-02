@@ -285,14 +285,22 @@ pub(super) fn refresh_guidance(compact: &mut CompactNextReceipt) {
     // A peek's direction to list memories goes before every other reminder,
     // the clipped-status one included: it says what to do before acting.
     let recovery = super::memory_recovery::reminder(compact.peek.as_ref());
+    let backup = compact.backup_reminder.clone();
     compact.guidance.reminders.retain(|reminder| {
-        reminder != CLIPPED_STATUS_REMINDER && Some(reminder) != recovery.as_ref()
+        reminder != CLIPPED_STATUS_REMINDER
+            && Some(reminder) != recovery.as_ref()
+            && Some(reminder) != backup.as_ref()
     });
     if clipped {
         compact
             .guidance
             .reminders
             .insert(0, CLIPPED_STATUS_REMINDER.into());
+    }
+    // The backup reminder goes after the direction to list memories and
+    // before everything else, whole, so the count limit keeps it too.
+    if let Some(backup) = backup {
+        compact.guidance.reminders.insert(0, backup);
     }
     if let Some(recovery) = recovery {
         compact.guidance.reminders.insert(0, recovery);

@@ -33,16 +33,30 @@ pub(crate) fn doctor(
     if repair_projections {
         return repair_store_projections(database, project_id, json);
     }
+    // The backup block stands beside the store's health in every outcome
+    // and never changes it. It reads only the home's records and the store,
+    // and contacts no target.
+    let backup = BackupBlock::read(database, project_id);
     let store = match SqliteStore::open_with_host_path_identity(database, identity) {
         Ok(store) => store,
-        Err(error) => return report_error(database, project_id, &error, json, Phase::Open),
+        Err(error) => return refuse(database, project_id, &error, json, Phase::Open, &backup),
     };
     let report = match store.verify_all() {
         Ok(report) => report,
-        Err(error) => return report_error(database, project_id, &error, json, Phase::Verification),
+        Err(error) => {
+            return refuse(
+                database,
+                project_id,
+                &error,
+                json,
+                Phase::Verification,
+                &backup,
+            );
+        }
     };
     if json {
-        let json_report = build_doctor_json_report(&store, database, project_id, &report)?;
+        let mut json_report = build_doctor_json_report(&store, database, project_id, &report)?;
+        json_report.value["backup"] = backup.json()?;
         println!("{}", serde_json::to_string_pretty(&json_report.value)?);
         match &json_report.control {
             Some(control) => emit_control_limitations(control),
@@ -56,6 +70,7 @@ pub(crate) fn doctor(
     if !report.is_healthy() {
         let json_report = build_doctor_json_report(&store, database, project_id, &report)?;
         refusals::emit(&json_report.value, false)?;
+        print!("{}", backup.text());
         bail!(
             "integrity check failed for {} object(s), {} graph snapshot audit(s), {} control record(s), and {} work record(s)",
             report.invalid_objects.len(),
@@ -68,12 +83,13 @@ pub(crate) fn doctor(
         Ok(control) => control,
         Err(error) => {
             println!("{}", verified_snapshot_line(&report, project_id));
-            return report_error(
+            return refuse(
                 database,
                 project_id,
                 &error,
                 json,
                 Phase::ControlDiagnostics,
+                &backup,
             );
         }
     };
@@ -120,8 +136,74 @@ pub(crate) fn doctor(
             "Host path policy: unresolved; path-bearing control requests are refused until --host-path-policy is supplied"
         ),
     }
+    print!("{}", backup.text());
     emit_control_limitations(&control);
     Ok(())
+}
+
+/// Why doctor read no backup records for a store outside the home layout.
+const BACKUP_NOT_READ: &str = "the store is not at <home>/projects/<project digest>/engram.db, so no Engram home's backup records name it";
+
+/// The backup block doctor prints: the same status `engram backup status`
+/// reports, or, for a store outside an Engram home's layout, that none was
+/// read.
+enum BackupBlock {
+    Status(Box<engram::backup::status::BackupStatus>),
+    NotRead,
+}
+
+impl BackupBlock {
+    fn read(database: &Path, project_id: &ProjectId) -> Self {
+        engram::project_home_of(database, project_id).map_or(Self::NotRead, |home| {
+            Self::Status(Box::new(engram::backup::status::backup_status(
+                &home, project_id, database,
+            )))
+        })
+    }
+
+    fn json(&self) -> Result<serde_json::Value> {
+        Ok(match self {
+            Self::Status(status) => serde_json::to_value(status)?,
+            Self::NotRead => serde_json::json!({
+                "unavailable": "backup_store_outside_home",
+                "reason": BACKUP_NOT_READ,
+            }),
+        })
+    }
+
+    fn text(&self) -> String {
+        match self {
+            Self::Status(status) => engram::backup::status::render_status(status),
+            Self::NotRead => format!(
+                "backup: not read ({BACKUP_NOT_READ})
+"
+            ),
+        }
+    }
+}
+
+/// Reports a refusal with the backup block beside it: inside the JSON
+/// report, or as its own lines after the text one.
+fn refuse(
+    database: &Path,
+    project_id: &ProjectId,
+    error: &engram::StoreError,
+    json: bool,
+    phase: Phase,
+    backup: &BackupBlock,
+) -> Result<()> {
+    let mut value = refusals::refusal(database, project_id, error, phase);
+    if json {
+        value["backup"] = backup.json()?;
+    }
+    refusals::emit(&value, json)?;
+    if !json {
+        print!("{}", backup.text());
+    }
+    bail!(
+        "doctor refused: {}",
+        value["code"].as_str().unwrap_or("corrupt_store")
+    )
 }
 
 fn diagnose_policy_recovery(database: &Path, project_id: &ProjectId, json: bool) -> Result<()> {
@@ -584,6 +666,33 @@ fn emit_redactor_limitation() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_store_outside_the_home_layout_says_its_backup_was_not_read() {
+        let directory = crate::test_support::temp_home().unwrap();
+        let project = ProjectId("outside".into());
+        let database = directory.path().join("work.db");
+        let block = BackupBlock::read(&database, &project);
+        assert!(matches!(block, BackupBlock::NotRead));
+        assert_eq!(
+            block.json().unwrap(),
+            serde_json::json!({
+                "unavailable": "backup_store_outside_home",
+                "reason": BACKUP_NOT_READ,
+            })
+        );
+        assert_eq!(
+            block.text(),
+            format!("backup: not read ({BACKUP_NOT_READ})\n")
+        );
+        assert!(!directory.path().join("backup-records").exists());
+        // The same store in the home layout reads the status.
+        let database = engram::project_database_path(directory.path(), &project);
+        assert!(matches!(
+            BackupBlock::read(&database, &project),
+            BackupBlock::Status(_)
+        ));
+    }
 
     #[test]
     fn post_open_operational_control_failure_keeps_typed_refusal() {

@@ -99,7 +99,7 @@ pub use mcp::{McpServer, store_error_value};
 pub use memory::{DevelopmentNoopRedactor, Redactor};
 pub use project::{
     HostPathProbeError, parse_host_path_policy, probe_host_path_policy, project_database_path,
-    project_digest,
+    project_digest, project_home_of,
 };
 pub use storage::{
     AcceptanceEvaluationPolicyUpdateReceipt, AcceptanceEvaluationReceipt,

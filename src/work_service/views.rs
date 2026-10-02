@@ -53,6 +53,10 @@ pub struct WorkNextView {
     /// confirms that the signal survived its tighter byte budget.
     #[serde(skip)]
     pub(crate) memory_advertisement: Option<ProjectMemoryAdvertisement>,
+    /// The agent reminder about a configured backup that needs attention,
+    /// filled by the agent `next` from the recorded backup state.
+    #[serde(skip)]
+    pub(crate) backup_reminder: Option<String>,
 }
 
 /// Disclosure for a non-advancing orientation read, never a delivery capability.

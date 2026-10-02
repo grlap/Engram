@@ -405,12 +405,30 @@ fn assert_schema_refusal_cli_without_mutation(fixture_sql: &str, expected_code: 
             assert!(!observed.is_empty(), "{observed:?}");
         }
         let text = String::from_utf8(text_result.stdout).unwrap();
-        for (key, value) in report.as_object().unwrap() {
+        assert_refusal_text_mirrors_report(&report, &text);
+    }
+}
+
+/// A text refusal prints each field of the JSON report as `key: value`,
+/// except the backup block, which it prints as `backup status` does.
+fn assert_refusal_text_mirrors_report(report: &Value, text: &str) {
+    for (key, value) in report.as_object().unwrap() {
+        if key == "backup" {
+            let opening = if value.get("unavailable").is_some() {
+                "backup: not read ("
+            } else {
+                "backup mode: "
+            };
             assert!(
-                text.lines().any(|line| line == format!("{key}: {value}")),
-                "missing {key}"
+                text.lines().any(|line| line.starts_with(opening)),
+                "missing the backup block: {text}"
             );
+            continue;
         }
+        assert!(
+            text.lines().any(|line| line == format!("{key}: {value}")),
+            "missing {key}"
+        );
     }
 }
 
@@ -614,12 +632,7 @@ fn doctor_cli_refusals_are_json_and_leave_the_store_unchanged() {
         let refused_text = run(home, &["doctor"]);
         assert!(!refused_text.status.success());
         let text = String::from_utf8(refused_text.stdout).unwrap();
-        for (key, value) in report.as_object().unwrap() {
-            assert!(
-                text.lines().any(|line| line == format!("{key}: {value}")),
-                "missing {key}"
-            );
-        }
+        assert_refusal_text_mirrors_report(&report, &text);
         assert_eq!(fs::read(database).unwrap(), before);
     }
 }

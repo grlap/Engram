@@ -608,6 +608,7 @@ impl AgentVerbs {
                 now,
             )?
         };
+        view.backup_reminder = self.service.backup_reminder();
         let lists = view.agent_lists.take().ok_or_else(|| {
             StoreError::InvalidWorkProjection("agent next has no advisory list snapshot".into())
         })?;
@@ -698,12 +699,17 @@ impl AgentVerbs {
         let (lines, value, guidance) = if input.verbose {
             // The direction to list memories stays first among the reminders
             // and is never shed; its command is the first next command, which
-            // the loop below keeps.
+            // the loop below keeps. The backup reminder follows it and is
+            // never shed either.
             let recovery = super::memory_recovery::reminder(view.peek.as_ref());
             if let Some(recovery) = &recovery {
                 guidance.reminders.insert(0, recovery.clone());
             }
-            let kept_reminders = usize::from(recovery.is_some());
+            let mut kept_reminders = usize::from(recovery.is_some());
+            if let Some(backup) = &view.backup_reminder {
+                guidance.reminders.insert(kept_reminders, backup.clone());
+                kept_reminders += 1;
+            }
             let mut peek_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             let mut agent_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             let mut evaluation_obligations = view.focus.as_ref().and_then(|focus| {
