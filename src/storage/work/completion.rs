@@ -74,6 +74,7 @@ pub use landings::RecordedLanding;
 mod lifecycle;
 mod named_root;
 mod obligation_guidance;
+pub(crate) use obligation_guidance::criteria_without_evidence_link;
 pub(super) use obligation_guidance::finished_run_cut_on;
 use obligation_guidance::require_expected_obligations_on;
 mod projections;
@@ -1862,6 +1863,21 @@ pub(super) fn binding_obligation<'a>(
         .max_by_key(|record| record.obligation.trigger_position.position)
 }
 
+/// The verification that satisfied a binding's newest obligation, when that
+/// obligation is satisfied. Only then can a self-asserted completion cite a
+/// verification for the bound criterion; a waived or open one adds none.
+pub(super) fn satisfied_binding<'a>(
+    records: &'a [WorkObligationRecord],
+    binding: &crate::domain::AcceptanceBinding,
+) -> Option<&'a ObjectId> {
+    let record = binding_obligation(records, binding)
+        .filter(|record| record.state == WorkObligationState::Satisfied)?;
+    match record.resolution.as_ref().map(|event| &event.resolution) {
+        Some(WorkObligationResolution::Satisfied { evidence, .. }) => Some(evidence),
+        _ => None,
+    }
+}
+
 /// Holds each bound criterion to its obligation at the completion cut. The
 /// obligation is resolved there, or completion refused before this; a
 /// satisfied one is contradicted when the newest verification of its kind at
@@ -1900,18 +1916,10 @@ fn bind_acceptance_to_obligations_on(
                 item.work_id.0
             )));
         };
-        let newest = binding_obligation(&records, binding);
-        let Some(record) = newest.filter(|record| record.state == WorkObligationState::Satisfied)
-        else {
-            // Waived by an authority the obligation path admitted; the seal
-            // binds that waiver where it binds every obligation.
-            continue;
-        };
-        let Some(WorkObligationResolution::Satisfied {
-            evidence: satisfying,
-            ..
-        }) = record.resolution.as_ref().map(|event| &event.resolution)
-        else {
+        // A waiver, by an authority the obligation path admitted, adds no
+        // citation; the seal binds that waiver where it binds every
+        // obligation.
+        let Some(satisfying) = satisfied_binding(&records, binding) else {
             continue;
         };
         let mut carried_by = satisfying.clone();

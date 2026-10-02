@@ -17,7 +17,7 @@ use crate::{
     WorkCriterionVerdictInput,
 };
 
-fn enable(database: &std::path::Path, modes: &[AcceptanceEvaluationMode], second: i64) {
+pub(super) fn enable(database: &std::path::Path, modes: &[AcceptanceEvaluationMode], second: i64) {
     enable_as(database, modes, "enable-evaluated-completion", second);
 }
 

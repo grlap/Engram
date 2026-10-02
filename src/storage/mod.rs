@@ -20,6 +20,7 @@ pub(crate) use work::AssessedAcceptanceEvaluation;
 pub(crate) use work::BindingReadRequest;
 pub(crate) use work::VerificationReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
+pub(crate) use work::criteria_without_evidence_link;
 pub(crate) use work::validate_work_plan;
 pub use work::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,

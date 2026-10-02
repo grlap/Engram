@@ -612,6 +612,12 @@ pub struct WorkFocusView {
     /// an author typed by hand; agent detail only.
     #[serde(skip)]
     pub(crate) acceptance_placeholder: Option<String>,
+    /// One-based positions of the open item's criteria that carry no evidence
+    /// link yet under a self-asserted policy, so completion would seal them
+    /// unlinked unless it links evidence; `None` when completed work or an
+    /// evaluated policy makes the question moot. Agent detail only.
+    #[serde(skip)]
+    pub(crate) unlinked_criteria: Option<Vec<usize>>,
     /// How many open-obligation advisory rows the safe show renderer retains.
     #[serde(skip)]
     pub(crate) evaluation_obligation_rows_visible: usize,

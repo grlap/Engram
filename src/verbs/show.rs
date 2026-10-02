@@ -750,6 +750,10 @@ pub(super) struct ShowReceiptValue {
     /// `"<title> is done"`, which no evaluator can judge.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) acceptance_placeholder: bool,
+    /// The open item's criteria that carry no evidence link yet under a
+    /// self-asserted policy, so completion would seal them unlinked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) unlinked_criteria: Option<super::acceptance::UnlinkedCriteria>,
     /// Run-feed position an evaluator passes back as `--evidence-basis`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) evidence_basis: Option<i64>,
@@ -1407,6 +1411,11 @@ pub(super) fn show_receipt_value(
     now: DateTime<Utc>,
 ) -> ShowReceiptValue {
     let work = &view.status.work;
+    // The unlinked criteria are the holder's to answer, so only the holder's
+    // show carries them; a peer's typical show stays as small as before.
+    let unlinked_criteria = matches!(holder, Holder::You(_))
+        .then(|| super::acceptance::UnlinkedCriteria::from_view(view))
+        .flatten();
     let (holder, held_until) = match holder {
         Holder::You(expires_at) => (Some("you".into()), Some(expires_at)),
         Holder::Other(session, expires_at, _) => {
@@ -1473,6 +1482,7 @@ pub(super) fn show_receipt_value(
         acceptance_basis: (work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0)
             .then_some(work.revision),
         acceptance_placeholder: view.acceptance_placeholder.is_some(),
+        unlinked_criteria,
         evidence_basis: view.evidence_basis,
         acceptance_evaluation: view.acceptance_evaluation.as_ref().map(|status| {
             show_evaluation(

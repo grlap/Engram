@@ -2209,7 +2209,11 @@ consumed evaluation's evidence: the service unions those citations into the
 completion evidence set it captures and checkpoints, and the core refuses a
 seal whose citations fall outside that set, so the same closure holds on
 both routes. No text is interpreted and no hash is demanded to complete. The
-fourteen-word `done` without links leaves every criterion unlinked. Optional
+fourteen-word `done` without links leaves every criterion unlinked, except a
+bound criterion whose satisfied obligation completion cites itself. Before
+completion, under a self-asserted policy, the holder's `show` and `gate`
+receipt name the criteria without a link while linking is still possible
+(see the [agent link contract](cli-and-mcp.md#using-engram-as-an-agent)). Optional
 `--link POSITION=LOCATOR` inputs explicitly select existing current-run
 note/gate evidence; `--link-basis` is required and carries the work revision
 from the author's `show` read. Any revision drift refuses before new evidence

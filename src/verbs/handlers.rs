@@ -2146,6 +2146,10 @@ impl AgentVerbs {
                 reminders.push(words);
             }
         }
+        if matches!(word, "show" | "gate") && matches!(holder, Holder::You(_)) {
+            let unlinked = super::acceptance::UnlinkedCriteria::from_view(view);
+            reminders.extend(unlinked.and_then(|unlinked| unlinked.reminder()));
+        }
         if evaluation_obligations.is_none() && !(word == "evaluate" && view.evaluated_policy) {
             for words in obligation_reminders(&view.obligation_page) {
                 if !reminders.contains(&words) {

@@ -20,7 +20,7 @@ mod completion;
 pub use completion::RecordedLanding;
 pub(crate) use completion::{
     AssessmentBoundary, RecordedObligationEnd, VerificationAssessment,
-    VerificationObligationAssessment,
+    VerificationObligationAssessment, criteria_without_evidence_link,
 };
 mod discovery;
 mod execution;

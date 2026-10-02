@@ -857,6 +857,26 @@ Rules that matter:
   Core explicit acceptance cannot be combined with these positional links.
   Neither a link nor a passing gate verifies that
   the criterion is satisfied: satisfaction remains the author's assertion.
+- Unlinked criteria are named before the seal, while linking is still
+  possible. Under a self-asserted policy, the holder's `show` of an open item
+  reports `unlinked_criteria: {count, positions}` in JSON: the criteria that
+  carry no evidence link yet. That is every unbound criterion, and every
+  bound one whose newest binding obligation is not satisfied, because a
+  satisfied binding is the one link completion adds on its own, decided the
+  same way the seal decides it. Positions are capped at eight; the count
+  stays exact, and every criterion linked reads `{count: 0, positions: []}`.
+  While the count is above zero, the holder's `show` and `gate` receipt add
+  one reminder after the holder's existing guidance, the same on CLI and MCP:
+  `criteria 1, 3 have no evidence link yet; link evidence in done, or pass
+  the bound check first` (for one criterion, `criterion N has …`), with `and
+  K more` past eight positions. A bound criterion whose obligation is still
+  open needs its check, since `done` refuses an open obligation; any other
+  needs a link in `done`. The line states what is linked now, not a
+  forecast: completion checks a satisfied binding again. A peer's `show`
+  carries neither, since only the holder completes. Under an evaluated policy
+  neither appears, since the seal cites the consumed evaluation's evidence
+  and a pass must cite at least one record. Completed work reports its
+  frozen seal instead.
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim
   with the same identity and fence; expiry becomes the later of its existing
   expiry and now plus the requested TTL (one hour by default).

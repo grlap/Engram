@@ -1626,3 +1626,107 @@ fn a_reopened_item_owes_its_pinned_check_again_on_the_new_run() {
         Some(WorkObligationResolution::Satisfied { evidence, .. }) if evidence == &again
     ));
 }
+
+// Before completion, the criteria an author has not linked are exactly the
+// ones a completion that links nothing seals with no evidence: an unbound
+// criterion, and a bound one whose obligation was waived. A bound criterion
+// whose obligation a host check satisfied is linked by completion itself,
+// through the same predicate, so the two can never disagree.
+#[test]
+fn the_criteria_without_a_link_before_completion_are_the_ones_the_seal_leaves_unlinked() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = create_bound(
+        &mut store,
+        "project-unlinked-before-seal",
+        &["run tests", "lint clean", "write docs"],
+        bound(1, VerificationKind::Test),
+        Creation::Add,
+    );
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-unlinked", 2, 300);
+    let work = revise_bound(
+        &mut store,
+        &work,
+        &claim,
+        None,
+        Some(vec![
+            bound(1, VerificationKind::Test),
+            bound(2, VerificationKind::Lint),
+        ]),
+        "bind-lint",
+        3,
+    );
+    let unlinked = |store: &SqliteStore, work: &WorkItem| {
+        crate::storage::criteria_without_evidence_link(
+            work,
+            &store.work_run_obligations(run_id).expect("obligations"),
+        )
+    };
+    // Nothing is linked while both bindings are still owed.
+    assert_eq!(unlinked(&store, &work), vec![1, 2, 3]);
+
+    let verification = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-unlinked",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        4,
+    );
+    let lint = store
+        .work_run_obligations(run_id)
+        .expect("obligations")
+        .into_iter()
+        .find(|record| {
+            record.obligation.rule.rule_id == "acceptance_criterion_requires_verification:2"
+                && record.state == WorkObligationState::Open
+        })
+        .expect("the lint obligation");
+    store
+        .waive_work_obligation(
+            &WaiveWorkObligationRequest {
+                obligation_id: lint.obligation.obligation_id,
+                expected_definition: lint.definition_id.clone(),
+                waived_by: "operator".into(),
+                reason: "lint runs elsewhere".into(),
+                actor: actor("operator"),
+                idempotency_key: "waive-lint".into(),
+                waived_at: at(5),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("waive the lint binding");
+    // The satisfied binding is linked; the waived and the unbound are not.
+    assert_eq!(unlinked(&store, &work), vec![2, 3]);
+
+    let all = store.work_run_evidence(run_id).expect("run evidence");
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "checkpoint-unlinked",
+        6,
+        &all,
+    );
+    let mut request = completion_request(&work, &claim, "runner", &verification, "complete", 7);
+    request.evidence = all;
+    for result in &mut request.acceptance {
+        result.evidence.clear();
+    }
+    let seal = store
+        .complete_work(&request, &DevelopmentNoopRedactor)
+        .expect("complete without author links");
+    let sealed_unlinked: Vec<usize> = seal
+        .acceptance
+        .iter()
+        .enumerate()
+        .filter(|(_, result)| result.evidence.is_empty())
+        .map(|(index, _)| index + 1)
+        .collect();
+    assert_eq!(sealed_unlinked, vec![2, 3]);
+    assert!(seal.acceptance[0].evidence.contains(&verification));
+}

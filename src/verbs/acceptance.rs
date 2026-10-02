@@ -15,6 +15,69 @@ pub(super) const RESTORED_UNAVAILABLE: &str =
 pub(super) const REPLAY_UNAVAILABLE: &str =
     "per-criterion evidence unavailable for this completed work";
 
+/// How many unlinked positions an open item's `show` and its reminder name;
+/// the count stays exact.
+const MAX_UNLINKED_POSITIONS: usize = 8;
+
+/// The criteria of an open, self-asserted item that carry no evidence link
+/// yet, as `show` JSON states them: an exact count, and the first positions.
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct UnlinkedCriteria {
+    count: usize,
+    positions: Vec<usize>,
+}
+
+impl UnlinkedCriteria {
+    /// The fact for an open, self-asserted item, kept at a count of zero so
+    /// "all linked" reads differently from "not asked".
+    pub(super) fn from_view(view: &crate::work_service::WorkFocusView) -> Option<Self> {
+        view.unlinked_criteria.as_deref().map(Self::from_positions)
+    }
+
+    pub(super) fn from_positions(positions: &[usize]) -> Self {
+        Self {
+            count: positions.len(),
+            positions: positions
+                .iter()
+                .take(MAX_UNLINKED_POSITIONS)
+                .copied()
+                .collect(),
+        }
+    }
+
+    /// The one line `show` and `gate` give the holder while linking is still
+    /// possible, so the author need not learn of the gap from the sealed
+    /// completion receipt; none when every criterion is linked. A bound
+    /// criterion whose obligation is still open is answered by its check, so
+    /// the line names both remedies. One wording serves CLI and MCP alike.
+    pub(super) fn reminder(&self) -> Option<String> {
+        if self.count == 0 {
+            return None;
+        }
+        let listed = self
+            .positions
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = self.count - self.positions.len();
+        let named = if more > 0 {
+            format!("{listed} and {more} more")
+        } else {
+            listed
+        };
+        Some(if self.count == 1 {
+            format!(
+                "criterion {named} has no evidence link yet; link evidence in done, or pass the bound check first"
+            )
+        } else {
+            format!(
+                "criteria {named} have no evidence link yet; link evidence in done, or pass the bound check first"
+            )
+        })
+    }
+}
+
 /// The total survives byte shedding; positions name only the visible subset.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct AcceptanceEvidence {

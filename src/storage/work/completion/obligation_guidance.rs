@@ -13,6 +13,27 @@ use super::{
     named_root_context_on, obligation_rule_set_for_observation_on,
 };
 
+/// One-based positions of the criteria a self-asserted completion would seal
+/// with no evidence link unless the completing call links evidence to them:
+/// every unbound criterion, and every bound one whose newest binding
+/// obligation is not satisfied. A satisfied binding is the only link
+/// completion adds on its own, decided by the same predicate the seal uses.
+/// It reports what is linked now, not a forecast: completion checks a
+/// satisfied binding again and may refuse it.
+pub(crate) fn criteria_without_evidence_link(
+    item: &crate::WorkItem,
+    records: &[WorkObligationRecord],
+) -> Vec<usize> {
+    (1..=item.acceptance.len())
+        .filter(|position| {
+            !item.acceptance_bindings.iter().any(|binding| {
+                binding.criterion == *position
+                    && super::satisfied_binding(records, binding).is_some()
+            })
+        })
+        .collect()
+}
+
 impl SqliteStore {
     /// Guidance at the current claim's named-root cut; completion classifies
     /// again. A bounded page loads each run's claim and root once.

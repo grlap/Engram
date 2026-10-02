@@ -1021,6 +1021,20 @@ impl LocalWorkService {
             (None, None)
         };
         let acceptance_placeholder = acceptance_placeholder(store, &status.work)?;
+        // Under an evaluated policy the seal cites the evaluation's citations,
+        // and a pass cannot cite nothing, so only self-asserted work asks.
+        // An open item without an active run, such as one restored and not
+        // yet claimed, has no obligation that could link a criterion.
+        let unlinked_criteria = (status.work.lifecycle == crate::domain::WorkLifecycle::Open
+            && !evaluated_policy)
+            .then(|| {
+                let records = if status.work.active_run_id.is_some() {
+                    obligation_records.as_slice()
+                } else {
+                    &[]
+                };
+                crate::storage::criteria_without_evidence_link(&status.work, records)
+            });
         let title_stored_bytes = status.work.title.len();
         let title_truncated = matches!(text, FocusText::Full)
             && compact_text(&status.work.title) != status.work.title;
@@ -1046,6 +1060,7 @@ impl LocalWorkService {
             acceptance_evaluation,
             evaluated_policy,
             acceptance_placeholder,
+            unlinked_criteria,
             evaluation_obligation_rows_visible,
             evidence_basis,
             acceptance_provenance,

@@ -286,7 +286,10 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   executor session, and the task admits it under
   [Independent by default](#independent-by-default).
 - **R5 pass citations.** Every `pass` carries a non-empty rationale and at
-  least one citation. `observed`: each citation is host-minted
+  least one citation, so a seal built from a fresh all-pass evaluation links
+  evidence to every criterion; that is why an evaluated item's `show` names
+  no [unlinked criteria](cli-and-mcp.md#using-engram-as-an-agent) before
+  completion. `observed`: each citation is host-minted
   `VerificationEvidence` bound to this run whose result is `passed`.
   `asserted`: each citation is a gate record on this run with no failure
   labels; refused when policy `mechanical_basis` is `observed`. `judgment`:
