@@ -192,3 +192,59 @@ fn a_state_with_an_impossible_cut_is_unreadable_and_status_does_not_crash() {
         fs::write(&paths.state, serde_json::to_vec(&original).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn check_target_records_a_missing_copy_and_reports_an_unreachable_target() {
+    let root = test_support::temp_home().unwrap();
+    setup(root.path());
+    let copies = root.path().join("copies");
+    fs::create_dir_all(&copies).unwrap();
+    set_target(root.path(), &copies);
+    let push = engram(root.path(), &["backup", "push"]);
+    assert!(push.status.success(), "{}", text(&push.stderr));
+
+    let check = |args: &[&str]| {
+        let output = engram(root.path(), args);
+        assert!(output.status.success(), "{}", text(&output.stderr));
+        output
+    };
+    let confirmed = check(&["backup", "status", "--check-target", "--json"]);
+    let value: Value = serde_json::from_slice(&confirmed.stdout).unwrap();
+    assert_eq!(value["checks"][0]["outcome"], "confirmed");
+    assert_eq!(value["checks"][0]["recorded"], true);
+    assert_eq!(value["durability"]["mode"], "local_backed_up");
+
+    // The stored file is gone: the check records it, and the kind reads
+    // the missing copy at once.
+    let digest = engram::project_digest(&ProjectId(PROJECT.into()));
+    for entry in fs::read_dir(copies.join(&digest)).unwrap() {
+        let path = entry.unwrap().path();
+        if path.to_string_lossy().ends_with(".db.gz") {
+            fs::remove_file(path).unwrap();
+        }
+    }
+    let missing = check(&["backup", "status", "--check-target", "--json"]);
+    let value: Value = serde_json::from_slice(&missing.stdout).unwrap();
+    assert_eq!(value["checks"][0]["outcome"], "missing");
+    assert_eq!(value["checks"][0]["code"], "backup_copy_missing");
+    assert_eq!(value["checks"][0]["recorded"], true);
+    assert_eq!(value["kinds"][0]["reason"], "backup_copy_missing");
+    assert_eq!(value["durability"]["mode"], "local");
+
+    // The target is gone: reported, and nothing recorded.
+    let paths = RecordPaths::new(
+        &root.path().join("home"),
+        &ProjectId(PROJECT.into()),
+        CopyKind::Store,
+    );
+    let before = fs::read(&paths.state).unwrap();
+    fs::remove_dir_all(&copies).unwrap();
+    let unreachable = check(&["backup", "status", "--check-target"]);
+    let printed = text(&unreachable.stdout);
+    assert!(
+        printed.contains(": backup_target_unreachable: ") && printed.contains("nothing recorded"),
+        "{printed}"
+    );
+    assert_eq!(fs::read(&paths.state).unwrap(), before);
+    assert!(!copies.exists());
+}

@@ -22,6 +22,9 @@ use engram::{
 use serde_json::json;
 
 use super::{
+    backup::check::{
+        CheckOutcome, CheckReport, CheckSettings, DEFAULT_CHECK_DEADLINE, check_targets,
+    },
     backup::push::{
         DEFAULT_CAPTURE_DEADLINE, DEFAULT_TRANSPORT_DEADLINE, KindReport, Outcome, PushSettings,
         push,
@@ -36,10 +39,18 @@ pub(crate) enum BackupCommand {
     #[command(subcommand)]
     Target(TargetCommand),
     /// Report the backup mode, with what backs it, and each kind's recorded
-    /// evidence. Reads only local files and the store; contacts no target.
+    /// evidence. Reads only local files and the store unless asked to check
+    /// the targets.
     Status {
         #[arg(long)]
         json: bool,
+        /// Ask each target to confirm the newest copy, recording a
+        /// confirmation or a missing copy under the push lock.
+        #[arg(long)]
+        check_target: bool,
+        /// Seconds a target check may take.
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_CHECK_DEADLINE.as_secs(), requires = "check_target")]
+        check_deadline_secs: u64,
     },
     /// Capture the store and bring the copy at each configured target up to
     /// date. Exits 0 when nothing is configured or another push is running,
@@ -131,12 +142,27 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
     let (home, _) = engram_home_and_project_digest(database)?;
     let command = match command {
         BackupCommand::Target(command) => command,
-        BackupCommand::Status { json } => {
+        BackupCommand::Status {
+            json,
+            check_target,
+            check_deadline_secs,
+        } => {
+            // The check goes first, so the status shows what it recorded.
+            let checks = check_target.then(|| {
+                check_targets(
+                    home,
+                    project,
+                    &CheckSettings::new(Duration::from_secs(check_deadline_secs)),
+                    Utc::now(),
+                )
+            });
             let status = engram::backup::status::backup_status(home, project, database);
-            if json {
-                println!("{}", serde_json::to_string_pretty(&status)?);
-            } else {
-                print!("{}", engram::backup::status::render_status(&status));
+            let reports = checks.as_ref().map(|run| run.reports.as_slice());
+            print_status(&status, reports, json)?;
+            if checks.is_some_and(|run| run.abandoned.is_some()) {
+                // A check passed its deadline inside the operating system;
+                // ending the process is what stops it. It recorded nothing.
+                std::process::exit(0);
             }
             return Ok(true);
         }
@@ -238,6 +264,46 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
         }
     }
     Ok(true)
+}
+
+fn print_status(
+    status: &engram::backup::status::BackupStatus,
+    checks: Option<&[CheckReport]>,
+    json: bool,
+) -> Result<()> {
+    if json {
+        let mut value = serde_json::to_value(status)?;
+        if let Some(checks) = checks {
+            value["checks"] = serde_json::to_value(checks)?;
+        }
+        println!("{}", serde_json::to_string_pretty(&value)?);
+        return Ok(());
+    }
+    print!("{}", engram::backup::status::render_status(status));
+    for check in checks.unwrap_or_default() {
+        let found = match check.outcome {
+            CheckOutcome::Confirmed => "confirmed".to_owned(),
+            CheckOutcome::NothingToCheck => "nothing to check".to_owned(),
+            _ => format!(
+                "{}: {}",
+                check.code.unwrap_or("backup_target_unconfirmed"),
+                check.reason.as_deref().unwrap_or("")
+            ),
+        };
+        let recorded = if check.recorded {
+            "recorded".to_owned()
+        } else if let Some(why) = &check.not_recorded {
+            format!("not recorded: {why}")
+        } else {
+            "nothing recorded".to_owned()
+        };
+        let copy = check
+            .copy
+            .as_deref()
+            .map_or_else(String::new, |copy| format!(" ({copy})"));
+        println!("check {}{copy}: {found}; {recorded}", check.kind.as_str());
+    }
+    Ok(())
 }
 
 fn print_push(project: &ProjectId, reports: &[KindReport], json: bool) -> Result<()> {

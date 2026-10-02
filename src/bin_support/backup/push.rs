@@ -213,16 +213,16 @@ impl From<TargetError> for Failure {
 
 /// The time every request to the target may take together, spent request by
 /// request on a worker thread.
-struct Transport {
-    budget: Duration,
-    used: Duration,
+pub(super) struct Transport {
+    pub(super) budget: Duration,
+    pub(super) used: Duration,
 }
 
 impl Transport {
     /// Runs `work` on a worker, giving it the time left. Returns its answer,
     /// or, when the time ran out first, the unjoined worker; with no time
     /// left at all, the request is not started.
-    fn run<T: Send + 'static>(
+    pub(super) fn run<T: Send + 'static>(
         &mut self,
         work: impl FnOnce(Duration) -> T + Send + 'static,
     ) -> Result<T, Option<JoinHandle<()>>> {
@@ -252,16 +252,16 @@ impl Transport {
 
 /// The configured target as a transport worker needs it.
 #[derive(Clone)]
-struct Target {
-    root: PathBuf,
-    identity: ObjectId,
-    project: ProjectId,
-    free_space: FreeSpace,
+pub(super) struct Target {
+    pub(super) root: PathBuf,
+    pub(super) identity: ObjectId,
+    pub(super) project: ProjectId,
+    pub(super) free_space: FreeSpace,
 }
 
 impl Target {
     /// The adapter for this target, whose reads stop at `deadline`.
-    fn adapter(&self, deadline: Duration) -> DirectoryAdapter<'_> {
+    pub(super) fn adapter(&self, deadline: Duration) -> DirectoryAdapter<'_> {
         DirectoryAdapter::new(
             self.root.clone(),
             self.identity.clone(),
@@ -453,7 +453,9 @@ impl Push<'_> {
                     state.confirm_newest(Utc::now());
                     return Ok(AttemptOutcome::Unchanged);
                 }
-                Confirmation::Unknown { reason } => {
+                Confirmation::Unknown { reason }
+                | Confirmation::Unreachable { reason }
+                | Confirmation::TimedOut { reason } => {
                     return Err(Failure::new(
                         "backup_target_unconfirmed",
                         format!(
@@ -620,8 +622,12 @@ impl Push<'_> {
                     "the resolution of the pending attempt",
                 )
             })?;
-        let missing = match (reconciled, confirmation) {
-            (Reconciled::Unknown { reason }, _) | (_, Some(Confirmation::Unknown { reason })) => {
+        let undecided = confirmation
+            .as_ref()
+            .and_then(Confirmation::undecided)
+            .map(str::to_owned);
+        let missing = match (reconciled, undecided, confirmation) {
+            (Reconciled::Unknown { reason }, _, _) | (_, Some(reason), _) => {
                 return Err(Failure::new(
                     "backup_pending_unresolved",
                     format!(
@@ -630,11 +636,13 @@ impl Push<'_> {
                     ),
                 ));
             }
-            (_, Some(Confirmation::Confirmed)) => false,
-            (Reconciled::Removed | Reconciled::Absent, _)
-            | (_, Some(Confirmation::Missing { .. })) => true,
-            (Reconciled::Complete | Reconciled::Completed, None) => {
-                unreachable!("a complete attempt is confirmed")
+            (_, None, Some(Confirmation::Confirmed)) => false,
+            (Reconciled::Removed | Reconciled::Absent, None, _)
+            | (_, None, Some(Confirmation::Missing { .. })) => true,
+            (_, None, Some(_)) | (Reconciled::Complete | Reconciled::Completed, None, None) => {
+                unreachable!(
+                    "an undecided confirmation was matched above; a complete attempt is confirmed"
+                )
             }
         };
         if missing {

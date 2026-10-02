@@ -284,15 +284,15 @@ fn confirm_answers_missing_for_a_gone_or_changed_copy_and_unknown_when_unreachab
     let unreachable = adapter_at(&fixture.home.path().join("not-mounted"));
     assert!(matches!(
         unreachable.confirm(&project(), &attempt.manifest),
-        Confirmation::Unknown { .. }
+        Confirmation::Unreachable { .. }
     ));
 
-    // A read past the deadline cannot say.
+    // A read past the deadline, at a reachable target, cannot say.
     fs::write(&data, &original).unwrap();
     let hurried = DirectoryAdapter::new(fixture.root.clone(), identity(), Duration::ZERO, &plenty);
     assert!(matches!(
         hurried.confirm(&project(), &attempt.manifest),
-        Confirmation::Unknown { .. }
+        Confirmation::TimedOut { .. }
     ));
     assert_eq!(
         adapter.confirm(&project(), &attempt.manifest),

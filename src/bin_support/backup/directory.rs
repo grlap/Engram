@@ -535,7 +535,7 @@ impl BackupAdapter for DirectoryAdapter<'_> {
 
     fn confirm(&self, project: &ProjectId, manifest: &StoredManifest) -> Confirmation {
         if let Err(reason) = self.reachable() {
-            return Confirmation::Unknown { reason };
+            return Confirmation::Unreachable { reason };
         }
         if let Err(error) = self.check_manifest(project, manifest) {
             return Confirmation::Missing {
@@ -567,7 +567,7 @@ impl BackupAdapter for DirectoryAdapter<'_> {
                 reason: format!("the stored file holds other bytes: {reason}"),
             },
             Verified::Unreadable(reason) => Confirmation::Unknown { reason },
-            Verified::Deadline => Confirmation::Unknown {
+            Verified::Deadline => Confirmation::TimedOut {
                 reason: format!("the read passed its deadline of {:?}", self.deadline),
             },
         }

@@ -4,6 +4,7 @@
 //! confirmed.
 
 pub(crate) mod adapter;
+pub(crate) mod check;
 pub(crate) mod directory;
 pub(crate) mod push;
 

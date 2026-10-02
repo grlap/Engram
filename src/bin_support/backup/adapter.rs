@@ -18,8 +18,25 @@ pub(crate) enum Confirmation {
     Confirmed,
     /// The copy is not there, or other bytes stand under its name.
     Missing { reason: String },
-    /// The target could not be read well enough to say.
+    /// The configured location cannot be reached at all.
+    Unreachable { reason: String },
+    /// The target was reached, and the read of the copy passed its deadline
+    /// before it could say; nothing against the copy.
+    TimedOut { reason: String },
+    /// The target was reached but could not be read well enough to say.
     Unknown { reason: String },
+}
+
+impl Confirmation {
+    /// Why the target could not say, when it could not.
+    pub(crate) fn undecided(&self) -> Option<&str> {
+        match self {
+            Self::Unreachable { reason } | Self::TimedOut { reason } | Self::Unknown { reason } => {
+                Some(reason)
+            }
+            Self::Confirmed | Self::Missing { .. } => None,
+        }
+    }
 }
 
 /// One page of a project's copies at a target.

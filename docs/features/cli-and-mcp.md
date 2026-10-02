@@ -1525,6 +1525,24 @@ error. A configuration or state file this build cannot use is reported as
 `schema_version` 1, the mode inside a `durability` object beside its
 `off_host` list, and the reasons as their codes. The word exits 0.
 
+`backup status --check-target [--check-deadline-secs N]` first asks each
+configured target to confirm the newest copy, reading it in full under the
+deadline (600 seconds by default), and then reports as above with a
+`checks` list. The check reads the records without the push lock and asks
+the target outside it; it then takes the lock and records a confirmation,
+or a finding that the copy is missing (`backup_copy_missing`, which stops
+the kind qualifying at once), only when the target, the newest receipt and
+its evidence are unchanged since it read them, so a push that recorded a
+newer receipt meanwhile is never overwritten. A target that cannot be
+reached is reported as `backup_target_unreachable`, a check that reached the
+target and passed its deadline before it had read the copy as
+`backup_check_timed_out`, and one that could not read it as
+`backup_target_unconfirmed`; each stands beside the recorded evidence and
+changes nothing. A confirmation renews only the copy's last confirmation,
+never the time the store's content was observed in it, so an old copy that
+is confirmed again still reads `backup_stale`. A check stalled inside the
+operating system past its deadline ends the process, which still exits 0.
+
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence
 attribution contract.
