@@ -646,16 +646,26 @@ impl BackupAdapter for DirectoryAdapter<'_> {
         // again, which gives it a new identity.
         self.check_copy(project, manifest)?;
         let started = Instant::now();
+        let files = self.files(project, &manifest.copy);
+        // Room for the stored file and the uncompressed copy, as a restore
+        // needs; sizes a manifest cannot add up are no copy at all.
+        let required = manifest
+            .stored_bytes
+            .checked_add(manifest.capture.bytes)
+            .ok_or_else(|| AdapterError::CopyInvalid {
+                path: files.manifest.clone(),
+                reason: "its stored and uncompressed sizes add up past what a disk holds".into(),
+            })?;
         let probe = nearest_existing_ancestor(destination);
         let available =
             (self.free_space)(&probe).map_err(|source| AdapterError::LocalSpaceUnknown {
                 path: probe.clone(),
                 source,
             })?;
-        if available < manifest.capture.bytes {
+        if available < required {
             return Err(AdapterError::LocalNoSpace {
                 path: probe,
-                required: manifest.capture.bytes,
+                required,
                 available,
             });
         }
@@ -664,7 +674,6 @@ impl BackupAdapter for DirectoryAdapter<'_> {
                 path: self.root.clone(),
                 reason,
             })?;
-        let files = self.files(project, &manifest.copy);
         let stored = File::open(&files.data).map_err(|source| {
             if source.kind() == io::ErrorKind::NotFound {
                 AdapterError::CopyMissing {
@@ -677,6 +686,22 @@ impl BackupAdapter for DirectoryAdapter<'_> {
                 }
             }
         })?;
+        let stored_length = stored
+            .metadata()
+            .map_err(|source| AdapterError::Io {
+                path: files.data.clone(),
+                source,
+            })?
+            .len();
+        if stored_length != manifest.stored_bytes {
+            return Err(AdapterError::CopyInvalid {
+                path: files.data.clone(),
+                reason: format!(
+                    "it holds {stored_length} bytes, not the {} its manifest declares",
+                    manifest.stored_bytes
+                ),
+            });
+        }
         let output = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -1002,34 +1027,38 @@ fn publish(
         return cleanup(classify_write(temporary, error));
     }
     drop(file);
-    // The move takes the long-path forms, which a deep target needs: the
-    // system call behind it, unlike std's file operations, is not given them
-    // otherwise.
-    let (moved, destination) = match (verbatim(temporary), verbatim(final_path)) {
-        (Ok(moved), Ok(destination)) => (moved, destination),
-        (Err(error), _) | (_, Err(error)) => {
-            return cleanup(Publish::Io(temporary.to_path_buf(), error));
+    match move_without_replacing(temporary, final_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            cleanup(Publish::Exists(final_path.to_path_buf()))
         }
-    };
-    let mut pending = match tempfile::TempPath::try_from_path(moved) {
-        Ok(pending) => pending,
-        Err(error) => return cleanup(Publish::Io(temporary.to_path_buf(), error)),
-    };
+        Err(error) => cleanup(Publish::Io(final_path.to_path_buf(), error)),
+    }
+}
+
+/// Moves `from`, a closed file this process wrote, to `to` without replacing
+/// anything there; an existing `to` fails with `AlreadyExists`. It renames
+/// rather than links, so it works on file systems without hard links, such as
+/// FAT, exFAT and many network shares, and it waits out another program that
+/// holds either file open. On failure `from` stays where it was, for the
+/// caller to remove and report.
+pub(super) fn move_without_replacing(from: &Path, to: &Path) -> io::Result<()> {
+    // The move takes the long-path forms, which a deep path needs: the system
+    // call behind it, unlike std's file operations, is not given them
+    // otherwise.
+    let mut pending = tempfile::TempPath::try_from_path(verbatim(from)?)?;
+    let destination = verbatim(to)?;
     for attempt in 0..=SHARING_RETRIES {
         match pending.persist_noclobber(&destination) {
             Ok(()) => return Ok(()),
-            Err(error) if error.error.kind() == io::ErrorKind::AlreadyExists => {
-                // Dropping the returned path removes only the temporary file.
-                drop(error.path);
-                return Err(Publish::Exists(final_path.to_path_buf()));
-            }
             Err(error) if is_sharing_violation(&error.error) && attempt < SHARING_RETRIES => {
                 pending = error.path;
                 std::thread::sleep(SHARING_PAUSE);
             }
-            Err(error) => {
-                drop(error.path);
-                return Err(Publish::Io(final_path.to_path_buf(), error.error));
+            Err(mut error) => {
+                // Leave the file to the caller, which reports a failed removal.
+                error.path.disable_cleanup(true);
+                return Err(error.error);
             }
         }
     }
@@ -1115,7 +1144,7 @@ pub(super) fn with_cleanup(error: AdapterError, path: &Path) -> AdapterError {
 
 /// Removes `path`, waiting out another program that holds it open, such as
 /// a sync client or a scanner. A missing file is fine.
-fn remove_with_retry(path: &Path) -> io::Result<()> {
+pub(super) fn remove_with_retry(path: &Path) -> io::Result<()> {
     let mut attempt = 0;
     loop {
         match fs::remove_file(path) {
@@ -1170,6 +1199,14 @@ fn valid_copy_name(copy: &str) -> bool {
 fn nearest_existing_ancestor(path: &Path) -> PathBuf {
     path.ancestors()
         .skip(1)
+        // A bare relative name's parent is empty: the current directory.
+        .map(|ancestor| {
+            if ancestor.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                ancestor
+            }
+        })
         .find(|ancestor| ancestor.exists())
         .unwrap_or(path)
         .to_path_buf()

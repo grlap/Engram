@@ -1353,6 +1353,9 @@ engram backup target set --kind store --adapter directory --dir <absolute path> 
   [--window-hours N] [--keep N]
 engram backup target show [--json]
 engram backup target clear --kind store
+# Read the copies a target holds, from any home that configured it.
+engram backup list [--kind store] [--json]
+engram backup fetch <copy> --out <file> [--kind store] [--json]
 
 # Deterministic planning/history disclosure. The default path is
 # <home>/snapshots/<project>/graph-<work-cut>-<memory-cut>-<first-12-body-digest>.json.
@@ -1567,6 +1570,33 @@ ahead of every other reminder, and neither the reminder count limit nor byte
 fitting sheds or shortens it. A recorded failure code that is not a plain
 lowercase code of at most 64 bytes reads `unrecognised code`. See
 [off-host backup](off-host-backup.md#what-the-operator-sees).
+
+`backup list [--kind store] [--json] [--deadline-secs N]` prints the
+manifests of the copies the configured target holds for this project, with
+each copy's name, capture start, uncompressed and stored sizes, SHA-256,
+cut, format identity, capturing build, source revision and host, and names
+the manifests it could not use. `backup fetch COPY --out FILE [--kind store]
+[--json] [--deadline-secs N]` writes that copy to FILE, which must not exist
+(`backup_copy_exists`). Before it creates anything it checks that the local
+disk has room for the stored file and the uncompressed copy together
+(`backup_local_no_space`, or `backup_local_space_unknown` when the room
+cannot be measured) and that the stored file is the length its manifest
+declares; it then decodes no more than the declared length and checks the
+result against the manifest's SHA-256 (`backup_copy_invalid` otherwise). A
+copy the target does not hold is `backup_copy_unknown`. The copy is decoded
+into a hidden file beside FILE and linked to FILE, without replacing
+anything, only once it is checked, so FILE never holds a partial or
+unchecked copy; only a process that ends in the middle can leave that hidden
+`.FILE.PID.fetching` file. Both words read
+only the target's records under the home and the target itself, never open
+or create a store, and so work in a home that has only configured the
+target; without one they refuse with `backup_not_configured`. Their
+requests to the target run under one deadline, thirty minutes by default,
+and a request stalled past it ends the process with exit 1. Their `--json`
+receipts carry `schema_version` 1; under `--json` a refusal is also printed
+on standard output as a JSON object with `code` and `message`. `backup
+restore`, which installs a fetched copy as this home's store, is not yet
+shipped; see [off-host backup](off-host-backup.md#restore).
 
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence

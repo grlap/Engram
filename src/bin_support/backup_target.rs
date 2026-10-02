@@ -1,6 +1,7 @@
 //! The operator `backup target` words, which set, show and clear a project's
-//! backup targets and read and write only the records under the Engram home,
-//! and `backup push`, which brings each configured kind's copy up to date.
+//! backup targets and read and write only the records under the Engram home;
+//! `backup push`, which brings each configured kind's copy up to date; and
+//! `backup list` and `backup fetch`, which read the copies a target holds.
 
 use std::{
     path::{Path, PathBuf},
@@ -25,6 +26,7 @@ use super::{
     backup::check::{
         CheckOutcome, CheckReport, CheckSettings, DEFAULT_CHECK_DEADLINE, check_targets,
     },
+    backup::fetch::{DEFAULT_READ_DEADLINE, Listing, ReadFailure, ReadSettings, fetch, list},
     backup::push::{
         DEFAULT_CAPTURE_DEADLINE, DEFAULT_TRANSPORT_DEADLINE, KindReport, Outcome, PushSettings,
         push,
@@ -67,6 +69,35 @@ pub(crate) enum BackupCommand {
         /// Seconds the requests to the target may take together.
         #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_TRANSPORT_DEADLINE.as_secs())]
         transport_deadline_secs: u64,
+    },
+    /// Print the manifests of the copies the configured target holds for
+    /// this project. Opens no store.
+    List {
+        #[arg(long, value_enum, default_value = "store")]
+        kind: KindArg,
+        #[arg(long)]
+        json: bool,
+        /// Seconds the requests to the target may take together.
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_READ_DEADLINE.as_secs())]
+        deadline_secs: u64,
+    },
+    /// Write one copy, decoded to no more than the length its manifest
+    /// declares and checked against that manifest, to a new file. Checks
+    /// first that the local disk has room for the stored file and the
+    /// uncompressed copy. Opens no store.
+    Fetch {
+        /// The copy's name, as `backup list` prints it.
+        copy: String,
+        /// The file to write; it must not exist.
+        #[arg(long, value_name = "FILE")]
+        out: PathBuf,
+        #[arg(long, value_enum, default_value = "store")]
+        kind: KindArg,
+        #[arg(long)]
+        json: bool,
+        /// Seconds the requests to the target may take together.
+        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_READ_DEADLINE.as_secs())]
+        deadline_secs: u64,
     },
 }
 
@@ -200,6 +231,61 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
                 std::process::exit(i32::from(!succeeded));
             }
             return Ok(succeeded);
+        }
+        BackupCommand::List {
+            kind,
+            json,
+            deadline_secs,
+        } => {
+            let run = list(
+                home,
+                project,
+                kind.into(),
+                &ReadSettings::new(Duration::from_secs(deadline_secs)),
+            );
+            let listing = finish(run.outcome, run.abandoned.is_some(), json)?;
+            print_listing(kind.into(), &listing, json)?;
+            return Ok(true);
+        }
+        BackupCommand::Fetch {
+            copy,
+            out,
+            kind,
+            json,
+            deadline_secs,
+        } => {
+            let run = fetch(
+                home,
+                project,
+                kind.into(),
+                &copy,
+                &out,
+                &ReadSettings::new(Duration::from_secs(deadline_secs)),
+            );
+            let fetched = finish(run.outcome, run.abandoned.is_some(), json)?;
+            let manifest = &fetched.manifest;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "schema_version": READ_SCHEMA_VERSION,
+                        "copy": manifest.copy,
+                        "out": fetched.out.display().to_string(),
+                        "bytes": manifest.capture.bytes,
+                        "sha256": manifest.capture.sha256,
+                        "manifest": manifest,
+                    }))?
+                );
+            } else {
+                println!(
+                    "fetched {} to {}: {} bytes, sha256 {}",
+                    manifest.copy,
+                    fetched.out.display(),
+                    manifest.capture.bytes,
+                    manifest.capture.sha256
+                );
+            }
+            return Ok(true);
         }
     };
     match command {
@@ -399,6 +485,87 @@ fn print_view(view: &TargetView) {
     if !view.state_recorded {
         println!("  no recorded state");
     }
+}
+
+/// The schema of the `--json` receipts of `backup list` and `backup fetch`.
+const READ_SCHEMA_VERSION: u32 = 1;
+
+/// The outcome of a list or fetch. A refusal is also printed as a JSON
+/// object with its code under `--json`. A worker left running past its
+/// deadline is stopped by ending the process, after the refusal is printed.
+fn finish<T>(
+    outcome: std::result::Result<T, ReadFailure>,
+    abandoned: bool,
+    json: bool,
+) -> Result<T> {
+    match outcome {
+        Ok(value) => Ok(value),
+        Err(failure) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "schema_version": READ_SCHEMA_VERSION,
+                        "code": failure.code,
+                        "message": failure.message,
+                    }))?
+                );
+            }
+            if abandoned {
+                eprintln!("error: {}: {}", failure.code, failure.message);
+                std::process::exit(1);
+            }
+            Err(anyhow!("{}: {}", failure.code, failure.message))
+        }
+    }
+}
+
+fn print_listing(kind: CopyKind, listing: &Listing, json: bool) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "schema_version": READ_SCHEMA_VERSION,
+                "kind": kind.as_str(),
+                "copies": listing.manifests,
+                "unreadable": listing.unreadable,
+            }))?
+        );
+        return Ok(());
+    }
+    if listing.manifests.is_empty() {
+        println!(
+            "The target holds no {} copy of this project.",
+            kind.as_str()
+        );
+    }
+    for manifest in &listing.manifests {
+        let capture = &manifest.capture;
+        println!(
+            "{}: captured {}, {} bytes ({} stored), sha256 {}, cut work feed {} memory {}",
+            manifest.copy,
+            capture.capture_started_at.to_rfc3339(),
+            capture.bytes,
+            manifest.stored_bytes,
+            capture.sha256,
+            capture.cut.work_feed,
+            capture.cut.project_memory
+        );
+        println!(
+            "  format {}, build {}, source {}, host {}",
+            capture.format_identity.as_str(),
+            capture
+                .build_fingerprint
+                .as_ref()
+                .map_or("unknown", engram::ObjectId::as_str),
+            capture.source_revision.as_deref().unwrap_or("unknown"),
+            capture.host_name.as_deref().unwrap_or("unknown")
+        );
+    }
+    for name in &listing.unreadable {
+        println!("unreadable manifest: {name}");
+    }
+    Ok(())
 }
 
 fn refusal(error: &TargetError) -> anyhow::Error {

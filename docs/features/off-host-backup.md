@@ -16,9 +16,9 @@
 > `engram backup target` words, `engram backup push` with its capture,
 > pending attempts, deadlines and retention, and `engram backup status
 > [--json] [--check-target]` with the freshness rule and the
-> `local_backed_up` mode it reports, the backup block of `engram doctor` and
-> the `next` reminder. Restore from a target and the `graph` kind are not
-> shipped. The [shipped inventory](../shipped.md) stays the record of what
+> `local_backed_up` mode it reports, the backup block of `engram doctor`,
+> the `next` reminder, and `engram backup list` and `engram backup fetch`.
+> `backup restore` and the `graph` kind are not shipped. The [shipped inventory](../shipped.md) stays the record of what
 > exists.
 
 Today every Engram store lives on one machine. `engram backup` writes its

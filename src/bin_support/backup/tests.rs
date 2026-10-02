@@ -355,10 +355,12 @@ fn decoding_writes_no_more_than_the_declared_length() {
     adapter.put(&project(), &attempt, &stored).unwrap();
     let data = project_dir(&fixture.root).join(format!("{}.db.gz", attempt.manifest.copy));
     fs::write(&data, gzip(&longer)).unwrap();
+    // The manifest declares the stored file's true length, so the refusal
+    // comes from the bounded decode, not from the length check before it.
+    let mut manifest = attempt.manifest.clone();
+    manifest.stored_bytes = fs::metadata(&data).unwrap().len();
     let restored = fixture.home.path().join("restored.db");
-    let error = adapter
-        .get(&project(), &attempt.manifest, &restored)
-        .unwrap_err();
+    let error = adapter.get(&project(), &manifest, &restored).unwrap_err();
     assert_eq!(error.code(), "backup_copy_invalid", "{error}");
     assert!(error.to_string().contains("more than"), "{error}");
     assert!(!restored.exists());
@@ -536,13 +538,62 @@ fn get_checks_local_space_first() {
         .prepare(&path, &capture, uuid::Uuid::now_v7())
         .unwrap();
     adapter.put(&project(), &attempt, &stored).unwrap();
-    let short = move |_: &Path| Ok(bytes.len() as u64 - 1);
+    // Room for the uncompressed copy alone is not enough: a fetch needs room
+    // for the stored file and the uncompressed copy together.
+    let needed = attempt.manifest.stored_bytes + bytes.len() as u64;
+    let short = move |_: &Path| Ok(needed - 1);
     let local = adapter_with(&fixture.root, &short);
     let restored = fixture.home.path().join("restored.db");
     let error = local
         .get(&project(), &attempt.manifest, &restored)
         .unwrap_err();
     assert_eq!(error.code(), "backup_local_no_space", "{error}");
+    assert!(error.to_string().contains(&needed.to_string()), "{error}");
+    assert!(!restored.exists());
+
+    let unknown = |_: &Path| Err(io::Error::other("no answer from the file system"));
+    let error = adapter_with(&fixture.root, &unknown)
+        .get(&project(), &attempt.manifest, &restored)
+        .unwrap_err();
+    assert_eq!(error.code(), "backup_local_space_unknown", "{error}");
+    assert!(!restored.exists());
+
+    let exact = move |_: &Path| Ok(needed);
+    adapter_with(&fixture.root, &exact)
+        .get(&project(), &attempt.manifest, &restored)
+        .unwrap();
+    assert_eq!(fs::read(&restored).unwrap(), bytes);
+}
+
+#[test]
+fn get_refuses_sizes_that_do_not_add_up_or_a_stored_file_of_another_length() {
+    let fixture = fixture();
+    let adapter = adapter(&fixture.root, &plenty);
+    let bytes = b"sized copy ".repeat(120);
+    let (path, capture) = artifact(fixture.home.path(), "sized", &bytes, 11);
+    let (attempt, stored) = adapter
+        .prepare(&path, &capture, uuid::Uuid::now_v7())
+        .unwrap();
+    adapter.put(&project(), &attempt, &stored).unwrap();
+    let restored = fixture.home.path().join("restored.db");
+
+    let mut overflowing = attempt.manifest.clone();
+    overflowing.stored_bytes = u64::MAX;
+    let error = adapter
+        .get(&project(), &overflowing, &restored)
+        .unwrap_err();
+    assert_eq!(error.code(), "backup_copy_invalid", "{error}");
+    assert!(error.to_string().contains("add up"), "{error}");
+    assert!(!restored.exists());
+
+    let mut longer = attempt.manifest.clone();
+    longer.stored_bytes += 1;
+    let error = adapter.get(&project(), &longer, &restored).unwrap_err();
+    assert_eq!(error.code(), "backup_copy_invalid", "{error}");
+    assert!(
+        error.to_string().contains("its manifest declares"),
+        "{error}"
+    );
     assert!(!restored.exists());
 }
 
@@ -916,6 +967,13 @@ fn list_pages_through_copies_and_reports_unusable_manifests() {
     ];
     expected.sort();
     assert_eq!(unreadable, expected);
+
+    // `backup list` and `backup fetch` join those pages into one listing.
+    let listing = super::fetch::list_all(&adapter, &project()).unwrap();
+    assert_eq!(listing.manifests, copies);
+    let mut joined = listing.unreadable;
+    joined.sort();
+    assert_eq!(joined, expected);
 }
 
 #[test]
@@ -1048,4 +1106,54 @@ fn preparing_stops_at_its_deadline_and_leaves_no_stored_file() {
     assert_eq!(error.code(), "backup_capture_deadline", "{error}");
     // Only the staged copy is left in its stage.
     assert_eq!(names(path.parent().unwrap()), ["store.db"]);
+}
+
+#[test]
+fn the_move_to_a_fetched_file_never_replaces_one_and_keeps_its_source_on_refusal() {
+    let home = temp_home().unwrap();
+    let staging = home.path().join(".out.db.1.fetching");
+    let out = home.path().join("out.db");
+    fs::write(&staging, b"checked copy").unwrap();
+    fs::write(&out, b"already here").unwrap();
+    let error = super::directory::move_without_replacing(&staging, &out).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists, "{error}");
+    assert_eq!(fs::read(&out).unwrap(), b"already here");
+    assert_eq!(fs::read(&staging).unwrap(), b"checked copy");
+
+    fs::remove_file(&out).unwrap();
+    super::directory::move_without_replacing(&staging, &out).unwrap();
+    assert_eq!(fs::read(&out).unwrap(), b"checked copy");
+    assert!(!staging.exists());
+}
+
+#[test]
+fn a_staging_file_that_stays_is_named_in_the_fetch_refusal() {
+    let home = temp_home().unwrap();
+    // A directory cannot be removed as a file: the removal fails.
+    let stuck = home.path().join(".out.db.1.fetching");
+    fs::create_dir(&stuck).unwrap();
+    let failure = super::fetch::removing(
+        super::fetch::ReadFailure::new("backup_copy_exists", "the original failure"),
+        &stuck,
+    );
+    assert_eq!(failure.code, "backup_copy_exists");
+    assert!(
+        failure.message.starts_with("the original failure; "),
+        "{}",
+        failure.message
+    );
+    assert!(
+        failure
+            .message
+            .contains(&format!("{} could not be removed", stuck.display())),
+        "{}",
+        failure.message
+    );
+
+    let gone = home.path().join(".gone.db.1.fetching");
+    let failure = super::fetch::removing(
+        super::fetch::ReadFailure::new("backup_io", "the original failure"),
+        &gone,
+    );
+    assert_eq!(failure.message, "the original failure");
 }

@@ -1,0 +1,299 @@
+//! `engram backup list` and `engram backup fetch`: read the copies the
+//! configured target holds for this project. They read the target's records
+//! under the Engram home and never open or create the store, so they work in
+//! a home that has only configured the target. Every request to the target
+//! runs on a worker under one deadline.
+
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
+
+use engram::{
+    ProjectId,
+    backup::{
+        CopyKind,
+        freshness::{KindRecords, kind_records},
+        record::StoredManifest,
+    },
+};
+
+use super::{
+    adapter::{AdapterError, BackupAdapter},
+    directory::{move_without_replacing, remove_with_retry},
+    push::{FreeSpace, Target, Transport},
+};
+
+/// How long the requests of one list or fetch may take together when no
+/// deadline is given.
+pub(crate) const DEFAULT_READ_DEADLINE: Duration = Duration::from_mins(30);
+
+/// How much earlier than the whole fetch the decode's own deadline falls, so
+/// a decode that runs out of time removes its partial file itself before the
+/// process gives up on the worker.
+const DECODE_MARGIN: Duration = Duration::from_secs(2);
+
+/// How a list or fetch runs.
+pub(crate) struct ReadSettings {
+    pub deadline: Duration,
+    pub local_free_space: FreeSpace,
+}
+
+impl ReadSettings {
+    pub(crate) fn new(deadline: Duration) -> Self {
+        Self {
+            deadline,
+            local_free_space: engram::backup::available_space,
+        }
+    }
+}
+
+/// The copies a target holds for the project.
+#[derive(Debug, Default)]
+pub(crate) struct Listing {
+    pub manifests: Vec<StoredManifest>,
+    /// Names of manifest files the target holds that could not be used.
+    pub unreadable: Vec<String>,
+}
+
+/// Why a list or fetch stopped, with its stable code.
+#[derive(Debug)]
+pub(crate) struct ReadFailure {
+    pub code: &'static str,
+    pub message: String,
+}
+
+impl ReadFailure {
+    pub(super) fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+impl From<AdapterError> for ReadFailure {
+    fn from(error: AdapterError) -> Self {
+        Self::new(error.code(), error.to_string())
+    }
+}
+
+/// A list or fetch's outcome, and a worker left running past the deadline;
+/// the caller ends the process rather than wait for it.
+pub(crate) struct ReadRun<T> {
+    pub outcome: Result<T, ReadFailure>,
+    pub abandoned: Option<JoinHandle<()>>,
+}
+
+/// Lists every copy the configured target of `kind` holds for `project`.
+pub(crate) fn list(
+    home: &Path,
+    project: &ProjectId,
+    kind: CopyKind,
+    settings: &ReadSettings,
+) -> ReadRun<Listing> {
+    let target = match configured(home, project, kind, settings) {
+        Ok(target) => target,
+        Err(failure) => return failed(failure),
+    };
+    run(settings.deadline, move |left| {
+        list_all(&target.adapter(left), &target.project).map_err(ReadFailure::from)
+    })
+}
+
+/// A fetched copy: its manifest and the file it was written to.
+#[derive(Debug)]
+pub(crate) struct Fetched {
+    pub manifest: StoredManifest,
+    pub out: PathBuf,
+}
+
+/// Writes copy `copy` of `kind`, decoded and checked against its manifest,
+/// to `out`, which must not exist. The copy is decoded into a hidden file
+/// beside `out` and moved to `out` only once it is checked, so `out` never
+/// holds a partial or unchecked copy. That hidden `.<name>.<pid>.fetching`
+/// file is left behind only by a process that ends in the middle, or by a
+/// removal that fails, and the refusal then names it.
+pub(crate) fn fetch(
+    home: &Path,
+    project: &ProjectId,
+    kind: CopyKind,
+    copy: &str,
+    out: &Path,
+    settings: &ReadSettings,
+) -> ReadRun<Fetched> {
+    let target = match configured(home, project, kind, settings) {
+        Ok(target) => target,
+        Err(failure) => return failed(failure),
+    };
+    let out = match std::path::absolute(out) {
+        Ok(out) => out,
+        Err(source) => return failed(io_failure(out, &source)),
+    };
+    let Some(name) = out
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+    else {
+        return failed(ReadFailure::new(
+            "backup_io",
+            format!("{} names no file to write", out.display()),
+        ));
+    };
+    if fs::symlink_metadata(&out).is_ok() {
+        return failed(exists(&out));
+    }
+    let staging = out.with_file_name(format!(".{name}.{}.fetching", std::process::id()));
+    let copy = copy.to_owned();
+    let left_behind = staging.clone();
+    let mut fetched = run(settings.deadline, move |left| {
+        let started = Instant::now();
+        let listing = list_all(&target.adapter(left), &target.project)?;
+        let manifest = listing
+            .manifests
+            .into_iter()
+            .find(|manifest| manifest.copy == copy)
+            .ok_or_else(|| {
+                ReadFailure::new(
+                    "backup_copy_unknown",
+                    format!("the target holds no usable copy named {copy}"),
+                )
+            })?;
+        let decode_left = left
+            .saturating_sub(started.elapsed())
+            .saturating_sub(DECODE_MARGIN);
+        target
+            .adapter(decode_left)
+            .get(&target.project, &manifest, &staging)?;
+        // The move never replaces a file that appeared at `out` meanwhile.
+        match move_without_replacing(&staging, &out) {
+            Ok(()) => Ok(Fetched { manifest, out }),
+            Err(source) => {
+                let failure = if source.kind() == io::ErrorKind::AlreadyExists {
+                    exists(&out)
+                } else {
+                    io_failure(&out, &source)
+                };
+                Err(removing(failure, &staging))
+            }
+        }
+    });
+    if fetched.abandoned.is_some()
+        && let Err(failure) = &mut fetched.outcome
+    {
+        failure.message = format!(
+            "{}; {} may be left behind",
+            failure.message,
+            left_behind.display()
+        );
+    }
+    fetched
+}
+
+/// Removes `staging` after `failure`, naming it in the failure when it stays.
+pub(super) fn removing(mut failure: ReadFailure, staging: &Path) -> ReadFailure {
+    if let Err(source) = remove_with_retry(staging) {
+        failure.message = format!(
+            "{}; {} could not be removed after it: {source}",
+            failure.message,
+            staging.display()
+        );
+    }
+    failure
+}
+
+fn exists(out: &Path) -> ReadFailure {
+    ReadFailure::new(
+        "backup_copy_exists",
+        format!(
+            "{} already exists; fetch never replaces a file",
+            out.display()
+        ),
+    )
+}
+
+fn io_failure(path: &Path, source: &io::Error) -> ReadFailure {
+    ReadFailure::new(
+        "backup_io",
+        format!("{} could not be written: {source}", path.display()),
+    )
+}
+
+/// The configured target of `kind`, or why there is none to read.
+fn configured(
+    home: &Path,
+    project: &ProjectId,
+    kind: CopyKind,
+    settings: &ReadSettings,
+) -> Result<Target, ReadFailure> {
+    match kind_records(home, project, kind) {
+        KindRecords::Configured {
+            config, identity, ..
+        } => Ok(Target {
+            root: PathBuf::from(&config.dir),
+            identity,
+            project: project.clone(),
+            free_space: settings.local_free_space,
+        }),
+        KindRecords::NotConfigured => Err(ReadFailure::new(
+            "backup_not_configured",
+            format!(
+                "no {} target is configured for this project; run `engram backup target set` first",
+                kind.as_str()
+            ),
+        )),
+        KindRecords::Unreadable { path, reason } => Err(ReadFailure::new(
+            "backup_record_unreadable",
+            format!("{} cannot be used: {reason}", path.display()),
+        )),
+    }
+}
+
+/// Every page of the target's listing.
+pub(super) fn list_all(
+    adapter: &impl BackupAdapter,
+    project: &ProjectId,
+) -> Result<Listing, AdapterError> {
+    let mut listing = Listing::default();
+    let mut cursor: Option<String> = None;
+    loop {
+        let page = adapter.list(project, cursor.as_deref())?;
+        listing.manifests.extend(page.manifests);
+        listing.unreadable.extend(page.unreadable);
+        match page.next {
+            Some(next) => cursor = Some(next),
+            None => return Ok(listing),
+        }
+    }
+}
+
+fn run<T: Send + 'static>(
+    deadline: Duration,
+    work: impl FnOnce(Duration) -> Result<T, ReadFailure> + Send + 'static,
+) -> ReadRun<T> {
+    let mut transport = Transport {
+        budget: deadline,
+        used: Duration::ZERO,
+    };
+    match transport.run(work) {
+        Ok(outcome) => ReadRun {
+            outcome,
+            abandoned: None,
+        },
+        Err(abandoned) => ReadRun {
+            outcome: Err(ReadFailure::new(
+                "backup_transport_deadline",
+                format!("the requests to the target passed their deadline of {deadline:?}"),
+            )),
+            abandoned,
+        },
+    }
+}
+
+fn failed<T>(failure: ReadFailure) -> ReadRun<T> {
+    ReadRun {
+        outcome: Err(failure),
+        abandoned: None,
+    }
+}
