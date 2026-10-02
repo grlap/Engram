@@ -124,13 +124,32 @@ impl<'a> DirectoryAdapter<'a> {
             stored_bytes,
             capture: capture.clone(),
         };
+        let data_file = data_name(&manifest.copy);
         Ok((
             Attempt {
                 id: attempt_id,
+                temporary_data_file: temporary_name(&data_file),
+                data_file,
                 manifest,
             },
             stored,
         ))
+    }
+
+    /// Checks that `attempt` records exactly the file names its copy has, so
+    /// no recorded name can lead anywhere else.
+    fn check_attempt(&self, project: &ProjectId, attempt: &Attempt) -> Result<(), AdapterError> {
+        self.check_manifest(project, &attempt.manifest)?;
+        let data_file = data_name(&attempt.manifest.copy);
+        if attempt.data_file != data_file
+            || attempt.temporary_data_file != temporary_name(&data_file)
+        {
+            return Err(AdapterError::CopyInvalid {
+                path: self.root.clone(),
+                reason: "the recorded attempt names other files than its copy's".into(),
+            });
+        }
+        Ok(())
     }
 
     fn project_dir(&self, project: &ProjectId) -> PathBuf {
@@ -246,7 +265,7 @@ impl<'a> DirectoryAdapter<'a> {
         if let Err(reason) = self.reachable() {
             return Reconciled::Unknown { reason };
         }
-        if self.check_manifest(project, &attempt.manifest).is_err() {
+        if self.check_attempt(project, attempt).is_err() {
             return Reconciled::Unknown {
                 reason: "the recorded attempt does not belong to this target".into(),
             };
@@ -334,7 +353,7 @@ impl<'a> DirectoryAdapter<'a> {
         project: &ProjectId,
         attempt: &Attempt,
     ) -> Result<(), AdapterError> {
-        self.check_manifest(project, &attempt.manifest)?;
+        self.check_attempt(project, attempt)?;
         self.reachable()
             .map_err(|reason| AdapterError::Unreachable {
                 path: self.root.clone(),
@@ -366,7 +385,7 @@ impl BackupAdapter for DirectoryAdapter<'_> {
         artifact: &Path,
     ) -> Result<BackupReceipt, AdapterError> {
         let manifest = &attempt.manifest;
-        self.check_manifest(project, manifest)?;
+        self.check_attempt(project, attempt)?;
         // A configured directory that is gone is never recreated: the copy
         // would land wherever the path now leads, likely on this machine.
         self.reachable()

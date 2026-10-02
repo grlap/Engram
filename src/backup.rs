@@ -52,12 +52,16 @@ pub struct CaptureManifest {
     pub sha256: String,
     /// The schema reference of the copy: the store format it restores into.
     pub format_identity: ObjectId,
-    /// The fingerprint of the build that captured and checked the copy.
+    /// The fingerprint of the build that captured and checked the copy. Each
+    /// optional field must be present, as null when empty.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub build_fingerprint: Option<ObjectId>,
     /// The source revision of that build: a commit id, that id followed by
     /// `+dirty`, or `unavailable` when the build could not determine it.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub source_revision: Option<String>,
     /// The capturing host's name, as asserted context.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub host_name: Option<String>,
 }
 
@@ -443,6 +447,7 @@ fn remove_attempt(attempt: &Path) -> Result<(), (PathBuf, io::Error)> {
     }
 }
 
+pub mod record;
 pub mod target;
 
 #[cfg(test)]

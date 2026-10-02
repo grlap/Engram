@@ -225,7 +225,10 @@ kept per project and kind, under one contract:
   reason, and a push fails. It never converts the file, guesses its meaning
   or carries on as if the file were absent. The way on is explicit:
   `target set` with the running build writes both files for that kind anew,
-  and the next push makes a new copy.
+  and the next push makes a new copy. A state file that cannot be read at
+  all, as when access to it is denied, is not replaced: `target set` refuses
+  with `backup_io` and changes nothing until the operator restores access to
+  the file or removes it.
 - A target's identity is derived from the project, the kind, the adapter, the
   location and both statements. A receipt names the identity it was issued
   for, so any change to the target ends the qualification of older receipts.
@@ -347,10 +350,12 @@ exits 1 and leaves the previous confirmed copy and its receipt untouched.
 
 The recorded state holds the newest receipt with its manifest, the time the
 store was last observed equal to that copy, a pending attempt if there is
-one, the last attempt, and, in a restored home, the restore record described
-below. When the state is lost, nothing is guessed from a file name at the
-target: the next push makes a new copy, or confirms one only after checking
-that exact artifact against its manifest.
+one, the last attempt, the receipts whose copies this home has not removed,
+which retention counts, the pending attempts set aside because they were
+recorded for another target identity, and, in a restored home, the restore
+record described below. When the state is lost, nothing is guessed from a
+file name at the target: the next push makes a new copy, or confirms one
+only after checking that exact artifact against its manifest.
 
 ### What a capture does to the live store
 

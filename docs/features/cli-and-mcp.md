@@ -1407,15 +1407,24 @@ operator's name and the time, and a directory target always reads
 "off-host asserted; not verified". `--dir` must be an absolute path, a
 Windows share included; it is kept as spelled and never contacted when set.
 The window defaults to 24 hours and the retention to three copies. `set`
-replaces any earlier target of its kind, starts the kind's recorded state
-anew, and derives the target's identity from the project, kind, adapter,
-location and both statements whenever it is needed; it is not stored. The
-configuration and state are files under `<home>/backup-records/<project>/`,
-each with a format version and replaced whole. A record this build cannot
-use is left untouched: one it cannot read or parse, one `set` would have
-refused, or a state recorded for another target than the configured one. `show` and
-`clear` refuse it with `backup_record_unreadable` and name the file, and
-`set` is the way on, writing both files for the kind anew. `set` and `clear` take the kind's push
+replaces any earlier target of its kind and derives the target's identity
+from the project, kind, adapter, location and both statements whenever it is
+needed; it is not stored. A first `set` starts the kind's recorded state
+empty. A later one keeps a readable earlier state: its receipts and pending
+attempt keep naming the identity they were made for, so they stay as history
+that qualifies nothing for the new target; a state whose content this build
+cannot use is started anew. The configuration and state are files under
+`<home>/backup-records/<project>/`, each with a format version and replaced
+whole. A record this build cannot use is left untouched: one it cannot read
+or parse, one `set` would have refused, or a state recorded for another
+target than the configured one. `show` and `clear` refuse it with
+`backup_record_unreadable` and name the file. `set` is the way on from a
+record whose content this build cannot use, writing both files for the kind
+anew. A state file that cannot be read at all, as when another program holds
+it, access to it is denied or a directory stands in its place, is not
+replaced: `set` refuses with `backup_io` and changes nothing, and the
+operator restores read access to the file or removes it before `set` again.
+`set` and `clear` take the kind's push
 lock, an operating-system lock that its holder's exit releases, and refuse
 with `backup_push_running` while another process holds it. The CLI parser
 refuses a missing required flag or an unknown kind or adapter before any

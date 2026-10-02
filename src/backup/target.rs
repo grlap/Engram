@@ -16,7 +16,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
-use super::CopyKind;
+use super::{
+    CopyKind,
+    record::{Attempt, BackupReceipt, LastAttempt},
+};
 use crate::{CanonicalObject, ObjectId, ProjectId};
 
 /// The directory below the Engram home that holds every project's records.
@@ -108,15 +111,64 @@ impl TargetConfig {
     }
 }
 
-/// What this host recorded about a kind's copies. Pushes fill it in; a newly
-/// set target starts from this empty state.
+/// What this host recorded about a kind's copies. Pushes fill it in. A first
+/// target starts from the empty state; `target set` keeps a readable earlier
+/// state, whose receipts and pending attempt keep naming the identity they
+/// were made for and so qualify nothing for the new target.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TargetState {
     pub format_version: u32,
-    /// The identity of the target this state was started for, compared with
-    /// the configured target's to tell whether the state belongs to it.
+    /// The identity of the configured target this state belongs to, compared
+    /// with the configured target's to tell whether the state is its own.
     pub target_identity: ObjectId,
+    /// The newest receipt, for whichever target identity issued it. Each
+    /// optional field must be present, as null when empty: a state missing one
+    /// is refused rather than read as empty.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub newest_receipt: Option<BackupReceipt>,
+    /// When the store's content was last observed in the newest receipt's
+    /// copy: that copy's capture start, or the start of a later capture that
+    /// produced the same bytes.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub observed_equal_at: Option<DateTime<Utc>>,
+    /// The attempt recorded before its put and not yet resolved.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub pending: Option<Attempt>,
+    /// The last push, with its outcome.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub last_attempt: Option<LastAttempt>,
+    /// The receipts this home recorded whose copies it has not removed,
+    /// oldest first, each naming the target identity that issued it.
+    pub receipts: Vec<BackupReceipt>,
+    /// Pending attempts set aside because they were recorded for another
+    /// target identity, kept as history that does not qualify.
+    pub set_aside: Vec<Attempt>,
+}
+
+impl TargetState {
+    /// The state of a target with nothing recorded yet.
+    #[must_use]
+    pub const fn empty(target_identity: ObjectId) -> Self {
+        Self {
+            format_version: RECORD_FORMAT_VERSION,
+            target_identity,
+            newest_receipt: None,
+            observed_equal_at: None,
+            pending: None,
+            last_attempt: None,
+            receipts: Vec::new(),
+            set_aside: Vec::new(),
+        }
+    }
+}
+
+/// A configured kind's records as a push reads them under its lock.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PushRecords {
+    pub config: TargetConfig,
+    pub identity: ObjectId,
+    pub state: TargetState,
 }
 
 /// What `target set` is asked to record.
@@ -216,6 +268,7 @@ impl RecordPaths {
 #[derive(Debug)]
 pub struct PushLock {
     _file: File,
+    path: PathBuf,
 }
 
 impl PushLock {
@@ -241,7 +294,10 @@ impl PushLock {
                 source,
             })?;
         match file.try_lock() {
-            Ok(()) => Ok(Self { _file: file }),
+            Ok(()) => Ok(Self {
+                _file: file,
+                path: paths.lock.clone(),
+            }),
             Err(fs::TryLockError::WouldBlock) => Err(TargetError::PushRunning {
                 path: paths.lock.clone(),
             }),
@@ -277,13 +333,17 @@ pub fn target_identity(input: &IdentityInput<'_>) -> Result<ObjectId, TargetErro
         .map_err(|error| TargetError::Identity(error.to_string()))
 }
 
-/// Records a target for `project`, replacing any earlier one for its kind,
-/// and starts its state anew. This is the way on from a record this build
-/// cannot read: both files for the kind are written in the current format.
+/// Records a target for `project`, replacing any earlier one for its kind.
+/// A readable earlier state is kept with the new identity as its own; one
+/// whose content this build cannot use is started anew. This is the way on
+/// from a record whose content this build cannot use: both files for the kind
+/// are written in the current format.
 ///
 /// # Errors
 ///
-/// Refuses an invalid request, a held push lock, or a failed write.
+/// Refuses an invalid request, a held push lock, or a failed write. A state
+/// file that cannot be read at all is refused with [`TargetError::Io`], and
+/// nothing is changed.
 pub fn set_target(
     home: &Path,
     project: &ProjectId,
@@ -317,12 +377,32 @@ pub fn set_target(
     config_problem(&config, project, request.kind)
         .map_or(Ok(()), |reason| Err(TargetError::Invalid { reason }))?;
     let identity = config.identity()?;
-    let state = TargetState {
-        format_version: RECORD_FORMAT_VERSION,
-        target_identity: identity.clone(),
-    };
     let paths = RecordPaths::new(home, project, request.kind);
     let _lock = PushLock::try_acquire(&paths)?;
+    // A readable earlier state is kept: its receipts and pending attempt name
+    // the identity they were made for, so they qualify nothing for this
+    // target and stay as history. One this build cannot use starts anew,
+    // which is the stated way on from it. A file that cannot be read at this
+    // moment, as when another program holds it, is not discarded: set
+    // refuses and changes nothing.
+    let state = match fs::read(&paths.state) {
+        Ok(bytes) => match parse_record::<TargetState>(&paths.state, &bytes) {
+            Ok(earlier) => TargetState {
+                target_identity: identity.clone(),
+                ..earlier
+            },
+            Err(_) => TargetState::empty(identity.clone()),
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            TargetState::empty(identity.clone())
+        }
+        Err(source) => {
+            return Err(TargetError::Io {
+                path: paths.state.clone(),
+                source,
+            });
+        }
+    };
     // The state goes first, so a new configuration never stands beside the
     // state of the target it replaced; the opposite pairing is refused when
     // read.
@@ -406,6 +486,65 @@ pub fn clear_target(home: &Path, project: &ProjectId, kind: CopyKind) -> Result<
         }
     }
     Ok(config.is_some())
+}
+
+/// Reads the records of one kind for a push that holds its lock. Without a
+/// configured target there is nothing to push, and the answer is `None`; a
+/// configured target without a state file has nothing recorded yet.
+///
+/// # Errors
+///
+/// Refuses a lock taken for another kind or project, and a record this build
+/// cannot use, as the target words do: a state is refused when its own
+/// identity is not the configured target's, while the receipts and pending
+/// attempt inside it may name earlier identities.
+pub fn read_for_push(
+    paths: &RecordPaths,
+    project: &ProjectId,
+    kind: CopyKind,
+    lock: &PushLock,
+) -> Result<Option<PushRecords>, TargetError> {
+    held(paths, lock)?;
+    let (config, state) = read_records(paths, project, kind)?;
+    Ok(config.map(|(config, identity)| PushRecords {
+        state: state.unwrap_or_else(|| TargetState::empty(identity.clone())),
+        config,
+        identity,
+    }))
+}
+
+/// Replaces the state of one kind whole, for a push that holds its lock: a
+/// new file is written and renamed into place.
+///
+/// # Errors
+///
+/// Refuses a lock taken for another kind or project, and reports a failed
+/// write; the earlier state then stays as it was.
+pub fn write_state(
+    paths: &RecordPaths,
+    lock: &PushLock,
+    state: &TargetState,
+) -> Result<(), TargetError> {
+    held(paths, lock)?;
+    write_record(&paths.state, state).map_err(|source| TargetError::Io {
+        path: paths.state.clone(),
+        source,
+    })
+}
+
+/// Checks that `lock` is the push lock of the kind `paths` name.
+fn held(paths: &RecordPaths, lock: &PushLock) -> Result<(), TargetError> {
+    if lock.path == paths.lock {
+        Ok(())
+    } else {
+        Err(TargetError::Invalid {
+            reason: format!(
+                "the push lock held is {}, not {}",
+                lock.path.display(),
+                paths.lock.display()
+            ),
+        })
+    }
 }
 
 /// A kind's usable configuration with its derived identity, and its state.
@@ -496,16 +635,24 @@ fn statement_problem(flag: &str, name: &str) -> Option<String> {
 }
 
 fn read_record<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, TargetError> {
+    match fs::read(path) {
+        Ok(bytes) => parse_record(path, &bytes).map(Some),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(TargetError::Unreadable {
+            path: path.to_path_buf(),
+            reason: format!("it cannot be read: {error}"),
+        }),
+    }
+}
+
+/// Parses a record read from `path`, refusing one of another format version
+/// or with fields that do not match its version.
+fn parse_record<T: DeserializeOwned>(path: &Path, bytes: &[u8]) -> Result<T, TargetError> {
     let unreadable = |reason: String| TargetError::Unreadable {
         path: path.to_path_buf(),
         reason,
     };
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(unreadable(format!("it cannot be read: {error}"))),
-    };
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
+    let value: serde_json::Value = serde_json::from_slice(bytes)
         .map_err(|error| unreadable(format!("it is not JSON: {error}")))?;
     match value
         .get("format_version")
@@ -519,7 +666,7 @@ fn read_record<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, TargetErro
         }
         None => return Err(unreadable("it has no format version".into())),
     }
-    serde_json::from_value(value).map(Some).map_err(|error| {
+    serde_json::from_value(value).map_err(|error| {
         unreadable(format!(
             "its fields do not match its format version: {error}"
         ))

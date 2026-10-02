@@ -31,8 +31,8 @@ pub(crate) enum BackupCommand {
 /// The target words.
 #[derive(clap::Subcommand, Debug)]
 pub(crate) enum TargetCommand {
-    /// Record a target for one copy kind, replacing any earlier one, and start
-    /// its recorded state anew. Copies nothing.
+    /// Record a target for one copy kind, replacing any earlier one; what was
+    /// recorded for an earlier target stays as history. Copies nothing.
     Set {
         #[arg(long, value_enum)]
         kind: KindArg,

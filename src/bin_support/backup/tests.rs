@@ -465,6 +465,68 @@ fn reconcile_completes_or_removes_only_the_attempt_s_own_files() {
 }
 
 #[test]
+fn an_attempt_records_its_file_names_and_one_naming_other_files_is_never_acted_on() {
+    let fixture = fixture();
+    let adapter = adapter(&fixture.root, &plenty);
+    let directory = project_dir(&fixture.root);
+    let bytes = b"named files ".repeat(300);
+    let (path, capture) = artifact(fixture.home.path(), "named", &bytes, 8);
+    let (attempt, stored) = adapter
+        .prepare(&path, &capture, uuid::Uuid::now_v7())
+        .unwrap();
+    // The attempt records the final and temporary names of its data file.
+    assert_eq!(
+        attempt.data_file,
+        format!("{}.db.gz", attempt.manifest.copy)
+    );
+    assert_eq!(
+        attempt.temporary_data_file,
+        format!(".{}.db.gz.tmp", attempt.manifest.copy)
+    );
+    adapter.put(&project(), &attempt, &stored).unwrap();
+    let before = names(&directory);
+
+    // A recorded name that is not its copy's own is refused, and nothing at
+    // the target is touched for it.
+    for (data_file, temporary_data_file) in [
+        (
+            "unrelated.txt".to_owned(),
+            attempt.temporary_data_file.clone(),
+        ),
+        (attempt.data_file.clone(), "..\\escape.tmp".to_owned()),
+    ] {
+        let tampered = engram::backup::record::Attempt {
+            data_file,
+            temporary_data_file,
+            ..attempt.clone()
+        };
+        assert!(matches!(
+            adapter.reconcile(&project(), &tampered),
+            Reconciled::Unknown { .. }
+        ));
+        let error = adapter.remove_attempt(&project(), &tampered).unwrap_err();
+        assert_eq!(error.code(), "backup_copy_invalid", "{error}");
+        assert_eq!(names(&directory), before);
+    }
+    // Nor does put store a copy for such an attempt.
+    let (path, capture) = artifact(fixture.home.path(), "named-second", &bytes, 9);
+    let (second, stored) = adapter
+        .prepare(&path, &capture, uuid::Uuid::now_v7())
+        .unwrap();
+    let tampered = engram::backup::record::Attempt {
+        data_file: "unrelated.txt".into(),
+        ..second
+    };
+    let error = adapter.put(&project(), &tampered, &stored).unwrap_err();
+    assert_eq!(error.code(), "backup_copy_invalid", "{error}");
+    assert_eq!(names(&directory), before);
+    assert_eq!(
+        adapter.reconcile(&project(), &attempt),
+        Reconciled::Complete
+    );
+}
+
+#[test]
 fn get_checks_local_space_first() {
     let fixture = fixture();
     let adapter = adapter(&fixture.root, &plenty);
