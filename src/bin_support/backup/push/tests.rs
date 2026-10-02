@@ -590,6 +590,249 @@ fn a_capture_past_its_own_deadline_fails_without_any_request_to_the_target() {
     assert!(run.abandoned.is_none());
     assert_eq!(fixture.files(&fixture.copies), Vec::<String>::new());
     assert_eq!(fixture.state().pending, None);
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+}
+
+#[test]
+fn a_zero_capture_deadline_still_resolves_a_pending_attempt_first() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let mut state = fixture.state();
+    let attempt = attempt_like(&state, uuid::Uuid::now_v7());
+    state.pending = Some(attempt.clone());
+    fixture.write(&state);
+
+    let mut hurried = settings();
+    hurried.capture_deadline = Duration::ZERO;
+    let run = fixture.push_with(&hurried);
+    assert_eq!(run.report.outcome, Outcome::Failed);
+    assert_eq!(run.report.code.as_deref(), Some("backup_capture_deadline"));
+    // The attempt that never arrived was resolved before the capture.
+    assert_eq!(
+        run.report.dropped.as_deref(),
+        Some(attempt.manifest.copy.as_str())
+    );
+    let after = fixture.state();
+    assert_eq!(after.pending, None);
+    assert_eq!(after.newest_receipt, state.newest_receipt);
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+}
+
+#[test]
+fn a_zero_transport_deadline_on_an_unchanged_store_leaves_no_attempt_pending() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let before = fixture.state();
+    let mut hurried = settings();
+    hurried.transport_deadline = Duration::ZERO;
+    let run = fixture.push_with(&hurried);
+    assert_eq!(run.report.outcome, Outcome::Failed);
+    assert_eq!(
+        run.report.code.as_deref(),
+        Some("backup_transport_deadline")
+    );
+    // No request was started, so no worker is left and the stage is gone.
+    assert!(run.abandoned.is_none());
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+    let after = fixture.state();
+    assert_eq!(after.pending, None);
+    assert_eq!(after.newest_receipt, before.newest_receipt);
+    assert_eq!(after.observed_equal_at, before.observed_equal_at);
+    // The failed attempt itself is recorded as the last one.
+    assert_eq!(
+        after.last_attempt.unwrap().code.as_deref(),
+        Some("backup_transport_deadline")
+    );
+}
+
+/// A hook that holds the transport worker until the test lets it go.
+fn held_worker() -> (mpsc::Sender<()>, Arc<dyn Fn() + Send + Sync>) {
+    let (release, held) = mpsc::channel::<()>();
+    let held = Arc::new(Mutex::new(held));
+    (
+        release,
+        Arc::new(move || {
+            let _ = held.lock().unwrap().recv();
+        }),
+    )
+}
+
+/// The state as recorded, read from its file while a run still holds the
+/// lock.
+fn recorded(fixture: &Fixture) -> TargetState {
+    serde_json::from_slice(&fs::read(&fixture.paths().state).unwrap()).unwrap()
+}
+
+#[test]
+fn a_resolution_past_the_transport_deadline_keeps_the_attempt_pending_and_holds_the_lock() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let mut state = fixture.state();
+    let attempt = attempt_like(&state, uuid::Uuid::now_v7());
+    state.pending = Some(attempt.clone());
+    fixture.write(&state);
+    let (release, hook) = held_worker();
+    let mut hurried = settings();
+    hurried.transport_deadline = Duration::from_millis(300);
+    hurried.before_resolve = Some(hook);
+
+    let run = fixture.push_with(&hurried);
+    assert_eq!(run.report.outcome, Outcome::Failed, "{:?}", run.report);
+    assert_eq!(
+        run.report.code.as_deref(),
+        Some("backup_transport_deadline")
+    );
+    let left = recorded(&fixture);
+    assert_eq!(left.pending, Some(attempt.clone()));
+    assert_eq!(left.newest_receipt, state.newest_receipt);
+    assert_eq!(
+        left.last_attempt.unwrap().code.as_deref(),
+        Some("backup_transport_deadline")
+    );
+    // Nothing was captured, so no stage is left; the lock stays held while
+    // the worker may still act on the target.
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+    let abandoned = run.abandoned.expect("the worker passed its deadline");
+    let error = PushLock::try_acquire(&fixture.paths()).unwrap_err();
+    assert_eq!(error.code(), "backup_push_running", "{error}");
+    release.send(()).unwrap();
+    abandoned.worker.join().unwrap();
+    drop(abandoned.lock);
+
+    let next = fixture.push();
+    assert_eq!(
+        next.report.dropped.as_deref(),
+        Some(attempt.manifest.copy.as_str())
+    );
+    assert_eq!(next.report.outcome, Outcome::Unchanged, "{:?}", next.report);
+    assert_eq!(fixture.state().pending, None);
+}
+
+#[test]
+fn a_confirmation_past_the_transport_deadline_leaves_its_stage_and_no_attempt_pending() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let before = fixture.state();
+    let (release, hook) = held_worker();
+    let mut hurried = settings();
+    hurried.transport_deadline = Duration::from_millis(300);
+    hurried.before_confirm = Some(hook);
+
+    let run = fixture.push_with(&hurried);
+    assert_eq!(run.report.outcome, Outcome::Failed, "{:?}", run.report);
+    assert_eq!(
+        run.report.code.as_deref(),
+        Some("backup_transport_deadline")
+    );
+    let left = recorded(&fixture);
+    assert_eq!(left.pending, None);
+    assert_eq!(left.newest_receipt, before.newest_receipt);
+    assert_eq!(left.observed_equal_at, before.observed_equal_at);
+    assert_eq!(
+        left.last_attempt.unwrap().code.as_deref(),
+        Some("backup_transport_deadline")
+    );
+    // The capture's stage is left, since the worker may still read the copy
+    // it confirms, and the lock stays held.
+    assert_eq!(fixture.stages().len(), 1, "{:?}", fixture.stages());
+    let abandoned = run.abandoned.expect("the worker passed its deadline");
+    let error = PushLock::try_acquire(&fixture.paths()).unwrap_err();
+    assert_eq!(error.code(), "backup_push_running", "{error}");
+    release.send(()).unwrap();
+    abandoned.worker.join().unwrap();
+    drop(abandoned.lock);
+
+    let next = fixture.push();
+    assert_eq!(next.report.outcome, Outcome::Unchanged, "{:?}", next.report);
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+}
+
+#[test]
+fn preparing_the_file_past_the_capture_deadline_fails_and_removes_the_stage() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let before = fixture.state();
+    let files = fixture.files(&fixture.copies);
+    fixture.change("second");
+    // The capture returns within its deadline; the hook then spends the
+    // whole deadline, so none is left to prepare the compressed file.
+    let deadline = Duration::from_secs(5);
+    let mut hurried = settings();
+    hurried.capture_deadline = deadline;
+    hurried.after_capture = Some(Arc::new(move || std::thread::sleep(deadline)));
+
+    let run = fixture.push_with(&hurried);
+    assert_eq!(run.report.outcome, Outcome::Failed, "{:?}", run.report);
+    assert_eq!(run.report.code.as_deref(), Some("backup_capture_deadline"));
+    assert!(
+        run.report
+            .message
+            .as_deref()
+            .is_some_and(|message| message.starts_with("preparing ")),
+        "{:?}",
+        run.report.message
+    );
+    assert!(run.abandoned.is_none());
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+    assert_eq!(fixture.files(&fixture.copies), files);
+    let after = fixture.state();
+    assert_eq!(after.pending, None);
+    assert_eq!(after.newest_receipt, before.newest_receipt);
+}
+
+#[test]
+fn a_zero_transport_deadline_leaves_an_attempt_already_pending_as_it_was() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let mut state = fixture.state();
+    let attempt = attempt_like(&state, uuid::Uuid::now_v7());
+    state.pending = Some(attempt.clone());
+    fixture.write(&state);
+    let mut hurried = settings();
+    hurried.transport_deadline = Duration::ZERO;
+    let run = fixture.push_with(&hurried);
+    assert_eq!(run.report.outcome, Outcome::Failed);
+    assert_eq!(
+        run.report.code.as_deref(),
+        Some("backup_transport_deadline")
+    );
+    assert!(run.abandoned.is_none());
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+    let after = fixture.state();
+    assert_eq!(after.pending, Some(attempt));
+    assert_eq!(after.newest_receipt, state.newest_receipt);
+}
+
+#[test]
+fn a_zero_transport_deadline_with_an_upload_due_leaves_the_attempt_pending_and_puts_nothing() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let before = fixture.files(&fixture.copies);
+    fixture.change("second");
+    let mut hurried = settings();
+    hurried.transport_deadline = Duration::ZERO;
+    let run = fixture.push_with(&hurried);
+    assert_eq!(run.report.outcome, Outcome::Failed);
+    assert_eq!(
+        run.report.code.as_deref(),
+        Some("backup_transport_deadline")
+    );
+    assert!(run.abandoned.is_none());
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+    assert_eq!(fixture.files(&fixture.copies), before);
+    let pending = fixture.state().pending.expect("the attempt stays pending");
+    assert_eq!(
+        run.report.pending.as_deref(),
+        Some(pending.manifest.copy.as_str())
+    );
+
+    // With time to ask the target, the next push drops it and puts anew.
+    let next = fixture.push();
+    assert_eq!(next.report.outcome, Outcome::Uploaded, "{:?}", next.report);
+    assert_eq!(
+        next.report.dropped.as_deref(),
+        Some(pending.manifest.copy.as_str())
+    );
 }
 
 #[test]
@@ -992,3 +1235,5 @@ fn a_missing_newest_copy_is_recorded_before_its_replacement_so_a_failed_replacem
     assert_eq!(state.missing_copy, None);
     assert_eq!(state.last_confirmation.unwrap().copy, CopyRef::of(&newest));
 }
+
+mod killed;

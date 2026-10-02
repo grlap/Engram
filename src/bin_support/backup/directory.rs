@@ -516,6 +516,8 @@ impl BackupAdapter for DirectoryAdapter<'_> {
                 return Err(with_cleanup(error, &files.data));
             }
         }
+        #[cfg(test)]
+        super::halt::at(super::halt::Stage::DataPublished);
         publish_bytes(
             &files.temporary_manifest,
             &files.manifest,
@@ -1028,6 +1030,8 @@ fn publish(
         return cleanup(classify_write(temporary, error));
     }
     drop(file);
+    #[cfg(test)]
+    super::halt::at(super::halt::Stage::TemporaryWritten);
     match move_without_replacing(temporary, final_path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {

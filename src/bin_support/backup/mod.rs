@@ -7,6 +7,8 @@ pub(crate) mod adapter;
 pub(crate) mod check;
 pub(crate) mod directory;
 pub(crate) mod fetch;
+#[cfg(test)]
+pub(crate) mod halt;
 pub(crate) mod push;
 pub(crate) mod restore;
 

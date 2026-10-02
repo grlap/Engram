@@ -66,7 +66,7 @@ pub enum RestoreRecords {
 pub fn restore_record_path(home: &Path, project: &ProjectId) -> PathBuf {
     RecordPaths::new(home, project, CopyKind::Store)
         .directory
-        .join("store.restore.json")
+        .join(super::target::RESTORE_RECORD)
 }
 
 /// Reads the project's restore record without taking a lock. A record that

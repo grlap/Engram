@@ -28,7 +28,7 @@ use engram::{
         record::{AttemptOutcome, LastAttempt},
         target::{
             PushLock, PushRecords, RecordPaths, TargetError, TargetState, read_for_push,
-            write_state,
+            remove_leftover_record_files, write_state,
         },
     },
 };
@@ -71,6 +71,18 @@ pub(crate) struct PushSettings {
     /// Runs on the transport worker just before a retention removal.
     #[cfg(test)]
     pub before_remove: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Runs on the transport worker just before a pending attempt is
+    /// reconciled and confirmed.
+    #[cfg(test)]
+    pub before_resolve: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Runs on the transport worker just before the newest copy is
+    /// confirmed.
+    #[cfg(test)]
+    pub before_confirm: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Runs once the capture returned, before the time it left is reckoned,
+    /// so a test can spend the rest of the capture's deadline.
+    #[cfg(test)]
+    pub after_capture: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl PushSettings {
@@ -88,6 +100,12 @@ impl PushSettings {
             fail_save_after_put: false,
             #[cfg(test)]
             before_remove: None,
+            #[cfg(test)]
+            before_resolve: None,
+            #[cfg(test)]
+            before_confirm: None,
+            #[cfg(test)]
+            after_capture: None,
         }
     }
 }
@@ -318,10 +336,25 @@ fn push_kind(home: &Path, project: &ProjectId, kind: CopyKind, settings: &PushSe
         }
         Err(error) => return refused(error.into()),
     };
+    // A record write whose process ended before its rename left its
+    // temporary file; under the lock every one found is such a leftover.
+    let swept = remove_leftover_record_files(&paths, kind, &lock)
+        .err()
+        .map(|error| {
+            format!("the leftover temporary record files could not all be removed: {error}")
+        });
     let records = match read_for_push(&paths, project, kind, &lock) {
         Ok(Some(records)) => records,
-        Ok(None) => return finished(KindReport::new(kind, Outcome::NotConfigured)),
-        Err(error) => return refused(error.into()),
+        Ok(None) => {
+            let mut report = KindReport::new(kind, Outcome::NotConfigured);
+            report.warnings.extend(swept);
+            return finished(report);
+        }
+        Err(error) => {
+            let mut run = refused(error.into());
+            run.report.warnings.extend(swept);
+            return run;
+        }
     };
     let mut attempt = Push {
         home,
@@ -348,6 +381,7 @@ fn push_kind(home: &Path, project: &ProjectId, kind: CopyKind, settings: &PushSe
         put_done: false,
     };
     attempt.report.target_identity = Some(records.identity.clone());
+    attempt.report.warnings.extend(swept);
     let PushRecords { mut state, .. } = records;
     let result = attempt.steps(&mut state);
     let (report, worker) = attempt.finish(&mut state, result);
@@ -398,19 +432,35 @@ impl Push<'_> {
     fn steps(&mut self, state: &mut TargetState) -> Result<AttemptOutcome, Failure> {
         self.remove_leftover_stages();
         self.resolve_pending(state)?;
+        #[cfg(test)]
+        super::halt::at(super::halt::Stage::BeforeCapture);
 
         // Step 4: capture into the local stage.
         let free_space = self.settings.stage_free_space;
+        #[cfg(test)]
+        let observer = |phase| {
+            if phase == engram::backup::CapturePhase::Verify {
+                super::halt::at(super::halt::Stage::CopyStaged);
+            }
+        };
+        #[cfg(test)]
+        let observer: Option<&dyn Fn(engram::backup::CapturePhase)> = Some(&observer);
+        #[cfg(not(test))]
+        let observer = None;
         let options = CaptureOptions {
             deadline: self.settings.capture_deadline,
             compressed_in_stage: true,
             host_name: host_name(),
             free_space: &free_space,
-            observer: None,
+            observer,
         };
         let capture_started = Instant::now();
         let capture = capture_store(self.home, self.project, &options)
             .map_err(|error| Failure::new(error.code(), error.to_string()))?;
+        #[cfg(test)]
+        if let Some(hook) = &self.settings.after_capture {
+            hook();
+        }
         // Only local work counts against the capture's deadline: the copy
         // now, and the stored file prepared below. Time spent asking the
         // target belongs to the transport's.
@@ -433,9 +483,17 @@ impl Push<'_> {
         if let Some(manifest) = equal_copy {
             let copy = manifest.copy.clone();
             let target = self.target.clone();
+            #[cfg(test)]
+            let before_confirm = self.settings.before_confirm.clone();
             let confirmation = self
                 .transport
-                .run(move |left| target.adapter(left).confirm(&target.project, &manifest))
+                .run(move |left| {
+                    #[cfg(test)]
+                    if let Some(hook) = before_confirm {
+                        hook();
+                    }
+                    target.adapter(left).confirm(&target.project, &manifest)
+                })
                 .map_err(|worker| {
                     Failure::deadline(
                         worker,
@@ -494,12 +552,16 @@ impl Push<'_> {
         if let Some((_, prepared)) = &mut self.stage {
             *prepared = Some(stored.clone());
         }
+        #[cfg(test)]
+        super::halt::at(super::halt::Stage::Prepared);
 
         // The attempt is recorded before anything is put, so the next push
         // can find whatever this one leaves at the target.
         state.pending = Some(attempt.clone());
         self.save(state)?;
         self.report.pending = Some(attempt.manifest.copy.clone());
+        #[cfg(test)]
+        super::halt::at(super::halt::Stage::PendingRecorded);
 
         let target = self.target.clone();
         #[cfg(test)]
@@ -519,6 +581,7 @@ impl Push<'_> {
             })??;
         #[cfg(test)]
         {
+            super::halt::at(super::halt::Stage::PutReturned);
             self.put_done = true;
         }
         state.record_receipt(receipt, captured_at);
@@ -602,9 +665,15 @@ impl Push<'_> {
         self.report.pending = Some(pending.manifest.copy.clone());
         let target = self.target.clone();
         let attempt = pending.clone();
+        #[cfg(test)]
+        let before_resolve = self.settings.before_resolve.clone();
         let (reconciled, confirmation) = self
             .transport
             .run(move |left| {
+                #[cfg(test)]
+                if let Some(hook) = before_resolve {
+                    hook();
+                }
                 let adapter = target.adapter(left);
                 let reconciled = adapter.reconcile(&target.project, &attempt);
                 let confirmation = match reconciled {
@@ -622,6 +691,8 @@ impl Push<'_> {
                     "the resolution of the pending attempt",
                 )
             })?;
+        #[cfg(test)]
+        super::halt::at(super::halt::Stage::Resolving);
         let undecided = confirmation
             .as_ref()
             .and_then(Confirmation::undecided)
@@ -813,7 +884,11 @@ impl Push<'_> {
                 }
                 target.adapter(left).remove_copy(&target.project, &manifest)
             }) {
-                Ok(Ok(())) => removed.push(copy),
+                Ok(Ok(())) => {
+                    #[cfg(test)]
+                    super::halt::at(super::halt::Stage::CopyRemoved);
+                    removed.push(copy);
+                }
                 Ok(Err(error)) => self.report.warnings.push(format!(
                     "the copy {copy} beyond the retention count could not be removed: {error}"
                 )),

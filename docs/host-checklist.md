@@ -290,7 +290,39 @@ for the fields named here.
    attempt. A push refused before it takes the kind's lock records nothing,
    and one whose state cannot be written says so in its `warnings` and
    leaves the earlier last attempt in place.
-4. **Show the status from `engram backup status --json`.** Read the receipt
+4. **Bound each push, and cancel it by terminating its process.** Push runs
+   under two deadlines: `--capture-deadline-secs` (900 by default) for the
+   local copy, its check and the compressed file, and
+   `--transport-deadline-secs` (1800 by default) for every request to the
+   target together. Past the capture deadline the capture stops, its stage
+   is removed, and the push exits 1 with `backup_capture_deadline`. Past the
+   transport deadline the push exits 1, with `backup_transport_deadline`,
+   or with `backup_pending_unresolved` or `backup_target_unconfirmed` when
+   the request noticed its own deadline first; a request still running ends
+   with the process, and an attempt it recorded before its put stays
+   pending. Act on the exit code, not on which of these codes came back. A
+   retention removal past the deadline is only a warning, with exit 0. A
+   push started meanwhile reports `busy`. Terminate a push still running
+   after 2760 seconds with the
+   default deadlines (900 + 1800 + 60 for the steps no deadline bounds), or
+   their sum plus 60 with others, and cancel one at any time the same way:
+   end its process (`taskkill /F`, `SIGTERM` or `SIGKILL`). Push starts no
+   child process and installs no signal handler. A terminated push prints no
+   report and records nothing more, so record the termination on the host's
+   side, and do not retry before the next scheduled push. A push the host
+   terminated is a failure whose outcome is unknown, whatever exit code the
+   system then reports: `taskkill /F` gives 1 with no report, Ctrl-C on
+   Windows 0xC000013A, a signal its own status. The host's record of the
+   termination takes precedence over the exit code table above. The next
+   scheduled push removes a stage the terminated one left and resolves its
+   pending attempt: a copy
+   that reached the target is recorded as recovered, one that did not is
+   dropped with its own files. Never run a push inside a control call: it
+   shares no lock with them, but a capture of a 400 MB store takes about
+   40 seconds. What a push terminated at each step leaves, and how the next
+   one resolves it, is in
+   [deadlines and cancelling a push](features/cli-and-mcp.md#deadlines-and-cancelling-a-push).
+5. **Show the status from `engram backup status --json`.** Read the receipt
    rather than parsing the text. Always show `durability.mode` together with
    `durability.off_host`, each entry's `kind`, `off_host` and `restores`;
    never show the mode alone, because `local_backed_up` means only what the
@@ -301,7 +333,7 @@ for the fields named here.
    a failed push.
    Show `restore` when it is not null. Plain `backup status` contacts no
    target; `--check-target` asks the target and is a separate, slower call.
-5. **After a restore, give sessions identities the restored store has not
+6. **After a restore, give sessions identities the restored store has not
    seen.** A restored store keeps the origin's claims, grants, begun turns
    and session rows unchanged, and the only boundary on them is the asserted
    session id. A session that reuses an old id can use and renew its claim,

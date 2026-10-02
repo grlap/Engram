@@ -541,3 +541,88 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
         .discard()
         .unwrap();
 }
+
+/// The capture that the test below runs in a child process and kills: inside
+/// the copy's read transaction it writes its ready file and waits. A child
+/// whose test never kills it ends after two minutes, without cleanup. It runs
+/// only in that exact filtered child.
+#[test]
+fn capture_killed_during_its_copy_process() {
+    let Some(home) = std::env::var_os("ENGRAM_KILLED_CAPTURE_HOME") else {
+        return;
+    };
+    let home = PathBuf::from(home);
+    let ready = home.join("killed-capture-ready");
+    let probe: Arc<dyn Fn(CopyProbePoint) -> bool + Send + Sync> = Arc::new(move |point| {
+        if point == CopyProbePoint::Copy {
+            std::fs::write(&ready, b"copying").unwrap();
+            std::thread::sleep(Duration::from_secs(120));
+            std::process::exit(3);
+        }
+        false
+    });
+    let mut options = options(&plenty);
+    options.copy_probe = Some(probe);
+    let capture = capture_store(&home, &ProjectId("capture-project".into()), &options);
+    panic!("the capture ended before its copy was killed: {capture:?}");
+}
+
+#[test]
+fn a_capture_killed_during_its_copy_leaves_the_live_store_usable_and_only_a_stage() {
+    let (home, project, database) = fixture(3, 64);
+    let ready = home.path().join("killed-capture-ready");
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "backup::tests::capture_killed_during_its_copy_process",
+            "--nocapture",
+        ])
+        .env("ENGRAM_KILLED_CAPTURE_HOME", home.path())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let give_up = Instant::now() + Duration::from_secs(60);
+    let stopped = loop {
+        if ready.exists() {
+            break Ok(());
+        }
+        if let Some(status) = child.try_wait().unwrap() {
+            break Err(format!("the capture ended before its copy: {status}"));
+        }
+        if Instant::now() >= give_up {
+            break Err("the capture never reached its copy".to_owned());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let _ = child.kill();
+    child.wait().unwrap();
+    if let Err(reason) = stopped {
+        panic!("{reason}");
+    }
+
+    // What the kill left in the stage is one attempt directory holding only
+    // files a capture writes, which a push removes before its own capture.
+    let stages = stage_entries(home.path(), &project);
+    assert_eq!(stages.len(), 1, "{stages:?}");
+    for entry in std::fs::read_dir(&stages[0]).unwrap() {
+        let name = entry.unwrap().file_name().into_string().unwrap();
+        assert!(
+            [
+                "store.db",
+                "store.db-journal",
+                "store.db-wal",
+                "store.db-shm"
+            ]
+            .contains(&name.as_str()),
+            "{name}"
+        );
+    }
+
+    // The live store still opens, takes a write and can be captured whole.
+    let mut store = SqliteStore::open(&database).unwrap();
+    remember(&mut store, &project, "after-the-kill", "written".into());
+    drop(store);
+    let capture = capture_store(home.path(), &project, &options(&plenty)).unwrap();
+    assert_eq!(capture.manifest.cut, raw_cut(&database, &project));
+    capture.discard().unwrap();
+}

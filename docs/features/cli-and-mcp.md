@@ -1480,16 +1480,17 @@ it) and `--transport-deadline-secs` (1800 by default, for every request to
 the target together). A request to the target runs on a worker thread, and
 one with no time left is not started. When a request before the receipt,
 resolving a pending attempt, confirming the newest copy or the put, passes
-its deadline, the push records the failure with the attempt still pending,
-keeps the push lock, and ends its process with exit 1, which is how a
-request stalled inside the operating system is cancelled; the lock is
-released only by that end. A retention removal that passes the deadline
-comes after the receipt is recorded: it is a warning, and the process ends
-the same way but with the push's own exit code. Push is therefore a
-CLI process by design and must not be run in-process inside a long-lived
-server. A read stuck in the kernel on a hung share can delay that process
-exit, as it would delay any process's end. A copy the target completed after
-the deadline is found by the next push and recorded as confirmed.
+its deadline, the push records the failure, keeps the push lock, and ends
+its process with exit 1, which is how a request stalled inside the
+operating system is cancelled; the lock is released only by that end. A
+retention removal that passes the deadline comes after the receipt is
+recorded: it is a warning, and the process ends the same way but with the
+push's own exit code. Push is therefore a CLI process by design and must not
+be run in-process inside a long-lived server. A read stuck in the kernel on
+a hung share can delay that process exit, as it would delay any process's
+end. A copy the target completed after the deadline is found by the next
+push and recorded as confirmed. The contract a host builds on is
+[below](#deadlines-and-cancelling-a-push).
 
 Push exits 0 when it uploaded a copy, found the store unchanged, found no
 target configured (it says so and creates nothing) or found another push
@@ -1513,6 +1514,123 @@ code and message, the target identity, the newest receipt with its manifest,
 the time the content was last observed in that copy, the copies it
 recovered, dropped, set aside or left pending, the copies retention removed,
 warnings and the elapsed milliseconds.
+
+#### Deadlines and cancelling a push
+
+This is the contract a host builds its push trigger on.
+
+**Two deadlines, each set by its flag.**
+
+- `--capture-deadline-secs N`, 900 by default, bounds the local work: the
+  running build's identity, the stage's space check, the read-only open of
+  the store, the copy, which is the only time the push holds a read
+  transaction on the store, the copy's full check and hash, and the
+  compressed file prepared from it. It is checked cooperatively: after the
+  space check, which follows reading the build's identity (on a process's
+  first capture that hashes the running executable, with no check of its
+  own), by SQLite's progress handler during the copy and its check, between
+  chunks of the copy's hash and of the reads that build the compressed file,
+  and once that file is written. No call is interrupted while it runs, so one
+  that stalls holds the push until it returns.
+- `--transport-deadline-secs N`, 1800 by default, is one budget for every
+  request to the target together: resolving a pending attempt, confirming
+  the newest copy, the put with its read-back, and retention removals. Each
+  request runs on a worker thread with the time left; with none left, no
+  request starts.
+- No deadline bounds the rest: taking the lock, which never waits, reading
+  and writing the records, removing leftover stages and record files,
+  removing the stage, and printing the report. These are local steps,
+  usually brief but not guaranteed to be.
+- 0 is accepted and expires at once. With a zero capture deadline the push
+  still resolves an earlier pending attempt, which may ask the target, and
+  then fails with `backup_capture_deadline` before it creates a stage. With
+  a zero transport deadline no request starts and the push fails with
+  `backup_transport_deadline`: when an upload was due, its attempt is
+  recorded as pending and nothing is put; when the store equals the newest
+  copy, no new attempt is recorded. An attempt already pending stays
+  pending, since resolving it is a request too. Either way the failure is
+  recorded as the last attempt.
+
+**At the capture deadline** the capture stops at its next check, which ends
+its read transaction, and removes its stage. Nothing of this capture is sent
+to the target. The push records `backup_capture_deadline` as the last
+attempt and exits 1; the earlier receipt stands.
+
+**At the transport deadline** the request still running is left on its
+worker thread. Before a receipt, that is while resolving a pending attempt,
+confirming the newest copy or putting a new one, the push records
+`backup_transport_deadline` as the last attempt and exits 1 at once. A put's
+attempt was recorded as pending before the put and stays pending, as does an
+earlier attempt being resolved; a confirmation of an unchanged copy leaves no
+pending attempt. The lock is held until the process ends, which is what
+stops the stalled request. After a confirmation or a put, the capture's
+stage is left for the next push to remove, since the worker may still read
+it; a resolution runs before the capture and leaves none. When the budget
+is spent before a request starts, no worker is left: the push removes its
+stage, records `backup_transport_deadline` and exits 1 as usual.
+
+A request also checks its own deadline between chunks of its reads, and it
+can get there before the push stops waiting for it. The request then ends
+as a failure of its own: the push removes any stage it made, releases the
+lock as it exits, and records `backup_pending_unresolved` for a resolution,
+`backup_target_unconfirmed` for a confirmation, or
+`backup_transport_deadline` for the put's read-back, after removing the data
+file it put. The exit code, 1, and what stays pending are the same either
+way, so a host acts on the exit code and the outcome rather than on which of
+these codes it got.
+
+During retention the receipt is already recorded: the timeout is a warning,
+the copy stays in the ledger for a later push to remove, and the process
+ends with the push's own exit code, 0. A put the target completes after the
+deadline is found by the next push, confirmed and recorded as recovered; one
+that never arrived is dropped and only its own files are removed.
+
+**Cancelling a push.** A host cancels a push by terminating its process:
+`TerminateProcess`, for example `taskkill /F /PID`, on Windows; `SIGTERM` or
+`SIGKILL` elsewhere. Push installs no signal handler, so Ctrl-C and
+`SIGTERM` act as a kill, and it starts no child process, only threads, so
+ending the one process stops all its work. A terminated push prints no
+complete report. Whatever it recorded before the termination stands, and
+nothing after it is recorded: its own last attempt is written only as it
+finishes, so until then `backup status` keeps showing the earlier one, and
+the host's own record of the termination is the only record of it. Its exit
+code is whatever the system reports; treat it as a failure whose outcome is
+unknown. What it leaves depends on where it was:
+
+| Terminated | What it leaves | What the next push does |
+| --- | --- | --- |
+| Before the capture | Nothing of its own. An earlier pending attempt it was resolving stays pending unless its resolution was already recorded. | Resolves that attempt again and proceeds as usual. |
+| During the capture, the confirmation of an unchanged copy, or the preparation of the compressed file | A stage directory under the home holding the partial or whole copy and, once prepared, the compressed file. The store's read transaction ended with the process; the store is untouched. | Removes the stage before its own capture. |
+| After its attempt was recorded, before the target held the whole copy | The stage with the whole copy and the compressed file, the pending attempt, and possibly a temporary file at the target. | Removes the stage, finds the copy missing, removes the attempt's own files at the target, drops the attempt and puts a new copy. |
+| After the copy's data file was in place, with or without its manifest, before the receipt was recorded | The stage with the whole copy and the compressed file, the pending attempt, and its copy at the target. | Removes the stage, writes the manifest when it is missing and the data matches it, confirms the copy and records it as the newest receipt, reported as recovered. |
+| During retention | The receipt and the successful last attempt, both recorded; a copy may already be removed at the target while the ledger still lists it. | Removes it again, where a copy already gone counts as removed, and updates the ledger. |
+| While a record file was replaced | The earlier or the new record, whole, and possibly a `<record>.<uuid>.tmp` file beside it. | Removes such files of its records under the lock: `store.target.json`, `store.state.json` and `store.restore.json`, with a UUID in its canonical form, and nothing else. |
+
+In every case the system frees the lock when the process ends, though not
+necessarily by the time the host's wait for it returns; a push started
+meanwhile exits 0 with the outcome `busy`. The next push resolves what is
+listed only when the target is reachable and its own cleanup succeeds;
+otherwise it fails with its typed code, or warns about a stage it could not
+remove, and the push after it tries again.
+
+**The host's bound.** With the default deadlines a host terminates a push
+still running after 900 + 1800 + 60 = 2760 seconds; with other deadlines,
+their sum plus 60 seconds for the steps no deadline bounds. This is the
+host's threshold, not a promise that the process has ended by then: a read
+stuck in the kernel on a hung share can delay the end of any process,
+including one being terminated. On reaching it, the host terminates the
+process, records the termination on its side, and does not retry before its
+next scheduled push.
+
+**Control calls.** A push shares no lock with the work or control words. Its
+lock is the file `store.lock` under the project's records directory, taken
+only by the backup words. Its one read transaction on the store lasts for the
+copy step only, about 2 to 3 seconds of the 37 to 40 seconds that a whole
+capture of a 400 MB store took in the observation recorded in
+[off-host backup](off-host-backup.md#what-a-capture-does-to-the-live-store).
+Writers commit meanwhile under the write-ahead log, with no hard bound on how
+long one commit can take. A host therefore runs a push as its own process,
+outside any budget it gives a control call.
 
 `backup status [--json]` is an operator word that reads only the records
 under the home and the store, through the admitted read-only opener, and

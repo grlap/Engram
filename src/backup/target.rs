@@ -649,6 +649,87 @@ pub fn write_state(
     })
 }
 
+/// The file below a project's records directory that holds its restore
+/// record.
+pub(super) const RESTORE_RECORD: &str = "store.restore.json";
+
+/// Removes the temporary files that a record write left in the records
+/// directory of `paths` when its process ended before the rename. Every
+/// writer of these records writes under the lock of the kind it belongs to,
+/// so a temporary file of this kind's records found while holding its lock
+/// is a leftover. Only a regular file named exactly `<record>.<uuid>.tmp` is
+/// removed, for `kind`'s target and state records and, for the `store` kind,
+/// whose lock a restore takes, the project's restore record; anything else
+/// stays. Returns the files removed.
+///
+/// # Errors
+///
+/// Refuses a lock taken for another kind or project, and reports the first
+/// read or removal that failed.
+pub fn remove_leftover_record_files(
+    paths: &RecordPaths,
+    kind: CopyKind,
+    lock: &PushLock,
+) -> Result<Vec<PathBuf>, TargetError> {
+    held(paths, lock)?;
+    let restore = (kind == CopyKind::Store).then_some(RESTORE_RECORD);
+    let records: Vec<_> = [&paths.config, &paths.state]
+        .into_iter()
+        .filter_map(|path| path.file_name())
+        .filter_map(|name| name.to_str())
+        .chain(restore)
+        .collect();
+    let io_at = |path: &Path| {
+        let path = path.to_path_buf();
+        move |source| TargetError::Io { path, source }
+    };
+    let entries = match fs::read_dir(&paths.directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => return Err(io_at(&paths.directory)(source)),
+    };
+    let mut removed = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(io_at(&paths.directory))?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !records
+            .iter()
+            .any(|record| is_record_leftover(name, record))
+        {
+            continue;
+        }
+        let path = entry.path();
+        if !entry.file_type().map_err(io_at(&path))?.is_file() {
+            continue;
+        }
+        match fs::remove_file(&path) {
+            Ok(()) => removed.push(path),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(source) => return Err(io_at(&path)(source)),
+        }
+    }
+    Ok(removed)
+}
+
+/// The name [`write_record`] gives the temporary file it writes `record`
+/// to.
+fn record_temporary_name(record: &str, id: uuid::Uuid) -> String {
+    format!("{record}.{}.tmp", id.hyphenated())
+}
+
+/// Whether `name` is a temporary file of `record` as
+/// [`record_temporary_name`] names it.
+fn is_record_leftover(name: &str, record: &str) -> bool {
+    name.strip_prefix(record)
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_suffix(".tmp"))
+        .and_then(|id| uuid::Uuid::parse_str(id).ok())
+        .is_some_and(|id| record_temporary_name(record, id) == name)
+}
+
 /// Checks that `lock` is the push lock of the kind `paths` name.
 pub(super) fn held(paths: &RecordPaths, lock: &PushLock) -> Result<(), TargetError> {
     if lock.path == paths.lock {
@@ -819,10 +900,9 @@ pub(super) fn write_record<T: Serialize>(path: &Path, record: &T) -> io::Result<
     bytes.push(b'\n');
     let name = path
         .file_name()
+        .and_then(|name| name.to_str())
         .ok_or_else(|| io::Error::other("a record path has no file name"))?;
-    let mut temporary = name.to_owned();
-    temporary.push(format!(".{}.tmp", uuid::Uuid::now_v7()));
-    let temporary = path.with_file_name(temporary);
+    let temporary = path.with_file_name(record_temporary_name(name, uuid::Uuid::now_v7()));
     let written = (|| {
         let mut file = OpenOptions::new()
             .write(true)

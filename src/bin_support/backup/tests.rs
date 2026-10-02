@@ -1166,3 +1166,45 @@ fn a_staging_file_that_stays_is_named_in_the_fetch_refusal() {
     );
     assert_eq!(failure.message, "the original failure");
 }
+
+#[test]
+fn a_put_whose_read_back_passes_its_deadline_fails_typed_and_leaves_none_of_its_files() {
+    let fixture = fixture();
+    let bytes = b"read back too late ".repeat(300);
+    let (path, capture) = artifact(fixture.home.path(), "late", &bytes, 20);
+    let (attempt, stored) = adapter(&fixture.root, &plenty)
+        .prepare(&path, &capture, uuid::Uuid::now_v7())
+        .unwrap();
+    let hurried = DirectoryAdapter::new(fixture.root.clone(), identity(), Duration::ZERO, &plenty);
+    let error = hurried.put(&project(), &attempt, &stored).unwrap_err();
+    assert_eq!(error.code(), "backup_transport_deadline", "{error}");
+    // The data file it put and its temporary file are both gone, and no
+    // manifest was written.
+    assert_eq!(names(&project_dir(&fixture.root)), Vec::<String>::new());
+}
+
+#[test]
+fn a_reconcile_whose_read_passes_its_deadline_cannot_say_and_keeps_the_copy() {
+    let fixture = fixture();
+    let bytes = b"reconciled too late ".repeat(300);
+    let (path, capture) = artifact(fixture.home.path(), "late", &bytes, 21);
+    let (attempt, stored) = adapter(&fixture.root, &plenty)
+        .prepare(&path, &capture, uuid::Uuid::now_v7())
+        .unwrap();
+    let directory = project_dir(&fixture.root);
+    fs::create_dir_all(&directory).unwrap();
+    let data = format!("{}.db.gz", attempt.manifest.copy);
+    fs::copy(&stored, directory.join(&data)).unwrap();
+    let hurried = DirectoryAdapter::new(fixture.root.clone(), identity(), Duration::ZERO, &plenty);
+    assert!(matches!(
+        hurried.reconcile(&project(), &attempt),
+        Reconciled::Unknown { reason } if reason.contains("deadline")
+    ));
+    // The data file stays, with no manifest written for it, so a later
+    // push can still finish the copy.
+    assert_eq!(names(&directory), [data]);
+    assert_eq!(
+        adapter(&fixture.root, &plenty).reconcile(&project(), &attempt),
+        Reconciled::Completed
+    );
+}

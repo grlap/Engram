@@ -352,12 +352,16 @@ target configured it says so and exits 0.
 8. Remove the local stage and record the attempt: time, outcome and, on
    failure, a typed code and the message.
 
-Capture and transport have separate deadlines. Passing one cancels the push:
-every local child process it started is stopped before the lock is released,
-and the process ends. A request the remote had already received may still
-complete there after the local deadline; that is the unknown outcome, and
-the attempt stays pending until a later push resolves it. A failed push
-exits 1 and leaves the previous confirmed copy and its receipt untouched.
+Capture and transport have separate deadlines. Passing the capture's stops
+the capture and removes its stage. Passing the transport's ends the push's
+process, which stops the request still running on its worker thread; push
+starts no child process, so nothing else is left running. A request the
+remote had already received may still complete there after the local
+deadline; that is the unknown outcome, and the attempt stays pending until a
+later push resolves it. A failed push exits 1 and leaves the previous
+confirmed copy and its receipt untouched. What each deadline stops, and what
+a push a host terminates leaves behind, is in
+[deadlines and cancelling a push](cli-and-mcp.md#deadlines-and-cancelling-a-push).
 
 The recorded state holds the newest receipt with its manifest, the time the
 store was last observed equal to that copy, the target's last confirmation
@@ -763,10 +767,11 @@ folder.
   it does not.
 - **One push at a time.** A second push started while the first holds the
   lock exits 0 without capturing. A push killed in the middle leaves the
-  lock free and a pending attempt that the next push resolves. A push that
-  passes its deadline stops its local child processes before the lock is
-  free; a `put` the target completes after that deadline is resolved as
-  confirmed by the next push. `target set`, `target clear` and
+  lock free once its process has ended, and the next push resolves what it
+  left: a stage, a pending attempt, or a copy whose receipt was not yet
+  recorded. A push that passes its transport deadline holds the lock until
+  its process ends; a `put` the target completes after that deadline is
+  resolved as confirmed by the next push. `target set`, `target clear` and
   `backup restore` refuse while a push holds the lock.
 - **A check never overwrites a newer push.** A target check that read one
   receipt, and finishes after a push recorded a newer one, reports its
