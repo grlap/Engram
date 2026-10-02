@@ -101,8 +101,13 @@ is declared only after that dogfood passes without an unmodeled workflow.
 Accepted risk while the dogfood runs: manual backup/restore exists, but
 backups stay host-local unless copied off-host by hand, `doctor` reports no
 backup freshness, and nothing runs automatically — so there is no off-host
-recovery guarantee until `local_backed_up` ships, and losing the active
-host can lose local work state. The shipped
+recovery guarantee, and losing the active host can lose local work state.
+The designed `local_backed_up` reports a verified copy at a configured
+target, and always says on what the off-host part rests. For a directory
+target that is the operator's assertion, shown as unverified. Only the Git
+adapter observes a remote's own acknowledgement; it carries the graph kind
+only, and an acknowledgement is not evidence of the provider's durability.
+The shipped
 [work-graph snapshot](features/work-graph-snapshot.md) is the first artifact
 on that path: one deterministic file that recreates a store on a build whose
 snapshot format matches and moves a project between machines by hand; it
@@ -114,9 +119,10 @@ reduces the risk only once a copy leaves the host.
 - Episodic compaction automation
 - Post-publication retention compaction
 - Budget tuning from retrieval decision logs
-- Optional configured external backup automation over the shipped work-graph
-  snapshot save/load path: an off-host copy with `doctor` freshness reporting
-  for `local_backed_up`
+- Optional configured external backup automation, designed in
+  [off-host backup](features/off-host-backup.md): first a verified full-store
+  copy at a configured target, then the shipped work-graph snapshot as a
+  second copy kind, with `doctor` freshness reporting for `local_backed_up`
 
 ## V2+ — widen the loop
 
@@ -148,5 +154,7 @@ reduces the risk only once a copy leaves the host.
 
 - Default grace period for post-publication retention — pick during V1
   implementation.
-- Optional backup recovery-point objective and portable push cadence.
+- Portable push cadence. The copy kinds, the freshness window and the other
+  defaults of backup are decided in
+  [off-host backup](features/off-host-backup.md).
 - See [spec §12](spec.md#12-decisions) for the resolved decision record.

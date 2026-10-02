@@ -40,14 +40,15 @@ and not canonical-object interchange.
   Until then the roadmap's dogfood-risk sentence stands: one active host, by
   discipline.
 - **A recovery artifact with a manifest.** The file carries the manifest that
-  `BackupAdapter.put_snapshot(project, manifest, bytes)` expects, so a
+  `BackupAdapter.put(project, manifest, artifact)` expects, so a
   configured copy of a save can later raise `local_backed_up`. Every save is
   referentially complete for the work graph and permanent keyed project-memory
   surface — no node, edge, or key in those surfaces is ever dropped — so every
   save is a recovery snapshot of record; a redacted save restores a typed
   placeholder where a sensitivity label excluded a text, and its body and
   manifest say so. A hand-run save by itself reduces no risk until the file
-  leaves the host.
+  leaves the host. The [off-host backup](off-host-backup.md) brief designs
+  that configured copy.
 
 ## File layout
 
@@ -185,9 +186,13 @@ its default file is created owner-only: mode `0600` on Unix, and on Windows
 the ACL inherited from `ENGRAM_HOME`, which is why the host checklist wants
 a user-private `ENGRAM_HOME`; `backup` makes no such promise today and that
 stays its own decision. A configured off-host copy is `BackupAdapter` work and
-stays under the security brief's authorized-destination rule — a destination
-not authorized for placeholder metadata receives the marked-truncated export
-that brief defines, never this file. Save commits one audit event on the
+stays under the security brief's authorized-destination rule: an
+[off-host backup](off-host-backup.md) target receives this file only under
+the operator's recorded authorization of that destination for it, placeholder
+metadata included. A destination without that authorization is not
+configured as a target; the marked-truncated export the security brief names
+for such a destination is not designed, and such a destination never
+receives this file. Save commits one audit event on the
 source store — as-of cut, `widened` and its reason, redacted counts,
 `secret_ref_bodies`, body
 hash, destination kind, and the saving actor — before any byte reaches the

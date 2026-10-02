@@ -26,9 +26,10 @@ WorkSourceAdapter {
 }
 
 BackupAdapter {
-  put_snapshot(project, manifest, bytes) → BackupReceipt
-  get_snapshot(project, snapshot_id) → RecoverySnapshot
-  list_snapshots(project, cursor) → [SnapshotMetadata]
+  put(project, manifest, artifact) → BackupReceipt
+  confirm(project, manifest) → confirmed | missing | unknown
+  list(project, cursor) → [BackupManifest]
+  get(project, copy) → artifact
 }
 
 PortableStoreAdapter {
@@ -51,7 +52,8 @@ PublicationAdapter {
 `WorkSourceSnapshot` is backend-neutral: ref, selected title/body/status/owner,
 captured time, source revision, canonical URL, payload hash, plus bounded
 `raw{}` extension data. It is immutable evidence for one explicit import.
-`BackupAdapter` stores immutable, verified recovery snapshots.
+`BackupAdapter` stores, confirms, lists and returns immutable, verified
+backup copies, as [off-host backup](off-host-backup.md) defines.
 `PortableStoreAdapter` transfers a canonical working snapshot between hosts
 under parent-head compare-and-swap and refuses divergence. It is single-writer
 handoff, not live synchronization. A later `Sync` backend provides concurrent

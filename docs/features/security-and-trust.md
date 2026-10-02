@@ -142,9 +142,16 @@ identity.
 scope and sensitivity authorization run before anything enters a context
 packet, an agent-facing local-work delta, or an off-host projection. Dense
 local-work delivery retains unauthorized positions as typed omission markers
-rather than returning the protected canonical payload. The planned
-JSONL/recovery/portable exporters exclude `restricted` records unless
-explicitly widened. The `secret-ref` label is writer-asserted; snapshot save
+rather than returning the protected canonical payload. The planned generic
+JSONL and portable exporters, and the shipped work-graph snapshot, exclude
+`restricted` records unless explicitly widened. A whole-store artifact is
+the exception: the shipped `engram backup`, the `store` kind of the designed
+[off-host backup](off-host-backup.md) and the file that
+[`migration export`](full-store-migration.md) writes each hold every row,
+with restricted bodies and agent-private scratch, so such an artifact may
+be kept only where the operator would keep the store itself, and a backup
+copy may go only to a destination the operator has authorized for the whole
+store. The `secret-ref` label is writer-asserted; snapshot save
 carries that labelled body without dereferencing it and still runs the
 redactor. The shipped save side of the
 [work-graph snapshot](work-graph-snapshot.md) applies

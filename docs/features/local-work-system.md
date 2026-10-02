@@ -2325,9 +2325,10 @@ WorkSourceAdapter {
 }
 
 BackupAdapter {
-  put_snapshot(project, manifest, bytes) -> BackupReceipt
-  get_snapshot(project, snapshot_id) -> RecoverySnapshot
-  list_snapshots(project, cursor) -> [SnapshotMetadata]
+  put(project, manifest, artifact) -> BackupReceipt
+  confirm(project, manifest) -> confirmed | missing | unknown
+  list(project, cursor) -> [BackupManifest]
+  get(project, copy) -> artifact
 }
 
 PortableStoreAdapter {
@@ -2366,7 +2367,7 @@ publication:
 | Mode | Off-host copy | Writer model | Normal remote reads |
 | --- | --- | --- | --- |
 | `local` | No | Concurrent sessions on one host | None |
-| `local_backed_up` | Verified restore snapshot | Concurrent sessions on one host | Explicit restore only |
+| `local_backed_up` | Verified restore copy at a configured target; off-host asserted or confirmed, as [off-host backup](off-host-backup.md) defines | Concurrent sessions on one host | A confirm during a push, an explicit `backup status --check-target`, and explicit restore; `doctor` and ordinary `status` read nothing remote |
 | `portable` | Transferable working snapshot | Release/acquire enforces clean handoff; forced takeover is detected within a bounded validation window | Head/epoch validation plus explicit restore/handoff |
 | `synchronized` | Shared working state | Concurrent hosts | Live synchronization |
 
@@ -2404,10 +2405,15 @@ it never silently renumbers dense feeds or drops a lineage. This preserves a
 single dense feed sequence in portable mode. Live concurrent synchronization
 must instead add per-origin ordering or a server sequencer and remains later.
 
-Portable/backup payloads contain canonical shared objects, the local work
-graph, feed ordering, evidence references, schemas, and a manifest. They never
-restore a live `WorkClaim`, control session, delivery state,
-or grant. Immutable claim lifecycle facts may remain for audit, but an
+A portable payload contains canonical shared objects, the local work graph,
+feed ordering, evidence references, schemas, and a manifest. A graph backup
+copy contains only what the copy-kind table of
+[off-host backup](off-host-backup.md#copy-kinds) lists for it, and restores
+no claim at all. Neither restores a live `WorkClaim`, control session,
+delivery state, or grant. A full-store backup copy is the exception: it
+restores every row as stored, under the preconditions that
+[off-host backup](off-host-backup.md#restore) sets. In a portable payload, immutable claim lifecycle
+facts may remain for audit, but an
 unfinished old-host claim restores as `recoverable`; a new host performs an
 attributed recovery and advances the generation/fence. Historical lease audit
 events confer no live authority. Agent-private scratch never enters a portable payload.

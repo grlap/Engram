@@ -570,10 +570,11 @@ triggers, and FTS5 content from those verified durable rows; it never recreates
 durable tables from `objects`. `engram doctor` checks that stored records decode
 and agree, along with graph references, projection bindings, and index freshness
 (§3.1.1). `local` mode relies on SQLite
-transactions. An optional
-deterministic recovery snapshot and verified restore provide
-`local_backed_up`. Sequential off-host transfer under one active host provides
-`portable`. A later concurrent `Sync` backend provides `synchronized`.
+transactions. An optional verified restore-only copy at a configured target
+provides `local_backed_up`: a full-store copy, or the deterministic
+work-graph recovery snapshot as a second, smaller kind. Sequential off-host
+transfer under one active host provides `portable`. A later concurrent
+`Sync` backend provides `synchronized`.
 Distributed merge semantics are not required for valid local-only or portable
 operation.
 
@@ -744,7 +745,10 @@ object storage, and later service transports implement the appropriate port
 without changing work semantics.
 
 **Interchange and durability modes:** SQLite is canonical in `local` mode.
-`local_backed_up` adds a verified restore-only off-host snapshot. `portable`
+`local_backed_up` adds a verified restore-only copy at a configured target,
+always reported with whether that target is off the host by the operator's
+assertion or by the remote's confirmation
+([off-host backup](features/off-host-backup.md)). `portable`
 adds a transferable working snapshot with exactly one active host, explicit
 handoff/restore, scheduled push, and divergence refusal. `synchronized`
 activates a later shared multi-writer backend. `engram doctor` reports mode,
@@ -954,11 +958,29 @@ add-ons:
   implying no compliance assurance whatsoever.
 - **No raw transcript persistence** by default; any ephemeral retention is
   explicit, bounded, and audited.
-- **Safe export defaults:** JSONL/backup/portable export excludes restricted
-  records unless explicitly widened and exports `secret-ref` only as a vault
-  reference. Portable mode additionally requires complete executable
-  shared-state closure; excluded provenance uses policy-authorized stubs and
-  feed placeholders (§3.2), while agent-private scratch never leaves the host.
+- **Safe export defaults:** they differ by artifact. A generic JSONL export,
+  the work-graph file and a portable export exclude `restricted` records
+  unless explicitly widened; a `graph` backup copy is never widened. A
+  `secret-ref` label is writer-asserted: the work-graph file carries the
+  labelled body as written, and no export resolves a reference into its
+  secret. Two whole-store artifacts are the exception to these defaults: a
+  full-store backup copy, and the file that `migration export` writes to
+  move a store to a new format
+  ([full store migration](features/full-store-migration.md)). Each carries
+  every row, restricted bodies, agent-private scratch and host authority
+  records included. A backup copy goes only to a target the operator has
+  authorized for the whole store
+  ([off-host backup](features/off-host-backup.md)); a migration file is kept
+  where the store itself may be kept. Portable mode
+  additionally requires complete executable shared-state closure; excluded
+  provenance uses policy-authorized stubs and feed placeholders (§3.2). Apart
+  from those two artifacts, agent-private scratch never leaves the host.
+  They are how the rule that scratch and live authority stay on the active
+  host is read: their rows leave it only as inert bytes of a whole-store
+  artifact, in a place the operator chose for the whole store. Nothing
+  reads them there as work state, the artifact grants nothing, and no
+  generic export, work-graph file, portable payload or publication carries
+  them.
 - **Signing is policy, not a dependency:** a `Signer` port supports signed
   objects and signed Git commits where a deployment requires cryptographic
   attestation. Baseline v1 runs without it — at asserted-identity assurance;
@@ -1227,9 +1249,10 @@ WorkSourceAdapter {
 }
 
 BackupAdapter {
-  put_snapshot(project, manifest, bytes) → BackupReceipt
-  get_snapshot(project, snapshot_id) → RecoverySnapshot
-  list_snapshots(project, cursor) → [SnapshotMetadata]
+  put(project, manifest, artifact) → BackupReceipt
+  confirm(project, manifest) → confirmed | missing | unknown
+  list(project, cursor) → [BackupManifest]
+  get(project, copy) → artifact
 }
 
 PortableStoreAdapter {
@@ -1253,7 +1276,8 @@ PublicationAdapter {
 status/owner, captured time, source revision, canonical URL, canonical payload
 hash, and bounded extension data. A `PublicationAdapter` accepts only an
 explicit target and frozen payload under a durable idempotency key.
-`BackupAdapter` stores/restores immutable recovery snapshots.
+`BackupAdapter` stores, confirms, lists and returns immutable backup copies
+of either kind, as [off-host backup](features/off-host-backup.md) defines.
 `PortableStoreAdapter` publishes and restores a sequential working snapshot
 under parent-head compare-and-swap; it never merges or restores live execution
 authority. Both are separate from a later live multi-writer `Sync` backend.
@@ -1420,10 +1444,10 @@ Codex::AgentMemory):
   coordinate live; same-host sessions do not trigger it.
 - Timing of the proprietary tracker adapter — when work authorizes real
   publication.
-- Recovery snapshot format and recovery-point defaults for optional
-  `local_backed_up` mode; portable push cadence and first transport substrate
-  (recommended: a private dedicated Git ref, not a branch; internal object
-  storage for organization scale).
+- Portable push cadence and first transport substrate (recommended: a
+  private dedicated Git ref, not a branch; internal object storage for
+  organization scale). The copy kinds and defaults of `local_backed_up` are
+  decided in [off-host backup](features/off-host-backup.md).
 
 ## Appendix A — Decision log
 

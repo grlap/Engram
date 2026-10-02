@@ -42,7 +42,7 @@ capabilities.
 | `Store` | append / get / list-heads over immutable objects | SQLite (canonical) |
 | `Index` | rebuild / search derived state | SQLite + FTS5 tables (disposable cache) |
 | `WorkSourceAdapter` | explicit external snapshot intake | optional; Beads snapshot import first, other trackers by immutable snapshot |
-| `BackupAdapter` | store/retrieve verified recovery snapshots | optional |
+| `BackupAdapter` | store, confirm, list and return verified backup copies | optional; designed, not built |
 | `PortableStoreAdapter` | sequential publish/handoff/restore under remote-head CAS | optional V1 |
 | `Sync` | concurrent fetch / push / verify between active stores | dormant until later |
 | `PublicationAdapter` | publish a frozen report/work projection under a receipt | deferred; no adapter shipped |
@@ -100,7 +100,8 @@ with `engram doctor --repair-projections`; ordinary open never repairs them.
 projections built from it, along with graph references, projection bindings, and
 configured durability freshness. It does not re-derive a record's id from its
 bytes: SQLite guards the bytes on disk. SQLite is canonical in `local` mode.
-Optional recovery snapshots produce `local_backed_up`; sequential
+A verified restore-only copy at a configured target produces
+`local_backed_up` ([off-host backup](features/off-host-backup.md)); sequential
 cross-machine handoff produces `portable`; a later concurrent `Sync` backend
 produces `synchronized`. These are honest durability claims, not runtime
 requirements.

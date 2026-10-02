@@ -331,15 +331,17 @@ checkpoint cut selection and append share one immediate transaction.
 
 WAL mode, bounded busy timeouts, short transactions, and atomic claims/CAS
 provide `local`: SQLite is the complete canonical local source of truth.
-A deterministic work-graph recovery snapshot with manifest hashes and a
-previewed, tested restore path may be copied to configured external storage to
-provide `local_backed_up`. The shipped
+A verified restore-only copy at a configured target provides
+`local_backed_up`: a full-store copy, or a deterministic work-graph recovery
+snapshot with manifest hashes and a previewed, tested restore path. The shipped
 [work-graph snapshot](work-graph-snapshot.md) carries the manifest that
-`BackupAdapter.put_snapshot` expects and atomically recreates an empty project
+`BackupAdapter.put` expects and atomically recreates an empty project
 store after strict preflight. Until a
 configured copy and `doctor` freshness reporting ship, it is a recreation and
-hand-carry artifact, not `local_backed_up`. `portable` adds scheduled publication of that
-canonical, human-readable working snapshot plus explicit sequential
+hand-carry artifact, not `local_backed_up`. The
+[off-host backup](off-host-backup.md) brief designs both copy kinds, the
+configured target and the rule for the claim. `portable` adds scheduled
+publication of a canonical, human-readable working snapshot plus explicit sequential
 handoff/restore under remote-head compare-and-swap. A later shared `Sync`
 backend provides `synchronized`. External storage is optional and never
 required on the hot execution path; `doctor` reports the actual mode, remote
@@ -372,8 +374,12 @@ closure qualifies as `portable`. Export-policy mismatch blocks acquire.
 
 Generic JSONL export remains interchange only and is not automatically a
 backup of record. The recovery snapshot is a separate versioned contract with
-referential/projection integrity checks. Safe defaults exclude `restricted`
-and `secret-ref` records unless explicitly widened.
+referential/projection integrity checks. Safe defaults differ by artifact. A
+generic export and the [work-graph snapshot](work-graph-snapshot.md) leave
+out `restricted` bodies unless explicitly widened; the snapshot carries a
+body labelled `secret-ref` as written, without dereferencing it, and its
+load side always turns a restricted body into a placeholder. A whole-store
+copy carries every row, as [off-host backup](off-host-backup.md) sets out.
 
 ## Portable projection and deferred concurrent sync
 

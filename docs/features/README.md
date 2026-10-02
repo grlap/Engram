@@ -19,6 +19,7 @@ references another.
 | [Local tasks & reports](local-tasks-and-reports.md) | Root execution, single-executor child runs, handoffs, completion seals, fenced report assembly, and optional receipted publication |
 | [SQLite store](sqlite-store.md) | Local append-only canonical store; recovery snapshots; sequential portability; deferred concurrent sync |
 | [Work-graph snapshot](work-graph-snapshot.md) | Shipped deterministic save/load of the agent-visible work graph, inert history, and keyed project memories |
+| [Off-host backup](off-host-backup.md) | Design: two copy kinds, adapter receipts, a host-triggered push, and the exact rule for reporting `local_backed_up` with its off-host assurance |
 | [External adapters](tracker-adapter.md) | Optional snapshot intake, backup/portable storage, and separately authorized publication |
 | [Source intake](source-intake.md) | Explicit file preview/apply, authored local work, and immutable source-change notices |
 | [Execution pipeline](execution-pipeline.md) | Layer map from external ticket to report, including shipped WorkRun-bound environment evidence, obligations, and completion gating |
