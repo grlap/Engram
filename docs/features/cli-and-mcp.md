@@ -1332,6 +1332,14 @@ engram control \
 engram backup                      # → <home>/backups/<project>/engram-<utc>.db + manifest
 engram restore --from <backup-file> [--replace]   # stop other Engram processes first
 
+# Off-host backup targets: the operator's record of where a kind's copies go.
+# Setting a target copies nothing.
+engram backup target set --kind store --adapter directory --dir <absolute path> \
+  --disclosure-authorized-by <operator> --off-host-asserted-by <operator> \
+  [--window-hours N] [--keep N]
+engram backup target show [--json]
+engram backup target clear --kind store
+
 # Deterministic planning/history disclosure. The default path is
 # <home>/snapshots/<project>/graph-<work-cut>-<memory-cut>-<first-12-body-digest>.json.
 # --include-restricted deliberately widens restricted project-memory bodies and
@@ -1373,6 +1381,38 @@ history proofs, and memories before one atomic recreation transaction, and
 records a separate immutable load audit. `--dry-run` performs the same
 validation and reports the landing plan without writing. See the
 [work-graph snapshot](work-graph-snapshot.md).
+
+`backup target set`, `show` and `clear` are operator-only words as well; they
+change none of the fourteen agent words and never open the store. A target
+belongs to one project and one copy kind; this build configures the `store`
+kind at a `directory` adapter. `set` requires
+`--disclosure-authorized-by` (the destination may hold everything the kind
+carries) and, for a directory, `--off-host-asserted-by` (the destination
+leaves this machine). Both are recorded as asserted context with the
+operator's name and the time, and a directory target always reads
+"off-host asserted; not verified". `--dir` must be an absolute path, a
+Windows share included; it is kept as spelled and never contacted when set.
+The window defaults to 24 hours and the retention to three copies. `set`
+replaces any earlier target of its kind, starts the kind's recorded state
+anew, and derives the target's identity from the project, kind, adapter,
+location and both statements whenever it is needed; it is not stored. The
+configuration and state are files under `<home>/backup-records/<project>/`,
+each with a format version and replaced whole. A record this build cannot
+use is left untouched: one it cannot read or parse, one `set` would have
+refused, or a state recorded for another target than the configured one. `show` and
+`clear` refuse it with `backup_record_unreadable` and name the file, and
+`set` is the way on, writing both files for the kind anew. `set` and `clear` take the kind's push
+lock, an operating-system lock that its holder's exit releases, and refuse
+with `backup_push_running` while another process holds it. The CLI parser
+refuses a missing required flag or an unknown kind or adapter before any
+code applies; a request it accepts but Engram refuses is
+`backup_target_invalid`. A `set` whose state was written but whose
+configuration was not reports `backup_record_partial` and is repeated. A
+record that exists but cannot be read is `backup_record_unreadable` like any
+other record this build cannot use; a record that cannot be written or
+removed, and a lock file that cannot be opened or locked, is `backup_io`.
+`show` on a clean home prints that no target is configured. See
+[off-host backup](off-host-backup.md#configuration).
 
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence

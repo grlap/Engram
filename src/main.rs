@@ -160,14 +160,18 @@ enum Command {
         #[arg(long, value_name = "PATH", requires = "check_landings")]
         repo: Option<PathBuf>,
     },
-    /// Write a verified copy of the store into the host-local backup directory.
+    /// Write a verified copy of the store into the host-local backup directory,
+    /// or manage the project's backup targets with `backup target`.
     ///
     /// A backup is a complete store, grants and private scratch included; keep
     /// it where the store itself may be kept.
+    #[command(args_conflicts_with_subcommands = true)]
     Backup {
         /// Backup file to write; defaults to `<home>/backups/<project>/engram-<utc>.db`.
         #[arg(long)]
         out: Option<PathBuf>,
+        #[command(subcommand)]
+        operation: Option<bin_support::backup_target::BackupCommand>,
     },
     /// Bring a verified backup back as this project's store.
     Restore {
@@ -1211,7 +1215,14 @@ async fn run_cli() -> Result<ExitCode> {
                 repository.as_deref(),
             )?;
         }
-        Command::Backup { out } => backup(&database, out)?,
+        Command::Backup {
+            out,
+            operation: None,
+        } => backup(&database, out)?,
+        Command::Backup {
+            operation: Some(operation),
+            ..
+        } => bin_support::backup_target::run(&database, &project_id, operation)?,
         Command::Restore { from, replace } => restore(&database, &from, replace)?,
         Command::Graph {
             actor_id,

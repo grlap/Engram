@@ -442,5 +442,7 @@ fn remove_attempt(attempt: &Path) -> Result<(), (PathBuf, io::Error)> {
     }
 }
 
+pub mod target;
+
 #[cfg(test)]
 mod tests;

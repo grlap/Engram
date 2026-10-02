@@ -182,7 +182,14 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
                 },
             },
         ),
-        ("backup", false, Command::Backup { out: None }),
+        (
+            "backup",
+            false,
+            Command::Backup {
+                out: None,
+                operation: None,
+            },
+        ),
         (
             "restore",
             false,

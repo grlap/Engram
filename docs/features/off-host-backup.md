@@ -11,8 +11,10 @@
 >
 > Status: design. Nothing in this brief is shipped except the commands it
 > names as shipped: `engram backup`, `engram restore`, `engram graph save`,
-> `engram graph load` and `engram migration export` / `import`. The
-> [shipped inventory](../shipped.md) stays the record of what exists.
+> `engram graph load` and `engram migration export` / `import`, and of this
+> design so far the `engram backup target` words for the `store` kind at a
+> `directory` target. The [shipped inventory](../shipped.md) stays the record
+> of what exists.
 
 Today every Engram store lives on one machine. `engram backup` writes its
 copy under the same home as the store, in `backups/`, and `engram graph

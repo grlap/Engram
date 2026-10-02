@@ -1,6 +1,7 @@
 //! Operator command families dispatched from the clap graph in `main.rs`.
 
 pub(crate) mod attribution;
+pub(crate) mod backup_target;
 pub(crate) mod control;
 pub(crate) mod control_session_inspect;
 pub(crate) mod doctor;
