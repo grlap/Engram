@@ -1506,6 +1506,25 @@ the time the content was last observed in that copy, the copies it
 recovered, dropped, set aside or left pending, the copies retention removed,
 warnings and the elapsed milliseconds.
 
+`backup status [--json]` is an operator word that reads only the records
+under the home and the store, through the admitted read-only opener, and
+contacts no target. It names the durability mode only together with what
+backs it: `local_backed_up` when at least one kind qualifies under the
+[freshness rule](off-host-backup.md),
+with each qualifying kind's off-host text, which for a directory target is
+exactly "off-host asserted; not verified", and what it restores; `local`
+otherwise, saying that nothing is known to be held off this host. For each
+kind it then gives whether it qualifies or the first reason it does not, by
+its `backup_*` code, and the recorded evidence as of its times: the target,
+both of the operator's statements, the copy with its acknowledgement,
+capture start and age, its cut and how far the store has moved since, the
+last confirmation, a missing finding, the build that checked the copy when
+it is not the running one, a pending attempt, and the last attempt with its
+error. A configuration or state file this build cannot use is reported as
+`backup_record_unreadable`, not as a failure. `--json` prints the same with
+`schema_version` 1, the mode inside a `durability` object beside its
+`off_host` list, and the reasons as their codes. The word exits 0.
+
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence
 attribution contract.

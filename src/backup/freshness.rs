@@ -36,9 +36,8 @@ impl Mode {
 }
 
 /// Why a kind does not qualify, in the order the rule checks them: the
-/// first that applies is the one reported.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
+/// first that applies is the one reported. It serializes as its code.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Reason {
     /// The configuration or state file cannot be read or used.
     RecordUnreadable,
@@ -59,6 +58,12 @@ pub enum Reason {
     /// The store's content was last observed in the copy longer ago than the
     /// window.
     Stale,
+}
+
+impl Serialize for Reason {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.code())
+    }
 }
 
 impl Reason {

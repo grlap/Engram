@@ -217,6 +217,25 @@ impl TargetState {
     /// Why the confirmation or missing finding does not belong to the newest
     /// receipt, if it does not: each may only name that receipt's copy.
     fn evidence_problem(&self) -> Option<String> {
+        // A store's positions are never negative: a recorded cut that has
+        // one is not a copy this home made.
+        let negative = self
+            .newest_receipt
+            .iter()
+            .chain(&self.receipts)
+            .map(|receipt| (&receipt.manifest.copy, &receipt.manifest.capture.cut))
+            .chain(
+                self.pending
+                    .iter()
+                    .chain(&self.set_aside)
+                    .map(|attempt| (&attempt.manifest.copy, &attempt.manifest.capture.cut)),
+            )
+            .find(|(_, cut)| cut.work_feed < 0 || cut.project_memory < 0);
+        if let Some((copy, _)) = negative {
+            return Some(format!(
+                "the recorded cut of the copy {copy} has a negative position"
+            ));
+        }
         let newest = self.newest_receipt.as_ref().map(CopyRef::of);
         let names_newest = |copy: &CopyRef| newest.as_ref() == Some(copy);
         if let Some(confirmed) = &self.last_confirmation

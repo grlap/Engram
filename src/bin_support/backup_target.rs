@@ -35,6 +35,12 @@ pub(crate) enum BackupCommand {
     /// Configure, show or clear where this project's copies go.
     #[command(subcommand)]
     Target(TargetCommand),
+    /// Report the backup mode, with what backs it, and each kind's recorded
+    /// evidence. Reads only local files and the store; contacts no target.
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
     /// Capture the store and bring the copy at each configured target up to
     /// date. Exits 0 when nothing is configured or another push is running,
     /// and 1 when a push failed.
@@ -125,6 +131,15 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
     let (home, _) = engram_home_and_project_digest(database)?;
     let command = match command {
         BackupCommand::Target(command) => command,
+        BackupCommand::Status { json } => {
+            let status = engram::backup::status::backup_status(home, project, database);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&status)?);
+            } else {
+                print!("{}", engram::backup::status::render_status(&status));
+            }
+            return Ok(true);
+        }
         BackupCommand::Push {
             kind,
             json,

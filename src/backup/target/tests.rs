@@ -867,3 +867,53 @@ fn recording_a_receipt_confirms_it_and_clears_an_earlier_missing_finding() {
     assert_eq!(state.last_confirmation.unwrap().copy, CopyRef::of(&second));
     assert_eq!(state.receipts, [first, second]);
 }
+
+/// One edit of a state, as a test applies it.
+type Edit = fn(&mut TargetState);
+
+#[test]
+fn a_recorded_cut_with_a_negative_position_is_refused() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let view = set_target(home.path(), &project(), &request(), at(0)).unwrap();
+    let lock = PushLock::try_acquire(&paths).unwrap();
+    let edits: [(&str, Edit); 4] = [
+        ("newest work feed", |state| {
+            state
+                .newest_receipt
+                .as_mut()
+                .unwrap()
+                .manifest
+                .capture
+                .cut
+                .work_feed = i64::MIN;
+        }),
+        ("ledger memory", |state| {
+            state.receipts[0].manifest.capture.cut.project_memory = -1;
+        }),
+        ("pending", |state| {
+            state
+                .pending
+                .as_mut()
+                .unwrap()
+                .manifest
+                .capture
+                .cut
+                .work_feed = -1;
+        }),
+        ("set aside", |state| {
+            state.set_aside[0].manifest.capture.cut.project_memory = -1;
+        }),
+    ];
+    for (label, edit) in edits {
+        let mut state = full_state(&view.identity, &view.identity);
+        edit(&mut state);
+        write_state(&paths, &lock, &state).unwrap();
+        let error = read_for_push(&paths, &project(), CopyKind::Store, &lock).unwrap_err();
+        assert_eq!(error.code(), "backup_record_unreadable", "{label}: {error}");
+        assert!(
+            error.to_string().contains("negative position"),
+            "{label}: {error}"
+        );
+    }
+}

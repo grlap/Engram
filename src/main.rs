@@ -161,7 +161,8 @@ enum Command {
         repo: Option<PathBuf>,
     },
     /// Write a verified copy of the store into the host-local backup directory,
-    /// or manage the project's backup targets with `backup target`.
+    /// or manage the project's backup targets with `backup target`, push
+    /// copies to them with `backup push`, and report them with `backup status`.
     ///
     /// A backup is a complete store, grants and private scratch included; keep
     /// it where the store itself may be kept.

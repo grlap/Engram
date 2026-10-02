@@ -13,10 +13,11 @@
 > names as shipped: `engram backup`, `engram restore`, `engram graph save`,
 > `engram graph load` and `engram migration export` / `import`, and of this
 > design so far, for the `store` kind at a `directory` target, the
-> `engram backup target` words and `engram backup push` with its capture,
-> pending attempts, deadlines and retention. Backup status, the
-> `local_backed_up` mode, restore from a target and the `graph` kind are not
-> shipped. The [shipped inventory](../shipped.md) stays the record of what
+> `engram backup target` words, `engram backup push` with its capture,
+> pending attempts, deadlines and retention, and `engram backup status
+> [--json]` with the freshness rule and the `local_backed_up` mode it
+> reports. `status --check-target`, the doctor block, the `next` reminder,
+> restore from a target and the `graph` kind are not shipped. The [shipped inventory](../shipped.md) stays the record of what
 > exists.
 
 Today every Engram store lives on one machine. `engram backup` writes its
