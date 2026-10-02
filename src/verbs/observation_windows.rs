@@ -5,6 +5,8 @@ use super::{
     AgentVerbs, DateTime, Guidance, MAX_AGENT_WORK_RESPONSE_BYTES, Receipt, StoreError, Utc, Value,
     VerbError, json,
 };
+use std::fmt::Write as _;
+
 use crate::work_service::{WorkObservationRow, WorkObservationWindow};
 
 impl AgentVerbs {
@@ -131,6 +133,9 @@ fn render_window(
 }
 
 fn row_line(row: &WorkObservationRow) -> String {
+    if let Some(detail) = &row.unadmitted {
+        return unadmitted_row_line(row, detail);
+    }
     let field = |value: Option<&String>| {
         value.map_or_else(
             || "not recorded".to_owned(),
@@ -141,7 +146,7 @@ fn row_line(row: &WorkObservationRow) -> String {
         "  run position {}: {} {}; workspace {}; revision {}{}; reported by {}; observed {}; recorded {}",
         row.position,
         row.observation,
-        if row.source_changed {
+        if row.source_changed == Some(true) {
             "change"
         } else {
             "sighting"
@@ -159,10 +164,64 @@ fn row_line(row: &WorkObservationRow) -> String {
     )
 }
 
+/// An unadmitted observation's line: what was seen and when, that it was not
+/// admitted, its cause as known, and every check as uncredited.
+fn unadmitted_row_line(
+    row: &WorkObservationRow,
+    detail: &crate::work_service::UnadmittedObservationDetail,
+) -> String {
+    let safe = super::terminal_safe_line;
+    let mut line = format!(
+        "  run position {}: {} unadmitted observation: {}; revision {}{}; {}; {}; reported by {}; observed {} to {}; recorded {}",
+        row.position,
+        row.observation,
+        safe(&detail.occurrence),
+        row.revision
+            .as_deref()
+            .map_or_else(|| "not recorded".to_owned(), safe),
+        row.root_generation
+            .map_or_else(String::new, |generation| format!(
+                "; root generation {generation}"
+            )),
+        safe(&detail.cause),
+        detail.accounting,
+        safe(&row.reporting_session),
+        detail.observed_from.to_rfc3339(),
+        detail.observed_through.to_rfc3339(),
+        row.recorded_at.to_rfc3339(),
+    );
+    for check in &detail.checks {
+        let _ = write!(
+            line,
+            "\n    observed check, uncredited: {} {} {}; {}; source {}{}",
+            safe(&check.host_check_id),
+            check.kind,
+            check.result,
+            check.finished_at.map_or_else(
+                || "not finished".to_owned(),
+                |at| format!("finished {}", at.to_rfc3339())
+            ),
+            check.source_revision.as_deref().map_or_else(
+                || "unknown".to_owned(),
+                |revision| format!("revision {}", safe(revision))
+            ),
+            check
+                .evidence_ref
+                .as_deref()
+                .map_or_else(String::new, |reference| format!(
+                    "; host ref {}",
+                    safe(reference)
+                )),
+        );
+    }
+    line
+}
+
 fn row_value(row: &WorkObservationRow) -> Value {
     json!({
         "observation": row.observation,
         "run_position": row.position,
+        "admission": row.admission,
         "source_changed": row.source_changed,
         "workspace": row.workspace,
         "revision": row.revision,
@@ -170,5 +229,6 @@ fn row_value(row: &WorkObservationRow) -> Value {
         "reporting_session": row.reporting_session,
         "observed_at": row.observed_at,
         "recorded_at": row.recorded_at,
+        "unadmitted": row.unadmitted,
     })
 }

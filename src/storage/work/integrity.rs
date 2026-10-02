@@ -1004,6 +1004,24 @@ pub(super) fn verify_work_feed_integrity(
                 .map(|event| expected_named_root_binding_feeds(connection, work_items, &event))
                 .transpose()?
                 .flatten(),
+            super::UNADMITTED_OBSERVATION_KIND => {
+                match object.decode::<crate::domain::UnadmittedExecutionObservation>() {
+                    Ok(observation)
+                        if super::unadmitted_observation_is_consistent_on(
+                            connection,
+                            &observation,
+                            &hash,
+                        )? =>
+                    {
+                        expected_feeds_for_work(
+                            work_items,
+                            observation.binding.work_id,
+                            Some(observation.binding.run_id),
+                        )
+                    }
+                    _ => None,
+                }
+            }
             "verification_evidence" => object
                 .decode::<VerificationEvidence>()
                 .ok()
@@ -1175,7 +1193,7 @@ pub(super) fn verify_work_feed_integrity(
          WHERE object.object_kind IN (
              'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
               'verification_evidence', 'environment_evidence', 'named_root_binding',
-             'work_obligation', 'work_obligation_resolution'
+             'work_obligation', 'work_obligation_resolution', 'unadmitted_execution_observation'
          )
            AND entry.object_id IS NULL
          ORDER BY object.object_id",

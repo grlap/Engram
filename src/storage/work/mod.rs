@@ -6,11 +6,11 @@
 )]
 
 mod acceptance_evaluation;
-pub(crate) use acceptance_evaluation::AssessedAcceptanceEvaluation;
 pub(crate) use acceptance_evaluation::attempt_identity as acceptance_attempt_identity;
 pub use acceptance_evaluation::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
 };
+pub(crate) use acceptance_evaluation::{AssessedAcceptanceEvaluation, SourceObservationRecord};
 mod binding_read;
 pub(crate) use binding_read::BindingReadRequest;
 pub(in crate::storage) use binding_read::read_acceptance_bindings_on;
@@ -47,6 +47,12 @@ mod schema;
 mod session;
 mod status;
 pub(crate) use status::SelectedStatusNote;
+mod unadmitted;
+pub(in crate::storage) use unadmitted::{
+    UNADMITTED_OBSERVATION_KIND, append_unadmitted_observation_on, check_root_basis_on,
+    check_sighting_matches_root_basis_on, check_source_root_at_cut_on, historical_claim_epoch_on,
+    unadmitted_observation_is_consistent_on,
+};
 
 pub(crate) use discovery::WorkDiscoveryRow;
 

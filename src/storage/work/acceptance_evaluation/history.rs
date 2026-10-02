@@ -27,6 +27,13 @@ pub(crate) struct AcceptanceEvaluationEntry {
 /// observation's run-feed position and record id, in position order.
 pub(crate) type SourceObservationEntries = (WorkRunId, Vec<(i64, ObjectId)>);
 
+/// One source observation on a run: one a turn admitted, or one a host
+/// recorded without admission.
+pub(crate) enum SourceObservationRecord {
+    Admitted(Box<crate::domain::ExecutionObservation>),
+    Unadmitted(Box<crate::domain::UnadmittedExecutionObservation>),
+}
+
 /// The run an item's evaluation history covers, and its records.
 #[derive(Clone, Debug)]
 pub(crate) struct AcceptanceEvaluationHistory {
@@ -263,7 +270,9 @@ impl SqliteStore {
                 .prepare(
                     "SELECT position, object_id FROM work_feed_entries
                      WHERE feed_kind = 'run_execution' AND feed_id = ?1
-                       AND object_kind = 'execution_observation'
+                       AND object_kind IN (
+                           'execution_observation', 'unadmitted_execution_observation'
+                       )
                      ORDER BY position",
                 )?
                 .query_map(params![run_id.0.to_string()], |row| {
@@ -290,14 +299,28 @@ impl SqliteStore {
     pub(crate) fn source_observations(
         &self,
         entries: &[(i64, ObjectId)],
-    ) -> Result<Vec<(i64, ObjectId, crate::domain::ExecutionObservation)>, StoreError> {
+    ) -> Result<Vec<(i64, ObjectId, SourceObservationRecord)>, StoreError> {
         on_one_snapshot(&self.connection, |connection| {
             entries
                 .iter()
                 .map(|(position, hash)| {
-                    let observation =
-                        load_typed_work_object(connection, hash, "execution_observation")?;
-                    Ok((*position, hash.clone(), observation))
+                    let kind: String = connection.query_row(
+                        "SELECT object_kind FROM objects WHERE object_id = ?1",
+                        [hash.as_str()],
+                        |row| row.get(0),
+                    )?;
+                    let record = if kind == super::super::UNADMITTED_OBSERVATION_KIND {
+                        SourceObservationRecord::Unadmitted(Box::new(load_typed_work_object(
+                            connection, hash, &kind,
+                        )?))
+                    } else {
+                        SourceObservationRecord::Admitted(Box::new(load_typed_work_object(
+                            connection,
+                            hash,
+                            "execution_observation",
+                        )?))
+                    };
+                    Ok((*position, hash.clone(), record))
                 })
                 .collect()
         })

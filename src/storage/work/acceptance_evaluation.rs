@@ -1837,7 +1837,7 @@ use source::{
     stale_bound_citation,
 };
 mod history;
-pub(crate) use history::AssessedAcceptanceEvaluation;
+pub(crate) use history::{AssessedAcceptanceEvaluation, SourceObservationRecord};
 mod identity_shape;
 use identity_shape::IdentityShape;
 mod reroll;

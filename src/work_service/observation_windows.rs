@@ -45,7 +45,12 @@ pub(crate) struct WorkObservationWindow {
 pub(crate) struct WorkObservationRow {
     pub observation: String,
     pub position: i64,
-    pub source_changed: bool,
+    /// `admitted` for a turn's own observation, `unadmitted` for one a host
+    /// recorded without admission.
+    pub admission: &'static str,
+    /// Whether the host reported a source change. An unadmitted record that
+    /// reports none says nothing about the source, so it carries `None`.
+    pub source_changed: Option<bool>,
     pub workspace: Option<String>,
     pub revision: Option<String>,
     pub root_generation: Option<i64>,
@@ -53,6 +58,108 @@ pub(crate) struct WorkObservationRow {
     pub reporting_session: String,
     pub observed_at: Option<DateTime<Utc>>,
     pub recorded_at: DateTime<Utc>,
+    /// What only an unadmitted observation carries.
+    pub unadmitted: Option<UnadmittedObservationDetail>,
+}
+
+/// An unadmitted observation's own facts, worded so it never reads as a
+/// turn, a pass or an established cause.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct UnadmittedObservationDetail {
+    pub occurrence: String,
+    pub observed_from: DateTime<Utc>,
+    pub observed_through: DateTime<Utc>,
+    pub cause: String,
+    pub accounting: &'static str,
+    pub checks: Vec<ObservedCheckRow>,
+}
+
+/// One check seen inside an unadmitted turn: always uncredited.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct ObservedCheckRow {
+    pub host_check_id: String,
+    pub kind: &'static str,
+    pub result: &'static str,
+    pub credit: &'static str,
+    pub finished_at: Option<DateTime<Utc>>,
+    /// The revision the host says it ran on; `None` when unknown.
+    pub source_revision: Option<String>,
+    /// The host's opaque reference, shortened for display only.
+    pub evidence_ref: Option<String>,
+}
+
+fn observation_row(
+    identity: &super::identity::DisplayIdentity,
+    position: i64,
+    hash: &ObjectId,
+    record: crate::storage::SourceObservationRecord,
+) -> WorkObservationRow {
+    use super::unadmitted::{
+        accounting_words, cause_words, check_kind_word, check_result_word, displayed,
+        occurrence_words,
+    };
+    match record {
+        crate::storage::SourceObservationRecord::Admitted(observation) => {
+            let basis = observation.source_basis.as_ref();
+            WorkObservationRow {
+                observation: hash.as_str().to_owned(),
+                position,
+                admission: "admitted",
+                source_changed: Some(observation.source_changed),
+                workspace: basis.map(|basis| basis.workspace_id.clone()),
+                revision: basis.map(|basis| basis.source_revision.clone()),
+                root_generation: basis.and_then(|basis| basis.source_root_generation),
+                reporting_session: identity.session(&observation.session_id),
+                observed_at: observation.observed_at,
+                recorded_at: observation.recorded_at,
+                unadmitted: None,
+            }
+        }
+        crate::storage::SourceObservationRecord::Unadmitted(observation) => {
+            let change = observation.occurrence.source_change();
+            let sighting = change.and_then(|change| change.sighting());
+            let checks = observation
+                .occurrence
+                .checks()
+                .into_iter()
+                .map(|recorded| ObservedCheckRow {
+                    host_check_id: displayed(&recorded.check.host_check_id),
+                    kind: check_kind_word(recorded.check.check_kind),
+                    result: check_result_word(recorded.check.observed_result),
+                    credit: "uncredited",
+                    finished_at: recorded.check.finished_at,
+                    source_revision: recorded
+                        .check
+                        .source_basis
+                        .as_ref()
+                        .map(|basis| displayed(&basis.source_revision)),
+                    evidence_ref: recorded.check.host_evidence_ref.as_deref().map(displayed),
+                })
+                .collect();
+            WorkObservationRow {
+                observation: hash.as_str().to_owned(),
+                position,
+                admission: "unadmitted",
+                source_changed: change.is_some().then_some(true),
+                workspace: change.map(|change| displayed(change.workspace_id())),
+                revision: sighting
+                    .map(|sighting| displayed(&sighting.source_basis.source_revision)),
+                root_generation: sighting
+                    .and_then(|sighting| sighting.source_basis.source_root_generation),
+                reporting_session: identity.session(&observation.observing_session),
+                observed_at: Some(observation.observed_interval.through),
+                recorded_at: observation.recorded_at,
+                unadmitted: Some(UnadmittedObservationDetail {
+                    occurrence: occurrence_words(&observation.occurrence),
+                    observed_from: observation.observed_interval.from,
+                    observed_through: observation.observed_interval.through,
+                    cause: cause_words(&observation.causality),
+                    accounting: accounting_words(&observation.accounting),
+                    checks,
+                }),
+            }
+        }
+    }
 }
 
 impl WorkObservationWindow {
@@ -168,20 +275,7 @@ impl LocalWorkService {
             let rows = store
                 .source_observations(&selected)?
                 .into_iter()
-                .map(|(position, hash, observation)| {
-                    let basis = observation.source_basis.as_ref();
-                    WorkObservationRow {
-                        observation: hash.as_str().to_owned(),
-                        position,
-                        source_changed: observation.source_changed,
-                        workspace: basis.map(|basis| basis.workspace_id.clone()),
-                        revision: basis.map(|basis| basis.source_revision.clone()),
-                        root_generation: basis.and_then(|basis| basis.source_root_generation),
-                        reporting_session: identity.session(&observation.session_id),
-                        observed_at: observation.observed_at,
-                        recorded_at: observation.recorded_at,
-                    }
-                })
+                .map(|(position, hash, record)| observation_row(&identity, position, &hash, record))
                 .collect();
             let title = compact_text(&item.title);
             Ok(WorkObservationWindow {

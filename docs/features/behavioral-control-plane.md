@@ -765,6 +765,89 @@ artifact fingerprints), prompts for semantic capture at handoff, resolved
 denial, contradiction resolution, irreversible boundary, and freeze, and
 requires semantic content only in the existing finalization contribution.
 
+### 5b. Record execution observed without admission
+
+A host that notices execution only after it started, or a workspace change
+between turns, records it with the host-private `execution_observe`
+operation. The record is attributed history, never authority: it creates no
+grant, no begin and no turn status, renews no claim, changes no session phase
+and credits nothing. Its request carries:
+
+- `routing_token` and `idempotency_key` (trimmed, nonblank, at most 128
+  bytes);
+- `binding`: the exact `root_execution_id`, `work_id`, `run_id`,
+  `work_revision`, `claim_id` and `claim_fence` observed, never the session's
+  ambient binding;
+- `root_basis`: the `capture_run_cut` (a run-feed position), the claim's
+  `latest_event` record id (or `null`) and its `state`, exactly as
+  `named_root_read` reports them at that cut;
+- `observed_interval`: `from` and `through`, the window actually observed;
+- `occurrence`, tagged by `kind`: `unadmitted_turn` (`host_turn_ref`,
+  `source_change` or `null`, and `observed_checks`, at most 16),
+  `inter_turn_change` (`source_change`), or `observed_check`
+  (`host_turn_ref` and one `check`);
+- `causality`: `{"kind": "unknown"}` or `{"kind": "host_assertion",
+  "claimed_actor": …, "basis": …}`. There is no verified cause;
+- `policy_basis`: `{"mode": "audit_only"}`, or `account_if_eligible` with the
+  project's current `project_policy_epoch`, `policy` and
+  `obligation_rule_set`.
+
+A `source_change` is tagged by `detection`: `content_comparison` with a
+`baseline` (`workspace_id`, `source_revision`, `observed_at`) and a
+`sighting` (`source_basis`, `observed_at`) of one workspace and two different
+revisions; `assumed_missing_baseline` with a `sighting` only; or
+`watcher_only` with `workspace_id` and `observed_at` and no revision.
+`source_change: null` means only that no change is reported, never that the
+source is unchanged. A check carries `host_check_id`, `check_kind`,
+`observed_result`, optional `started_at` and `finished_at`, `observed_at`,
+an optional `source_basis` and an optional opaque `host_evidence_ref` (at
+most 2048 bytes, never fetched). A passed or failed result needs
+`finished_at`; an unfinished check is `indeterminate`. Every time lies inside
+the observed window, and the window ends no later than the record time.
+
+Engram checks the session's connection and routing token, replays an
+identical earlier request under the same session and key, and otherwise
+checks the request against the store's history at the capture cut: a
+canonical event at or before the cut must record that claim epoch on the
+bound run, whoever held it, and the root basis and any root generation a
+source basis names must be what the claim had recorded by then. A claim that
+has since expired or moved on keeps that history valid; the observing
+session need not be the claim's holder. A closing sighting that states a
+root generation must agree with the root basis: `named` at generation g
+needs the claim bound at g at the cut, and `ended` at g needs no root there
+with g's end as the claim's newest root event; a check may name any
+generation the claim had recorded by the cut. The request is bounded to 64
+KiB before it is decoded and its receipt to 16 KiB before it commits. Nothing
+is truncated. A frame over 64 KiB, malformed JSON, an unknown field at any
+depth (including inside `root_basis.state` and `claimed_actor`) or an
+unknown variant is refused as `invalid_request`; a decoded request that
+breaks a rule above, an asserted actor with any assurance but `asserted` or
+an oversized field, and a receipt over 16 KiB are refused as
+`execution_observation_invalid`; and a binding, cut or root basis the store
+does not hold as `execution_observation_basis_mismatch`. Each refusal
+records nothing. The same key with any changed fact returns
+`control_operation_idempotency_conflict`; an identical retry, including one
+over a new connection for the same session, returns the original receipt.
+
+This build records `audit_only` requests only. `account_if_eligible` is
+refused with `execution_observation_accounting_unavailable`, recording
+nothing: source-change accounting from these records is not built yet, and a
+host must not send it.
+
+The receipt says `decision: "recorded"` and carries the `observation` record
+id, its run-feed `position`, the `observing_session`, the `binding`,
+`admission: "unadmitted"`, the `causality`, the `policy_basis`, the
+`accounting` (`{"kind": "audit_only", "reason": "explicit_audit"}`), the
+`opened_obligations` (none) and, for each check, its `host_check_id` with
+`credit: "uncredited"`. The record sits on the project, root and run feeds.
+A peer's `next` shows it as `unadmitted_observation`, leading with its cause
+(`cause unknown` or `unverified cause`), its uncredited checks and its
+accounting; `show REF --observations` lists it as an unadmitted observation
+with its window, its cause, and every check as `observed check, uncredited`.
+No check in it can satisfy an obligation, mint verification evidence, count
+as a gate, be cited by an evaluation or linked at completion, or enter a
+seal's tested set.
+
 ## Freshness without constant revocation
 
 Dense positions in named project, root-work, and run-execution feeds order
@@ -1195,7 +1278,7 @@ fail-mode result; a hung hook is not an acceptable control mechanism.
 
 The shipped host channel is `session_bind`, `session_status`,
 `turn_evaluate`, `turn_begin`, `turn_checkpoint`, `named_root_bind`,
-`named_root_read`, `acceptance_binding_read` and
+`named_root_read`, `execution_observe`, `acceptance_binding_read` and
 `acceptance_verification_read`. The design named seven
 more. None is built, and no host calls them:
 
@@ -1236,7 +1319,7 @@ persisted turn decisions and short-lived grants that carry no delivery page,
 begin-time rechecks, canonical execution observations, and canonical checkpoint
 events. A separate `engram control` JSON-lines process
 implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
-`turn_checkpoint`, `named_root_bind`, `named_root_read`,
+`turn_checkpoint`, `named_root_bind`, `named_root_read`, `execution_observe`,
 `acceptance_binding_read` and `acceptance_verification_read`; none is exposed
 through agent-facing MCP. Exact retry
 evidence survives process restart, while unbegun authority is invalidated and

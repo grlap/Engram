@@ -263,7 +263,9 @@ fn collapsed_changes(
         // and the attribution can be long, so it comes after the text there.
         let line = if matches!(
             kind.as_str(),
-            "execution_observation" | "untested_source_change"
+            "execution_observation"
+                | "untested_source_change"
+                | crate::work_service::unadmitted::UNADMITTED_CHANGE_KIND
         ) {
             format!("{subject} {verb}: {}{actor}", short(text))
         } else {

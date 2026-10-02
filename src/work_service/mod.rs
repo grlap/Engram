@@ -90,6 +90,7 @@ mod propose;
 mod record_windows;
 mod service;
 mod status;
+pub(crate) mod unadmitted;
 pub(crate) use projection::shed_work_next_focus;
 pub use status::WorkCurrentStatus;
 pub(crate) use status::shorten_status_previews;
@@ -108,7 +109,9 @@ pub(crate) use evaluation_windows::MAX_ROW_VERDICTS;
 pub(crate) use evaluation_windows::{
     WorkEvaluationDetail, WorkEvaluationRow, WorkEvaluationWindow,
 };
-pub(crate) use observation_windows::{WorkObservationRow, WorkObservationWindow};
+pub(crate) use observation_windows::{
+    UnadmittedObservationDetail, WorkObservationRow, WorkObservationWindow,
+};
 pub use operations::*;
 pub(crate) use projection::*;
 pub(crate) use record_windows::{VerificationAssessmentPage, WorkRecordRow, WorkRecordWindow};
@@ -1213,6 +1216,11 @@ fn verify_staged_work_change_page(
 }
 
 fn source_actor<'a>(kind: &str, object: &'a serde_json::Value) -> Option<&'a serde_json::Value> {
+    // An unadmitted observation is attributed to the session that observed
+    // it, never to the cause it may assert.
+    if kind == "unadmitted_execution_observation" {
+        return object.get("observer");
+    }
     object.get("actor").or_else(|| {
         (kind == "work_source_proposal")
             .then(|| object.get("notice")?.get("actor"))
@@ -1509,6 +1517,28 @@ fn agent_change_object(
                 actor_id: Some(compact_text(&observation.actor.actor_id)),
                 actor_context: projected_actor_context(&observation.actor),
                 created_at: observation.observed_at.unwrap_or(observation.recorded_at),
+            }))
+        }
+        "unadmitted_execution_observation" => {
+            let observation =
+                serde_json::from_value::<crate::domain::UnadmittedExecutionObservation>(object)?;
+            let item = store.get_work_item(observation.binding.work_id)?;
+            if &observation.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "unadmitted observation is bound outside its project work item".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: observation.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(observation.binding.work_id),
+                work_ref: Some(item.short_ref),
+                revision: Some(observation.binding.work_revision),
+                change_kind: unadmitted::UNADMITTED_CHANGE_KIND.into(),
+                summary: compact_text(&unadmitted::delta_summary(&observation)),
+                actor_id: Some(compact_text(&observation.observer.actor_id)),
+                actor_context: projected_actor_context(&observation.observer),
+                created_at: observation.recorded_at,
             }))
         }
         "verification_evidence" => {

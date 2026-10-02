@@ -110,6 +110,20 @@ pub enum HostControlRequest {
         delivery_tokens: Vec<String>,
         idempotency_key: String,
     },
+    /// Records execution the host observed without admission: a turn seen
+    /// after it started, a workspace change between turns, or a check inside
+    /// such a turn. It records a fact, never a grant, a begin or a turn
+    /// result.
+    ExecutionObserve {
+        routing_token: String,
+        idempotency_key: String,
+        binding: Box<ControlWorkBinding>,
+        root_basis: Box<crate::domain::ObservationRootBasis>,
+        observed_interval: crate::domain::ObservedInterval,
+        occurrence: Box<crate::domain::ObservedOccurrence>,
+        causality: crate::domain::ObservationCausality,
+        policy_basis: Box<crate::domain::ObservationPolicyBasis>,
+    },
     TurnCheckpoint {
         routing_token: String,
         grant_id: String,
@@ -137,6 +151,7 @@ impl HostControlRequest {
             Self::AcceptanceVerificationRead { .. } => "acceptance_verification_read",
             Self::TurnEvaluate { .. } => "turn_evaluate",
             Self::TurnBegin { .. } => "turn_begin",
+            Self::ExecutionObserve { .. } => "execution_observe",
             Self::TurnCheckpoint { .. } => "turn_checkpoint",
         }
     }
@@ -420,6 +435,40 @@ impl HostControlServer {
                 now,
             )?)
             .map_err(StoreError::Json),
+            HostControlRequest::ExecutionObserve {
+                routing_token,
+                idempotency_key,
+                binding,
+                root_basis,
+                observed_interval,
+                occurrence,
+                causality,
+                policy_basis,
+            } => {
+                let mut observer = self.actor(
+                    "execution_observe",
+                    "record execution observed without admission",
+                );
+                observer.run_id = Some(binding.run_id.0.to_string());
+                serde_json::to_value(self.store.record_unadmitted_execution_observation(
+                    &self.project_id,
+                    &self.session_id,
+                    &self.connection_token,
+                    &routing_token,
+                    &observer,
+                    crate::domain::ExecutionObserveInput {
+                        idempotency_key,
+                        binding: *binding,
+                        root_basis: *root_basis,
+                        observed_interval,
+                        occurrence: *occurrence,
+                        causality,
+                        policy_basis: *policy_basis,
+                    },
+                    now,
+                )?)
+                .map_err(StoreError::Json)
+            }
             HostControlRequest::TurnCheckpoint {
                 routing_token,
                 grant_id,
@@ -602,8 +651,54 @@ fn parse_frame(frame: Result<Vec<u8>, ()>) -> Result<HostControlRequest, HostCon
         Err(()) => Err(refuse(format!(
             "host control frame exceeds {MAX_HOST_CONTROL_FRAME_BYTES} bytes"
         ))),
-        Ok(frame) => parse_host_control_request(&frame).map_err(refuse),
+        Ok(frame) => {
+            // An observation request has its own, smaller bound, checked
+            // before the request is decoded into its typed shape.
+            if frame.len() > crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES
+                && frame_operation(&frame).as_deref() == Some("execution_observe")
+            {
+                return Err(refuse(format!(
+                    "host control request \"execution_observe\" exceeds {} bytes",
+                    crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES
+                )));
+            }
+            parse_host_control_request(&frame).map_err(refuse)
+        }
     }
+}
+
+/// A frame's top-level `operation`, read without building the rest of the
+/// request: every other member is skipped as it is parsed, so an oversized
+/// body is never decoded into values. `None` for a frame that is not a JSON
+/// object or names no operation.
+fn frame_operation(frame: &[u8]) -> Option<String> {
+    struct Operation;
+    impl<'de> serde::de::Visitor<'de> for Operation {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a host control request object")
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut map: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut operation = None;
+            while let Some(key) = map.next_key::<std::borrow::Cow<'de, str>>()? {
+                if key == "operation" && operation.is_none() {
+                    operation = Some(map.next_value::<String>()?);
+                } else {
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                }
+            }
+            Ok(operation)
+        }
+    }
+    let mut deserializer = serde_json::Deserializer::from_slice(frame);
+    serde::Deserializer::deserialize_map(&mut deserializer, Operation)
+        .ok()
+        .flatten()
 }
 
 fn read_control_frame(reader: &mut impl BufRead) -> std::io::Result<Option<Result<Vec<u8>, ()>>> {
@@ -705,6 +800,11 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::InvalidControlSession(_) => "invalid_control_session",
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",
         StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
+        StoreError::ExecutionObservationInvalid(_) => "execution_observation_invalid",
+        StoreError::ExecutionObservationBasisMismatch(_) => "execution_observation_basis_mismatch",
+        StoreError::ExecutionObservationAccountingUnavailable => {
+            "execution_observation_accounting_unavailable"
+        }
         StoreError::AcceptanceBindingReadRefused { refusal, .. } => refusal.code(),
         StoreError::AcceptanceVerificationReadRefused { refusal, .. } => refusal.code(),
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
@@ -873,6 +973,275 @@ mod tests {
             cause: Box::new(cause),
         };
         assert_eq!(store_error_code(&error), "storage_error");
+    }
+
+    /// The documented `execution_observe` frame: an unadmitted turn with a
+    /// source change and one check, its cause asserted by the host.
+    fn execution_observe_frame() -> Value {
+        serde_json::json!({
+            "operation": "execution_observe",
+            "routing_token": "routing-token",
+            "idempotency_key": "termal-turn-17-observed",
+            "binding": {
+                "root_execution_id": uuid::Uuid::new_v4(),
+                "work_id": uuid::Uuid::new_v4(),
+                "run_id": uuid::Uuid::new_v4(),
+                "work_revision": 3,
+                "claim_id": uuid::Uuid::new_v4(),
+                "claim_fence": 2
+            },
+            "root_basis": {
+                "capture_run_cut": 12,
+                "latest_event": null,
+                "state": {"state": "none"}
+            },
+            "observed_interval": {
+                "from": "2026-10-02T03:00:00Z",
+                "through": "2026-10-02T03:05:00Z"
+            },
+            "occurrence": {
+                "kind": "unadmitted_turn",
+                "host_turn_ref": "termal-turn-17",
+                "source_change": {
+                    "detection": "content_comparison",
+                    "workspace_id": "workspace-A",
+                    "baseline": {
+                        "workspace_id": "workspace-A",
+                        "source_revision": "rev-a",
+                        "observed_at": "2026-10-02T03:00:00Z"
+                    },
+                    "sighting": {
+                        "source_basis": {
+                            "workspace_id": "workspace-A",
+                            "source_revision": "rev-b"
+                        },
+                        "observed_at": "2026-10-02T03:04:00Z"
+                    }
+                },
+                "observed_checks": [{
+                    "host_check_id": "cargo-test",
+                    "check_kind": "test",
+                    "observed_result": "passed",
+                    "started_at": "2026-10-02T03:01:00Z",
+                    "finished_at": "2026-10-02T03:03:00Z",
+                    "observed_at": "2026-10-02T03:03:00Z",
+                    "host_evidence_ref": "termal://check-log/17"
+                }]
+            },
+            "causality": {
+                "kind": "host_assertion",
+                "claimed_actor": {
+                    "actor_id": "greg/claude",
+                    "actor_kind": "agent",
+                    "assurance": "asserted",
+                    "run_id": null,
+                    "session_id": "session-7284",
+                    "source_tool": null,
+                    "source_skill": null,
+                    "provenance_chain": [],
+                    "reason": "the host saw the session's terminal"
+                },
+                "basis": "terminal ownership"
+            },
+            "policy_basis": {"mode": "audit_only"}
+        })
+    }
+
+    #[test]
+    fn execution_observe_frame_parses_strictly() {
+        let frame = execution_observe_frame();
+        let parsed = parse_host_control_request(&serde_json::to_vec(&frame).expect("frame"))
+            .expect("the documented frame parses");
+        assert_eq!(parsed.operation(), "execution_observe");
+        assert!(matches!(
+            parsed,
+            HostControlRequest::ExecutionObserve {
+                ref occurrence,
+                causality: crate::domain::ObservationCausality::HostAssertion { .. },
+                ref policy_basis,
+                ..
+            } if matches!(**occurrence, crate::domain::ObservedOccurrence::UnadmittedTurn { .. })
+                && **policy_basis == crate::domain::ObservationPolicyBasis::AuditOnly {}
+        ));
+        // Nothing a caller sends can claim credit, a grant or verified cause.
+        for (pointer, field, value) in [
+            (
+                "/occurrence/observed_checks/0",
+                "credit",
+                serde_json::json!("credited"),
+            ),
+            ("", "grant_id", serde_json::json!("grant-1")),
+            ("/occurrence", "turn_status", serde_json::json!("succeeded")),
+        ] {
+            let mut altered = frame.clone();
+            altered
+                .pointer_mut(pointer)
+                .and_then(Value::as_object_mut)
+                .expect("object")
+                .insert(field.into(), value);
+            let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
+                .expect_err("an unknown field is refused");
+            assert!(error.contains(field), "{error}");
+        }
+        let mut verified = frame;
+        verified["causality"] = serde_json::json!({"kind": "verified"});
+        assert!(
+            parse_host_control_request(&serde_json::to_vec(&verified).expect("frame")).is_err()
+        );
+    }
+
+    // Fields the request types reuse are as strict as the rest: an unknown
+    // field inside the root state, the asserted actor or one of its
+    // provenance links is refused, never dropped.
+    #[test]
+    fn execution_observe_refuses_unknown_nested_fields() {
+        let frame = execution_observe_frame();
+        for (pointer, field) in [
+            ("/root_basis/state", "generation_hint"),
+            ("/causality/claimed_actor", "verified_by"),
+        ] {
+            let mut altered = frame.clone();
+            altered
+                .pointer_mut(pointer)
+                .and_then(Value::as_object_mut)
+                .expect("object")
+                .insert(field.into(), serde_json::json!("x"));
+            let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
+                .expect_err("an unknown nested field is refused");
+            assert!(error.contains(field), "{error}");
+        }
+        let mut linked = frame;
+        linked["causality"]["claimed_actor"]["provenance_chain"] = serde_json::json!([
+            {"relation": "asserted_by", "source": "host", "reference": null, "weight": 1}
+        ]);
+        let error = parse_host_control_request(&serde_json::to_vec(&linked).expect("frame"))
+            .expect_err("an unknown provenance field is refused");
+        assert!(error.contains("weight"), "{error}");
+    }
+
+    // A duplicate key anywhere in the request is refused, as it is for typed
+    // fields, never collapsed to its last value.
+    #[test]
+    fn execution_observe_refuses_duplicate_nested_keys() {
+        let mut frame = execution_observe_frame();
+        frame["causality"]["claimed_actor"]["provenance_chain"] = serde_json::json!([
+            {"relation": "asserted_by", "source": "host", "reference": null}
+        ]);
+        let text = serde_json::to_string(&frame).expect("frame");
+        for (needle, doubled) in [
+            (
+                r#""state":{"state":"none"}"#,
+                r#""state":{"state":"none","state":"none"}"#,
+            ),
+            (
+                r#""actor_id":"greg/claude""#,
+                r#""actor_id":"someone-else","actor_id":"greg/claude""#,
+            ),
+            (
+                r#""relation":"asserted_by""#,
+                r#""relation":"asserted_by","relation":"asserted_by""#,
+            ),
+        ] {
+            assert_eq!(text.matches(needle).count(), 1, "{needle}");
+            let altered = text.replacen(needle, doubled, 1);
+            let error = parse_host_control_request(altered.as_bytes())
+                .expect_err("a duplicate key is refused");
+            assert!(error.contains("duplicate"), "{needle}: {error}");
+        }
+    }
+
+    // A field beside a field-less tag is refused too, and the field-less
+    // shapes serialize exactly as their tag.
+    #[test]
+    fn execution_observe_refuses_fields_beside_a_bare_tag() {
+        let frame = execution_observe_frame();
+        for (pointer, bare, extra) in [
+            (
+                "/causality",
+                serde_json::json!({"kind": "unknown"}),
+                ("basis", serde_json::json!("dropped cause")),
+            ),
+            (
+                "/policy_basis",
+                serde_json::json!({"mode": "audit_only"}),
+                ("project_policy_epoch", serde_json::json!(1)),
+            ),
+        ] {
+            let mut accepted = frame.clone();
+            *accepted.pointer_mut(pointer).expect("field") = bare.clone();
+            parse_host_control_request(&serde_json::to_vec(&accepted).expect("frame"))
+                .expect("the bare tag parses");
+            let mut altered = accepted;
+            altered
+                .pointer_mut(pointer)
+                .and_then(Value::as_object_mut)
+                .expect("object")
+                .insert(extra.0.into(), extra.1);
+            let error = parse_host_control_request(&serde_json::to_vec(&altered).expect("frame"))
+                .expect_err("a field beside a bare tag is refused");
+            assert!(error.contains(extra.0), "{error}");
+        }
+        assert_eq!(
+            serde_json::to_value(crate::domain::ObservationCausality::Unknown {}).expect("json"),
+            serde_json::json!({"kind": "unknown"})
+        );
+        assert_eq!(
+            serde_json::to_value(crate::domain::ObservationPolicyBasis::AuditOnly {})
+                .expect("json"),
+            serde_json::json!({"mode": "audit_only"})
+        );
+    }
+
+    #[test]
+    fn the_frame_discriminator_reads_only_the_operation() {
+        let frame = serde_json::to_vec(&execution_observe_frame()).expect("frame");
+        assert_eq!(
+            frame_operation(&frame).as_deref(),
+            Some("execution_observe")
+        );
+        assert_eq!(frame_operation(b"[1, 2]"), None);
+        assert_eq!(frame_operation(b"{\"routing_token\": \"r\"}"), None);
+        assert_eq!(frame_operation(b"{\"operation\": "), None);
+    }
+
+    #[test]
+    fn an_oversized_execution_observe_frame_is_refused_before_decoding() {
+        let mut frame = execution_observe_frame();
+        frame["occurrence"]["host_turn_ref"] =
+            Value::String("x".repeat(crate::domain::MAX_EXECUTION_OBSERVE_REQUEST_BYTES));
+        let bytes = serde_json::to_vec(&frame).expect("frame");
+        assert!(bytes.len() < MAX_HOST_CONTROL_FRAME_BYTES);
+        let refused = parse_frame(Ok(bytes)).expect_err("refused");
+        let HostControlResponse::Error { error } = refused else {
+            panic!("an error response");
+        };
+        assert_eq!(error.code, "invalid_request");
+        assert!(
+            error.message.contains("execution_observe"),
+            "{}",
+            error.message
+        );
+        assert!(error.message.contains("65536"), "{}", error.message);
+    }
+
+    #[test]
+    fn execution_observation_refusals_answer_with_distinct_codes() {
+        for (error, code) in [
+            (
+                StoreError::ExecutionObservationInvalid("shape".into()),
+                "execution_observation_invalid",
+            ),
+            (
+                StoreError::ExecutionObservationBasisMismatch("basis".into()),
+                "execution_observation_basis_mismatch",
+            ),
+            (
+                StoreError::ExecutionObservationAccountingUnavailable,
+                "execution_observation_accounting_unavailable",
+            ),
+        ] {
+            assert_eq!(store_error_code(&error), code);
+        }
     }
 
     #[test]

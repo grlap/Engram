@@ -15,8 +15,8 @@ mod policy_admin;
 mod project_memory;
 mod schema_diagnostics;
 mod task_memory;
+mod unadmitted_observation;
 mod work;
-pub(crate) use work::AssessedAcceptanceEvaluation;
 pub(crate) use work::BindingReadRequest;
 pub(crate) use work::VerificationReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
@@ -26,6 +26,7 @@ pub use work::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
     RecordedLanding, WorkObligationCompletionAction,
 };
+pub(crate) use work::{AssessedAcceptanceEvaluation, SourceObservationRecord};
 
 pub(crate) use project_memory::validate_context_generation;
 
@@ -1098,6 +1099,20 @@ pub enum StoreError {
     /// never a named-root state.
     #[error("named-root read refused: {0}")]
     NamedRootReadRefused(String),
+    /// An `execution_observe` request is malformed or out of bounds; nothing
+    /// was recorded.
+    #[error("execution observation is invalid: {0}")]
+    ExecutionObservationInvalid(String),
+    /// An `execution_observe` request names a binding, cut or root basis the
+    /// store's history does not hold; nothing was recorded.
+    #[error("execution observation basis does not match the store: {0}")]
+    ExecutionObservationBasisMismatch(String),
+    /// An `execution_observe` request asked for source-change accounting,
+    /// which this build does not perform yet; nothing was recorded.
+    #[error(
+        "execution observation accounting is not available in this build; send policy_basis audit_only"
+    )]
+    ExecutionObservationAccountingUnavailable,
     /// A word named no item while the session's focus is not an item it
     /// holds and it holds others: it would otherwise act on an item the
     /// caller did not mean. Nothing was recorded.

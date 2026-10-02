@@ -975,7 +975,17 @@ none.
   active, those on other workspaces included: run-feed position, record id,
   whether it reported a change, workspace, revision and root generation when
   recorded, reporting session as the display label `show` uses, and the
-  observed and recorded times. Rows are selected newest first and shown in
+  observed and recorded times. Each row says its `admission`: `admitted`
+  for a turn's own observation, `unadmitted` for one a host recorded without
+  admission ([Record execution observed without
+  admission](behavioral-control-plane.md#5b-record-execution-observed-without-admission)).
+  An unadmitted row adds what was observed and its window, its cause as
+  unknown or as the host's unverified assertion, its accounting, and every
+  check as `observed check, uncredited`. Every host-supplied value in an
+  unadmitted row is shown to at most 64 bytes once escaped, ending with its
+  stored length when shortened, so any record fits; its observed time is the window's
+  end, and a row that reports no source change carries no `source_changed`
+  value. Rows are selected newest first and shown in
   run-feed order within the 12 KiB agent budget, with exact counts and a
   continuation bound to the item, run and read cut. It is exclusive of the
   other windows, and a read that records nothing.
