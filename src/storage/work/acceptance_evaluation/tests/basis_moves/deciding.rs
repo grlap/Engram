@@ -486,6 +486,27 @@ fn the_observations_window_pages_every_observation_once() {
     assert_eq!(seen.len(), 41);
     assert!(seen.windows(2).all(|pair| pair[0] < pair[1]), "{seen:?}");
 
+    // A write elsewhere in the project leaves the run's source records, and
+    // so the window, as they were: the continuation still reads its page.
+    let token = page(None).value["observations_window"]["after"]
+        .as_str()
+        .expect("a continuation")
+        .to_owned();
+    viewer
+        .add(
+            crate::AddInput {
+                title: "Unrelated item".into(),
+                ..crate::AddInput::default()
+            },
+            at(1_000),
+        )
+        .expect("an unrelated item");
+    assert!(
+        page(Some(token)).value["observations"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+    );
+
     let foreign = viewer
         .show_records(
             &work.short_ref,

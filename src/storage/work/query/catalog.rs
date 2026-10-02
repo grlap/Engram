@@ -272,7 +272,7 @@ impl SqliteStore {
         query: &WorkCatalogQuery,
     ) -> Result<(WorkCatalogPage, usize, Vec<WorkClaim>), StoreError> {
         self.query_work_catalog_continuation(project_id, now, query, None)
-            .map(|(page, total, _, claims, _)| (page, total, claims))
+            .map(|(page, total, _, claims, _, _)| (page, total, claims))
     }
 }
 

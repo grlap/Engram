@@ -167,7 +167,7 @@ fn listing_cursor_rejects_scoped_cross_project_and_unknown_anchor() {
 }
 
 #[test]
-fn listing_cursor_refuses_fractional_expiry_and_clock_reversal() {
+fn listing_cursor_refuses_sub_millisecond_clock_reversal_and_outlives_holder_expiry() {
     let (_directory, verbs, path, _) = fixture();
     let first = add(&verbs, "First", None, false, 0);
     add(&verbs, "Second", None, false, 1);
@@ -213,14 +213,13 @@ fn listing_cursor_refuses_fractional_expiry_and_clock_reversal() {
     };
     let connection = rusqlite::Connection::open(&path).unwrap();
     let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+    // The holder's expiry changes no member of the unfiltered listing, so the
+    // continuation outlives it; each page reads holders at its own time.
     for now in [
         at(12) + fraction,
         at(12) + chrono::Duration::milliseconds(124),
     ] {
-        assert!(matches!(
-            verbs.ls(&continued, now).unwrap_err().error,
-            StoreError::WorkCatalogCursorInvalid { .. }
-        ));
+        assert!(verbs.ls(&continued, now).is_ok());
     }
     assert!(
         verbs

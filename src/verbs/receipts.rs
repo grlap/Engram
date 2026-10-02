@@ -350,11 +350,13 @@ impl VerbError {
         reason = "the fixed refusal-to-guidance table stays contiguous and exhaustively reviewable"
     )]
     pub(super) fn guidance_with_holder(&self, holder: &str) -> Guidance {
-        if let StoreError::WorkCatalogCursorInvalid { reason }
-        | StoreError::WorkShowCursorInvalid { reason } = &self.error
+        // The refusal's headline already states the reason; guidance adds
+        // only the fresh command.
+        if let StoreError::WorkCatalogCursorInvalid { .. }
+        | StoreError::WorkShowCursorInvalid { .. } = &self.error
         {
             return Guidance {
-                reminders: vec![reason.clone()],
+                reminders: Vec::new(),
                 next: vec![
                     self.listing_command
                         .as_deref()

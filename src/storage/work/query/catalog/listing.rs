@@ -36,12 +36,20 @@ impl SqliteStore {
         clippy::type_complexity,
         reason = "internal count/page reader returns its shared snapshot basis"
     )]
+    ///
+    /// An `ls` continuation carries a membership fingerprint and is checked
+    /// against the listing's complete selected sequence recomputed now: it is
+    /// refused exactly when an item entered or left the filtered set or its
+    /// order moved, including through a time transition, and never because
+    /// of an unrelated write. Compact `next`'s ready navigation reads no
+    /// complete sequence and carries none: any project write or the next
+    /// project-wide time transition refuses it.
     pub(crate) fn query_work_catalog_continuation(
         &self,
         project: &ProjectId,
         now: DateTime<Utc>,
         query: &WorkCatalogQuery,
-        expected: Option<&WorkCatalogReadCut>,
+        expected: Option<(&WorkCatalogReadCut, Option<&str>)>,
     ) -> Result<
         (
             WorkCatalogPage,
@@ -49,19 +57,27 @@ impl SqliteStore {
             usize,
             Vec<WorkClaim>,
             WorkCatalogReadCut,
+            String,
         ),
         StoreError,
     > {
         self.work_read_snapshot(|store| {
             let cut = catalog_cut(store, project, now)?;
-            if let Some(expected) = expected
-                && (cut.project_position != expected.project_position
-                    || now < expected.observed_at
-                    || expected
-                        .valid_until_ms
-                        .is_some_and(|until| now.timestamp_millis() >= until))
-            {
-                return Err(cursor_invalid("catalog changed; start a fresh listing"));
+            let membership = catalog_membership(&store.connection, project, now, query)?;
+            if let Some((expected, expected_membership)) = expected {
+                let changed = now < expected.observed_at
+                    || match expected_membership {
+                        Some(expected_membership) => membership != expected_membership,
+                        None => {
+                            cut.project_position != expected.project_position
+                                || expected
+                                    .valid_until_ms
+                                    .is_some_and(|until| now.timestamp_millis() >= until)
+                        }
+                    };
+                if changed {
+                    return Err(cursor_invalid("catalog changed; start a fresh listing"));
+                }
             }
             if let Some((encoded, after)) = ready_seek_key(query)?
                 && current_work_priority(&store.connection, after)? != Some(encoded)
@@ -90,9 +106,53 @@ impl SqliteStore {
                     claims.push(claim);
                 }
             }
-            Ok((page, total, preceding, claims, cut))
+            Ok((page, total, preceding, claims, cut, membership))
         })
     }
+}
+
+/// A content fingerprint of the listing's complete selected sequence at
+/// `now`: every matching work id in listing order, with its priority under
+/// ready order. It compares two readings of one listing and is never stored.
+fn catalog_membership(
+    connection: &Connection,
+    project: &ProjectId,
+    now: DateTime<Utc>,
+    query: &WorkCatalogQuery,
+) -> Result<String, StoreError> {
+    let (sql, parameters) = work_catalog_sql(project, now, query, false)?;
+    let ready = ready_listing_order(query);
+    let order = if ready {
+        "priority, work_id"
+    } else {
+        "work_id"
+    };
+    let count = "SELECT COUNT(*) FROM classified";
+    if !sql.contains(count) {
+        return Err(StoreError::InvalidWorkProjection(
+            "catalog query lost its count selection; the membership scan cannot be derived".into(),
+        ));
+    }
+    let sql = format!(
+        "{} ORDER BY {order}",
+        sql.replace(count, "SELECT work_id, priority FROM classified")
+    );
+    let mut statement = connection.prepare(&sql)?;
+    let mut rows = statement.query(rusqlite::params_from_iter(parameters.iter()))?;
+    let mut sequence = String::new();
+    while let Some(row) = rows.next()? {
+        let work: String = row.get(0)?;
+        sequence.push_str(&work);
+        if ready {
+            let priority: i64 = row.get(1)?;
+            sequence.push(':');
+            sequence.push_str(&priority.to_string());
+        }
+        sequence.push('\n');
+    }
+    Ok(crate::ObjectId::from_canonical_bytes(sequence.as_bytes())
+        .as_str()
+        .to_owned())
 }
 
 fn catalog_cut(

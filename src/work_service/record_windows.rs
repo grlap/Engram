@@ -130,18 +130,13 @@ impl LocalWorkService {
             if kind == WorkRecordKind::Notes {
                 index.retain(|entry| entry.record_family != WorkRecordFamily::Gates);
             }
+            // The window's records are immutable and only ever appended, so
+            // the selected total and the boundary record decide whether the
+            // remaining rows are still the ones the first page announced; a
+            // write elsewhere in the project does not move them.
             let end = if let Some(cursor) = &cursor {
-                if cut.project_position != cursor.cut.project_position
-                    || now < cursor.cut.observed_at
-                    || cursor
-                        .cut
-                        .valid_until_ms
-                        .is_some_and(|until| now.timestamp_millis() >= until)
-                    || cursor.total != index.len()
-                {
-                    return Err(invalid(
-                        "show read cut changed or expired; start a fresh window",
-                    ));
+                if now < cursor.cut.observed_at || cursor.total != index.len() {
+                    return Err(invalid("the window changed; start a fresh window"));
                 }
                 index
                     .iter()

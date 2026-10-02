@@ -280,7 +280,7 @@ fn record_windows_oversized_body_has_a_complete_detail_and_does_not_hide_older_n
 }
 
 #[test]
-fn record_windows_refuse_wrong_kind_item_anchor_read_cut_and_note_locator() {
+fn record_windows_refuse_wrong_kind_item_anchor_changed_window_and_note_locator() {
     let (_directory, verbs, path, project) = fixture();
     let work = add(&verbs, "Cursor basis", None, false, 0);
     let other = add(&verbs, "Other item", None, false, 1);
@@ -367,7 +367,26 @@ fn record_windows_refuse_wrong_kind_item_anchor_read_cut_and_note_locator() {
     assert!(
         matches!(error.error, StoreError::WorkShowCursorInvalid { reason } if reason.contains("boundary"))
     );
-    note(&verbs, &work, "Changed cut", 21);
+    // A write elsewhere in the project leaves this item's window as it was.
+    note(&verbs, &other, "Unrelated write", 21);
+    let continued = verbs
+        .show_records(
+            &work,
+            &ShowInput {
+                notes: true,
+                after: Some(token.clone()),
+                ..ShowInput::default()
+            },
+            at(22),
+        )
+        .expect("an unrelated write keeps the window");
+    assert!(
+        continued.value["notes"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+    );
+    // A new note on this item changes the window's records.
+    note(&verbs, &work, "Changed window", 23);
     let error = verbs
         .show_records(
             &work,
@@ -376,11 +395,19 @@ fn record_windows_refuse_wrong_kind_item_anchor_read_cut_and_note_locator() {
                 after: Some(token),
                 ..ShowInput::default()
             },
-            at(22),
+            at(24),
         )
         .unwrap_err();
     assert!(
-        matches!(error.error, StoreError::WorkShowCursorInvalid { reason } if reason.contains("cut"))
+        matches!(&error.error, StoreError::WorkShowCursorInvalid { reason } if reason.contains("window changed")),
+        "{:?}",
+        error.error
+    );
+    // The reason is stated once: in the refusal, not again as a reminder.
+    assert!(
+        error.guidance().reminders.is_empty(),
+        "{:?}",
+        error.guidance()
     );
     assert!(
         SqliteStore::open(path)
@@ -534,7 +561,7 @@ fn record_windows_read_legacy_large_members_and_reject_new_large_restored_notes(
 }
 
 #[test]
-fn record_windows_refuse_expired_fractional_cuts_and_keep_detail_canonical() {
+fn record_windows_refuse_clock_reversal_outlive_claim_expiry_and_keep_detail_canonical() {
     let (_directory, verbs, path, project) = fixture();
     let work = add(&verbs, "Time cut", None, false, 0);
     for index in 0..8 {
@@ -574,13 +601,16 @@ fn record_windows_refuse_expired_fractional_cuts_and_keep_detail_canonical() {
         ..ShowInput::default()
     };
     assert!(input.after.is_some());
-    for time in [observed - chrono::Duration::microseconds(1), at(70)] {
-        let error = verbs.show_records(&work, &input, time).unwrap_err();
-        assert!(matches!(
-            error.error,
-            StoreError::WorkShowCursorInvalid { .. }
-        ));
-    }
+    // A clock that moved back refuses; the claim's expiry, which changes no
+    // record of this window, does not.
+    let error = verbs
+        .show_records(&work, &input, observed - chrono::Duration::microseconds(1))
+        .unwrap_err();
+    assert!(matches!(
+        error.error,
+        StoreError::WorkShowCursorInvalid { .. }
+    ));
+    assert!(verbs.show_records(&work, &input, at(70)).is_ok());
     let locator = first.value["notes"].as_array().unwrap().last().unwrap()["locator"]
         .as_str()
         .unwrap();

@@ -2660,8 +2660,14 @@ test("MCP scoped listing continuation shares the CLI cursor contract", async (t)
     structuredError(await client.call("ls", { optional: true }), "work_invalid");
     const mismatch = structuredError(await client.call("ls", { ...args, required: true, optional: false, after: first.after }), "work_catalog_cursor_invalid");
     assert.ok(mismatch.next[0].includes("--required"));
+    // An unrelated root moves the project feed but not this listing.
     await client.call("add", { title: "Advance cut" });
+    assert.deepEqual(receipt(await client.call("ls", { ...args, after: first.after })).items, second.items);
+    // A new optional child enters the listing: the continuation is refused,
+    // stating its reason once.
+    await client.call("add", { title: "Late child", under: parent, optional: true });
     const stale = structuredError(await client.call("ls", { ...args, after: first.after }), "work_catalog_cursor_invalid");
+    assert.equal(stale.message.match(/catalog changed/gu)?.length, 1, stale.message);
     assert.equal(stale.next.length, 1);
     assert.doesNotMatch(stale.next[0], /--after/u);
   } finally {

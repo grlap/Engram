@@ -798,7 +798,9 @@ final byte fitting on the first page. Later pages also report `shown_before`;
 `omitted` is the exact remainder after that prior prefix and the current rows.
 The footer includes the active limit and byte ceiling. Continuation is a
 `ls --after CURSOR` token bound to the last emitted key, normalized
-filters, project, and a project-feed read cut. Ordinary catalog ordering
+filters, project, the observed time, and a fingerprint of the listing's
+complete selected sequence: every matching item in listing order, with its
+priority under ready order. Ordinary catalog ordering
 remains ascending work id; `ls --ready` uses priority then work id. Neither
 is a dense feed ordering or an execution cursor.
 The token is opaque to the caller but not confidential: it encodes readable
@@ -806,13 +808,24 @@ filters, project and session context, without encryption. It is navigation,
 not authentication, and creates no server-side state or canonical object.
 Oversized continuation metadata refuses explicitly rather than emitting a
 false zero-row page; the error gives the fresh same-filter command and asks
-the caller to shorten filters. Any project-feed advance, clock reversal, or
-crossing a project claim/handoff expiry or deferral boundary refuses with
-`work_catalog_cursor_invalid` and a fresh same-filter command. This deliberately
-conservative restart includes unrelated project notes and the entire
-millisecond containing a time boundary; the observed time retains
-sub-millisecond precision. Focus-only reads do not invalidate it. Count,
-cursor validation, page and holders share one snapshot.
+the caller to shorten filters. A continuation recomputes that sequence at
+the current time in the same snapshot as its page and is refused with
+`work_catalog_cursor_invalid` and a fresh same-filter command exactly when
+the sequence changed: an item entered or left the filtered set, an equal
+count of items was replaced, or the order moved, including through a time
+transition such as a deferral ending or a claim expiring under `--ready` or
+`--mine`. A reversed clock refuses too. A write that changes no member or
+order, such as a note on any item or a new item outside the filters, does
+not refuse, and neither does a focus-only read. Restarting costs one fresh
+listing with the same filters; rows already read may appear again. Holder
+words are read at each page's own time. Compact `next`'s ready navigation
+mints its continuation without a fingerprint and keeps the conservative
+basis: any project-feed advance, or crossing a project claim/handoff expiry
+or deferral boundary (including the whole millisecond containing it, since
+the observed time retains sub-millisecond precision), refuses it. Every
+token names its basis; one an earlier build minted names none and is refused
+with fresh navigation. Count, cursor validation, page and holders share one
+snapshot.
 `ls --under PARENT` selects direct children only; `--optional` or `--required`
 narrow that scope and require the parent. Both switches together are refused.
 Ambient catalogs remain count-free and keep their existing keyset contract.
@@ -1415,14 +1428,23 @@ the presence of `history.window` distinguishes them from compact change
 rows. Shortened inherited-note summaries retain the original `body_bytes`
 and expose `summary_truncated` with a complete-note `detail` command.
 The stateless cursor binds item,
-project, kind, member locator, order and the shared listing read cut. Changed
-feeds, reversed clocks and time-boundary expiry refuse with fresh navigation.
+project, kind, member locator, order, the window's selected total and the
+observed time. The window's records are immutable and only appended, so a
+new record in it (which changes the total), a missing boundary or a reversed
+clock refuses with fresh navigation; a write elsewhere in the project and
+a time boundary, which change none of its records, do not. A continuation
+page's header (the item's focus facts, family totals and the reflected read
+cut) is read at that page's own time; only its rows continue the first
+page's selection.
 The encoded context is readable, not confidential or authoritative.
 `show REF --evaluations [--after CURSOR]` is the same kind of window over the
 acceptance-evaluation records of the item's active run, or of its latest run
 once none is active. It uses the same selection, order, exact counts and read
-cut, with its own cursor also bound to the run and the acceptance policy,
-which a new run, record or policy invalidates. Its rows carry each record's
+cut, with its own cursor also bound to the run, the run's feed head, the
+item's revision and the acceptance policy: each row's stale reason is judged
+from the run's records and the item's revision, so a new run, any new record
+on the run, a revision or a policy change invalidates it, while a write
+elsewhere in the project does not. Its rows carry each record's
 id, run position, mode, evaluator session label, attempt key, created time,
 work revision and bounded verdict words. They also carry the record's own
 stale reason at the read, what it supersedes, and whether it is the newest.

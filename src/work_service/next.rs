@@ -576,6 +576,7 @@ impl LocalWorkService {
                             &cut,
                             row.work.work_id,
                             row.work.priority,
+                            None,
                         )?,
                     ))
                 } else {

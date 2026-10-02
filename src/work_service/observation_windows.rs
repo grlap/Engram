@@ -245,17 +245,11 @@ impl LocalWorkService {
                         "the item's run changed; start a fresh observations window",
                     ));
                 }
-                if cut.project_position != cursor.cut.project_position
-                    || now < cursor.cut.observed_at
-                    || cursor
-                        .cut
-                        .valid_until_ms
-                        .is_some_and(|until| now.timestamp_millis() >= until)
-                    || cursor.total != entries.len()
-                {
-                    return Err(invalid(
-                        "show read cut changed or expired; start a fresh window",
-                    ));
+                // The run's source records are only ever appended: its
+                // total and the boundary record decide the remaining rows,
+                // whatever was written elsewhere in the project.
+                if now < cursor.cut.observed_at || cursor.total != entries.len() {
+                    return Err(invalid("the window changed; start a fresh window"));
                 }
                 entries
                     .iter()

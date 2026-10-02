@@ -607,11 +607,11 @@ Rules that matter:
   shortened. The detail read returns the complete note, not that summary.
   Ordinary show advertises this history reader. Notes and history are mutually
   exclusive; `after` requires one of them, and `gates` requires `notes`.
-  A cursor binds item, project, kind,
-  immutable boundary/member, order and read cut. Mismatches, changed project
-  feeds, reversed clocks and crossed time boundaries refuse with
-  `work_show_cursor_invalid` and a fresh same-kind command. The cut uses the
-  listing reader's conservative boundary-millisecond policy. Tokens encode
+  A cursor binds item, project, kind, immutable boundary/member, order, the
+  window's selected total and the observed time. A new record in the window,
+  a missing boundary, a mismatch or a reversed clock refuses with
+  `work_show_cursor_invalid` and a fresh same-kind command; a write elsewhere
+  in the project does not. The refusal states its reason once. Tokens encode
   readable context, are not confidential, and grant no authority.
 - Every full-note row prints a copyable `locator`. Native notes accept a unique
   prefix of the record's id, at least eight hex digits of an id of 32 or 64;
@@ -697,18 +697,25 @@ Rules that matter:
   by this session, counted once before limiting. The default limit is 20
   (explicit limits clamp to 1–1000). The complete text and JSON receipts,
   including footer and continuation, fit 12 KiB. The footer names the active
-  `limit` and `byte_budget` (12288 bytes). Nonempty truncated pages include an
+  `limit` and `byte_budget` (12288 bytes). A continuation is refused only
+  when the listing's membership or order changed since its page
+  ([local work](local-work-system.md)), and the refusal states its reason
+  once. Nonempty truncated pages include an
   `after` token and one `next` command repeating all filters and the
   active limit with `--after CURSOR`; MCP `ls` accepts the same `after` value.
   The cursor names the last row actually emitted, including after byte fitting.
   `shown_before` counts the prior prefix; `omitted` is the remaining total after
   that prefix plus this page, and `more` is true exactly when some remain.
   Ordinary listings stay ascending work id. `ls --ready` uses priority then
-  work id, matching compact `next`. A changed project feed, expired time basis,
-  reversed clock, malformed cursor, or different filters/project returns
-  `work_catalog_cursor_invalid` with a fresh same-filter command, never a silent
-  restart. Unrelated project notes also advance the feed; focus-only reads do
-  not. Tokens are opaque to the caller, not confidential: they encode readable
+  work id, matching compact `next`. A changed membership or order (an item
+  entering or leaving the filtered set, an equal-count replacement, a priority
+  move or a time transition that changes either), a reversed clock, a
+  malformed cursor or one without its basis, or different filters/project
+  returns `work_catalog_cursor_invalid` with a fresh same-filter command, never
+  a silent restart. Unrelated project notes and other writes that change no
+  member or order do not, and neither do focus-only reads. Only a token minted
+  by compact `next`'s ready navigation keeps the conservative basis, where any
+  project-feed advance or crossed time boundary refuses it. Tokens are opaque to the caller, not confidential: they encode readable
   filters, project and session context. They are not encrypted, authenticated,
   or execution authority, and have no server-side state. Avoid sharing them
   when that query context is sensitive. Filter text must be single-line and

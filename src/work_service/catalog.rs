@@ -18,6 +18,19 @@ struct ListingCursor {
     after: WorkId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     after_priority: Option<i32>,
+    basis: ListingBasis,
+}
+
+/// What a continuation is checked against. A token without one is refused.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ListingBasis {
+    /// `ls`: the fingerprint of the listing's complete selected sequence
+    /// when the page was read; a continuation is refused when it differs.
+    Membership { fingerprint: String },
+    /// Compact `next`'s ready navigation, which reads no complete sequence:
+    /// any project write or the next project-wide time transition refuses.
+    ProjectCut {},
 }
 
 /// Normalized listing filters without the wire-nulls and zeroed seek fields
@@ -45,6 +58,15 @@ struct ListingFilters {
     child_requirement: Option<ChildRequirement>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     ready_priority_order: bool,
+}
+
+impl ListingBasis {
+    fn fingerprint(&self) -> Option<&str> {
+        match self {
+            Self::Membership { fingerprint } => Some(fingerprint),
+            Self::ProjectCut {} => None,
+        }
+    }
 }
 
 fn listing_filters_are_empty(filters: &ListingFilters) -> bool {
@@ -94,6 +116,7 @@ pub(crate) struct WorkListingPage {
     project: ProjectId,
     filters: WorkCatalogQuery,
     cut: WorkCatalogReadCut,
+    membership: String,
 }
 
 impl WorkListingPage {
@@ -109,17 +132,21 @@ impl WorkListingPage {
             &self.cut,
             after,
             after_priority,
+            Some(&self.membership),
         )
     }
 }
 
-/// Filters must already be normalized by the query's owner.
+/// Filters must already be normalized by the query's owner. `membership` is
+/// the listing's sequence fingerprint, or `None` for compact `next`'s
+/// project-cut basis.
 pub(super) fn listing_continuation(
     project: &ProjectId,
     filters: &WorkCatalogQuery,
     cut: &WorkCatalogReadCut,
     after: WorkId,
     after_priority: i32,
+    membership: Option<&str>,
 ) -> Result<String, StoreError> {
     let cursor = ListingCursor {
         project: project.clone(),
@@ -127,6 +154,11 @@ pub(super) fn listing_continuation(
         cut: cut.clone(),
         after,
         after_priority: filters.ready_priority_order.then_some(after_priority),
+        basis: membership.map_or(ListingBasis::ProjectCut {}, |fingerprint| {
+            ListingBasis::Membership {
+                fingerprint: fingerprint.to_owned(),
+            }
+        }),
     };
     encode_listing_bytes(&serde_json::to_vec(&cursor)?).ok_or_else(|| {
         invalid("listing continuation metadata is too large; shorten search, label or parent scope")
@@ -170,12 +202,15 @@ impl LocalWorkService {
                 query.after = Some(cursor.after);
                 query.after_priority = cursor.after_priority;
             }
-            let (page, total, preceding, claims, cut) = store.query_work_catalog_continuation(
-                &self.project_id,
-                now,
-                &query,
-                cursor.as_ref().map(|cursor| &cursor.cut),
-            )?;
+            let (page, total, preceding, claims, cut, membership) = store
+                .query_work_catalog_continuation(
+                    &self.project_id,
+                    now,
+                    &query,
+                    cursor
+                        .as_ref()
+                        .map(|cursor| (&cursor.cut, cursor.basis.fingerprint())),
+                )?;
             Ok(WorkListingPage {
                 items: page
                     .items
@@ -193,6 +228,7 @@ impl LocalWorkService {
                 project: self.project_id.clone(),
                 filters,
                 cut,
+                membership,
             })
         })
     }
@@ -371,6 +407,7 @@ mod listing_cursor_tests {
             &sample_cut(),
             sample_after(),
             after_priority,
+            Some("sample-membership"),
         )
         .expect("dense token");
         let decoded = decode_cursor(&token).expect("roundtrip");
@@ -380,6 +417,31 @@ mod listing_cursor_tests {
             decoded.after_priority,
             filters.ready_priority_order.then_some(after_priority)
         );
+        assert_eq!(decoded.basis.fingerprint(), Some("sample-membership"));
+    }
+
+    // A token without its basis, as an earlier build minted, is refused
+    // rather than read on another basis.
+    #[test]
+    fn listing_cursor_without_a_basis_is_refused() {
+        let token = listing_continuation(
+            &ProjectId("customer-workflow".into()),
+            &sample_filters(),
+            &sample_cut(),
+            sample_after(),
+            3,
+            Some("sample-membership"),
+        )
+        .expect("dense token");
+        let mut cursor: serde_json::Value =
+            serde_json::from_slice(&decode_listing_bytes(&token).expect("bytes")).expect("json");
+        cursor.as_object_mut().expect("object").remove("basis");
+        let legacy =
+            encode_listing_bytes(&serde_json::to_vec(&cursor).expect("json")).expect("token");
+        assert!(matches!(
+            decode_cursor(&legacy),
+            Err(StoreError::WorkCatalogCursorInvalid { .. })
+        ));
     }
 
     #[test]

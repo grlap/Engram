@@ -427,7 +427,15 @@ test("scoped listing continuation is bounded and stale cursors refuse through CL
     }
     assert.deepEqual(actual, expected);
     assert.deepEqual(json("ls", "--under", parent, "--required").items.map(({ ref }) => ref), [required]);
+    // An unrelated root moves the project feed but not this listing: the
+    // continuation still reads its next page.
     json("add", "Moves the project cut");
+    assert.deepEqual(
+      json("ls", ...filters, "--after", first.after).items.map(({ work }) => work.short_ref),
+      expected.slice(5, 10),
+    );
+    // A new match enters the listing: the continuation is refused.
+    json("add", "Match late", "--under", parent, "--optional", "--label", "scope");
     const stale = run([...context, "ls", ...filters, "--after", first.after, "--json"]);
     assert.notEqual(stale.status, 0);
     const error = JSON.parse(stale.stderr).error;

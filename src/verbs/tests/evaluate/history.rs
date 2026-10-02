@@ -375,6 +375,40 @@ fn the_window_pages_every_record_and_refuses_a_stale_cursor() {
     }
     assert_eq!(seen, records, "every record once, in run-feed order");
 
+    // A write elsewhere in the project moves neither the run's records nor
+    // the item's revision: the cursor still reads its page.
+    fixture
+        .verbs
+        .add(
+            AddInput {
+                title: "Unrelated item".into(),
+                ..AddInput::default()
+            },
+            at(35),
+        )
+        .expect("an unrelated item");
+    fixture
+        .window(Some(after.clone()), 36)
+        .expect("an unrelated write keeps the window");
+    // A gate on the run is evidence the rows' freshness is judged from:
+    // the run's head moves and the cursor is refused, though no evaluation
+    // was added.
+    fixture
+        .verbs
+        .gate(
+            GateInput {
+                work_ref: Some(fixture.work_ref.clone()),
+                name: "cargo-clippy".into(),
+                failed: Vec::new(),
+                evidence_ref: None,
+            },
+            at(37),
+        )
+        .expect("a later gate");
+    assert!(matches!(
+        fixture.window(Some(after.clone()), 38).unwrap_err().error,
+        StoreError::WorkShowCursorInvalid { .. }
+    ));
     fixture.evaluate(1, &["pass"], 40);
     let refused = fixture
         .window(Some(after), 41)

@@ -28,6 +28,11 @@ struct EvaluationCursor {
     policy: crate::domain::AcceptanceEvaluationPolicy,
     position: i64,
     evaluation: ObjectId,
+    /// The run's feed head and the item's revision when the page was read.
+    /// Each row's freshness is judged from the run's records and the item's
+    /// revision, so either moving refuses the cursor; a write elsewhere in
+    /// the project does not.
+    basis: (i64, i64),
 }
 
 /// Newest-first rows of one run's evaluation records. Total and newer count
@@ -49,6 +54,7 @@ pub(crate) struct WorkEvaluationWindow {
     run: Option<WorkRunId>,
     cut: WorkCatalogReadCut,
     policy: crate::domain::AcceptanceEvaluationPolicy,
+    basis: (i64, i64),
 }
 
 /// One evaluation record as the window lists it.
@@ -122,6 +128,7 @@ impl WorkEvaluationWindow {
                 policy: self.policy.clone(),
                 position: row.position,
                 evaluation,
+                basis: self.basis,
             },
         )
         .map(Some)
@@ -171,6 +178,12 @@ impl LocalWorkService {
                 Some(history) => (Some(history.run_id), history.active, history.entries),
                 None => (None, true, Vec::new()),
             };
+            let basis = (
+                run.map_or(Ok(0), |run| {
+                    store.work_feed_head(&FeedId::RunExecution(run))
+                })?,
+                item.revision,
+            );
             let end = if let Some(cursor) = &cursor {
                 if run != Some(cursor.run) {
                     return Err(invalid(
@@ -182,17 +195,11 @@ impl LocalWorkService {
                         "the acceptance policy changed; start a fresh evaluations window",
                     ));
                 }
-                if cut.project_position != cursor.cut.project_position
+                if cursor.basis != basis
                     || now < cursor.cut.observed_at
-                    || cursor
-                        .cut
-                        .valid_until_ms
-                        .is_some_and(|until| now.timestamp_millis() >= until)
                     || cursor.total != entries.len()
                 {
-                    return Err(invalid(
-                        "show read cut changed or expired; start a fresh window",
-                    ));
+                    return Err(invalid("the window changed; start a fresh window"));
                 }
                 entries
                     .iter()
@@ -239,6 +246,7 @@ impl LocalWorkService {
                 run,
                 cut,
                 policy,
+                basis,
             })
         })
     }
