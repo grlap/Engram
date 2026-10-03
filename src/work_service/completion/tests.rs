@@ -6,6 +6,7 @@ use chrono::Duration;
 
 mod historical;
 mod identity;
+mod late_note_parity;
 mod restored;
 mod untested;
 

@@ -270,6 +270,39 @@ impl LocalWorkService {
             )?;
             return Ok(result);
         }
+        // A restored late note committed before an interrupted response is
+        // recovered under the same key when its content is this intent's;
+        // its stored request holds the original time, so a fresh capture
+        // would conflict instead of replaying.
+        if let Some(work) = attempt
+            .basis
+            .as_ref()
+            .map(|basis| serde_json::from_value::<WorkProtocolBasis>(basis.clone()))
+            .transpose()?
+            .and_then(|durable| durable.focused_work)
+            && let Some(evidence) = store.recover_restored_work_note(
+                &scoped_key,
+                work.work_id,
+                status,
+                summary,
+                refs,
+            )?
+        {
+            let capture = WorkNoteCapture {
+                non_holder: false,
+                evidence,
+                checkpoint: None,
+            };
+            let result = self.work_note_result(&store, work.work_id, &capture, now)?;
+            store.finish_work_protocol_attempt(
+                &self.project_id,
+                &self.session_id,
+                protocol_operation,
+                &raw_key,
+                &result,
+            )?;
+            return Ok(result);
+        }
         ensure_protocol_basis(basis_matches, protocol_operation, &raw_key, false)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("note attempt has no bound focused work".into())

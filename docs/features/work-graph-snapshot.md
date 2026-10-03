@@ -328,8 +328,13 @@ lands, or nothing does.
   appends a new observation, including an identical repeated call, chained
   to the prior same-name gate, without durable retry bookkeeping. After an
   uncertain response, inspect `show` before repeating it: another call is
-  another observation. Native gate and restored note retry semantics are
-  unchanged. `show`
+  another observation. Native gate retry semantics are unchanged. A late
+  `note` repeats exactly as on a natively completed item: an identical
+  repeat replays the same note and appends nothing. A note whose response
+  was lost after it committed is recovered on retry, even later, when the
+  stored note has the retry's content (item, status, summary and refs);
+  stored content that differs under that key is refused, never adopted.
+  `show`
   renders records oldest first with each entry's original `ActorContext`, and
   `doctor` verifies them like any other canonical object.
 - **A completed item lands completed**, its proof being the completion

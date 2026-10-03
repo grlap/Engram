@@ -403,6 +403,67 @@ impl SqliteStore {
         Ok(hash)
     }
 
+    /// The restored late note already committed under `idempotency_key`, for
+    /// an attempt interrupted before its response. The stored request also
+    /// holds the original time, so the note is matched by its content
+    /// instead: the same item, status, summary and refs as the retry, both
+    /// normalized as a capture stores them. A note under that key with other
+    /// content is refused, never adopted.
+    pub(crate) fn recover_restored_work_note(
+        &self,
+        idempotency_key: &str,
+        work_id: WorkId,
+        status: bool,
+        summary: &str,
+        refs: &[String],
+    ) -> Result<Option<ObjectId>, StoreError> {
+        const OPERATION: &str = "record_restored_work_evidence";
+        /// What a restored note holds that its retry must repeat.
+        #[derive(Serialize)]
+        struct NoteContent<'a> {
+            work_id: WorkId,
+            gate: bool,
+            status: bool,
+            summary: &'a str,
+            refs: &'a [String],
+        }
+        let Some(result) = self.work_operation_result_value(OPERATION, idempotency_key)? else {
+            return Ok(None);
+        };
+        let evidence_id: ObjectId = serde_json::from_value(result)?;
+        let evidence: RestoredWorkEvidence = super::feeds::load_typed_work_object(
+            &self.connection,
+            &evidence_id,
+            "work_restored_evidence",
+        )?;
+        let fingerprint = |content: &NoteContent<'_>| {
+            CanonicalObject::freeze(content).map(|object| object.key().clone())
+        };
+        let retry_summary = super::planning::normalize_note_text(summary, "note summary")?;
+        let retry_refs = normalize_strings(refs);
+        let stored_fingerprint = fingerprint(&NoteContent {
+            work_id: evidence.work_id,
+            gate: evidence.gate.is_some(),
+            status: crate::domain::status_note_role(&evidence.actor).is_some(),
+            summary: &evidence.summary,
+            refs: &evidence.refs,
+        })?;
+        let retry_fingerprint = fingerprint(&NoteContent {
+            work_id,
+            gate: false,
+            status,
+            summary: &retry_summary,
+            refs: &retry_refs,
+        })?;
+        if stored_fingerprint != retry_fingerprint {
+            return Err(StoreError::WorkOperationIdempotencyConflict {
+                operation: OPERATION.into(),
+                key: idempotency_key.into(),
+            });
+        }
+        Ok(Some(evidence_id))
+    }
+
     /// Atomically claims ready work, renews a live claim held by the caller,
     /// or recovers an expired/released claim. Only a nonempty explicit key
     /// requests exact replay; a keyless call is a fresh claim/renewal.
