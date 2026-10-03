@@ -1,4 +1,4 @@
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use super::super::{SchemaDurability, SchemaOwner, StoreError};
 use super::CURRENT_WORK_SCHEMA_VERSION;
@@ -487,9 +487,13 @@ pub(in crate::storage) fn initialize_schema(
     Ok(())
 }
 
+/// Rebuilds every local-work projection that repair owns. A restored record
+/// or restored evidence that cannot be projected is left out and named in
+/// the returned findings, so the caller refuses the whole repair and rolls
+/// it back with every such record listed.
 pub(in crate::storage) fn repair_rebuildable_schema_on(
     connection: &Connection,
-) -> Result<bool, StoreError> {
+) -> Result<Vec<String>, StoreError> {
     preflight_schema(connection, false)?;
     for (_, object) in REBUILDABLE_WORK_SCHEMA_OBJECTS {
         super::super::drop_schema_object(connection, object)?;
@@ -597,8 +601,8 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_items(project_id, work_id);",
     )?;
     super::observation::create_schema(connection)?;
-    rebuild_restored_projections_on(connection)?;
-    super::observation::rebuild(connection)?;
+    let mut restored_findings = rebuild_restored_projections_on(connection)?;
+    restored_findings.extend(super::observation::rebuild(connection)?);
     connection.execute("DELETE FROM work_catalog_fts", [])?;
     connection.execute(
         "INSERT INTO work_catalog_fts (work_id, search_text)
@@ -619,10 +623,47 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
             "explicit local-work projection repair did not restore the current schema".into(),
         ));
     }
-    Ok(true)
+    Ok(restored_findings)
 }
 
-fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreError> {
+/// Inserts one restored projection row, or names why it cannot hold: a
+/// constraint the row breaks is a finding about that record; any other
+/// failure, such as a busy or failing database, is an error.
+fn insert_restored_row(
+    connection: &Connection,
+    sql: &str,
+    params: &[&dyn rusqlite::ToSql],
+    label: &str,
+    findings: &mut Vec<String>,
+) -> Result<bool, StoreError> {
+    match connection.execute(sql, params) {
+        Ok(_) => Ok(true),
+        Err(error)
+            if error.sqlite_error_code() == Some(rusqlite::ErrorCode::ConstraintViolation) =>
+        {
+            findings.push(format!("{label}:projection_constraint"));
+            Ok(false)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Rebuilds the restored-record and restored-evidence projections from their
+/// canonical objects. A record that cannot be projected (it does not decode,
+/// its generation is out of range, its work item is missing, or its row breaks
+/// a constraint) is left out and named as a typed finding, and every other
+/// record is still rebuilt, so the findings are complete; the caller refuses
+/// and rolls back. Only a failure that is no finding about a record, such as
+/// a busy or failing database, is returned as an error.
+fn rebuild_restored_projections_on(connection: &Connection) -> Result<Vec<String>, StoreError> {
+    let mut findings = Vec::new();
+    let item_exists = |work_id: &str| -> Result<bool, StoreError> {
+        Ok(connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_items WHERE work_id = ?1)",
+            [work_id],
+            |row| row.get::<_, bool>(0),
+        )?)
+    };
     let mut statement = connection.prepare(
         "SELECT object_id, canonical_json FROM objects
          WHERE object_kind = ?1 ORDER BY object_id",
@@ -633,21 +674,38 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreE
         })?
         .collect::<Result<Vec<_>, _>>()?;
     for (stored_hash, bytes) in restored_records {
-        let hash = ObjectId::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
-        let record: RestoredRecord = CanonicalObject::stored(&hash, bytes)?.decode()?;
-        connection.execute(
+        let label = format!("work_restored_record:{stored_hash}");
+        let Some(hash) = ObjectId::from_stored(stored_hash) else {
+            findings.push(format!("{label}:invalid_id"));
+            continue;
+        };
+        let record: RestoredRecord =
+            match CanonicalObject::stored(&hash, bytes).and_then(|object| object.decode()) {
+                Ok(record) => record,
+                Err(error) => {
+                    findings.push(crate::storage::decode_failure_label(
+                        format!("{label}:decode"),
+                        &error,
+                    ));
+                    continue;
+                }
+            };
+        let Ok(generation) = i64::try_from(record.generation_index) else {
+            findings.push(format!("{label}:generation_out_of_range"));
+            continue;
+        };
+        let work_id = record.work_id.0.to_string();
+        if !item_exists(&work_id)? {
+            findings.push(format!("{label}:missing_item"));
+            continue;
+        }
+        insert_restored_row(
+            connection,
             "INSERT INTO work_restored_records (work_id, generation_index, record_id)
              VALUES (?1, ?2, ?3)",
-            params![
-                record.work_id.0.to_string(),
-                i64::try_from(record.generation_index).map_err(|_| {
-                    StoreError::InvalidWorkProjection(
-                        "restored generation exceeds SQLite range during repair".into(),
-                    )
-                })?,
-                hash.as_str(),
-            ],
+            &[&work_id, &generation, &hash.as_str()],
+            &label,
+            &mut findings,
         )?;
     }
     let restored_evidence = statement
@@ -656,24 +714,45 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreE
         })?
         .collect::<Result<Vec<_>, _>>()?;
     for (stored_hash, bytes) in restored_evidence {
-        let hash = ObjectId::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
-        let evidence: RestoredWorkEvidence = CanonicalObject::stored(&hash, bytes)?.decode()?;
-        connection.execute(
+        let label = format!("work_restored_evidence:{stored_hash}");
+        let Some(hash) = ObjectId::from_stored(stored_hash) else {
+            findings.push(format!("{label}:invalid_id"));
+            continue;
+        };
+        let evidence: RestoredWorkEvidence =
+            match CanonicalObject::stored(&hash, bytes).and_then(|object| object.decode()) {
+                Ok(evidence) => evidence,
+                Err(error) => {
+                    findings.push(crate::storage::decode_failure_label(
+                        format!("{label}:decode"),
+                        &error,
+                    ));
+                    continue;
+                }
+            };
+        let work_id = evidence.work_id.0.to_string();
+        if !item_exists(&work_id)? {
+            findings.push(format!("{label}:missing_item"));
+            continue;
+        }
+        insert_restored_row(
+            connection,
             "INSERT INTO work_restored_evidence (
                  evidence_id, work_id, record_id, sequence, gate_name, created_at_ms
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                hash.as_str(),
-                evidence.work_id.0.to_string(),
-                evidence.restored_record.as_str(),
-                evidence.sequence,
-                evidence.gate.as_ref().map(|gate| gate.name.as_str()),
-                evidence.created_at.timestamp_millis(),
+            &[
+                &hash.as_str(),
+                &work_id,
+                &evidence.restored_record.as_str(),
+                &evidence.sequence,
+                &evidence.gate.as_ref().map(|gate| gate.name.as_str()),
+                &evidence.created_at.timestamp_millis(),
             ],
+            &label,
+            &mut findings,
         )?;
     }
-    Ok(())
+    Ok(findings)
 }
 
 fn current_work_schema_is_complete(connection: &Connection) -> Result<bool, StoreError> {

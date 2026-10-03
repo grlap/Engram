@@ -6,6 +6,7 @@ mod memory_revisions;
 mod persisted_text;
 mod redaction;
 mod restored_identity;
+mod restored_repair;
 
 use super::*;
 use crate::storage::test_support::{

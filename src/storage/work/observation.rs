@@ -357,7 +357,14 @@ fn insert_projection(
     Ok(())
 }
 
-pub(super) fn rebuild(connection: &Connection) -> Result<(), StoreError> {
+/// Rebuilds the observation projection from its canonical objects. An
+/// observation that cannot be projected (it does not decode, its planning
+/// basis does not hold, or its row breaks a constraint, as when its item or
+/// restored record is missing) is left out and named as a finding, and every
+/// other observation is still rebuilt, so a repair that refuses names every
+/// record. A failure that is no finding about a record, such as a busy or
+/// failing database, is returned as an error.
+pub(super) fn rebuild(connection: &Connection) -> Result<Vec<String>, StoreError> {
     let rows = connection
         .prepare(
             "SELECT object_id, canonical_json FROM objects
@@ -367,13 +374,29 @@ pub(super) fn rebuild(connection: &Connection) -> Result<(), StoreError> {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    for (observation_id, bytes) in rows {
-        let observation_id = parse_record_id(observation_id)?;
-        let value: WorkObservation = CanonicalObject::stored(&observation_id, bytes)?.decode()?;
-        validate(connection, &value)?;
-        insert_projection(connection, &observation_id, &value)?;
+    let mut findings = Vec::new();
+    for (stored_id, bytes) in rows {
+        let projected = (|| -> Result<(), StoreError> {
+            let observation_id = parse_record_id(stored_id.clone())?;
+            let value: WorkObservation =
+                CanonicalObject::stored(&observation_id, bytes)?.decode()?;
+            validate(connection, &value)?;
+            insert_projection(connection, &observation_id, &value)
+        })();
+        match projected {
+            Ok(()) => {}
+            Err(StoreError::Sqlite(error))
+                if error.sqlite_error_code() != Some(rusqlite::ErrorCode::ConstraintViolation) =>
+            {
+                return Err(error.into());
+            }
+            Err(error) => findings.push(crate::storage::decode_failure_label(
+                format!("work_observation:{stored_id}:unprojectable"),
+                &error,
+            )),
+        }
     }
-    Ok(())
+    Ok(findings)
 }
 
 pub(super) fn verify_rows(

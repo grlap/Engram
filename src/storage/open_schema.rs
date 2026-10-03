@@ -316,26 +316,50 @@ impl SqliteStore {
         // the active snapshot; any error drops the connection and rolls back.
         connection.execute_batch("BEGIN IMMEDIATE;")?;
         Self::repair_core_rebuildable_schema_on(&connection)?;
-        work::repair_rebuildable_schema_on(&connection)?;
+        // Restored records, restored evidence and observations that cannot be
+        // projected are left out and named; the repair still verifies
+        // everything else so the refusal is complete.
+        let restored_findings = work::repair_rebuildable_schema_on(&connection)?;
         let store = Self {
             connection,
             work_schema_version,
             host_path_policy: None,
         };
         let after = store.verify_all()?;
-        if !after.is_healthy() {
+        if !restored_findings.is_empty() || !after.is_healthy() {
+            // A record left out above is also reported by verification for
+            // its missing projection row; the record's own finding already
+            // names it, so that echo is dropped.
+            let named = |label: &String| {
+                let record = label.strip_suffix(":missing_projection").unwrap_or(label);
+                restored_findings
+                    .iter()
+                    .any(|finding| finding.starts_with(&format!("{record}:")))
+            };
+            let work_records = restored_findings
+                .iter()
+                .chain(
+                    after
+                        .invalid_work_records
+                        .iter()
+                        .filter(|label| !named(label)),
+                )
+                .cloned()
+                .collect::<Vec<_>>();
+            // Dropping the connection without COMMIT rolls back every
+            // projection this repair wrote.
             return Err(StoreError::InvalidControlProjection(format!(
                 "projection repair refused because verification found {} invalid object(s), {} invalid graph snapshot audit(s), {} invalid control record(s), and {} invalid work record(s); invalid labels: {}",
                 after.invalid_objects.len(),
                 after.invalid_graph_snapshot_audits.len(),
                 after.invalid_control_records.len(),
-                after.invalid_work_records.len(),
+                work_records.len(),
                 after
                     .invalid_objects
                     .iter()
                     .chain(&after.invalid_graph_snapshot_audits)
                     .chain(&after.invalid_control_records)
-                    .chain(&after.invalid_work_records)
+                    .chain(&work_records)
                     .cloned()
                     .collect::<Vec<_>>()
                     .join(", ")
