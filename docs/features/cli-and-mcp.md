@@ -1474,6 +1474,19 @@ removed copies. The stage is removed at the end, and a stage a push could not re
 is removed by the next one before it captures: only a directory a capture
 created, never a link, and in it only the files a push writes.
 
+Each JSON kind report includes `capture_check`: `full` for a copy checked
+in full, `same_bytes_as_newest` when its settled SHA-256 and length equal
+the newest copy at the configured target and this same build checked that
+copy, or `null` when no capture was made. Byte equality skips the full
+check and compression, but still copies and hashes the store and confirms
+the target. An unknown or different checking build runs the full check;
+a missing target copy is checked in full before preparing its replacement.
+The field reports work performed, not qualification: only equality plus a
+successful target confirmation advances `observed_equal_at` to this
+capture's start. Failed confirmation, `busy` and termination refresh nothing.
+`backup status` exposes no cheap exact store-wide change marker; its cut
+does not cover claims, control rows or delivery state.
+
 Capture and transport have separate deadlines, `--capture-deadline-secs`
 (900 by default, for the local copy and the compressed file prepared from
 it) and `--transport-deadline-secs` (1800 by default, for every request to

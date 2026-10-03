@@ -9,8 +9,8 @@ use chrono::Utc;
 use engram::{
     LocalWorkService, ObjectId, ProjectId, SessionId, SqliteStore,
     backup::{
-        CopyKind,
-        record::{Attempt, AttemptOutcome, CopyConfirmed, CopyRef},
+        CaptureCheck, CopyKind,
+        record::{Attempt, AttemptOutcome, CopyConfirmed, CopyRef, StoredManifest},
         target::{
             AdapterKind, PushLock, RecordPaths, TargetRequest, TargetState, TargetView,
             read_for_push, set_target, write_state,
@@ -577,6 +577,89 @@ fn a_put_past_the_transport_deadline_stays_pending_and_the_next_push_confirms_it
     assert_eq!(state.pending, None);
     // The stage the abandoned worker read from was removed by this push.
     assert_eq!(fixture.stages(), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn a_capture_equal_to_the_newest_copy_this_build_checked_skips_the_full_check() {
+    let fixture = fixture();
+    let first = fixture.push();
+    assert_eq!(first.report.outcome, Outcome::Uploaded);
+    assert_eq!(first.report.capture_check, Some(CaptureCheck::Full));
+
+    let mut no_compression = settings();
+    no_compression.before_prepare = Some(Arc::new(|| panic!("equal copy was compressed")));
+    let second = fixture.push_with(&no_compression);
+    assert_eq!(
+        second.report.outcome,
+        Outcome::Unchanged,
+        "{:?}",
+        second.report
+    );
+    assert_eq!(
+        second.report.capture_check,
+        Some(CaptureCheck::SameBytesAsNewest)
+    );
+    // Nothing was prepared or put: the target holds the first copy only.
+    let copy = fixture.state().newest_receipt.unwrap().manifest.copy;
+    assert_eq!(
+        fixture.files(&fixture.copies),
+        [data(&copy), manifest(&copy)]
+    );
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+}
+
+#[test]
+fn a_copy_another_build_checked_is_checked_in_full_again_even_with_equal_bytes() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    // The newest copy's check is recorded as another build's, in the ledger
+    // and at the target alike, so the target still confirms the copy.
+    let other = ObjectId::from_canonical_bytes(b"another build");
+    let mut state = fixture.state();
+    let copy = state.newest_receipt.as_ref().unwrap().manifest.copy.clone();
+    for receipt in state
+        .newest_receipt
+        .iter_mut()
+        .chain(state.receipts.iter_mut())
+    {
+        receipt.manifest.capture.build_fingerprint = Some(other.clone());
+    }
+    fixture.write(&state);
+    let path = fixture.project_dir(&fixture.copies).join(manifest(&copy));
+    let mut stored: StoredManifest = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    stored.capture.build_fingerprint = Some(other);
+    fs::write(&path, serde_json::to_vec_pretty(&stored).unwrap()).unwrap();
+
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Unchanged, "{:?}", run.report);
+    assert_eq!(run.report.capture_check, Some(CaptureCheck::Full));
+}
+
+#[test]
+fn a_replacement_for_a_missing_copy_is_checked_in_full_before_it_is_put() {
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let before = fixture.state().newest_receipt.unwrap();
+    fs::remove_file(
+        fixture
+            .project_dir(&fixture.copies)
+            .join(data(&before.manifest.copy)),
+    )
+    .unwrap();
+
+    // The capture equals the lost copy, so its check was first taken from
+    // it; a copy of its own is then checked in full before it is put.
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
+    assert_eq!(run.report.capture_check, Some(CaptureCheck::Full));
+    let after = fixture.state().newest_receipt.unwrap();
+    assert_ne!(after.manifest.copy, before.manifest.copy);
+    assert_eq!(after.sha256, before.sha256);
+    assert_eq!(after.manifest.capture.cut, before.manifest.capture.cut);
+    assert_eq!(
+        after.manifest.capture.format_identity,
+        before.manifest.capture.format_identity
+    );
 }
 
 #[test]

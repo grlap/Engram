@@ -24,7 +24,7 @@ use chrono::{DateTime, Utc};
 use engram::{
     ObjectId, ProjectId,
     backup::{
-        CaptureOptions, CopyKind, StoreCapture, capture_store, host_name,
+        CaptureCheck, CaptureOptions, CopyKind, StoreCapture, capture_store, host_name,
         record::{AttemptOutcome, LastAttempt},
         target::{
             PushLock, PushRecords, RecordPaths, TargetError, TargetState, read_for_push,
@@ -83,6 +83,9 @@ pub(crate) struct PushSettings {
     /// so a test can spend the rest of the capture's deadline.
     #[cfg(test)]
     pub after_capture: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    /// Runs immediately before compression of a new copy begins.
+    #[cfg(test)]
+    pub before_prepare: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl PushSettings {
@@ -106,6 +109,8 @@ impl PushSettings {
             before_confirm: None,
             #[cfg(test)]
             after_capture: None,
+            #[cfg(test)]
+            before_prepare: None,
         }
     }
 }
@@ -150,6 +155,10 @@ pub(crate) struct KindReport {
     pub pending: Option<String>,
     /// The copies retention removed from the target.
     pub removed: Vec<String>,
+    /// How the capture was checked: in full, or by its bytes equalling the
+    /// newest copy that this build checked in full. Absent when no capture
+    /// was made.
+    pub capture_check: Option<CaptureCheck>,
     /// What went wrong without failing the push.
     pub warnings: Vec<String>,
     pub elapsed_ms: u64,
@@ -170,6 +179,7 @@ impl KindReport {
             set_aside: None,
             pending: None,
             removed: Vec::new(),
+            capture_check: None,
             warnings: Vec::new(),
             elapsed_ms: 0,
         }
@@ -447,12 +457,20 @@ impl Push<'_> {
         let observer: Option<&dyn Fn(engram::backup::CapturePhase)> = Some(&observer);
         #[cfg(not(test))]
         let observer = None;
+        // The newest copy at this target: when the capture's settled bytes
+        // equal it, its full check stands for this capture.
+        let newest = state
+            .newest_receipt
+            .as_ref()
+            .filter(|receipt| receipt.target_identity == self.target.identity)
+            .map(|receipt| receipt.manifest.capture.clone());
         let options = CaptureOptions {
             deadline: self.settings.capture_deadline,
             compressed_in_stage: true,
             host_name: host_name(),
             free_space: &free_space,
             observer,
+            same_as: newest.as_ref(),
         };
         let capture_started = Instant::now();
         let capture = capture_store(self.home, self.project, &options)
@@ -462,13 +480,15 @@ impl Push<'_> {
             hook();
         }
         // Only local work counts against the capture's deadline: the copy
-        // now, and the stored file prepared below. Time spent asking the
-        // target belongs to the transport's.
-        let capture_left = self
+        // now, a full check a replacement may still need, and the stored
+        // file prepared below. Time spent asking the target belongs to the
+        // transport's.
+        let mut capture_left = self
             .settings
             .capture_deadline
             .saturating_sub(capture_started.elapsed());
         let captured_at = capture.manifest.capture_started_at;
+        self.report.capture_check = Some(capture.check);
         self.stage = Some((capture, None));
 
         // Step 6: skip the upload only for the same bytes, in the same
@@ -533,9 +553,26 @@ impl Push<'_> {
             }
         }
 
+        // A copy that becomes a copy of its own is checked in full first, so
+        // its manifest never names a check that was not run for it.
+        let checking = Instant::now();
+        if let Some((capture, _)) = &mut self.stage
+            && capture.check != CaptureCheck::Full
+        {
+            capture
+                .check_in_full(self.project, capture_left)
+                .map_err(|error| Failure::new(error.code(), error.to_string()))?;
+            self.report.capture_check = Some(capture.check);
+        }
+        capture_left = capture_left.saturating_sub(checking.elapsed());
+
         // The stored file is prepared in the stage, still within the
         // capture's time.
         let attempt_id = uuid::Uuid::now_v7();
+        #[cfg(test)]
+        if let Some(hook) = &self.settings.before_prepare {
+            hook();
+        }
         let (staged, manifest) = {
             let capture = &self.stage.as_ref().expect("captured above").0;
             (capture.staged.clone(), capture.manifest.clone())

@@ -471,12 +471,12 @@ impl SqliteStore {
         Self::verify_copy_bytes(path, interrupt)
     }
 
-    /// Hashes the file at `path` and checks the store its bytes hold, opened
-    /// immutable, so only the main file is read.
-    fn verify_copy_bytes(
+    /// The SHA-256, in lowercase hex, and the length of the file at `path`,
+    /// read in chunks with `interrupt` checked between them.
+    pub(super) fn hash_copy_file(
         path: &Path,
         interrupt: Option<&CopyInterrupt>,
-    ) -> Result<(BackupManifest, Self), StoreError> {
+    ) -> Result<(String, u64), StoreError> {
         let unreadable = |error: std::io::Error| {
             StoreError::InvalidWork(format!("cannot read backup {}: {error}", path.display()))
         };
@@ -503,7 +503,16 @@ impl SqliteStore {
             file_bytes += read as u64;
         }
         drop(file);
-        let digest = sha2::Digest::finalize(digest);
+        Ok((format!("{:x}", sha2::Digest::finalize(digest)), file_bytes))
+    }
+
+    /// Hashes the file at `path` and checks the store its bytes hold, opened
+    /// immutable, so only the main file is read.
+    fn verify_copy_bytes(
+        path: &Path,
+        interrupt: Option<&CopyInterrupt>,
+    ) -> Result<(BackupManifest, Self), StoreError> {
+        let (file_sha256, file_bytes) = Self::hash_copy_file(path, interrupt)?;
         // `immutable=1` reads exactly the hashed bytes: no shared-memory or log
         // file is consulted or created, so a read-only directory works too.
         let connection = Connection::open_with_flags(
@@ -530,7 +539,7 @@ impl SqliteStore {
         }
         let manifest = BackupManifest {
             path: path.to_path_buf(),
-            file_sha256: format!("{digest:x}"),
+            file_sha256,
             file_bytes,
             checked_objects: report.checked_objects,
             checked_control_records: report.checked_control_records,

@@ -319,8 +319,9 @@ target configured it says so and exits 0.
    checked the copy, that build's source revision (`unavailable` when the
    build could not determine it), and the
    host name as asserted context. The cut is read from the finished staged
-   copy, not from the live store. These identities are separate fields and
-   are never merged into one.
+   copy, or reused from the same-build checked copy when the settled bytes
+   equal it as described below, never from the live store. These identities
+   are separate fields and are never merged into one.
 6. Decide whether anything has to be uploaded. The upload is skipped only
    when all of these hold: the newest receipt names the configured target's
    identity, its format identity is the capture's, and the captured
@@ -373,6 +374,43 @@ record described below. When the state is lost, nothing is guessed from a
 file name at the target: the next push makes a new copy, or confirms one
 only after checking that exact artifact against its manifest.
 
+### Comparing the settled copy
+
+A `store` push always takes a whole `VACUUM INTO` copy, settles its journal
+mode and hashes the self-contained file. When both SHA-256 and byte length
+equal the newest receipt's copy, that receipt names the configured target,
+and its manifest names this build as the checking build, the earlier full
+check stands for the equal bytes. The push reuses that copy's cut and schema
+reference and skips the full check and compression. Its JSON kind report
+says `capture_check: "same_bytes_as_newest"`. Every other case, including an
+unknown checking build, runs the full check and reports `"full"`.
+
+The target must still confirm the stored copy, reading its gzip in full.
+Only successful confirmation after the equality observation advances
+`observed_equal_at`, to this capture's start. Skipping a check alone advances
+no time. If the target copy is missing, the replacement is checked in full
+before preparing it. Failed, busy and terminated pushes refresh nothing.
+An older fully checked copy can thus remain qualified after a recent exact
+equality observation and target confirmation within the freshness window.
+
+There is no cheap exact store-wide marker in `backup status`. The work and
+memory cut misses claims, control rows and delivery state; SQLite's
+`data_version` is per connection and its main-file change counter misses
+WAL commits. Trigger counters do not cover virtual FTS tables or
+`sqlite_sequence`. None of these is shipped as an exact substitute for the
+settled-byte comparison. The comparison covers every row the copy restores,
+without changing the live store's schema or rows.
+
+One Windows measurement on 2026-10-03 used the release binary against an
+isolated 435,761,152-byte copy of this repository's store and a local
+directory target. The first full push took 81.4 seconds; the next unchanged
+push took 2.1 seconds and reported `same_bytes_as_newest`. After one project
+memory write, a full push took 51.3 seconds. These are whole push times,
+including target reads, rather than timings of the check alone.
+The target was local and the data cached; a network or sync-folder target
+can take longer. The earlier 37–40-second measurement timed a verified
+capture, not a whole push. No fixed speedup or latency is promised.
+
 ### What a capture does to the live store
 
 Agents keep writing while a copy is taken, so this is part of the contract.
@@ -417,7 +455,8 @@ The cut of a `graph` copy is the pair the snapshot body already carries: the
 project work-feed head and the project-memory change position. A `store`
 copy records the same pair for the reader, but no position covers every row
 of a store, so the `store` kind never skips a capture because a cut is
-unchanged. It skips only the upload, and only when the bytes are equal.
+unchanged. Equal settled bytes can skip the full check and compression as
+above, and skip the upload only after target confirmation.
 
 ## Trigger
 
@@ -427,12 +466,19 @@ sessions are active, and when the last session ends. Where no host runs, an
 operating-system scheduler calls the same command. Calling it often is safe
 for correctness, because the lock makes overlapping calls harmless, but it
 is not free. An unchanged `graph` cut costs one `confirm`. A `store` push
-always costs a full local capture, about 40 s of work and 400 MB of local
-writes for this repository today, even when the store has not changed and
-nothing is uploaded. A host therefore pushes at its start, once an hour
-while sessions are active, and when the last session ends, not every
-minute. The cadence must be shorter than the window. A host may put a
-scheduled push off, for example while a timing-sensitive test run is in
+always copies the whole store locally. Only unchanged settled bytes checked
+by the same build skip the full check and compression; target confirmation
+still reads the stored gzip. Any real store write, including a claim renewal,
+control turn or delivery change, can require the full path. An open session
+is a reason to schedule an hourly push, not a change detector. Push at host
+start, hourly while sessions are open, and when the last session ends;
+whether active or idle, push at least once per half of `window_hours` (12
+hours at the default 24 hours). Successful pushes need no separate
+`--check-target` cadence; failed, busy or terminated pushes refresh nothing.
+An earlier assurance due takes priority. Before enabling automatic pushes,
+the host checks full-path cost and control latency on a representative store;
+an idle-push measurement does not establish either for a changing store.
+A host may put a scheduled push off, for example while a timing-sensitive test run is in
 progress: the window, not the cadence, decides the claim, so a late push
 costs nothing but the age of the copy.
 
@@ -854,7 +900,7 @@ decided each on that date, on the two architects' joint recommendation.
 | Which kind is built first | `store`. `graph` follows | Only a `store` copy restores a store equal to its source |
 | Which adapter is built first | `directory`. `git-ref` follows with the `graph` kind | A `store` copy needs a `directory` target |
 | Default window | 24 hours | The claim ends within a day of the last fresh copy, and one missed night does not end it |
-| Host cadence | At start, hourly while sessions are active, and when the last session ends | A `store` capture costs about 40 s. The aim is a fresh copy every hour while pushes succeed; a push that is put off or fails, or a folder that has not finished uploading, lengthens what a loss would cost. The window decides the claim and is not a promise of one hour |
+| Host cadence | At start, hourly while sessions are open, when the last session ends, and at least once per half window even when idle | An open session is a scheduling reason, not a change signal. Equal settled bytes can skip the full check and compression; ordinary activity still needs the full path. Successful pushes confirm the target without a separate check cadence. The window decides the claim and is not a promise of one hour |
 | Default retention at a `directory` target | Three copies | Two earlier copies survive one bad copy, at about 220 MB compressed for this repository |
 | Who starts the copies | The host. TermAl's coordinator agreed on 2026-10-02 that TermAl owns the trigger, the status display and session identities that a restored store has not seen, on the condition that a push must not distort a running gate's timing-sensitive stages; TermAl decides how, for example by putting the push off | Engram runs no daemon, and the host already runs Engram for each session |
 | Who may read a target | Only the operator's own account | A `store` copy holds the whole store in readable bytes |

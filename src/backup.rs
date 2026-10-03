@@ -65,6 +65,17 @@ pub struct CaptureManifest {
     pub host_name: Option<String>,
 }
 
+/// How a capture's copy was checked.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureCheck {
+    /// The copy was checked in full.
+    Full,
+    /// The settled copy's bytes equal those of the newest copy, which this
+    /// same build checked in full, so that check stands for this copy.
+    SameBytesAsNewest,
+}
+
 /// The step a capture was in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CapturePhase {
@@ -157,6 +168,10 @@ pub struct CaptureOptions<'a> {
     pub free_space: &'a dyn Fn(&Path) -> io::Result<u64>,
     /// Told when each step begins.
     pub observer: Option<&'a dyn Fn(CapturePhase)>,
+    /// The manifest of the newest copy. When the settled copy's bytes equal
+    /// it and this build checked it in full, that check stands for this copy
+    /// and the full check is not run again.
+    pub same_as: Option<&'a CaptureManifest>,
     #[cfg(test)]
     pub(crate) copy_probe:
         Option<std::sync::Arc<dyn Fn(crate::storage::CopyProbePoint) -> bool + Send + Sync>>,
@@ -172,6 +187,7 @@ impl CaptureOptions<'static> {
             host_name: host_name(),
             free_space: &available_space,
             observer: None,
+            same_as: None,
             #[cfg(test)]
             copy_probe: None,
         }
@@ -203,10 +219,52 @@ pub struct StoreCapture {
     pub manifest: CaptureManifest,
     /// The staged copy file.
     pub staged: PathBuf,
+    /// How the copy was checked.
+    pub check: CaptureCheck,
     attempt: PathBuf,
 }
 
 impl StoreCapture {
+    /// Checks in full, within `deadline`, a copy whose check was taken from
+    /// the newest copy's, and reads its cut and format from the copy itself.
+    /// A copy already checked in full is left as it is.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackupError`] with a stable code when the check fails or the
+    /// deadline passes.
+    pub fn check_in_full(
+        &mut self,
+        project: &ProjectId,
+        deadline: Duration,
+    ) -> Result<(), BackupError> {
+        if self.check == CaptureCheck::Full {
+            return Ok(());
+        }
+        let interrupt = CopyInterrupt::after(deadline);
+        let copy = SqliteStore::verify_settled_store_copy(&self.staged, project, &interrupt)
+            .map_err(|error| {
+                if interrupt.expired() || is_interrupted(&error) {
+                    BackupError::CaptureDeadline {
+                        phase: CapturePhase::Verify,
+                    }
+                } else {
+                    BackupError::Store(error)
+                }
+            })?;
+        if interrupt.expired() {
+            return Err(BackupError::CaptureDeadline {
+                phase: CapturePhase::Verify,
+            });
+        }
+        self.manifest.cut = copy.cut;
+        self.manifest.format_identity = copy.schema_reference;
+        self.manifest.sha256 = copy.file_sha256;
+        self.manifest.bytes = copy.file_bytes;
+        self.check = CaptureCheck::Full;
+        Ok(())
+    }
+
     /// The directory this capture owns.
     #[must_use]
     pub fn stage(&self) -> &Path {
@@ -331,9 +389,10 @@ pub fn capture_store(
         &observe,
     );
     match captured {
-        Ok(manifest) => Ok(StoreCapture {
+        Ok((manifest, check)) => Ok(StoreCapture {
             manifest,
             staged,
+            check,
             attempt,
         }),
         Err(error) => match remove_attempt(&attempt) {
@@ -361,7 +420,7 @@ fn capture_into(
     options: &CaptureOptions<'_>,
     interrupt: &CopyInterrupt,
     observe: &dyn Fn(CapturePhase),
-) -> Result<CaptureManifest, BackupError> {
+) -> Result<(CaptureManifest, CaptureCheck), BackupError> {
     let classified = |phase: CapturePhase| {
         move |error: StoreError| {
             // A failure once the deadline has passed is the deadline's, even
@@ -379,25 +438,59 @@ fn capture_into(
     SqliteStore::copy_existing_read_only(database, staged, interrupt)
         .map_err(classified(CapturePhase::Copy))?;
     observe(CapturePhase::Verify);
-    let copy = SqliteStore::verify_store_copy(staged, project, interrupt)
+    SqliteStore::settle_store_copy(staged, interrupt).map_err(classified(CapturePhase::Verify))?;
+    if let Some(newest) = options.same_as {
+        // Equal settled bytes hold equal rows, so the newest copy's full
+        // check stands for this one, but only when this build made it: a
+        // check is a property of the build that ran it, not of the bytes.
+        let (sha256, bytes) = SqliteStore::hash_store_copy(staged, interrupt)
+            .map_err(classified(CapturePhase::Verify))?;
+        if newest.kind == CopyKind::Store
+            && newest.project_digest == identity.digest
+            && newest.sha256 == sha256
+            && newest.bytes == bytes
+            && newest.build_fingerprint.is_some()
+            && newest.build_fingerprint == identity.build_fingerprint
+        {
+            return Ok((
+                CaptureManifest {
+                    project_digest: identity.digest.to_owned(),
+                    kind: CopyKind::Store,
+                    cut: newest.cut.clone(),
+                    capture_started_at,
+                    bytes,
+                    sha256,
+                    format_identity: newest.format_identity.clone(),
+                    build_fingerprint: identity.build_fingerprint,
+                    source_revision: Some(crate::build_identity::source_revision().to_owned()),
+                    host_name: options.host_name.clone(),
+                },
+                CaptureCheck::SameBytesAsNewest,
+            ));
+        }
+    }
+    let copy = SqliteStore::verify_settled_store_copy(staged, project, interrupt)
         .map_err(classified(CapturePhase::Verify))?;
     if interrupt.expired() {
         return Err(BackupError::CaptureDeadline {
             phase: CapturePhase::Verify,
         });
     }
-    Ok(CaptureManifest {
-        project_digest: identity.digest.to_owned(),
-        kind: CopyKind::Store,
-        cut: copy.cut,
-        capture_started_at,
-        bytes: copy.file_bytes,
-        sha256: copy.file_sha256,
-        format_identity: copy.schema_reference,
-        build_fingerprint: identity.build_fingerprint,
-        source_revision: Some(crate::build_identity::source_revision().to_owned()),
-        host_name: options.host_name.clone(),
-    })
+    Ok((
+        CaptureManifest {
+            project_digest: identity.digest.to_owned(),
+            kind: CopyKind::Store,
+            cut: copy.cut,
+            capture_started_at,
+            bytes: copy.file_bytes,
+            sha256: copy.file_sha256,
+            format_identity: copy.schema_reference,
+            build_fingerprint: identity.build_fingerprint,
+            source_revision: Some(crate::build_identity::source_revision().to_owned()),
+            host_name: options.host_name.clone(),
+        },
+        CaptureCheck::Full,
+    ))
 }
 
 fn is_interrupted(error: &StoreError) -> bool {

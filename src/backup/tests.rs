@@ -74,6 +74,7 @@ fn options(free_space: &dyn Fn(&Path) -> io::Result<u64>) -> CaptureOptions<'_> 
         host_name: Some("test-host".into()),
         free_space,
         observer: None,
+        same_as: None,
         copy_probe: None,
     }
 }
@@ -84,6 +85,54 @@ fn options(free_space: &dyn Fn(&Path) -> io::Result<u64>) -> CaptureOptions<'_> 
 )]
 fn plenty(_: &Path) -> io::Result<u64> {
     Ok(u64::MAX)
+}
+
+#[test]
+fn only_equal_bytes_checked_by_this_build_skip_the_integrity_scan() {
+    let (home, project, database) = fixture(20, 256);
+    let first = capture_store(home.path(), &project, &options(&plenty)).unwrap();
+    let scans = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = scans.clone();
+    let mut observed = options(&plenty);
+    observed.copy_probe = Some(Arc::new(move |point| {
+        if point == CopyProbePoint::Scan {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }
+        false
+    }));
+    observed.same_as = Some(&first.manifest);
+    let equal = capture_store(home.path(), &project, &observed).unwrap();
+    assert_eq!(equal.check, CaptureCheck::SameBytesAsNewest);
+    assert_eq!(scans.load(Ordering::SeqCst), 0);
+    equal.discard().unwrap();
+
+    for build in [
+        None,
+        Some(crate::ObjectId::from_canonical_bytes(b"other build")),
+    ] {
+        let mut older = first.manifest.clone();
+        older.build_fingerprint = build;
+        let mut full = options(&plenty);
+        full.same_as = Some(&older);
+        full.copy_probe = observed.copy_probe.clone();
+        scans.store(0, Ordering::SeqCst);
+        let checked = capture_store(home.path(), &project, &full).unwrap();
+        assert_eq!(checked.check, CaptureCheck::Full);
+        assert!(scans.load(Ordering::SeqCst) > 0);
+        checked.discard().unwrap();
+    }
+    {
+        let mut store = SqliteStore::open(&database).unwrap();
+        remember(&mut store, &project, "changed", "new restored row".into());
+    }
+    observed.same_as = Some(&first.manifest);
+    scans.store(0, Ordering::SeqCst);
+    let changed = capture_store(home.path(), &project, &observed).unwrap();
+    assert_eq!(changed.check, CaptureCheck::Full);
+    assert!(scans.load(Ordering::SeqCst) > 0);
+    assert_ne!(changed.manifest.sha256, first.manifest.sha256);
+    changed.discard().unwrap();
+    first.discard().unwrap();
 }
 
 /// The cut read straight from a store file, without Engram's opener.

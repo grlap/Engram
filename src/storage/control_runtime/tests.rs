@@ -1335,3 +1335,54 @@ fn records_stored_while_grants_carried_a_page_still_decode_and_audit_clean() {
         now + TimeDelta::seconds(2),
     );
 }
+
+// A control turn writes only control rows: no work-feed or memory position
+// moves. A backup push compares the copy's settled bytes, not that cut, so
+// the turn still makes the next capture differ and be checked in full.
+#[test]
+fn a_control_turn_alone_changes_the_bytes_a_backup_push_compares() {
+    let home = crate::test_support::temp_home().expect("tempdir");
+    let project = ProjectId("project-a".into());
+    let database = crate::project_database_path(home.path(), &project);
+    std::fs::create_dir_all(database.parent().unwrap()).unwrap();
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open(&database).expect("store");
+    let binding = bind_control(&mut store, now);
+    let capture = |same_as: Option<&crate::backup::CaptureManifest>| {
+        let options = crate::backup::CaptureOptions {
+            deadline: std::time::Duration::from_secs(120),
+            compressed_in_stage: false,
+            host_name: None,
+            free_space: &crate::backup::available_space,
+            observer: None,
+            same_as,
+            copy_probe: None,
+        };
+        crate::backup::capture_store(home.path(), &project, &options).expect("capture")
+    };
+
+    let first = capture(None);
+    assert_eq!(first.check, crate::backup::CaptureCheck::Full);
+    let unchanged = capture(Some(&first.manifest));
+    assert_eq!(
+        unchanged.check,
+        crate::backup::CaptureCheck::SameBytesAsNewest
+    );
+    unchanged.discard().unwrap();
+
+    complete_control_turn(
+        &mut store,
+        &binding,
+        "a-turn-the-backup-sees",
+        vec![EffectClass::Observe],
+        Vec::new(),
+        now + TimeDelta::seconds(1),
+    );
+    let after_turn = capture(Some(&first.manifest));
+    assert_eq!(after_turn.check, crate::backup::CaptureCheck::Full);
+    assert_ne!(after_turn.manifest.sha256, first.manifest.sha256);
+    // The cut a host could read cheaply did not move.
+    assert_eq!(after_turn.manifest.cut, first.manifest.cut);
+    after_turn.discard().unwrap();
+    first.discard().unwrap();
+}

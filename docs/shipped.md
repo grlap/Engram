@@ -92,6 +92,14 @@ planned, target, and deferred capabilities; those belong in the
 | Root identity probe | Agent work words, MCP startup, graph, backup, restore and import do not probe the project root's filesystem identity. Path-bearing host commands (`init`, `doctor`, `control`, `authority`, `control-policy`, `readiness`, `control-session-inspect`) resolve it by flag, or by a probe that looks the project file up under the opposite ASCII case and writes nothing, so it works in a read-only checkout. A project file the probe cannot test (a name with no ASCII letter, or an alias wider than ASCII case such as a short 8.3 name) leaves the identity unresolved until the host supplies it. Ordinary store and file I/O on the agent paths is unchanged. | [Host path identity](features/cli-and-mcp.md#host-integration) |
 | CLI error line policy | Every `anyhow` `Err` from `run_cli` prints framed `error: <Display cause>` per cause on stderr (exit 1), in any output mode, including `--json` and core input/argument errors. Work text refusals frame message and reminder lines; `next` commands keep safe quoted spacing. The host-path probe `WARNING` uses the same line policy. The same prefix-free helpers also frame success-receipt / MCP text; they are not a store or JSON sanitizer. Clap help/parser stay on clap's writer; `--version` is a custom DisplayVersion build printer, not that renderer. Panics stay outside. Structured JSON receipts and refusal envelopes keep source projections without terminal sanitization. Project-file `terminal_detail` is a separate, unchanged framer. | [Agent words](features/cli-and-mcp.md#using-engram-as-an-agent) |
 
+The store backup push also reports each kind's `capture_check` as `full`,
+`same_bytes_as_newest`, or `null` when no capture ran. Equal settled SHA-256
+and length at the configured target, checked by the same build, skip the
+full check and compression; copying, hashing and target confirmation still
+run. Another or unknown checking build uses the full check, and a missing
+target copy needs a fully checked replacement. This changes no store schema
+or qualification rule. See [the comparison](features/off-host-backup.md#comparing-the-settled-copy).
+
 ## Removed pre-release scaffolding
 
 The obsolete whole-task advisory claim API/tables, standalone report/barrier

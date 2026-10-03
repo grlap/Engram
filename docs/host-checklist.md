@@ -260,12 +260,29 @@ for the fields named here.
 
 1. **Push at three moments, per project.** Run `engram backup push --json`
    for each project when the host starts, about every hour while the project
-   has an active session, and when its last session ends. Keep the interval
-   well below the target's `window_hours` (24 by default), or the copy stops
-   qualifying between pushes. Run it as its own
+   has an open session, and when its last session ends. An open session is a
+   scheduling reason, not evidence that the store changed. Even when no work
+   happens, push at least once per half of `window_hours` (12 hours with the
+   default 24-hour window); an earlier assurance due takes priority.
+   Successful pushes also confirm the target, so
+   they need no separate `--check-target` cadence. A failed, busy or
+   terminated push refreshes nothing. Run it as its own
    CLI process, never inside a long-lived server: a request to the target
    that stalls past its deadline ends that process, which is how it is
    stopped.
+   Each push still copies the whole store and hashes the settled file.
+   `kinds[].capture_check` is `same_bytes_as_newest` only when its SHA-256
+   and length equal the newest copy at this target and this build checked
+   that copy. It skips the full check and compression, then reads the
+   stored gzip in full to confirm it. Any changed row, including claims,
+   control rows and delivery state, can force `full`; another or unknown
+   checking build also forces the full check. A missing target copy needs a
+   fully checked replacement. This helps idle stores; an hourly push during
+   ordinary agent activity still does a full capture. See the
+   [comparison and measured cost](features/off-host-backup.md#comparing-the-settled-copy)
+   before choosing the cadence for a large store. Before automatic pushes
+   are enabled, observe full-path cost and control latency on a representative
+   store; an idle-push measurement does not prove changing-store cost.
 2. **A push may be put off.** When pushing now would disturb something that
    matters more, such as the timing-sensitive stages of a running full gate,
    push later. Nothing is lost: the next push captures the store as it then

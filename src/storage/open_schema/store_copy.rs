@@ -217,6 +217,18 @@ impl SqliteStore {
         project: &ProjectId,
         interrupt: &CopyInterrupt,
     ) -> Result<VerifiedStoreCopy, StoreError> {
+        Self::settle_store_copy(path, interrupt)?;
+        Self::verify_settled_store_copy(path, project, interrupt)
+    }
+
+    /// Settles a copy that [`Self::copy_existing_read_only`] wrote, so it is
+    /// one self-contained file in the form a verified copy is hashed in.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the copy cannot be settled or `interrupt`
+    /// fires.
+    pub fn settle_store_copy(path: &Path, interrupt: &CopyInterrupt) -> Result<(), StoreError> {
         interrupt.checked()?;
         // The copy came from an admitted store, so this ordinary open settles
         // its journal mode and initializes nothing. Closing it folds its log;
@@ -241,6 +253,39 @@ impl SqliteStore {
                 }
             }
         }
+        interrupt.checked()
+    }
+
+    /// The SHA-256, in lowercase hex, and the length of a settled copy, the
+    /// same fingerprint its full check records.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the copy cannot be read or `interrupt`
+    /// fires.
+    pub fn hash_store_copy(
+        path: &Path,
+        interrupt: &CopyInterrupt,
+    ) -> Result<(String, u64), StoreError> {
+        interrupt.checked()?;
+        let hashed = Self::hash_copy_file(path, Some(interrupt))?;
+        interrupt.checked()?;
+        Ok(hashed)
+    }
+
+    /// Checks a settled copy in full as [`Self::verify_backup`] does and
+    /// reads, from the copy itself, the schema it carries and the cut of
+    /// `project`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the copy fails its check or `interrupt`
+    /// fires.
+    pub fn verify_settled_store_copy(
+        path: &Path,
+        project: &ProjectId,
+        interrupt: &CopyInterrupt,
+    ) -> Result<VerifiedStoreCopy, StoreError> {
         interrupt.checked()?;
         let (manifest, store) = Self::verify_copy_file(path, Some(interrupt))?;
         interrupt.checked()?;
