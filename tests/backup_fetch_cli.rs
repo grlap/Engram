@@ -158,6 +158,15 @@ fn a_home_that_only_configured_the_target_lists_and_fetches_a_checked_copy() {
         manifest["capture"]["sha256"].as_str().unwrap()
     );
     assert_eq!(fetched["sha256"], manifest["capture"]["sha256"]);
+    // The move took its staging file: no warning, and nothing hidden beside
+    // the fetched copy.
+    assert_eq!(fetched["warnings"], serde_json::json!([]));
+    let hidden: Vec<_> = fs::read_dir(out.parent().unwrap())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".fetching"))
+        .collect();
+    assert!(hidden.is_empty(), "{hidden:?}");
     // Neither word created a store in the clean home.
     assert!(!homes.database("clean").exists());
     assert!(!homes.database("clean").parent().unwrap().exists());

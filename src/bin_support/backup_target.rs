@@ -27,7 +27,9 @@ use super::{
     backup::check::{
         CheckOutcome, CheckReport, CheckSettings, DEFAULT_CHECK_DEADLINE, check_targets,
     },
-    backup::fetch::{DEFAULT_READ_DEADLINE, Listing, ReadFailure, ReadSettings, fetch, list},
+    backup::fetch::{
+        DEFAULT_READ_DEADLINE, Fetched, Listing, ReadFailure, ReadSettings, fetch, list,
+    },
     backup::push::{
         DEFAULT_CAPTURE_DEADLINE, DEFAULT_TRANSPORT_DEADLINE, KindReport, Outcome, PushSettings,
         push,
@@ -92,7 +94,8 @@ pub(crate) enum BackupCommand {
     /// Write one copy, decoded to no more than the length its manifest
     /// declares and checked against that manifest, to a new file. Checks
     /// first that the local disk has room for the stored file and the
-    /// uncompressed copy. Opens no store.
+    /// uncompressed copy. A hidden staging file that the move to the new file
+    /// left behind is named in a warning. Opens no store.
     Fetch {
         /// The copy's name, as `backup list` prints it.
         copy: String,
@@ -286,27 +289,13 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
                 &ReadSettings::new(Duration::from_secs(deadline_secs)),
             );
             let fetched = finish(run.outcome, run.abandoned.is_some(), json)?;
-            let manifest = &fetched.manifest;
             if json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&json!({
-                        "schema_version": READ_SCHEMA_VERSION,
-                        "copy": manifest.copy,
-                        "out": fetched.out.display().to_string(),
-                        "bytes": manifest.capture.bytes,
-                        "sha256": manifest.capture.sha256,
-                        "manifest": manifest,
-                    }))?
+                    serde_json::to_string_pretty(&fetch_receipt(&fetched))?
                 );
             } else {
-                println!(
-                    "fetched {} to {}: {} bytes, sha256 {}",
-                    manifest.copy,
-                    fetched.out.display(),
-                    manifest.capture.bytes,
-                    manifest.capture.sha256
-                );
+                print!("{}", fetch_text(&fetched));
             }
             return Ok(true);
         }
@@ -583,6 +572,39 @@ fn print_restored(restored: &Restored, json: bool) -> Result<()> {
     }
     print!("{}", report_text(restored));
     Ok(())
+}
+
+/// The `--json` receipt of a fetch.
+pub(crate) fn fetch_receipt(fetched: &Fetched) -> serde_json::Value {
+    let manifest = &fetched.manifest;
+    json!({
+        "schema_version": READ_SCHEMA_VERSION,
+        "copy": manifest.copy,
+        "out": fetched.out.display().to_string(),
+        "bytes": manifest.capture.bytes,
+        "sha256": manifest.capture.sha256,
+        "manifest": manifest,
+        "warnings": fetched.warnings,
+    })
+}
+
+/// The text a fetch prints: one line, then one per warning.
+pub(crate) fn fetch_text(fetched: &Fetched) -> String {
+    let manifest = &fetched.manifest;
+    let mut lines = vec![format!(
+        "fetched {} to {}: {} bytes, sha256 {}",
+        manifest.copy,
+        fetched.out.display(),
+        manifest.capture.bytes,
+        manifest.capture.sha256
+    )];
+    lines.extend(
+        fetched
+            .warnings
+            .iter()
+            .map(|warning| format!("warning: {warning}")),
+    );
+    lines.into_iter().map(|line| line + "\n").collect()
 }
 
 fn print_listing(kind: CopyKind, listing: &Listing, json: bool) -> Result<()> {

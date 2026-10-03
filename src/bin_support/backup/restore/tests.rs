@@ -91,6 +91,22 @@ impl Fixture {
         engram::project_database_path(self.clean.path(), &self.project)
     }
 
+    /// Fetches `copy` into `out` from the clean home.
+    fn fetch(&self, copy: &str, out: &Path, leave_staging: bool) -> super::super::fetch::Fetched {
+        let mut settings = ReadSettings::new(Duration::from_secs(120));
+        settings.leave_staging = leave_staging;
+        let run = super::super::fetch::fetch(
+            self.clean.path(),
+            &self.project,
+            CopyKind::Store,
+            copy,
+            out,
+            &settings,
+        );
+        assert!(run.abandoned.is_none());
+        run.outcome.expect("the fetch succeeds")
+    }
+
     fn restore(&self, copy: &str, stop: Option<Stop>) -> Result<Restored, ReadFailure> {
         let mut settings = RestoreSettings::new(ReadSettings::new(Duration::from_secs(120)));
         settings.stop = stop;
@@ -439,4 +455,43 @@ fn a_retry_that_cannot_fetch_again_keeps_the_earlier_staged_copy() {
     );
     assert!(staged.is_file());
     assert_eq!(fixture.record().state, RestoreState::Pending);
+}
+
+#[test]
+fn a_fetch_names_a_staging_file_its_move_left_behind() {
+    let fixture = Fixture::new();
+    let copy = fixture.push_change("leftover");
+    let out_directory = fixture.clean.path().join("fetched");
+    fs::create_dir_all(&out_directory).unwrap();
+
+    // A move that takes its staging file leaves nothing to warn about.
+    let clean = fixture.fetch(&copy, &out_directory.join("clean.db"), false);
+    assert_eq!(clean.warnings, Vec::<String>::new());
+    assert_eq!(
+        crate::bin_support::backup_target::fetch_receipt(&clean)["warnings"],
+        serde_json::json!([])
+    );
+    assert!(!crate::bin_support::backup_target::fetch_text(&clean).contains("warning:"));
+
+    // A move that leaves it, as the hard-link fallback does when its unlink
+    // fails, is detected by the move itself and named in the receipt.
+    let out = out_directory.join("left.db");
+    let fetched = fixture.fetch(&copy, &out, true);
+    let staging = out_directory.join(format!(".left.db.{}.fetching", std::process::id()));
+    assert!(staging.is_file(), "the staging file stays");
+    assert!(out.is_file(), "the fetched copy is complete");
+    assert_eq!(fetched.warnings.len(), 1, "{:?}", fetched.warnings);
+    let named = std::path::absolute(&staging).unwrap().display().to_string();
+    assert!(
+        fetched.warnings[0].contains(&named),
+        "{:?}",
+        fetched.warnings
+    );
+    let receipt = crate::bin_support::backup_target::fetch_receipt(&fetched);
+    assert_eq!(receipt["warnings"], serde_json::json!(fetched.warnings));
+    let text = crate::bin_support::backup_target::fetch_text(&fetched);
+    assert!(
+        text.contains(&format!("warning: {}", fetched.warnings[0])),
+        "{text}"
+    );
 }

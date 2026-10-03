@@ -1153,9 +1153,50 @@ fn the_move_to_a_fetched_file_never_replaces_one_and_keeps_its_source_on_refusal
     assert_eq!(fs::read(&staging).unwrap(), b"checked copy");
 
     fs::remove_file(&out).unwrap();
-    super::directory::move_without_replacing(&staging, &out).unwrap();
+    let moved = super::directory::move_without_replacing(&staging, &out).unwrap();
+    assert_eq!(moved.leftover, None);
     assert_eq!(fs::read(&out).unwrap(), b"checked copy");
     assert!(!staging.exists());
+}
+
+#[test]
+fn a_destination_that_cannot_be_resolved_leaves_the_source_in_place() {
+    let home = temp_home().unwrap();
+    let staging = home.path().join(".out.db.1.fetching");
+    fs::write(&staging, b"checked copy").unwrap();
+    // An empty path has no absolute form, so resolving it fails before the
+    // move holds the source.
+    let error = super::directory::move_without_replacing(&staging, Path::new("")).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{error}");
+    assert_eq!(fs::read(&staging).unwrap(), b"checked copy");
+}
+
+#[test]
+fn a_source_left_after_a_move_is_named_in_the_fetch_warning() {
+    let home = temp_home().unwrap();
+    let staging = home.path().join(".out.db.1.fetching");
+    let out = home.path().join("out.db");
+    fs::write(&staging, b"checked copy").unwrap();
+    // A move that takes its source leaves nothing to name.
+    let moved = super::directory::move_without_replacing(&staging, &out).unwrap();
+    assert_eq!(moved.leftover, None);
+    assert_eq!(super::fetch::leftover_warning(&moved), None);
+
+    // A move that leaves its source standing, as the hard-link fallback does
+    // when its unlink fails, reports it by name, and the fetch warning names
+    // it.
+    fs::remove_file(&out).unwrap();
+    fs::write(&staging, b"checked copy").unwrap();
+    let moved = super::directory::move_leaving_source(&staging, &out).unwrap();
+    assert_eq!(moved.leftover.as_deref(), Some(staging.as_path()));
+    assert_eq!(fs::read(&out).unwrap(), b"checked copy");
+    let warning = super::fetch::leftover_warning(&moved).expect("a warning");
+    assert!(
+        warning.contains(&staging.display().to_string()),
+        "{warning}"
+    );
+    fs::remove_file(&staging).unwrap();
+    assert_eq!(super::directory::remaining(&staging), None);
 }
 
 #[test]

@@ -1855,10 +1855,16 @@ result against the manifest's SHA-256 (`backup_copy_invalid` otherwise). A
 copy the target does not hold is `backup_copy_unknown`, and one whose
 manifest names another project is `backup_project_mismatch`. The copy is
 decoded into a hidden file beside FILE and renamed to FILE, without
-replacing anything and without needing hard links, only once it is checked,
-so FILE never holds a partial or unchecked copy. That hidden
-`.FILE.PID.fetching` file is left only by a process that ends in the middle
-or by a removal that fails, and the refusal then names it. Both words read
+replacing anything, only once it is checked, so FILE never holds a partial
+or unchecked copy. On Windows the rename needs no hard links; elsewhere,
+where the system cannot rename without replacing, the move links FILE and
+then unlinks the hidden file, ignoring an unlink that fails. That hidden
+`.FILE.PID.fetching` file is left only in three cases. A process that ends
+in the middle, or a removal that fails, leaves it, and the refusal then
+names it. Such an unlink leaves it too: after every successful move the
+fetch checks whether the hidden file still stands, and when it does, or
+when that cannot be told, a warning names it (`warnings` in JSON, a
+`warning:` line otherwise) beside a fetched copy that is complete. Both words read
 only the target's records under the home and the target itself, never open
 or create a store, and so work in a home that has only configured the
 target; without one they refuse with `backup_not_configured`. Their

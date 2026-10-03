@@ -1036,7 +1036,9 @@ fn publish(
     #[cfg(test)]
     super::halt::at(super::halt::Stage::TemporaryWritten);
     match move_without_replacing(temporary, final_path) {
-        Ok(()) => Ok(()),
+        // A temporary file left at the target after the move is not reported
+        // yet; surfacing it is tracked separately.
+        Ok(_moved) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             cleanup(Publish::Exists(final_path.to_path_buf()))
         }
@@ -1045,20 +1047,50 @@ fn publish(
 }
 
 /// Moves `from`, a closed file this process wrote, to `to` without replacing
-/// anything there; an existing `to` fails with `AlreadyExists`. It renames
-/// rather than links, so it works on file systems without hard links, such as
+/// anything there; an existing `to` fails with `AlreadyExists`. On Windows it
+/// renames rather than links, so it needs no hard links there and works on
 /// FAT, exFAT and many network shares, and it waits out another program that
-/// holds either file open. On failure `from` stays where it was, for the
-/// caller to remove and report.
-pub(super) fn move_without_replacing(from: &Path, to: &Path) -> io::Result<()> {
+/// holds either file open. Elsewhere tempfile renames without replacing where
+/// the system offers that, and otherwise falls back to a hard link followed
+/// by an unlink whose error it ignores, so `from` can remain after a move that
+/// succeeded; the result names it then. On failure `from` stays where it was,
+/// for the caller to remove and report, including when `to` cannot be
+/// resolved.
+pub(super) fn move_without_replacing(from: &Path, to: &Path) -> io::Result<Moved> {
+    persist_without_replacing(from, to, |_, _| {})
+}
+
+/// Moves `from` to `to` as [`move_without_replacing`] does, then puts a copy
+/// of the moved file back at `from`, as the hard-link fallback leaves it when
+/// its unlink fails, before the move checks for a leftover.
+#[cfg(test)]
+pub(super) fn move_leaving_source(from: &Path, to: &Path) -> io::Result<Moved> {
+    persist_without_replacing(from, to, |from, destination| {
+        fs::copy(destination, from).expect("put the source back");
+    })
+}
+
+/// The move itself; `after` runs once the move succeeded, before the check
+/// for a leftover.
+fn persist_without_replacing(
+    from: &Path,
+    to: &Path,
+    after: impl Fn(&Path, &Path),
+) -> io::Result<Moved> {
     // The move takes the long-path forms, which a deep path needs: the system
     // call behind it, unlike std's file operations, is not given them
-    // otherwise.
-    let mut pending = tempfile::TempPath::try_from_path(verbatim(from)?)?;
+    // otherwise. The destination is resolved first: once `from` is held as a
+    // temporary path, an early return would delete it.
     let destination = verbatim(to)?;
+    let mut pending = tempfile::TempPath::try_from_path(verbatim(from)?)?;
     for attempt in 0..=SHARING_RETRIES {
         match pending.persist_noclobber(&destination) {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                after(from, &destination);
+                return Ok(Moved {
+                    leftover: remaining(from),
+                });
+            }
             Err(error) if is_sharing_violation(&error.error) && attempt < SHARING_RETRIES => {
                 pending = error.path;
                 std::thread::sleep(SHARING_PAUSE);
@@ -1071,6 +1103,24 @@ pub(super) fn move_without_replacing(from: &Path, to: &Path) -> io::Result<()> {
         }
     }
     unreachable!("the last attempt returns")
+}
+
+/// A move that succeeded, and the source it left behind, if any.
+#[derive(Debug)]
+#[must_use]
+pub(super) struct Moved {
+    /// `from`, when it still stands after the move, or when whether it does
+    /// cannot be told.
+    pub leftover: Option<PathBuf>,
+}
+
+/// `path`, unless it is known to be gone: an inspection that fails counts as
+/// the file remaining.
+pub(super) fn remaining(path: &Path) -> Option<PathBuf> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        _ => Some(path.to_path_buf()),
+    }
 }
 
 /// `path` in the Windows long-path form (`\\?\C:\…`, `\\?\UNC\server\…`),

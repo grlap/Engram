@@ -39,6 +39,10 @@ const DECODE_MARGIN: Duration = Duration::from_secs(2);
 pub(crate) struct ReadSettings {
     pub deadline: Duration,
     pub local_free_space: FreeSpace,
+    /// Makes the fetch's move leave its staging file behind, as the
+    /// hard-link fallback does when its unlink fails.
+    #[cfg(test)]
+    pub leave_staging: bool,
 }
 
 impl ReadSettings {
@@ -46,6 +50,8 @@ impl ReadSettings {
         Self {
             deadline,
             local_free_space: engram::backup::available_space,
+            #[cfg(test)]
+            leave_staging: false,
         }
     }
 }
@@ -105,19 +111,22 @@ pub(crate) fn list(
     })
 }
 
-/// A fetched copy: its manifest and the file it was written to.
+/// A fetched copy: its manifest, the file it was written to, and what the
+/// operator should know about it.
 #[derive(Debug)]
 pub(crate) struct Fetched {
     pub manifest: StoredManifest,
     pub out: PathBuf,
+    pub warnings: Vec<String>,
 }
 
 /// Writes copy `copy` of `kind`, decoded and checked against its manifest,
 /// to `out`, which must not exist. The copy is decoded into a hidden file
 /// beside `out` and moved to `out` only once it is checked, so `out` never
 /// holds a partial or unchecked copy. That hidden `.<name>.<pid>.fetching`
-/// file is left behind only by a process that ends in the middle, or by a
-/// removal that fails, and the refusal then names it.
+/// file is left behind by a process that ends in the middle, or by a removal
+/// that fails, and the refusal then names it. A move that succeeded can also
+/// leave it, which a warning beside the fetched copy names.
 pub(crate) fn fetch(
     home: &Path,
     project: &ProjectId,
@@ -149,6 +158,8 @@ pub(crate) fn fetch(
     let staging = out.with_file_name(format!(".{name}.{}.fetching", std::process::id()));
     let copy = copy.to_owned();
     let left_behind = staging.clone();
+    #[cfg(test)]
+    let leave_staging = settings.leave_staging;
     let mut fetched = run(settings.deadline, move |left| {
         let started = Instant::now();
         let listing = list_all(&target.adapter(left), &target.project)?;
@@ -160,8 +171,20 @@ pub(crate) fn fetch(
             .adapter(decode_left)
             .get(&target.project, &manifest, &staging)?;
         // The move never replaces a file that appeared at `out` meanwhile.
-        match move_without_replacing(&staging, &out) {
-            Ok(()) => Ok(Fetched { manifest, out }),
+        #[cfg(test)]
+        let moved = if leave_staging {
+            super::directory::move_leaving_source(&staging, &out)
+        } else {
+            move_without_replacing(&staging, &out)
+        };
+        #[cfg(not(test))]
+        let moved = move_without_replacing(&staging, &out);
+        match moved {
+            Ok(moved) => Ok(Fetched {
+                manifest,
+                out,
+                warnings: leftover_warning(&moved).into_iter().collect(),
+            }),
             Err(source) => {
                 let failure = if source.kind() == io::ErrorKind::AlreadyExists {
                     exists(&out)
@@ -182,6 +205,16 @@ pub(crate) fn fetch(
         );
     }
     fetched
+}
+
+/// The warning that names a staging file a successful move left behind.
+pub(super) fn leftover_warning(moved: &super::directory::Moved) -> Option<String> {
+    moved.leftover.as_ref().map(|left| {
+        format!(
+            "the hidden staging file {} may remain after the move: it still stood, or whether it did could not be checked; the fetched copy is complete, and the staging file can be removed",
+            left.display()
+        )
+    })
 }
 
 /// Removes `staging` after `failure`, naming it in the failure when it stays.

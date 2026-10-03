@@ -339,6 +339,8 @@ fn install(
     if !occupied.is_empty() {
         return Err(store_exists(database, &occupied));
     }
+    // A staging file left after the move is not reported yet; surfacing it
+    // is tracked separately.
     if let Err(source) = move_without_replacing(staging, database) {
         let failure = if source.kind() == io::ErrorKind::AlreadyExists {
             store_exists(database, &[database.to_path_buf()])
