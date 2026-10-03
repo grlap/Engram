@@ -1479,6 +1479,14 @@ pub(super) fn verify_work_catalog_projections(
     checked: &mut usize,
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
+    // The catalog's stored search text is read once, every row kept, rather
+    // than looked up per item through its unindexed work id.
+    let content = crate::storage::fts_verification::fts_content(
+        connection,
+        "SELECT work_id, search_text FROM work_catalog_fts",
+        |row| row.get::<_, String>(1),
+    )?;
+    let mut work_ids = HashSet::new();
     let mut statement = connection.prepare(
         "SELECT work_id, item_json, assigned_to_key, search_text_key
          FROM work_items ORDER BY work_id",
@@ -1494,6 +1502,8 @@ pub(super) fn verify_work_catalog_projections(
     for row in rows {
         let (work_id, item_json, assigned_to_key, search_text_key) = row?;
         *checked += 1;
+        // Every item owns its catalog row, one that does not decode included.
+        work_ids.insert(work_id.clone());
         let item = match serde_json::from_slice::<WorkItem>(&item_json) {
             Ok(item) => item,
             Err(error) => {
@@ -1520,78 +1530,43 @@ pub(super) fn verify_work_catalog_projections(
         let actual_labels = label_statement
             .query_map([work_id.as_str()], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
-        let mut fts_statement =
-            connection.prepare("SELECT search_text FROM work_catalog_fts WHERE work_id = ?1")?;
-        let fts_rows = fts_statement
-            .query_map([work_id.as_str()], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
+        // An unreadable catalog is reported once below, never as every
+        // item's row gone missing.
+        let fts_bound = content.as_ref().map_or(true, |content| {
+            content.get(&work_id).map(Vec::as_slice) == Some(std::slice::from_ref(&expected_search))
+        });
         if item.work_id.0.to_string() != work_id
             || assigned_to_key != expected_assigned
             || search_text_key != expected_search
             || actual_labels != expected_labels
-            || fts_rows.len() != 1
-            || fts_rows.first() != Some(&expected_search)
+            || !fts_bound
         {
             invalid.push(format!("work_catalog:{work_id}:projection_binding"));
         }
     }
     drop(statement);
+    match &content {
+        Ok(content) => {
+            if content.keys().any(|work_id| !work_ids.contains(work_id)) {
+                invalid.push("work_catalog:orphaned_fts_rows".into());
+            }
+        }
+        Err(detail) => invalid.push(crate::storage::fts_verification::bounded_finding(
+            "work_catalog:fts_content",
+            detail,
+        )),
+    }
     // SQLite's FTS5 xIntegrity checks every posting against the table content.
     // A single read-only pass also covers malformed segments and rows with no
     // searchable trigram, which a per-item MATCH query cannot exercise.
-    let fts_integrity = connection.query_row(
-        "PRAGMA main.integrity_check('work_catalog_fts')",
-        [],
-        |row| row.get::<_, String>(0),
-    );
-    match fts_integrity {
-        Ok(result) if result == "ok" => {}
-        Ok(result) => invalid.push(fts_integrity_failure_label(&result)),
-        Err(error)
-            if matches!(
-                error.sqlite_error_code(),
-                Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
-            ) =>
-        {
-            invalid.push(fts_integrity_failure_label(&error.to_string()));
-        }
-        Err(error) => return Err(error.into()),
-    }
-    let orphaned_fts = connection.query_row(
-        "SELECT COUNT(*) FROM work_catalog_fts catalog
-         WHERE NOT EXISTS (
-             SELECT 1 FROM work_items item WHERE item.work_id = catalog.work_id
-         )",
-        [],
-        |row| row.get::<_, i64>(0),
-    )?;
-    if orphaned_fts != 0 {
-        invalid.push("work_catalog:orphaned_fts_rows".into());
+    if let Some(finding) = crate::storage::fts_verification::fts_index_finding(
+        connection,
+        "work_catalog_fts",
+        "work_catalog:fts_index",
+    )? {
+        invalid.push(finding);
     }
     Ok(())
-}
-
-fn fts_integrity_failure_label(detail: &str) -> String {
-    let bounded = detail
-        .chars()
-        .take(160)
-        .map(|ch| {
-            if ch.is_ascii_graphic() || ch == ' ' {
-                ch
-            } else {
-                ' '
-            }
-        })
-        .collect::<String>();
-    let bounded = bounded.trim();
-    format!(
-        "work_catalog:fts_index:{}",
-        if bounded.is_empty() {
-            "unknown"
-        } else {
-            bounded
-        }
-    )
 }
 
 pub(super) fn verify_work_scalar_bindings(

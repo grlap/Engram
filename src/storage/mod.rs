@@ -6,6 +6,7 @@ mod control_inspection;
 mod control_runtime;
 mod control_support;
 mod doctor;
+mod fts_verification;
 mod graph_snapshot;
 pub mod migration;
 mod named_root_read;

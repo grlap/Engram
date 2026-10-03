@@ -12,6 +12,7 @@ use crate::storage::{
 use crate::*;
 use crate::{ProjectId, domain::ProvenanceLink};
 
+mod fts_verification;
 mod listing_acknowledgement;
 mod partial;
 mod retiring;
@@ -642,7 +643,7 @@ fn a_memory_holding_a_lone_underscore_verifies_and_stays_searchable() {
         .expect("the memory's version");
     // Removes the index's structure record and segments but keeps each
     // memory's stored text, so the content binding still holds and only the
-    // index probe, whose query now fails, can report the damage.
+    // index's own integrity check can report the damage.
     store
         .connection
         .execute("DELETE FROM object_fts_data WHERE id > 1", [])
@@ -651,8 +652,15 @@ fn a_memory_holding_a_lone_underscore_verifies_and_stays_searchable() {
     assert!(
         damaged
             .invalid_objects
-            .contains(&format!("object_fts:{version}:fts_index")),
-        "the index probe must still catch damage to this memory: {damaged:?}"
+            .iter()
+            .any(|label| label.starts_with("object_fts:fts_index:")),
+        "the index check must still catch damage to the index: {damaged:?}"
+    );
+    assert!(
+        !damaged
+            .invalid_objects
+            .contains(&format!("object_fts:{version}:projection_binding")),
+        "the stored text still binds: {damaged:?}"
     );
 }
 

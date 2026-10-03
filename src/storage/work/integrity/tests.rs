@@ -4,7 +4,8 @@ use super::super::*;
 #[test]
 fn fts_integrity_failure_label_bounds_and_sanitizes_sqlite_detail() {
     let diagnostic = format!("malformed\n\u{1b}[31m\u{e9}{}", "x".repeat(300));
-    let label = super::fts_integrity_failure_label(&diagnostic);
+    let label =
+        crate::storage::fts_verification::bounded_finding("work_catalog:fts_index", &diagnostic);
     let detail = label
         .strip_prefix("work_catalog:fts_index:")
         .expect("catalog integrity family");
@@ -13,7 +14,7 @@ fn fts_integrity_failure_label_bounds_and_sanitizes_sqlite_detail() {
     assert!(detail.is_ascii());
     assert!(!detail.chars().any(char::is_control));
     assert_eq!(
-        super::fts_integrity_failure_label("\r\n"),
+        crate::storage::fts_verification::bounded_finding("work_catalog:fts_index", "\r\n"),
         "work_catalog:fts_index:unknown"
     );
 }

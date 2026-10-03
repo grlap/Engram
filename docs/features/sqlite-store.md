@@ -250,7 +250,14 @@ changing its verifier at the same time.
 ## Rebuildable and durable projections
 
 Declared indexes, triggers, and full-text search (FTS5) content are disposable
-and rebuilt explicitly from verified durable rows. Runtime heads, status,
+and rebuilt explicitly from verified durable rows. `engram doctor` checks each
+full-text table (the memory index and the work catalog) read-only and in time
+bounded by the table's size: one pass over its stored text binds every row to
+its memory head or work item, naming a changed, repeated or missing row and
+any orphan, and SQLite's own `integrity_check` of the table compares every
+posting with that text. A table too damaged to read is reported once, never as
+every row gone missing; a busy, I/O or other operational failure is an error,
+not a finding. Runtime heads, status,
 claims, feeds, ordering, and idempotency tables are durable parts of
 the exact-current SQLite store: current writers validate their canonical and
 relational bindings, but `--repair-projections` never reconstructs them from

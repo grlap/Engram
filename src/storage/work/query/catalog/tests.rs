@@ -642,3 +642,169 @@ fn catalog_held_by_refuses_an_oversized_session_before_sql() {
     ));
     assert!(!error.to_string().contains(&giant.0));
 }
+
+/// A store with `count` catalogued roots, short and Unicode titles among them.
+fn catalogued(count: usize) -> (SqliteStore, Vec<String>) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let ids = (0..count)
+        .map(|index| {
+            let mut request = root_request(
+                "project-catalog-fts-scan",
+                &format!("root-{index}"),
+                i64::try_from(index).unwrap(),
+            );
+            request.title = match index % 3 {
+                0 => "a".into(),
+                1 => format!("Zażółć gęślą jaźń {index}"),
+                _ => format!("root {index} {}", "words ".repeat(30)),
+            };
+            store
+                .create_work(&request, &DevelopmentNoopRedactor)
+                .expect("catalogued root")
+                .work_id
+                .0
+                .to_string()
+        })
+        .collect();
+    (store, ids)
+}
+
+fn catalog_findings(store: &SqliteStore, sql: &str) -> Vec<String> {
+    store.connection.execute_batch("SAVEPOINT damage").unwrap();
+    store.connection.execute_batch(sql).expect("damage");
+    let report = store.verify_all().expect("doctor");
+    store
+        .connection
+        .execute_batch("ROLLBACK TO damage; RELEASE damage")
+        .unwrap();
+    report.invalid_work_records
+}
+
+// The catalog's stored text is read in one pass however many items there are.
+#[test]
+fn doctor_reads_the_catalog_text_once_whatever_the_item_count() {
+    for count in [1, 30] {
+        let (store, _) = catalogued(count);
+        store
+            .connection
+            .pragma_update(None, "query_only", true)
+            .unwrap();
+        let before = crate::storage::fts_verification::fts_content_scans();
+        let report = store.verify_all().expect("doctor");
+        assert!(report.is_healthy(), "{report:?}");
+        // One pass for the work catalog and one for the memory index.
+        assert_eq!(
+            crate::storage::fts_verification::fts_content_scans() - before,
+            2,
+            "{count} items"
+        );
+    }
+}
+
+// Each row-binding defect has its finding: changed text, a repeated row, a
+// missing row and an orphan; an item that does not decode still owns its row.
+#[test]
+fn doctor_names_every_catalog_binding_defect() {
+    let (store, ids) = catalogued(3);
+    let id = &ids[0];
+    let binding = format!("work_catalog:{id}:projection_binding");
+    for (defect, sql) in [
+        (
+            "changed text",
+            format!("UPDATE work_catalog_fts SET search_text = 'changed' WHERE work_id = '{id}'"),
+        ),
+        (
+            "repeated row",
+            format!(
+                "INSERT INTO work_catalog_fts (work_id, search_text)
+                 SELECT work_id, search_text FROM work_catalog_fts WHERE work_id = '{id}'"
+            ),
+        ),
+        (
+            "missing row",
+            format!("DELETE FROM work_catalog_fts WHERE work_id = '{id}'"),
+        ),
+    ] {
+        let invalid = catalog_findings(&store, &sql);
+        assert!(invalid.contains(&binding), "{defect}: {invalid:?}");
+    }
+    let invalid = catalog_findings(
+        &store,
+        "INSERT INTO work_catalog_fts (work_id, search_text) VALUES ('no-such-item', 'x')",
+    );
+    assert!(
+        invalid.contains(&"work_catalog:orphaned_fts_rows".to_owned()),
+        "{invalid:?}"
+    );
+    let invalid = catalog_findings(
+        &store,
+        &format!("UPDATE work_items SET item_json = X'7B7D' WHERE work_id = '{id}'"),
+    );
+    assert!(
+        invalid
+            .iter()
+            .any(|label| label.starts_with(&format!("work_catalog:{id}:item_decode"))),
+        "{invalid:?}"
+    );
+    assert!(
+        !invalid.contains(&"work_catalog:orphaned_fts_rows".to_owned()),
+        "an item that does not decode still owns its catalog row: {invalid:?}"
+    );
+}
+
+/// Old and new catalog content scanners and the whole doctor, timed on the
+/// same synthetic stores. Run on request:
+/// `cargo test --lib catalog_fts_scan_cost_measurement -- --ignored --nocapture`.
+#[test]
+#[ignore = "measurement, run on request"]
+fn catalog_fts_scan_cost_measurement() {
+    for count in [1_000, 3_000, 9_000] {
+        let started = std::time::Instant::now();
+        let (store, ids) = catalogued(count);
+        let fixture = started.elapsed();
+        let (rows, bytes): (i64, i64) = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*), COALESCE(SUM(LENGTH(search_text)), 0) FROM work_catalog_fts",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        // The replaced path: one unindexed lookup per work item.
+        let old = std::time::Instant::now();
+        let mut found = 0;
+        for id in &ids {
+            let mut statement = store
+                .connection
+                .prepare("SELECT search_text FROM work_catalog_fts WHERE work_id = ?1")
+                .unwrap();
+            found += statement
+                .query_map([id.as_str()], |row| row.get::<_, String>(0))
+                .unwrap()
+                .count();
+        }
+        let old = old.elapsed();
+        assert_eq!(found, count);
+        let new = std::time::Instant::now();
+        let content = crate::storage::fts_verification::fts_content(
+            &store.connection,
+            "SELECT work_id, search_text FROM work_catalog_fts",
+            |row| row.get::<_, String>(1),
+        )
+        .unwrap()
+        .unwrap();
+        let new = new.elapsed();
+        assert_eq!(content.len(), count);
+        let doctor = std::time::Instant::now();
+        assert!(store.verify_all().unwrap().is_healthy());
+        let doctor = doctor.elapsed();
+        println!(
+            "catalog items={count} fts_rows={rows} fts_bytes={bytes} \
+             old_per_item_scan_ms={:.1} new_one_pass_ms={:.1} whole_doctor_ms={:.1} fixture_ms={:.0}",
+            old.as_secs_f64() * 1e3,
+            new.as_secs_f64() * 1e3,
+            doctor.as_secs_f64() * 1e3,
+            fixture.as_secs_f64() * 1e3,
+        );
+    }
+}

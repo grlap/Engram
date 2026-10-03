@@ -11,10 +11,9 @@ use super::{
     ProjectPolicyOperation, Redactor, SCHEMA_VERSION, SchemaDurability, SchemaOwner, Scope,
     SqliteStore, StoreError, TransactionBehavior, Utc, current_schema_definition_issue,
     derived_project_memory_state_rows_on, describe_host_path_policy, different_build_store_error,
-    drop_schema_object, enum_name, fts_query, immutable_uri, normalize_control_policy_actor,
-    params, parse_enum, publish_without_replacing, remove_store_files,
-    require_current_schema_marker, store_sidecars, unique_sibling_path,
-    validate_keyed_project_memory_shape, work,
+    drop_schema_object, enum_name, immutable_uri, normalize_control_policy_actor, params,
+    parse_enum, publish_without_replacing, remove_store_files, require_current_schema_marker,
+    store_sidecars, unique_sibling_path, validate_keyed_project_memory_shape, work,
 };
 
 #[cfg(test)]
@@ -1889,6 +1888,14 @@ impl SqliteStore {
         checked: &mut usize,
         invalid: &mut Vec<String>,
     ) -> Result<(), StoreError> {
+        // Every stored row is read once, kept with its repeats, rather than
+        // looked up per memory head through the unindexed object id.
+        let content = super::fts_verification::fts_content(
+            connection,
+            "SELECT object_id, title, body FROM object_fts",
+            |row| Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+        )?;
+        let mut heads = HashSet::new();
         let mut statement = connection
             .prepare("SELECT version_id, title, body FROM memory_heads ORDER BY version_id")?;
         let rows = statement.query_map([], |row| {
@@ -1901,45 +1908,37 @@ impl SqliteStore {
         for row in rows {
             let (version_id, title, body) = row?;
             *checked += 1;
-            let mut fts_statement =
-                connection.prepare("SELECT title, body FROM object_fts WHERE object_id = ?1")?;
-            let stored = fts_statement
-                .query_map([version_id.as_str()], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-            if stored.as_slice() != [(title.clone(), body.clone())] {
-                invalid.push(format!("object_fts:{version_id}:projection_binding"));
-                continue;
-            }
-            // Text with no searchable fragment indexes no term, so only the
-            // content binding above can be checked for it.
-            if let Some(query) = fts_query(&format!("{title} {body}"))
-                && !connection
-                    .query_row(
-                        "SELECT EXISTS(
-                             SELECT 1 FROM object_fts
-                             WHERE object_id = ?1 AND object_fts MATCH ?2
-                         )",
-                        params![version_id, query],
-                        |row| row.get::<_, bool>(0),
-                    )
-                    .unwrap_or(false)
+            // An unreadable table is reported once below, never as every
+            // memory's row gone missing.
+            if let Ok(content) = &content
+                && content.get(&version_id).map(Vec::as_slice) != Some(&[(title, body)][..])
             {
-                invalid.push(format!("object_fts:{version_id}:fts_index"));
+                invalid.push(format!("object_fts:{version_id}:projection_binding"));
             }
+            heads.insert(version_id);
         }
         drop(statement);
-        let orphaned = connection.query_row(
-            "SELECT COUNT(*) FROM object_fts fts
-             WHERE NOT EXISTS (
-                 SELECT 1 FROM memory_heads head WHERE head.version_id = fts.object_id
-             )",
-            [],
-            |row| row.get::<_, i64>(0),
-        )?;
-        if orphaned != 0 {
-            invalid.push("object_fts:orphaned_rows".into());
+        match &content {
+            Ok(content) => {
+                if content.keys().any(|object_id| !heads.contains(object_id)) {
+                    invalid.push("object_fts:orphaned_rows".into());
+                }
+            }
+            Err(detail) => invalid.push(super::fts_verification::bounded_finding(
+                "object_fts:fts_content",
+                detail,
+            )),
+        }
+        // SQLite's FTS5 integrity check compares every posting with the
+        // stored text in one read-only pass, bounded by the index's size,
+        // where a full-text query per memory head grew with the memories and
+        // their text.
+        if let Some(finding) = super::fts_verification::fts_index_finding(
+            connection,
+            "object_fts",
+            "object_fts:fts_index",
+        )? {
+            invalid.push(finding);
         }
         Ok(())
     }
