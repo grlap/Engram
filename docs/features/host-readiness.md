@@ -66,6 +66,11 @@ Success is exit 0 and one JSON object on stdout with these required fields:
 | `control` | Same fields and enum spellings as `control-policy show` |
 | `build`, `build_fingerprint` | Existing doctor build diagnostics, never authentication or admission tokens |
 
+`build_fingerprint` identifies the exact executable reporting readiness through
+its package version, executable SHA-256, schema reference and source revision.
+In a landing record it names the installed executable; the commit is recorded
+separately. Rebuilding the same clean commit need not reproduce that value.
+
 The receipt never contains `healthy`. Diagnostic build fields can be unavailable
 as documented in [build identity](cli-and-mcp.md#build-identity-and-doctor-refusals);
 schema admission does not depend on those fingerprints. Example of the scoped

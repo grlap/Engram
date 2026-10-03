@@ -1235,6 +1235,14 @@ Equal inputs produce equal fingerprints; different executable bytes, schema
 definitions or source revisions distinguish builds even when their package
 versions agree.
 
+The fingerprint identifies the exact executable reporting those build
+components; it is not a reproducible identity for the runtime source tree.
+Link metadata can change executable bytes between release builds of the same
+clean commit. A landing record's installed build uses the fingerprint reported
+by the installed executable. A restart signal names that executable's build,
+the commit and the reason separately: a different fingerprint alone does not
+establish that restarting gains a behavior change or fix.
+
 An unreadable executable is explicitly `executable_sha256: null` with
 `executable: "unavailable"`; an unavailable in-memory schema reference likewise
 uses `schema_reference: null` and `schema: "unavailable"`. A canonicalization
