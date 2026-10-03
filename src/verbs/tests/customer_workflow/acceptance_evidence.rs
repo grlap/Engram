@@ -442,6 +442,8 @@ fn criterion_disclosure_restored_completion_states_unavailability_without_counts
         "this store holds no per-criterion evidence record for this restored completion";
     assert_eq!(show.value["acceptance_evidence_unavailable"], explanation);
     assert_eq!(show.value["acceptance"]["provenance"], "unavailable");
+    // No native seal is no failure: plain unavailable, without a class.
+    assert!(show.value["acceptance"].get("error_class").is_none());
     assert!(show.text().contains(
         "acceptance: provenance unavailable (completion provenance could not be established)"
     ));
@@ -1041,6 +1043,10 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
             let readable = verbs.show_records(&reference, input, at(4)).unwrap();
             assert_eq!(healthy.value["acceptance"]["provenance"], "self_asserted");
             assert_eq!(readable.value["acceptance"]["provenance"], "unavailable");
+            // A seal the run names but that cannot be read carries the
+            // read's class, unlike an item with no seal at all.
+            assert_eq!(readable.value["acceptance"]["error_class"], error_class);
+            assert!(healthy.value["acceptance"].get("error_class").is_none());
             assert!(
                 readable
                     .text()
@@ -1097,6 +1103,71 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
             before
         );
     }
+}
+
+// A seal record that reads but belongs to another item's run is a binding
+// failure: show names its class instead of reading like an item with no seal.
+#[test]
+fn a_completed_items_misbound_seal_is_unavailable_with_its_class() {
+    let (_directory, verbs, path, _) = fixture();
+    let complete = |reference: &str, key: &str| {
+        let result = verbs
+            .service
+            .work_complete_on(
+                Some(reference),
+                WorkCompleteInput {
+                    source_fingerprint: None,
+                    landing: None,
+                    links: Vec::new(),
+                    link_basis: None,
+                    capture: Some(crate::work_service::WorkCompletionCaptureInput {
+                        summary: "delivered".into(),
+                        refs: Vec::new(),
+                    }),
+                    evidence: Vec::new(),
+                    acceptance: None,
+                    note: None,
+                    idempotency_key: key.into(),
+                },
+                at(2),
+            )
+            .unwrap();
+        let WorkCompleteResult::Completed(completed) = result else {
+            panic!("expected completion")
+        };
+        completed.seal
+    };
+    let first = claimed(&verbs, vec!["first".into()]);
+    let first_seal = complete(&first, "complete-first");
+    let second = claimed(&verbs, vec!["second".into()]);
+    let second_seal = complete(&second, "complete-second");
+    let healthy = verbs.show(&first, at(3)).unwrap();
+    assert_eq!(healthy.value["acceptance"]["provenance"], "self_asserted");
+
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "UPDATE objects SET canonical_json =
+                 (SELECT canonical_json FROM objects WHERE object_id = ?2)
+             WHERE object_id = ?1",
+            [first_seal.as_str(), second_seal.as_str()],
+        )
+        .unwrap();
+    let misbound = verbs.show(&first, at(4)).unwrap();
+    assert_eq!(misbound.value["acceptance"]["provenance"], "unavailable");
+    assert_eq!(
+        misbound.value["acceptance"]["error_class"],
+        "work_projection_invalid"
+    );
+    assert!(
+        misbound
+            .text()
+            .contains("diagnostic class: work_projection_invalid")
+    );
+    // The other item's seal is untouched and still reads.
+    let other = verbs.show(&second, at(4)).unwrap();
+    assert_eq!(other.value["acceptance"]["provenance"], "self_asserted");
+    assert!(other.value["acceptance"].get("error_class").is_none());
 }
 
 #[test]

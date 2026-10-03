@@ -1436,7 +1436,10 @@ application-receipt JSON window stays strictly under 12 KiB, with exact
 uses the same window metadata in `history.window`. Unlike ordinary show's
 native-change history and separate restored history, this mode combines
 inherited notes/events/completion with native work events; `history.total`
-counts that combined stream. Its rows carry locators and byte sizes, and
+counts that combined stream. Each inherited generation lists its notes, then
+its events, then its completion, in the order the record stores them, as
+ordinary show's restored history does: a deterministic presentation, not a
+chronology, so carried timestamps never reorder rows. Its rows carry locators and byte sizes, and
 the presence of `history.window` distinguishes them from compact change
 rows. Shortened inherited-note summaries retain the original `body_bytes`
 and expose `summary_truncated` with a complete-note `detail` command.
@@ -1470,7 +1473,10 @@ evidence links and acceptance evaluation ids. Native notes use a unique
 prefix of the record's id (at least eight hex digits, from an id of 32 or 64);
 inherited notes use
 `RECORD_ID:INDEX`, with a one-based immutable member index rather than a display
-ordinal. No id is derived from content to build a locator.
+ordinal; inherited events use `RECORD_ID:event-INDEX` and an inherited
+completion `RECORD_ID:completion`, whose detail returns the complete member
+framed as data with its byte size. No id is derived from content to build a
+locator.
 `show REF --note LOCATOR` / MCP `note: LOCATOR` returns complete detail and
 UTF-8 `body_bytes`, deliberately beyond 12 KiB when necessary. A window that
 cannot fit a body retains its locator, size, `body_omitted` flag and detail

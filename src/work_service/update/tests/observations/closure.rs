@@ -113,14 +113,35 @@ fn assert_restored_note_kind(
             at(second + 1),
         )
         .unwrap();
-    let focus = restored.work_focus(work_ref, at(second + 2)).unwrap();
-    let note = focus
-        .restored_history
-        .items
-        .iter()
-        .find(|entry| entry.summary == summary)
+    // The notes window lists every inherited note; the focus view's short
+    // restored-history tail shows a generation's events after its notes.
+    let words = AgentVerbs::with_shared_service(
+        Arc::new(restored),
+        "reader".into(),
+        SessionId("reader".into()),
+    );
+    let shown = words
+        .show_records(
+            work_ref,
+            &crate::verbs::ShowInput {
+                notes: true,
+                ..crate::verbs::ShowInput::default()
+            },
+            at(second + 2),
+        )
         .unwrap();
-    assert_eq!(note.kind, expected);
+    let note = shown.value["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["summary"] == summary)
+        .unwrap_or_else(|| panic!("no restored note {summary:?}: {}", shown.value));
+    if expected == "non_holder_note" {
+        assert_eq!(note["non_holder"], true);
+    } else {
+        assert_eq!(note["non_holder"], false);
+        assert_eq!(note["kind"], expected);
+    }
 }
 
 #[test]

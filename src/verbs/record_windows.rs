@@ -133,7 +133,15 @@ impl AgentVerbs {
                 });
             // The continuation names the record's full id, so it stays on the
             // assessment block, like a window row's detail command, not in `next`.
-            let next = vec![format!("engram work show {work_ref} --notes")];
+            // An inherited event or completion came from the history window.
+            let next = vec![format!(
+                "engram work show {work_ref} {}",
+                if row.member.is_some() {
+                    "--history"
+                } else {
+                    "--notes"
+                }
+            )];
             let assessment_value = assessment
                 .as_ref()
                 .map(|page| super::verification_assessment::value(page, continuation.as_deref()));
@@ -158,11 +166,51 @@ impl AgentVerbs {
                 ));
             }
             let mut value = row_value(&row, false, &work_ref, self.service.display_identity());
-            let mut lines = vec![format!(
-                "note {}: {} UTF-8 body bytes (complete detail)",
-                row.locator, row.body_bytes
-            )];
+            // An inherited event or completion also carries the complete
+            // member, every field as its record stores it, framed as data,
+            // except its actor, which reads as the row's display label like
+            // every other attribution in these windows.
+            let displayed_member = row.member.as_ref().map(|member| {
+                let mut member = member.clone();
+                if let Some(actor) = member.get_mut("actor") {
+                    *actor = value["by"].clone();
+                }
+                member
+            });
+            let member = displayed_member
+                .as_ref()
+                .map(|member| -> Result<_, VerbError> {
+                    let compact = serde_json::to_string(member)
+                        .map_err(|error| VerbError::at(StoreError::Json(error), &work_ref))?;
+                    let pretty = serde_json::to_string_pretty(member)
+                        .map_err(|error| VerbError::at(StoreError::Json(error), &work_ref))?;
+                    Ok((compact.len(), pretty))
+                })
+                .transpose()?;
+            let mut lines = vec![match &member {
+                Some((bytes, _)) => format!(
+                    "history {}: complete inherited {} member, {bytes} UTF-8 bytes",
+                    row.locator,
+                    super::terminal_safe_line(&row.kind)
+                ),
+                None => format!(
+                    "note {}: {} UTF-8 body bytes (complete detail)",
+                    row.locator, row.body_bytes
+                ),
+            }];
             append_row_lines(&mut lines, &value, row.family);
+            if let (Some(record), Some((bytes, pretty))) = (&displayed_member, &member) {
+                lines.push("    member:".into());
+                lines.push(
+                    super::terminal_data_block(pretty)
+                        .lines()
+                        .map(|line| format!("      {line}"))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                );
+                value["member"] = record.clone();
+                value["member_bytes"] = json!(bytes);
+            }
             if let (Some(page), Some(assessment)) = (&assessment, assessment_value) {
                 super::verification_assessment::append_lines(
                     &mut lines,

@@ -252,7 +252,7 @@ engram work next --peek [--verbose]  # orientation without advancing delivery
 engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
-engram work show REF --note ID[:INDEX]  # complete immutable note detail
+engram work show REF --note ID[:INDEX | :event-INDEX | :completion]  # complete immutable note or inherited member detail
 engram work show REF --evaluations [--after CURSOR]  # the run's evaluation records, oldest to newest
 engram work show REF --evaluation RECORD_ID  # one evaluation record complete
 engram work show REF --observations [--after CURSOR]  # the run's source observations, oldest to newest
@@ -639,6 +639,12 @@ Rules that matter:
   separate `restored_history` with one stream: inherited notes, events and
   completion members, then native work events. Its `history.total` counts
   that combined stream; ordinary show's total counts only native changes.
+  Each inherited generation lists its notes, then its events, then its
+  completion, each in the order the record stores them; ordinary show's
+  `restored_history` uses the same order. This is a deterministic
+  presentation, not a chronology: a snapshot carries no position shared
+  across those families, and carried timestamps are shown as data and never
+  reorder rows.
   Window rows carry `locator`, `kind`, `summary`, `by`, `created_at`, and
   `body_bytes`, rather than ordinary show's compact change-row shape.
   Note-family rows in explicit window/detail JSON carry the native project
@@ -661,7 +667,15 @@ Rules that matter:
   prefix of the record's id, at least eight hex digits of an id of 32 or 64;
   inherited notes use `RECORD_ID:INDEX`, where INDEX is the one-based immutable
   member position,
-  not a display ordinal. `show REF --note LOCATOR` (MCP `note: LOCATOR`)
+  not a display ordinal. An inherited event row uses `RECORD_ID:event-INDEX`
+  and an inherited completion `RECORD_ID:completion`. A history window row
+  whose summary was shortened keeps the original `body_bytes`, sets
+  `summary_truncated` and offers that locator's `detail` command. That detail
+  returns the whole summary and the complete `member`, every field as the
+  record stores it (for an event: kind, work revision, reason, lifecycle,
+  related item and revision, and time), except that its `actor` is the row's
+  `by` display label, with its `member_bytes` as compact JSON; text frames
+  the member as data, and `next` returns to the `--history` window. `show REF --note LOCATOR` (MCP `note: LOCATOR`)
   returns the complete body and references, with `body_bytes` in UTF-8, and
   deliberately may exceed 12 KiB. Ambiguous or wrong-item references refuse
   with `work_note_reference_invalid` and candidate locators when available.

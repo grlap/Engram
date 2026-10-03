@@ -49,6 +49,9 @@ pub(crate) struct WorkRecordRow {
     pub summary_truncated: bool,
     /// The typed facts of a native verification record.
     pub verification: Option<crate::storage::VerificationFacts>,
+    /// The complete inherited event or completion member, every field as the
+    /// record stores it; only its detail read carries it.
+    pub member: Option<serde_json::Value>,
     address: WorkRecordAddress,
     order: WorkRecordOrder,
 }
@@ -156,7 +159,8 @@ impl LocalWorkService {
             let mut rows = Vec::new();
             let mut bytes = 0;
             for entry in index[..end].iter().rev().take(64) {
-                let mut row = project_record(store, &self.project_id, item.work_id, entry, kind)?;
+                let mut row =
+                    project_record(store, &self.project_id, item.work_id, entry, kind, false)?;
                 let size = row.summary.len() + row.refs.iter().map(String::len).sum::<usize>();
                 if size > MAX_AGENT_WORK_RESPONSE_BYTES {
                     row.summary.clear();
@@ -214,24 +218,34 @@ impl LocalWorkService {
         let (prefix, member) = locator
             .split_once(':')
             .map_or((locator, None), |(prefix, member)| (prefix, Some(member)));
+        // An inherited member is a note (INDEX), an event (event-INDEX) or
+        // the completion; indexes are one-based immutable member positions.
+        let positive = |index: &str| {
+            !index.is_empty()
+                && index.bytes().all(|byte| byte.is_ascii_digit())
+                && index.parse::<usize>().is_ok_and(|index| index > 0)
+        };
+        let history_member = member.is_some_and(|member| {
+            member == "completion" || member.strip_prefix("event-").is_some_and(positive)
+        });
         if !(8..=64).contains(&prefix.len())
             || !prefix.bytes().all(|byte| byte.is_ascii_hexdigit())
-            || member
-                .is_some_and(|member| member.parse::<usize>().ok().is_none_or(|index| index == 0))
+            || member.is_some_and(|member| !history_member && !positive(member))
         {
             return Err(reference_invalid(
-                "use at least eight hex digits and, for inherited notes, :INDEX",
+                "use at least eight hex digits and, for inherited members, :INDEX for a note, :event-INDEX for an event, or :completion",
                 Vec::new(),
             ));
         }
+        let kind = if history_member {
+            WorkRecordKind::History
+        } else {
+            WorkRecordKind::NotesWithGates
+        };
         let store = self.read_store_at(now)?;
         store.work_read_snapshot(|store| {
             let item = store.resolve_work_ref(&self.project_id, work_ref)?;
-            let index = store.work_record_index(
-                &self.project_id,
-                item.work_id,
-                WorkRecordKind::NotesWithGates,
-            )?;
+            let index = store.work_record_index(&self.project_id, item.work_id, kind)?;
             let prefix = prefix.to_ascii_lowercase();
             let matches = index
                 .iter()
@@ -260,6 +274,7 @@ impl LocalWorkService {
                 item.work_id,
                 matches[0],
                 WorkRecordKind::NotesWithGates,
+                true,
             )?;
             if cursor.as_ref().is_some_and(|cursor| {
                 cursor.work != item.work_id || cursor.record != row.address.hash
@@ -405,16 +420,21 @@ fn assessment_page(
     })
 }
 
+/// One row of a window, or with `detail` the complete record a locator
+/// names: an inherited event or completion then keeps its whole summary and
+/// carries the complete member.
 fn project_record(
     store: &SqliteStore,
     project: &ProjectId,
     work: WorkId,
     entry: &WorkRecordIndex,
     kind: WorkRecordKind,
+    detail: bool,
 ) -> Result<WorkRecordRow, StoreError> {
     let mut note_body_bytes = None;
     let mut summary_truncated = false;
     let mut verification = None;
+    let mut complete_member = None;
     let (label, summary, refs, actor, recorded_at) =
         match store.work_record_content(project, work, entry)? {
             WorkRecordContent::Note(mut note) => {
@@ -458,7 +478,22 @@ fn project_record(
                 summary,
                 actor,
                 recorded_at,
-            } => (kind, compact_text(&summary), Vec::new(), actor, recorded_at),
+                member,
+            } => {
+                // The window shows a compact summary but keeps the original
+                // size, and says when it shortened it so the row offers its
+                // detail; the detail read keeps the whole text.
+                note_body_bytes = Some(summary.len());
+                let shown = if detail {
+                    complete_member = Some(member);
+                    summary
+                } else {
+                    let compact = compact_text(&summary);
+                    summary_truncated = compact != summary;
+                    compact
+                };
+                (kind, shown, Vec::new(), actor, recorded_at)
+            }
         };
     Ok(WorkRecordRow {
         family: entry.record_family,
@@ -472,6 +507,7 @@ fn project_record(
         body_omitted: false,
         summary_truncated,
         verification,
+        member: complete_member,
         address: entry.address.clone(),
         order: entry.order.clone(),
     })

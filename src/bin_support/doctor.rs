@@ -9,7 +9,7 @@ use engram::{HostPathPolicy, ProjectId, SqliteStore, describe_host_path_policy};
 use crate::{control_assurance_name, warn_if_action_gated};
 
 const MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS: usize = 32;
-const MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES: usize = 256;
+const MAX_DOCTOR_GRAPH_SNAPSHOT_TEXT_BYTES: usize = 256;
 
 pub(crate) mod landings;
 pub(crate) mod refusals;
@@ -297,7 +297,7 @@ fn print_graph_snapshot_audits(store: &SqliteStore, project_id: &ProjectId) -> R
                 .map_or_else(|| "not recorded".into(), |count| count.to_string()),
             audit.body_sha256,
             audit.destination_kind,
-            bounded_doctor_snapshot_actor(&audit.actor.actor_id),
+            bounded_doctor_snapshot_text(&audit.actor.actor_id),
         );
     }
     let (total, audits) = store
@@ -321,8 +321,8 @@ fn print_graph_snapshot_audits(store: &SqliteStore, project_id: &ProjectId) -> R
                 + audit.redacted.records
                 + audit.redacted.memories,
             audit.body_sha256,
-            audit.exporting_build,
-            bounded_doctor_snapshot_actor(&audit.actor.actor_id),
+            bounded_doctor_snapshot_text(&audit.exporting_build),
+            bounded_doctor_snapshot_text(&audit.actor.actor_id),
         );
     }
     Ok(())
@@ -610,23 +610,25 @@ fn compact_graph_snapshot_audit_json<T: serde::Serialize>(
     fields.insert(
         "actor".into(),
         serde_json::json!({
-            "actor_id": bounded_doctor_snapshot_actor(actor_id),
+            "actor_id": bounded_doctor_snapshot_text(actor_id),
             "details_omitted": true,
         }),
     );
     Ok(value)
 }
 
-fn bounded_doctor_snapshot_actor(actor_id: &str) -> String {
-    if actor_id.len() <= MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES {
-        return actor_id.to_owned();
+/// Carried snapshot audit text a doctor line prints, such as the actor id
+/// or the exporting build, cut on a character boundary to a bounded size.
+fn bounded_doctor_snapshot_text(text: &str) -> String {
+    if text.len() <= MAX_DOCTOR_GRAPH_SNAPSHOT_TEXT_BYTES {
+        return text.to_owned();
     }
     let suffix = "…";
-    let mut end = MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES.saturating_sub(suffix.len());
-    while !actor_id.is_char_boundary(end) {
+    let mut end = MAX_DOCTOR_GRAPH_SNAPSHOT_TEXT_BYTES.saturating_sub(suffix.len());
+    while !text.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{}{suffix}", &actor_id[..end])
+    format!("{}{suffix}", &text[..end])
 }
 
 pub(crate) fn canonical_database_path(database: &Path) -> Result<String> {
@@ -831,12 +833,28 @@ mod tests {
     }
 
     #[test]
-    fn doctor_snapshot_actor_rendering_is_utf8_safe_and_bounded() {
+    fn doctor_snapshot_text_rendering_is_utf8_safe_and_bounded() {
         let actor = format!("{}é", "x".repeat(300));
-        let rendered = bounded_doctor_snapshot_actor(&actor);
-        assert!(rendered.len() <= MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES);
+        let rendered = bounded_doctor_snapshot_text(&actor);
+        assert!(rendered.len() <= MAX_DOCTOR_GRAPH_SNAPSHOT_TEXT_BYTES);
         assert!(rendered.ends_with('…'));
         assert!(std::str::from_utf8(rendered.as_bytes()).is_ok());
+
+        // An exporting build whose cut point falls inside a two-byte
+        // character: the cut moves back to the character's start.
+        let suffix = "…";
+        let cut = MAX_DOCTOR_GRAPH_SNAPSHOT_TEXT_BYTES - suffix.len();
+        let build = format!("{}{}", "b".repeat(cut - 1), "é".repeat(40));
+        assert!(!build.is_char_boundary(cut), "the cut crosses a character");
+        let rendered = bounded_doctor_snapshot_text(&build);
+        assert_eq!(rendered, format!("{}{suffix}", "b".repeat(cut - 1)));
+        assert!(rendered.len() <= MAX_DOCTOR_GRAPH_SNAPSHOT_TEXT_BYTES);
+
+        // Text within the bound is printed whole, multibyte or not.
+        let short = "engram 0.1.0 ✓ é";
+        assert_eq!(bounded_doctor_snapshot_text(short), short);
+        let exact = "é".repeat(MAX_DOCTOR_GRAPH_SNAPSHOT_TEXT_BYTES / 2);
+        assert_eq!(bounded_doctor_snapshot_text(&exact), exact);
     }
 
     #[test]

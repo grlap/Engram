@@ -234,7 +234,9 @@ struct ShowArgs {
     /// With note, continues a verification record's obligation assessment.
     after: Option<String>,
     /// Complete note body beyond the window ceiling: record id or `RECORD_ID:INDEX`.
-    /// A verification record also shows its reconstructed obligation assessment.
+    /// An inherited event or completion: `RECORD_ID:event-INDEX` or `RECORD_ID:completion`,
+    /// returning the complete member. A verification record also shows its
+    /// reconstructed obligation assessment.
     note: Option<String>,
     /// Complete stored title, outcome, and acceptance; exclusive of windows.
     full: Option<bool>,

@@ -4,6 +4,8 @@ use std::fmt::Write as _;
 
 mod corrections;
 mod gate_families;
+mod inherited_detail;
+mod restored_order;
 
 fn window(
     verbs: &AgentVerbs,

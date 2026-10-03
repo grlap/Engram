@@ -1117,14 +1117,20 @@ impl LocalWorkService {
                 .map(|(run_id, seal_id)| {
                     super::acceptance::bound_seal(store, seal_id, work_id, run_id)
                 });
-            if let Some(Ok(seal)) = &sealed {
-                match super::acceptance::provenance(store, seal) {
+            // A seal the run names but that cannot be read or bound is
+            // classed too, so it never reads like an item with no seal.
+            match &sealed {
+                Some(Ok(seal)) => match super::acceptance::provenance(store, seal) {
                     Ok(provenance) => acceptance_provenance = Some(provenance),
                     Err(error) => {
                         acceptance_provenance_error_class =
                             Some(super::advisory_error_class(&error));
                     }
+                },
+                Some(Err(error)) => {
+                    acceptance_provenance_error_class = Some(super::advisory_error_class(error));
                 }
+                None => {}
             }
             (landing, landing_unavailable) =
                 completed_landing(completed_by_record, sealed.as_ref());
@@ -1390,7 +1396,11 @@ fn restored_history_view(records: Vec<crate::RestoredRecord>) -> RestoredHistory
             });
         }
     }
-    entries.sort_by_key(|entry| (entry.generation_index, entry.created_at));
+    // A deterministic presentation order, not a chronology: by generation,
+    // then notes, events and completion in the order each record stores
+    // them. The stable sort keeps that order; carried timestamps are shown
+    // as data and never reorder entries.
+    entries.sort_by_key(|entry| entry.generation_index);
     let total = entries.len();
     let keep = usize::try_from(MAX_FOCUS_HISTORY).unwrap_or(usize::MAX);
     let omitted = total.saturating_sub(keep);

@@ -116,6 +116,8 @@ pub(crate) enum WorkRecordContent {
         summary: String,
         actor: ActorContext,
         recorded_at: DateTime<Utc>,
+        /// The complete member as the record stores it, every field kept.
+        member: serde_json::Value,
     },
 }
 
@@ -148,32 +150,23 @@ impl SqliteStore {
             )?;
             let record_id = parse_record_id(stored_record_id)?;
             let record = Arc::new(record);
-            let mut members = record
-                .history
-                .notes
-                .iter()
-                .enumerate()
-                .map(|(index, note)| (note.recorded_at, RestoredMember::Note(index + 1)))
+            // A deterministic presentation order, not a chronology: the
+            // snapshot carries no position shared across families, so each
+            // generation lists its notes, then its events, then its
+            // completion, each family in the order the record stores it.
+            // Carried timestamps stay data and never reorder members.
+            let mut members = (1..=record.history.notes.len())
+                .map(RestoredMember::Note)
                 .collect::<Vec<_>>();
             if kind == WorkRecordKind::History {
-                members.extend(
-                    record
-                        .history
-                        .events
-                        .iter()
-                        .enumerate()
-                        .filter(|_| !carried_disposal)
-                        .map(|(index, event)| {
-                            (event.occurred_at, RestoredMember::Event(index + 1))
-                        }),
-                );
-                if let Some(completion) = &record.history.completion {
-                    members.push((completion.completed_at, RestoredMember::Completion));
+                if !carried_disposal {
+                    members.extend((1..=record.history.events.len()).map(RestoredMember::Event));
                 }
-                // Preserve the existing restored history's stable timestamp order.
-                members.sort_by_key(|(time, _)| *time);
+                if record.history.completion.is_some() {
+                    members.push(RestoredMember::Completion);
+                }
             }
-            for (position, (_, member)) in members.into_iter().enumerate() {
+            for (position, member) in members.into_iter().enumerate() {
                 let record_family = match member {
                     RestoredMember::Note(index) => {
                         let note = &record.history.notes[index - 1];
@@ -354,11 +347,13 @@ fn inherited_content(
                 )
                 .ok_or_else(|| invalid("missing event member"))?
                 .clone();
+            let member = serde_json::to_value(&event)?;
             WorkRecordContent::InheritedHistory {
                 summary: event.reason.unwrap_or_else(|| event.kind.clone()),
                 kind: event.kind,
                 actor: event.actor,
                 recorded_at: event.occurred_at,
+                member,
             }
         }
         RestoredMember::Completion => {
@@ -372,6 +367,7 @@ fn inherited_content(
                 summary: completion.summary.clone(),
                 actor: completion.actor.clone(),
                 recorded_at: completion.completed_at,
+                member: serde_json::to_value(completion)?,
             }
         }
     })
