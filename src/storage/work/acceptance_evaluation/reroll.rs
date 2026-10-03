@@ -6,12 +6,21 @@
 //! the policy, cannot replace a fail, while a correction note followed by a
 //! new evaluation still can. A change of the criteria or their bindings is
 //! the carried-failure rule's to judge, not this one's.
+//!
+//! One assessment serves both readers: the record transaction asks it at the
+//! submitted evidence basis, and the evaluation status asks it at the run
+//! feed's head, so a host can see a standing refusal before it starts an
+//! evaluator. The record transaction always asks again; a status read is
+//! never an admission.
 
 use rusqlite::{Connection, params};
 
 use super::{
     AcceptanceEvaluation, NamedEvaluationRoot, ObjectId, StoreError, WorkItem, WorkRunId,
     citation_position, judged_bindings, judged_source, latest_on, named_root_at_on, off_named_root,
+};
+use crate::domain::{
+    EvaluationAdmissionRemedy, EvaluationRerollMismatch, FeedId, RerollAdmissionCause,
 };
 use crate::storage::work::UNADMITTED_OBSERVATION_KIND;
 use crate::storage::work::feeds::source_observation_if_accounted_on;
@@ -24,17 +33,18 @@ use crate::storage::work::feeds::source_observation_if_accounted_on;
 const EVIDENCE_KINDS: &str = "'work_evidence', 'verification_evidence', 'environment_evidence',
      'execution_observation', 'unadmitted_execution_observation'";
 
-/// Why an evaluation cut at `cut` may not replace the newest evaluation on
-/// the run, or `None` when it may: the newest one passes, judged other
-/// criteria or bindings than the item has now, or qualifying evidence was
-/// recorded after its cut and at or before `cut`.
-pub(super) fn reroll_refusal(
+/// The blocking evaluation that stands against an evaluation cut at `cut`,
+/// or `None` when one may replace the newest evaluation on the run: there is
+/// none, it passes, it judged other criteria or bindings than the item has
+/// now, or qualifying evidence was recorded after its cut and at or before
+/// `cut`.
+pub(super) fn reroll_assessment(
     connection: &Connection,
     item: &WorkItem,
     run_id: WorkRunId,
     cut: i64,
     root: Option<&NamedEvaluationRoot>,
-) -> Result<Option<String>, StoreError> {
+) -> Result<Option<RerollAdmissionCause>, StoreError> {
     let Some((newest, record)) = latest_on(connection, run_id)? else {
         return Ok(None);
     };
@@ -44,7 +54,6 @@ pub(super) fn reroll_refusal(
     if contract_changed(connection, item, run_id, &newest, &record)? {
         return Ok(None);
     }
-    let blocked_at = record.evaluated_cut.position;
     if new_evidence_between(connection, run_id, &record, cut, root)? {
         return Ok(None);
     }
@@ -53,10 +62,29 @@ pub(super) fn reroll_refusal(
         .iter()
         .position(|verdict| std::ptr::eq(verdict, blocking))
         .map_or(0, |index| index + 1);
-    Ok(Some(format!(
-        "the newest evaluation on this run, {newest}, gave {} on criterion {criterion}, and nothing that could change it was recorded after its evidence basis {blocked_at} and within this one ({cut}): record the correction or the new evidence first (a note, a gate, a host check or a source change), then evaluate on a basis that includes it; another evaluation, a claim, a checkpoint, or an edit of the title, the mode or the policy does not count",
-        blocking.verdict.word()
-    )))
+    Ok(Some(RerollAdmissionCause {
+        mismatch: EvaluationRerollMismatch::BlockingEvaluationStands,
+        evaluation: newest,
+        feed: FeedId::RunExecution(run_id),
+        after_position: record.evaluated_cut.position,
+        through_position: cut,
+        criterion,
+        verdict: blocking.verdict,
+        remedy: EvaluationAdmissionRemedy::RecordNewEvidenceThenEvaluate,
+    }))
+}
+
+/// The refusal's words for a standing blocking evaluation.
+pub(super) fn reroll_reason(cause: &RerollAdmissionCause) -> String {
+    format!(
+        "the newest evaluation on this run, {}, gave {} on criterion {}, and nothing that could change it was recorded after its evidence basis {} and within this one ({}): {}",
+        cause.evaluation,
+        cause.verdict.word(),
+        cause.criterion,
+        cause.after_position,
+        cause.through_position,
+        RerollAdmissionCause::REMEDY
+    )
 }
 
 /// Whether the item's criteria or their bindings differ from those the

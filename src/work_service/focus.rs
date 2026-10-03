@@ -39,6 +39,9 @@ pub(crate) struct WorkAuthoredEvaluation {
     pub supersedes: Option<String>,
     /// The failing evaluation whose criteria were revised on this run.
     pub carried_failure: Option<crate::domain::CarriedFailure>,
+    /// The blocking evaluation a new one through the run's head would be
+    /// refused for.
+    pub reroll: Option<Box<crate::domain::RerollAdmissionCause>>,
 }
 
 /// One complete verdict of the `show --full` read.
@@ -337,6 +340,7 @@ impl LocalWorkService {
                             .as_ref()
                             .map(|id| id.as_str().to_owned()),
                         carried_failure: status.carried_failure.clone(),
+                        reroll: status.reroll.clone(),
                     })
             } else {
                 None

@@ -253,6 +253,10 @@ pub(super) enum Typed {
     Eligibility(EvaluationEligibilityMismatch, EvaluationAdmissionRemedy),
     Root(EvaluationRootMismatch, EvaluationAdmissionRemedy),
     Citation(EvaluationCitationMismatch, EvaluationAdmissionRemedy),
+    Reroll(
+        crate::domain::EvaluationRerollMismatch,
+        EvaluationAdmissionRemedy,
+    ),
 }
 
 /// The reason of a refusal, after checking its shared CLI/MCP shape, its
@@ -271,6 +275,9 @@ pub(super) fn typed_cause(
         }
         AcceptanceEvaluationAdmissionCause::Citation(cause) => {
             Typed::Citation(cause.mismatch, cause.remedy)
+        }
+        AcceptanceEvaluationAdmissionCause::Reroll(cause) => {
+            Typed::Reroll(cause.mismatch, cause.remedy)
         }
     };
     assert_eq!(found, expected, "{reason}");

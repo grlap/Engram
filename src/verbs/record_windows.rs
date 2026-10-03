@@ -361,6 +361,9 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
                 ));
             }
         }
+        if let Some(cause) = &evaluation.reroll {
+            lines.push(super::show::reroll_line(cause));
+        }
         for verdict in &evaluation.verdicts {
             lines.push(format!(
                 "  {}. {} ({})",
@@ -400,6 +403,14 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
             }
             if let Some(observation) = &evaluation.stale_observation {
                 object.insert("stale_observation".into(), json!(observation));
+            }
+            if let Some(cause) = &evaluation.reroll {
+                object.insert(
+                    "reroll".into(),
+                    json!(crate::domain::AcceptanceEvaluationAdmissionCause::Reroll(
+                        cause.clone()
+                    )),
+                );
             }
             if let (Some(carried), Some(full)) = (&carried, &evaluation.carried_failure) {
                 let mut carried = json!(carried);

@@ -4,8 +4,61 @@
 //! cut at the same position, or one whose cut advanced only by evaluation or
 //! checkpoint entries, or by a repeat sighting of the source it judged, does
 //! not replace it.
+//!
+//! Every record in these tests goes through a wrapper that first reads the
+//! evaluation status: at the run's head, the status's `reroll` must predict
+//! this rule's answer exactly, so the status and the record transaction are
+//! shown to share one assessment rather than said to.
 
 use super::*;
+use crate::domain::{EvaluationRerollMismatch, RerollAdmissionCause};
+
+/// Records as the shared helper does, after reading the status at the same
+/// moment. When the request is cut at the run's head, an admitted record had
+/// no standing cause in the status, and a refusal for the standing
+/// evaluation carries exactly the cause the status showed. A refusal by an
+/// earlier rule says nothing of this one, since the record stops before it.
+fn record(
+    store: &mut SqliteStore,
+    request: &RecordAcceptanceEvaluationRequest,
+) -> Result<AcceptanceEvaluationReceipt, StoreError> {
+    let item = store.get_work_item(request.work_id).expect("item");
+    let at_head = item.active_run_id.is_some_and(|run| {
+        store
+            .work_feed_head(&FeedId::RunExecution(run))
+            .expect("run feed head")
+            == request.evaluated_through
+    });
+    let standing = store
+        .acceptance_evaluation_status(request.work_id, None)
+        .expect("status read")
+        .and_then(|status| status.reroll);
+    let result = super::record(store, request);
+    let answered = match &result {
+        Ok(receipt) if !receipt.replayed => Some(None),
+        Err(StoreError::AcceptanceEvaluationAdmissionRefused { cause, .. }) => match cause.as_ref()
+        {
+            AcceptanceEvaluationAdmissionCause::Reroll(cause) => Some(Some(cause.clone())),
+            _ => None,
+        },
+        _ => None,
+    };
+    if at_head && let Some(answered) = answered {
+        assert_eq!(
+            answered, standing,
+            "the status read at the head predicts the record's re-roll answer"
+        );
+    }
+    result
+}
+
+/// The standing cause the status shows now.
+fn standing(store: &SqliteStore, work: &WorkItem) -> Option<Box<RerollAdmissionCause>> {
+    store
+        .acceptance_evaluation_status(work.work_id, None)
+        .expect("status read")
+        .and_then(|status| status.reroll)
+}
 
 fn judged(
     work: &WorkItem,
@@ -32,16 +85,29 @@ fn judged(
     request
 }
 
-/// The refusal a re-roll on the same evidence gets.
+/// The refusal a re-roll on the same evidence gets: the typed cause, with the
+/// shared CLI/MCP error shape and unchanged words.
 fn rerolled(result: Result<AcceptanceEvaluationReceipt, StoreError>, case: &str) -> String {
-    match result {
-        Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
-            if reason.contains("nothing that could change it was recorded") =>
-        {
-            reason
-        }
-        other => panic!("{case}: a re-roll must be refused, got {other:?}"),
-    }
+    assert!(
+        matches!(
+            &result,
+            Err(StoreError::AcceptanceEvaluationAdmissionRefused { cause, .. })
+                if matches!(**cause, AcceptanceEvaluationAdmissionCause::Reroll(_))
+        ),
+        "{case}: a re-roll must be refused, got {result:?}"
+    );
+    let reason = typed_cause(
+        result,
+        Typed::Reroll(
+            EvaluationRerollMismatch::BlockingEvaluationStands,
+            Remedy::RecordNewEvidenceThenEvaluate,
+        ),
+    );
+    assert!(
+        reason.contains("nothing that could change it was recorded"),
+        "{case}: {reason}"
+    );
+    reason
 }
 
 // B65: the same cut, a cut advanced only by the failing record itself, and one
@@ -607,6 +673,211 @@ fn an_accounted_unadmitted_change_is_new_evidence_whatever_revision_it_reports()
             (status.evaluation, status.stale),
             (replacement.evaluation, None),
             "{case}"
+        );
+    }
+}
+
+// The status shows a standing blocking evaluation with the refusal's own
+// fields before any evaluator starts. A release and a re-claim keep the run,
+// so the evaluation still stands for the new claim, as the record transaction
+// finds too. A note recorded after a read that showed the standing cause lies
+// within the next basis, and that record is admitted: the transaction
+// assesses again, so the earlier read is no token either way.
+#[test]
+fn the_status_shows_the_standing_cause_and_the_record_assesses_it_again() {
+    let mut fixture = fixture("project-reroll-status");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let (work, held, note) = (
+        fixture.work.clone(),
+        fixture.claim.clone(),
+        fixture.evidence.clone(),
+    );
+    let run = work.active_run_id.expect("active run");
+    assert!(
+        store
+            .acceptance_evaluation_status(work.work_id, None)
+            .expect("status read")
+            .is_none(),
+        "no evaluation, no status"
+    );
+    let failed_at = cut(store, &work);
+    let failed = record(
+        store,
+        &judged(&work, AcceptanceVerdict::Fail, &[], failed_at, "fail", 10),
+    )
+    .expect("the failing evaluation");
+    let expected = RerollAdmissionCause {
+        mismatch: EvaluationRerollMismatch::BlockingEvaluationStands,
+        evaluation: failed.evaluation.clone(),
+        feed: FeedId::RunExecution(run),
+        after_position: failed_at,
+        through_position: cut(store, &work),
+        criterion: 1,
+        verdict: AcceptanceVerdict::Fail,
+        remedy: Remedy::RecordNewEvidenceThenEvaluate,
+    };
+    assert_eq!(standing(store, &work).as_deref(), Some(&expected));
+    let refused = record(
+        store,
+        &judged(
+            &work,
+            AcceptanceVerdict::Pass,
+            std::slice::from_ref(&note),
+            cut(store, &work),
+            "same-evidence",
+            11,
+        ),
+    );
+    assert!(
+        matches!(
+            &refused,
+            Err(StoreError::AcceptanceEvaluationAdmissionRefused { cause, .. })
+                if **cause == AcceptanceEvaluationAdmissionCause::Reroll(Box::new(expected.clone()))
+        ),
+        "{refused:?}"
+    );
+
+    // Release and re-claim: the run stays, and so does the standing cause.
+    let current = store.get_work_item(work.work_id).expect("item");
+    store
+        .release_work(
+            &crate::domain::ReleaseWorkRequest {
+                work_id: current.work_id,
+                run_id: held.run_id,
+                expected_work_revision: current.revision,
+                holder: held.holder.clone(),
+                claim_id: held.claim_id,
+                claim_fence: held.fence,
+                reason: "stepping away".into(),
+                waiver_reason: None,
+                actor: actor("runner"),
+                idempotency_key: "release-runner".into(),
+                released_at: at(20),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("release");
+    let released = store.get_work_item(work.work_id).expect("item");
+    let reclaim = claim(store, &released, "runner", "reclaim", 21, 3_600);
+    let current = store.get_work_item(work.work_id).expect("item");
+    assert_eq!(
+        current.active_run_id,
+        Some(run),
+        "the re-claim keeps the run"
+    );
+    let read = standing(store, &current).expect("the evaluation still stands");
+    assert_eq!(read.evaluation, failed.evaluation);
+    assert_eq!(read.through_position, cut(store, &current));
+    rerolled(
+        record(
+            store,
+            &judged(
+                &current,
+                AcceptanceVerdict::Pass,
+                std::slice::from_ref(&note),
+                cut(store, &current),
+                "after-reclaim",
+                22,
+            ),
+        ),
+        "after a release and a re-claim",
+    );
+
+    // The read above showed the standing cause; a correction recorded after
+    // it lies within the next basis, and the record is admitted.
+    let correction = gate(store, &current, &reclaim, "runner", "correction", &[], 23);
+    record(
+        store,
+        &judged(
+            &current,
+            AcceptanceVerdict::Pass,
+            std::slice::from_ref(&correction),
+            cut(store, &current),
+            "after-correction",
+            24,
+        ),
+    )
+    .expect("an evaluation after the correction replaces the failure");
+    assert!(
+        standing(store, &current).is_none(),
+        "a passing newest evaluation leaves nothing standing"
+    );
+}
+
+// A read that showed nothing standing admits nothing: when a newer blocking
+// evaluation lands after it, a record is refused against that evaluation,
+// whether it is cut where the read was or at the new head.
+#[test]
+fn a_permissive_read_before_a_newer_blocking_evaluation_admits_nothing() {
+    let mut fixture = fixture("project-reroll-race");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable",
+        5,
+    );
+    let (work, note) = (fixture.work.clone(), fixture.evidence.clone());
+    record(
+        store,
+        &judged(
+            &work,
+            AcceptanceVerdict::Pass,
+            std::slice::from_ref(&note),
+            cut(store, &work),
+            "pass",
+            10,
+        ),
+    )
+    .expect("a passing evaluation");
+    assert!(
+        standing(store, &work).is_none(),
+        "a pass leaves nothing standing"
+    );
+    let read_at = cut(store, &work);
+    let newer = record(
+        store,
+        &judged(
+            &work,
+            AcceptanceVerdict::Fail,
+            &[],
+            read_at,
+            "newer-fail",
+            11,
+        ),
+    )
+    .expect("a newer blocking evaluation");
+    for (case, through, key) in [
+        ("cut where the permissive read was", read_at, "stale-read"),
+        ("cut at the new head", cut(store, &work), "new-head"),
+    ] {
+        let reason = rerolled(
+            record(
+                store,
+                &judged(
+                    &work,
+                    AcceptanceVerdict::Pass,
+                    std::slice::from_ref(&note),
+                    through,
+                    key,
+                    12,
+                ),
+            ),
+            case,
+        );
+        assert!(
+            reason.contains(newer.evaluation.as_str()),
+            "{case}: {reason}"
         );
     }
 }

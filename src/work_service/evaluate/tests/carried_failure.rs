@@ -343,8 +343,12 @@ fn assert_nothing_to_supersede(scenario: &Scenario, failed: &ObjectId, second: i
 /// A re-roll on the same evidence: the blocking evaluation stands.
 fn assert_reroll_refused(result: Result<WorkEvaluateResult, StoreError>, case: &str) {
     match result {
-        Err(StoreError::AcceptanceEvaluationRefused { reason, .. }) => assert!(
-            reason.contains("nothing that could change it was recorded"),
+        Err(StoreError::AcceptanceEvaluationAdmissionRefused { reason, cause, .. }) => assert!(
+            reason.contains("nothing that could change it was recorded")
+                && matches!(
+                    *cause,
+                    crate::domain::AcceptanceEvaluationAdmissionCause::Reroll(_)
+                ),
             "{case}: {reason}"
         ),
         other => panic!("{case}: a re-roll must be refused, got {other:?}"),

@@ -849,6 +849,16 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
         StoreError::AcceptanceEvaluationRefused { .. }
         | StoreError::AcceptanceEvaluationCarriedFailure { .. } => "acceptance_evaluation_refused",
+        // A standing blocking evaluation answers as an evaluation refusal;
+        // the other typed admission causes stay storage errors below.
+        StoreError::AcceptanceEvaluationAdmissionRefused { cause, .. }
+            if matches!(
+                **cause,
+                crate::domain::AcceptanceEvaluationAdmissionCause::Reroll(_)
+            ) =>
+        {
+            "acceptance_evaluation_refused"
+        }
         StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
             evaluation_basis_move_code(*moved)
         }
@@ -996,6 +1006,25 @@ mod tests {
             cause: Box::new(cause),
         };
         assert_eq!(store_error_code(&error), "storage_error");
+        // A standing blocking evaluation answers as an evaluation refusal.
+        let reroll = serde_json::from_value(serde_json::json!({
+            "kind": "reroll",
+            "mismatch": "blocking_evaluation_stands",
+            "evaluation": "0".repeat(32),
+            "feed": {"kind": "run_execution", "id": uuid::Uuid::nil()},
+            "after_position": 3,
+            "through_position": 5,
+            "criterion": 1,
+            "verdict": "fail",
+            "remedy": "record_new_evidence_then_evaluate",
+        }))
+        .expect("typed re-roll cause");
+        let error = StoreError::AcceptanceEvaluationAdmissionRefused {
+            work: crate::domain::WorkId::new(),
+            reason: "unchanged re-roll reason".into(),
+            cause: Box::new(reroll),
+        };
+        assert_eq!(store_error_code(&error), "acceptance_evaluation_refused");
     }
 
     /// The documented `execution_observe` frame: an unadmitted turn with a

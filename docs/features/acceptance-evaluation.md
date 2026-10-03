@@ -163,7 +163,10 @@ when an evaluation is recorded. Sealed completions are not reassessed.
   another reason, so a re-roll on the same evidence, or after an edit of the
   title, the mode or the policy, is refused with a remedy to record the
   correction first; a correction note followed by a new evaluation replaces
-  the failure. When the item's criteria or their bindings differ from those
+  the failure. The refusal carries the typed cause `reroll`, and the
+  evaluation status shows the same cause through the active run's head, so a
+  host can see a standing blocking evaluation before it starts an evaluator
+  (shape in [CLI and MCP](cli-and-mcp.md)). When the item's criteria or their bindings differ from those
   the blocking evaluation judged, the carried-failure rule (R11 under
   [Record-time validation](#record-time-validation)) governs instead. An exact
   resend of a recorded attempt still replays it.
@@ -721,12 +724,14 @@ confirmation; citation and gate freshness still decide before the completion
 fingerprint. Agent `done` remains an owed receipt (CLI exit 2, MCP non-error);
 a raw recovery error retains `work_completion_recovery_required`.
 
-Admission refusals for eligibility, named-root source and citation checks carry
-`AcceptanceEvaluationAdmissionCause` beside their unchanged reason text. CLI
-JSON and MCP use `acceptance_evaluation_refused`, with `details.cause` tagged
-by `kind`: `eligibility`, `source_root` or `citation`. The CLI still exits 1
-and MCP still returns an error. The host-private control transport retains
-`storage_error` for this refusal; it does not gain an evaluation operation.
+Admission refusals for eligibility, named-root source, citation and re-roll
+checks carry `AcceptanceEvaluationAdmissionCause` beside their unchanged
+reason text. CLI JSON and MCP use `acceptance_evaluation_refused`, with
+`details.cause` tagged by `kind`: `eligibility`, `source_root`, `citation` or
+`reroll`. The CLI still exits 1 and MCP still returns an error. The
+host-private control transport retains `storage_error` for the first three
+and `acceptance_evaluation_refused` for a re-roll; it does not gain an
+evaluation operation.
 
 The deciding guard supplies a typed mismatch and remedy action. Eligibility
 context names the requested mode, current task mark and admitted modes,

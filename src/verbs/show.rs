@@ -404,6 +404,32 @@ pub(super) struct ShowEvaluation {
     /// The failing evaluation whose criteria were revised on this run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) carried_failure: Option<ShowCarriedFailure>,
+    /// The blocking evaluation a new one through the run's head would be
+    /// refused for, as the refusal's own typed cause.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reroll: Option<crate::domain::AcceptanceEvaluationAdmissionCause>,
+}
+
+/// A standing blocking evaluation as the refusal's typed cause, so a status
+/// read and a refused record carry the same fields and discriminator.
+pub(super) fn reroll_cause(
+    status: &crate::storage::AcceptanceEvaluationStatus,
+) -> Option<crate::domain::AcceptanceEvaluationAdmissionCause> {
+    status
+        .reroll
+        .clone()
+        .map(crate::domain::AcceptanceEvaluationAdmissionCause::Reroll)
+}
+
+/// The text line that discloses a standing blocking evaluation.
+pub(super) fn reroll_line(cause: &crate::domain::RerollAdmissionCause) -> String {
+    format!(
+        "  re-roll refused: {} on criterion {} stands, with no new evidence after position {} through {}; record new evidence, then evaluate on a basis that includes it",
+        cause.verdict.word(),
+        cause.criterion,
+        cause.after_position,
+        cause.through_position
+    )
 }
 
 /// A failing evaluation whose criteria were revised after it, as `show`
@@ -484,9 +510,14 @@ pub(super) fn evaluation_summary(status: &crate::storage::AcceptanceEvaluationSt
         Some(reason) => format!("stale: {}", reason.word()),
     };
     format!(
-        "{} {passed}/{} pass, {freshness}",
+        "{} {passed}/{} pass, {freshness}{}",
         record.mode.word(),
-        record.verdicts.len()
+        record.verdicts.len(),
+        if status.reroll.is_some() {
+            "; re-roll needs new evidence"
+        } else {
+            ""
+        }
     )
 }
 
@@ -664,6 +695,7 @@ pub(super) fn show_evaluation(
         full_detail: super::mutation::full_contract(work_ref),
         supersedes: record.supersedes.as_ref().map(|id| id.as_str().to_owned()),
         carried_failure: status.carried_failure.as_ref().map(show_carried_failure),
+        reroll: reroll_cause(status),
     }
 }
 
@@ -714,6 +746,9 @@ fn evaluation_lines(
     }
     if let Some(carried) = &projected.carried_failure {
         lines.push(carried_failure_line(carried));
+    }
+    if let Some(cause) = &status.reroll {
+        lines.push(reroll_line(cause));
     }
     for (verdict, record) in projected.verdicts.iter().zip(&status.record.verdicts) {
         lines.push(format!(

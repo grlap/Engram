@@ -1277,8 +1277,9 @@ fn a_foreign_report_under_a_named_root_does_not_unlock_a_failure() {
     assert!(
         matches!(
             &refused,
-            Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
+            Err(StoreError::AcceptanceEvaluationAdmissionRefused { reason, cause, .. })
                 if reason.contains("nothing that could change it was recorded")
+                    && matches!(**cause, AcceptanceEvaluationAdmissionCause::Reroll(_))
         ),
         "{refused:?}"
     );

@@ -4,6 +4,7 @@ mod carried_failure;
 mod criteria_required;
 mod history;
 mod missing_evaluation;
+mod reroll;
 mod review;
 mod self_waiver;
 

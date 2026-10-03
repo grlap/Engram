@@ -1052,7 +1052,27 @@ Rules that matter:
   held the run, and only a passing one that names it ends the carry; a
   mismatch is refused with `acceptance_evaluation_refused`,
   details `reason: carried_failure_unacknowledged`,
-  `carried_failure_self_acknowledged` or `nothing_to_supersede`. The receipt and
+  `carried_failure_self_acknowledged` or `nothing_to_supersede`. A newest
+  `fail`, `insufficient_evidence` or `needs_human` stands until a note, a
+  gate, a host check or a source change is recorded after its evidence basis:
+  an evaluation whose basis includes none is refused with
+  `acceptance_evaluation_refused` (CLI exit 1, MCP error), and
+  `details.cause` reads `{"kind": "reroll", "mismatch":
+  "blocking_evaluation_stands", "evaluation": RECORD_ID, "feed": {"kind":
+  "run_execution", "id": RUN_ID}, "after_position": A, "through_position":
+  T, "criterion": N, "verdict": VERDICT, "remedy":
+  "record_new_evidence_then_evaluate"}`. Qualifying evidence must lie after
+  position `A` (exclusive, the blocking evaluation's evidence basis) and at
+  or before `T` (inclusive, the submitted basis); `N` is the one-based
+  position of the blocking criterion (the first `fail`, else the first
+  `insufficient_evidence`, else the first `needs_human`), and `VERDICT` its
+  verdict word. Before any evaluator is started, `show`
+  (`acceptance_evaluation.reroll`), `show --full` (`work.evaluation.reroll`)
+  and `next` (`focus.evaluation.reroll`) carry the same object, assessed
+  through the active run's feed head (`T` is that head), and omit it when
+  nothing stands. The record transaction assesses again at its own basis, so
+  an absent field admits nothing and a present one is cleared by recording
+  new evidence. The receipt and
   ordinary `show` carry a bounded prefix of verdict rows with an exact
   `verdicts_omitted` count and the decision facts (passed count, first
   blocking verdict, evaluator label, freshness, recorded source

@@ -156,15 +156,19 @@ pub(super) struct CompactEvaluation {
 
 impl CompactEvaluation {
     pub(super) fn from_status(status: &crate::storage::AcceptanceEvaluationStatus) -> Self {
+        let mut value = json!({
+            "mode": status.record.mode.word(),
+            "passed": status.record.verdicts.iter().filter(|verdict| verdict.verdict == crate::AcceptanceVerdict::Pass).count(),
+            "criteria": status.record.verdicts.len(),
+            "stale": status.stale.map(crate::AcceptanceStaleReason::word),
+            "evaluation": status.evaluation.as_str(),
+        });
+        if let Some(cause) = super::show::reroll_cause(status) {
+            value["reroll"] = json!(cause);
+        }
         Self {
             summary: super::show::evaluation_summary(status),
-            value: json!({
-                "mode": status.record.mode.word(),
-                "passed": status.record.verdicts.iter().filter(|verdict| verdict.verdict == crate::AcceptanceVerdict::Pass).count(),
-                "criteria": status.record.verdicts.len(),
-                "stale": status.stale.map(crate::AcceptanceStaleReason::word),
-                "evaluation": status.evaluation.as_str(),
-            }),
+            value,
         }
     }
 }

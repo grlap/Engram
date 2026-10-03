@@ -85,6 +85,13 @@ pub struct AcceptanceEvaluationStatus {
     /// the next evaluation must see and, after the executor's revision, name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub carried_failure: Option<CarriedFailure>,
+    /// The blocking evaluation an evaluation through the run feed's head
+    /// would be refused for: the same assessment the record transaction
+    /// repeats at the submitted basis. Assessed on the item's active run
+    /// only, since no evaluation is recorded without one. `None` means only
+    /// that this rule does not refuse; it admits nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reroll: Option<Box<crate::domain::RerollAdmissionCause>>,
 }
 
 /// What a completion would do with the newest evaluation right now.
@@ -411,10 +418,14 @@ impl SqliteStore {
         }
         // And a blocking evaluation stands until something that could change
         // it lies within this one's basis.
-        if let Some(reason) =
-            reroll::reroll_refusal(&transaction, &item, run_id, cut, named_root.as_ref())?
+        if let Some(cause) =
+            reroll::reroll_assessment(&transaction, &item, run_id, cut, named_root.as_ref())?
         {
-            return Err(refused(item.work_id, reason));
+            return Err(admission::refusal(
+                item.work_id,
+                reroll::reroll_reason(&cause),
+                AcceptanceEvaluationAdmissionCause::Reroll(Box::new(cause)),
+            ));
         }
         let receipt = append_evaluation(&transaction, &item, run_id, request, &attempt, verdicts)?;
         transaction.commit()?;
@@ -457,8 +468,17 @@ impl SqliteStore {
             let (stale, context) =
                 staleness_named(connection, &item, run_id, &policy, &hash, &record, source)?;
             let carried_failure = carried_failure_on(connection, &item, run_id)?;
+            let reroll = if item.active_run_id == Some(run_id) {
+                let head = feed_head(connection, &FeedId::RunExecution(run_id))?;
+                let root = named_root_at_on(connection, run_id, head)?;
+                reroll::reroll_assessment(connection, &item, run_id, head, root.as_ref())?
+                    .map(Box::new)
+            } else {
+                None
+            };
             Ok(Some(AcceptanceEvaluationStatus {
                 carried_failure,
+                reroll,
                 stale_observation: context.deciding_observation.map(|value| *value),
                 source_recovery: context.source,
                 evaluation: hash,

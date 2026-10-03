@@ -272,8 +272,9 @@ fn an_exempt_check_is_new_evidence_only_within_the_next_basis() {
     assert!(
         matches!(
             &rerolled,
-            Err(StoreError::AcceptanceEvaluationRefused { reason, .. })
+            Err(StoreError::AcceptanceEvaluationAdmissionRefused { reason, cause, .. })
                 if reason.contains("nothing that could change it was recorded")
+                    && matches!(**cause, AcceptanceEvaluationAdmissionCause::Reroll(_))
         ),
         "{rerolled:?}"
     );

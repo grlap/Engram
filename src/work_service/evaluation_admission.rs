@@ -9,6 +9,7 @@ pub(crate) fn evaluation_admission_remedy(cause: &AcceptanceEvaluationAdmissionC
         AcceptanceEvaluationAdmissionCause::Eligibility(context) => context.remedy,
         AcceptanceEvaluationAdmissionCause::SourceRoot(context) => context.remedy,
         AcceptanceEvaluationAdmissionCause::Citation(context) => context.remedy,
+        AcceptanceEvaluationAdmissionCause::Reroll(context) => context.remedy,
     };
     match action {
         EvaluationAdmissionRemedy::UseSelfAssertedCompletion => "the project does not enable acceptance evaluation; satisfy its current acceptance and complete under its self-asserted policy".into(),
@@ -27,5 +28,6 @@ pub(crate) fn evaluation_admission_remedy(cause: &AcceptanceEvaluationAdmissionC
         EvaluationAdmissionRemedy::ReadRunEvidence => "read this run's show --notes --gates and cite its own admissible evidence; a pass on a criterion bound to a check uses basis observed, and every citation of it is a passed host-minted verification of the bound kind, matching any pinned check, cited by its full record id".into(),
         EvaluationAdmissionRemedy::ReadCurrentCut => "read show again for the evidence cut that includes the citation, then judge that evidence and submit with that cut".into(),
         EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate => "run the required check on the current named root or run source, have the host record it, then evaluate again citing that check within the evaluated cut".into(),
+        EvaluationAdmissionRemedy::RecordNewEvidenceThenEvaluate => crate::domain::RerollAdmissionCause::REMEDY.into(),
     }
 }
