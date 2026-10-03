@@ -123,9 +123,17 @@ fn completed_root_parent_remains_readable_and_detachable_after_child_detach() {
             .unwrap()
             .contains("--waive")
     );
+    let rows = shown.value["child_obligations"]["required_owed"]["items"]
+        .as_array()
+        .unwrap();
+    let row = rows.iter().find(|row| row["ref"] == child).unwrap();
     assert_eq!(
-        shown.value["child_obligations"]["required_owed"]["items"][0]["remedy"],
+        row["remedy"],
         super::super::super::handlers::detach_command(&parent)
+    );
+    assert_eq!(
+        row["resolve_first"],
+        "waiver is unavailable; resolve the parent's execution context"
     );
     let view = verbs
         .service
@@ -235,6 +243,10 @@ fn parent_detach_guidance_requires_all_open_descendants_to_be_resolved() {
         .unwrap();
     let row = rows.iter().find(|row| row["ref"] == child).unwrap();
     assert_eq!(row["remedy"], format!("engram work show {child}"));
+    assert_eq!(
+        row["resolve_first"],
+        "waiver is unavailable; resolve the parent's execution context"
+    );
     let refusal = verbs
         .update(
             UpdateInput {
@@ -283,6 +295,18 @@ fn superseded_child_waiver_guidance_remains_available_under_an_open_root() {
         shown.value["status"]["work"]["child_resolution"]["remedy"],
         command
     );
+    let shown_parent = verbs.show(&parent, at(4)).unwrap();
+    let children = shown_parent.value["children"].as_array().unwrap();
+    let child_row = children
+        .iter()
+        .find(|row| row["short_ref"] == child)
+        .unwrap();
+    assert_eq!(child_row["child_resolution"]["remedy"], command);
+    let owed = shown_parent.value["child_obligations"]["required_owed"]["items"]
+        .as_array()
+        .unwrap();
+    let owed_row = owed.iter().find(|row| row["ref"] == child).unwrap();
+    assert_eq!(owed_row["remedy"], command);
     for verbose in [false, true] {
         let listed = verbs
             .ls(
