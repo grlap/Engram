@@ -6,6 +6,7 @@ mod backup_reminder;
 mod blockers;
 mod budgets;
 mod child_summary;
+mod compact_completion;
 mod contract_text;
 mod creation;
 mod criterion_links;

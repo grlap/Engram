@@ -448,10 +448,7 @@ impl LocalWorkService {
                     claim.run_id,
                     claim.claim_id,
                     claim.fence,
-                    self.actor(
-                        "work_update",
-                        "record note evidence and checkpoint ambient local work",
-                    ),
+                    self.actor("work_update", super::change_context::NOTE_CHECKPOINT_REASON),
                 ))
             }
             WorkLifecycle::Completed => {
@@ -472,10 +469,7 @@ impl LocalWorkService {
                         claim.run_id,
                         claim.claim_id,
                         claim.fence,
-                        self.actor(
-                            "work_update",
-                            "record note evidence and checkpoint ambient local work",
-                        ),
+                        self.actor("work_update", super::change_context::NOTE_CHECKPOINT_REASON),
                     )
                 })
             }

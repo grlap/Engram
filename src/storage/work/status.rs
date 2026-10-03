@@ -6,6 +6,7 @@ use rusqlite::{OptionalExtension, params};
 use super::feeds::load_typed_work_object;
 use super::notes::{NOTE_OBJECTS, WorkNoteRecord, load_note};
 use super::query::{load_work_claim_optional, restored_records_with_id_for_item};
+use super::record_windows::{RestoredMember, WorkRecordAddress};
 use crate::domain::{StatusNoteRole, status_note_role};
 use crate::storage::{SqliteStore, StoreError};
 use crate::{ObjectId, WorkClaimState, WorkEvent, WorkItem};
@@ -14,6 +15,7 @@ use crate::{ObjectId, WorkClaimState, WorkEvent, WorkItem};
 /// notes, after inherited generation/member order. Capture time is not order.
 pub(crate) struct SelectedStatusNote {
     pub note: WorkNoteRecord,
+    pub identity: WorkRecordAddress,
     /// Read-only native record id or inherited `RECORD_ID:INDEX` detail address.
     pub locator: String,
 }
@@ -54,6 +56,10 @@ impl SqliteStore {
                         _ => continue,
                     };
                     *target = Some(SelectedStatusNote {
+                        identity: WorkRecordAddress {
+                            hash: record_id.clone(),
+                            member: Some(RestoredMember::Note(index + 1)),
+                        },
                         locator: format!("{record_id}:{}", index + 1),
                         note: WorkNoteRecord {
                             kind: note.evidence_kind,
@@ -172,6 +178,10 @@ impl SqliteStore {
             )?;
             validate_selection(&note, owner)?;
             return Ok(Some(SelectedStatusNote {
+                identity: WorkRecordAddress {
+                    hash: record_id.clone(),
+                    member: None,
+                },
                 locator: record_id.as_str().into(),
                 note,
             }));

@@ -884,7 +884,7 @@ fn append_row_lines(lines: &mut Vec<String>, row: &Value, family: WorkRecordFami
     }
     if let Some(body) = row["summary"].as_str() {
         lines.push(
-            super::terminal_data_block(body)
+            super::terminal_note_block(body)
                 .lines()
                 .map(|line| format!("    {line}"))
                 .collect::<Vec<_>>()

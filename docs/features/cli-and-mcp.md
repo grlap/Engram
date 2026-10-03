@@ -52,7 +52,9 @@ summaries; ordinary verbose `next` retains the exact staged page and full
 change summaries. Verbose peek instead carries a bounded unstaged preview.
 References require the same immutable capture, never text similarity; absent
 capture identity keeps the body. References retain change kind and actor
-attribution, and note session markers precede untrusted note text.
+attribution, and note session markers precede untrusted note text. Human text
+escapes a note body's leading `[` as `\[` so the body cannot supply a session
+marker; structured note bodies retain their original bytes.
 If any retained status is clipped, receipt guidance requires reading its full
 note before acting on approval or STOP conditions: a prefix grants no
 permission. This guarantee covers status projections with `complete` and a
@@ -273,8 +275,10 @@ Human receipt fields use the existing terminal text policy before byte
 bounding, including compact next/list titles, labels, holders, show outcomes
 and blockers, child rows, and guidance. Single-line prose fields flatten whitespace;
 multiline acceptance and note bodies keep indented newlines and fold tabs to spaces.
-Printed commands escape unsafe characters but preserve every safe literal byte, including repeated spaces inside quoted arguments.
-The same prefix-free `terminal_error_line` / `terminal_error_command` helpers serve those receipt fields and CLI error lines; they are not a store or JSON sanitizer.
+Printed commands escape unsafe characters but preserve every safe literal byte,
+including repeated spaces inside quoted arguments. The same prefix-free
+`terminal_error_line` / `terminal_error_command` helpers serve those receipt fields
+and CLI error lines; they are not a store or JSON sanitizer.
 Every `anyhow` `Err` returned from `run_cli` prints one framed `error: <cause>` line per cause on stderr (Display order, exit 1), in any output mode, including `--json` and core input or argument errors. Work-word text refusals frame the message and reminder lines the same way. `next` commands keep safe quoted spacing. The host-path probe `WARNING` uses the same line policy. Clap help and parser diagnostics stay on clap's writer. `--version` is a custom `DisplayVersion` branch that prints build identity, not clap's version writer and not this error renderer. Panics still unwind. Structured JSON success receipts and structured JSON refusal envelopes keep source projections without terminal sanitization; this includes `--json` work-word envelopes, core `StoreError` envelopes, import, and doctor. Project-file `terminal_detail` is a separate refusal framer and is unchanged. This is not a blanket stdout/stderr sanitizer and does not rewrite the store.
 Structured JSON retains its existing source projections, not terminal escapes;
 this includes both MCP structured content and its equivalent JSON text content.
@@ -349,8 +353,12 @@ expiry. CLI JSON and MCP carry the same envelope. Host-core errors keep their
 raw identifiers. Other work-error variants are not covered by this conversion.
 Project-memory attribution, caller-owned process-default session notices and
 encoded continuation context also retain their documented contracts. Compact
-rows retain up to 80 UTF-8 bytes of title, omit redundant lifecycle and blocked
-fields, cap labels, and report `labels_omitted`. When fitting an oversized
+rows retain up to 80 UTF-8 bytes of title. Their hybrid `state` is availability
+for open work and lifecycle for proposed, completed, cancelled or superseded
+work; redundant lifecycle and blocked fields are omitted. Empty labels are
+omitted, nonempty labels are capped, and `labels_omitted` counts the rest.
+Truncation reserves three UTF-8 bytes for `…` and cuts the remaining prefix at
+a character boundary. When fitting an oversized
 advisory response, `next` sheds discovery rows before any existing section,
 then sheds labels from the least-important navigation rows before dropping
 rows; `ls` does not shed labels. Compact `next` uses the same

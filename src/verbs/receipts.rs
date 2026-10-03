@@ -1441,7 +1441,9 @@ pub(super) fn discovery_note_text(row: &crate::work_service::WorkDiscoverySummar
             .note_session_id
             .as_ref()
             .map_or(String::new(), |_| " [note session you]".into());
-        format!("{session} — {}", super::terminal_safe_line(note))
+        let separator = if session.is_empty() { " " } else { " — " };
+        let body = super::terminal_note_line(note);
+        format!("{session}{separator}{body}")
     })
 }
 

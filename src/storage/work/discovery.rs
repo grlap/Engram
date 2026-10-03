@@ -20,7 +20,7 @@ pub(crate) struct WorkDiscoveryRow {
     pub claim: Option<WorkClaim>,
     pub note: Option<String>,
     /// Identity of the selected, canonically verified note; presentation only.
-    pub note_identity: Option<String>,
+    pub note_identity: Option<super::record_windows::WorkRecordAddress>,
     /// Private canonical attribution for presentation policy, never serialized.
     pub note_actor_id: Option<String>,
 }
@@ -193,7 +193,16 @@ impl SqliteStore {
                 let (note, note_actor_id) = note
                     .map(|(summary, actor)| (Some(summary), Some(actor)))
                     .unwrap_or_default();
-                let note_identity = note.as_ref().and(hash);
+                let note_identity = note
+                    .as_ref()
+                    .and(hash)
+                    .map(|raw| {
+                        stored_hash(raw).map(|hash| super::record_windows::WorkRecordAddress {
+                            hash,
+                            member: None,
+                        })
+                    })
+                    .transpose()?;
                 page.items.push(WorkDiscoveryRow {
                     work,
                     claim,

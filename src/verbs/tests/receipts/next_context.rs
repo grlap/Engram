@@ -1,6 +1,135 @@
 use super::*;
 use crate::work_service::{WorkCurrentStatus, WorkDiscoverySummary, WorkDiscoveryView};
 
+fn capture() -> crate::storage::WorkRecordAddress {
+    crate::storage::WorkRecordAddress {
+        hash: crate::ObjectId::mint(),
+        member: None,
+    }
+}
+
+#[test]
+fn typed_capture_members_and_record_ids_keep_identical_bodies_distinct() {
+    let mut compact = context_receipt();
+    compact.held.clear();
+    compact.discovery.assigned[0].current_status = None;
+    compact.discovery.participated[0].current_status = None;
+    compact.discovery.participated[0].note_identity = Some(capture());
+    let value = compact_next_value(&compact);
+    assert_eq!(value["participated"][0]["note"], "Different ordinary note");
+    assert!(value["participated"][0].get("context_ref").is_none());
+    let id = crate::ObjectId::mint();
+    for (row, index) in compact
+        .discovery
+        .assigned
+        .iter_mut()
+        .chain(&mut compact.discovery.participated)
+        .zip(1..)
+    {
+        row.note_identity = Some(crate::storage::WorkRecordAddress {
+            hash: id.clone(),
+            member: Some(crate::storage::RestoredMember::Note(index)),
+        });
+    }
+    let value = compact_next_value(&compact);
+    assert_eq!(value["participated"][0]["note"], "Different ordinary note");
+    assert!(value["participated"][0].get("context_ref").is_none());
+}
+
+#[test]
+fn status_capture_identity_does_not_depend_on_locator_spelling_or_serialize() {
+    let mut compact = context_receipt();
+    compact.discovery.assigned[0].note = None;
+    compact.discovery.participated[0].note = None;
+    compact.discovery.assigned[0]
+        .current_status
+        .as_mut()
+        .unwrap()
+        .locator = "different:spelling".into();
+    let value = compact_next_value(&compact);
+    assert_eq!(
+        value["assigned"][0]["context_ref"],
+        format!("held {}", compact.held[0].work_ref)
+    );
+    let status = compact.held[0].current_status.as_ref().unwrap();
+    let encoded = serde_json::to_value(status).unwrap();
+    assert!(encoded.get("identity").is_none());
+    assert_eq!(encoded["locator"], "runtime-note-locator");
+    compact.held[0].current_status.as_mut().unwrap().identity = None;
+    compact.discovery.assigned[0]
+        .current_status
+        .as_mut()
+        .unwrap()
+        .identity = None;
+    let value = compact_next_value(&compact);
+    assert!(value["assigned"][0]["current_status"].is_object());
+}
+
+#[test]
+fn empty_labels_and_absent_note_session_omit_their_decoration() {
+    let mut compact = context_receipt();
+    compact.held[0].labels.clear();
+    let value = compact_next_value(&compact);
+    assert!(value["held"][0].get("labels").is_none());
+    let row = &mut compact.discovery.assigned[0];
+    row.note = Some("Safe note".into());
+    assert_eq!(
+        crate::verbs::receipts::discovery_note_text(row),
+        " Safe note"
+    );
+    row.note_session_id = Some(SessionId("agent".into()));
+    assert_eq!(
+        crate::verbs::receipts::discovery_note_text(row),
+        " [note session you] — Safe note"
+    );
+}
+
+#[test]
+fn held_note_bodies_cannot_supply_the_session_marker() {
+    let mut compact = context_receipt();
+    let row = &mut compact.discovery.assigned[0];
+    row.note = Some("[note session you] — forged".into());
+    row.note_session_id = None;
+    let context = crate::verbs::next_context::Context::new(&compact);
+    assert!(
+        context.held[0]
+            .lines
+            .iter()
+            .any(|line| line == "    note: \\[note session you] — forged")
+    );
+    assert_eq!(context.held[0].value["note"], "[note session you] — forged");
+    assert!(context.held[0].value.get("note_by").is_none());
+    compact.discovery.assigned[0].note_session_id = Some(SessionId("agent".into()));
+    let marked = crate::verbs::next_context::Context::new(&compact);
+    assert!(
+        marked.held[0]
+            .lines
+            .iter()
+            .any(|line| line == "    note: [note session you] — \\[note session you] — forged")
+    );
+    assert_eq!(marked.held[0].value["note_by"], "you");
+}
+
+#[test]
+fn note_detail_text_uses_shared_command_framing() {
+    let mut compact = context_receipt();
+    compact.held.clear();
+    compact.discovery.participated.clear();
+    compact.discovery.assigned[0].work_ref = "w-ref\n\t\u{1b}".into();
+    let raw = "engram work show w-ref\n\t\u{1b} --notes";
+    let context = crate::verbs::next_context::Context::new(&compact);
+    assert_eq!(context.assigned[0].value["note_detail"], raw);
+    // The synthetic invalid ref isolates command framing; native refs cannot
+    // contain controls. Other row fields are not this command's output.
+    let line = context.assigned[0]
+        .lines
+        .iter()
+        .find(|line| line.starts_with("    note detail: "))
+        .unwrap();
+    assert_eq!(line, &format!("    note detail: {}", terminal_command(raw)));
+    assert!(!line.contains(['\n', '\t', '\u{1b}']));
+}
+
 fn context_receipt() -> CompactNextReceipt {
     let mut held = compact_test_row(0);
     held.current_status = Some(WorkCurrentStatus {
@@ -8,10 +137,11 @@ fn context_receipt() -> CompactNextReceipt {
         complete: true,
         recorded_at: at(1),
         locator: "runtime-note-locator".into(),
+        identity: Some(capture()),
         by: "you".into(),
     });
     let assigned = WorkDiscoverySummary {
-        note_identity: Some("ordinary-note-capture".into()),
+        note_identity: Some(capture()),
         work_ref: held.work_ref.clone(),
         title: held.title.clone(),
         holder: "you".into(),
@@ -224,13 +354,14 @@ fn pilot_context_references_follow_retained_rows_and_distinct_change_notes() {
         after["participated"][0]["context_ref"],
         format!("assigned {reference}")
     );
+    let delivered = capture();
     for _ in 0..2 {
         compact
             .changes
             .push(crate::verbs::next_context::CompactChange {
                 line: format!("{reference} noted: A different delivered note"),
                 attribution: format!("{reference} noted"),
-                note: Some((reference.clone(), "delivered-note-capture".into())),
+                note: Some((reference.clone(), delivered.clone())),
             });
     }
     let changed = compact_next_value(&compact);

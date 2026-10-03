@@ -163,6 +163,8 @@ use task_memory::{fts_query, normalize_project_memory_query};
 
 pub(crate) use work::ListingExpectation;
 pub(crate) use work::RequiredChildSuccessor;
+#[cfg(test)]
+pub(crate) use work::RestoredMember;
 pub(crate) use work::SelectedStatusNote;
 pub(crate) use work::WorkDiscoveryRow;
 pub(crate) use work::{

@@ -487,7 +487,7 @@ impl LocalWorkService {
                     refs: capture.refs.clone(),
                     actor: self.actor(
                         "work_complete",
-                        "capture completion evidence for ambient local work",
+                        super::change_context::COMPLETION_CAPTURE_REASON,
                     ),
                     idempotency_key: evidence_key,
                     recorded_at,
@@ -511,7 +511,7 @@ impl LocalWorkService {
                     evidence: Some(evidence.clone()),
                     actor: self.actor(
                         "work_complete",
-                        "checkpoint the exact completion evidence cut",
+                        super::change_context::COMPLETION_CHECKPOINT_REASON,
                     ),
                     idempotency_key: base_key.to_owned(),
                     checkpointed_at: now,

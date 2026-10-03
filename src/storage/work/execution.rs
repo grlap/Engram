@@ -1716,7 +1716,7 @@ pub(super) fn validate_work_evidence_event_phase_on(
     })?;
     let seal: CompletionSeal = load_typed_work_object(connection, seal_id, "completion_seal")?;
     let evidence_position = run_feed_position_for_object_on(connection, run.run_id, evidence_id)?;
-    let completed_claim_fence = seal.claim_fence.checked_add(1).ok_or_else(|| {
+    let completed_claim_fence = seal.completed_claim_fence().ok_or_else(|| {
         StoreError::InvalidWorkProjection(
             "completed claim fence overflowed its sealed basis".into(),
         )
@@ -1807,7 +1807,7 @@ fn validate_post_completion_evidence_basis_on(
         || claim.claim_id != seal.claim_id
         || claim.state != WorkClaimState::Completed
         || claim.fence
-            != seal.claim_fence.checked_add(1).ok_or_else(|| {
+            != seal.completed_claim_fence().ok_or_else(|| {
                 StoreError::InvalidWorkProjection(
                     "completed claim fence overflowed its sealed basis".into(),
                 )

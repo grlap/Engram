@@ -149,7 +149,7 @@ fn status_text_lines(
     label: &str,
     indent: &str,
 ) -> Vec<String> {
-    let body = terminal_data_block(&status.body_or_first_line);
+    let body = terminal_note_block(&status.body_or_first_line);
     let mut body = body.split('\n');
     let mut lines = vec![format!(
         "{indent}{label}: [{}; {}] {}",
@@ -211,7 +211,7 @@ fn collapsed_changes(
         })
         .collect::<Vec<_>>();
     let mut lines = Vec::new();
-    let mut last_note: Option<(String, String)> = None;
+    let mut last_note: Option<crate::storage::WorkRecordAddress> = None;
     for (index, change) in changes.iter().enumerate() {
         let Some((subject, kind, text, actor_id, actor_context)) = visible[index].as_ref() else {
             last_note = None;
@@ -229,25 +229,40 @@ fn collapsed_changes(
         if kind == "evidence_added" {
             continue;
         }
-        if kind == "checkpoint" {
-            let repeats_note = last_note.as_ref().is_some_and(|(note_subject, note_text)| {
-                note_subject == subject && note_text == text
-            });
-            let precedes_completion = visible.get(index + 1).is_some_and(|next| {
-                next.as_ref()
-                    .is_some_and(|(next_subject, next_kind, _, _, _)| {
-                        next_subject == subject && next_kind == "completed"
+        if matches!(kind.as_str(), "checkpoint" | "checkpointed") {
+            let repeats_note = last_note
+                .as_ref()
+                .is_some_and(|note| change.capture.as_ref() == Some(note))
+                // Canonical hydration also identifies a capture delivered on
+                // an earlier page, including one whose completion was refused.
+                || change.capture.as_ref().is_some_and(|capture| {
+                    capture.member.is_none() && capture.hash != change.entry.object_id
+                });
+            let precedes_completion = change.capture.as_ref().is_some_and(|capture| {
+                capture.member.is_none()
+                    && changes.iter().any(|completion| {
+                        !completion.from_current_session
+                            && matches!(completion.delivery, WorkChangeProjection::Visible(_))
+                            && completion.completion_checkpoint.as_ref()
+                                == Some(&change.entry.object_id)
                     })
             });
             if repeats_note || precedes_completion {
                 continue;
             }
         }
-        last_note = (kind == "evidence").then(|| (subject.clone(), text.clone()));
+        last_note = (kind == "evidence")
+            .then(|| change.capture.clone())
+            .flatten();
         let verb = match kind.as_str() {
             "evidence" => "noted",
             "checkpoint" => "checkpointed",
             other => other,
+        };
+        let rendered_text = if matches!(kind.as_str(), "evidence" | "checkpoint") {
+            short_note(text)
+        } else {
+            short(text)
         };
         let actor = actor_id
             .as_ref()
@@ -272,15 +287,17 @@ fn collapsed_changes(
                 | "untested_source_change"
                 | crate::work_service::unadmitted::UNADMITTED_CHANGE_KIND
         ) {
-            format!("{subject} {verb}: {}{actor}", short(text))
+            format!("{subject} {verb}: {rendered_text}{actor}")
         } else {
-            format!("{subject} {verb}{actor}: {}", short(text))
+            format!("{subject} {verb}{actor}: {rendered_text}")
         };
         lines.push(next_context::CompactChange {
             line,
             attribution: format!("{subject} {verb}{actor}"),
-            note: matches!(kind.as_str(), "evidence" | "checkpoint")
-                .then(|| (subject.clone(), change.entry.object_id.as_str().into())),
+            note: change
+                .capture
+                .clone()
+                .map(|identity| (subject.clone(), identity)),
         });
     }
     lines
@@ -461,6 +478,37 @@ fn short_with_limit(text: &str, max_bytes: usize) -> String {
 /// CLI error lines. Not a store or JSON sanitizer.
 fn terminal_safe_line(text: &str) -> String {
     crate::work_service::terminal_error_line(text)
+}
+
+/// Framing for untrusted note bodies; JSON retains the original source bytes.
+fn escape_note_marker(mut body: String) -> String {
+    if let Some(index) = body.find(|ch: char| !ch.is_whitespace())
+        && body[index..].starts_with('[')
+    {
+        body.insert(index, '\\');
+    }
+    body
+}
+
+fn terminal_note_line(text: &str) -> String {
+    let indentation = text.chars().take_while(|ch| *ch == ' ').count();
+    escape_note_marker(format!(
+        "{}{}",
+        " ".repeat(indentation),
+        terminal_safe_line(text)
+    ))
+}
+
+fn terminal_note_block(text: &str) -> String {
+    terminal_data_block(text)
+        .split('\n')
+        .map(|line| escape_note_marker(line.to_owned()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn short_note(text: &str) -> String {
+    short_with_limit(&terminal_note_line(text), MAX_TEXT_LINE_BYTES)
 }
 
 fn nonempty(value: Option<String>) -> Option<String> {

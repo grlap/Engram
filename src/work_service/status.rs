@@ -7,6 +7,9 @@ use super::*;
 /// appends), never `recorded_at`. Rendering may shorten only the preview.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkCurrentStatus {
+    /// Canonically selected record/member address, separate from navigation.
+    #[serde(skip)]
+    pub(crate) identity: Option<crate::storage::WorkRecordAddress>,
     /// Complete source text, or a bounded first nonblank line/prefix.
     pub body_or_first_line: String,
     /// False requires explicit omission disclosure and full-detail navigation.
@@ -101,6 +104,7 @@ impl LocalWorkService {
             format!("{}…", &body[..end])
         };
         WorkCurrentStatus {
+            identity: Some(selected.identity),
             body_or_first_line: body,
             complete,
             recorded_at: note.recorded_at,

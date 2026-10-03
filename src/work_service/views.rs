@@ -161,7 +161,7 @@ pub struct WorkDiscoverySummary {
     /// Verified capture identity for the outer compact projection only.
     /// Not a new core/verbose wire field or a delivery cursor.
     #[serde(skip)]
-    pub(crate) note_identity: Option<String>,
+    pub(crate) note_identity: Option<crate::storage::WorkRecordAddress>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_status: Option<WorkCurrentStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -272,6 +272,13 @@ impl FromStr for WorkNextSection {
 /// agreement, and the compact `delivery` is projected from the record, not fingerprinted.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkChange {
+    /// Read-side capture identity; never part of the frozen delivery bytes.
+    #[serde(skip)]
+    pub(crate) capture: Option<crate::storage::WorkRecordAddress>,
+    /// A completion's checkpoint, only when its canonical operation provenance
+    /// identifies the completion capture path. Seal membership alone is not enough.
+    #[serde(skip)]
+    pub(crate) completion_checkpoint: Option<ObjectId>,
     /// Transient canonical producer attribution for outer display only. Hydrated
     /// from the source record on fresh delivery and staged replay; never
     /// changes the frozen delivery payload.

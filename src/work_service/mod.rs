@@ -66,6 +66,7 @@ mod evaluation_admission;
 pub(crate) use bound_verification::bound_verification_remedy;
 pub(crate) use evaluation_admission::evaluation_admission_remedy;
 mod catalog;
+mod change_context;
 mod completion;
 mod continuation;
 mod deciding;
@@ -1116,6 +1117,7 @@ fn verified_bounded_work_changes(
             })?;
         let from_current_session = source_is_from_session(&entry.object_kind, &object, session_id);
         let display_producer = source_display_producer(&entry.object_kind, &object);
+        let (capture, completion_checkpoint) = change_context::hydrate(store, &entry, &object)?;
         let delivery = agent_change_object(
             store,
             project_id,
@@ -1125,6 +1127,8 @@ fn verified_bounded_work_changes(
             Some(&entry.position),
         )?;
         changes.push(WorkChange {
+            capture,
+            completion_checkpoint,
             display_producer,
             from_current_session: matches!(&delivery, WorkChangeProjection::Visible(_))
                 && from_current_session,
@@ -1234,6 +1238,8 @@ fn verify_staged_work_change_page(
             ));
         }
         change.display_producer = source_display_producer(&entry.object_kind, &object);
+        (change.capture, change.completion_checkpoint) =
+            change_context::hydrate(store, &entry, &object)?;
     }
     Ok(())
 }

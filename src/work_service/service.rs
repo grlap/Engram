@@ -916,6 +916,8 @@ impl LocalWorkService {
             }
             let summary = project_work_event(store, &event, &entry.position)?;
             history.push(WorkChange {
+                capture: None,
+                completion_checkpoint: None,
                 display_producer: Some((
                     event.actor.actor_id.clone(),
                     event.actor.session_id.clone(),

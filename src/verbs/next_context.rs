@@ -1,6 +1,7 @@
 //! Compact injection only. Rebuild references from retained rows on every fit
 //! pass; neither the service view nor the exact staged delivery is rewritten.
 
+use crate::storage::WorkRecordAddress;
 use std::collections::HashMap;
 
 use super::receipts::{CompactNextReceipt, compact_row_line};
@@ -15,7 +16,7 @@ pub(super) struct CompactChange {
     /// Rendered kind and actor retained even when the body is a reference.
     pub(super) attribution: String,
     /// Work reference and verified immutable capture identity, never body text.
-    pub(super) note: Option<(String, String)>,
+    pub(super) note: Option<(String, WorkRecordAddress)>,
 }
 
 impl From<String> for CompactChange {
@@ -51,37 +52,34 @@ pub(super) struct Context {
 #[derive(Default)]
 struct Seen {
     owners: HashMap<String, String>,
-    captures: HashMap<String, Vec<(String, String)>>,
+    captures: HashMap<String, Vec<(WorkRecordAddress, String)>>,
 }
 
 impl Seen {
     fn remember_status(&mut self, reference: &str, status: Option<&WorkCurrentStatus>) {
-        if let Some(status) = status {
-            self.remember(reference, &status.locator);
+        if let Some(identity) = status.and_then(|status| status.identity.as_ref()) {
+            self.remember(reference, identity);
         }
     }
 
-    fn remember(&mut self, reference: &str, identity: &str) {
+    fn remember(&mut self, reference: &str, identity: &WorkRecordAddress) {
         if let Some(owner) = self.owners.get(reference) {
             self.remember_at(reference, identity, owner.clone());
         }
     }
 
-    fn remember_at(&mut self, reference: &str, identity: &str, owner: String) {
-        if identity.is_empty() {
-            return;
-        }
+    fn remember_at(&mut self, reference: &str, identity: &WorkRecordAddress, owner: String) {
         self.captures
             .entry(reference.into())
             .or_default()
-            .push((identity.into(), owner));
+            .push((identity.clone(), owner));
     }
 
-    fn repeats(&self, reference: &str, identity: Option<&str>) -> bool {
+    fn repeats(&self, reference: &str, identity: Option<&WorkRecordAddress>) -> bool {
         identity.is_some_and(|identity| self.owner_of(reference, identity).is_some())
     }
 
-    fn owner_of(&self, reference: &str, identity: &str) -> Option<&str> {
+    fn owner_of(&self, reference: &str, identity: &WorkRecordAddress) -> Option<&str> {
         self.captures
             .get(reference)?
             .iter()
@@ -140,7 +138,7 @@ impl Context {
                 && let Some(note) = discovery
                     .note
                     .as_ref()
-                    .filter(|_| !seen.repeats(reference, discovery.note_identity.as_deref()))
+                    .filter(|_| !seen.repeats(reference, discovery.note_identity.as_ref()))
             {
                 if let Value::Object(fields) = &mut row.value {
                     fields.insert("note".into(), json!(note));
@@ -190,7 +188,7 @@ impl Context {
                 if row
                     .note
                     .as_ref()
-                    .is_some_and(|_| seen.repeats(&row.work_ref, row.note_identity.as_deref()))
+                    .is_some_and(|_| seen.repeats(&row.work_ref, row.note_identity.as_ref()))
                 {
                     row.note = None;
                     row.note_session_id = None;
@@ -256,12 +254,17 @@ fn captures_owned_by(row: &WorkDiscoverySummary, seen: &Seen, owner: &str) -> bo
         .current_status
         .iter()
         .chain(&row.status_observation)
-        .all(|status| seen.owner_of(&row.work_ref, &status.locator) == Some(owner));
+        .all(|status| {
+            status
+                .identity
+                .as_ref()
+                .is_some_and(|identity| seen.owner_of(&row.work_ref, identity) == Some(owner))
+        });
     status_owned
         && (row.note.is_none()
             || row
                 .note_identity
-                .as_deref()
+                .as_ref()
                 .is_some_and(|identity| seen.owner_of(&row.work_ref, identity) == Some(owner)))
 }
 
@@ -270,7 +273,10 @@ fn append_note_navigation(row: &mut Row, reference: &str) {
     if let Value::Object(fields) = &mut row.value {
         fields.insert("note_detail".into(), json!(command));
     }
-    row.lines.push(format!("    note detail: {command}"));
+    row.lines.push(format!(
+        "    note detail: {}",
+        super::terminal_command(&command)
+    ));
 }
 
 fn clipped(current: Option<&WorkCurrentStatus>, peer: Option<&WorkCurrentStatus>) -> bool {

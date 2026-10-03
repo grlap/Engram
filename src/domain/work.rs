@@ -1155,6 +1155,13 @@ pub struct CompletionSeal {
     pub landing: Option<CompletionLanding>,
 }
 
+impl CompletionSeal {
+    /// Completion advances the authorizing fence when it closes the claim.
+    pub(crate) fn completed_claim_fence(&self) -> Option<i64> {
+        self.claim_fence.checked_add(1)
+    }
+}
+
 /// Most bytes a landing's remote or branch name may take.
 pub const MAX_LANDING_NAME_BYTES: usize = 256;
 

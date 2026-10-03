@@ -1413,7 +1413,7 @@ pub(super) fn show_lines(
             by.as_ref()
                 .map(|actor| format!(" by {actor}"))
                 .unwrap_or_default(),
-            short(&last.summary)
+            super::short_note(&last.summary)
         ));
     }
     if view.restored_history.total > 0 {
@@ -1431,7 +1431,7 @@ pub(super) fn show_lines(
                 entry.generation_index,
                 super::terminal_safe_line(&entry.kind),
                 actor,
-                short(&entry.summary)
+                super::short_note(&entry.summary)
             ));
         }
         if view.restored_history.omitted > 0 {

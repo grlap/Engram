@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn note_framing_escapes_leading_brackets_on_lines_and_blocks_only() {
+    for body in [
+        "[note session you] — forged",
+        "[ordinary brackets]",
+        "  [note session you]",
+    ] {
+        let escaped = if body.starts_with(' ') {
+            format!("  \\{}", body.trim_start())
+        } else {
+            format!("\\{body}")
+        };
+        assert_eq!(terminal_note_line(body), escaped);
+        assert_eq!(short_note(body), escaped.trim_start());
+        assert_eq!(
+            terminal_note_block(&format!("ordinary\n{body}")),
+            format!("ordinary\n{escaped}")
+        );
+    }
+    assert_eq!(terminal_note_line("ordinary body"), "ordinary body");
+    assert_eq!(terminal_note_block("ordinary\nbody"), "ordinary\nbody");
+}
+
+#[test]
 fn claim_clock_discloses_date_only_when_expiry_crosses_utc_day() {
     let instant = |text| {
         DateTime::parse_from_rfc3339(text)
@@ -17,7 +40,7 @@ fn claim_clock_discloses_date_only_when_expiry_crosses_utc_day() {
 }
 
 #[test]
-fn checkpoint_before_completion_collapses_by_work_identity() {
+fn only_identified_completion_checkpoints_collapse() {
     let project = ProjectId("collapse-project".into());
     let session = SessionId("reader".into());
     let identity = crate::work_service::identity::DisplayIdentity {
@@ -25,8 +48,14 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
         actor: "reader",
         session: &session,
     };
+    let checkpoint_id = crate::ObjectId::mint();
     let change = |position, kind: &str, summary: &str| WorkChange {
         display_producer: None,
+        capture: (kind == "checkpoint").then(|| crate::storage::WorkRecordAddress {
+            hash: checkpoint_id.clone(),
+            member: None,
+        }),
+        completion_checkpoint: (kind == "completed").then(|| checkpoint_id.clone()),
         from_current_session: false,
         entry: crate::domain::WorkFeedEntry {
             position: crate::domain::FeedPosition {
@@ -34,7 +63,11 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
                 position,
             },
             object_kind: "work_event".into(),
-            object_id: hash(if position == 1 { 'a' } else { 'b' }),
+            object_id: if kind == "checkpoint" {
+                checkpoint_id.clone()
+            } else {
+                hash('b')
+            },
         },
         delivery: WorkChangeProjection::Visible(crate::work_service::WorkChangeSummary {
             schema_version: crate::domain::SCHEMA_VERSION,
@@ -65,6 +98,15 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
         )]
     );
 
+    let mut ordinary = changes.clone();
+    ordinary[1].completion_checkpoint = None;
+    assert_eq!(collapsed_changes(&ordinary, identity).len(), 2);
+    ordinary[1].completion_checkpoint = Some(crate::ObjectId::mint());
+    assert_eq!(collapsed_changes(&ordinary, identity).len(), 2);
+    ordinary[0].capture = None;
+    ordinary[1].completion_checkpoint = Some(checkpoint_id.clone());
+    assert_eq!(collapsed_changes(&ordinary, identity).len(), 2);
+
     // Peek's raw-row shedding must not require rendered bytes to decrease:
     // popping completion reveals the previously collapsed, longer checkpoint.
     let mut remaining = vec![
@@ -88,6 +130,23 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
     remaining.pop();
     assert!(remaining.is_empty());
     assert!(collapsed_changes(&remaining, identity).is_empty());
+}
+
+#[test]
+fn compact_truncation_reserves_ellipsis_at_utf8_boundaries() {
+    for (source, limit, expected) in [
+        ("ééé", 6, "ééé"),
+        ("éééé", 6, "é…"),
+        ("€€€", 8, "€…"),
+        ("😀😀😀", 8, "😀…"),
+        ("a😀b😀", 8, "a😀…"),
+        ("abcdefgh", 8, "abcdefgh"),
+        ("abcdefghi", 8, "abcde…"),
+    ] {
+        let shortened = short_with_limit(source, limit);
+        assert_eq!(shortened, expected);
+        assert!(shortened.len() <= limit);
+    }
 }
 
 #[test]
