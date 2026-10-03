@@ -145,7 +145,8 @@ user profile:
   Greg's own word in the acting session. Outside the standing approval, a
   word relayed by another session never carries a commit or push. The
   standing approval grants no restart, deploy or global-configuration
-  authority; those actions need Greg's explicit word. A landing under it
+  authority; those acts are Greg's and need his explicit word.
+  A landing under it
   also installs the binary built from the exact gated tree (Greg,
   2026-09-23, recorded in Engram's instructions and extended to TermAl on
   2026-09-27: his word "commit" for a presented changeset also authorizes
@@ -155,9 +156,26 @@ user profile:
   puts it at C:\Users\grzeg\.cargo\bin\engram.exe, renaming the installed
   binary aside as a backup under C:\Users\grzeg\.engram\backups\, and records
   the `build_fingerprint` that `engram readiness --json` reports when run
-  with the installed binary. Installing is not deploying: running processes keep
-  their build until they restart, and restarting them is Greg's, on the
-  restart signal (build hash and reason).
+  with the installed binary.
+  The moment of a TermAl restart is the agents' decision (Greg, 2026-10-02:
+  'Wolę aby agenci zdecydowali na moment restaru Termal. Wtedy kiedy
+  potrzebuja poprawek. To nie jest problem, nie chce przerywać pracy.' and
+  'Chwila. Termal muszę zrestartować ja. Engram mogą sami. Wiec do restaru
+  termala oczekuje od nich potwierdzenia kiedy potrzebują to zrobic.'): when
+  running sessions need a landed fix, the Engram and TermAl coordinators agree
+  on a moment when running work can resume, and the TermAl coordinator sends
+  Greg, through Engram::Advisor, 'restart now' with the build hash and reason.
+  Greg performs the restart; no agent stops or starts the TermAl host. Engram
+  agents may restart Engram's own processes themselves, but only by a
+  supported route: let a TermAl control sidecar go five minutes without
+  control requests, so that TermAl reaps it and starts the installed build on
+  the next request, or start a new CLI process. Never kill an `engram.exe`
+  process, least of all a live `engram mcp` server, which its client may not
+  reconnect. An MCP server picks up a new build only when its host session is
+  recreated, which for TermAl sessions means a TermAl restart.
+  Installing is not deploying: running processes keep their build until they
+  restart by the supported routes above; the landing report says whether
+  running sessions need the new build, with its build hash and reason.
 - Implementers claim their own Engram items and complete them with the
   words; never place work refs in source comments, identifiers,
   documentation prose, or user-facing output.
