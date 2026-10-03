@@ -177,6 +177,7 @@ fn assert_recovery_claim_guidance(receipt: &Receipt, work_ref: &str) {
 mod claims;
 mod customer_workflow;
 mod evaluate;
+mod focus_change;
 mod handlers;
 mod implicit_target;
 mod planning;

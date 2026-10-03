@@ -232,6 +232,75 @@ fn host_binds(
     )
 }
 
+/// A focus move captures the target's live claim and its bound named root in
+/// the focus transaction: the workspace and generation the host bound. After
+/// the host ends the root, a move captures the claim alone.
+#[test]
+fn a_focus_move_captures_the_claims_named_root() {
+    let mut fixture = fixture("project-focus-named-root");
+    let (work, claim) = (fixture.work.clone(), fixture.claim.clone());
+    let store = &mut fixture.store;
+    let host = HostSession::bind(store, &work, &claim, 6);
+    host_binds(
+        store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        20,
+        "name-B",
+        20,
+    )
+    .expect("host names B");
+    let other = store
+        .create_work(
+            &root_request("project-focus-named-root", "focus-other", 30),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("another item");
+    let move_back = |store: &mut SqliteStore, second: i64| {
+        store
+            .focus_work_session(&work.project_id, &claim.holder, other.work_id, at(second))
+            .expect("focus the other item");
+        let journal = crate::storage::FocusJournal::begin(&work.project_id, &claim.holder);
+        store
+            .focus_work_session(
+                &work.project_id,
+                &claim.holder,
+                work.work_id,
+                at(second + 1),
+            )
+            .expect("focus the claimed item");
+        journal.finish().expect("a move")
+    };
+    let change = move_back(store, 31);
+    assert_eq!(change.from.as_deref(), Some(other.short_ref.as_str()));
+    assert_eq!(change.to.as_deref(), Some(work.short_ref.as_str()));
+    let binding = change.binding.expect("the live claim");
+    assert_eq!(
+        (binding.claim_id, binding.claim_fence),
+        (claim.claim_id, claim.fence)
+    );
+    assert_eq!(binding.workspace_id.as_deref(), Some("workspace-B"));
+    assert_eq!(binding.generation, Some(9));
+
+    host_binds(
+        store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Ended,
+        20,
+        "end-B",
+        40,
+    )
+    .expect("host ends B");
+    let binding = move_back(store, 41).binding.expect("the live claim");
+    assert_eq!((binding.workspace_id, binding.generation), (None, None));
+}
+
 /// One host turn whose only observation states `basis`, a source change or
 /// a quiet sighting, with the checkpoint's own answer.
 fn checkpoint_basis(

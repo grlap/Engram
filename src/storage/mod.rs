@@ -25,6 +25,8 @@ mod task_memory;
 mod unadmitted_observation;
 mod work;
 pub(crate) use work::BindingReadRequest;
+#[cfg(test)]
+pub(crate) use work::FocusBinding;
 pub(crate) use work::VerificationReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
 pub(crate) use work::validate_work_plan;
@@ -33,6 +35,10 @@ pub use work::{
     RecordedLanding, WorkObligationCompletionAction,
 };
 pub(crate) use work::{AssessedAcceptanceEvaluation, SourceObservationRecord};
+pub(crate) use work::{
+    FOCUS_CHANGE_RESERVE, FocusChange, FocusJournal, MAX_DISCLOSED_WORKSPACE_JSON_BYTES,
+    owned_control_work_binding,
+};
 pub(crate) use work::{criteria_without_evidence_link, unlinked_criteria_owe_bound_check};
 
 pub(crate) use project_memory::validate_context_generation;

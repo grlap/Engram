@@ -853,6 +853,43 @@ impl SqliteStore {
                 "focused work must belong to the bound project".into(),
             ));
         }
+        // A word that discloses its focus change reads the move here, in the
+        // transaction that writes it; nothing is read without a journal. The
+        // disclosure never refuses the move: a failed read records none.
+        let moved = if super::focus_journal::recording() {
+            let previous = || -> Result<Option<(WorkId, String)>, StoreError> {
+                transaction
+                    .query_row(
+                        "SELECT focused_work_id FROM work_session_state
+                         WHERE project_id = ?1 AND session_id = ?2",
+                        params![project_id.0, session_id.0],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .optional()?
+                    .flatten()
+                    .map(|stored| {
+                        let previous = load_work_item(&transaction, parse_work_id(&stored)?)?;
+                        Ok((previous.work_id, previous.short_ref))
+                    })
+                    .transpose()
+            };
+            match previous() {
+                Ok(from) if from.as_ref().is_some_and(|(id, _)| *id == work_id) => None,
+                Ok(from) => Some((
+                    from,
+                    super::focus_journal::focus_binding_on(
+                        &transaction,
+                        project_id,
+                        session_id,
+                        &item,
+                        now,
+                    ),
+                )),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
         // A staged change page was projected under the previous focus. A
         // different focus discards it so the next call recomputes the same
         // interval under the new visibility basis; nothing is confirmed here.
@@ -880,6 +917,15 @@ impl SqliteStore {
             ],
         )?;
         transaction.commit()?;
+        if let Some((from, binding)) = moved {
+            super::focus_journal::record_move(
+                project_id,
+                session_id,
+                from,
+                (item.work_id, item.short_ref.clone()),
+                binding,
+            );
+        }
         self.work_session_state(project_id, session_id, now)
     }
 

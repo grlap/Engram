@@ -27,7 +27,12 @@ pub(crate) use completion::{
 mod discovery;
 mod execution;
 mod feeds;
+mod focus_journal;
 pub(in crate::storage) use feeds::append_named_root_binding_on;
+pub(crate) use focus_journal::{
+    FOCUS_CHANGE_RESERVE, FocusBinding, FocusChange, FocusJournal,
+    MAX_DISCLOSED_WORKSPACE_JSON_BYTES, owned_control_work_binding,
+};
 mod import;
 mod integrity;
 pub(in crate::storage) use import::{

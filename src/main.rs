@@ -2095,7 +2095,11 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 })?;
                 eprintln!("{}", refusal_stderr_text(&error.error, text));
             } else {
-                emit_work_text_refusal(&verbs.error_message(&error), &guidance);
+                emit_work_text_refusal(
+                    &verbs.error_message(&error),
+                    error.focus_change_line(),
+                    &guidance,
+                );
             }
             Ok(ExitCode::FAILURE)
         }

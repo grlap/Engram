@@ -43,6 +43,10 @@ impl AgentVerbs {
     /// core consumers keep the original envelope; no input identity is resolved.
     #[must_use]
     pub fn project_error(&self, error: &VerbError, mut value: Value) -> Value {
+        // A word that moved focus before it refused says so beside the error.
+        if let Some(disclosure) = error.focus_change() {
+            value["focus_change"] = disclosure.value.clone();
+        }
         if let StoreError::WorkClaimHeld { work, holder, .. } = &error.error {
             if let Some(Value::Object(details)) = value.pointer_mut("/error/details") {
                 details.remove("holder_session_id");

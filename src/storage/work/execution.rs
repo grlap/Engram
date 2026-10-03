@@ -442,8 +442,47 @@ impl SqliteStore {
                 &claim,
             )?;
         }
+        let journaled = Self::claimed_binding_on(
+            &transaction,
+            &request.holder,
+            claim.work_id,
+            request.claimed_at,
+        );
         transaction.commit()?;
+        if let Some((project_id, binding)) = journaled {
+            super::focus_journal::record_binding(
+                &project_id,
+                &request.holder,
+                claim.work_id,
+                binding,
+            );
+        }
         Ok(claim)
+    }
+
+    /// The binding a claim just taken, renewed or recovered leaves on
+    /// `work_id`, read in the claim's transaction for a word that discloses
+    /// its focus change; `None` when no journal is installed. Like every
+    /// disclosure read, it never refuses the claim: a failed read records
+    /// nothing.
+    fn claimed_binding_on(
+        connection: &rusqlite::Connection,
+        holder: &crate::domain::SessionId,
+        work_id: WorkId,
+        now: DateTime<Utc>,
+    ) -> Option<(crate::domain::ProjectId, Option<super::FocusBinding>)> {
+        if !super::focus_journal::recording() {
+            return None;
+        }
+        let item = load_work_item(connection, work_id).ok()?;
+        let binding = super::focus_journal::focus_binding_on(
+            connection,
+            &item.project_id,
+            holder,
+            &item,
+            now,
+        );
+        Some((item.project_id, binding))
     }
 
     /// Selects the next ready direct child of one parent and claims it in the
@@ -558,7 +597,21 @@ impl SqliteStore {
                 &selection,
             )?;
         }
+        let journaled = Self::claimed_binding_on(
+            &transaction,
+            &request.holder,
+            selection.work_id,
+            request.claimed_at,
+        );
         transaction.commit()?;
+        if let Some((project_id, binding)) = journaled {
+            super::focus_journal::record_binding(
+                &project_id,
+                &request.holder,
+                selection.work_id,
+                binding,
+            );
+        }
         Ok(selection)
     }
 

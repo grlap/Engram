@@ -182,6 +182,35 @@ Repeating the word with the item named acts as before. A bare `handoff` keeps
 the focus without this check: its recipient accepts an item it does not hold
 yet, and an offer or a cancel already needs the claim.
 
+A `claim` (with or without `--under`), `note`, `gate`, `evaluate` or `done`
+that actually moves this session's focus says so. Its receipt carries a
+top-level `focus_change` and one text line after the headline, for example
+`focus moved from w-… to w-…; the host binds w-…'s claim from its next turn,
+not this one`. The object holds `from` and `to` (work refs, either `null`
+when there was or is no focus). When the target has a live claim of this
+session that session bind would accept, as captured in this word's own
+transactions, it adds `claim_id` and `claim_fence`. When that claim has a
+bound named source root, it adds `workspace_id` and `generation`. A
+workspace name longer than 192 bytes as JSON or as escaped shell text is
+given instead as `workspace_id_omitted_bytes`, its UTF-8 length. Shell text
+never shows the fence.
+Without such a claim the line ends `w-… has no live claim to bind`, and
+after `done` the completed item's claim has ended, so no binding is named.
+
+The change is what this invocation did, computed when the word finishes and
+never stored. A call that leaves focus where it was says nothing, and so does
+one that ends where it started: `claim --under` passes through the parent on
+its way to the child. A peer's `note`, `gate` or `evaluate` moves nothing, and
+an exact retry reports only a move the retry itself made. A word that moved
+focus and then refused (a claim held elsewhere, a refused `done`, a note
+whose later check fails) carries the same `focus_change` beside `error` in
+CLI JSON and MCP, and its line after the message on the CLI text surface.
+
+The claiming turn keeps the binding the host admitted it with. The new
+target is only a candidate for the host's next admission, and the receipt
+never says the host has rebound: whether and when the host binds the new
+claim and root, and how it says so, is the host's to report.
+
 The host's core operations follow the same rule when they name no item: a
 decomposition under the focus, and every `work core update` form, claims,
 checkpoints and evidence capture included. They are refused the same way

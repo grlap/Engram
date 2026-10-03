@@ -1,10 +1,10 @@
 //! `gate` and `evaluate` word handlers: recording a quality-gate observation
 //! and recording an attributed acceptance evaluation on an item's active run.
 
+use super::super::FOCUS_DISCLOSED_BUDGET;
 use super::{
-    AgentVerbs, DateTime, EvaluateInput, GateInput, MAX_AGENT_WORK_RESPONSE_BYTES, Receipt,
-    StoreError, Utc, VerbError, held_suffix, json, minimal_evaluate_receipt, normalize_gate_input,
-    short,
+    AgentVerbs, DateTime, EvaluateInput, GateInput, Receipt, StoreError, Utc, VerbError,
+    held_suffix, json, minimal_evaluate_receipt, normalize_gate_input, short,
 };
 
 impl AgentVerbs {
@@ -16,6 +16,10 @@ impl AgentVerbs {
     /// text contains unsafe control/format characters, or this session does
     /// not hold the item.
     pub fn gate(&self, input: GateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        self.disclosing_focus(|| self.gate_word(input, now))
+    }
+
+    fn gate_word(&self, input: GateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let normalized = normalize_gate_input(&input)?;
         let GateInput {
             work_ref: target_ref,
@@ -82,6 +86,14 @@ impl AgentVerbs {
     /// stale, a word or citation is malformed, or the core refuses the record
     /// for policy, identity, criteria, or provenance reasons.
     pub fn evaluate(&self, input: EvaluateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        self.disclosing_focus(|| self.evaluate_word(input, now))
+    }
+
+    fn evaluate_word(
+        &self,
+        input: EvaluateInput,
+        now: DateTime<Utc>,
+    ) -> Result<Receipt, VerbError> {
         let view = self.target_unfocused("evaluate", input.work_ref.as_deref(), now).map_err(|error| {
             if matches!(&error.error, StoreError::InvalidWork(reason) if reason.contains("no focused work")) {
                 VerbError::from(StoreError::InvalidWork(
@@ -187,8 +199,7 @@ impl AgentVerbs {
                 self.holder(&after, now),
                 false,
             )?);
-            if super::super::receipts::agent_receipt_fits(&receipt, MAX_AGENT_WORK_RESPONSE_BYTES)?
-            {
+            if super::super::receipts::agent_receipt_fits(&receipt, FOCUS_DISCLOSED_BUDGET)? {
                 return Ok(receipt);
             }
             if projection.verdicts.pop().is_some() {
@@ -216,7 +227,7 @@ impl AgentVerbs {
                 ));
                 debug_assert!(super::super::receipts::agent_receipt_fits(
                     &minimal,
-                    MAX_AGENT_WORK_RESPONSE_BYTES
+                    FOCUS_DISCLOSED_BUDGET
                 )?);
                 return Ok(minimal);
             }

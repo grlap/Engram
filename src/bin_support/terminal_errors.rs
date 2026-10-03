@@ -15,8 +15,17 @@ pub(crate) fn anyhow_error_lines(error: &anyhow::Error) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn work_text_refusal_lines(message: &str, guidance: &Guidance) -> Vec<String> {
+/// A word's text refusal: the error, then the focus move the word made before
+/// it refused on a line of its own, then the guidance.
+pub(crate) fn work_text_refusal_lines(
+    message: &str,
+    focus_change: Option<&str>,
+    guidance: &Guidance,
+) -> Vec<String> {
     let mut lines = vec![format!("error: {}", terminal_error_line(message))];
+    if let Some(focus_change) = focus_change {
+        lines.push(terminal_error_line(focus_change));
+    }
     for reminder in &guidance.reminders {
         lines.push(format!("  - {}", terminal_error_line(reminder)));
     }
@@ -42,8 +51,12 @@ pub(crate) fn emit_anyhow_error(error: &anyhow::Error) {
     emit_lines(&anyhow_error_lines(error));
 }
 
-pub(crate) fn emit_work_text_refusal(message: &str, guidance: &Guidance) {
-    emit_lines(&work_text_refusal_lines(message, guidance));
+pub(crate) fn emit_work_text_refusal(
+    message: &str,
+    focus_change: Option<&str>,
+    guidance: &Guidance,
+) {
+    emit_lines(&work_text_refusal_lines(message, focus_change, guidance));
 }
 
 pub(crate) fn emit_host_path_probe_warning(error: &dyn std::fmt::Display) {
@@ -119,12 +132,26 @@ mod tests {
         let raw_command = format!("{command}{HOSTILE}");
         let lines = work_text_refusal_lines(
             HOSTILE,
+            None,
             &Guidance {
                 reminders: vec![HOSTILE.into()],
                 next: vec![raw_command.clone()],
             },
         );
         assert_eq!(lines.len(), 4, "{lines:?}");
+        // A focus move the refused word made is its own framed line, right
+        // after the error.
+        let moved = work_text_refusal_lines(
+            "work w-a is claimed",
+            Some(&format!("focus moved from w-b to w-a{HOSTILE}")),
+            &Guidance::default(),
+        );
+        assert_eq!(moved.len(), 2, "{moved:?}");
+        assert_eq!(moved[0], "error: work w-a is claimed");
+        assert_eq!(
+            moved[1],
+            terminal_error_line(&format!("focus moved from w-b to w-a{HOSTILE}"))
+        );
         assert_eq!(lines[0], format!("error: {}", terminal_error_line(HOSTILE)));
         assert_eq!(lines[1], format!("  - {}", terminal_error_line(HOSTILE)));
         assert_eq!(lines[2], "next:");

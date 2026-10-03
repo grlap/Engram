@@ -42,6 +42,7 @@ mod attribution;
 mod child_obligations;
 mod evaluation_guidance;
 mod evaluation_windows;
+mod focus_change;
 mod handlers;
 mod listing;
 mod memory_change;
@@ -72,6 +73,10 @@ const DEFAULT_LIMIT: u32 = 20;
 pub const MAX_NEXT_READY_CANDIDATES: u32 = 5;
 const MAX_TEXT_LINE_BYTES: usize = 96;
 const MAX_COMPACT_NEXT_JSON_BYTES: usize = MAX_AGENT_WORK_RESPONSE_BYTES;
+/// The budget a word that fits its receipt and can move focus fits it to,
+/// leaving its focus disclosure room beside it.
+const FOCUS_DISCLOSED_BUDGET: usize =
+    MAX_AGENT_WORK_RESPONSE_BYTES - crate::storage::FOCUS_CHANGE_RESERVE;
 const MAX_COMPACT_CHANGE_ITEMS: u32 = 8;
 const MAX_COMPACT_TITLE_BYTES: usize = 80;
 const MAX_COMPACT_LABEL_ITEMS: usize = 2;

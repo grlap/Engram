@@ -7,15 +7,14 @@ use super::{
     MAX_FOCUS_RELATIONS, MAX_LABEL_ITEMS, MAX_OBLIGATION_PAGE_BYTES, MAX_SUMMARY_BYTES,
     MemorySummary, ObjectId, ReadyWork, ReadyWorkSummary, RequiredChildWaiverCandidate,
     RestoredWorkEvidence, Serialize, SessionId, SqliteStore, StoreError, Utc, WorkClaim,
-    WorkClaimState, WorkCompletionRecoveryCause, WorkDecomposition, WorkDecompositionChildSummary,
+    WorkCompletionRecoveryCause, WorkDecomposition, WorkDecompositionChildSummary,
     WorkDecompositionSummary, WorkEvidence, WorkEvidenceKind, WorkEvidenceProjectionSummary,
     WorkEvidenceSummary, WorkFocusView, WorkGateEvidenceSummary, WorkHandoffOffer,
     WorkHandoffSummary, WorkId, WorkItem, WorkItemSummary, WorkLifecycle, WorkMemoryIndexEntry,
     WorkMutationReceipt, WorkNextSection, WorkNextView, WorkObligationGuidance, WorkObligationPage,
     WorkObligationResolution, WorkObligationState, WorkObligationSummary, WorkPrerequisiteState,
-    WorkRun, WorkRunId, WorkRunState, WorkRunSummary, WorkSectionOmission,
-    WorkSectionOmissionReason, WorkSessionState, is_unsafe_rendered_text_char,
-    validate_gate_evidence_payload,
+    WorkRun, WorkRunId, WorkRunSummary, WorkSectionOmission, WorkSectionOmissionReason,
+    WorkSessionState, is_unsafe_rendered_text_char, validate_gate_evidence_payload,
 };
 
 /// A fixed diagnostic class, never an error body, path, hash, or actor text.
@@ -297,40 +296,14 @@ pub(super) fn bindable_control_work_binding(
     claim: Option<&WorkClaim>,
     now: DateTime<Utc>,
 ) -> Result<Option<ControlWorkBinding>, StoreError> {
-    let Some(candidate) = owned_control_work_binding(work, run, claim, session_id, now) else {
+    let Some(candidate) =
+        crate::storage::owned_control_work_binding(work, run, claim, session_id, now)
+    else {
         return Ok(None);
     };
     Ok(store
         .control_work_binding_bindable(project_id, session_id, &candidate, now)?
         .then_some(candidate))
-}
-
-fn owned_control_work_binding(
-    work: &WorkItem,
-    run: &WorkRun,
-    claim: Option<&WorkClaim>,
-    session_id: &SessionId,
-    now: DateTime<Utc>,
-) -> Option<ControlWorkBinding> {
-    let claim = claim?;
-    (work.lifecycle == WorkLifecycle::Open
-        && work.active_run_id == Some(run.run_id)
-        && run.work_id == work.work_id
-        && matches!(run.state, WorkRunState::Claimed | WorkRunState::Active)
-        && claim.work_id == work.work_id
-        && claim.run_id == run.run_id
-        && claim.accepted_work_revision == work.revision
-        && claim.holder == *session_id
-        && claim.state == WorkClaimState::Active
-        && claim.expires_at > now)
-        .then_some(ControlWorkBinding {
-            root_execution_id: run.root_execution_id,
-            work_id: work.work_id,
-            run_id: run.run_id,
-            work_revision: work.revision,
-            claim_id: claim.claim_id,
-            claim_fence: claim.fence,
-        })
 }
 
 pub(super) fn work_handoff_summary(offer: &WorkHandoffOffer) -> WorkHandoffSummary {

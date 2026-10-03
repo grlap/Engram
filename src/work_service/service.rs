@@ -471,6 +471,12 @@ impl LocalWorkService {
         Ok(format!("auto:{}", object.key().as_str()))
     }
 
+    /// Starts a journal of this connection's focus moves for one word; the
+    /// word takes the net change when it finishes.
+    pub(crate) fn focus_journal(&self) -> crate::storage::FocusJournal {
+        crate::storage::FocusJournal::begin(&self.project_id, &self.session_id)
+    }
+
     /// The project's active acceptance-evaluation policy.
     ///
     /// # Errors

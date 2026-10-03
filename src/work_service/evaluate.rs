@@ -45,8 +45,10 @@ use crate::{DevelopmentNoopRedactor, ObjectId, SqliteStore, StoreError};
 /// is a minimal measured provenance receipt. The verbs tests pin this
 /// derivation by constructing that maximal envelope from a real receipt
 /// with control-character fields, by pinning the minimal receipt's size,
-/// and by measuring a real word receipt against its service result.
-pub const EVALUATE_WORD_RESERVE: usize = 3072;
+/// and by measuring a real word receipt against its service result. The
+/// word's focus disclosure is reserved on top: the word fits its receipt to
+/// the budget less that disclosure's room.
+pub const EVALUATE_WORD_RESERVE: usize = 3072 + crate::storage::FOCUS_CHANGE_RESERVE;
 
 const SERVICE_ENVELOPE_BUDGET: usize = MAX_AGENT_WORK_RESPONSE_BYTES - EVALUATE_WORD_RESERVE;
 

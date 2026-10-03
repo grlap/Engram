@@ -2546,6 +2546,90 @@ test("targeted reads do not steer later bare writes on CLI or MCP", async (t) =>
   }
 });
 
+test("a word that moves focus says so on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-focus-change-", t);
+  const session = "focus-change-session";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const first = cliJson(engramHome, session, "add", "First held item").work.short_ref;
+    const second = cliJson(engramHome, session, "add", "Second held item").work.short_ref;
+    // add focused the second item: claiming the first moves focus there and
+    // names the claim the host can bind from its next turn.
+    const claimedFirst = cliJson(engramHome, session, "claim", first);
+    assert.equal(claimedFirst.focus_change.from, second);
+    assert.equal(claimedFirst.focus_change.to, first);
+    assert.equal(typeof claimedFirst.focus_change.claim_id, "string");
+    assert.equal(typeof claimedFirst.focus_change.claim_fence, "number");
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const claimedSecond = await client.call("claim", { work_ref: second });
+    const claimedValue = receipt(claimedSecond);
+    assert.deepEqual(
+      [claimedValue.focus_change.from, claimedValue.focus_change.to],
+      [first, second],
+    );
+    assert.equal(typeof claimedValue.focus_change.claim_fence, "number");
+    const claimedText = claimedSecond.content.filter(({ type }) => type === "text");
+    assert.deepEqual(JSON.parse(claimedText[0].text), claimedValue);
+    // Claiming the focused item again moves nothing and says nothing.
+    assert.equal("focus_change" in receipt(await client.call("claim", { work_ref: second })), false);
+
+    // A note on a held item that is not the focus moves focus there.
+    const noted = receipt(
+      await client.call("note", { work_ref: first, text: "MCP note on the other held item" }),
+    );
+    assert.deepEqual([noted.focus_change.from, noted.focus_change.to], [second, first]);
+    assert.equal(typeof noted.focus_change.claim_fence, "number");
+    assert.equal(
+      "focus_change" in receipt(await client.call("note", { work_ref: first, text: "again" })),
+      false,
+    );
+    // The same move on the CLI, after putting focus back on the second item.
+    receipt(await client.call("note", { work_ref: second, text: "back to the second item" }));
+    const cliNote = cliJson(engramHome, session, "note", first, "CLI note on the other held item");
+    assert.deepEqual([cliNote.focus_change.from, cliNote.focus_change.to], [second, first]);
+    const text = cliText(engramHome, session, "note", second, "CLI text note");
+    assert.ok(
+      text.includes(
+        `focus moved from ${first} to ${second}; the host binds ${second}'s claim from its next turn, not this one`,
+      ),
+      text,
+    );
+    // A peer's observation on an item it does not hold moves nothing.
+    const observed = cliJson(engramHome, "focus-change-peer", "note", first, "peer observation");
+    assert.equal("focus_change" in observed, false);
+
+    // A claim that moves focus and is then refused says so beside its
+    // refusal: its own line after the error on the CLI, and beside error on MCP.
+    const peerHeld = cliJson(engramHome, "focus-change-peer", "add", "Held by the peer").work.short_ref;
+    cliJson(engramHome, "focus-change-peer", "claim", peerHeld);
+    const refused = cliWord(engramHome, session, "claim", peerHeld);
+    assert.notEqual(refused.status, 0);
+    const refusedLines = refused.stderr.split(/\r?\n/u);
+    assert.match(refusedLines[0], /^error: work .* is claimed by /u, refused.stderr);
+    assert.equal(
+      refusedLines[1],
+      `focus moved from ${second} to ${peerHeld}; ${peerHeld} has no live claim to bind`,
+      refused.stderr,
+    );
+    assert.doesNotMatch(refused.stderr, /fence/u);
+    receipt(await client.call("note", { work_ref: first, text: "focus on the first item again" }));
+    const mcpRefused = await client.call("claim", { work_ref: peerHeld });
+    structuredError(mcpRefused, "work_claim_held");
+    assert.deepEqual(
+      [mcpRefused.structuredContent.focus_change.from, mcpRefused.structuredContent.focus_change.to],
+      [first, peerHeld],
+    );
+  } finally {
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
+  }
+});
+
 test("show parent context agrees across CLI and MCP for required optional and root", async (t) => {
   const engramHome = fixtureHome("engram-show-parent-", t);
   const session = "parent-reader";

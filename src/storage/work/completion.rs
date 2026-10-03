@@ -152,6 +152,7 @@ impl SqliteStore {
             request_object.key(),
         )? {
             transaction.commit()?;
+            Self::journal_claim_ended(request);
             return Ok(CompleteWorkStorageResult::Completed(Box::new(seal)));
         }
         expire_handoff_offers(
@@ -702,7 +703,14 @@ impl SqliteStore {
             &seal,
         )?;
         transaction.commit()?;
+        Self::journal_claim_ended(request);
         Ok(CompleteWorkStorageResult::Completed(Box::new(seal)))
+    }
+
+    /// A completion ends the holder's claim, so a word that moved focus to
+    /// the completed item promises no binding for it.
+    fn journal_claim_ended(request: &CompleteWorkRequest) {
+        super::focus_journal::record_ended(&request.holder, request.work_id);
     }
 
     /// Resolves one exact open obligation through an attributed local shell

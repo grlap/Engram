@@ -326,7 +326,15 @@ thread_local! {
 pub struct VerbError {
     pub error: StoreError,
     pub work_ref: Option<String>,
-    listing_command: Option<Box<str>>,
+    /// Context only some refusals carry, kept behind one pointer.
+    context: Option<Box<VerbErrorContext>>,
+}
+
+#[derive(Debug, Default)]
+struct VerbErrorContext {
+    listing_command: Option<String>,
+    /// The focus move the refused word made before it refused.
+    focus_change: Option<super::focus_change::FocusDisclosure>,
 }
 
 impl VerbError {
@@ -334,7 +342,7 @@ impl VerbError {
         Self {
             error,
             work_ref: Some(work_ref.to_owned()),
-            listing_command: None,
+            context: None,
         }
     }
 
@@ -342,8 +350,32 @@ impl VerbError {
         Self {
             error,
             work_ref: None,
-            listing_command: Some(command.into()),
+            context: Some(Box::new(VerbErrorContext {
+                listing_command: Some(command.into()),
+                focus_change: None,
+            })),
         }
+    }
+
+    pub(super) fn with_focus_change(
+        mut self,
+        disclosure: super::focus_change::FocusDisclosure,
+    ) -> Self {
+        self.context.get_or_insert_with(Box::default).focus_change = Some(disclosure);
+        self
+    }
+
+    pub(super) fn focus_change(&self) -> Option<&super::focus_change::FocusDisclosure> {
+        self.context
+            .as_ref()
+            .and_then(|context| context.focus_change.as_ref())
+    }
+
+    /// The text line of the focus move this refused word made, if it moved.
+    #[must_use]
+    pub fn focus_change_line(&self) -> Option<&str> {
+        self.focus_change()
+            .map(|disclosure| disclosure.line.as_str())
     }
 
     /// Words and commands that resolve the failure, when a fixed table knows.
@@ -365,8 +397,9 @@ impl VerbError {
             return Guidance {
                 reminders: Vec::new(),
                 next: vec![
-                    self.listing_command
-                        .as_deref()
+                    self.context
+                        .as_ref()
+                        .and_then(|context| context.listing_command.as_deref())
                         .unwrap_or("engram work ls")
                         .to_owned(),
                 ],
@@ -644,7 +677,7 @@ impl From<StoreError> for VerbError {
         Self {
             error,
             work_ref: None,
-            listing_command: None,
+            context: None,
         }
     }
 }
