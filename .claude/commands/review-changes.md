@@ -403,6 +403,40 @@ passage of authority text to the auditing coordinator by TermAl mailbox. The
 change is neither committed nor pushed before the audit of that input is
 recorded on the item as passed.
 
+Before judging the authority passages, the auditing coordinator confirms
+that the supplied authority diff matches a diff read from the frozen worktree
+against the same recorded base commit, including each added authority file
+and its placement. With the holder's confirmation that no check is carried
+in that root, the coordinator runs the compiled host freeze checker before
+and after reading that diff and those files from the same worktree. Use the
+canonical root, the absolute manifest path and the parent's fingerprint
+retained independently of the manifest. Record the checker and freeze
+protocol version, base commit, root, manifest, independent fingerprint and
+both results with the audit. For Engram schema 1, the compiled checker is
+`termal review-freeze-check ROOT MANIFEST EXPECTED_SHA256`, matching
+`scripts/review-freeze-fingerprint.mjs --check`; both checks must exit zero
+with stdout exactly the independent fingerprint plus one LF. For another
+project's freeze protocol, name its matching compiled checker and compare
+its documented success output exactly. Retain stderr separately, including
+coverage limits. A missing or mismatched check does not pass, even when no
+content change is apparent: investigate it rather than dismissing it as Git
+stat-cache noise. The checks cover their declared Git normalization and
+platform scope, not raw bytes or the absence of transient edits.
+
+Only when the auditing coordinator cannot read the worktree, record that
+access gap and retain the exact supplied authority diff, each added authority
+file and the base commit. After landing, the coordinator compares the landed
+commit's authority diff against that same base with the retained input,
+including placement and surrounding context, using only the audit's
+documented whitespace normalization. Passage lists alone do not establish
+identity. Record the landed commit and comparison result on the item; report
+a mismatch through the Advisor to Greg and track its correction, without
+recording a successful identity check.
+
+The fallback establishes identity only after landing. The wording audit and
+existing concurrence, notice, gate, review and landing requirements still
+apply before landing; the fallback grants no additional authority.
+
 The auditing coordinator is the project's coordinator; where the project's
 coordinator worded the change, it is the other project's coordinator. A
 changed passage is each sentence or heading of authority text that the
