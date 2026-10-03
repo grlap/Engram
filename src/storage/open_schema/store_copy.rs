@@ -203,25 +203,6 @@ impl SqliteStore {
     }
 
     /// Settles a copy that [`Self::copy_existing_read_only`] wrote, so it is
-    /// one self-contained file, then checks it in full as
-    /// [`Self::verify_backup`] does and reads, from the copy itself, the
-    /// schema it carries and the cut of `project`: the project work-feed
-    /// head and the project-memory change position.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when the copy cannot be settled, fails its check,
-    /// or `interrupt` fires.
-    pub fn verify_store_copy(
-        path: &Path,
-        project: &ProjectId,
-        interrupt: &CopyInterrupt,
-    ) -> Result<VerifiedStoreCopy, StoreError> {
-        Self::settle_store_copy(path, interrupt)?;
-        Self::verify_settled_store_copy(path, project, interrupt)
-    }
-
-    /// Settles a copy that [`Self::copy_existing_read_only`] wrote, so it is
     /// one self-contained file in the form a verified copy is hashed in.
     ///
     /// # Errors
@@ -286,8 +267,21 @@ impl SqliteStore {
         project: &ProjectId,
         interrupt: &CopyInterrupt,
     ) -> Result<VerifiedStoreCopy, StoreError> {
+        Self::verify_settled_store_copy_with_hash(path, project, interrupt, None)
+    }
+
+    /// The supplied hash must come from this same privately staged file after
+    /// settlement, with no writer between hashing and upload. The full check
+    /// opens it immutable and never changes its bytes. Public verification and
+    /// later replacement checks must instead derive a fresh hash.
+    pub(crate) fn verify_settled_store_copy_with_hash(
+        path: &Path,
+        project: &ProjectId,
+        interrupt: &CopyInterrupt,
+        hashed: Option<(String, u64)>,
+    ) -> Result<VerifiedStoreCopy, StoreError> {
         interrupt.checked()?;
-        let (manifest, store) = Self::verify_copy_file(path, Some(interrupt))?;
+        let (manifest, store) = Self::verify_copy_file_with_hash(path, Some(interrupt), hashed)?;
         interrupt.checked()?;
         let schema_reference =
             CanonicalObject::freeze(&super::super::stored_schema_definitions(&store.connection)?)?

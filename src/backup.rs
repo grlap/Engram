@@ -439,7 +439,7 @@ fn capture_into(
         .map_err(classified(CapturePhase::Copy))?;
     observe(CapturePhase::Verify);
     SqliteStore::settle_store_copy(staged, interrupt).map_err(classified(CapturePhase::Verify))?;
-    if let Some(newest) = options.same_as {
+    let hashed = if let Some(newest) = options.same_as {
         // Equal settled bytes hold equal rows, so the newest copy's full
         // check stands for this one, but only when this build made it: a
         // check is a property of the build that ran it, not of the bytes.
@@ -468,8 +468,14 @@ fn capture_into(
                 CaptureCheck::SameBytesAsNewest,
             ));
         }
-    }
-    let copy = SqliteStore::verify_settled_store_copy(staged, project, interrupt)
+        Some((sha256, bytes))
+    } else {
+        None
+    };
+    // This attempt alone owns the settled stage. Verification opens it
+    // immutable, and compression reads it without writing: the comparison
+    // hash still describes exactly the bytes that will be uploaded.
+    let copy = SqliteStore::verify_settled_store_copy_with_hash(staged, project, interrupt, hashed)
         .map_err(classified(CapturePhase::Verify))?;
     if interrupt.expired() {
         return Err(BackupError::CaptureDeadline {

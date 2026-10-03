@@ -450,6 +450,14 @@ impl SqliteStore {
         path: &Path,
         interrupt: Option<&CopyInterrupt>,
     ) -> Result<(BackupManifest, Self), StoreError> {
+        Self::verify_copy_file_with_hash(path, interrupt, None)
+    }
+
+    fn verify_copy_file_with_hash(
+        path: &Path,
+        interrupt: Option<&CopyInterrupt>,
+        hashed: Option<(String, u64)>,
+    ) -> Result<(BackupManifest, Self), StoreError> {
         if !path.is_file() {
             return Err(StoreError::InvalidWork(format!(
                 "backup {} is not an existing file",
@@ -468,7 +476,7 @@ impl SqliteStore {
                 )));
             }
         }
-        Self::verify_copy_bytes(path, interrupt)
+        Self::verify_copy_bytes_with_hash(path, interrupt, hashed)
     }
 
     /// The SHA-256, in lowercase hex, and the length of the file at `path`,
@@ -512,7 +520,18 @@ impl SqliteStore {
         path: &Path,
         interrupt: Option<&CopyInterrupt>,
     ) -> Result<(BackupManifest, Self), StoreError> {
-        let (file_sha256, file_bytes) = Self::hash_copy_file(path, interrupt)?;
+        Self::verify_copy_bytes_with_hash(path, interrupt, None)
+    }
+
+    fn verify_copy_bytes_with_hash(
+        path: &Path,
+        interrupt: Option<&CopyInterrupt>,
+        hashed: Option<(String, u64)>,
+    ) -> Result<(BackupManifest, Self), StoreError> {
+        let (file_sha256, file_bytes) = match hashed {
+            Some(hashed) => hashed,
+            None => Self::hash_copy_file(path, interrupt)?,
+        };
         // `immutable=1` reads exactly the hashed bytes: no shared-memory or log
         // file is consulted or created, so a read-only directory works too.
         let connection = Connection::open_with_flags(

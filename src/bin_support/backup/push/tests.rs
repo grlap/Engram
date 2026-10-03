@@ -185,6 +185,37 @@ fn attempt_like(state: &TargetState, id: uuid::Uuid) -> Attempt {
 }
 
 #[test]
+fn a_changed_push_receipt_names_the_exact_uploaded_bytes() {
+    use sha2::{Digest, Sha256};
+
+    let fixture = fixture();
+    assert_eq!(fixture.push().report.outcome, Outcome::Uploaded);
+    let earlier = fixture.state().newest_receipt.unwrap();
+    fixture.change("changed-bytes");
+    let run = fixture.push();
+    assert_eq!(run.report.outcome, Outcome::Uploaded, "{:?}", run.report);
+    assert_eq!(run.report.capture_check, Some(CaptureCheck::Full));
+    let receipt = run.report.receipt.unwrap();
+    assert_ne!(receipt.sha256, earlier.sha256);
+    let uploaded = fs::File::open(
+        fixture
+            .project_dir(&fixture.copies)
+            .join(data(&receipt.manifest.copy)),
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    io::Read::read_to_end(&mut flate2::read::GzDecoder::new(uploaded), &mut bytes).unwrap();
+    // Full verification must leave the privately staged file unchanged. The
+    // receipt's reused hash must still describe exactly the bytes uploaded.
+    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+    assert_eq!(receipt.sha256, sha256);
+    assert_eq!(receipt.manifest.capture.sha256, sha256);
+    assert_eq!(receipt.manifest.capture.bytes, bytes.len() as u64);
+    assert_eq!(fixture.state().newest_receipt, Some(receipt));
+    assert_eq!(fixture.stages(), Vec::<PathBuf>::new());
+}
+
+#[test]
 fn a_push_puts_a_copy_and_records_its_receipt_then_confirms_an_unchanged_store() {
     let fixture = fixture();
     let first = fixture.push();

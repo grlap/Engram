@@ -90,20 +90,31 @@ fn plenty(_: &Path) -> io::Result<u64> {
 #[test]
 fn only_equal_bytes_checked_by_this_build_skip_the_integrity_scan() {
     let (home, project, database) = fixture(20, 256);
-    let first = capture_store(home.path(), &project, &options(&plenty)).unwrap();
     let scans = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let hashes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counter = scans.clone();
+    let hash_counter = hashes.clone();
     let mut observed = options(&plenty);
     observed.copy_probe = Some(Arc::new(move |point| {
         if point == CopyProbePoint::Scan {
             counter.fetch_add(1, Ordering::SeqCst);
         }
+        if point == CopyProbePoint::Hash {
+            hash_counter.fetch_add(1, Ordering::SeqCst);
+        }
         false
     }));
+    let first = capture_store(home.path(), &project, &observed).unwrap();
+    assert_eq!(first.check, CaptureCheck::Full);
+    assert!(scans.load(Ordering::SeqCst) > 0);
+    assert_single_capture_hash(&first, &hashes);
+    scans.store(0, Ordering::SeqCst);
+    hashes.store(0, Ordering::SeqCst);
     observed.same_as = Some(&first.manifest);
     let equal = capture_store(home.path(), &project, &observed).unwrap();
     assert_eq!(equal.check, CaptureCheck::SameBytesAsNewest);
     assert_eq!(scans.load(Ordering::SeqCst), 0);
+    assert_single_capture_hash(&equal, &hashes);
     equal.discard().unwrap();
 
     for build in [
@@ -116,9 +127,11 @@ fn only_equal_bytes_checked_by_this_build_skip_the_integrity_scan() {
         full.same_as = Some(&older);
         full.copy_probe = observed.copy_probe.clone();
         scans.store(0, Ordering::SeqCst);
+        hashes.store(0, Ordering::SeqCst);
         let checked = capture_store(home.path(), &project, &full).unwrap();
         assert_eq!(checked.check, CaptureCheck::Full);
         assert!(scans.load(Ordering::SeqCst) > 0);
+        assert_single_capture_hash(&checked, &hashes);
         checked.discard().unwrap();
     }
     {
@@ -127,12 +140,30 @@ fn only_equal_bytes_checked_by_this_build_skip_the_integrity_scan() {
     }
     observed.same_as = Some(&first.manifest);
     scans.store(0, Ordering::SeqCst);
+    hashes.store(0, Ordering::SeqCst);
     let changed = capture_store(home.path(), &project, &observed).unwrap();
     assert_eq!(changed.check, CaptureCheck::Full);
     assert!(scans.load(Ordering::SeqCst) > 0);
     assert_ne!(changed.manifest.sha256, first.manifest.sha256);
+    assert_single_capture_hash(&changed, &hashes);
     changed.discard().unwrap();
     first.discard().unwrap();
+}
+
+/// Count the file chunks plus EOF, and independently compare the exact staged
+/// bytes after the full verifier's immutable opens with the recorded hash.
+fn assert_single_capture_hash(copy: &StoreCapture, hashes: &std::sync::atomic::AtomicUsize) {
+    let bytes = std::fs::read(&copy.staged).unwrap();
+    assert_eq!(copy.manifest.bytes, bytes.len() as u64);
+    assert_eq!(
+        copy.manifest.sha256,
+        format!("{:x}", Sha256::digest(&bytes))
+    );
+    assert_eq!(
+        hashes.load(Ordering::SeqCst) as u64,
+        copy.manifest.bytes.div_ceil(1 << 20) + 1,
+        "the settled stage must be hashed once, including the EOF check"
+    );
 }
 
 /// The cut read straight from a store file, without Engram's opener.
