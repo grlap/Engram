@@ -604,3 +604,57 @@ fn a_binding_travels_from_add_to_show_and_a_bare_acceptance_replacement_drops_it
         .expect("show after the replacement");
     assert!(!shown.text().contains("requires host"), "{}", shown.text());
 }
+
+// `add --under` follows the one creation rule for an omitted priority: a
+// required child takes its parent's, an optional child the project default;
+// an explicit priority wins for either. CLI and MCP add both run this word.
+#[test]
+fn add_under_resolves_an_omitted_priority_by_requirement() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("work.sqlite3");
+    let project = ProjectId("add-child-priority".into());
+    let verbs = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let add = |title: &str, under: Option<&str>, optional: bool, priority: Option<i32>, second| {
+        verbs
+            .add(
+                AddInput {
+                    title: title.into(),
+                    under: under.map(str::to_owned),
+                    optional,
+                    priority,
+                    ..AddInput::default()
+                },
+                at(second),
+            )
+            .expect("add")
+            .value["work"]["short_ref"]
+            .as_str()
+            .expect("ref")
+            .to_owned()
+    };
+    let parent = add("Parent", None, false, Some(3), 0);
+    let children = [
+        (add("Required", Some(&parent), false, None, 1), 3),
+        (
+            add("Optional", Some(&parent), true, None, 2),
+            crate::domain::DEFAULT_WORK_PRIORITY,
+        ),
+        (
+            add("Explicit required", Some(&parent), false, Some(0), 3),
+            0,
+        ),
+        (add("Explicit optional", Some(&parent), true, Some(4), 4), 4),
+    ];
+    assert_ne!(crate::domain::DEFAULT_WORK_PRIORITY, 3);
+    let store = SqliteStore::open(&database).expect("store");
+    for (child, expected) in children {
+        let item = store.resolve_work_ref(&project, &child).expect("child");
+        assert_eq!(item.priority, expected, "{}", item.title);
+    }
+}

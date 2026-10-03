@@ -29,6 +29,8 @@ pub(crate) use work::BindingReadRequest;
 pub(crate) use work::FocusBinding;
 pub(crate) use work::VerificationReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
+#[cfg(test)]
+pub(crate) use work::plan_validations;
 pub(crate) use work::validate_work_plan;
 pub use work::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,

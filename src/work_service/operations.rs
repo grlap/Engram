@@ -63,6 +63,8 @@ pub struct WorkChildInput {
     pub acceptance_bindings: Vec<crate::domain::AcceptanceBinding>,
     pub requirement: Option<ChildRequirement>,
     pub kind: Option<WorkItemKind>,
+    /// 0 (highest) through 4. Omitted, a required child gets its parent's
+    /// priority and an optional child the project default (1).
     pub priority: Option<i32>,
     #[serde(default)]
     pub labels: Vec<String>,

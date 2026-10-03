@@ -145,6 +145,28 @@ pub enum ChildRequirement {
     Optional,
 }
 
+/// The project's default priority: what a root, or an optional child, is
+/// created with when its author names none.
+pub const DEFAULT_WORK_PRIORITY: i32 = 1;
+
+/// The priority a new child is created with, one rule for every way a child
+/// is made (`add --under`, decomposition and an atomic plan): an explicit
+/// priority wins; otherwise a required child takes its parent's priority,
+/// since it is part of the parent's completion, and an optional child takes
+/// the project default. Only creation applies it; a stored item keeps its
+/// priority.
+#[must_use]
+pub fn child_creation_priority(
+    explicit: Option<i32>,
+    requirement: ChildRequirement,
+    parent_priority: i32,
+) -> i32 {
+    explicit.unwrap_or(match requirement {
+        ChildRequirement::Required => parent_priority,
+        ChildRequirement::Optional => DEFAULT_WORK_PRIORITY,
+    })
+}
+
 /// How a local work item entered Engram.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

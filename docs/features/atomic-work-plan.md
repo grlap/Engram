@@ -80,8 +80,10 @@ host verification of that kind, exactly as `add --bind` does, on a root task
 as on a child, and opens its obligation when the task is created; the optional
 `check_fingerprint` is the command fingerprint the host records on its
 verification evidence, and the id of a stored record there refuses the whole
-plan. Root priority defaults to 1;
-children inherit their parent's priority when omitted. Child labels include
+plan. An omitted priority follows the one creation rule shared with `add
+--under` and decomposition: a root and an optional child get the project
+default (1), and a required child gets its parent's priority; an explicit
+priority wins. Child labels include
 the parent's labels, as in ordinary decomposition. Initial notes are
 attributed non-holder observations, not execution evidence.
 

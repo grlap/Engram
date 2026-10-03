@@ -20,12 +20,28 @@ use crate::domain::{
 #[cfg(test)]
 mod tests;
 
-struct ValidatedPlan {
+/// A plan that passed whole-input validation, bound to the exact input it was
+/// validated from. Only this module builds one, and admission reuses it only
+/// for a request whose plan equals that input; any other request is validated
+/// afresh.
+pub(crate) struct ValidatedPlan {
+    input: WorkPlanInput,
     drafts: Vec<ChildWorkDraft>,
     notes: Vec<Vec<String>>,
     parents: Vec<Option<usize>>,
     order: Vec<usize>,
     edges: Vec<(usize, WorkPlanDependency)>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PLAN_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many whole-plan validations ran on this thread.
+#[cfg(test)]
+pub(crate) fn plan_validations() -> usize {
+    PLAN_VALIDATIONS.with(std::cell::Cell::get)
 }
 
 impl SqliteStore {
@@ -39,16 +55,22 @@ impl SqliteStore {
         request: &ProposeWorkPlanRequest,
         redactor: &R,
     ) -> Result<WorkPlanReceipt, StoreError> {
-        self.propose_work_plan_with_admission(request, redactor, |_| Ok(()))
+        self.propose_work_plan_with_admission(request, None, redactor, |_| Ok(()))
     }
 
+    /// Admits `request`, reusing `validated` only when it was validated from
+    /// exactly this request's plan; otherwise the plan is validated here.
     pub(crate) fn propose_work_plan_with_admission<R: Redactor>(
         &mut self,
         request: &ProposeWorkPlanRequest,
+        validated: Option<ValidatedPlan>,
         redactor: &R,
         admit: impl Fn(&WorkPlanReceipt) -> Result<(), StoreError>,
     ) -> Result<WorkPlanReceipt, StoreError> {
-        let plan = validate_plan(&request.plan)?;
+        let plan = match validated {
+            Some(validated) if validated.input == request.plan => validated,
+            _ => validate_plan(&request.plan)?,
+        };
         normalize_text(&request.project_id.0, "plan project")?;
         inspect_work_request(redactor, request, &request.actor)?;
         let session = request.actor.session_id.as_ref().ok_or_else(|| {
@@ -145,8 +167,10 @@ fn plan_operation_key(
     .to_owned())
 }
 
-pub(crate) fn validate_work_plan(input: &WorkPlanInput) -> Result<(), StoreError> {
-    validate_plan(input).map(|_| ())
+/// Validates a whole plan before any store or protocol effect, for admission
+/// to reuse when it is given exactly this plan.
+pub(crate) fn validate_work_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
+    validate_plan(input)
 }
 
 fn validate_existing_on(
@@ -196,6 +220,8 @@ fn valid_key(value: &str) -> bool {
     reason = "whole-input validation precedes every planning write"
 )]
 fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
+    #[cfg(test)]
+    PLAN_VALIDATIONS.with(|count| count.set(count.get() + 1));
     let invalid = |message: &str| StoreError::InvalidWork(format!("plan: {message}"));
     if input.tasks.is_empty() || input.tasks.len() > MAX_WORK_PLAN_TASKS {
         return Err(invalid(&format!(
@@ -287,7 +313,11 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
             acceptance,
             acceptance_bindings,
             kind: task.kind.unwrap_or(crate::domain::WorkItemKind::Task),
-            priority: task.priority.unwrap_or(1),
+            // A child's omitted priority is resolved against its parent at
+            // admission; a root's is the project default.
+            priority: task
+                .priority
+                .unwrap_or(crate::domain::DEFAULT_WORK_PRIORITY),
             child_requirement: task.requirement.unwrap_or(ChildRequirement::Required),
             labels: normalize_strings(&task.labels),
             assigned_to: normalize_optional(task.assigned_to.clone()),
@@ -368,6 +398,7 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
         return Err(StoreError::WorkDependencyCycle);
     }
     Ok(ValidatedPlan {
+        input: input.clone(),
         drafts,
         notes,
         parents,
@@ -470,9 +501,11 @@ fn admit_plan_on<R: Redactor>(
             .iter()
             .map(|child| {
                 let mut draft = plan.drafts[*child].clone();
-                if request.plan.tasks[*child].priority.is_none() {
-                    draft.priority = parent.priority;
-                }
+                draft.priority = crate::domain::child_creation_priority(
+                    request.plan.tasks[*child].priority,
+                    draft.child_requirement,
+                    parent.priority,
+                );
                 draft
             })
             .collect();

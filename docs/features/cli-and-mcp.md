@@ -2459,7 +2459,12 @@ item when this session holds it; claims on other items are visible through
 `show`. `add --under` selects the parent and submits one required child
 through `work_propose:decompose`; adding `--optional` instead records an
 optional child that is shown as such and does not gate parent completion (a
-decomposition admits one through 16 children). Either form then focuses that
+decomposition admits one through 16 children). An omitted `--priority`
+(MCP `priority`) follows one creation rule for `add --under`, a core
+decomposition and an atomic plan alike: a required child gets its parent's
+priority, an optional child the project default (1), as a root does; an
+explicit priority wins. The rule applies only when an item is created;
+existing items keep their stored priority. Either form then focuses that
 child exactly as a root `add` focuses the new root; a bare word that follows
 while this session holds other work is refused, as described under reading
 and focus above. On open work, `note`

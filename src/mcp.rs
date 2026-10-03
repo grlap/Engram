@@ -270,7 +270,8 @@ struct AddArgs {
     under: Option<String>,
     /// Make the child optional for parent completion. Requires `under`.
     optional: Option<bool>,
-    /// 0 (highest) through 4.
+    /// 0 (highest) through 4. Omitted, a root or an optional child gets the
+    /// project default (1) and a required child its parent's priority.
     priority: Option<i32>,
     labels: Option<Vec<String>>,
     assignee: Option<String>,

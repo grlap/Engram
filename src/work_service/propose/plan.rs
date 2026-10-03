@@ -30,10 +30,21 @@ impl LocalWorkService {
                 "plan parents must use payload-local keys; omit work_ref".into(),
             ));
         }
-        crate::storage::validate_work_plan(plan)?;
+        // Whole-plan validation runs here, before any store or protocol
+        // effect, and admission reuses it for this exact plan.
+        let validated = crate::storage::validate_work_plan(plan)?;
         // Full typed envelope with worst-width generated identities and revisions.
         // ASCII-only keys need no escaping, and the exact receipt is also checked
         // by the storage callback before its transaction can commit.
+        //
+        // This worst-case preflight deliberately passes the production
+        // constant, not the injected `budget`: a test that injects a smaller
+        // budget then passes this check and reaches the exact in-transaction
+        // and replay checks below, which take `budget` and are what such tests
+        // exercise. At the current task cap and mapping shape the worst case is
+        // well inside 64 KiB, so no valid input fails here today; raising
+        // either makes this check live against the same constant the exact
+        // receipt is held to.
         let bound = WorkPlanReceipt {
             tasks: plan
                 .tasks
@@ -76,6 +87,7 @@ impl LocalWorkService {
                 actor: self.actor("work_propose", "atomically admit an authored local plan"),
                 created_at: now,
             },
+            Some(validated),
             &DevelopmentNoopRedactor,
             |receipt| admit_plan_response(&WorkProposeResult::Plan(receipt.clone()), budget),
         )?;

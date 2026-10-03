@@ -348,12 +348,17 @@ fn atomic_plan_large_refusals_preserve_the_entire_store() {
         );
     }
     let error = store
-        .propose_work_plan_with_admission(&maximum_forest(), &DevelopmentNoopRedactor, |receipt| {
-            assert_eq!(receipt.tasks.len(), MAX_WORK_PLAN_TASKS);
-            Err(StoreError::InvalidWork(
-                "reject complete large receipt".into(),
-            ))
-        })
+        .propose_work_plan_with_admission(
+            &maximum_forest(),
+            None,
+            &DevelopmentNoopRedactor,
+            |receipt| {
+                assert_eq!(receipt.tasks.len(), MAX_WORK_PLAN_TASKS);
+                Err(StoreError::InvalidWork(
+                    "reject complete large receipt".into(),
+                ))
+            },
+        )
         .expect_err("late refusal");
     assert!(
         matches!(error, StoreError::InvalidWork(reason) if reason == "reject complete large receipt")

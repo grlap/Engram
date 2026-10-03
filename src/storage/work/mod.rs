@@ -41,6 +41,8 @@ pub(in crate::storage) use import::{
 mod notes;
 mod observation;
 mod planning;
+#[cfg(test)]
+pub(crate) use planning::plan_validations;
 pub(crate) use planning::validate_work_plan;
 mod query;
 pub(crate) use query::ListingExpectation;

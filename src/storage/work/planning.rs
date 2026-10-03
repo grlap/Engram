@@ -47,6 +47,8 @@ mod tests;
 mod detach;
 mod plan;
 mod relations;
+#[cfg(test)]
+pub(crate) use plan::plan_validations;
 pub(crate) use plan::validate_work_plan;
 pub(super) use relations::{
     apply_work_relation_transition, projected_work_relation_basis,

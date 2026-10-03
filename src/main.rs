@@ -625,7 +625,8 @@ enum WorkCommand {
         /// Make the child optional for parent completion; requires --under.
         #[arg(long, requires = "under")]
         optional: bool,
-        /// 0 (highest) through 4.
+        /// 0 (highest) through 4. Omitted, a root or an optional child gets
+        /// the project default (1) and a required child its parent's priority.
         #[arg(long)]
         priority: Option<i32>,
         /// Label; repeatable.

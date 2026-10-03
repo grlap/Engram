@@ -197,6 +197,80 @@ fn maximum_default_fanout_decomposition_receipt_is_bounded_and_replays_exactly()
     );
 }
 
+// One creation rule for a decomposition's omitted child priority: a required
+// child takes its parent's, an optional child the project default; an
+// explicit priority wins for either.
+#[test]
+fn a_decomposition_resolves_each_omitted_child_priority_by_requirement() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("engram.sqlite3");
+    let service = LocalWorkService::new(
+        database.clone(),
+        ProjectId("child-priority".into()),
+        "agent".into(),
+        SessionId("priority-session".into()),
+        None,
+    );
+    let mut root = root_input("Priority parent", "priority-root");
+    if let WorkProposeInput::Root { priority, .. } = &mut root {
+        *priority = Some(3);
+    }
+    service.work_propose(root, at(0)).expect("root");
+    let child = |key: &str, requirement: ChildRequirement, priority: Option<i32>| WorkChildInput {
+        acceptance_bindings: Vec::new(),
+        evaluation_mode: None,
+        external_ref: None,
+        notes: Vec::new(),
+        key: key.into(),
+        title: key.into(),
+        outcome: format!("{key} outcome"),
+        acceptance: vec![format!("{key} accepted")],
+        requirement: Some(requirement),
+        kind: None,
+        priority,
+        labels: Vec::new(),
+        assigned_to: None,
+        deferred_until: None,
+    };
+    let WorkProposeResult::Decomposition(summary) = service
+        .work_propose(
+            WorkProposeInput::Decompose {
+                children: vec![
+                    child("required", ChildRequirement::Required, None),
+                    child("optional", ChildRequirement::Optional, None),
+                    child("explicit-required", ChildRequirement::Required, Some(0)),
+                    child("explicit-optional", ChildRequirement::Optional, Some(4)),
+                ],
+                prerequisites: Vec::new(),
+                idempotency_key: "priority-decompose".into(),
+            },
+            at(1),
+        )
+        .expect("decomposition")
+    else {
+        panic!("expected a decomposition");
+    };
+    let store = SqliteStore::open(&database).expect("store");
+    let priorities = summary
+        .children
+        .iter()
+        .map(|child| {
+            let item = store.get_work_item(child.work_id).expect("child");
+            (item.title, item.priority)
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_ne!(crate::domain::DEFAULT_WORK_PRIORITY, 3);
+    assert_eq!(
+        priorities,
+        std::collections::BTreeMap::from([
+            ("explicit-optional".to_owned(), 4),
+            ("explicit-required".to_owned(), 0),
+            ("optional".to_owned(), crate::domain::DEFAULT_WORK_PRIORITY),
+            ("required".to_owned(), 3),
+        ])
+    );
+}
+
 fn count_rows(database: &std::path::Path, sql: &str, param: &str) -> i64 {
     rusqlite::Connection::open(database)
         .expect("inspect")

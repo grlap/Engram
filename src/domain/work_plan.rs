@@ -39,6 +39,8 @@ pub struct WorkPlanTask {
     pub bindings: Vec<WorkPlanBinding>,
     pub requirement: Option<ChildRequirement>,
     pub kind: Option<WorkItemKind>,
+    /// 0 (highest) through 4. Omitted, a root or an optional child gets the
+    /// project default (1) and a required child its parent's priority.
     pub priority: Option<i32>,
     #[serde(default)]
     pub labels: Vec<String>,

@@ -444,11 +444,15 @@ fn atomic_plan_late_redactor_and_receipt_refusals_roll_back_every_write() {
     }
     let mut store = SqliteStore::open_in_memory().expect("store");
     let before = test_database_shape_snapshot(&store.connection).expect("before");
-    let result =
-        store.propose_work_plan_with_admission(&request(), &DevelopmentNoopRedactor, |receipt| {
+    let result = store.propose_work_plan_with_admission(
+        &request(),
+        None,
+        &DevelopmentNoopRedactor,
+        |receipt| {
             assert_eq!(receipt.tasks.len(), 4);
             Err(StoreError::InvalidWork("test receipt byte limit".into()))
-        });
+        },
+    );
     assert!(
         matches!(result, Err(StoreError::InvalidWork(reason)) if reason == "test receipt byte limit")
     );
@@ -693,6 +697,11 @@ fn atomic_plan_stores_inherited_and_explicit_child_options() {
             grandchild
         },
         task("from-explicit", Some("explicit")),
+        {
+            let mut optional = task("optional-default", Some("root"));
+            optional.requirement = Some(ChildRequirement::Optional);
+            optional
+        },
     ];
     let receipt = store
         .propose_work_plan(&request, &DevelopmentNoopRedactor)
@@ -756,5 +765,55 @@ fn atomic_plan_stores_inherited_and_explicit_child_options() {
     assert_eq!(from_explicit.labels, vec!["Parent", "child-b", "shared"]);
     assert_eq!(from_explicit.external_ref, None);
     assert_eq!(from_explicit.root_id, root.work_id);
+
+    // An optional child that names no priority gets the project default, not
+    // its parent's.
+    let optional = item("optional-default");
+    assert_eq!(optional.child_requirement, ChildRequirement::Optional);
+    assert_eq!(optional.priority, crate::domain::DEFAULT_WORK_PRIORITY);
+    assert_ne!(root.priority, crate::domain::DEFAULT_WORK_PRIORITY);
     assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+// Admission reuses a validation only for exactly the plan it was made from:
+// the service's validated plan spares a second whole-plan validation, and a
+// request whose plan differs under the same key is validated afresh (and
+// refused here when that plan is invalid), never admitted on the stale one.
+#[test]
+fn admission_reuses_a_validation_only_for_the_exact_plan() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let first = request();
+    let validated = validate_work_plan(&first.plan).expect("valid plan");
+    let before = plan_validations();
+    store
+        .propose_work_plan_with_admission(&first, Some(validated), &DevelopmentNoopRedactor, |_| {
+            Ok(())
+        })
+        .expect("admitted on the reused validation");
+    assert_eq!(plan_validations(), before, "no second validation");
+
+    let mut changed = request();
+    changed.plan.tasks[0].parent_key = Some("missing".into());
+    let stale = validate_work_plan(&request().plan).expect("the original plan");
+    let before = plan_validations();
+    let refused = store.propose_work_plan_with_admission(
+        &changed,
+        Some(stale),
+        &DevelopmentNoopRedactor,
+        |_| Ok(()),
+    );
+    assert!(
+        matches!(&refused, Err(StoreError::InvalidWork(reason)) if reason.contains("unknown payload-local key")),
+        "{refused:?}"
+    );
+    assert_eq!(plan_validations(), before + 1, "validated afresh");
+
+    // Without a validation, admission validates once.
+    let mut other = request();
+    other.plan.idempotency_key = "plan-two".into();
+    let before = plan_validations();
+    store
+        .propose_work_plan(&other, &DevelopmentNoopRedactor)
+        .expect("direct admission");
+    assert_eq!(plan_validations(), before + 1);
 }

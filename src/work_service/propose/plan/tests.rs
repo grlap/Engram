@@ -39,6 +39,22 @@ fn service(database: std::path::PathBuf) -> LocalWorkService {
     )
 }
 
+// The service validates a plan once, before any store or protocol effect,
+// and admission reuses that validation; an exact retry is answered from its
+// protocol attempt after the same single validation.
+#[test]
+fn a_service_plan_is_validated_once_per_admission() {
+    let temp = crate::test_support::temp_home().expect("temp");
+    let service = service(temp.path().join("plan.db"));
+    for (case, second) in [("first admission", 1), ("exact retry", 2)] {
+        let before = crate::storage::plan_validations();
+        service
+            .work_propose(WorkProposeInput::Plan { plan: plan(3) }, at(second))
+            .expect("plan");
+        assert_eq!(crate::storage::plan_validations(), before + 1, "{case}");
+    }
+}
+
 #[test]
 fn a_plan_receipt_is_keyed_by_the_plan_tuple_and_scoped_to_its_session() {
     // The key contract, derived here independently of storage's helper: a

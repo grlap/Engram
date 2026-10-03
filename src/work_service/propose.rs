@@ -217,7 +217,7 @@ impl LocalWorkService {
                         outcome,
                         acceptance,
                         kind: work_kind.unwrap_or(WorkItemKind::Task),
-                        priority: priority.unwrap_or(1),
+                        priority: priority.unwrap_or(crate::domain::DEFAULT_WORK_PRIORITY),
                         labels,
                         assigned_to,
                         deferred_until,
@@ -257,23 +257,29 @@ impl LocalWorkService {
                         .collect::<Vec<_>>();
                     let children = children
                         .into_iter()
-                        .map(|child| ChildWorkDraft {
-                            acceptance_bindings: child.acceptance_bindings,
-                            external_ref: child.external_ref,
-                            notes: child.notes,
-                            local_key: child.key,
-                            child_requirement: child
-                                .requirement
-                                .unwrap_or(ChildRequirement::Required),
-                            title: child.title,
-                            outcome: child.outcome,
-                            acceptance: child.acceptance,
-                            kind: child.kind.unwrap_or(WorkItemKind::Task),
-                            priority: child.priority.unwrap_or(parent.priority),
-                            labels: child.labels,
-                            assigned_to: child.assigned_to,
-                            deferred_until: child.deferred_until,
-                            evaluation_mode: child.evaluation_mode,
+                        .map(|child| {
+                            let requirement =
+                                child.requirement.unwrap_or(ChildRequirement::Required);
+                            ChildWorkDraft {
+                                acceptance_bindings: child.acceptance_bindings,
+                                external_ref: child.external_ref,
+                                notes: child.notes,
+                                local_key: child.key,
+                                child_requirement: requirement,
+                                title: child.title,
+                                outcome: child.outcome,
+                                acceptance: child.acceptance,
+                                kind: child.kind.unwrap_or(WorkItemKind::Task),
+                                priority: crate::domain::child_creation_priority(
+                                    child.priority,
+                                    requirement,
+                                    parent.priority,
+                                ),
+                                labels: child.labels,
+                                assigned_to: child.assigned_to,
+                                deferred_until: child.deferred_until,
+                                evaluation_mode: child.evaluation_mode,
+                            }
                         })
                         .collect();
                     let mut resolved = Vec::with_capacity(prerequisites.len());
