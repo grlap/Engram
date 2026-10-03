@@ -4,14 +4,13 @@
 //! recorded resolution with its original verification and producer. It
 //! writes nothing and computes no freshness.
 
-use std::collections::HashSet;
 use std::fmt::Write as _;
 
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::WorkObligationRecord;
-use super::completion::{binding_obligation, load_work_obligation_records_on};
+use super::completion::{binding_obligation, load_complete_work_obligation_records_on};
 use super::feeds::{
     current_run_feed_cut_on, load_typed_work_object, run_feed_position_for_object_on,
 };
@@ -152,8 +151,10 @@ pub(in crate::storage) fn read_acceptance_bindings_on(
         run_id: request.run_id,
         run_cut: head,
     };
-    let records = load_work_obligation_records_on(connection, request.run_id, None)?;
-    require_projected_obligations_on(connection, &basis, &records)?;
+    // The checked load refuses a run whose feed records an obligation or
+    // resolution the projection lost, so selection never reads one as
+    // absent or lets an older definition answer for it.
+    let records = load_complete_work_obligation_records_on(connection, request.run_id)?;
     let reader = RowReader {
         connection,
         item: &item,
@@ -215,50 +216,6 @@ fn fit_page(
         rows = page.rows;
         rows.pop();
     }
-}
-
-/// Selection reads the run's obligation projection rows, so every
-/// obligation record on the run's feed at or before the cut must have its
-/// row. A lost definition row would read as no obligation, or let an older
-/// definition answer for the criterion; a lost resolution would read as
-/// open. Either is a damaged store.
-fn require_projected_obligations_on(
-    connection: &Connection,
-    basis: &AcceptanceBindingReadBasis,
-    records: &[WorkObligationRecord],
-) -> Result<(), StoreError> {
-    let definitions: HashSet<&ObjectId> =
-        records.iter().map(|record| &record.definition_id).collect();
-    let resolutions: HashSet<&ObjectId> = records
-        .iter()
-        .filter_map(|record| record.resolution_id.as_ref())
-        .collect();
-    let recorded = connection
-        .prepare(
-            "SELECT object_kind, object_id FROM work_feed_entries
-             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position <= ?2
-               AND object_kind IN ('work_obligation', 'work_obligation_resolution')",
-        )?
-        .query_map(params![basis.run_id.0.to_string(), basis.run_cut], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    for (kind, stored) in recorded {
-        let id =
-            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
-        let projected = if kind == "work_obligation" {
-            definitions.contains(&id)
-        } else {
-            resolutions.contains(&id)
-        };
-        if !projected {
-            return Err(damaged(format!(
-                "{kind} {id} on run {:?} has no obligation projection",
-                basis.run_id
-            )));
-        }
-    }
-    Ok(())
 }
 
 /// A run-feed position the read reports, which must lie at or before the

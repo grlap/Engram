@@ -1794,3 +1794,262 @@ fn a_binding_authored_again_after_its_check_passed_owes_its_check_again() {
     );
     assert_eq!(state(&store, &rebound), (vec![1, 2], true));
 }
+
+/// A run with one bound criterion whose test obligation a passing check
+/// satisfied, the evidence checkpointed for completion.
+fn satisfied_binding_run(
+    project: &str,
+) -> (
+    crate::test_support::TempHome,
+    SqliteStore,
+    WorkItem,
+    WorkClaim,
+) {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = create_bound(
+        &mut store,
+        project,
+        &["run tests"],
+        bound(1, VerificationKind::Test),
+        Creation::Add,
+    );
+    let claim = claim(&mut store, &work, "runner", "claim-lost-row", 2, 3_600);
+    host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-lost-row",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        3,
+    );
+    (directory, store, work, claim)
+}
+
+/// Completion of `work` citing every run evidence record, after a fresh
+/// checkpoint of them; the store snapshot is taken after that checkpoint.
+fn complete_citing_all(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    second: i64,
+) -> (
+    crate::storage::TestDatabaseShapeSnapshot,
+    Result<CompletionSeal, StoreError>,
+) {
+    let all = store.work_run_evidence(claim.run_id).expect("run evidence");
+    checkpoint(
+        store,
+        work,
+        claim,
+        "runner",
+        "checkpoint-lost-row",
+        second,
+        &all,
+    );
+    let before = test_database_shape_snapshot(&store.connection).expect("before");
+    let mut request = completion_request(work, claim, "runner", &all[0], "complete", second + 1);
+    request.evidence = all;
+    for result in &mut request.acceptance {
+        result.evidence.clear();
+    }
+    let result = store.complete_work(&request, &DevelopmentNoopRedactor);
+    (before, result)
+}
+
+fn drop_obligation_row(store: &SqliteStore, record: &WorkObligationRecord) {
+    let deleted = store
+        .connection
+        .execute(
+            "DELETE FROM work_run_obligations WHERE obligation_id = ?1",
+            [record.obligation.obligation_id.0.to_string()],
+        )
+        .expect("drop an obligation row");
+    assert_eq!(deleted, 1);
+}
+
+/// The store refused completion as damaged and kept nothing of the attempt,
+/// while the run's obligations still read for diagnosis and doctor names the
+/// lost projection.
+fn refused_as_damaged(
+    store: &SqliteStore,
+    run_id: WorkRunId,
+    before: &crate::storage::TestDatabaseShapeSnapshot,
+    result: &Result<CompletionSeal, StoreError>,
+) {
+    assert!(
+        matches!(result, Err(StoreError::InvalidWorkProjection(reason)) if reason.contains("has no obligation projection")),
+        "{result:?}"
+    );
+    assert_eq!(
+        &test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+    store
+        .work_run_obligations(run_id)
+        .expect("the run's obligations still read");
+    let report = store.verify_all().expect("doctor");
+    assert!(!report.is_healthy(), "{report:?}");
+    assert!(
+        format!("{report:?}").contains("missing_projection"),
+        "{report:?}"
+    );
+}
+
+// A bound criterion's newest obligation row lost from the projection is a
+// damaged store: completion refuses rather than letting the older obligation
+// a passing check satisfied answer for the rewritten criterion.
+#[test]
+fn completion_refuses_when_a_bound_criterion_lost_its_newest_obligation_row() {
+    let (_home, mut store, work, claim) = satisfied_binding_run("project-lost-newest-row");
+    let older = store
+        .work_run_obligations(claim.run_id)
+        .expect("obligations")
+        .into_iter()
+        .find(|record| record.state == WorkObligationState::Satisfied)
+        .expect("the satisfied binding obligation");
+    let reworded = revise_bound(
+        &mut store,
+        &work,
+        &claim,
+        Some(vec!["run the tests again"]),
+        Some(vec![bound(1, VerificationKind::Test)]),
+        "reword",
+        4,
+    );
+    let records = store
+        .work_run_obligations(claim.run_id)
+        .expect("obligations");
+    let newest = binding_obligation(&records, &reworded.acceptance_bindings[0])
+        .expect("the reworded binding's obligation")
+        .clone();
+    assert_ne!(
+        newest.obligation.obligation_id,
+        older.obligation.obligation_id
+    );
+    assert_eq!(newest.state, WorkObligationState::Open);
+    drop_obligation_row(&store, &newest);
+    let (before, result) = complete_citing_all(&mut store, &reworded, &claim, 5);
+    refused_as_damaged(&store, claim.run_id, &before, &result);
+}
+
+// A bound criterion's only obligation row lost is a damaged store, never a
+// criterion with no obligation.
+#[test]
+fn completion_refuses_when_a_bound_criterion_lost_its_only_obligation_row() {
+    let (_home, mut store, work, claim) = satisfied_binding_run("project-lost-only-row");
+    let records = store
+        .work_run_obligations(claim.run_id)
+        .expect("obligations");
+    let only = binding_obligation(&records, &work.acceptance_bindings[0])
+        .expect("the binding's obligation")
+        .clone();
+    assert_eq!(only.state, WorkObligationState::Satisfied);
+    drop_obligation_row(&store, &only);
+    let (before, result) = complete_citing_all(&mut store, &work, &claim, 4);
+    refused_as_damaged(&store, claim.run_id, &before, &result);
+}
+
+// A resolution the run's feed records whose projection row lost it reads as
+// a damaged store, not as an open obligation.
+#[test]
+fn completion_refuses_when_an_obligation_lost_its_resolution() {
+    let (_home, mut store, work, claim) = satisfied_binding_run("project-lost-resolution");
+    let records = store
+        .work_run_obligations(claim.run_id)
+        .expect("obligations");
+    let satisfied = binding_obligation(&records, &work.acceptance_bindings[0])
+        .expect("the binding's obligation")
+        .clone();
+    assert!(satisfied.resolution_id.is_some());
+    let changed = store
+        .connection
+        .execute(
+            "UPDATE work_run_obligations SET state = 'open', resolution_id = NULL,
+                 resolution_kind = NULL, evidence_id = NULL, resolved_at_ms = NULL
+             WHERE obligation_id = ?1",
+            [satisfied.obligation.obligation_id.0.to_string()],
+        )
+        .expect("lose the resolution");
+    assert_eq!(changed, 1);
+    let (before, result) = complete_citing_all(&mut store, &work, &claim, 4);
+    refused_as_damaged(&store, claim.run_id, &before, &result);
+}
+
+// The intact run completes, citing the check that satisfied its binding.
+#[test]
+fn an_intact_bound_run_completes_with_the_check_that_satisfied_it() {
+    let (_home, mut store, work, claim) = satisfied_binding_run("project-intact-row");
+    let (_, result) = complete_citing_all(&mut store, &work, &claim, 4);
+    let seal = result.expect("the intact run completes");
+    assert_ne!(seal.acceptance[0].evidence, Vec::<ObjectId>::new());
+}
+
+// A source-change obligation whose waiver the projection lost reads as a
+// damaged store at completion, not as an open obligation to waive again.
+#[test]
+fn completion_refuses_when_a_source_change_obligation_lost_its_resolution() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = store
+        .create_work(
+            &root_request("project-lost-source-resolution", "create-source-change", 1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create local work");
+    let claim = claim(&mut store, &work, "runner", "claim-source-change", 2, 3_600);
+    source_mutation(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "source-change",
+        3,
+        Some("revision-changed"),
+    );
+    let opened = store
+        .work_run_obligations(claim.run_id)
+        .expect("obligations")
+        .into_iter()
+        .find(|record| record.state == WorkObligationState::Open)
+        .expect("the source change's obligation");
+    store
+        .waive_work_obligation(
+            &WaiveWorkObligationRequest {
+                obligation_id: opened.obligation.obligation_id,
+                expected_definition: opened.definition_id.clone(),
+                waived_by: "operator".into(),
+                reason: "the change was checked elsewhere".into(),
+                actor: actor("operator"),
+                idempotency_key: "waive-source-change".into(),
+                waived_at: at(4),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("waive the source change's obligation");
+    let changed = store
+        .connection
+        .execute(
+            "UPDATE work_run_obligations SET state = 'open', resolution_id = NULL,
+                 resolution_kind = NULL, evidence_id = NULL, resolved_at_ms = NULL
+             WHERE obligation_id = ?1",
+            [opened.obligation.obligation_id.0.to_string()],
+        )
+        .expect("lose the waiver");
+    assert_eq!(changed, 1);
+    let generic = evidence(&mut store, &work, &claim, "runner", "source-evidence", 5);
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "source-checkpoint",
+        6,
+        std::slice::from_ref(&generic),
+    );
+    let before = test_database_shape_snapshot(&store.connection).expect("before");
+    let result = complete(&mut store, &work, &claim, "runner", &generic, "complete", 7);
+    refused_as_damaged(&store, claim.run_id, &before, &result);
+}

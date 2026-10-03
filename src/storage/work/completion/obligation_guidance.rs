@@ -139,6 +139,50 @@ impl SqliteStore {
     }
 }
 
+/// Every obligation definition and resolution the run's feed records must
+/// have its projection row among `records`, the run's obligations in every
+/// state. A lost definition row would read as no obligation, or let an older
+/// definition answer for a bound criterion; a lost resolution would read as
+/// open. Either is a damaged store, whatever event triggered the obligation:
+/// a source change or a work event that opened an acceptance binding.
+pub(super) fn require_projected_obligations_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    records: &[WorkObligationRecord],
+) -> Result<(), StoreError> {
+    let definitions: std::collections::HashSet<&ObjectId> =
+        records.iter().map(|record| &record.definition_id).collect();
+    let resolutions: std::collections::HashSet<&ObjectId> = records
+        .iter()
+        .filter_map(|record| record.resolution_id.as_ref())
+        .collect();
+    let recorded = connection
+        .prepare(
+            "SELECT object_kind, object_id FROM work_feed_entries
+             WHERE feed_kind = 'run_execution' AND feed_id = ?1
+               AND object_kind IN ('work_obligation', 'work_obligation_resolution')",
+        )?
+        .query_map([run_id.0.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (kind, stored) in recorded {
+        let id =
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
+        let projected = if kind == "work_obligation" {
+            definitions.contains(&id)
+        } else {
+            resolutions.contains(&id)
+        };
+        if !projected {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "{kind} {id} on run {run_id:?} has no obligation projection"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn require_expected_obligations_on(
     connection: &Connection,
     run_id: WorkRunId,

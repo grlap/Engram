@@ -1178,7 +1178,10 @@ revision open one for every binding of an item with an active run, so in a
 healthy store this marks a record never opened, not one lost: an obligation
 or resolution on the run's feed without its projection row is a damaged
 store, and the read returns a storage error rather than `null` or an older
-obligation. An obligation carries its `obligation_id`, its record id
+obligation. Completion refuses the same damage the same way, so a lost row
+never lets a criterion seal without its obligation or on an older one; reads
+that only show the item still render it, and doctor names the damage. An
+obligation carries its `obligation_id`, its record id
 as `definition`, the `work_revision` that opened it, its `rule`, its
 `triggering_observation`, its `trigger_position` and `definition_position`,
 its `state` at the cut, and its `resolution`, `null` exactly while it is

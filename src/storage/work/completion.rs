@@ -74,10 +74,10 @@ mod lifecycle;
 mod named_root;
 mod obligation_guidance;
 pub(super) use obligation_guidance::finished_run_cut_on;
-use obligation_guidance::require_expected_obligations_on;
 pub(crate) use obligation_guidance::{
     criteria_without_evidence_link, unlinked_criteria_owe_bound_check,
 };
+use obligation_guidance::{require_expected_obligations_on, require_projected_obligations_on};
 mod projections;
 mod repeat;
 pub(in crate::storage) use repeat::{newest_change_repeated_on, source_revision_repeats_on};
@@ -790,7 +790,7 @@ pub(super) fn applicable_work_obligations_at_cut_on(
             "obligation cut exceeds the current run-feed head".into(),
         ));
     }
-    let records = load_work_obligation_records_on(connection, run_id, None)?;
+    let records = load_complete_work_obligation_records_on(connection, run_id)?;
     let mut applicable = Vec::new();
     for record in records {
         if record.obligation.trigger_position.position > cut.position {
@@ -1028,6 +1028,21 @@ pub(super) fn load_work_obligation_records_on(
     if state.is_none() {
         require_expected_obligations_on(connection, run_id, &records)?;
     }
+    Ok(records)
+}
+
+/// The run's obligations in every state, for the reads that decide
+/// completion: refused as a damaged store when the run's feed records an
+/// obligation definition or resolution whose projection row is lost, so a
+/// lost row never lets a criterion seal without its obligation, or on an
+/// older one. Reads that only show the run keep the plain load, so a damaged
+/// item stays readable and doctor names the damage.
+pub(super) fn load_complete_work_obligation_records_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+) -> Result<Vec<WorkObligationRecord>, StoreError> {
+    let records = load_work_obligation_records_on(connection, run_id, None)?;
+    require_projected_obligations_on(connection, run_id, &records)?;
     Ok(records)
 }
 
@@ -1828,7 +1843,7 @@ fn bind_acceptance_to_obligations_on(
         return Ok(acceptance);
     }
     let run_id = claim.run_id;
-    let records = load_work_obligation_records_on(connection, run_id, None)?;
+    let records = load_complete_work_obligation_records_on(connection, run_id)?;
     let root = named_root_context_on(connection, run_id, claim.claim_id, cut.position)?;
     let latest_mutation = if let Some(root) = &root {
         root.latest_mutation.clone()
