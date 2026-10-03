@@ -491,18 +491,23 @@ pub(super) fn count_omission(
     }
 }
 
-/// The focus evidence to show, in a stable order: verifications first, each
-/// preceded by the environment evidence it links to, then everything else.
+/// The focus evidence to show: verifications first, newest first by run-feed
+/// position, each preceded by the environment evidence it links to however
+/// old that is, then everything else, newest first. A verification whose
+/// environment no longer fits is left out whole: its environment is not shown
+/// alone either, and the rows the pair would have displaced keep the slots.
 pub(super) fn prioritized_focus_evidence(
     mut candidates: Vec<WorkEvidenceProjectionSummary>,
 ) -> Vec<ObjectId> {
-    candidates.sort_by(|left, right| left.hash.as_str().cmp(right.hash.as_str()));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.run_position));
     let environment_hashes = candidates
         .iter()
         .filter(|candidate| candidate.kind == WorkEvidenceKind::Environment)
         .map(|candidate| candidate.hash.clone())
         .collect::<std::collections::HashSet<_>>();
     let mut selected = Vec::new();
+    // Environments of verifications left out for want of room.
+    let mut withheld = std::collections::HashSet::new();
     for candidate in candidates
         .iter()
         .filter(|candidate| candidate.kind == WorkEvidenceKind::Verification)
@@ -512,6 +517,7 @@ pub(super) fn prioritized_focus_evidence(
                 let environment_is_visible = selected.contains(environment);
                 let needed = usize::from(!environment_is_visible) + 1;
                 if selected.len() + needed > MAX_FOCUS_RELATIONS {
+                    withheld.insert(environment.clone());
                     continue;
                 }
                 // Environment first means byte trimming pops its dependent
@@ -526,7 +532,7 @@ pub(super) fn prioritized_focus_evidence(
         }
     }
     for candidate in candidates {
-        if candidate.kind != WorkEvidenceKind::Verification {
+        if candidate.kind != WorkEvidenceKind::Verification && !withheld.contains(&candidate.hash) {
             push_focus_evidence(&mut selected, &candidate.hash);
         }
         if selected.len() == MAX_FOCUS_RELATIONS {

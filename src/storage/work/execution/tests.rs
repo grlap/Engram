@@ -8,6 +8,7 @@ use super::*;
 use crate::storage::test_support::bind_control_for;
 
 mod claims;
+mod evidence_page;
 mod gate_evidence;
 mod next_ready;
 mod sessions;

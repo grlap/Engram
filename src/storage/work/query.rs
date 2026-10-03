@@ -149,10 +149,10 @@ impl SqliteStore {
         work_run_evidence_on(&self.connection, run_id)
     }
 
-    /// Returns a bounded selection basis for one focus page. A candidate is
-    /// chosen only by its evidence record's id; the record's canonical kind and
-    /// environment binding are checked against the run projection before
-    /// selection.
+    /// Returns a bounded selection basis for one focus page: the run's newest
+    /// evidence records by run-feed position, plus the environments their
+    /// verifications link to. Each record's canonical kind and environment
+    /// binding are checked against the run projection before selection.
     pub(crate) fn work_run_evidence_projection(
         &self,
         run_id: WorkRunId,

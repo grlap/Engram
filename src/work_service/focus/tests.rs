@@ -349,32 +349,38 @@ fn focus_evidence_keeps_each_verification_after_its_environment() {
                 hash: environment_a.clone(),
                 kind: WorkEvidenceKind::Environment,
                 environment: None,
+                run_position: 1,
             },
             WorkEvidenceProjectionSummary {
                 hash: environment_b.clone(),
                 kind: WorkEvidenceKind::Environment,
                 environment: None,
+                run_position: 2,
             },
             WorkEvidenceProjectionSummary {
                 hash: hash("verification-a"),
                 kind: WorkEvidenceKind::Verification,
                 environment: Some(environment_a.clone()),
+                run_position: 3,
             },
             WorkEvidenceProjectionSummary {
                 hash: hash("verification-b"),
                 kind: WorkEvidenceKind::Verification,
                 environment: Some(environment_b.clone()),
+                run_position: 4,
             },
             WorkEvidenceProjectionSummary {
                 hash: hash("verification-without-environment"),
                 kind: WorkEvidenceKind::Verification,
                 environment: None,
+                run_position: 5,
             },
         ];
         candidates.extend((0..6).map(|index| WorkEvidenceProjectionSummary {
             hash: hash(&format!("generic-{index}")),
             kind: WorkEvidenceKind::Generic,
             environment: None,
+            run_position: 6 + index,
         }));
         let expected = prioritized_focus_evidence(candidates.clone());
         candidates.reverse();
@@ -399,6 +405,87 @@ fn focus_evidence_keeps_each_verification_after_its_environment() {
             }
         }
     }
+}
+
+// Verifications come first, newest first, each with its environment however
+// old; a pair that no longer fits is left out whole and the rows after it
+// keep the slot; a shared environment takes one slot; the rest follow newest
+// first by run-feed position, not by id.
+#[test]
+fn focus_evidence_keeps_a_verification_with_its_environment_or_leaves_both_out() {
+    let hash = |label: &str| ObjectId::from_canonical_bytes(label.as_bytes());
+    let row = |label: &str, kind, environment: Option<&str>, run_position| {
+        WorkEvidenceProjectionSummary {
+            hash: hash(label),
+            kind,
+            environment: environment.map(hash),
+            run_position,
+        }
+    };
+    let labels = |labels: &[String]| labels.iter().map(|label| hash(label)).collect::<Vec<_>>();
+    // The generic row, when present, is older than the environment, so only
+    // the left-out pair rule keeps that environment off the page.
+    let page = |count: i64, generic: bool| {
+        let mut candidates = vec![
+            row("environment", WorkEvidenceKind::Environment, None, 1),
+            row(
+                "linked",
+                WorkEvidenceKind::Verification,
+                Some("environment"),
+                3,
+            ),
+        ];
+        if generic {
+            candidates.push(row("generic-old", WorkEvidenceKind::Generic, None, 0));
+        }
+        candidates.extend((0..count).map(|index| {
+            row(
+                &format!("bare-{index}"),
+                WorkEvidenceKind::Verification,
+                None,
+                10 + index,
+            )
+        }));
+        prioritized_focus_evidence(candidates)
+    };
+    let newest_bare = |count: i64| (0..count).rev().map(|index| format!("bare-{index}"));
+
+    // Six newer verifications leave exactly two slots: the pair just fits.
+    let mut expected = newest_bare(6).collect::<Vec<_>>();
+    expected.extend(["environment".to_owned(), "linked".to_owned()]);
+    assert_eq!(page(6, true), labels(&expected));
+
+    // Seven leave one: the pair is left out whole, its environment too, and
+    // the other row takes the slot.
+    let mut expected = newest_bare(7).collect::<Vec<_>>();
+    expected.push("generic-old".to_owned());
+    assert_eq!(page(7, true), labels(&expected));
+
+    // The loader's own shape for that boundary: eight verifications and the
+    // environment fetched beyond it for the oldest. The slot stays free for
+    // an observation rather than holding the environment alone.
+    assert_eq!(page(7, false), labels(&newest_bare(7).collect::<Vec<_>>()));
+
+    // Two verifications sharing one environment take three slots.
+    let mut candidates = vec![
+        row("shared", WorkEvidenceKind::Environment, None, 1),
+        row("second", WorkEvidenceKind::Verification, Some("shared"), 4),
+        row("first", WorkEvidenceKind::Verification, Some("shared"), 5),
+    ];
+    candidates.extend((6..12).map(|position| {
+        row(
+            &format!("generic-{position}"),
+            WorkEvidenceKind::Generic,
+            None,
+            position,
+        )
+    }));
+    let expected = ["shared", "first", "second"]
+        .into_iter()
+        .map(str::to_owned)
+        .chain((7..12).rev().map(|position| format!("generic-{position}")))
+        .collect::<Vec<_>>();
+    assert_eq!(prioritized_focus_evidence(candidates), labels(&expected));
 }
 
 #[test]

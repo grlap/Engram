@@ -1845,15 +1845,18 @@ pub(super) fn work_run_evidence_projection_on(
         }
         selected.extend(closure);
     }
-    selected.sort_by(|left, right| left.hash.as_str().cmp(right.hash.as_str()));
+    // One record has one run-feed position, so equal positions are the same
+    // record and adjacent after sorting.
+    selected.sort_by_key(|candidate| candidate.run_position);
     selected.dedup_by(|left, right| left.hash == right.hash);
     Ok(selected)
 }
 
-/// Up to `limit` evidence rows of the run, taken in descending evidence-id
-/// order, plus the rows named in `required`: the environment evidence the
-/// selected verifications link to. Evidence ids are random, so the bounded
-/// part is a stable selection, not the newest rows.
+/// The run's `limit` newest evidence rows by dense run-execution feed
+/// position, plus the rows named in `required`: the environment evidence the
+/// selected verifications link to, wherever it lies. A projected row with no
+/// run-feed entry sorts first so that its missing position is refused rather
+/// than silently left out.
 fn load_work_evidence_selection_rows_on(
     connection: &Connection,
     run_id: WorkRunId,
@@ -1867,8 +1870,13 @@ fn load_work_evidence_selection_rows_on(
     })?;
     let mut statement = connection.prepare(
         "WITH bounded(evidence_id) AS (
-             SELECT evidence_id FROM work_run_evidence
-             WHERE run_id = ?1 ORDER BY evidence_id DESC LIMIT ?2
+             SELECT evidence.evidence_id FROM work_run_evidence evidence
+             LEFT JOIN work_feed_entries entry
+               ON entry.feed_kind = 'run_execution'
+              AND entry.feed_id = ?1
+              AND entry.object_id = evidence.evidence_id
+             WHERE evidence.run_id = ?1
+             ORDER BY entry.position DESC NULLS FIRST LIMIT ?2
          ), requested(evidence_id) AS (
              SELECT value FROM json_each(?3)
          ), candidates(evidence_id) AS (
@@ -1878,13 +1886,17 @@ fn load_work_evidence_selection_rows_on(
          )
          SELECT projection.evidence_id, projection.work_id, projection.run_id,
                 projection.evidence_kind, projection.environment_evidence_id,
-                object.object_kind, object.canonical_json
+                object.object_kind, object.canonical_json, entry.position
          FROM candidates candidate
          JOIN work_run_evidence projection
            ON projection.run_id = ?1
           AND projection.evidence_id = candidate.evidence_id
          LEFT JOIN objects object ON object.object_id = projection.evidence_id
-         ORDER BY projection.evidence_id",
+         LEFT JOIN work_feed_entries entry
+           ON entry.feed_kind = 'run_execution'
+          AND entry.feed_id = ?1
+          AND entry.object_id = projection.evidence_id
+         ORDER BY entry.position",
     )?;
     let rows = statement
         .query_map(params![run_id.0.to_string(), limit, required_json], |row| {
@@ -1896,6 +1908,7 @@ fn load_work_evidence_selection_rows_on(
                 projected_environment: row.get(4)?,
                 object_kind: row.get(5)?,
                 canonical_json: row.get(6)?,
+                run_position: row.get(7)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1985,10 +1998,16 @@ fn load_work_evidence_selection_rows_on(
                     "evidence object {hash} disagrees with its selection projection"
                 )));
             }
+            let run_position = row.run_position.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "run evidence {hash} has no entry in its run-execution feed"
+                ))
+            })?;
             Ok(WorkEvidenceProjectionSummary {
                 hash,
                 kind,
                 environment,
+                run_position,
             })
         })
         .collect()

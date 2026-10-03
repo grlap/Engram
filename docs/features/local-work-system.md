@@ -1353,7 +1353,10 @@ note independently from the bounded evidence page; latest means the highest
 dense run-feed position for execution evidence, or their shared root-feed
 position when non-holder observations are present. Evidence timestamps are
 asserted metadata, never ordering authority. Selection decides which rows the
-bounded page keeps, and on a full page the latest note replaces the
+bounded page keeps: the newest execution evidence by dense run-feed position,
+verifications first, each with the environment evidence it links to however
+old that is; a verification whose environment no longer fits is left out with
+it, never shown alone. On a full page the latest note replaces the
 least-priority selected note. `notes` then emits every kept row in the item's
 dense root-work feed order, so the latest note comes last.
 `notes_omitted` is the

@@ -331,12 +331,15 @@ pub enum WorkObligationCompletionAction {
 
 /// Evidence selection basis used to choose a bounded focus page. The loader
 /// decodes these fields from the evidence record and rejects any disagreement
-/// with the durable run projection before selection.
+/// with the durable run projection before selection. `run_position` is the
+/// record's dense position in its run-execution feed, which orders the page
+/// newest first; it is read for selection only and never stored.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkEvidenceProjectionSummary {
     pub hash: ObjectId,
     pub kind: WorkEvidenceKind,
     pub environment: Option<ObjectId>,
+    pub run_position: i64,
 }
 
 struct StoredWorkEvidenceSelectionRow {
@@ -347,6 +350,7 @@ struct StoredWorkEvidenceSelectionRow {
     projected_environment: Option<String>,
     object_kind: Option<String>,
     canonical_json: Option<Vec<u8>>,
+    run_position: Option<i64>,
 }
 
 #[cfg(test)]
