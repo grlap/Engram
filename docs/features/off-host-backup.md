@@ -577,7 +577,10 @@ backup never makes a healthy store unhealthy, and `readiness` is unchanged.
 and the mode is `local`, or when the last attempt failed. They add nothing
 when no target is configured or when all is well. They read only the
 recorded state, and read nothing more when no kind has a configuration
-file; a state file alone configures nothing. The line names the mode with
+file; a state file alone configures nothing. A configuration file whose
+existence cannot be checked, for example because access to it is denied,
+counts as present, so its records are read and an unreadable one is
+reported. The line names the mode with
 each kind's reason, or the failed push with its code and the earlier copy
 that still qualifies with its off-host text, and ends with `see engram
 backup status`. It follows the direction to list memories, ahead of every

@@ -307,8 +307,14 @@ for the fields named here.
    push's own report, its `code`, `message` and `warnings`: `backup status`
    shows a failure only when the push could record it as the kind's last
    attempt. A push refused before it takes the kind's lock records nothing,
-   and one whose state cannot be written says so in its `warnings` and
-   leaves the earlier last attempt in place.
+   and neither does one whose records this build cannot use. A push whose
+   state cannot be written leaves the earlier last attempt in place and
+   reports it in its `code`, `message` or `warnings`: when the push
+   otherwise succeeded (`uploaded` or `unchanged`) and only the final state
+   write failed, the push is `failed` with the write error as its `code`
+   and `message`, and the error adds nothing to its `warnings`, which keep
+   only what earlier steps reported; when the push had already failed, the
+   unwritten state is added to its `warnings`.
 4. **Bound each push, and cancel it by terminating its process.** Push runs
    under two deadlines: `--capture-deadline-secs` (900 by default) for the
    local copy, its check and the compressed file, and

@@ -189,10 +189,7 @@ impl BackupBlock {
     fn text(&self) -> String {
         match self {
             Self::Status(status) => engram::backup::status::render_status(status),
-            Self::NotRead => format!(
-                "backup: not read ({BACKUP_NOT_READ})
-"
-            ),
+            Self::NotRead => format!("backup: not read ({BACKUP_NOT_READ})\n"),
         }
     }
 }

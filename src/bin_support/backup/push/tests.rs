@@ -1015,6 +1015,13 @@ fn a_failed_write_after_the_put_reports_what_is_recorded_and_the_next_push_recov
     let run = fixture.push_with(&failing);
     assert_eq!(run.report.outcome, Outcome::Failed, "{:?}", run.report);
     assert_eq!(run.report.code.as_deref(), Some("backup_io"));
+    // The write error is the push's own code and message, never a warning:
+    // only a push that had already failed reports an unwritable state there.
+    assert_eq!(
+        run.report.message.as_deref(),
+        Some("the state could not be written (injected by a test)")
+    );
+    assert!(run.report.warnings.is_empty(), "{:?}", run.report.warnings);
     // The report shows the recorded state: no receipt, no time, and the
     // attempt still pending, although the copy reached the target.
     let state = fixture.state();

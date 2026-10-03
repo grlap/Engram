@@ -1,5 +1,6 @@
 //! Each kind of backup trouble the operator must see: a failed push, a
-//! refused capture, a copy the target no longer holds and a stale copy. Each
+//! refused capture, a copy the target no longer holds, a stale copy and an
+//! expired confirmation. Each
 //! is checked in `backup status --json`, in `doctor --json`'s backup block,
 //! and as the one backup reminder line of `next --peek`.
 
@@ -274,5 +275,29 @@ fn a_copy_older_than_the_window_is_seen_as_stale() {
     let status =
         home.assert_visible("backup: mode local (store: backup_stale); see engram backup status");
     assert_eq!(status["kinds"][0]["reason"], "backup_stale");
+    assert_eq!(status["durability"]["mode"], "local");
+}
+
+#[test]
+fn a_confirmation_older_than_the_window_is_seen_as_expired() {
+    let home = Home::pushed();
+    // The target last confirmed the copy two days ago, beyond the 24-hour
+    // window; the store's content was observed in it just now.
+    let mut state: Value = serde_json::from_slice(&fs::read(home.state_path()).unwrap()).unwrap();
+    let old = (chrono::Utc::now() - chrono::Duration::hours(48)).to_rfc3339();
+    assert!(state["last_confirmation"]["at"].is_string(), "{state}");
+    state["last_confirmation"]["at"] = old.into();
+    fs::write(
+        home.state_path(),
+        serde_json::to_vec_pretty(&state).unwrap(),
+    )
+    .unwrap();
+
+    // Doctor stays healthy: an expired confirmation is a backup finding, not
+    // a store fault.
+    let status = home.assert_visible(
+        "backup: mode local (store: backup_confirmation_expired); see engram backup status",
+    );
+    assert_eq!(status["kinds"][0]["reason"], "backup_confirmation_expired");
     assert_eq!(status["durability"]["mode"], "local");
 }

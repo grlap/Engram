@@ -1521,7 +1521,20 @@ a pending attempt, `backup_transport_deadline`, and
 `backup_record_unreadable` for records this build cannot use. A failed push
 leaves the previous receipt and the previous copy at the target as they were,
 advances no time, and records the attempt's start, end, outcome, code and
-message as the last attempt. `--json` prints the project and, per kind, the
+message as the last attempt, with three exceptions that the `backup status`
+receipt's `kinds[].target.last_attempt` row also gives: a push refused before
+it takes the kind's lock, one whose records this build cannot use (the kind's
+`reason` shows those records), and one whose state cannot be written record
+no last attempt, and the earlier one stays. A push whose final state write
+fails may still have recorded earlier steps, such as its pending attempt or
+a missing finding. When the push otherwise succeeded (`uploaded` or
+`unchanged`) and only that final write failed, it is `failed` with the write
+error as its code and message, and the error adds no warning; when it had
+already failed, the unwritten state is a warning. A push
+that asks the target to confirm the newest copy and learns that the copy is
+gone first records that copy as missing, so it stops qualifying, and then
+puts a new one; if that replacement fails, the missing finding stays
+recorded. `--json` prints the project and, per kind, the
 outcome (`uploaded`, `unchanged`, `not_configured`, `busy` or `failed`), the
 code and message, the target identity, the newest receipt with its manifest,
 the time the content was last observed in that copy, the copies it
@@ -1765,7 +1778,7 @@ the field paths, and every value a listed field takes.
 | `kinds[].target.pending.capture_started_at` | string, an RFC 3339 time | When its capture began. |
 | `kinds[].target.pending.target_identity` | string | The identity it was recorded for. |
 | `kinds[].target.pending.for_earlier_target` | boolean | Whether that is an earlier identity. |
-| `kinds[].target.last_attempt` | object or null | The last push of the kind that could be recorded; a failure is shown even while the mode reads `local_backed_up`. A push refused before it takes the lock, or one whose state cannot be written, is not recorded here. |
+| `kinds[].target.last_attempt` | object or null | The last push of the kind that could be recorded; a failure is shown even while the mode reads `local_backed_up`. A push refused before it takes the lock, one whose records this build cannot use, or one whose state cannot be written, is not recorded here. |
 | `kinds[].target.last_attempt.started_at` | string, an RFC 3339 time | When it started. |
 | `kinds[].target.last_attempt.ended_at` | string, an RFC 3339 time | When it ended. |
 | `kinds[].target.last_attempt.outcome` | string, one of: `uploaded`, `unchanged`, `failed` | How it ended. |
@@ -1817,7 +1830,10 @@ the last store push failed: CODE; an earlier copy still qualifies (store
 copy: off-host asserted; not verified); see engram backup status`, or both
 parts in one line. It reads only the recorded state under the home, never
 the store or a target, and reads nothing more when no kind has a
-configuration file. It stands right after the direction to list memories,
+configuration file. A configuration file whose existence cannot be checked,
+for example because access to it is denied, counts as present, so its
+records are read and an unreadable one is reported. It stands right after
+the direction to list memories,
 ahead of every other reminder, and neither the reminder count limit nor byte
 fitting sheds or shortens it. A recorded failure code that is not a plain
 lowercase code of at most 64 bytes reads `unrecognised code`. See
