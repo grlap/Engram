@@ -12,6 +12,7 @@ use crate::storage::{
 use crate::*;
 use crate::{ProjectId, domain::ProvenanceLink};
 
+mod fts_terms;
 mod fts_verification;
 mod listing_acknowledgement;
 mod partial;

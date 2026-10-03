@@ -287,7 +287,8 @@ impl SqliteStore {
         let limit = limit.map_or(i64::MAX, |limit| i64::from(limit.clamp(1, 1_000)));
         let search = query
             .filter(|value| !value.trim().is_empty())
-            .map(fts_query);
+            .map(fts_query)
+            .transpose()?;
         let rows = match search {
             // A query with no searchable fragment finds nothing.
             Some(None) => Vec::new(),
@@ -384,7 +385,7 @@ impl SqliteStore {
         let limit = limit.map_or(i64::MAX, |limit| i64::from(limit.clamp(1, 1_000)));
         let rows = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
             // A query with no searchable fragment finds nothing.
-            let Some(fts_query) = fts_query(query) else {
+            let Some(fts_query) = fts_query(query)? else {
                 return Ok(Vec::new());
             };
             let sql = format!(
@@ -836,22 +837,121 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
 /// The full-text query for `query`: every search fragment as a quoted prefix
 /// term, all of them required. `None` when `query` holds no fragment at all,
 /// so the caller finds nothing rather than matching some stand-in phrase.
-pub(super) fn fts_query(query: &str) -> Option<String> {
-    let tokens: Vec<_> = fts_tokens(query)
+pub(super) fn fts_query(query: &str) -> Result<Option<String>, StoreError> {
+    let tokens: Vec<_> = fts_tokens(query)?
+        .into_iter()
         .map(|token| format!("\"{token}\"*"))
         .collect();
-    (!tokens.is_empty()).then(|| tokens.join(" AND "))
+    Ok((!tokens.is_empty()).then(|| tokens.join(" AND ")))
 }
 
-/// Search fragments of `query`. An underscore stays inside a fragment, so
-/// `engram_check` remains one quoted phrase. A fragment with no letter or
-/// digit, such as a lone `_`, is dropped: the full-text tokenizer treats `_`
-/// as a separator, so such a fragment indexes nothing and a query term made
-/// of it could never match.
-fn fts_tokens(query: &str) -> impl Iterator<Item = &str> {
-    query
-        .split(|character: char| !character.is_alphanumeric() && character != '_')
-        .filter(|token| token.chars().any(char::is_alphanumeric))
+/// Search fragments of `query`, split where the full-text tokenizer that
+/// indexed the memories splits text, so a word holding a combining mark or a
+/// private-use character stays one fragment. An underscore stays inside a
+/// fragment too, so `engram_check` remains one quoted phrase. A fragment the
+/// tokenizer reads no token from, such as a lone `_` or a mark on its own, is
+/// dropped: a query term made of it could never match.
+///
+/// ASCII letters and digits are token characters and other ASCII characters
+/// separators; every other character is classified by the tokenizer itself,
+/// in a private in-memory table, never by an approximation of its rules.
+fn fts_tokens(query: &str) -> Result<Vec<&str>, StoreError> {
+    let mut wider: Vec<char> = query.chars().filter(|ch| !ch.is_ascii()).collect();
+    wider.sort_unstable();
+    wider.dedup();
+    let tokenizer = (!wider.is_empty()).then(QueryTokenizer::open).transpose()?;
+    let token_characters = match &tokenizer {
+        Some(tokenizer) => tokenizer.token_characters(&wider)?,
+        None => Vec::new(),
+    };
+    let fragments: Vec<&str> = query
+        .split(|ch: char| {
+            !(ch.is_ascii_alphanumeric()
+                || ch == '_'
+                || token_characters.binary_search(&ch).is_ok())
+        })
+        .filter(|fragment| !fragment.is_empty())
+        .collect();
+    let Some(tokenizer) = tokenizer else {
+        return Ok(fragments
+            .into_iter()
+            .filter(|fragment| fragment.chars().any(|ch| ch.is_ascii_alphanumeric()))
+            .collect());
+    };
+    let yields = tokenizer.yields_tokens(&fragments)?;
+    Ok(fragments
+        .into_iter()
+        .zip(yields)
+        .filter_map(|(fragment, yields)| yields.then_some(fragment))
+        .collect())
+}
+
+/// A private in-memory full-text table with the memory index's tokenizer,
+/// opened for one query and dropped with it.
+struct QueryTokenizer(Connection);
+
+impl QueryTokenizer {
+    /// The table names no tokenizer, as the memory index does not, so both
+    /// tokenize with the same default.
+    fn open() -> Result<Self, StoreError> {
+        let connection = Connection::open_in_memory()?;
+        connection.execute_batch(
+            "CREATE VIRTUAL TABLE probe USING fts5(text);
+             CREATE VIRTUAL TABLE probe_tokens USING fts5vocab(probe, 'instance');",
+        )?;
+        Ok(Self(connection))
+    }
+
+    /// How many tokens the tokenizer reads from each of `texts`, in order.
+    fn token_counts(&self, texts: &[String]) -> Result<Vec<usize>, StoreError> {
+        self.0.execute("DELETE FROM probe", [])?;
+        let mut insert = self
+            .0
+            .prepare("INSERT INTO probe (rowid, text) VALUES (?1, ?2)")?;
+        for (row, text) in texts.iter().enumerate() {
+            insert.execute(params![i64::try_from(row).unwrap_or(i64::MAX), text])?;
+        }
+        let mut counts = vec![0; texts.len()];
+        let mut statement = self
+            .0
+            .prepare("SELECT doc, COUNT(*) FROM probe_tokens GROUP BY doc")?;
+        let rows =
+            statement.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
+        for row in rows {
+            let (doc, count) = row?;
+            if let (Ok(doc), Ok(count)) = (usize::try_from(doc), usize::try_from(count))
+                && let Some(slot) = counts.get_mut(doc)
+            {
+                *slot = count;
+            }
+        }
+        Ok(counts)
+    }
+
+    /// The sorted characters of `characters` that the tokenizer keeps inside
+    /// a token: placed between two letters, such a character leaves one
+    /// token where a separator would leave two.
+    fn token_characters(&self, characters: &[char]) -> Result<Vec<char>, StoreError> {
+        let probes: Vec<String> = characters.iter().map(|ch| format!("a{ch}a")).collect();
+        Ok(characters
+            .iter()
+            .zip(self.token_counts(&probes)?)
+            .filter_map(|(ch, count)| (count == 1).then_some(*ch))
+            .collect())
+    }
+
+    /// Whether the tokenizer reads at least one token from each fragment.
+    fn yields_tokens(&self, fragments: &[&str]) -> Result<Vec<bool>, StoreError> {
+        let texts: Vec<String> = fragments
+            .iter()
+            .map(|fragment| (*fragment).to_owned())
+            .collect();
+        Ok(self
+            .token_counts(&texts)?
+            .into_iter()
+            .map(|count| count > 0)
+            .collect())
+    }
 }
 
 pub(super) fn normalize_project_memory_query(
@@ -869,11 +969,7 @@ pub(super) fn normalize_project_memory_query(
     if query.is_empty() {
         return Ok(None);
     }
-    if fts_tokens(query)
-        .take(MAX_PROJECT_MEMORY_QUERY_TOKENS + 1)
-        .count()
-        > MAX_PROJECT_MEMORY_QUERY_TOKENS
-    {
+    if fts_tokens(query)?.len() > MAX_PROJECT_MEMORY_QUERY_TOKENS {
         return Err(StoreError::InvalidProjectMemory(format!(
             "memory query exceeds {MAX_PROJECT_MEMORY_QUERY_TOKENS} search tokens"
         )));

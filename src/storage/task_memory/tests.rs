@@ -667,24 +667,44 @@ fn capture_note_preserves_an_exact_64_byte_utf8_actor_session() {
 
 #[test]
 fn a_fragment_without_a_letter_or_digit_adds_no_search_term() {
-    for text in ["_", "___", "--", "::", r"_ . - : \ /"] {
-        assert_eq!(fts_tokens(text).count(), 0, "{text:?}");
-        assert_eq!(fts_query(text), None, "{text:?}");
+    for text in [
+        "_",
+        "___",
+        "--",
+        "::",
+        r"_ . - : \ /",
+        "\u{0345}",
+        "_ \u{0301} _",
+    ] {
+        assert!(fts_tokens(text).unwrap().is_empty(), "{text:?}");
+        assert_eq!(fts_query(text).unwrap(), None, "{text:?}");
     }
+    assert_eq!(fts_tokens("alpha _ beta").unwrap(), ["alpha", "beta"]);
     assert_eq!(
-        fts_tokens("alpha _ beta").collect::<Vec<_>>(),
-        ["alpha", "beta"]
-    );
-    assert_eq!(
-        fts_query("alpha _ beta").as_deref(),
+        fts_query("alpha _ beta").unwrap().as_deref(),
         Some("\"alpha\"* AND \"beta\"*")
     );
     assert_eq!(
-        fts_tokens("engram_check __init__ _private").collect::<Vec<_>>(),
+        fts_tokens("engram_check __init__ _private").unwrap(),
         ["engram_check", "__init__", "_private"]
     );
     assert_eq!(
-        fts_query("engram_check").as_deref(),
+        fts_query("engram_check").unwrap().as_deref(),
         Some("\"engram_check\"*")
+    );
+}
+
+// A character the tokenizer keeps inside a token keeps its word whole; one it
+// splits on separates words, as the index did; letters outside ASCII are
+// words of their own.
+#[test]
+fn search_fragments_split_where_the_tokenizer_splits() {
+    assert_eq!(fts_tokens("a\u{0301}b").unwrap(), ["a\u{0301}b"]);
+    assert_eq!(fts_tokens("a\u{E000}b").unwrap(), ["a\u{E000}b"]);
+    assert_eq!(fts_tokens("x \u{0345} y").unwrap(), ["x", "y"]);
+    assert_eq!(fts_tokens("zażółć—gęślą").unwrap(), ["zażółć", "gęślą"]);
+    assert_eq!(
+        fts_tokens("engram_check\u{00A0}a\u{0301}b").unwrap(),
+        ["engram_check", "a\u{0301}b"]
     );
 }

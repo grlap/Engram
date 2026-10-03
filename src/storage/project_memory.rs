@@ -1560,7 +1560,7 @@ fn project_memory_rows_on(
             .replace('%', "\\%")
             .replace('_', "\\_");
         // A query with no searchable fragment finds nothing.
-        let Some(fts_query) = fts_query(query) else {
+        let Some(fts_query) = fts_query(query)? else {
             return Ok((Vec::new(), Some(0)));
         };
         let mut statement = connection.prepare(

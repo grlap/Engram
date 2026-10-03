@@ -205,7 +205,8 @@ fn memory_fts_check_cost_measurement() {
                     .count(),
                 1
             );
-            if let Some(query) = crate::storage::task_memory::fts_query(&format!("{title} {body}"))
+            if let Some(query) =
+                crate::storage::task_memory::fts_query(&format!("{title} {body}")).unwrap()
             {
                 let _: bool = store
                     .connection
