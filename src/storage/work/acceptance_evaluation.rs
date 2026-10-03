@@ -1839,6 +1839,7 @@ use crate::domain::{
 use admission::{CitationContext, EligibilityContext, SameSessionRefusal};
 #[cfg(test)]
 use source::declared_not_contradicted;
+pub(in crate::storage) use source::read_named_root_sighting_on;
 use source::{
     NamedEvaluationRoot, RootBinding, RootPhase, RootSource, StaleCause, assess_named_root_binding,
     assess_named_root_source, judged_revision, judged_source, named_root_at_on, off_named_root,

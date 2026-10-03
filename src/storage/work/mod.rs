@@ -7,6 +7,7 @@
 
 mod acceptance_evaluation;
 pub(crate) use acceptance_evaluation::attempt_identity as acceptance_attempt_identity;
+pub(in crate::storage) use acceptance_evaluation::read_named_root_sighting_on;
 pub use acceptance_evaluation::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
 };

@@ -65,6 +65,16 @@ pub enum HostControlRequest {
         run_id: WorkRunId,
         claim_id: WorkClaimId,
     },
+    /// Reads whether a run's named source root has the initial sighting that
+    /// recording an evaluation at `run_cut` requires, or at the head when it
+    /// is absent. It needs no routing token or live holder and writes
+    /// nothing.
+    NamedRootSightingRead {
+        work_ref: String,
+        run_id: WorkRunId,
+        #[serde(default)]
+        run_cut: Option<i64>,
+    },
     /// Reads, for one item on its active run, what satisfied each bound
     /// acceptance criterion: the first page captures the run's feed head as
     /// its cut, and `after` continues at that cut. It writes nothing.
@@ -147,6 +157,7 @@ impl HostControlRequest {
             Self::SessionStatus { .. } => "session_status",
             Self::NamedRootBind { .. } => "named_root_bind",
             Self::NamedRootRead { .. } => "named_root_read",
+            Self::NamedRootSightingRead { .. } => "named_root_sighting_read",
             Self::AcceptanceBindingRead { .. } => "acceptance_binding_read",
             Self::AcceptanceVerificationRead { .. } => "acceptance_verification_read",
             Self::TurnEvaluate { .. } => "turn_evaluate",
@@ -346,6 +357,17 @@ impl HostControlServer {
                 &routing_token,
                 run_id,
                 claim_id,
+            )?)
+            .map_err(StoreError::Json),
+            HostControlRequest::NamedRootSightingRead {
+                work_ref,
+                run_id,
+                run_cut,
+            } => serde_json::to_value(self.store.read_named_root_sighting(
+                &self.project_id,
+                &work_ref,
+                run_id,
+                run_cut,
             )?)
             .map_err(StoreError::Json),
             HostControlRequest::AcceptanceBindingRead {
@@ -806,6 +828,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
             "execution_observation_policy_basis_mismatch"
         }
         StoreError::AcceptanceBindingReadRefused { refusal, .. } => refusal.code(),
+        StoreError::NamedRootSightingReadRefused { refusal, .. } => refusal.code(),
         StoreError::AcceptanceVerificationReadRefused { refusal, .. } => refusal.code(),
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
@@ -1303,6 +1326,64 @@ mod tests {
         let error = parse_host_control_request(&serde_json::to_vec(&cut).expect("frame"))
             .expect_err("the first page captures the cut; a caller cannot name one");
         assert!(error.contains("run_cut"), "{error}");
+    }
+
+    #[test]
+    fn named_root_sighting_read_frame_needs_no_routing_token() {
+        let frame = serde_json::json!({
+            "operation": "named_root_sighting_read",
+            "work_ref": "w-0123456789ab",
+            "run_id": uuid::Uuid::new_v4(),
+        });
+        let parsed = parse_host_control_request(&serde_json::to_vec(&frame).expect("frame"))
+            .expect("the read takes no routing token");
+        assert!(matches!(
+            parsed,
+            HostControlRequest::NamedRootSightingRead { ref work_ref, run_cut: None, .. }
+                if work_ref == "w-0123456789ab"
+        ));
+        assert_eq!(parsed.operation(), "named_root_sighting_read");
+        let mut at_cut = frame.clone();
+        at_cut["run_cut"] = serde_json::json!(12);
+        assert!(matches!(
+            parse_host_control_request(&serde_json::to_vec(&at_cut).expect("frame"))
+                .expect("a caller cut"),
+            HostControlRequest::NamedRootSightingRead {
+                run_cut: Some(12),
+                ..
+            }
+        ));
+        let mut token = frame;
+        token["routing_token"] = serde_json::json!("routing-token");
+        let error = parse_host_control_request(&serde_json::to_vec(&token).expect("frame"))
+            .expect_err("an unknown field is refused");
+        assert!(error.contains("routing_token"), "{error}");
+    }
+
+    #[test]
+    fn named_root_sighting_read_refusals_answer_with_distinct_codes() {
+        use crate::domain::NamedRootSightingReadRefusal as Refusal;
+        let refusals = [
+            Refusal::InvalidWorkRef,
+            Refusal::WrongRun,
+            Refusal::InvalidCut,
+            Refusal::ResponseTooLarge,
+        ];
+        let codes: std::collections::BTreeSet<&str> = refusals
+            .iter()
+            .map(|refusal| {
+                store_error_code(&StoreError::NamedRootSightingReadRefused {
+                    refusal: *refusal,
+                    reason: "reason".into(),
+                })
+            })
+            .collect();
+        assert_eq!(codes.len(), refusals.len());
+        assert!(
+            codes
+                .iter()
+                .all(|code| code.starts_with("named_root_sighting_read_"))
+        );
     }
 
     #[test]

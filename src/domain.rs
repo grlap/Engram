@@ -8,6 +8,7 @@ mod acceptance_verification_read;
 mod control;
 mod identity;
 mod memory;
+mod named_root_sighting_read;
 mod provenance;
 mod source_observation;
 mod task;
@@ -20,7 +21,8 @@ mod work_requests;
 
 pub use crate::schema::{
     COMPLETION_ENVIRONMENT_SCHEMA_VERSION, COMPLETION_OBLIGATION_SCHEMA_VERSION,
-    CONTROL_SCHEMA_VERSION, OBLIGATION_RULE_SET_SCHEMA_VERSION, SCHEMA_VERSION,
+    CONTROL_SCHEMA_VERSION, NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION,
+    OBLIGATION_RULE_SET_SCHEMA_VERSION, SCHEMA_VERSION,
 };
 pub use acceptance_admission::*;
 pub use acceptance_binding_read::*;
@@ -30,6 +32,7 @@ pub use acceptance_verification_read::*;
 pub use control::*;
 pub use identity::*;
 pub use memory::*;
+pub use named_root_sighting_read::*;
 pub use provenance::*;
 pub use source_observation::*;
 pub use task::*;

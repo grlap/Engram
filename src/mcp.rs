@@ -1383,6 +1383,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::ExecutionObservationPolicyBasisMismatch(_)
         | StoreError::AcceptanceBindingReadRefused { .. }
         | StoreError::AcceptanceVerificationReadRefused { .. }
+        | StoreError::NamedRootSightingReadRefused { .. }
         | StoreError::HostPathIdentityUnresolved
         | StoreError::ControlSessionNotBound(_)
         | StoreError::ControlSessionTokenMismatch(_)

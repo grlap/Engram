@@ -551,6 +551,76 @@ that is not the run's, or a run of another project returns
 fails its canonical association returns a storage error. A refused or failed
 read is never a `none` state.
 
+#### Reading a root's initial sighting before an evaluation
+
+Recording an acceptance evaluation at a cut under a named root is refused
+with `no_initial_sighting` while the root has no sighting at or before that
+cut. A host can ask first, with the host-private `named_root_sighting_read`
+operation, and spawn no evaluator that would be refused. Its request carries
+`work_ref` (the item's short reference or full id, within the project the
+control process is routed to), `run_id` and an optional `run_cut`; without
+one the read takes the run-feed head. It needs no bound session, routing
+token or live claim holder, and takes no idempotency key.
+
+Engram resolves the item, checks that the run is one of its runs and that
+the cut lies between 0 and the head, and then reads, from one snapshot, the
+root recording would select at the cut and whether it has a sighting there.
+It uses recording's own functions: the run's current claim's newest binding
+after its latest release, when that binding names a root, and the root's
+newest source record at or before the cut in its workspace, at its
+generation, with the root named. A record counts when a turn admitted it,
+quiet or not, or when it was recorded without admission and accounted as a
+change or a repeat; one accounted as no change does not. A record after the
+cut is never a sighting at it. The result has exactly three shapes:
+
+<!-- named-root-sighting-read:begin -->
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema_version` | integer | This result's version, 1. |
+| `project_id` | string | The routed project. |
+| `work_id` | string | The item `work_ref` named. |
+| `run_id` | string | The run read. |
+| `read_cut` | integer | The run-feed position read at: the requested cut, or the head. |
+| `head_cut` | integer | The run-feed head in the same snapshot. |
+| `current_binding` | string or null | The binding event of the root recording would select at the head; null when it would select none. |
+| `binding_changed` | boolean | Whether the binding selected at `read_cut` differs from `current_binding`. |
+| `root.state` | `none` or `bound` | Whether a root is bound at `read_cut`. |
+| `root.workspace_id` | string | The bound root's workspace; `bound` only. |
+| `root.generation` | integer | The bound root's generation; `bound` only. |
+| `root.binding_event` | string | The binding event's record id; `bound` only. |
+| `root.binding_position` | integer | The binding event's run-feed position; `bound` only. |
+| `root.sighting.state` | `absent` or `present` | Whether the root has a sighting at or before `read_cut`; `bound` only. |
+| `root.sighting.record` | string | The sighting record's id; `present` only. |
+| `root.sighting.position` | integer | Its run-feed position; `present` only. |
+| `root.sighting.revision` | string | The source revision it sighted; `present` only. |
+<!-- named-root-sighting-read:end -->
+
+A host acts on it this way:
+
+- Only a valid result with a `bound` root whose sighting is `absent` shows
+  that recording at `read_cut` would be refused for want of a sighting.
+- An unsupported `schema_version`, a malformed or unknown shape, a refusal
+  or a failed call is unknown, never absent.
+- `binding_changed` true means the root moved after the cut: recording at
+  that cut is refused as moved before the sighting is looked at, so the host
+  reads again at a newer cut.
+- A read at the head returns `read_cut` equal to `head_cut`; the host carries
+  that cut as the floor of the evaluator's basis under the same binding, and
+  never uses it to justify an earlier cut.
+- The read takes any run of the item, but recording evaluates only the
+  item's active run, so only a read of that run predicts recording.
+- The read is not a verdict. Recording an evaluation still decides, against
+  everything recorded since, and the host revalidates before it spawns.
+
+A work reference that names no item of the project returns
+`named_root_sighting_read_invalid_work_ref`, and an ambiguous one keeps
+`work_reference_ambiguous`. An unknown run, or one of another item, returns
+`named_root_sighting_read_wrong_run`; a negative cut or one past the head
+returns `named_root_sighting_read_invalid_cut`; a result larger than 16 KiB
+returns `named_root_sighting_read_response_too_large`. The read writes
+nothing: it binds no session, refreshes no connection, renews no claim and
+records nothing, so a host may repeat it freely.
+
 A sighting's generation, not its time or feed position, places it against a
 binding at generation g. The sighting is before that binding when its
 `source_root_generation` is absent or smaller than g, and after it otherwise.
@@ -1343,8 +1413,8 @@ fail-mode result; a hung hook is not an acceptable control mechanism.
 
 The shipped host channel is `session_bind`, `session_status`,
 `turn_evaluate`, `turn_begin`, `turn_checkpoint`, `named_root_bind`,
-`named_root_read`, `execution_observe`, `acceptance_binding_read` and
-`acceptance_verification_read`. The design named seven
+`named_root_read`, `named_root_sighting_read`, `execution_observe`,
+`acceptance_binding_read` and `acceptance_verification_read`. The design named seven
 more. None is built, and no host calls them:
 
 - **`action_authorize`, `action_begin` and `action_complete` (not built).**
@@ -1387,9 +1457,9 @@ persisted turn decisions and short-lived grants that carry no delivery page,
 begin-time rechecks, canonical execution observations, and canonical checkpoint
 events. A separate `engram control` JSON-lines process
 implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
-`turn_checkpoint`, `named_root_bind`, `named_root_read`, `execution_observe`,
-`acceptance_binding_read` and `acceptance_verification_read`; none is exposed
-through agent-facing MCP. Exact retry
+`turn_checkpoint`, `named_root_bind`, `named_root_read`,
+`named_root_sighting_read`, `execution_observe`, `acceptance_binding_read` and
+`acceptance_verification_read`; none is exposed through agent-facing MCP. Exact retry
 evidence survives process restart, while unbegun authority is invalidated and
 the session returns to `ready`. Each open rotates an internal
 connection generation so a still-running predecessor is fenced. Begun grants

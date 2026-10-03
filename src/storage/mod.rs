@@ -9,6 +9,7 @@ mod doctor;
 mod graph_snapshot;
 pub mod migration;
 mod named_root_read;
+mod named_root_sighting_read;
 mod objects_tasks;
 mod open_schema;
 #[cfg(test)]
@@ -1133,6 +1134,13 @@ pub enum StoreError {
     #[error("acceptance binding read refused: {reason}")]
     AcceptanceBindingReadRefused {
         refusal: crate::domain::AcceptanceBindingReadRefusal,
+        reason: String,
+    },
+    /// A host's read of a named root's initial sighting was refused for a
+    /// typed reason; never a finding about the root.
+    #[error("named root sighting read refused: {reason}")]
+    NamedRootSightingReadRefused {
+        refusal: crate::domain::NamedRootSightingReadRefusal,
         reason: String,
     },
     /// A host's read of one criterion's candidate verifications was refused

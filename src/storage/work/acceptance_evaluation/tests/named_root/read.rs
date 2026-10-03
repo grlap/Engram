@@ -1,10 +1,13 @@
 //! A host's read of one claim's named root on its run, for a claim it may no
 //! longer hold: the state the session status derives, the newest recorded
-//! root event by its real id, and the run's lifecycle, from one snapshot.
+//! root event by its real id, and the run's lifecycle, from one snapshot;
+//! and a host's read of a named root's initial sighting at a cut.
 
 use super::*;
 use crate::domain::{
-    NamedRootEndReason, NamedRootRead, NamedRootState, WorkClaimId, WorkClaimState, WorkRunState,
+    InitialSighting, NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION, NamedRootAtCut, NamedRootEndReason,
+    NamedRootRead, NamedRootSightingRead, NamedRootSightingReadRefusal, NamedRootState,
+    WorkClaimId, WorkClaimState, WorkRunState,
 };
 
 /// The control credentials a read presents.
@@ -697,5 +700,730 @@ fn a_run_missing_its_row_is_a_storage_error_not_an_unknown_run() {
             assert!(reason.contains("has a run feed but no run row"), "{reason}");
         }
         other => panic!("expected a storage error, got {other:?}"),
+    }
+}
+
+// A host's read of a named root's initial sighting agrees with recording:
+// wherever the read finds a bound root without a sighting, recording an
+// evaluation at that cut is refused for want of one, and wherever it finds
+// no root or a sighting, recording is not refused for that reason. The read
+// writes nothing and needs no routing token or live holder.
+fn sighting_read(
+    store: &SqliteStore,
+    work: &WorkItem,
+    run_id: WorkRunId,
+    run_cut: Option<i64>,
+) -> NamedRootSightingRead {
+    let snapshot = test_database_shape_snapshot(&store.connection).expect("snapshot");
+    let read = store
+        .read_named_root_sighting(&work.project_id, &work.short_ref, run_id, run_cut)
+        .expect("the read answers");
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("snapshot"),
+        snapshot,
+        "the read writes nothing"
+    );
+    assert_eq!(read.schema_version, NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION);
+    assert_eq!(read.work_id, work.work_id);
+    assert_eq!(read.run_id, run_id);
+    read
+}
+
+/// Recording's answer to a passing evaluation at `through`.
+fn record_at(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    session: &str,
+    evidence: &ObjectId,
+    through: i64,
+    key: &str,
+    second: i64,
+) -> Result<AcceptanceEvaluationReceipt, StoreError> {
+    let mut input = request(
+        work,
+        through,
+        session,
+        Mode::SameSession,
+        vec![verdict(
+            1,
+            AcceptanceVerdict::Pass,
+            AcceptanceBasis::Judgment,
+            std::slice::from_ref(evidence),
+        )],
+        second,
+    );
+    input.attempt_key = Some(key.into());
+    record(store, &input)
+}
+
+/// Whether recording refused for want of the root's initial sighting.
+fn refused_for_no_sighting(answer: &Result<AcceptanceEvaluationReceipt, StoreError>) -> bool {
+    match answer {
+        Err(StoreError::AcceptanceEvaluationAdmissionRefused { cause, .. }) => matches!(
+            **cause,
+            AcceptanceEvaluationAdmissionCause::SourceRoot(ref root)
+                if root.mismatch == EvaluationRootMismatch::NoInitialSighting
+        ),
+        _ => false,
+    }
+}
+
+/// A claimed item with evaluation enabled and a host control session bound
+/// for the runner.
+fn evaluated_fixture() -> (Fixture, WorkItem, WorkClaim, ObjectId) {
+    let mut fixture = fixture("project-a");
+    enable(
+        &mut fixture.store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-evaluation",
+        5,
+    );
+    let (work, claim, note) = (
+        fixture.work.clone(),
+        fixture.claim.clone(),
+        fixture.evidence.clone(),
+    );
+    (fixture, work, claim, note)
+}
+
+#[test]
+fn without_a_named_root_the_read_finds_none_and_recording_checks_no_sighting() {
+    let (mut fixture, work, claim, note) = evaluated_fixture();
+    let read = sighting_read(&fixture.store, &work, claim.run_id, None);
+    assert_eq!(read.root, NamedRootAtCut::None {});
+    assert_eq!(read.current_binding, None);
+    assert!(!read.binding_changed);
+    assert_eq!(read.read_cut, read.head_cut);
+    let through = read.read_cut;
+    record_at(
+        &mut fixture.store,
+        &work,
+        "runner",
+        &note,
+        through,
+        "no-root",
+        10,
+    )
+    .expect("recording records the evaluation");
+}
+
+#[test]
+fn a_named_root_without_a_sighting_reads_absent_and_recording_refuses_until_it_is_sighted() {
+    let (mut fixture, work, claim, note) = evaluated_fixture();
+    let host = bind_control_for(
+        &mut fixture.store,
+        "runner",
+        "named-evaluation-host",
+        &[crate::domain::EffectClass::Observe],
+        at(8),
+    );
+    name_root(&mut fixture.store, &work, &claim, &host, 9, 8);
+    let before = sighting_read(&fixture.store, &work, claim.run_id, None);
+    let NamedRootAtCut::Bound {
+        workspace_id,
+        generation,
+        binding_event,
+        binding_position,
+        sighting,
+    } = &before.root
+    else {
+        panic!("a bound root: {before:?}");
+    };
+    assert_eq!(workspace_id, "workspace-B");
+    assert_eq!(*generation, 9);
+    assert_eq!(sighting, &InitialSighting::Absent {});
+    assert_eq!(before.current_binding.as_ref(), Some(binding_event));
+    assert!(!before.binding_changed);
+    assert!(*binding_position <= before.read_cut);
+    assert!(refused_for_no_sighting(&record_at(
+        &mut fixture.store,
+        &work,
+        "runner",
+        &note,
+        before.read_cut,
+        "before-sighting",
+        10
+    )));
+
+    host_verification_from_basis(
+        &mut fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "sighting-B",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        11,
+        source("workspace-B", 9),
+    );
+    let after = sighting_read(&fixture.store, &work, claim.run_id, None);
+    let NamedRootAtCut::Bound {
+        sighting: InitialSighting::Present {
+            position, revision, ..
+        },
+        ..
+    } = &after.root
+    else {
+        panic!("a sighted root: {after:?}");
+    };
+    assert_eq!(revision, "revision-B");
+    assert!(*position > before.read_cut && *position <= after.read_cut);
+    // The earlier cut still reads absent: a later record is never a
+    // sighting at an earlier cut.
+    let earlier = sighting_read(&fixture.store, &work, claim.run_id, Some(before.read_cut));
+    assert_eq!(earlier.read_cut, before.read_cut);
+    assert!(matches!(
+        earlier.root,
+        NamedRootAtCut::Bound {
+            sighting: InitialSighting::Absent {},
+            ..
+        }
+    ));
+    record_at(
+        &mut fixture.store,
+        &work,
+        "runner",
+        &note,
+        after.read_cut,
+        "after-sighting",
+        12,
+    )
+    .expect("recording records the evaluation");
+}
+
+#[test]
+fn a_quiet_checkpoint_in_the_root_is_a_sighting() {
+    let (mut fixture, work, claim, note) = evaluated_fixture();
+    let mut host = HostSession::bind(&mut fixture.store, &work, &claim, 6);
+    let store = &mut fixture.store;
+    host_binds(
+        store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        30,
+        "name-B",
+        30,
+    )
+    .expect("host names B");
+    assert!(matches!(
+        checkpoint_basis(
+            &mut host,
+            store,
+            workspace("workspace-B", "R2", Some(9)),
+            false,
+            40,
+        ),
+        Ok(ControlTurnCheckpointDecision::Checkpointed { .. })
+    ));
+    let read = sighting_read(store, &work, claim.run_id, None);
+    assert!(
+        matches!(
+            &read.root,
+            NamedRootAtCut::Bound {
+                sighting: InitialSighting::Present { revision, .. },
+                ..
+            } if revision == "R2"
+        ),
+        "{read:?}"
+    );
+    record_at(
+        store,
+        &work,
+        "runner",
+        &note,
+        read.read_cut,
+        "quiet-sighting",
+        50,
+    )
+    .expect("recording records the evaluation");
+}
+
+#[test]
+fn an_accounted_unadmitted_change_in_the_root_is_a_sighting() {
+    use crate::domain::{
+        ExecutionObserveInput, MeasuredBaseline, MeasuredSighting, ObservationCausality,
+        ObservationPolicyBasis, ObservationRootBasis, ObservedInterval, ObservedOccurrence,
+        ObservedSourceChange,
+    };
+    let (mut fixture, work, claim, note) = evaluated_fixture();
+    let host = HostSession::bind(&mut fixture.store, &work, &claim, 6);
+    let store = &mut fixture.store;
+    host_binds(
+        store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        30,
+        "name-B",
+        30,
+    )
+    .expect("host names B");
+    let before = sighting_read(store, &work, claim.run_id, None);
+    assert!(matches!(
+        before.root,
+        NamedRootAtCut::Bound {
+            sighting: InitialSighting::Absent {},
+            ..
+        }
+    ));
+    // The host reports a change in B between turns, against the root state
+    // it read at the capture cut.
+    let root = store
+        .read_named_root(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            claim.run_id,
+            claim.claim_id,
+        )
+        .expect("the host reads its root");
+    let run = load_work_run(&store.connection, claim.run_id).expect("run");
+    let policy = SqliteStore::load_active_control_policy(&store.connection).expect("policy");
+    let input = ExecutionObserveInput {
+        idempotency_key: "unadmitted-change-in-B".into(),
+        binding: crate::domain::ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: claim.work_id,
+            run_id: claim.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        },
+        root_basis: ObservationRootBasis {
+            capture_run_cut: root.read_cut.position,
+            latest_event: root.latest_event.as_ref().map(|event| event.event.clone()),
+            state: root.named_root.clone(),
+        },
+        observed_interval: ObservedInterval {
+            from: at(38),
+            through: at(39),
+        },
+        occurrence: ObservedOccurrence::InterTurnChange {
+            source_change: ObservedSourceChange::ContentComparison {
+                workspace_id: "workspace-B".into(),
+                baseline: MeasuredBaseline {
+                    workspace_id: "workspace-B".into(),
+                    source_revision: "revision-before".into(),
+                    observed_at: at(38),
+                },
+                sighting: MeasuredSighting {
+                    source_basis: workspace("workspace-B", "R3", Some(9)),
+                    observed_at: at(39),
+                },
+            },
+        },
+        causality: ObservationCausality::Unknown {},
+        policy_basis: ObservationPolicyBasis::AccountIfEligible {
+            project_policy_epoch: policy.epoch,
+            policy: policy.policy_id,
+            obligation_rule_set: policy.obligation_rule_set,
+        },
+    };
+    store
+        .record_unadmitted_execution_observation(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            &actor(&host.session_id.0),
+            input,
+            at(40),
+        )
+        .expect("an accounted change in B");
+    let after = sighting_read(store, &work, claim.run_id, None);
+    assert!(
+        matches!(
+            &after.root,
+            NamedRootAtCut::Bound {
+                sighting: InitialSighting::Present { revision, .. },
+                ..
+            } if revision == "R3"
+        ),
+        "{after:?}"
+    );
+    record_at(
+        store,
+        &work,
+        "runner",
+        &note,
+        after.read_cut,
+        "unadmitted-sighting",
+        50,
+    )
+    .expect("recording records the evaluation");
+}
+
+#[test]
+fn after_a_release_and_a_new_name_an_older_generation_sighting_does_not_count() {
+    let (mut fixture, work, claim, note) = evaluated_fixture();
+    let host = HostSession::bind(&mut fixture.store, &work, &claim, 6);
+    host_binds(
+        &mut fixture.store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        9,
+        "name-B-9",
+        9,
+    )
+    .expect("host names B");
+    let mut host = host;
+    assert!(matches!(
+        checkpoint_basis(
+            &mut host,
+            &mut fixture.store,
+            stated(Some(9), Some(SourceRootState::Named)),
+            false,
+            10,
+        ),
+        Ok(ControlTurnCheckpointDecision::Checkpointed { .. })
+    ));
+    let sighted = sighting_read(&fixture.store, &work, claim.run_id, None);
+    assert!(matches!(
+        sighted.root,
+        NamedRootAtCut::Bound {
+            sighting: InitialSighting::Present { .. },
+            ..
+        }
+    ));
+
+    release_runner(&mut fixture, &work, &claim, 20);
+    let released = sighting_read(&fixture.store, &work, claim.run_id, None);
+    assert_eq!(released.root, NamedRootAtCut::None {});
+    assert_eq!(released.current_binding, None);
+    // The binding recording would select at the earlier cut is gone at the
+    // head.
+    let at_sighted = sighting_read(&fixture.store, &work, claim.run_id, Some(sighted.read_cut));
+    assert!(at_sighted.binding_changed);
+
+    let current = fixture.store.get_work_item(work.work_id).expect("item");
+    let reclaimed =
+        super::super::claim(&mut fixture.store, &current, "second", "reclaim", 21, 3_600);
+    assert_eq!(reclaimed.claim_id, claim.claim_id);
+    let second = HostSession::bind(&mut fixture.store, &current, &reclaimed, 22);
+    host_binds(
+        &mut fixture.store,
+        &second,
+        &reclaimed,
+        "workspace-B",
+        10,
+        NamedRootBindingKind::Bound,
+        23,
+        "name-B-10",
+        23,
+    )
+    .expect("host names B again, at a higher generation");
+    let renamed = sighting_read(&fixture.store, &current, claim.run_id, None);
+    let NamedRootAtCut::Bound {
+        generation,
+        sighting,
+        binding_event,
+        ..
+    } = &renamed.root
+    else {
+        panic!("a bound root: {renamed:?}");
+    };
+    assert_eq!(*generation, 10);
+    assert_eq!(sighting, &InitialSighting::Absent {});
+    assert_eq!(renamed.current_binding.as_ref(), Some(binding_event));
+    let current = fixture.store.get_work_item(work.work_id).expect("item");
+    assert!(refused_for_no_sighting(&record_at(
+        &mut fixture.store,
+        &current,
+        "second",
+        &note,
+        renamed.read_cut,
+        "after-rename",
+        24
+    )));
+}
+
+#[test]
+fn a_binding_that_moved_after_the_cut_is_reported_and_an_ended_root_reads_none() {
+    let (mut fixture, work, claim, note) = evaluated_fixture();
+    let host = bind_control_for(
+        &mut fixture.store,
+        "runner",
+        "named-evaluation-host",
+        &[crate::domain::EffectClass::Observe],
+        at(8),
+    );
+    name_root(&mut fixture.store, &work, &claim, &host, 9, 8);
+    host_verification_from_basis(
+        &mut fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "sighting-B",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        9,
+        source("workspace-B", 9),
+    );
+    let first = sighting_read(&fixture.store, &work, claim.run_id, None);
+    name_root(&mut fixture.store, &work, &claim, &host, 10, 10);
+    let moved = sighting_read(&fixture.store, &work, claim.run_id, Some(first.read_cut));
+    assert!(moved.binding_changed);
+    assert_ne!(moved.current_binding, first.current_binding);
+    assert!(matches!(
+        moved.root,
+        NamedRootAtCut::Bound {
+            generation: 9,
+            sighting: InitialSighting::Present { .. },
+            ..
+        }
+    ));
+    // Recording refuses that cut as moved, before it looks for a sighting.
+    let answer = record_at(
+        &mut fixture.store,
+        &work,
+        "runner",
+        &note,
+        first.read_cut,
+        "cut-before-rename",
+        11,
+    );
+    assert!(
+        matches!(
+            answer,
+            Err(StoreError::AcceptanceEvaluationBasisMoved {
+                moved: EvaluationBasisMove::SourceChanged,
+                ..
+            })
+        ),
+        "{answer:?}"
+    );
+
+    fixture
+        .store
+        .bind_named_root(
+            &work.project_id,
+            &host.status.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            claim.claim_id,
+            claim.fence,
+            "workspace-B",
+            10,
+            at(10),
+            NamedRootBindingKind::Ended,
+            Some(crate::domain::NamedRootEndReason::ExplicitClear),
+            &mut actor("runner"),
+            "end-B-10",
+            at(12),
+        )
+        .expect("the host ends B");
+    let ended = sighting_read(&fixture.store, &work, claim.run_id, None);
+    assert_eq!(ended.root, NamedRootAtCut::None {});
+    assert_eq!(ended.current_binding, None);
+}
+
+#[test]
+fn a_read_outside_its_item_or_its_run_feed_is_refused_with_a_typed_code() {
+    let (mut fixture, work, claim, _) = evaluated_fixture();
+    let store = &mut fixture.store;
+    let refusal = |result: Result<NamedRootSightingRead, StoreError>| match result {
+        Err(StoreError::NamedRootSightingReadRefused { refusal, .. }) => refusal,
+        other => panic!("a typed refusal, not {other:?}"),
+    };
+    let head = cut(store, &work);
+    assert_eq!(
+        refusal(store.read_named_root_sighting(
+            &work.project_id,
+            "w-000000000000",
+            claim.run_id,
+            None
+        )),
+        NamedRootSightingReadRefusal::InvalidWorkRef
+    );
+    assert_eq!(
+        refusal(store.read_named_root_sighting(&work.project_id, "  ", claim.run_id, None)),
+        NamedRootSightingReadRefusal::InvalidWorkRef
+    );
+    let other = store
+        .create_work(
+            &root_request("project-a", "create-other-work", 30),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("another item");
+    let other_claim = super::super::claim(store, &other, "runner", "claim-other", 31, 3_600);
+    assert_eq!(
+        refusal(store.read_named_root_sighting(
+            &work.project_id,
+            &work.short_ref,
+            other_claim.run_id,
+            None
+        )),
+        NamedRootSightingReadRefusal::WrongRun
+    );
+    assert_eq!(
+        refusal(store.read_named_root_sighting(
+            &work.project_id,
+            &work.short_ref,
+            WorkRunId(uuid::Uuid::now_v7()),
+            None
+        )),
+        NamedRootSightingReadRefusal::WrongRun
+    );
+    for bad in [-1, head + 1] {
+        assert_eq!(
+            refusal(store.read_named_root_sighting(
+                &work.project_id,
+                &work.short_ref,
+                claim.run_id,
+                Some(bad)
+            )),
+            NamedRootSightingReadRefusal::InvalidCut,
+            "{bad}"
+        );
+    }
+    // Cut 0 is the lowest cut recording takes, and the read takes it too.
+    let first = store
+        .read_named_root_sighting(&work.project_id, &work.short_ref, claim.run_id, Some(0))
+        .expect("cut 0 is inside the run feed");
+    assert_eq!(first.read_cut, 0);
+    assert_eq!(first.root, NamedRootAtCut::None {});
+    assert!(!first.binding_changed);
+    // The same item, named by its full id, reads at the head.
+    let by_id = store
+        .read_named_root_sighting(
+            &work.project_id,
+            &work.work_id.0.to_string(),
+            claim.run_id,
+            Some(head),
+        )
+        .expect("the full id names the item");
+    assert_eq!(by_id.read_cut, head);
+    assert_eq!(by_id.head_cut, head);
+}
+
+/// Every path of a JSON value, objects joined with dots.
+fn json_paths(
+    prefix: &str,
+    value: &serde_json::Value,
+    paths: &mut std::collections::BTreeSet<String>,
+) {
+    if let serde_json::Value::Object(object) = value {
+        for (key, child) in object {
+            let path = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            json_paths(&path, child, paths);
+        }
+    } else {
+        paths.insert(prefix.to_owned());
+    }
+}
+
+/// The documented result table names exactly the fields the three result
+/// shapes carry, and lists the state values they take.
+#[test]
+fn the_documented_result_table_matches_every_result_shape() {
+    let doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/features/behavioral-control-plane.md"
+    ));
+    let table = doc
+        .split("<!-- named-root-sighting-read:begin -->")
+        .nth(1)
+        .and_then(|rest| rest.split("<!-- named-root-sighting-read:end -->").next())
+        .expect("the result table is marked");
+    let rows: Vec<(String, String)> = table
+        .lines()
+        .filter_map(|line| {
+            let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+            let field = cells.get(1)?.strip_prefix('`')?.strip_suffix('`')?;
+            Some((field.to_owned(), (*cells.get(2)?).to_owned()))
+        })
+        .collect();
+    let documented: std::collections::BTreeSet<String> =
+        rows.iter().map(|(field, _)| field.clone()).collect();
+
+    let object = ObjectId::from_canonical_bytes(b"event");
+    let shape = |root: NamedRootAtCut| NamedRootSightingRead {
+        schema_version: NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION,
+        project_id: ProjectId("project-a".into()),
+        work_id: WorkId(uuid::Uuid::now_v7()),
+        run_id: WorkRunId(uuid::Uuid::now_v7()),
+        read_cut: 3,
+        head_cut: 4,
+        current_binding: Some(object.clone()),
+        binding_changed: true,
+        root,
+    };
+    let bound = |sighting| NamedRootAtCut::Bound {
+        workspace_id: "workspace-B".into(),
+        generation: 9,
+        binding_event: object.clone(),
+        binding_position: 2,
+        sighting,
+    };
+    let mut emitted = std::collections::BTreeSet::new();
+    for read in [
+        shape(NamedRootAtCut::None {}),
+        shape(bound(InitialSighting::Absent {})),
+        shape(bound(InitialSighting::Present {
+            record: object.clone(),
+            position: 3,
+            revision: "R1".into(),
+        })),
+    ] {
+        let value = serde_json::to_value(&read).expect("serialize");
+        json_paths("", &value, &mut emitted);
+        // Each shape reads back as itself; nothing is dropped.
+        let back: NamedRootSightingRead = serde_json::from_value(value).expect("read back");
+        assert_eq!(back, read);
+    }
+    assert_eq!(documented, emitted);
+    let values = |field: &str| {
+        rows.iter()
+            .find(|(name, _)| name == field)
+            .map(|(_, kind)| kind.clone())
+            .expect("documented")
+    };
+    for state in ["`none`", "`bound`"] {
+        assert!(values("root.state").contains(state), "{state}");
+    }
+    for state in ["`absent`", "`present`"] {
+        assert!(values("root.sighting.state").contains(state), "{state}");
+    }
+    // An unknown field is refused at every level, never ignored.
+    let present = serde_json::to_value(shape(bound(InitialSighting::Present {
+        record: object.clone(),
+        position: 3,
+        revision: "R1".into(),
+    })))
+    .expect("serialize");
+    let none = serde_json::to_value(shape(NamedRootAtCut::None {})).expect("serialize");
+    let mut cases = Vec::new();
+    let mut extra = none.clone();
+    extra["root"]["sighting"] = serde_json::json!({ "state": "absent" });
+    cases.push(extra);
+    let mut extra = none;
+    extra["reader"] = serde_json::json!("host");
+    cases.push(extra);
+    let mut extra = present.clone();
+    extra["root"]["extra"] = serde_json::json!(1);
+    cases.push(extra);
+    let mut extra = present;
+    extra["root"]["sighting"]["extra"] = serde_json::json!(1);
+    cases.push(extra);
+    for extra in cases {
+        assert!(
+            serde_json::from_value::<NamedRootSightingRead>(extra.clone()).is_err(),
+            "{extra}"
+        );
     }
 }

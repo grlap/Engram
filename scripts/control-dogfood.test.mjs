@@ -3103,6 +3103,28 @@ test("source recovery keeps a judgment through host confirmation and separates f
       run_id: "00000000-0000-0000-0000-000000000007", claim_id: binding.claim_id });
     assert.equal(unknownRun.status, "error", JSON.stringify(unknownRun));
     assert.equal(unknownRun.error.code, "named_root_read_refused");
+    // The host reads the root's initial sighting with no routing token: the
+    // finished run still reads the root recording selected, sighted at R2.
+    const sighting = ok(await client.request({ operation: "named_root_sighting_read", work_ref: ref,
+      run_id: binding.run_id }));
+    assert.deepEqual(Object.keys(sighting).sort(), ["binding_changed", "current_binding", "head_cut", "project_id",
+      "read_cut", "root", "run_id", "schema_version", "work_id"]);
+    assert.equal(sighting.schema_version, 1);
+    assert.equal(sighting.run_id, binding.run_id);
+    assert.equal(sighting.work_id, binding.work_id);
+    assert.equal(sighting.read_cut, sighting.head_cut);
+    assert.equal(sighting.binding_changed, false);
+    assert.equal(sighting.root.state, "bound");
+    assert.equal(sighting.root.workspace_id, workspace);
+    assert.equal(sighting.root.binding_event, rootRead.latest_event.event);
+    assert.equal(sighting.current_binding, rootRead.latest_event.event);
+    assert.equal(sighting.root.sighting.state, "present");
+    assert.equal(sighting.root.sighting.revision, "R2");
+    assert.match(sighting.root.sighting.record, /^[0-9a-f]{32}$/u);
+    const wrongRun = await client.request({ operation: "named_root_sighting_read", work_ref: ref,
+      run_id: "00000000-0000-0000-0000-000000000007" });
+    assert.equal(wrongRun.status, "error", JSON.stringify(wrongRun));
+    assert.equal(wrongRun.error.code, "named_root_sighting_read_wrong_run");
     await client.close();
     client = null;
 

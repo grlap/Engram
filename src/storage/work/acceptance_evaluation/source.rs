@@ -1,6 +1,8 @@
 //! An evaluation's named source root and judged revision: the root
 //! selected at a cut, sighting horizons, the root binding and source
-//! assessments, declaration confirmation, and stale bound citations.
+//! assessments, declaration confirmation, stale bound citations, and a
+//! host's read of a root's initial sighting, which selects the root and the
+//! sighting with recording's own functions and writes nothing.
 
 use super::{
     AcceptanceVerdict, Citation, Connection, CriterionVerdict, EvaluationRootMismatch,
@@ -9,10 +11,15 @@ use super::{
     WorkRunId, admission, citation_position, classify_citation, latest_named_root_binding_on,
     latest_named_root_sighting_on, load_typed_work_object, load_work_claim_optional, params,
 };
+use crate::domain::{
+    InitialSighting, NAMED_ROOT_SIGHTING_READ_BYTES, NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION,
+    NamedRootAtCut, NamedRootSightingRead, NamedRootSightingReadRefusal as Refusal, ProjectId,
+};
 use crate::storage::work::feeds::{
     SOURCE_CHANGED_SQL, SOURCE_RECORD_SQL, latest_source_mutation_on, newest_measured_sighting_on,
     source_basis_sql, unadmitted_barrier_on,
 };
+use crate::storage::work::{current_run_feed_cut_on, load_work_run, resolve_work_ref_on};
 
 pub(super) struct NamedEvaluationRoot {
     pub(super) position: i64,
@@ -59,6 +66,25 @@ pub(super) fn off_named_root(
     })
 }
 
+/// The named root's newest sighting at or before `through`, the record
+/// recording an evaluation looks for: a source record in the root's
+/// workspace, at its generation, with the root named. A quiet record counts.
+pub(super) fn named_root_sighting_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    root: &NamedEvaluationRoot,
+    through: i64,
+) -> Result<Option<(i64, SourceObservation)>, StoreError> {
+    latest_named_root_sighting_on(
+        connection,
+        run_id,
+        &root.event.workspace_id,
+        root.event.generation,
+        through,
+        false,
+    )
+}
+
 /// The revision the run was last seen at, at or before `through`: that of
 /// the newest source record there that carries one. Verification
 /// and environment records are left out: they carry the basis of the check
@@ -73,15 +99,11 @@ pub(super) fn revision_seen_through(
     root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<String>, StoreError> {
     if let Some(root) = root {
-        return Ok(latest_named_root_sighting_on(
-            connection,
-            run_id,
-            &root.event.workspace_id,
-            root.event.generation,
-            through,
-            false,
-        )?
-        .and_then(|(_, observation)| observation.source_basis.map(|basis| basis.source_revision)));
+        return Ok(
+            named_root_sighting_on(connection, run_id, root, through)?.and_then(
+                |(_, observation)| observation.source_basis.map(|basis| basis.source_revision),
+            ),
+        );
     }
     if let Some(measured) = measured_after_unadmitted(connection, run_id, through)? {
         return Ok(Some(measured));
@@ -691,4 +713,102 @@ pub(super) fn judged_revision(
             .workspace_id
             .as_ref()
             .is_none_or(|workspace| *workspace == basis.workspace_id)
+}
+
+fn sighting_read_refused(refusal: Refusal, reason: impl Into<String>) -> StoreError {
+    StoreError::NamedRootSightingReadRefused {
+        refusal,
+        reason: reason.into(),
+    }
+}
+
+/// Reads, on `connection`'s snapshot, the root recording would select for
+/// `run_id` at `run_cut` (the head when `None`) and whether it has a
+/// sighting there. `work_ref` names an item of `project_id`, and the run
+/// must be one of its runs.
+pub(in crate::storage) fn read_named_root_sighting_on(
+    connection: &Connection,
+    project_id: &ProjectId,
+    work_ref: &str,
+    run_id: WorkRunId,
+    run_cut: Option<i64>,
+) -> Result<NamedRootSightingRead, StoreError> {
+    let item = match resolve_work_ref_on(connection, project_id, work_ref) {
+        Ok(item) => item,
+        Err(StoreError::InvalidWork(reason)) => {
+            return Err(sighting_read_refused(Refusal::InvalidWorkRef, reason));
+        }
+        Err(error) => return Err(error),
+    };
+    let known: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM work_runs WHERE run_id = ?1)",
+        [run_id.0.to_string()],
+        |row| row.get(0),
+    )?;
+    if !known {
+        return Err(sighting_read_refused(
+            Refusal::WrongRun,
+            "the run is unknown in this store",
+        ));
+    }
+    let run = load_work_run(connection, run_id)?;
+    if run.work_id != item.work_id {
+        return Err(sighting_read_refused(
+            Refusal::WrongRun,
+            "the run belongs to another item",
+        ));
+    }
+    let head = current_run_feed_cut_on(connection, run_id)?.position;
+    let cut = run_cut.unwrap_or(head);
+    if cut < 0 || cut > head {
+        return Err(sighting_read_refused(
+            Refusal::InvalidCut,
+            format!("the cut {cut} is not between 0 and the run-feed head {head}"),
+        ));
+    }
+    let at_cut = named_root_at_on(connection, run_id, cut)?;
+    let at_head = named_root_at_on(connection, run_id, head)?;
+    let current_binding = at_head.map(|root| root.event_id);
+    let binding_changed = at_cut.as_ref().map(|root| &root.event_id) != current_binding.as_ref();
+    let root = match at_cut {
+        None => NamedRootAtCut::None {},
+        Some(root) => {
+            let sighting = match named_root_sighting_on(connection, run_id, &root, cut)? {
+                Some((position, observation)) => match observation.source_basis {
+                    Some(basis) => InitialSighting::Present {
+                        record: observation.record,
+                        position,
+                        revision: basis.source_revision,
+                    },
+                    None => InitialSighting::Absent {},
+                },
+                None => InitialSighting::Absent {},
+            };
+            NamedRootAtCut::Bound {
+                workspace_id: root.event.workspace_id,
+                generation: root.event.generation,
+                binding_event: root.event_id,
+                binding_position: root.position,
+                sighting,
+            }
+        }
+    };
+    let read = NamedRootSightingRead {
+        schema_version: NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION,
+        project_id: project_id.clone(),
+        work_id: item.work_id,
+        run_id,
+        read_cut: cut,
+        head_cut: head,
+        current_binding,
+        binding_changed,
+        root,
+    };
+    if serde_json::to_vec(&read)?.len() > NAMED_ROOT_SIGHTING_READ_BYTES {
+        return Err(sighting_read_refused(
+            Refusal::ResponseTooLarge,
+            format!("the result does not fit {NAMED_ROOT_SIGHTING_READ_BYTES} bytes"),
+        ));
+    }
+    Ok(read)
 }

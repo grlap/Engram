@@ -23,3 +23,5 @@ pub const COMPLETION_ENVIRONMENT_SCHEMA_VERSION: u16 = 1;
 pub const OBLIGATION_RULE_SET_SCHEMA_VERSION: u16 = 1;
 /// Canonical intent schema for project-policy administration operations.
 pub const CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION: u16 = 1;
+/// Result schema of the host's named-root sighting read.
+pub const NAMED_ROOT_SIGHTING_READ_SCHEMA_VERSION: u16 = 1;
