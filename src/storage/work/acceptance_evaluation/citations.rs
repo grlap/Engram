@@ -160,7 +160,8 @@ fn admit_pass_citation(
             _ => Err(context.refused(
                 EvaluationCitationMismatch::PassedVerificationRequired,
                 format!(
-                    "criterion {position}: an observed pass requires host-minted verification evidence with a passed result"
+                    "criterion {position}: an observed pass requires every citation to be host-minted verification evidence with a passed result; {} is not",
+                    context.citation
                 ),
             )),
         },
@@ -178,7 +179,8 @@ fn admit_pass_citation(
                 _ => Err(context.refused(
                     EvaluationCitationMismatch::PassingGateRequired,
                     format!(
-                        "criterion {position}: an asserted pass requires a gate record with no failure labels"
+                        "criterion {position}: an asserted pass requires every citation to be a gate record with no failure labels; {} is not",
+                        context.citation
                     ),
                 )),
             }

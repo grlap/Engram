@@ -34,6 +34,22 @@ pub(crate) fn criteria_without_evidence_link(
         .collect()
 }
 
+/// Whether any of `positions` is a criterion whose binding still owes its
+/// check: the binding's newest obligation, matched as completion matches it,
+/// is open. A waived or satisfied one owes nothing, and an unbound criterion
+/// has no check to pass.
+pub(crate) fn unlinked_criteria_owe_bound_check(
+    item: &crate::WorkItem,
+    records: &[WorkObligationRecord],
+    positions: &[usize],
+) -> bool {
+    item.acceptance_bindings.iter().any(|binding| {
+        positions.contains(&binding.criterion)
+            && super::binding_obligation(records, binding)
+                .is_some_and(|record| record.state == crate::domain::WorkObligationState::Open)
+    })
+}
+
 impl SqliteStore {
     /// Guidance at the current claim's named-root cut; completion classifies
     /// again. A bounded page loads each run's claim and root once.

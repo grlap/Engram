@@ -839,14 +839,25 @@ fn an_evaluation_under_a_named_root_judges_only_that_root_as_it_stands() {
     let mut named = named_evaluation();
     let cut_now = |named: &NamedEvaluation| cut(&named.fixture.store, &named.work);
     let cut_a = cut_now(&named);
-    let foreign = refusal(evaluate_declared(
-        &mut named,
-        cut_a,
-        "workspace-A",
-        "revision-B",
-        "declares-A",
-        10,
-    ));
+    let snapshot = test_database_shape_snapshot(&named.fixture.store.connection).unwrap();
+    let foreign = typed_cause(
+        evaluate_declared(
+            &mut named,
+            cut_a,
+            "workspace-A",
+            "revision-B",
+            "declares-A",
+            10,
+        ),
+        Typed::Root(
+            EvaluationRootMismatch::DeclaredWorkspaceMismatch,
+            Remedy::EvaluateNamedRoot,
+        ),
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&named.fixture.store.connection).unwrap(),
+        snapshot
+    );
     assert!(
         foreign.contains("declares a workspace other than the claim's named source root"),
         "{foreign}"
@@ -1544,5 +1555,35 @@ fn a_late_declaration_under_a_named_root_records_and_an_off_root_check_still_cou
     assert_eq!(
         stale_reason(store, &work),
         Some(AcceptanceStaleReason::Mutation)
+    );
+}
+
+/// A judged source the named root does not confirm selects the same remedy
+/// as a declared foreign workspace. Admission refuses a sighting after the
+/// cut as a moved basis first, so no recorded history reaches this refusal;
+/// its mapping is pinned on the root the claim named.
+#[test]
+fn a_judged_source_mismatch_selects_the_named_root_remedy() {
+    let named = named_evaluation();
+    let store = &named.fixture.store;
+    let through = cut(store, &named.work);
+    let root = super::super::named_root_at_on(&store.connection, named.claim.run_id, through)
+        .expect("read the named root")
+        .expect("the claim names a root");
+    let refusal = super::super::admission::root_refusal(
+        named.work.work_id,
+        &root,
+        through,
+        EvaluationRootMismatch::JudgedSourceMismatch,
+        None,
+        Some("revision-B".into()),
+        "the evaluated source does not match the named root's newest sighting",
+    );
+    typed_cause(
+        Err(refusal),
+        Typed::Root(
+            EvaluationRootMismatch::JudgedSourceMismatch,
+            Remedy::EvaluateNamedRoot,
+        ),
     );
 }

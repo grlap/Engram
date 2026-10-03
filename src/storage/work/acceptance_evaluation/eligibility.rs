@@ -7,8 +7,8 @@ use super::{
     AcceptanceEvaluationMode, AcceptanceEvaluationPolicy, ActorContext, Connection,
     DETACH_PROVENANCE_SOURCE, EligibilityContext, EvaluationEligibilityMismatch, IdentityShape,
     ObjectId, ProvenanceRelation, RecordAcceptanceEvaluationRequest, SameSessionRefusal, SessionId,
-    StoreError, WorkEvent, WorkItem, WorkRunId, WorkTransition, canonical_work_events_for_item,
-    load_typed_work_object, params, refused,
+    StoreError, WorkEvent, WorkItem, WorkRunId, WorkTransition,
+    canonical_work_mark_events_for_item, load_typed_work_object, params, refused,
 };
 
 /// Every session that ever held the run, from its immutable history: claim,
@@ -161,7 +161,7 @@ fn ineligible_mark(policy: &AcceptanceEvaluationPolicy, why: &str) -> String {
         None => String::new(),
     };
     format!(
-        "this task's same-session mark {why}, so it cannot waive independent evaluation: have a session that never held or executed this run clear the mark and set it again{instead}"
+        "this task's same-session mark {why}, so it cannot waive independent evaluation: to keep same-session evaluation, have a session that never held or executed this run clear the mark and set it again{instead}"
     )
 }
 
@@ -195,20 +195,21 @@ impl SessionStanding<'_> {
 }
 
 /// Who set the task's current same-session mark: the session of the
-/// Created or Revised event that turned it on, found by walking the item's
-/// own events in order. Revisions that keep the mark keep its author;
+/// Created or Revised event that turned it on, found by walking, in order,
+/// the item's first event and its creations and revisions, the only events
+/// that set or clear the mark. Revisions that keep the mark keep its author;
 /// clearing or changing it ends the mark, and setting it again authors a new
 /// one. `None` when the mark's author has no recorded session, or no native
 /// event of the item shows the mark being turned on, as for an item whose
 /// earlier history was restored rather than recorded here, or a successor
 /// whose creation only carried the mark over from the item it was detached
 /// from: the session that detached it did not set the mark.
-fn same_session_mark_author(
+pub(super) fn same_session_mark_author(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<Option<SessionId>, StoreError> {
     Ok(mark_author(
-        canonical_work_events_for_item(connection, item.work_id)?
+        canonical_work_mark_events_for_item(connection, item.work_id)?
             .into_iter()
             .map(|event| MarkStep {
                 transition: match event.transition {
@@ -289,14 +290,19 @@ pub(super) fn same_session_ineligibility(
     standing: &SessionStanding<'_>,
 ) -> Result<Option<SameSessionRefusal>, StoreError> {
     if mode == AcceptanceEvaluationMode::SubAgent {
+        // A task marked for sub-agent evaluation refuses every other mode,
+        // so its advice never names one.
+        let instead = if item.evaluation_mode == Some(AcceptanceEvaluationMode::SubAgent) {
+            "record it from the sub-agent's own child session, or request a sub-agent evaluation from the host"
+        } else {
+            host_evaluation_words(policy).unwrap_or("record it from the sub-agent's own session")
+        };
         return Ok(standing
             .evaluator
             .is_some_and(|evaluator| standing.holds_or_held(evaluator))
             .then(|| SameSessionRefusal {
                 reason: format!(
-                    "a sub_agent evaluation must be recorded from a distinct child session with a holder or executor as its parent; this one comes from a session that holds, executes or held the run, which makes it the executor's own evaluation: {}",
-                    host_evaluation_words(policy)
-                        .unwrap_or("record it from the sub-agent's own session")
+                    "a sub_agent evaluation must be recorded from a distinct child session with a holder or executor as its parent; this one comes from a session that holds, executes or held the run, which makes it the executor's own evaluation: {instead}"
                 ),
                 mismatch: EvaluationEligibilityMismatch::SubAgentEvaluatorAffiliated,
                 mark_author: None,

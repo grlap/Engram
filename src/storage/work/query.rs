@@ -1522,16 +1522,46 @@ pub(in crate::storage) fn canonical_work_events_for_item(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<WorkEvent>, StoreError> {
-    let mut statement = connection.prepare(
+    item_events(connection, work_id, "")
+}
+
+/// The item's canonical events that can bear on its evaluation-mode mark, in
+/// order: its first event, the baseline that tells a mark carried in by
+/// restored history from one set here, and every creation or revision after
+/// it. Only a creation or a revision sets or clears the mark, so every event
+/// left out repeats the mark of the one before it, and the bodies fetched and
+/// decoded do not grow with claims, notes or gates. The filter itself may
+/// still visit the item's whole event index.
+pub(in crate::storage) fn canonical_work_mark_events_for_item(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<WorkEvent>, StoreError> {
+    item_events(
+        connection,
+        work_id,
+        "AND (json_extract(object.canonical_json, '$.transition.kind') IN ('created', 'revised')
+           OR entry.position = (SELECT MIN(first.position) FROM work_feed_entries first
+             WHERE first.feed_kind = 'project' AND first.object_kind = 'work_event'
+               AND first.work_id = ?1))",
+    )
+}
+
+/// The item's canonical events that also meet `filter`, in feed order.
+fn item_events(
+    connection: &Connection,
+    work_id: WorkId,
+    filter: &str,
+) -> Result<Vec<WorkEvent>, StoreError> {
+    let mut statement = connection.prepare(&format!(
         "SELECT object.object_id, object.canonical_json
          FROM objects object
          JOIN work_feed_entries entry ON entry.object_id = object.object_id
          WHERE object.object_kind = 'work_event'
            AND entry.feed_kind = 'project'
            AND entry.object_kind = 'work_event'
-           AND entry.work_id = ?1
-         ORDER BY entry.position",
-    )?;
+           AND entry.work_id = ?1 {filter}
+         ORDER BY entry.position"
+    ))?;
     statement
         .query_map([work_id.0.to_string()], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))

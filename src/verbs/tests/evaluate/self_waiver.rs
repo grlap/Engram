@@ -178,6 +178,8 @@ fn refusal(result: Result<Receipt, VerbError>) -> String {
     result.expect_err("the evaluation refuses").to_string()
 }
 
+// B59: an unmarked task in a project that admits another mode refuses its
+// holder's same-session evaluation; one that admits only same-session records.
 #[test]
 fn an_unmarked_task_refuses_its_holders_own_evaluation_while_another_mode_is_admitted() {
     let both = project("unmarked-both", &BOTH);
@@ -206,6 +208,8 @@ fn an_unmarked_task_refuses_its_holders_own_evaluation_while_another_mode_is_adm
         .expect("the holder's own evaluation records where no other mode is admitted");
 }
 
+// B60: a same-session mark set by the session that executes, at creation or
+// after a failed independent evaluation, waives nothing.
 #[test]
 fn a_mark_its_executor_set_never_waives_independence() {
     // Set at creation by the session that later executes.
@@ -252,6 +256,7 @@ fn a_mark_its_executor_set_never_waives_independence() {
     );
 }
 
+// B61: a peer's mark keeps its author through other revisions, and done seals.
 #[test]
 fn a_peers_mark_is_accepted_and_keeps_its_author_through_other_revisions() {
     let project = project("peer-mark", &BOTH);
@@ -291,6 +296,8 @@ fn a_peers_mark_is_accepted_and_keeps_its_author_through_other_revisions() {
     assert_eq!(done.value["acceptance"]["mode"], "same_session");
 }
 
+// B62: once the mark's author holds the run, done reads the evaluation stale
+// (policy) and the author's own evaluation refuses.
 #[test]
 fn a_mark_whose_author_later_holds_the_run_no_longer_admits_same_session() {
     let project = project("author-holds", &BOTH);
@@ -327,7 +334,15 @@ fn a_mark_whose_author_later_holds_the_run_no_longer_admits_same_session() {
     let refused = project.done(&project.peer, &work, 7);
     assert!(refused.owed, "{}", refused.text());
     assert_eq!(refused.value["code"], "acceptance_evaluation_stale");
-    // The task stays marked, so the remedy names its mode, not another.
+    // The task stays marked, so the remedy names its mode, not another, in
+    // the structured remedy as in the reminder.
+    let remedy = refused.value["remedy"].as_str().expect("remedy");
+    assert!(
+        remedy.contains("no longer admits it")
+            && remedy.contains("marked for same-session evaluation")
+            && !remedy.contains("independent"),
+        "{remedy}"
+    );
     assert!(
         refused.text().contains("stale (policy)")
             && refused
@@ -344,6 +359,8 @@ fn a_mark_whose_author_later_holds_the_run_no_longer_admits_same_session() {
     );
 }
 
+// B63: a sub-agent evaluation from the holder's own session refuses, one from a
+// distinct child records and seals, and stales once that child takes the run.
 #[test]
 fn a_sub_agent_evaluation_counts_only_from_its_own_child_session() {
     let project = project(
@@ -459,7 +476,7 @@ fn a_record_without_its_evaluator_is_stale_identity_with_the_tasks_remedy() {
     let text = refused.text();
     assert!(
         text.contains("stale (identity)")
-            && text.contains("or the record lacks a session its mode requires")
+            && text.contains("or the record lacks a session or execution identity its mode requires, or carries one admission refuses")
             && text.contains("record one in that mode with evaluate")
             && !text.contains("request an independent"),
         "{text}"
@@ -472,6 +489,8 @@ fn a_record_without_its_evaluator_is_stale_identity_with_the_tasks_remedy() {
     assert!(!done.owed, "{}", done.text());
 }
 
+// B64: a mark a detach carried over has no author on the successor until a
+// peer clears it and sets it again.
 #[test]
 fn a_mark_a_detach_carries_over_has_no_author_on_the_successor() {
     let project = project("detached", &BOTH);
@@ -522,11 +541,44 @@ fn a_mark_a_detach_carries_over_has_no_author_on_the_successor() {
     project.take(&project.agent, &successor, 8);
     // The session that detached it carried the mark over; it did not set
     // it, so the executor's own mark still waives nothing.
-    let words = refusal(project.evaluate(&project.agent, &successor, "same_session", "pass", 10));
+    let error = project
+        .evaluate(&project.agent, &successor, "same_session", "pass", 10)
+        .expect_err("the carried-over mark waives nothing");
+    let words = error.to_string();
     assert!(
         words.contains("has no author recorded on this item")
             && words.contains("clear the mark and set it again"),
         "{words}"
+    );
+    // Its typed cause names the unrecorded author and asks for an eligible
+    // evaluation, the remedy the word advice repeats.
+    let StoreError::AcceptanceEvaluationAdmissionRefused { cause, .. } = &error.error else {
+        panic!("expected a typed admission refusal, got {:?}", error.error);
+    };
+    let crate::domain::AcceptanceEvaluationAdmissionCause::Eligibility(cause) = cause.as_ref()
+    else {
+        panic!("eligibility");
+    };
+    assert_eq!(
+        (cause.mismatch, cause.remedy, cause.mark_author.clone()),
+        (
+            crate::domain::EvaluationEligibilityMismatch::MarkAuthorUnrecorded,
+            crate::domain::EvaluationAdmissionRemedy::RequestEligibleEvaluation,
+            None
+        )
+    );
+    let value = crate::mcp::store_error_value(&error.error);
+    assert_eq!(
+        value["error"]["details"]["cause"]["mismatch"],
+        "mark_author_unrecorded"
+    );
+    assert_eq!(
+        error.guidance().reminders,
+        vec![
+            value["error"]["details"]["remedy"]
+                .as_str()
+                .expect("remedy")
+        ]
     );
     // Once a peer clears the mark and sets it again, the peer is its author.
     project
@@ -710,5 +762,149 @@ fn a_completion_sealed_before_the_rules_tightened_is_unchanged() {
             .contains("acceptance: evaluated (same_session, asserted) by "),
         "{}",
         shown.text()
+    );
+}
+
+#[test]
+fn a_task_marked_sub_agent_is_never_advised_toward_another_mode() {
+    let project = project(
+        "pinned-sub-agent",
+        &[
+            AcceptanceEvaluationMode::SameSession,
+            AcceptanceEvaluationMode::SubAgent,
+            AcceptanceEvaluationMode::IndependentSession,
+        ],
+    );
+    let work = project.add(&project.peer, Some("sub_agent"), 1);
+    project.take(&project.agent, &work, 2);
+    // Recorded from the holder's own session on a task marked sub_agent: the
+    // advice keeps to that mode, though the project admits independent ones.
+    let error = project
+        .evaluate(&project.agent, &work, "sub_agent", "pass", 4)
+        .expect_err("the holder's own sub-agent evaluation refuses");
+    let words = error.to_string();
+    assert!(
+        words.contains("must be recorded from a distinct child session")
+            && words.contains(
+                "record it from the sub-agent's own child session, or request a sub-agent evaluation from the host"
+            )
+            && !words.contains("independent"),
+        "{words}"
+    );
+    let guidance = error.guidance();
+    assert!(
+        guidance
+            .reminders
+            .iter()
+            .any(|line| line.contains("inspect the evaluator's session")),
+        "{:?}",
+        guidance.reminders
+    );
+}
+
+#[test]
+fn a_mark_author_refusal_needs_a_never_holding_session_only_to_set_same_session_again() {
+    let project = project("mark-author-remedy", &BOTH);
+    let work = project.add(&project.agent, Some("same_session"), 1);
+    project.take(&project.agent, &work, 2);
+    let error = project
+        .evaluate(&project.agent, &work, "same_session", "pass", 4)
+        .expect_err("the executor's own mark waives nothing");
+    let remedy = error.guidance().reminders.join(" | ");
+    assert!(
+        remedy.contains(
+            "clear the task's evaluation mark or change it to another mode the project admits"
+        ) && remedy.contains(
+            "only setting same_session again needs a session that never held or executed this run"
+        ),
+        "{remedy}"
+    );
+}
+
+#[test]
+fn a_policy_that_now_requires_observed_passes_names_that_cause() {
+    let project = project(
+        "observed-after-asserted",
+        &[AcceptanceEvaluationMode::SameSession],
+    );
+    let work = project.add(&project.peer, Some("same_session"), 1);
+    project.take(&project.agent, &work, 2);
+    // The holder records an asserted pass citing its passing gate, which the
+    // policy admits while its mechanical basis is asserted.
+    let shown = project.agent.show(&work, at(3)).expect("show");
+    let store = SqliteStore::open(&project.database).expect("store");
+    let run = store
+        .resolve_work_ref(&project.id, &work)
+        .expect("item")
+        .active_run_id
+        .expect("run");
+    let gates: Vec<String> = store
+        .work_run_evidence(run)
+        .expect("run evidence")
+        .into_iter()
+        .map(|hash| hash.as_str().to_owned())
+        .collect();
+    drop(store);
+    project
+        .agent
+        .evaluate(
+            EvaluateInput {
+                acceptance_basis: shown.value["acceptance_basis"]
+                    .as_i64()
+                    .expect("acceptance basis"),
+                ..evaluate_input(
+                    &work,
+                    shown.value["evidence_basis"]
+                        .as_i64()
+                        .expect("evidence basis"),
+                    vec![verdict(1, "pass", "asserted", &gates)],
+                )
+            },
+            at(4),
+        )
+        .expect("an asserted pass records");
+    // The policy now requires observed passes.
+    SqliteStore::open(&project.database)
+        .expect("store")
+        .set_acceptance_evaluation_policy(
+            &AcceptanceEvaluationPolicy {
+                allowed_modes: vec![AcceptanceEvaluationMode::SameSession],
+                mechanical_basis: MechanicalBasis::Observed,
+                require_source_freshness: false,
+            },
+            &ActorContext {
+                actor_id: "policy-admin".into(),
+                actor_kind: "host_operator".into(),
+                assurance: AssuranceLevel::Asserted,
+                run_id: None,
+                session_id: None,
+                source_tool: Some("verbs_test".into()),
+                source_skill: None,
+                provenance_chain: Vec::<ProvenanceLink>::new(),
+                reason: "require observed passes".into(),
+            },
+            "require-observed",
+            None,
+            at(5),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("strengthen the mechanical basis");
+    let refused = project.done(&project.agent, &work, 6);
+    assert_eq!(refused.value["code"], "acceptance_evaluation_stale");
+    let text = refused.text();
+    assert!(
+        text.contains("stale (policy)")
+            && text
+                .contains("the policy now requires observed passes and it holds an asserted one")
+            && text.contains("record one in that mode with evaluate")
+            && !text.contains("independent"),
+        "{text}"
+    );
+    let remedy = refused.value["remedy"].as_str().expect("remedy");
+    assert!(
+        remedy.contains("the policy now requires observed passes and it holds an asserted one")
+            && remedy.contains("record one in that mode with evaluate")
+            && !remedy.contains("independent"),
+        "{remedy}"
     );
 }

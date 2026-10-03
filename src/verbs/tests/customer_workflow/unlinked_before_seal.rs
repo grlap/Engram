@@ -69,7 +69,7 @@ fn a_held_self_asserted_item_names_its_unlinked_criteria_before_the_seal() {
         0,
     );
     claim_item(&verbs, &reference, 1);
-    let three = "criteria 1, 2, 3 have no evidence link yet; link evidence in done, or pass the bound check first";
+    let three = "criteria 1, 2, 3 have no evidence link yet; link evidence in done";
 
     // The holder's show names them after the holder's existing guidance, and
     // its JSON states the fact.
@@ -208,9 +208,7 @@ fn the_unlinked_reminder_names_one_criterion_and_caps_many_with_an_exact_count()
     claim_item(&verbs, &one, 1);
     assert_eq!(
         unlinked_lines(&verbs.show(&one, at(2)).expect("show")),
-        vec![
-            "criterion 1 has no evidence link yet; link evidence in done, or pass the bound check first"
-        ]
+        vec!["criterion 1 has no evidence link yet; link evidence in done"]
     );
     let criteria: Vec<String> = (1..=10).map(|n| format!("Outcome {n}")).collect();
     let criteria: Vec<&str> = criteria.iter().map(String::as_str).collect();
@@ -220,7 +218,7 @@ fn the_unlinked_reminder_names_one_criterion_and_caps_many_with_an_exact_count()
     assert_eq!(
         unlinked_lines(&shown),
         vec![
-            "criteria 1, 2, 3, 4, 5, 6, 7, 8 and 2 more have no evidence link yet; link evidence in done, or pass the bound check first"
+            "criteria 1, 2, 3, 4, 5, 6, 7, 8 and 2 more have no evidence link yet; link evidence in done"
         ]
     );
     assert_eq!(
@@ -314,8 +312,67 @@ fn a_restored_item_without_a_run_names_every_criterion() {
     );
     assert_eq!(
         unlinked_lines(&held),
-        vec![
-            "criteria 1, 2 have no evidence link yet; link evidence in done, or pass the bound check first"
-        ]
+        vec!["criteria 1, 2 have no evidence link yet; link evidence in done"]
+    );
+}
+
+// The bound-check clause follows the bindings that still owe a check, over
+// every unlinked criterion: it appears for an open binding, also one past
+// the eighth listed position, on show and on the gate receipt alike.
+#[test]
+fn the_bound_check_remedy_is_named_only_while_an_unlinked_criterion_owes_its_check() {
+    let (_home, verbs, _path, _project) = fixture();
+    let criteria: Vec<String> = (1..=10).map(|n| format!("Outcome {n}")).collect();
+    let reference = verbs
+        .add(
+            AddInput {
+                title: "Bound ninth-plus".into(),
+                acceptance: criteria.clone(),
+                bindings: vec!["10=test".into()],
+                ..Default::default()
+            },
+            at(0),
+        )
+        .expect("add")
+        .value["work"]["short_ref"]
+        .as_str()
+        .expect("work ref")
+        .to_owned();
+    claim_item(&verbs, &reference, 1);
+    let open = "criteria 1, 2, 3, 4, 5, 6, 7, 8 and 2 more have no evidence link yet; link evidence in done, or pass the bound check first";
+    let shown = verbs.show(&reference, at(2)).expect("show");
+    assert_eq!(unlinked_lines(&shown), vec![open]);
+    // It comes before the open binding's own obligation reminder.
+    let position = |needle: &str| {
+        shown
+            .reminders
+            .iter()
+            .position(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("{needle}: {:?}", shown.reminders))
+    };
+    assert!(
+        position("no evidence link yet") < position("tests have not run"),
+        "{:?}",
+        shown.reminders
+    );
+    assert_eq!(
+        shown.value["unlinked_criteria"],
+        json!({"count": 10, "positions": [1, 2, 3, 4, 5, 6, 7, 8]})
+    );
+    assert_eq!(
+        unlinked_lines(&gate_on(&verbs, &reference, "a-gate", 3)),
+        vec![open]
+    );
+    // An item with no binding names only linking evidence.
+    let plain = add_item(&verbs, "Unbound", &["First", "Second"], 4);
+    claim_item(&verbs, &plain, 5);
+    let unbound = "criteria 1, 2 have no evidence link yet; link evidence in done";
+    assert_eq!(
+        unlinked_lines(&verbs.show(&plain, at(6)).expect("show")),
+        vec![unbound]
+    );
+    assert_eq!(
+        unlinked_lines(&gate_on(&verbs, &plain, "plain-gate", 7)),
+        vec![unbound]
     );
 }

@@ -370,3 +370,62 @@ fn a_change_before_the_root_was_named_is_displaced_as_the_reminder_says() {
         WorkObligationState::Displaced
     );
 }
+
+/// The evaluated-policy disclosure of a foreign change under a bound root
+/// names the waiver it needs, and keeps naming it, in words that hold after
+/// the root ends as well: no check in any named root satisfies it.
+#[test]
+fn an_evaluated_policy_discloses_the_waiver_a_foreign_change_needs_before_and_after_its_root_ends()
+{
+    let mut case = case("bound-foreign-evaluated", true);
+    name_root(&mut case.store, &case.work, &case.claim, 9, 3);
+    let change = source_mutation_from_basis(
+        &mut case.store,
+        &case.work,
+        &case.claim,
+        "runner",
+        "change-in-A",
+        4,
+        Some(basis("workspace-A", "A4", Some(9))),
+        None,
+    );
+    assert_eq!(
+        stock_completion_action(&case.store, &case.claim, &change),
+        Action::WaiverOnly
+    );
+    let disclosure = |second| {
+        let shown = case
+            .verbs
+            .show(&case.work.short_ref, at(second))
+            .expect("show")
+            .value["evaluation_obligations"]
+            .clone();
+        assert_eq!(shown["action_required_total"], 1, "{shown}");
+        shown["items"][0]["remedy"]
+            .as_str()
+            .expect("remedy")
+            .to_owned()
+    };
+    let expected = "obtain an authorized human waiver before evaluation; no check in a named root can satisfy this foreign change";
+    assert_eq!(disclosure(5), expected);
+    end_root(
+        &mut case.store,
+        &case.work,
+        &case.claim,
+        "workspace-B",
+        9,
+        3,
+        6,
+    );
+    assert_eq!(
+        stock_completion_action(&case.store, &case.claim, &change),
+        Action::WaiverOnly
+    );
+    let after = disclosure(7);
+    assert_eq!(after, expected);
+    assert!(!after.contains("this root"), "{after}");
+    // Completion still refuses on it, as before the root ended.
+    let refused = case.done(8);
+    assert!(refused.owed);
+    assert_eq!(case.lifecycle(), crate::WorkLifecycle::Open);
+}

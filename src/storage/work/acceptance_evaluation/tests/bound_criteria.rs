@@ -156,30 +156,39 @@ fn a_pinned_bound_criterion_passes_only_on_the_check_it_pins() {
         7,
     );
     let through = cut(&fixture.store, &work);
-    let wrong_check = refusal(record(
+    let wrong_check = typed_reason(
         &mut fixture.store,
-        &request(
-            &work,
-            through,
-            "runner",
-            Mode::SameSession,
-            vec![
-                verdict(
-                    1,
-                    AcceptanceVerdict::Pass,
-                    AcceptanceBasis::Observed,
-                    std::slice::from_ref(&other),
-                ),
-                verdict(
-                    2,
-                    AcceptanceVerdict::Pass,
-                    AcceptanceBasis::Judgment,
-                    std::slice::from_ref(&generic),
-                ),
-            ],
-            8,
+        Typed::Citation(
+            EvaluationCitationMismatch::BoundVerificationMismatch,
+            Remedy::ReadRunEvidence,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    through,
+                    "runner",
+                    Mode::SameSession,
+                    vec![
+                        verdict(
+                            1,
+                            AcceptanceVerdict::Pass,
+                            AcceptanceBasis::Observed,
+                            std::slice::from_ref(&other),
+                        ),
+                        verdict(
+                            2,
+                            AcceptanceVerdict::Pass,
+                            AcceptanceBasis::Judgment,
+                            std::slice::from_ref(&generic),
+                        ),
+                    ],
+                    8,
+                ),
+            )
+        },
+    );
     assert!(
         wrong_check.contains("is not passed host-minted verification evidence of that kind"),
         "{wrong_check}"
@@ -262,60 +271,78 @@ fn a_bound_criterion_passes_only_on_observed_verification_of_its_kind() {
     let gate = gate(&mut fixture.store, &work, &claim, "runner", "tests", &[], 7);
 
     let through = cut(&fixture.store, &work);
-    let judgment = refusal(record(
+    let judgment = typed_reason(
         &mut fixture.store,
-        &request(
-            &work,
-            through,
-            "runner",
-            Mode::SameSession,
-            vec![
-                verdict(
-                    1,
-                    AcceptanceVerdict::Pass,
-                    AcceptanceBasis::Judgment,
-                    std::slice::from_ref(&generic),
-                ),
-                verdict(
-                    2,
-                    AcceptanceVerdict::Pass,
-                    AcceptanceBasis::Judgment,
-                    std::slice::from_ref(&generic),
-                ),
-            ],
-            8,
+        Typed::Citation(
+            EvaluationCitationMismatch::ObservedBasisRequired,
+            Remedy::ReadRunEvidence,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    through,
+                    "runner",
+                    Mode::SameSession,
+                    vec![
+                        verdict(
+                            1,
+                            AcceptanceVerdict::Pass,
+                            AcceptanceBasis::Judgment,
+                            std::slice::from_ref(&generic),
+                        ),
+                        verdict(
+                            2,
+                            AcceptanceVerdict::Pass,
+                            AcceptanceBasis::Judgment,
+                            std::slice::from_ref(&generic),
+                        ),
+                    ],
+                    8,
+                ),
+            )
+        },
+    );
     assert!(
         judgment.contains("criterion 1 is bound to test verification"),
         "{judgment}"
     );
 
     let through = cut(&fixture.store, &work);
-    let asserted = refusal(record(
+    let asserted = typed_reason(
         &mut fixture.store,
-        &request(
-            &work,
-            through,
-            "runner",
-            Mode::SameSession,
-            vec![
-                verdict(
-                    1,
-                    AcceptanceVerdict::Pass,
-                    AcceptanceBasis::Asserted,
-                    std::slice::from_ref(&gate),
-                ),
-                verdict(
-                    2,
-                    AcceptanceVerdict::Pass,
-                    AcceptanceBasis::Judgment,
-                    std::slice::from_ref(&generic),
-                ),
-            ],
-            9,
+        Typed::Citation(
+            EvaluationCitationMismatch::ObservedBasisRequired,
+            Remedy::ReadRunEvidence,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    through,
+                    "runner",
+                    Mode::SameSession,
+                    vec![
+                        verdict(
+                            1,
+                            AcceptanceVerdict::Pass,
+                            AcceptanceBasis::Asserted,
+                            std::slice::from_ref(&gate),
+                        ),
+                        verdict(
+                            2,
+                            AcceptanceVerdict::Pass,
+                            AcceptanceBasis::Judgment,
+                            std::slice::from_ref(&generic),
+                        ),
+                    ],
+                    9,
+                ),
+            )
+        },
+    );
     assert!(
         asserted.contains("criterion 1 is bound to test verification"),
         "{asserted}"
@@ -332,30 +359,39 @@ fn a_bound_criterion_passes_only_on_observed_verification_of_its_kind() {
         10,
     );
     let through = cut(&fixture.store, &work);
-    let wrong_kind = refusal(record(
+    let wrong_kind = typed_reason(
         &mut fixture.store,
-        &request(
-            &work,
-            through,
-            "runner",
-            Mode::SameSession,
-            vec![
-                verdict(
-                    1,
-                    AcceptanceVerdict::Pass,
-                    AcceptanceBasis::Observed,
-                    std::slice::from_ref(&build),
-                ),
-                verdict(
-                    2,
-                    AcceptanceVerdict::Pass,
-                    AcceptanceBasis::Judgment,
-                    std::slice::from_ref(&generic),
-                ),
-            ],
-            11,
+        Typed::Citation(
+            EvaluationCitationMismatch::BoundVerificationMismatch,
+            Remedy::ReadRunEvidence,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    through,
+                    "runner",
+                    Mode::SameSession,
+                    vec![
+                        verdict(
+                            1,
+                            AcceptanceVerdict::Pass,
+                            AcceptanceBasis::Observed,
+                            std::slice::from_ref(&build),
+                        ),
+                        verdict(
+                            2,
+                            AcceptanceVerdict::Pass,
+                            AcceptanceBasis::Judgment,
+                            std::slice::from_ref(&generic),
+                        ),
+                    ],
+                    11,
+                ),
+            )
+        },
+    );
     assert!(
         wrong_kind.contains("is not passed host-minted verification evidence of that kind"),
         "{wrong_kind}"

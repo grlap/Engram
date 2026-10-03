@@ -2,7 +2,9 @@
 //! Each test names the rows of the agreed matrix it exercises.
 
 mod admission;
+use crate::domain::EvaluationAdmissionRemedy as Remedy;
 pub(crate) use admission::{AdmissionTransportFixture, admission_transport_fixture};
+use admission::{Typed, typed_cause, typed_reason};
 mod basis_moves;
 mod binding_read;
 mod bound_criteria;
@@ -1195,32 +1197,50 @@ fn identity_admission_follows_the_selected_mode() {
             std::slice::from_ref(&note),
         )
     };
-    let by_stranger = refusal(record(
+    let by_stranger = typed_reason(
         store,
-        &request(
-            &work,
-            cut(store, &work),
-            "reviewer",
-            Mode::SameSession,
-            vec![pass(1)],
-            6,
+        Typed::Eligibility(
+            EvaluationEligibilityMismatch::SameSessionNotExecuting,
+            Remedy::InspectEvaluatorBinding,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    cut(store, &work),
+                    "reviewer",
+                    Mode::SameSession,
+                    vec![pass(1)],
+                    6,
+                ),
+            )
+        },
+    );
     assert!(
         by_stranger.contains("same_session evaluation must come from the session"),
         "{by_stranger}"
     );
-    let by_holder = refusal(record(
+    let by_holder = typed_reason(
         store,
-        &request(
-            &work,
-            cut(store, &work),
-            "runner",
-            Mode::IndependentSession,
-            vec![pass(1)],
-            6,
+        Typed::Eligibility(
+            EvaluationEligibilityMismatch::IndependentEvaluatorAffiliated,
+            Remedy::InspectEvaluatorBinding,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    cut(store, &work),
+                    "runner",
+                    Mode::IndependentSession,
+                    vec![pass(1)],
+                    6,
+                ),
+            )
+        },
+    );
     assert!(
         by_holder.contains("neither holds nor executes"),
         "{by_holder}"
@@ -1243,21 +1263,30 @@ fn identity_admission_follows_the_selected_mode() {
     );
     assert_eq!(independent.record.mode, Mode::IndependentSession);
 
-    let orphaned = refusal(record(
+    let orphaned = typed_reason(
         store,
-        &RecordAcceptanceEvaluationRequest {
-            execution_identity: Some("sub-agent-exec".into()),
-            parent_session: Some(SessionId("reviewer".into())),
-            ..request(
-                &work,
-                cut(store, &work),
-                "sub-agent",
-                Mode::SubAgent,
-                vec![pass(1)],
-                7,
+        Typed::Eligibility(
+            EvaluationEligibilityMismatch::SubAgentParentNotExecuting,
+            Remedy::InspectEvaluatorBinding,
+        ),
+        |store| {
+            record(
+                store,
+                &RecordAcceptanceEvaluationRequest {
+                    execution_identity: Some("sub-agent-exec".into()),
+                    parent_session: Some(SessionId("reviewer".into())),
+                    ..request(
+                        &work,
+                        cut(store, &work),
+                        "sub-agent",
+                        Mode::SubAgent,
+                        vec![pass(1)],
+                        7,
+                    )
+                },
             )
         },
-    ));
+    );
     assert!(
         orphaned.contains("parent session must hold or execute"),
         "{orphaned}"
@@ -1671,42 +1700,60 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
         VerificationResult::Passed
     );
     let gate_pass = gate(store, &work, &claim, "runner", "cargo-test", &[], 25);
-    let asserted = refusal(record(
+    let asserted = typed_reason(
         store,
-        &request(
-            &work,
-            cut(store, &work),
-            "runner",
-            Mode::SameSession,
-            vec![verdict(
-                1,
-                AcceptanceVerdict::Pass,
-                AcceptanceBasis::Asserted,
-                std::slice::from_ref(&gate_pass),
-            )],
-            26,
+        Typed::Citation(
+            EvaluationCitationMismatch::ObservedPolicyRequired,
+            Remedy::ReadRunEvidence,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    cut(store, &work),
+                    "runner",
+                    Mode::SameSession,
+                    vec![verdict(
+                        1,
+                        AcceptanceVerdict::Pass,
+                        AcceptanceBasis::Asserted,
+                        std::slice::from_ref(&gate_pass),
+                    )],
+                    26,
+                ),
+            )
+        },
+    );
     assert!(
         asserted.contains("requires observed check evidence"),
         "{asserted}"
     );
-    let gate_as_observed = refusal(record(
+    let gate_as_observed = typed_reason(
         store,
-        &request(
-            &work,
-            cut(store, &work),
-            "runner",
-            Mode::SameSession,
-            vec![verdict(
-                1,
-                AcceptanceVerdict::Pass,
-                AcceptanceBasis::Observed,
-                std::slice::from_ref(&gate_pass),
-            )],
-            26,
+        Typed::Citation(
+            EvaluationCitationMismatch::PassedVerificationRequired,
+            Remedy::ReadRunEvidence,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    cut(store, &work),
+                    "runner",
+                    Mode::SameSession,
+                    vec![verdict(
+                        1,
+                        AcceptanceVerdict::Pass,
+                        AcceptanceBasis::Observed,
+                        std::slice::from_ref(&gate_pass),
+                    )],
+                    26,
+                ),
+            )
+        },
+    );
     assert!(
         gate_as_observed.contains("host-minted verification evidence"),
         "{gate_as_observed}"
@@ -1777,22 +1824,31 @@ fn host_observed_evidence_governs_mechanical_passes_and_freshness() {
             .result,
         VerificationResult::Failed
     );
-    let failed_as_pass = refusal(record(
+    let failed_as_pass = typed_reason(
         store,
-        &request(
-            &work,
-            cut(store, &work),
-            "runner",
-            Mode::SameSession,
-            vec![verdict(
-                1,
-                AcceptanceVerdict::Pass,
-                AcceptanceBasis::Observed,
-                &failed,
-            )],
-            45,
+        Typed::Citation(
+            EvaluationCitationMismatch::PassedVerificationRequired,
+            Remedy::ReadRunEvidence,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &request(
+                    &work,
+                    cut(store, &work),
+                    "runner",
+                    Mode::SameSession,
+                    vec![verdict(
+                        1,
+                        AcceptanceVerdict::Pass,
+                        AcceptanceBasis::Observed,
+                        &failed,
+                    )],
+                    45,
+                ),
+            )
+        },
+    );
     assert!(failed_as_pass.contains("passed result"), "{failed_as_pass}");
     record(
         store,

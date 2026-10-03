@@ -552,7 +552,11 @@ fn the_remedy_never_asks_for_a_mode_the_project_does_not_admit() {
     ));
     assert!(
         words.contains("marked for a mode this project does not admit")
-            && !words.contains("record one in that mode"),
+            && words.contains(
+                "only a change to same_session needs a session that never held or executed this run"
+            )
+            && !words.contains("record one in that mode")
+            && !words.contains("someone other than its executor"),
         "{words}"
     );
 }

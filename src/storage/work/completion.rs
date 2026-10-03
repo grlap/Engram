@@ -73,9 +73,11 @@ pub use landings::RecordedLanding;
 mod lifecycle;
 mod named_root;
 mod obligation_guidance;
-pub(crate) use obligation_guidance::criteria_without_evidence_link;
 pub(super) use obligation_guidance::finished_run_cut_on;
 use obligation_guidance::require_expected_obligations_on;
+pub(crate) use obligation_guidance::{
+    criteria_without_evidence_link, unlinked_criteria_owe_bound_check,
+};
 mod projections;
 mod repeat;
 pub(in crate::storage) use repeat::{newest_change_repeated_on, source_revision_repeats_on};

@@ -1667,8 +1667,19 @@ fn the_criteria_without_a_link_before_completion_are_the_ones_the_seal_leaves_un
             &store.work_run_obligations(run_id).expect("obligations"),
         )
     };
-    // Nothing is linked while both bindings are still owed.
+    let owe = |store: &SqliteStore, work: &WorkItem, positions: &[usize]| {
+        crate::storage::unlinked_criteria_owe_bound_check(
+            work,
+            &store.work_run_obligations(run_id).expect("obligations"),
+            positions,
+        )
+    };
+    // Nothing is linked while both bindings are still owed, and both owe
+    // their check; the unbound criterion alone owes none.
     assert_eq!(unlinked(&store, &work), vec![1, 2, 3]);
+    assert!(owe(&store, &work, &[1, 2, 3]));
+    assert!(owe(&store, &work, &[2]));
+    assert!(!owe(&store, &work, &[3]));
 
     let verification = host_verification(
         &mut store,
@@ -1703,8 +1714,10 @@ fn the_criteria_without_a_link_before_completion_are_the_ones_the_seal_leaves_un
             &DevelopmentNoopRedactor,
         )
         .expect("waive the lint binding");
-    // The satisfied binding is linked; the waived and the unbound are not.
+    // The satisfied binding is linked; the waived and the unbound are not,
+    // and neither owes a check any more.
     assert_eq!(unlinked(&store, &work), vec![2, 3]);
+    assert!(!owe(&store, &work, &[2, 3]));
 
     let all = store.work_run_evidence(run_id).expect("run evidence");
     checkpoint(
@@ -1733,4 +1746,51 @@ fn the_criteria_without_a_link_before_completion_are_the_ones_the_seal_leaves_un
         .collect();
     assert_eq!(sealed_unlinked, vec![2, 3]);
     assert!(seal.acceptance[0].evidence.contains(&verification));
+}
+
+/// A binding authored again after its check passed owes a check anew, so the
+/// unlinked reminder names that remedy again for it; the unbound criterion
+/// never owes one.
+#[test]
+fn a_binding_authored_again_after_its_check_passed_owes_its_check_again() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = create_bound(
+        &mut store,
+        "project-rebound-check",
+        &["run tests", "write docs"],
+        bound(1, VerificationKind::Test),
+        Creation::Add,
+    );
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-rebound", 2, 300);
+    let state = |store: &SqliteStore, work: &WorkItem| {
+        let records = store.work_run_obligations(run_id).expect("obligations");
+        let unlinked = crate::storage::criteria_without_evidence_link(work, &records);
+        let owed = crate::storage::unlinked_criteria_owe_bound_check(work, &records, &unlinked);
+        (unlinked, owed)
+    };
+    assert_eq!(state(&store, &work), (vec![1, 2], true));
+    host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-rebound",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        3,
+    );
+    // The passed check links its criterion; the unbound one owes no check.
+    assert_eq!(state(&store, &work), (vec![2], false));
+    let rebound = revise_bound(
+        &mut store,
+        &work,
+        &claim,
+        None,
+        Some(vec![bound(1, VerificationKind::Build)]),
+        "rebind-build",
+        4,
+    );
+    assert_eq!(state(&store, &rebound), (vec![1, 2], true));
 }

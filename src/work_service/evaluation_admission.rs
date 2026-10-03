@@ -17,7 +17,7 @@ pub(crate) fn evaluation_admission_remedy(cause: &AcceptanceEvaluationAdmissionC
                 return "request an evaluation in a mode admitted by the project and the task's mark".into();
             };
             if matches!(context.mismatch, EvaluationEligibilityMismatch::MarkAuthorUnrecorded | EvaluationEligibilityMismatch::MarkAuthorAffiliated) {
-                return "have a planning session that never held or executed this run clear the task's evaluation mark and set an admitted mark again, then request an evaluation admitted by that mark and the project policy".into();
+                return "clear the task's evaluation mark or change it to another mode the project admits, then request an evaluation admitted by that mark and the project policy; only setting same_session again needs a session that never held or executed this run".into();
             }
             super::missing_evaluation_remedy(context.task_mark, &context.admitted_modes).into()
         }

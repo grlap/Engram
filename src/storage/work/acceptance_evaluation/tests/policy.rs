@@ -2,6 +2,13 @@
 
 use super::*;
 
+// Boundary-matrix rows, the mode-membership and task-pin part only: B01's
+// refusal of `evaluate` under a policy that enables no evaluation (not its
+// self-asserted completion), B04's refusal of a mode the policy does not
+// admit, and B08's refusal of an admitted mode other than the task's selected
+// one, each checked at admission and again as staleness. B01's completion,
+// B05's affiliation, B32's strengthening and B59 to B64's mark authorship
+// are proven by their own histories, not by this matrix.
 #[test]
 fn mode_and_pin_matrix_preserves_admission_and_freshness() {
     let mut fixture = fixture("project-mode-pin-matrix");

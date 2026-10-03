@@ -583,6 +583,17 @@ pub struct WorkHeldClaim {
     pub control_binding: Option<ControlWorkBinding>,
 }
 
+/// The open item's criteria that carry no evidence link yet.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct UnlinkedCriteriaView {
+    /// Their one-based positions.
+    pub(crate) positions: Vec<usize>,
+    /// Whether any of them, all of them and not only the listed ones, has a
+    /// binding whose newest obligation is still open, so passing its check
+    /// would link it.
+    pub(crate) bound_check_open: bool,
+}
+
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {
@@ -616,12 +627,12 @@ pub struct WorkFocusView {
     /// an author typed by hand; agent detail only.
     #[serde(skip)]
     pub(crate) acceptance_placeholder: Option<String>,
-    /// One-based positions of the open item's criteria that carry no evidence
-    /// link yet under a self-asserted policy, so completion would seal them
-    /// unlinked unless it links evidence; `None` when completed work or an
-    /// evaluated policy makes the question moot. Agent detail only.
+    /// The open item's criteria that carry no evidence link yet under a
+    /// self-asserted policy, so completion would seal them unlinked unless it
+    /// links evidence; `None` when completed work or an evaluated policy
+    /// makes the question moot. Agent detail only.
     #[serde(skip)]
-    pub(crate) unlinked_criteria: Option<Vec<usize>>,
+    pub(crate) unlinked_criteria: Option<UnlinkedCriteriaView>,
     /// How many open-obligation advisory rows the safe show renderer retains.
     #[serde(skip)]
     pub(crate) evaluation_obligation_rows_visible: usize,

@@ -60,7 +60,7 @@ pub(in crate::verbs) fn completion_recovery_reminder(
             // Two causes share this reason and the refusal does not say which,
             // so the remedy is the one a missing evaluation of this task gets.
             crate::AcceptanceStaleReason::Identity => format!(
-                "{label} acceptance evaluation is stale (identity): its independent evaluator has since held this run, or the record lacks a session its mode requires; {}",
+                "{label} acceptance evaluation is stale (identity): its independent evaluator has since held this run, or the record lacks a session or execution identity its mode requires, or carries one admission refuses; {}",
                 crate::work_service::missing_evaluation_remedy(
                     evaluation.mark,
                     &evaluation.admitted
@@ -70,7 +70,8 @@ pub(in crate::verbs) fn completion_recovery_reminder(
                 "{label} acceptance evaluation is stale (verification_source): a pass on a bound criterion cites a check that ran on another source than the one evaluated, or before a later change to it; run the check on the current source, then evaluate again citing it, declaring the source revision the host reports"
             ),
             crate::AcceptanceStaleReason::Policy => format!(
-                "{label} acceptance evaluation is stale (policy): the project's policy or the task's mark no longer admits the mode or session it was recorded in; {}",
+                "{label} acceptance evaluation is stale (policy): {}; {}",
+                crate::work_service::POLICY_STALE_CAUSES,
                 crate::work_service::missing_evaluation_remedy(
                     evaluation.mark,
                     &evaluation.admitted

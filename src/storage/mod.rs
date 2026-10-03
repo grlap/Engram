@@ -26,13 +26,13 @@ mod work;
 pub(crate) use work::BindingReadRequest;
 pub(crate) use work::VerificationReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
-pub(crate) use work::criteria_without_evidence_link;
 pub(crate) use work::validate_work_plan;
 pub use work::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
     RecordedLanding, WorkObligationCompletionAction,
 };
 pub(crate) use work::{AssessedAcceptanceEvaluation, SourceObservationRecord};
+pub(crate) use work::{criteria_without_evidence_link, unlinked_criteria_owe_bound_check};
 
 pub(crate) use project_memory::validate_context_generation;
 

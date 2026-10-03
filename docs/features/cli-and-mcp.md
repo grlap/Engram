@@ -873,12 +873,15 @@ Rules that matter:
   same way the seal decides it. Positions are capped at eight; the count
   stays exact, and every criterion linked reads `{count: 0, positions: []}`.
   While the count is above zero, the holder's `show` and `gate` receipt add
-  one reminder after the holder's existing guidance, the same on CLI and MCP:
-  `criteria 1, 3 have no evidence link yet; link evidence in done, or pass
-  the bound check first` (for one criterion, `criterion N has …`), with `and
-  K more` past eight positions. A bound criterion whose obligation is still
-  open needs its check, since `done` refuses an open obligation; any other
-  needs a link in `done`. The line states what is linked now, not a
+  one reminder after the status guidance and before the reminders of open
+  obligations, the same on CLI and MCP: `criteria 1, 3 have no evidence link
+  yet; link evidence in done` (for one criterion, `criterion N has …`), with
+  `and K more` past eight positions. While any of the unlinked criteria, listed
+  or past the eighth, has a binding whose newest obligation is still open, the
+  line ends `, or pass the bound check first`, since `done` refuses an open
+  obligation and passing its check links the criterion; an unbound criterion,
+  or one whose binding was waived, has no check to pass and needs a link in
+  `done`. The line states what is linked now, not a
   forecast: completion checks a satisfied binding again. A peer's `show`
   carries neither, since only the holder completes. Under an evaluated policy
   neither appears, since the seal cites the consumed evaluation's evidence

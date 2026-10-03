@@ -457,13 +457,21 @@ pub enum AcceptanceStaleReason {
     Evidence,
     /// An `independent_session` evaluator has since held or executed the
     /// run, so the record no longer describes an independent judgment; or
-    /// the record lacks a session its mode requires (the evaluator's in any
-    /// mode, a `sub_agent` record's parent), which admission never records.
+    /// the record carries an identity admission never records: it lacks a
+    /// session its mode requires (the evaluator's in any mode, a `sub_agent`
+    /// record's parent), or a `sub_agent` record's execution identity is
+    /// missing, blank or out of bounds, or its parent session is malformed.
     Identity,
     /// A pass on a criterion bound to a typed check cites a check that ran
     /// on another source than the one the evaluation judged, or one the
     /// source had moved away from by the evaluated cut.
     VerificationSource,
+    /// The record has a shape admission never records: its verdicts are not
+    /// one per recorded criterion in order, or one has a blank rationale,
+    /// too many citations, or is a pass without a citation or on a
+    /// `human_required` basis; or a record of another mode carries the
+    /// parent session or execution identity only `sub_agent` records.
+    RecordShape,
 }
 
 impl AcceptanceStaleReason {
@@ -479,6 +487,7 @@ impl AcceptanceStaleReason {
             Self::Evidence => "evidence",
             Self::Identity => "identity",
             Self::VerificationSource => "verification_source",
+            Self::RecordShape => "record_shape",
         }
     }
 }

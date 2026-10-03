@@ -1025,15 +1025,24 @@ impl LocalWorkService {
         // and a pass cannot cite nothing, so only self-asserted work asks.
         // An open item without an active run, such as one restored and not
         // yet claimed, has no obligation that could link a criterion.
+        let unlinked_records: &[_] = if status.work.active_run_id.is_some() {
+            obligation_records.as_slice()
+        } else {
+            &[]
+        };
         let unlinked_criteria = (status.work.lifecycle == crate::domain::WorkLifecycle::Open
             && !evaluated_policy)
             .then(|| {
-                let records = if status.work.active_run_id.is_some() {
-                    obligation_records.as_slice()
-                } else {
-                    &[]
-                };
-                crate::storage::criteria_without_evidence_link(&status.work, records)
+                let positions =
+                    crate::storage::criteria_without_evidence_link(&status.work, unlinked_records);
+                super::views::UnlinkedCriteriaView {
+                    bound_check_open: crate::storage::unlinked_criteria_owe_bound_check(
+                        &status.work,
+                        unlinked_records,
+                        &positions,
+                    ),
+                    positions,
+                }
             });
         let title_stored_bytes = status.work.title.len();
         let title_truncated = matches!(text, FocusText::Full)

@@ -121,8 +121,9 @@ when an evaluation is recorded. Sealed completions are not reassessed.
   setting it again authors a new one. A mark set at creation by the later
   executor, or by the holder to escape a failed independent evaluation, is
   refused; a mark set by an operator or a peer is accepted. A mark with no
-  author recorded on the item is refused with a remedy to have a session that
-  never held or executed the run clear it and set it again: its author's
+  author recorded on the item is refused with a remedy to clear the mark or
+  change it to another mode the project admits; only setting `same_session`
+  again needs a session that never held or executed the run: its author's
   session was not recorded, the item's earlier history was restored rather
   than recorded here, or the item is a detach successor, whose creation
   carried the mark over without its detaching session setting it. In a project
@@ -145,10 +146,13 @@ when an evaluation is recorded. Sealed completions are not reassessed.
   observation that the source changed to a revision other than the one last
   seen, starting from the source the blocking evaluation judged (its declared
   revision, or else the run's last sighting at its cut); a reported change
-  that carries no revision qualifies too. Evaluation records, and claim,
+  that carries no revision qualifies too, and so does an accounted unadmitted
+  change, whatever revision it reports, since it already makes the blocking
+  evaluation stale. Evaluation records, and claim,
   renewal, handoff, revision, checkpoint and obligation bookkeeping, do not
-  qualify, nor does a repeat sighting of an unchanged source, a reported
-  change that leaves the source at the judged revision, a sighting outside the
+  qualify, nor does a repeat sighting of an unchanged source, an admitted
+  reported change that leaves the source at the judged revision, a sighting
+  outside the
   claim's named source root, or a quiet sighting at another revision without
   the change flag (which does make the blocking evaluation stale, but a note
   still has to precede the next one). A flagged change compares with the
@@ -551,11 +555,22 @@ stale reason named.
   [Independent by default](#independent-by-default) rules recheck them at
   completion instead, and one they no longer admit is stale with reason
   `policy`. A record of any mode without its evaluator's session, or a
-  `sub_agent` record without its parent session, is stale with reason
-  `identity` as well, after the `policy` checks: admission never records
-  one, so it can only have reached the store by import or edit, and it never
-  completes work. Presence is all this checks; whether either session is
-  registered is not asked.
+  `sub_agent` record without its parent session, or whose execution identity
+  is missing, blank, longer than its bound or holds a control character, or
+  whose parent session is not a session id admission accepts, is stale with
+  reason `identity` as well, after the `policy` checks: admission never
+  records one, so it can only have reached the store by import or edit, and
+  it never completes work. The shape is all this checks; whether either
+  session is registered is not asked. After that shape check, and before the
+  check above that an `independent_session` evaluator never held the run, a
+  record whose shape admission refuses otherwise is stale with reason
+  `record_shape`: its
+  verdicts are not one per recorded criterion in the recorded order, or one
+  has a blank rationale, more citations than the bound, or is a pass without
+  a citation or on a `human_required` basis; or a `same_session` or
+  `independent_session` record carries the parent session or execution
+  identity only `sub_agent` records. Admission and consumption read these
+  rules from one owner.
 - **F8 bound check source.** Every citation of a `pass` on a bound criterion
   is a passed check that ran on the source the evaluation judged, and the
   source had not moved away from it by the cut (R5). The rule is applied
@@ -653,7 +668,7 @@ Refusals extend the typed recovery causes; each carries one recovery command:
 | Cause | Meaning | Recovery |
 | --- | --- | --- |
 | `MissingAcceptanceEvaluation { criterion }` | no evaluation for this run | record one: `engram work evaluate REF …` (or the host's evaluator) |
-| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`) | re-evaluate against the current state; `source` uses the sibling source context below to select confirmation, measurement or new-evaluation guidance; `identity` needs a fresh evaluation recorded with every session its mode requires, as a missing one would be requested for the task, and from a session that never held the run when the stale record was `independent_session`; `verification_source` needs the cited check run again on the current source |
+| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`, `record_shape`) | re-evaluate against the current state; `source` uses the sibling source context below to select confirmation, measurement or new-evaluation guidance; `identity` needs a fresh evaluation recorded with every session and execution identity its mode requires, as a missing one would be requested for the task, and from a session that never held the run when the stale record was `independent_session`; `verification_source` needs the cited check run again on the current source; `record_shape` needs a fresh evaluation, since admission records only well-formed ones |
 | `AcceptanceFailed { criterion }` | newest fresh evaluation has a `fail` | corrective work, then evaluate again |
 | `AcceptanceInsufficientEvidence { criterion }` | newest fresh evaluation has `insufficient_evidence` | record the missing evidence, then evaluate again |
 | `AcceptanceNeedsHuman { criterion }` | a criterion needs a human decision | obtain that decision; only a separately authorized revision (`update REF --accept …`) or cancellation changes the requirement, and a new evaluation follows the decision. No agent override exists. |

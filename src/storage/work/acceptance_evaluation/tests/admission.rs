@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::EvaluationAdmissionRemedy;
+use crate::domain::{AcceptWorkHandoffRequest, EvaluationAdmissionRemedy, OfferWorkHandoffRequest};
 use chrono::{DateTime, Utc};
 
 pub(crate) struct AdmissionTransportFixture {
@@ -246,6 +246,115 @@ pub(super) fn typed_refusal(
     result
 }
 
+/// What a typed admission refusal must name: its family's mismatch and the
+/// remedy that mismatch selects.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Typed {
+    Eligibility(EvaluationEligibilityMismatch, EvaluationAdmissionRemedy),
+    Root(EvaluationRootMismatch, EvaluationAdmissionRemedy),
+    Citation(EvaluationCitationMismatch, EvaluationAdmissionRemedy),
+}
+
+/// The reason of a refusal, after checking its shared CLI/MCP shape, its
+/// word advice and that its typed cause names `expected`.
+pub(super) fn typed_cause(
+    result: Result<AcceptanceEvaluationReceipt, StoreError>,
+    expected: Typed,
+) -> String {
+    let (reason, cause) = typed_refusal(result);
+    let found = match cause {
+        AcceptanceEvaluationAdmissionCause::Eligibility(cause) => {
+            Typed::Eligibility(cause.mismatch, cause.remedy)
+        }
+        AcceptanceEvaluationAdmissionCause::SourceRoot(cause) => {
+            Typed::Root(cause.mismatch, cause.remedy)
+        }
+        AcceptanceEvaluationAdmissionCause::Citation(cause) => {
+            Typed::Citation(cause.mismatch, cause.remedy)
+        }
+    };
+    assert_eq!(found, expected, "{reason}");
+    reason
+}
+
+/// As `typed_cause`, for the refusal `attempt` meets, which must also leave
+/// the store unchanged.
+pub(super) fn typed_reason(
+    store: &mut SqliteStore,
+    expected: Typed,
+    attempt: impl FnOnce(&mut SqliteStore) -> Result<AcceptanceEvaluationReceipt, StoreError>,
+) -> String {
+    let snapshot = test_database_shape_snapshot(&store.connection).unwrap();
+    let result = attempt(store);
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).unwrap(),
+        snapshot,
+        "a refused evaluation changes nothing"
+    );
+    typed_cause(result, expected)
+}
+
+// Every citation mismatch selects its remedy by name. Unverifiable source is
+// pinned here: admission never meets it, since a pass on a bound criterion
+// cites only passed checks, each produced by a sighting with a revision
+// before it.
+#[test]
+fn every_citation_mismatch_selects_its_remedy() {
+    let fixture = fixture("citation-remedies");
+    let context = CitationContext {
+        item: &fixture.work,
+        run_id: fixture.claim.run_id,
+        cut: 1,
+        criterion: 1,
+        citation: "citation",
+        position: None,
+    };
+    for (mismatch, remedy) in [
+        (
+            EvaluationCitationMismatch::NotOnRun,
+            EvaluationAdmissionRemedy::ReadRunEvidence,
+        ),
+        (
+            EvaluationCitationMismatch::BeyondCut,
+            EvaluationAdmissionRemedy::ReadCurrentCut,
+        ),
+        (
+            EvaluationCitationMismatch::ObservedBasisRequired,
+            EvaluationAdmissionRemedy::ReadRunEvidence,
+        ),
+        (
+            EvaluationCitationMismatch::PassedVerificationRequired,
+            EvaluationAdmissionRemedy::ReadRunEvidence,
+        ),
+        (
+            EvaluationCitationMismatch::ObservedPolicyRequired,
+            EvaluationAdmissionRemedy::ReadRunEvidence,
+        ),
+        (
+            EvaluationCitationMismatch::PassingGateRequired,
+            EvaluationAdmissionRemedy::ReadRunEvidence,
+        ),
+        (
+            EvaluationCitationMismatch::BoundVerificationMismatch,
+            EvaluationAdmissionRemedy::ReadRunEvidence,
+        ),
+        (
+            EvaluationCitationMismatch::WrongSource,
+            EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate,
+        ),
+        (
+            EvaluationCitationMismatch::SourceMovedAfterCheck,
+            EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate,
+        ),
+        (
+            EvaluationCitationMismatch::UnverifiableSource,
+            EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate,
+        ),
+    ] {
+        assert_eq!(context.cause(mismatch).remedy, remedy, "{mismatch:?}");
+    }
+}
+
 // B01, B05, B32, B63: existing policy, default-independence and mark guards
 // supply distinct typed causes without appending an evaluation or any row.
 #[test]
@@ -378,4 +487,111 @@ fn admission_eligibility_causes_preserve_precedence_text_and_database() {
             snapshot
         );
     }
+}
+
+// B63: a legitimately shaped sub_agent request, with a parent session and an
+// execution identity, recorded from the run's current holder or from a former
+// one, is the executor's own evaluation. Its typed cause points at the
+// evaluator binding, not at another mode, and nothing is appended.
+#[test]
+fn a_sub_agent_request_from_a_current_or_former_holder_points_at_the_evaluator_binding() {
+    let mut fixture = fixture("admission-sub-agent-affiliated");
+    let work = fixture.work.clone();
+    let first = fixture.claim.clone();
+    let note = fixture.evidence.clone();
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SubAgent, Mode::IndependentSession],
+        MechanicalBasis::Asserted,
+        false,
+        "sub-agent-affiliated",
+        5,
+    );
+    let child = |store: &SqliteStore, work: &WorkItem, session: &str, parent: &SessionId| {
+        RecordAcceptanceEvaluationRequest {
+            execution_identity: Some("child-execution".into()),
+            parent_session: Some(parent.clone()),
+            ..request(
+                work,
+                cut(store, work),
+                session,
+                Mode::SubAgent,
+                vec![verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&note),
+                )],
+                20,
+            )
+        }
+    };
+    let refused = |store: &mut SqliteStore, request: &RecordAcceptanceEvaluationRequest| {
+        let snapshot = test_database_shape_snapshot(&store.connection).unwrap();
+        let (reason, cause) = typed_refusal(record(store, request));
+        assert!(
+            reason.starts_with(
+                "a sub_agent evaluation must be recorded from a distinct child session"
+            ),
+            "{reason}"
+        );
+        let AcceptanceEvaluationAdmissionCause::Eligibility(cause) = cause else {
+            panic!("eligibility");
+        };
+        assert_eq!(
+            cause.mismatch,
+            EvaluationEligibilityMismatch::SubAgentEvaluatorAffiliated
+        );
+        assert_eq!(
+            cause.remedy,
+            EvaluationAdmissionRemedy::InspectEvaluatorBinding
+        );
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).unwrap(),
+            snapshot
+        );
+    };
+    // The current holder, naming itself as the parent.
+    refused(store, &child(store, &work, "runner", &first.holder));
+
+    // A handoff to "second" leaves "runner" a former holder.
+    let offer = store
+        .offer_work_handoff(
+            &OfferWorkHandoffRequest {
+                work_id: work.work_id,
+                run_id: first.run_id,
+                expected_work_revision: work.revision,
+                from: first.holder.clone(),
+                to: SessionId("second".into()),
+                claim_id: first.claim_id,
+                claim_fence: first.fence,
+                ttl_seconds: 300,
+                checkpoint_summary: "handing the run to second".into(),
+                actor: actor("runner"),
+                idempotency_key: "offer-to-second".into(),
+                offered_at: at(6),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("offer handoff");
+    let second = store
+        .accept_work_handoff(
+            &AcceptWorkHandoffRequest {
+                work_id: work.work_id,
+                offer_id: offer.offer_id,
+                to: SessionId("second".into()),
+                actor: actor("second"),
+                idempotency_key: "accept-as-second".into(),
+                accepted_at: at(7),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("accept handoff");
+    let work = store
+        .get_work_item(work.work_id)
+        .expect("item after handoff");
+    refused(store, &child(store, &work, "runner", &second.holder));
+    // A distinct child of the current holder records.
+    record(store, &child(store, &work, "child", &second.holder)).expect("a distinct child records");
 }

@@ -2,8 +2,10 @@
 //! order: only a Created event, or a Revised event after a native event that
 //! showed the item unmarked, proves who turned the mark on.
 
-use super::super::{MarkStep, MarkTransition, mark_author};
+use super::super::{MarkStep, MarkTransition, mark_author, same_session_mark_author};
+use super::*;
 use crate::domain::SessionId;
+use crate::storage::work::{reset_work_event_decode_count, work_event_decode_count};
 
 fn step(transition: MarkTransition, marked: bool, session: &str) -> MarkStep {
     MarkStep {
@@ -95,5 +97,73 @@ fn a_mark_no_native_event_shows_being_turned_on_has_no_author() {
             session: None,
         }]),
         None
+    );
+}
+
+/// On a real store, the lookup fetches and decodes only the item's first
+/// event and its creations and revisions: the claims, renewals, notes and
+/// gates recorded after the mark was set add events to the item's history
+/// but none to what the lookup decodes. This counts decoded bodies, not
+/// SQLite's own steps.
+#[test]
+fn the_mark_author_lookup_decodes_no_more_as_claims_notes_and_gates_accumulate() {
+    let mut fixture = fixture("mark-author-decodes");
+    let store = &mut fixture.store;
+    let mut create = root_request("mark-author-decodes", "create-marked-peer", 4);
+    create.evaluation_mode = Some(Mode::SameSession);
+    create.actor = actor("peer");
+    let marked = store
+        .create_work(&create, &DevelopmentNoopRedactor)
+        .expect("a peer marks it at creation");
+    let held = claim(store, &marked, "runner", "claim-marked", 5, 3_600);
+    let marked = store.get_work_item(marked.work_id).expect("claimed item");
+    let lookup = |store: &SqliteStore, item: &WorkItem| {
+        reset_work_event_decode_count();
+        let author = same_session_mark_author(&store.connection, item).expect("mark author");
+        (author, work_event_decode_count())
+    };
+    let history = |store: &SqliteStore| {
+        crate::storage::work::canonical_work_events_for_item(&store.connection, marked.work_id)
+            .expect("history")
+            .len()
+    };
+    let (author, decoded) = lookup(store, &marked);
+    assert_eq!(author, Some(SessionId("peer".into())));
+    let events_before = history(store);
+    for round in 0..6 {
+        let second = 6 + round * 3;
+        evidence(
+            store,
+            &marked,
+            &held,
+            "runner",
+            &format!("note-{round}"),
+            second,
+        );
+        gate(
+            store,
+            &marked,
+            &held,
+            "runner",
+            &format!("gate-{round}"),
+            &[],
+            second + 1,
+        );
+        claim(
+            store,
+            &marked,
+            "runner",
+            &format!("renew-{round}"),
+            second + 2,
+            3_600,
+        );
+    }
+    let marked = store
+        .get_work_item(marked.work_id)
+        .expect("item after the history");
+    assert!(history(store) > events_before, "the history grew");
+    assert_eq!(
+        lookup(store, &marked),
+        (Some(SessionId("peer".into())), decoded)
     );
 }

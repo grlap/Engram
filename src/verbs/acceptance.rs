@@ -25,13 +25,20 @@ const MAX_UNLINKED_POSITIONS: usize = 8;
 pub(super) struct UnlinkedCriteria {
     count: usize,
     positions: Vec<usize>,
+    /// Whether one of the unlinked criteria, listed or not, still owes its
+    /// bound check, so passing it is the other way to link.
+    #[serde(skip)]
+    bound_check_open: bool,
 }
 
 impl UnlinkedCriteria {
     /// The fact for an open, self-asserted item, kept at a count of zero so
     /// "all linked" reads differently from "not asked".
     pub(super) fn from_view(view: &crate::work_service::WorkFocusView) -> Option<Self> {
-        view.unlinked_criteria.as_deref().map(Self::from_positions)
+        view.unlinked_criteria.as_ref().map(|unlinked| Self {
+            bound_check_open: unlinked.bound_check_open,
+            ..Self::from_positions(&unlinked.positions)
+        })
     }
 
     pub(super) fn from_positions(positions: &[usize]) -> Self {
@@ -42,14 +49,16 @@ impl UnlinkedCriteria {
                 .take(MAX_UNLINKED_POSITIONS)
                 .copied()
                 .collect(),
+            bound_check_open: false,
         }
     }
 
     /// The one line `show` and `gate` give the holder while linking is still
     /// possible, so the author need not learn of the gap from the sealed
-    /// completion receipt; none when every criterion is linked. A bound
-    /// criterion whose obligation is still open is answered by its check, so
-    /// the line names both remedies. One wording serves CLI and MCP alike.
+    /// completion receipt; none when every criterion is linked. It names
+    /// linking evidence in done, and passing the bound check as well only
+    /// while one of the unlinked criteria still owes one. One wording serves
+    /// CLI and MCP alike.
     pub(super) fn reminder(&self) -> Option<String> {
         if self.count == 0 {
             return None;
@@ -66,14 +75,15 @@ impl UnlinkedCriteria {
         } else {
             listed
         };
-        Some(if self.count == 1 {
-            format!(
-                "criterion {named} has no evidence link yet; link evidence in done, or pass the bound check first"
-            )
+        let check = if self.bound_check_open {
+            ", or pass the bound check first"
         } else {
-            format!(
-                "criteria {named} have no evidence link yet; link evidence in done, or pass the bound check first"
-            )
+            ""
+        };
+        Some(if self.count == 1 {
+            format!("criterion {named} has no evidence link yet; link evidence in done{check}")
+        } else {
+            format!("criteria {named} have no evidence link yet; link evidence in done{check}")
         })
     }
 }

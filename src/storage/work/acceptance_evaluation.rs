@@ -16,7 +16,7 @@ use super::feeds::{
 };
 use super::planning::{normalize_note_text, persist_operation_result};
 use super::query::{
-    canonical_work_events_for_item, load_work_claim_optional, load_work_item, load_work_run,
+    canonical_work_mark_events_for_item, load_work_claim_optional, load_work_item, load_work_run,
     on_one_snapshot,
 };
 use super::{
@@ -822,61 +822,53 @@ fn validate_request_shape(request: &RecordAcceptanceEvaluationRequest) -> Result
                 "verdict positions are one-based and each criterion appears exactly once",
             ));
         }
-        if verdict.rationale.trim().is_empty() {
+        let criterion = verdict.criterion;
+        if let Some(fault) = verdict_fault(
+            verdict.verdict,
+            verdict.basis,
+            &verdict.rationale,
+            verdict.evidence.len(),
+        ) {
             return Err(refused(
                 work,
-                format!("criterion {} needs a rationale", verdict.criterion),
-            ));
-        }
-        if verdict.evidence.len() > MAX_ACCEPTANCE_VERDICT_CITATIONS {
-            return Err(refused(
-                work,
-                format!(
-                    "criterion {} cites more than {MAX_ACCEPTANCE_VERDICT_CITATIONS} objects",
-                    verdict.criterion
-                ),
-            ));
-        }
-        if verdict.verdict == AcceptanceVerdict::Pass {
-            if verdict.evidence.is_empty() {
-                return Err(refused(
-                    work,
-                    format!(
-                        "criterion {} passes without a citation; a pass needs at least one relevant run evidence citation",
-                        verdict.criterion
+                match fault {
+                    VerdictFault::BlankRationale => {
+                        format!("criterion {criterion} needs a rationale")
+                    }
+                    VerdictFault::TooManyCitations => format!(
+                        "criterion {criterion} cites more than {MAX_ACCEPTANCE_VERDICT_CITATIONS} objects"
                     ),
-                ));
-            }
-            if verdict.basis == AcceptanceBasis::HumanRequired {
-                return Err(refused(
-                    work,
-                    format!(
-                        "criterion {} cannot pass on a human_required basis",
-                        verdict.criterion
+                    VerdictFault::PassWithoutCitation => format!(
+                        "criterion {criterion} passes without a citation; a pass needs at least one relevant run evidence citation"
                     ),
-                ));
-            }
+                    VerdictFault::PassOnHumanRequired => {
+                        format!("criterion {criterion} cannot pass on a human_required basis")
+                    }
+                },
+            ));
         }
     }
-    match request.mode {
-        AcceptanceEvaluationMode::SubAgent => {
-            let (Some(identity), Some(parent)) = (
-                request
-                    .execution_identity
-                    .as_deref()
-                    .filter(|identity| !identity.trim().is_empty()),
-                IdentityShape::of_request(request).child_parent(),
-            ) else {
+    let shape = IdentityShape::of_request(request);
+    if shape.stray_child_metadata() {
+        return Err(refused(
+            work,
+            "execution identity and parent session belong to sub_agent mode only",
+        ));
+    }
+    if request.mode == AcceptanceEvaluationMode::SubAgent {
+        // Both are asserted identifiers stored in the immutable record:
+        // bounded like every other identifier on it.
+        match (
+            execution_identity_fault(request.execution_identity.as_deref()),
+            shape.child_parent(),
+        ) {
+            (Some(ExecutionIdentityFault::Missing), _) | (_, None) => {
                 return Err(refused(
                     work,
                     "sub_agent mode needs a distinct execution identity and the attested parent session",
                 ));
-            };
-            // Both are asserted identifiers stored in the immutable record:
-            // bounded like every other identifier on it.
-            if identity.len() > MAX_EXECUTION_IDENTITY_BYTES
-                || identity.chars().any(char::is_control)
-            {
+            }
+            (Some(ExecutionIdentityFault::OutOfBounds), Some(_)) => {
                 return Err(refused(
                     work,
                     format!(
@@ -884,16 +876,10 @@ fn validate_request_shape(request: &RecordAcceptanceEvaluationRequest) -> Result
                     ),
                 ));
             }
-            if let Err(error) = crate::storage::admit_session_id(parent) {
-                return Err(refused(work, format!("parent session: {error}")));
-            }
-        }
-        AcceptanceEvaluationMode::SameSession | AcceptanceEvaluationMode::IndependentSession => {
-            if request.execution_identity.is_some() || request.parent_session.is_some() {
-                return Err(refused(
-                    work,
-                    "execution identity and parent session belong to sub_agent mode only",
-                ));
+            (None, Some(parent)) => {
+                if let Err(error) = crate::storage::admit_session_id(parent) {
+                    return Err(refused(work, format!("parent session: {error}")));
+                }
             }
         }
     }
@@ -1582,12 +1568,17 @@ fn staleness_before_move(
             return Ok(Some(AcceptanceStaleReason::Policy));
         }
     }
-    // A record without a session its mode requires could not be admitted
-    // today. One that reached the store by import or edit names no evaluator
-    // to judge, so it cannot complete work; the earlier reasons keep their
-    // precedence.
-    if IdentityShape::of_record(record).lacks_required_session() {
+    // A record whose shape admission refuses could not be recorded today.
+    // One that reached the store by import or edit cannot complete work: an
+    // identity admission refuses names no evaluator to judge, and a
+    // malformed verdict list or metadata of another mode is not a record of
+    // this shape at all. The earlier reasons keep their precedence.
+    let shape = IdentityShape::of_record(record);
+    if shape.identity_defect() {
         return Ok(Some(AcceptanceStaleReason::Identity));
+    }
+    if shape.stray_child_metadata() || record_verdicts_malformed(record) {
+        return Ok(Some(AcceptanceStaleReason::RecordShape));
     }
     if record.mode == AcceptanceEvaluationMode::IndependentSession {
         let claim = load_work_claim_optional(connection, run_id)?;
@@ -1826,7 +1817,9 @@ use citations::{
 };
 mod eligibility;
 #[cfg(test)]
-use eligibility::{MarkStep, MarkTransition, ModePolicyMismatch, mark_author};
+use eligibility::{
+    MarkStep, MarkTransition, ModePolicyMismatch, mark_author, same_session_mark_author,
+};
 use eligibility::{
     SessionStanding, admit_identity, admit_mode, assess_mode_policy, run_holder_history,
     same_session_ineligibility,
@@ -1849,7 +1842,10 @@ use source::{
 mod history;
 pub(crate) use history::{AssessedAcceptanceEvaluation, SourceObservationRecord};
 mod identity_shape;
-use identity_shape::IdentityShape;
+use identity_shape::{
+    ExecutionIdentityFault, IdentityShape, VerdictFault, execution_identity_fault,
+    record_verdicts_malformed, verdict_fault,
+};
 mod reroll;
 mod same_turn;
 

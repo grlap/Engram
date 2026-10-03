@@ -178,10 +178,19 @@ fn sub_agent_pass_survives_parent_handoff_and_refuses_a_former_holder() {
             )
         }
     };
-    let self_evaluation = refusal(record(
+    let self_evaluation = typed_reason(
         store,
-        &child_request(&work, cut(store, &work), "runner", "runner", 6),
-    ));
+        Typed::Eligibility(
+            EvaluationEligibilityMismatch::SubAgentEvaluatorAffiliated,
+            Remedy::InspectEvaluatorBinding,
+        ),
+        |store| {
+            record(
+                store,
+                &child_request(&work, cut(store, &work), "runner", "runner", 6),
+            )
+        },
+    );
     assert!(
         self_evaluation.contains("must be recorded from a distinct child session"),
         "{self_evaluation}"
@@ -207,7 +216,14 @@ fn sub_agent_pass_survives_parent_handoff_and_refuses_a_former_holder() {
     );
     let mut former = child_request(&after, cut(store, &after), "runner", "second", 10);
     former.attempt_key = Some("former-holder-child-attempt".into());
-    let former_refusal = refusal(record(store, &former));
+    let former_refusal = typed_reason(
+        store,
+        Typed::Eligibility(
+            EvaluationEligibilityMismatch::SubAgentEvaluatorAffiliated,
+            Remedy::InspectEvaluatorBinding,
+        ),
+        |store| record(store, &former),
+    );
     assert!(
         former_refusal.contains("must be recorded from a distinct child session"),
         "{former_refusal}"

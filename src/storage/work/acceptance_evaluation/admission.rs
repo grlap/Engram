@@ -37,16 +37,29 @@ impl EligibilityContext<'_> {
         reason: impl Into<String>,
         mark_author: Option<SessionId>,
     ) -> StoreError {
+        // Every mismatch is mapped here by name, so a new one must be given
+        // its remedy deliberately.
         let remedy = match mismatch {
             EvaluationEligibilityMismatch::EvaluationDisabled => {
                 EvaluationAdmissionRemedy::UseSelfAssertedCompletion
             }
+            // The evaluator or its parent is bound wrongly to the run: the
+            // binding is what to inspect.
             EvaluationEligibilityMismatch::SameSessionNotExecuting
             | EvaluationEligibilityMismatch::SubAgentParentNotExecuting
-            | EvaluationEligibilityMismatch::IndependentEvaluatorAffiliated => {
+            | EvaluationEligibilityMismatch::IndependentEvaluatorAffiliated
+            | EvaluationEligibilityMismatch::SubAgentEvaluatorAffiliated => {
                 EvaluationAdmissionRemedy::InspectEvaluatorBinding
             }
-            _ => EvaluationAdmissionRemedy::RequestEligibleEvaluation,
+            // The mode, the mark or who set it rules this evaluation out:
+            // another, eligible evaluation is the way on.
+            EvaluationEligibilityMismatch::ModeDisallowed
+            | EvaluationEligibilityMismatch::TaskPinMismatch
+            | EvaluationEligibilityMismatch::SameSessionUnmarked
+            | EvaluationEligibilityMismatch::MarkAuthorUnrecorded
+            | EvaluationEligibilityMismatch::MarkAuthorAffiliated => {
+                EvaluationAdmissionRemedy::RequestEligibleEvaluation
+            }
         };
         refusal(
             self.item.work_id,
@@ -98,6 +111,8 @@ impl CitationContext<'_> {
             checked_revision: None,
             judged_revision: None,
             producer_observation: None,
+            // Every mismatch is mapped here by name, so a new one must be
+            // given its remedy deliberately.
             remedy: match mismatch {
                 EvaluationCitationMismatch::BeyondCut => EvaluationAdmissionRemedy::ReadCurrentCut,
                 EvaluationCitationMismatch::WrongSource
@@ -105,7 +120,14 @@ impl CitationContext<'_> {
                 | EvaluationCitationMismatch::UnverifiableSource => {
                     EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate
                 }
-                _ => EvaluationAdmissionRemedy::ReadRunEvidence,
+                EvaluationCitationMismatch::NotOnRun
+                | EvaluationCitationMismatch::ObservedBasisRequired
+                | EvaluationCitationMismatch::PassedVerificationRequired
+                | EvaluationCitationMismatch::ObservedPolicyRequired
+                | EvaluationCitationMismatch::PassingGateRequired
+                | EvaluationCitationMismatch::BoundVerificationMismatch => {
+                    EvaluationAdmissionRemedy::ReadRunEvidence
+                }
             },
         }
     }

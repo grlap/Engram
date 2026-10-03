@@ -1,7 +1,9 @@
-//! A record without a session its mode requires cannot complete work. Such a
-//! record is never admitted, so each case writes an admitted record and then
-//! rewrites its stored bytes under the same id, as an import or an edit
-//! could.
+//! A record whose shape admission refuses cannot complete work: one without
+//! a session or execution identity its mode requires, or with one out of
+//! bounds, reads stale (identity); one with malformed verdicts or another
+//! mode's metadata reads stale (`record_shape`). Such a record is never
+//! admitted, so each case writes an admitted record and then rewrites its
+//! stored bytes under the same id, as an import or an edit could.
 
 use super::review::{handoff, pass_judgment};
 use super::*;
@@ -47,6 +49,27 @@ fn refused_for_identity(
     key: &str,
     second: i64,
 ) {
+    refused_as(
+        store,
+        work,
+        claim,
+        note,
+        key,
+        second,
+        AcceptanceStaleReason::Identity,
+    );
+}
+
+/// `done` refuses with the stale `reason`, and the item stays open.
+fn refused_as(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    note: &ObjectId,
+    key: &str,
+    second: i64,
+    reason: AcceptanceStaleReason,
+) {
     let cause = recovery_cause(complete_evaluated(
         store,
         work,
@@ -58,12 +81,7 @@ fn refused_for_identity(
         second,
     ));
     assert!(
-        matches!(
-            cause,
-            WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
-                reason: AcceptanceStaleReason::Identity
-            }
-        ),
+        cause == WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason },
         "{cause:?}"
     );
     let after = store
@@ -175,14 +193,27 @@ fn a_same_session_record_without_its_evaluator_cannot_complete() {
 }
 
 #[test]
-fn a_sub_agent_record_without_its_parent_or_evaluator_cannot_complete() {
+fn a_sub_agent_record_whose_identity_admission_refuses_cannot_complete() {
     type Edit = fn(&mut AcceptanceEvaluation);
-    let shapes: [(&str, Edit); 3] = [
+    let shapes: [(&str, Edit); 8] = [
         ("parent", |record| record.parent_session = None),
         ("evaluator", |record| record.evaluator.session_id = None),
         ("both", |record| {
             record.parent_session = None;
             record.evaluator.session_id = None;
+        }),
+        ("execution", |record| record.execution_identity = None),
+        ("blank-execution", |record| {
+            record.execution_identity = Some(" \t".into());
+        }),
+        ("long-execution", |record| {
+            record.execution_identity = Some("x".repeat(MAX_EXECUTION_IDENTITY_BYTES + 1));
+        }),
+        ("control-execution", |record| {
+            record.execution_identity = Some("child\nexecution".into());
+        }),
+        ("long-parent", |record| {
+            record.parent_session = Some(SessionId("p".repeat(65)));
         }),
     ];
     for (missing, edit) in shapes {
@@ -464,6 +495,270 @@ fn a_missing_session_reads_after_earlier_reasons_and_before_later_ones() {
             &missing,
             SourceCheck::AtCompletion(Some("another-revision"))
         ),
+        Some(AcceptanceStaleReason::Identity)
+    );
+}
+
+/// A sub-agent execution identity exactly at the byte bound, in single-byte
+/// or multibyte characters, is admitted and completes the item.
+#[test]
+fn a_sub_agent_execution_identity_at_the_bound_completes() {
+    let exact = "x".repeat(MAX_EXECUTION_IDENTITY_BYTES);
+    let multibyte = "\u{e9}".repeat(MAX_EXECUTION_IDENTITY_BYTES / 2);
+    for (name, identity) in [("exact", exact), ("multibyte", multibyte)] {
+        assert_eq!(identity.len(), MAX_EXECUTION_IDENTITY_BYTES);
+        let mut fx = fixture(&format!("project-shape-bound-{name}"));
+        let store = &mut fx.store;
+        enable(
+            store,
+            &[Mode::SubAgent],
+            MechanicalBasis::Asserted,
+            false,
+            "enable-child",
+            5,
+        );
+        let (work, runner, note) = (fx.work.clone(), fx.claim.clone(), fx.evidence.clone());
+        let admitted = record(
+            store,
+            &RecordAcceptanceEvaluationRequest {
+                execution_identity: Some(identity),
+                parent_session: Some(runner.holder.clone()),
+                ..request(
+                    &work,
+                    cut(store, &work),
+                    "child",
+                    Mode::SubAgent,
+                    pass_judgment(&note),
+                    6,
+                )
+            },
+        )
+        .expect("an identity at the bound is admitted");
+        assert_eq!(
+            newest(store, &work),
+            (admitted.evaluation.clone(), None),
+            "{name}"
+        );
+        let seal = complete_evaluated(store, &work, &runner, "runner", &note, None, "complete", 7)
+            .expect("the bounded child pass completes the item");
+        assert_eq!(
+            seal.acceptance_evaluation,
+            Some(admitted.evaluation),
+            "{name}"
+        );
+    }
+}
+
+/// An item with `criteria` an outside planner marked for `same_session`,
+/// claimed by `runner` with one evidence note.
+fn marked_with(project: &str, criteria: &[&str]) -> (Fixture, WorkItem, WorkClaim, ObjectId) {
+    let mut fx = fixture(project);
+    enable(
+        &mut fx.store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-same-session",
+        5,
+    );
+    let mut create = root_request(project, "create-marked", 6);
+    create.evaluation_mode = Some(Mode::SameSession);
+    create.acceptance = criteria.iter().map(|text| (*text).into()).collect();
+    let work = fx
+        .store
+        .create_work(&create, &DevelopmentNoopRedactor)
+        .expect("outside-authored mark");
+    let held = claim(&mut fx.store, &work, "runner", "claim-marked", 7, 3_600);
+    let note = evidence(&mut fx.store, &work, &held, "runner", "marked-evidence", 8);
+    (fx, work, held, note)
+}
+
+/// A pass of every one of `count` criteria, citing `note`.
+fn pass_all(note: &ObjectId, count: usize) -> Vec<CriterionVerdictInput> {
+    (1..=count)
+        .map(|position| {
+            verdict(
+                position,
+                AcceptanceVerdict::Pass,
+                AcceptanceBasis::Judgment,
+                std::slice::from_ref(note),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_record_whose_shape_admission_refuses_cannot_complete() {
+    type Edit = fn(&mut AcceptanceEvaluation);
+    let (mut fx, work, held, note) =
+        marked_with("project-record-shape", &["first outcome", "second outcome"]);
+    let store = &mut fx.store;
+    let shapes: [(&str, Edit); 11] = [
+        ("no-verdicts", |record| record.verdicts.clear()),
+        ("one-verdict-fewer", |record| {
+            record.verdicts.pop();
+        }),
+        ("one-verdict-more", |record| {
+            let extra = record.verdicts[1].clone();
+            record.verdicts.push(extra);
+        }),
+        ("reordered", |record| record.verdicts.swap(0, 1)),
+        ("other-criterion", |record| {
+            record.verdicts[0].criterion = "another outcome".into();
+        }),
+        ("blank-rationale", |record| {
+            record.verdicts[0].rationale = " ".into();
+        }),
+        ("too-many-citations", |record| {
+            let cited = record.verdicts[0].evidence[0].clone();
+            record.verdicts[0].evidence = vec![cited; MAX_ACCEPTANCE_VERDICT_CITATIONS + 1];
+        }),
+        ("pass-without-citation", |record| {
+            record.verdicts[0].evidence.clear();
+        }),
+        ("pass-on-human-required", |record| {
+            record.verdicts[0].basis = AcceptanceBasis::HumanRequired;
+        }),
+        ("stray-parent", |record| {
+            record.parent_session = Some(SessionId("runner".into()));
+        }),
+        ("stray-execution", |record| {
+            record.execution_identity = Some("child-execution".into());
+        }),
+    ];
+    let mut second = 9;
+    for (shape, edit) in shapes {
+        let admitted = record(
+            store,
+            &RecordAcceptanceEvaluationRequest {
+                attempt_key: Some(format!("pass-{shape}")),
+                ..request(
+                    &work,
+                    cut(store, &work),
+                    "runner",
+                    Mode::SameSession,
+                    pass_all(&note, 2),
+                    second,
+                )
+            },
+        )
+        .expect("an admitted pass");
+        assert_eq!(
+            newest(store, &work),
+            (admitted.evaluation.clone(), None),
+            "{shape}"
+        );
+        malform(store, &admitted.evaluation, edit);
+        assert_eq!(
+            newest(store, &work),
+            (
+                admitted.evaluation.clone(),
+                Some(AcceptanceStaleReason::RecordShape)
+            ),
+            "{shape}"
+        );
+        refused_as(
+            store,
+            &work,
+            &held,
+            &note,
+            &format!("complete-{shape}"),
+            second + 1,
+            AcceptanceStaleReason::RecordShape,
+        );
+        second += 2;
+    }
+    // A fresh admitted evaluation completes the item.
+    let fresh = record(
+        store,
+        &RecordAcceptanceEvaluationRequest {
+            attempt_key: Some("fresh-pass".into()),
+            ..request(
+                &work,
+                cut(store, &work),
+                "runner",
+                Mode::SameSession,
+                pass_all(&note, 2),
+                second,
+            )
+        },
+    )
+    .expect("fresh valid pass");
+    let seal = complete_evaluated(
+        store,
+        &work,
+        &held,
+        "runner",
+        &note,
+        None,
+        "complete-fresh",
+        second + 1,
+    )
+    .expect("the fresh pass completes the item");
+    assert_eq!(seal.acceptance_evaluation, Some(fresh.evaluation));
+}
+
+// Earlier reasons keep their precedence over a malformed record, and an
+// identity defect precedes it. Assessment inputs; nothing is written.
+#[test]
+fn a_malformed_record_reads_after_earlier_reasons_and_identity() {
+    let (fx, work, held, recorded) = {
+        let (mut fx, work, held, note) = marked_same_session("project-record-shape-precedence");
+        let through = cut(&fx.store, &work);
+        let recorded = record(
+            &mut fx.store,
+            &request(
+                &work,
+                through,
+                "runner",
+                Mode::SameSession,
+                pass_judgment(&note),
+                9,
+            ),
+        )
+        .expect("same-session pass");
+        (fx, work, held, recorded)
+    };
+    let assess =
+        |item: &WorkItem, policy: &AcceptanceEvaluationPolicy, record: &AcceptanceEvaluation| {
+            staleness_named(
+                &fx.store.connection,
+                item,
+                held.run_id,
+                policy,
+                &recorded.evaluation,
+                record,
+                SourceCheck::Unmeasured,
+            )
+            .expect("assessment")
+            .0
+        };
+    let admitted = policy(&[Mode::SameSession], MechanicalBasis::Asserted, false);
+    let mut malformed = recorded.record.clone();
+    malformed.verdicts[0].rationale = " ".into();
+    assert_eq!(
+        assess(&work, &admitted, &malformed),
+        Some(AcceptanceStaleReason::RecordShape)
+    );
+    let mut revised = work.clone();
+    revised.revision += 1;
+    assert_eq!(
+        assess(&revised, &admitted, &malformed),
+        Some(AcceptanceStaleReason::Revision)
+    );
+    let independent_only = policy(
+        &[Mode::IndependentSession],
+        MechanicalBasis::Asserted,
+        false,
+    );
+    assert_eq!(
+        assess(&work, &independent_only, &malformed),
+        Some(AcceptanceStaleReason::Policy)
+    );
+    let mut both = malformed.clone();
+    both.evaluator.session_id = None;
+    assert_eq!(
+        assess(&work, &admitted, &both),
         Some(AcceptanceStaleReason::Identity)
     );
 }

@@ -897,7 +897,7 @@ pub(crate) fn missing_evaluation_remedy(
     let admits = |mode: Mode| admitted.is_empty() || admitted.contains(&mode);
     match mark {
         Some(mark) if !admits(mark) => {
-            "it is marked for a mode this project does not admit: have someone other than its executor change the mark, then request an evaluation"
+            "it is marked for a mode this project does not admit: change the mark to a mode the project admits, then request an evaluation in that mode; only a change to same_session needs a session that never held or executed this run"
         }
         Some(Mode::SameSession) => {
             "it is marked for same-session evaluation: if a session that never held or executed this run set the mark, record one in that mode with evaluate, then retry done; otherwise such a session must first clear the mark and set it again"
@@ -916,6 +916,12 @@ pub(crate) fn missing_evaluation_remedy(
         }
     }
 }
+
+/// Every cause behind an evaluation stale with reason policy, which the
+/// refusal does not tell apart: the mode, the session or a mark's author is
+/// no longer admitted, or the policy now requires observed passes while the
+/// record holds an asserted one.
+pub(crate) const POLICY_STALE_CAUSES: &str = "the project's policy or the task's mark no longer admits it: its mode, the session it was recorded from or the mark's author is no longer admitted, or the policy now requires observed passes and it holds an asserted one";
 
 /// What the evaluation remedies of a completion refusal read: the task's
 /// evaluation-mode mark and the modes the project admits.
@@ -960,6 +966,23 @@ fn completion_recovery_result(
         &recovery.cause,
         WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. }
     ) {
+        format!(
+            "{}; evaluator absence never falls back to self-asserted completion",
+            missing_evaluation_remedy(modes.mark, &modes.admitted)
+        )
+    } else if let WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+        reason: crate::AcceptanceStaleReason::Policy,
+    } = &recovery.cause
+    {
+        format!(
+            "{}: {}; evaluator absence never falls back to self-asserted completion",
+            POLICY_STALE_CAUSES,
+            missing_evaluation_remedy(modes.mark, &modes.admitted)
+        )
+    } else if let WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+        reason: crate::AcceptanceStaleReason::Identity,
+    } = &recovery.cause
+    {
         format!(
             "{}; evaluator absence never falls back to self-asserted completion",
             missing_evaluation_remedy(modes.mark, &modes.admitted)

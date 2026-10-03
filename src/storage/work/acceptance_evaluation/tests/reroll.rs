@@ -488,3 +488,125 @@ fn the_observation_rule_reads_the_change_flag_and_the_revision_last_seen() {
     let request = pass(store, "flagged-without-revision", 65);
     record(store, &request).expect("a flagged change with no revision is new evidence");
 }
+
+// An accounted unadmitted change after a blocking evaluation's cut voids that
+// evaluation even when it reports the revision the evaluation judged, so it is
+// new evidence for the next one: a fail, an insufficient-evidence verdict or
+// one that needs a human is replaced by an evaluation whose basis includes the
+// change, and the refusal naming no new evidence never appears while the
+// blocking record reads stale for it. A basis that stops before the change is
+// refused as void.
+#[test]
+fn an_accounted_unadmitted_change_is_new_evidence_whatever_revision_it_reports() {
+    for blocking in [
+        AcceptanceVerdict::Fail,
+        AcceptanceVerdict::InsufficientEvidence,
+        AcceptanceVerdict::NeedsHuman,
+    ] {
+        let case = blocking.word();
+        let mut fixture = fixture(&format!("project-reroll-unadmitted-{case}"));
+        let store = &mut fixture.store;
+        enable(
+            store,
+            &[Mode::SameSession],
+            MechanicalBasis::Asserted,
+            false,
+            "enable",
+            5,
+        );
+        disable_obligation_rules(store, 6);
+        let (work, claim, note) = (
+            fixture.work.clone(),
+            fixture.claim.clone(),
+            fixture.evidence.clone(),
+        );
+        let mut host = HostSession::bind(store, &work, &claim, 10);
+        // A sighting, not a change, so the later report is accounted as a
+        // change of its own rather than a repeat of this one.
+        host.checkpoint(store, false, None, 20);
+        let blocked_at = cut(store, &work);
+        let blocked = record(
+            store,
+            &judged(&work, blocking, &[], blocked_at, "blocking", 30),
+        )
+        .expect("the blocking evaluation");
+        // The change reports the very revision the blocking evaluation judged.
+        let judged_revision = host.basis.source_revision.clone();
+        let change = super::citation_sources::unadmitted_change(
+            store,
+            &host,
+            &claim,
+            &judged_revision,
+            "late-report",
+            40,
+        );
+        assert!(
+            matches!(
+                change.accounting,
+                crate::domain::ObservationAccounting::SourceChange { .. }
+            ),
+            "{case}: {:?}",
+            change.accounting
+        );
+        let status = store
+            .acceptance_evaluation_status(work.work_id, None)
+            .expect("status read")
+            .expect("newest evaluation");
+        assert_eq!(status.evaluation, blocked.evaluation, "{case}");
+        assert_eq!(
+            status.stale,
+            Some(AcceptanceStaleReason::Mutation),
+            "{case}"
+        );
+        assert_eq!(
+            status
+                .stale_observation
+                .as_ref()
+                .map(|deciding| deciding.observation.clone()),
+            Some(change.observation.clone()),
+            "{case}"
+        );
+        // A basis that stops before the change is refused: the change voids
+        // it as it voids the blocking record.
+        let before = record(
+            store,
+            &judged(
+                &work,
+                AcceptanceVerdict::Pass,
+                std::slice::from_ref(&note),
+                blocked_at,
+                "before-the-change",
+                45,
+            ),
+        );
+        assert!(
+            matches!(
+                &before,
+                Err(StoreError::AcceptanceEvaluationBasisMoved { .. })
+            ),
+            "{case}: {before:?}"
+        );
+        // One whose basis includes the change replaces the blocking record.
+        let replacement = record(
+            store,
+            &judged(
+                &work,
+                AcceptanceVerdict::Pass,
+                std::slice::from_ref(&note),
+                cut(store, &work),
+                "after-the-change",
+                50,
+            ),
+        )
+        .unwrap_or_else(|error| panic!("{case}: the change is new evidence: {error:?}"));
+        let status = store
+            .acceptance_evaluation_status(work.work_id, None)
+            .expect("status read")
+            .expect("newest evaluation");
+        assert_eq!(
+            (status.evaluation, status.stale),
+            (replacement.evaluation, None),
+            "{case}"
+        );
+    }
+}

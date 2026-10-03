@@ -137,7 +137,7 @@ impl EvaluationObligation {
                 "name a source root and run its credited check, or obtain an authorized waiver before evaluation"
             }
             WorkObligationCompletionAction::WaiverOnly => {
-                "obtain an authorized human waiver before evaluation; a check in this root cannot satisfy this foreign change"
+                "obtain an authorized human waiver before evaluation; no check in a named root can satisfy this foreign change"
             }
         };
         Self {

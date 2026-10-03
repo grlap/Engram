@@ -644,7 +644,7 @@ fn completion_recovery_reminder_names_the_identity_remedy_for_the_task() {
         source: None,
         open_obligation_check: None,
     };
-    let cause = "w-000000000004 acceptance evaluation is stale (identity): its independent evaluator has since held this run, or the record lacks a session its mode requires";
+    let cause = "w-000000000004 acceptance evaluation is stale (identity): its independent evaluator has since held this run, or the record lacks a session or execution identity its mode requires, or carries one admission refuses";
     for (remedy, mark, admitted) in [
         (
             crate::verbs::handlers::EvaluationRemedy {

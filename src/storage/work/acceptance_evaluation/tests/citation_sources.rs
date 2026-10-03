@@ -576,17 +576,26 @@ fn a_declared_source_is_matched_and_never_hides_a_later_sighting() {
     // on, matches the check but not the run after it.
     host.basis.source_revision = "revision-e".into();
     host.checkpoint(store, true, None, 30);
-    let behind = refusal(record(
+    let behind = typed_reason(
         store,
-        &evaluation(
-            store,
-            &work,
-            std::slice::from_ref(&at_d),
-            &note,
-            Some(declared("revision-d", Some("workspace-evaluated"))),
-            35,
+        Typed::Citation(
+            EvaluationCitationMismatch::SourceMovedAfterCheck,
+            Remedy::RunCurrentCheckAndEvaluate,
         ),
-    ));
+        |store| {
+            record(
+                store,
+                &evaluation(
+                    store,
+                    &work,
+                    std::slice::from_ref(&at_d),
+                    &note,
+                    Some(declared("revision-d", Some("workspace-evaluated"))),
+                    35,
+                ),
+            )
+        },
+    );
     assert!(
         behind.contains(&format!(
             "{at_d} ran on source revision revision-d, but the run was last seen at revision revision-e after it"
@@ -610,10 +619,19 @@ fn a_change_without_a_revision_after_the_check_retires_it() {
         20,
     ));
     host.report(store, &[(true, None)], 30);
-    let refused = refusal(record(
+    let refused = typed_reason(
         store,
-        &evaluation(store, &work, std::slice::from_ref(&at_d), &note, None, 35),
-    ));
+        Typed::Citation(
+            EvaluationCitationMismatch::SourceMovedAfterCheck,
+            Remedy::RunCurrentCheckAndEvaluate,
+        ),
+        |store| {
+            record(
+                store,
+                &evaluation(store, &work, std::slice::from_ref(&at_d), &note, None, 35),
+            )
+        },
+    );
     assert!(
         refused.contains(&format!(
             "{at_d} ran on source revision revision-d, but the run reported a source change without a revision after it"
@@ -870,7 +888,7 @@ fn a_late_record_of_a_check_stands_through_sightings_of_its_revision() {
 /// An accounted inter-turn change the host observed without admission, in
 /// the evaluated workspace, to `revision`, recorded at `second` by the
 /// holder's host session.
-fn unadmitted_change(
+pub(super) fn unadmitted_change(
     store: &mut SqliteStore,
     host: &HostSession,
     claim: &WorkClaim,
@@ -1142,4 +1160,109 @@ fn an_unadmitted_change_after_the_cut_retires_an_evaluation_that_declared_its_re
         .expect("an evaluation");
     assert!(status.stale.is_some(), "{status:?}");
     refusal(record(store, &resubmitted));
+}
+
+// A pass whose citations mix an admissible record with an inadmissible one is
+// refused naming the inadmissible one and the every-citation rule, whatever
+// order the citations were given in; a list of admissible records alone is
+// admitted.
+#[test]
+fn a_mixed_citation_list_names_the_offending_record_and_the_every_citation_rule() {
+    use crate::domain::{
+        AcceptanceEvaluationAdmissionCause, EvaluationAdmissionRemedy, EvaluationCitationMismatch,
+    };
+    let mut fixture = fixture("project-evaluation-mixed-citations");
+    let store = &mut fixture.store;
+    enable(
+        store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-mixed",
+        5,
+    );
+    let work = fixture.work.clone();
+    let claim = fixture.claim.clone();
+    let note = fixture.evidence.clone();
+    let gate_pass = gate(store, &work, &claim, "runner", "cargo-test", &[], 6);
+    let passed = host_verification(
+        store,
+        &work,
+        &claim,
+        "runner",
+        "passed-test",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        7,
+    );
+    let cases = [
+        (
+            AcceptanceBasis::Asserted,
+            &gate_pass,
+            EvaluationCitationMismatch::PassingGateRequired,
+            "an asserted pass requires every citation to be a gate record with no failure labels",
+        ),
+        (
+            AcceptanceBasis::Observed,
+            &passed,
+            EvaluationCitationMismatch::PassedVerificationRequired,
+            "an observed pass requires every citation to be host-minted verification evidence with a passed result",
+        ),
+    ];
+    for (basis, admissible, mismatch, rule) in cases {
+        for citations in [
+            vec![admissible.clone(), note.clone()],
+            vec![note.clone(), admissible.clone()],
+        ] {
+            let snapshot = test_database_shape_snapshot(&store.connection).unwrap();
+            let (reason, cause) = super::admission::typed_refusal(record(
+                store,
+                &request(
+                    &work,
+                    cut(store, &work),
+                    "runner",
+                    Mode::SameSession,
+                    vec![verdict(1, AcceptanceVerdict::Pass, basis, &citations)],
+                    8,
+                ),
+            ));
+            assert!(
+                reason.contains(rule) && reason.contains(&format!("{} is not", note.as_str())),
+                "{reason}"
+            );
+            let AcceptanceEvaluationAdmissionCause::Citation(cause) = cause else {
+                panic!("a citation refusal");
+            };
+            assert_eq!(cause.mismatch, mismatch);
+            assert_eq!(cause.citation, note.as_str());
+            assert_eq!(cause.remedy, EvaluationAdmissionRemedy::ReadRunEvidence);
+            assert_eq!(
+                test_database_shape_snapshot(&store.connection).unwrap(),
+                snapshot
+            );
+        }
+    }
+    // Admissible records alone are admitted, for each basis.
+    for (second, basis, admissible) in [
+        (9, AcceptanceBasis::Asserted, &gate_pass),
+        (10, AcceptanceBasis::Observed, &passed),
+    ] {
+        record(
+            store,
+            &request(
+                &work,
+                cut(store, &work),
+                "runner",
+                Mode::SameSession,
+                vec![verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    basis,
+                    std::slice::from_ref(admissible),
+                )],
+                second,
+            ),
+        )
+        .unwrap_or_else(|error| panic!("{basis:?} with only admissible citations: {error:?}"));
+    }
 }

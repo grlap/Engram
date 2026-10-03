@@ -89,7 +89,10 @@ fn contract_changed(
 /// declared revision, or else the run's last sighting at its cut. A report
 /// that leaves the source at that revision, or any sighting outside the
 /// claim's named root, is no new evidence. A reported change that carries no
-/// revision qualifies, since nothing shows it left the source as judged.
+/// revision qualifies, since nothing shows it left the source as judged, and
+/// so does an accounted unadmitted change whatever revision it reports: it
+/// already voids the blocking evaluation, which may have judged the source
+/// from before it.
 fn new_evidence_between(
     connection: &Connection,
     run_id: WorkRunId,
@@ -144,7 +147,9 @@ fn new_evidence_between(
             .source_basis
             .as_ref()
             .map(|basis| basis.source_revision.clone());
-        if observation.source_changed && (revision.is_none() || revision != last) {
+        if observation.source_changed
+            && (!observation.admitted || revision.is_none() || revision != last)
+        {
             return Ok(true);
         }
         seen = Some(revision.or(last));
