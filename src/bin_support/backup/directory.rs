@@ -90,20 +90,22 @@ impl<'a> DirectoryAdapter<'a> {
             artifact,
             capture,
             attempt_id,
-            Instant::now() + Duration::from_secs(3600),
+            Instant::now().checked_add(Duration::from_secs(3600)),
         )
     }
 
     /// Compresses a captured `artifact` into the local stage beside it and
     /// returns the attempt the caller records before `put`, with its complete
     /// manifest, and the stored file `put` takes. The compression stops at
-    /// `until`, checked between reads, and then removes its stored file.
+    /// `until`, checked between reads, and then removes its stored file;
+    /// `None`, a deadline too far off for the clock to represent, sets no
+    /// limit.
     pub(crate) fn prepare_until(
         &self,
         artifact: &Path,
         capture: &CaptureManifest,
         attempt_id: uuid::Uuid,
-        until: Instant,
+        until: Option<Instant>,
     ) -> Result<(Attempt, PathBuf), AdapterError> {
         let copy = copy_name(capture.capture_started_at, attempt_id);
         let stored = artifact.with_file_name(data_name(&copy));
@@ -130,7 +132,7 @@ impl<'a> DirectoryAdapter<'a> {
             file.sync_all()
         })();
         let written = written.and_then(|()| {
-            if Instant::now() >= until {
+            if until.is_some_and(|until| Instant::now() >= until) {
                 Err(io::Error::new(io::ErrorKind::TimedOut, "past the deadline"))
             } else {
                 Ok(())
@@ -773,12 +775,13 @@ impl BackupAdapter for DirectoryAdapter<'_> {
 /// each read.
 struct UntilReader<R> {
     inner: R,
-    until: Instant,
+    /// `None` sets no limit.
+    until: Option<Instant>,
 }
 
 impl<R: Read> Read for UntilReader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        if Instant::now() >= self.until {
+        if self.until.is_some_and(|until| Instant::now() >= until) {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "past the deadline"));
         }
         self.inner.read(buffer)

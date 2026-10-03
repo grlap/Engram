@@ -584,7 +584,9 @@ impl Push<'_> {
                 &staged,
                 &manifest,
                 attempt_id,
-                Instant::now() + capture_left,
+                // A capture deadline too far off for the clock to represent
+                // sets no limit, as it does for the capture itself.
+                Instant::now().checked_add(capture_left),
             )?;
         if let Some((_, prepared)) = &mut self.stage {
             *prepared = Some(stored.clone());

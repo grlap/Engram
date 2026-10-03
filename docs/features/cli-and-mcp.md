@@ -1563,6 +1563,8 @@ This is the contract a host builds its push trigger on.
   copy, no new attempt is recorded. An attempt already pending stays
   pending, since resolving it is a request too. Either way the failure is
   recorded as the last attempt.
+- A deadline too far off for the clock to represent, such as
+  18446744073709551615 seconds, sets no limit on what it bounds.
 
 **At the capture deadline** the capture stops at its next check, which ends
 its read transaction, and removes its stage. Nothing of this capture is sent

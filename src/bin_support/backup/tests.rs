@@ -1110,11 +1110,34 @@ fn preparing_stops_at_its_deadline_and_leaves_no_stored_file() {
     let bytes = incompressible(1 << 20);
     let (path, capture) = artifact(fixture.home.path(), "late", &bytes, 10);
     let error = adapter
-        .prepare_until(&path, &capture, uuid::Uuid::now_v7(), Instant::now())
+        .prepare_until(&path, &capture, uuid::Uuid::now_v7(), Some(Instant::now()))
         .unwrap_err();
     assert_eq!(error.code(), "backup_capture_deadline", "{error}");
     // Only the staged copy is left in its stage.
     assert_eq!(names(path.parent().unwrap()), ["store.db"]);
+}
+
+#[test]
+fn preparing_without_a_deadline_prepares_the_whole_file() {
+    let fixture = fixture();
+    let adapter = adapter(&fixture.root, &plenty);
+    let bytes = incompressible(1 << 20);
+    let (path, capture) = artifact(fixture.home.path(), "unbounded", &bytes, 11);
+    let (attempt, stored) = adapter
+        .prepare_until(&path, &capture, uuid::Uuid::now_v7(), None)
+        .unwrap();
+    assert_eq!(
+        fs::metadata(&stored).unwrap().len(),
+        attempt.manifest.stored_bytes
+    );
+    let stored_bytes = fs::read(&stored).unwrap();
+    let mut decoded = Vec::new();
+    std::io::Read::read_to_end(
+        &mut flate2::read::GzDecoder::new(stored_bytes.as_slice()),
+        &mut decoded,
+    )
+    .unwrap();
+    assert_eq!(decoded, bytes);
 }
 
 #[test]

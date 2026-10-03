@@ -201,6 +201,48 @@ fn a_failed_push_exits_one_with_its_typed_code() {
 }
 
 #[test]
+fn deadlines_too_far_off_for_the_clock_push_without_a_limit() {
+    let root = test_support::temp_home().unwrap();
+    setup(root.path());
+    let copies = root.path().join("copies");
+    fs::create_dir_all(&copies).unwrap();
+    set_target(root.path(), &copies);
+    let max = u64::MAX.to_string();
+
+    let push = engram(
+        root.path(),
+        &[
+            "backup",
+            "push",
+            "--json",
+            "--capture-deadline-secs",
+            &max,
+            "--transport-deadline-secs",
+            &max,
+        ],
+    );
+    assert!(
+        push.status.success(),
+        "{}{}",
+        text(&push.stdout),
+        text(&push.stderr)
+    );
+    let value: Value = serde_json::from_slice(&push.stdout).unwrap();
+    assert_eq!(value["kinds"][0]["outcome"], "uploaded", "{value}");
+    let stage = root
+        .path()
+        .join("home")
+        .join(engram::backup::STAGE_DIRECTORY)
+        .join(engram::project_digest(&project()));
+    let left: Vec<_> = match fs::read_dir(&stage) {
+        Ok(entries) => entries.map(|entry| entry.unwrap().path()).collect(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => panic!("{error}"),
+    };
+    assert!(left.is_empty(), "{left:?}");
+}
+
+#[test]
 fn a_transport_deadline_shorter_than_the_put_exits_one_and_leaves_the_attempt_pending() {
     let root = test_support::temp_home().unwrap();
     setup(root.path());

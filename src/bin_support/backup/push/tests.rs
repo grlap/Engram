@@ -694,6 +694,46 @@ fn a_replacement_for_a_missing_copy_is_checked_in_full_before_it_is_put() {
 }
 
 #[test]
+fn deadlines_too_far_off_for_the_clock_set_no_limit() {
+    let fixture = fixture();
+    let mut unbounded = settings();
+    unbounded.capture_deadline = Duration::from_secs(u64::MAX);
+    unbounded.transport_deadline = Duration::from_secs(u64::MAX);
+
+    // An upload: the capture, the compressed file and the put all run.
+    let first = fixture.push_with(&unbounded);
+    assert_eq!(
+        first.report.outcome,
+        Outcome::Uploaded,
+        "{:?}",
+        first.report
+    );
+    assert!(first.abandoned.is_none());
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+
+    // A changed store: its own check and compressed file run too.
+    fixture.change("second");
+    let second = fixture.push_with(&unbounded);
+    assert_eq!(
+        second.report.outcome,
+        Outcome::Uploaded,
+        "{:?}",
+        second.report
+    );
+    assert_eq!(second.report.capture_check, Some(CaptureCheck::Full));
+
+    // An unchanged store: the target confirms the copy.
+    let third = fixture.push_with(&unbounded);
+    assert_eq!(
+        third.report.outcome,
+        Outcome::Unchanged,
+        "{:?}",
+        third.report
+    );
+    assert!(fixture.stages().is_empty(), "{:?}", fixture.stages());
+}
+
+#[test]
 fn a_capture_past_its_own_deadline_fails_without_any_request_to_the_target() {
     let fixture = fixture();
     let mut hurried = settings();
