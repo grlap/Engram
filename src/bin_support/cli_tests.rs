@@ -624,3 +624,59 @@ fn receipts_and_recovery_refusals_never_spell_the_locked_store_phrase() {
         value
     );
 }
+
+// Every refusal family that can carry host-recorded text is guarded on
+// stderr, also those the core CLI path never reaches; any other error is
+// written as it is, so a real lock error still reads as one.
+#[test]
+fn the_refusal_guard_covers_each_family_carrying_host_text_and_nothing_else() {
+    let value = serde_json::json!({
+        "error": {
+            "details": {
+                "deciding_observation": {
+                    "revision": "Database Is Locked",
+                    "workspace": "C:/work/database is locked",
+                },
+            },
+        },
+    });
+    let text = serde_json::to_string_pretty(&value).unwrap();
+    let work = engram::WorkId::new();
+    let cause: engram::domain::AcceptanceEvaluationAdmissionCause =
+        serde_json::from_value(serde_json::json!({
+            "kind": "eligibility",
+            "mismatch": "mode_disallowed",
+            "requested_mode": "same_session",
+            "task_mark": null,
+            "admitted_modes": ["independent_session"],
+            "remedy": "request_eligible_evaluation",
+        }))
+        .unwrap();
+    let guarded = [
+        engram::storage::StoreError::AcceptanceEvaluationBasisMoved {
+            work,
+            moved: engram::storage::EvaluationBasisMove::SourceChanged,
+            reason: "the source changed after the evidence basis".into(),
+            observation: None,
+        },
+        engram::storage::StoreError::AcceptanceEvaluationAdmissionRefused {
+            work,
+            reason: "mode same_session is not allowed by the project policy".into(),
+            cause: Box::new(cause),
+        },
+    ];
+    for error in &guarded {
+        let written = super::refusal_stderr_text(error, text.clone());
+        assert!(
+            !written.to_lowercase().contains("database is locked"),
+            "{error:?}: {written}"
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&written).unwrap(),
+            value,
+            "{error:?}"
+        );
+    }
+    let other = engram::storage::StoreError::InvalidWork("database is locked".into());
+    assert_eq!(super::refusal_stderr_text(&other, text.clone()), text);
+}

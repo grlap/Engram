@@ -11,7 +11,20 @@ pub(crate) struct SourceRecoveryTransportFixture {
     pub mismatch: Mismatch,
 }
 
-/// B21/B22/B77/B78: real histories reused by service and MCP tests.
+/// A declared source past the agent projection's 128-byte bound, in a
+/// multibyte script whose 128th byte falls inside a character.
+pub(crate) fn long_declared_source() -> String {
+    "源".repeat(43)
+}
+
+/// A presented measurement one byte past that bound.
+pub(crate) fn long_presented_source() -> String {
+    "m".repeat(129)
+}
+
+/// B21/B22/B77/B78: real histories reused by service and MCP tests. The
+/// `long_` cases repeat `unconfirmed` and `mismatch` with host-recorded
+/// strings past the projection bound.
 pub(crate) fn source_recovery_transport_fixture(
     case: &str,
     now: DateTime<Utc>,
@@ -22,7 +35,7 @@ pub(crate) fn source_recovery_transport_fixture(
     let note = fixture.evidence.clone();
     let store = &mut fixture.store;
     let claim = claim(store, &work, "runner", "renew-source-claim", second, 3600);
-    let named = case == "unconfirmed";
+    let named = matches!(case, "unconfirmed" | "long_unconfirmed");
     enable(
         store,
         &[Mode::SameSession],
@@ -80,12 +93,20 @@ pub(crate) fn source_recovery_transport_fixture(
     if case != "no_basis" {
         input.source_basis = Some(AcceptanceSourceBasis {
             workspace_id: None,
-            fingerprint: if named { "R2" } else { "measured-A" }.into(),
+            fingerprint: match case {
+                "unconfirmed" => "R2".into(),
+                "long_unconfirmed" | "long_mismatch" => long_declared_source(),
+                _ => "measured-A".into(),
+            },
         });
     }
     let evaluation = record(store, &input).unwrap().evaluation;
     let (presented, mismatch) = match case {
-        "unconfirmed" => (None, Mismatch::UnconfirmedDeclaration),
+        "unconfirmed" | "long_unconfirmed" => (None, Mismatch::UnconfirmedDeclaration),
+        "long_mismatch" => (
+            Some(long_presented_source()),
+            Mismatch::CompletionFingerprintMismatch,
+        ),
         "missing" => (None, Mismatch::CompletionMeasurementMissing),
         "mismatch" => (
             Some("measured-B".into()),

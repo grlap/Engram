@@ -1676,10 +1676,19 @@ mod tests {
     }
 
     // B21/B22/B77/B78: storage's deciding source context selects both the
-    // service remedy and word guidance, without changing the owed status.
+    // service remedy and word guidance, without changing the owed status. The
+    // word and plain show bound host-recorded strings; service and raw error
+    // details keep them whole.
     #[test]
     fn source_recovery_causes_select_the_same_service_and_mcp_guidance() {
-        for case in ["unconfirmed", "missing", "mismatch", "no_basis"] {
+        for case in [
+            "unconfirmed",
+            "missing",
+            "mismatch",
+            "no_basis",
+            "long_unconfirmed",
+            "long_mismatch",
+        ] {
             let fixture: crate::storage::SourceRecoveryTransportFixture =
                 crate::storage::source_recovery_transport_fixture(case, Utc::now());
             let service = crate::LocalWorkService::new(
@@ -1747,7 +1756,81 @@ mod tests {
                 .expect("structured word receipt");
             assert_eq!(value["code"], refusal.code);
             assert_eq!(value["recovery"]["cause"], json!(refusal.recovery.cause));
-            assert_eq!(value["recovery"]["source"], json!(source));
+            let shown = crate::work_service::shown_source_recovery(source);
+            assert_eq!(value["recovery"]["source"], json!(shown));
+            let long_declared = crate::storage::long_declared_source();
+            let bounded_declared = format!("{}… (129 bytes stored)", "源".repeat(42));
+            if case.starts_with("long_") {
+                // The service keeps the declaration whole; the word bounds it.
+                assert_eq!(source.declared_revision.as_deref(), Some(&*long_declared));
+                assert_eq!(
+                    value["recovery"]["source"]["declared_revision"], bounded_declared,
+                    "{case}"
+                );
+            }
+            if case == "long_mismatch" {
+                let long_presented = crate::storage::long_presented_source();
+                assert_eq!(
+                    source.expected_fingerprint.as_deref(),
+                    Some(&*long_declared)
+                );
+                assert_eq!(
+                    source.presented_fingerprint.as_deref(),
+                    Some(&*long_presented)
+                );
+                assert_eq!(
+                    value["recovery"]["source"]["expected_fingerprint"],
+                    bounded_declared
+                );
+                assert_eq!(
+                    value["recovery"]["source"]["presented_fingerprint"],
+                    format!("{}… (129 bytes stored)", "m".repeat(128))
+                );
+            }
+            // Plain show names the same remedy on its own line, from the
+            // bounded projection of the source context it reads.
+            let verbs = crate::verbs::AgentVerbs::new(
+                fixture.database.clone(),
+                fixture.work.project_id.clone(),
+                "runner".into(),
+                SessionId("runner".into()),
+                None,
+            );
+            let read = verbs
+                .show(&fixture.work.short_ref, Utc::now())
+                .expect("show the item");
+            let status = crate::SqliteStore::open(&fixture.database)
+                .expect("open the store")
+                .acceptance_evaluation_status(fixture.work.work_id, None)
+                .expect("status read")
+                .expect("newest evaluation");
+            let shown_in_read = read.value["acceptance_evaluation"]["source_recovery"].clone();
+            match &status.source_recovery {
+                Some(at_read) => {
+                    let line =
+                        format!("  {}", crate::work_service::source_recovery_remedy(at_read));
+                    assert!(
+                        read.text().lines().any(|shown| shown == line),
+                        "{case}: {}",
+                        read.text()
+                    );
+                    assert_eq!(
+                        shown_in_read,
+                        json!(crate::work_service::shown_source_recovery(at_read)),
+                        "{case}"
+                    );
+                    if case == "long_unconfirmed" {
+                        assert_eq!(at_read.declared_revision.as_deref(), Some(&*long_declared));
+                        assert_eq!(shown_in_read["declared_revision"], bounded_declared);
+                    }
+                }
+                None => assert!(shown_in_read.is_null(), "{case}: {shown_in_read}"),
+            }
+            assert_eq!(
+                status.source_recovery.is_some(),
+                matches!(case, "unconfirmed" | "no_basis" | "long_unconfirmed"),
+                "{case}"
+            );
             assert!(value["reminders"].as_array().unwrap().iter().any(|line| {
                 line.as_str()
                     .is_some_and(|text| text.contains(&refusal.remedy))
@@ -1781,6 +1864,12 @@ mod tests {
                 "work_completion_recovery_required"
             );
             assert_eq!(raw_json["error"]["details"]["source"], json!(source));
+            if case.starts_with("long_") {
+                assert_eq!(
+                    raw_json["error"]["details"]["source"]["declared_revision"],
+                    long_declared
+                );
+            }
         }
     }
 

@@ -494,5 +494,5 @@ pub(crate) struct CompletionRecoverySnapshot {
 #[cfg(test)]
 pub(crate) use acceptance_evaluation::{
     AdmissionTransportFixture, SourceRecoveryTransportFixture, admission_transport_fixture,
-    source_recovery_transport_fixture,
+    long_declared_source, long_presented_source, source_recovery_transport_fixture,
 };

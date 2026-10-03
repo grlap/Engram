@@ -38,3 +38,98 @@ pub(crate) fn shown_source_recovery(
     }
     shown
 }
+
+#[cfg(test)]
+mod tests {
+    use super::shown_source_recovery;
+    use crate::domain::{
+        AcceptanceSourceMismatch, AcceptanceSourceRecoveryCause, AcceptanceSourceRemedy,
+    };
+    use crate::{ObjectId, WorkRunId};
+
+    type Field = fn(&mut AcceptanceSourceRecoveryCause) -> &mut Option<String>;
+
+    /// Each of the five host-recorded strings is bounded on its own at 128
+    /// UTF-8 bytes, never inside a character, with the stored byte length
+    /// after the cut; the cause it was projected from keeps the whole value.
+    #[test]
+    fn every_source_string_is_bounded_at_128_bytes_with_its_stored_length() {
+        let fields: [(&str, Field); 5] = [
+            ("workspace_id", |cause| &mut cause.workspace_id),
+            ("declared_revision", |cause| &mut cause.declared_revision),
+            ("reported_revision", |cause| &mut cause.reported_revision),
+            ("expected_fingerprint", |cause| {
+                &mut cause.expected_fingerprint
+            }),
+            ("presented_fingerprint", |cause| {
+                &mut cause.presented_fingerprint
+            }),
+        ];
+        // The 43rd three-byte character spans bytes 126 to 129, so the cut
+        // falls back to byte 126; the four-byte one at 125 to 129 likewise.
+        let cases = [
+            ("a".repeat(127), "a".repeat(127)),
+            ("a".repeat(128), "a".repeat(128)),
+            (
+                "a".repeat(129),
+                format!("{}… (129 bytes stored)", "a".repeat(128)),
+            ),
+            (
+                "源".repeat(43),
+                format!("{}… (129 bytes stored)", "源".repeat(42)),
+            ),
+            (
+                format!("{}😀", "a".repeat(125)),
+                format!("{}… (129 bytes stored)", "a".repeat(125)),
+            ),
+            (
+                format!("{}源", "a".repeat(125)),
+                format!("{}源", "a".repeat(125)),
+            ),
+        ];
+        for (name, field) in fields {
+            for (stored, expected) in &cases {
+                let mut raw = AcceptanceSourceRecoveryCause {
+                    mismatch: AcceptanceSourceMismatch::CompletionFingerprintMismatch,
+                    evaluation: ObjectId::from_canonical_bytes(b"evaluation"),
+                    run_id: WorkRunId::new(),
+                    evaluated_cut: 7,
+                    remedy: AcceptanceSourceRemedy::EvaluateCurrentSource,
+                    root_binding: None,
+                    workspace_id: Some("w".into()),
+                    declared_revision: Some("d".into()),
+                    reported_revision: Some("r".into()),
+                    expected_fingerprint: Some("e".into()),
+                    presented_fingerprint: Some("p".into()),
+                };
+                *field(&mut raw) = Some(stored.clone());
+                let mut shown = shown_source_recovery(&raw);
+                assert_eq!(
+                    field(&mut shown).as_deref(),
+                    Some(expected.as_str()),
+                    "{name}"
+                );
+                assert_eq!(field(&mut raw).as_deref(), Some(stored.as_str()), "{name}");
+                // The other four, and every other field, are unchanged.
+                *field(&mut shown) = Some(stored.clone());
+                assert_eq!(shown, raw, "{name}");
+            }
+            // An absent string stays absent.
+            let mut raw = AcceptanceSourceRecoveryCause {
+                mismatch: AcceptanceSourceMismatch::EvaluationSourceBasisMissing,
+                evaluation: ObjectId::from_canonical_bytes(b"evaluation"),
+                run_id: WorkRunId::new(),
+                evaluated_cut: 7,
+                remedy: AcceptanceSourceRemedy::EvaluateCurrentSource,
+                root_binding: None,
+                workspace_id: None,
+                declared_revision: None,
+                reported_revision: None,
+                expected_fingerprint: None,
+                presented_fingerprint: None,
+            };
+            assert_eq!(shown_source_recovery(&raw), raw);
+            assert!(field(&mut raw).is_none());
+        }
+    }
+}

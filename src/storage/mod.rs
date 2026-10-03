@@ -1999,5 +1999,5 @@ pub struct SqliteStore {
 #[cfg(test)]
 pub(crate) use work::{
     AdmissionTransportFixture, SourceRecoveryTransportFixture, admission_transport_fixture,
-    source_recovery_transport_fixture,
+    long_declared_source, long_presented_source, source_recovery_transport_fixture,
 };
