@@ -37,10 +37,30 @@ pub(crate) enum CopyProbePoint {
 /// One deadline shared by every step of a copy. Every SQLite connection a
 /// copy opens checks it through a progress handler and is interrupted once it
 /// has passed; lock waits are bounded by the time left; the steps between
-/// statements, and closing a connection, are checked explicitly. It is checked, not enforced to the instant: a file-system call
+/// statements, and closing a connection, are checked explicitly. It is checked,
+/// not enforced to the instant: a file-system call
 /// that stalls is not interrupted. Once a check has seen the deadline pass,
 /// the interrupt stays fired, so a step that turns the interruption into some
 /// other error can still be recognized as the deadline's.
+///
+/// Copying and settling captured files are internal operations; an external
+/// caller cannot apply either helper to an arbitrary store path.
+///
+/// ```compile_fail,E0624
+/// use engram::{storage::CopyInterrupt, SqliteStore};
+/// use std::{path::Path, time::Duration};
+/// let interrupt = CopyInterrupt::after(Duration::from_secs(5));
+/// SqliteStore::copy_existing_read_only(
+///     Path::new("source.db"), Path::new("stage.db"), &interrupt,
+/// ).unwrap();
+/// ```
+///
+/// ```compile_fail,E0624
+/// use engram::{storage::CopyInterrupt, SqliteStore};
+/// use std::{path::Path, time::Duration};
+/// let interrupt = CopyInterrupt::after(Duration::from_secs(5));
+/// SqliteStore::settle_store_copy(Path::new("stage.db"), &interrupt).unwrap();
+/// ```
 #[derive(Clone)]
 pub struct CopyInterrupt {
     /// `None` when the deadline lies beyond what the clock can represent.
@@ -106,12 +126,21 @@ impl CopyInterrupt {
         self.fired.load(Ordering::SeqCst)
     }
 
-    /// How long a lock wait may last: the time left, at most [`LOCK_WAIT`].
+    /// The time left rounded up to SQLite's whole milliseconds, at most
+    /// [`LOCK_WAIT`]. A positive remainder never disables its busy handler.
     fn lock_wait(&self) -> Duration {
+        self.lock_wait_at(Instant::now())
+    }
+
+    fn lock_wait_at(&self, now: Instant) -> Duration {
         self.deadline.map_or(LOCK_WAIT, |deadline| {
-            deadline
-                .saturating_duration_since(Instant::now())
-                .min(LOCK_WAIT)
+            let remaining = deadline.saturating_duration_since(now).min(LOCK_WAIT);
+            let fractional_ns = remaining.subsec_nanos() % 1_000_000;
+            if fractional_ns == 0 {
+                remaining
+            } else {
+                remaining + Duration::from_nanos(u64::from(1_000_000 - fractional_ns))
+            }
         })
     }
 
@@ -180,7 +209,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when the store is refused, the copy fails, or
     /// `interrupt` fires during the copy.
-    pub fn copy_existing_read_only(
+    pub(crate) fn copy_existing_read_only(
         source: &Path,
         target: &Path,
         interrupt: &CopyInterrupt,
@@ -209,7 +238,10 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when the copy cannot be settled or `interrupt`
     /// fires.
-    pub fn settle_store_copy(path: &Path, interrupt: &CopyInterrupt) -> Result<(), StoreError> {
+    pub(crate) fn settle_store_copy(
+        path: &Path,
+        interrupt: &CopyInterrupt,
+    ) -> Result<(), StoreError> {
         interrupt.checked()?;
         // The copy came from an admitted store, so this ordinary open settles
         // its journal mode and initializes nothing. Closing it folds its log;
@@ -305,3 +337,6 @@ impl SqliteStore {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

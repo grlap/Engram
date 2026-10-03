@@ -1916,6 +1916,10 @@ fn publish_without_replacing(staged: &Path, target: &Path) -> Result<(), StoreEr
 /// Installs a verified staged copy as `target` without replacing anything;
 /// hosts use it for a restore into an absent store.
 ///
+/// The caller must supply its own private staged file, already verified, with
+/// no writer between verification and installation. This consumes that file
+/// and cleans up its sidecars; never pass a live store as `staged`.
+///
 /// # Errors
 ///
 /// Returns [`StoreError`] when `target` already exists or the copy fails.
