@@ -151,13 +151,16 @@ fn physical_lines(bytes: &[u8]) -> usize {
 /// Refuses a missing or unreadable module file, a missing child directory for
 /// a split family, and any child directory, entry or file whose metadata or
 /// contents cannot be read: nothing is skipped because it could not be seen.
+/// Links are present even when their targets are missing, and are refused.
 fn inventory(root: &Path, family: &Family) -> Result<Vec<(String, usize)>, String> {
     let module_file = root.join(format!("{}.rs", family.module));
     let mut counted = vec![count(root, &module_file)?];
     let children = root.join(family.children.unwrap_or(family.module));
-    let present = children
-        .try_exists()
-        .map_err(|error| format!("cannot inspect {}: {error}", children.display()))?;
+    let present = match fs::symlink_metadata(&children) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(format!("cannot inspect {}: {error}", children.display())),
+    };
     if present {
         let mut files = Vec::new();
         collect_rust_files(&children, &mut files)?;
@@ -852,6 +855,73 @@ fn a_link_in_the_tree_or_a_family_is_refused_rather_than_followed() {
     test_support::make_dir_link(&root.join("real"), &root.join("src"));
     let refused = whole_tree_report(&root, &[]).expect_err("a linked src");
     refuses_link(&refused, "src is a link");
+}
+
+#[test]
+fn a_family_refuses_a_dangling_child_directory_link_whether_split_or_unsplit() {
+    for split in [false, true] {
+        let directory = test_support::temp_home().expect("directory");
+        let root = directory.path();
+        fs::create_dir(root.join("src")).expect("source directory");
+        fs::write(root.join("src/fam.rs"), "mod child;\n").expect("family module");
+        let target = root.join("owned-target");
+        fs::create_dir(&target).expect("empty owned target");
+        let link = root.join("src/fam");
+        test_support::make_dir_link(&target, &link);
+        // Remove only our empty target, leaving the child-directory link dangling.
+        fs::remove_dir(&target).expect("remove empty owned target");
+        let family = Family {
+            module: "src/fam",
+            children: None,
+            split,
+        };
+        let result = family_report(root, &family, &[]);
+        // Restore the target after inspection to prove unlinking preserves it.
+        // Unlink before assertions or the fixture's recursive parent cleanup.
+        fs::create_dir(&target).expect("restore owned target");
+        test_support::remove_dir_link(&link);
+        assert!(target.is_dir(), "unlinking must preserve the target");
+        let refused = result.expect_err("a dangling child-directory link");
+        assert_eq!(
+            refused,
+            format!(
+                "{} is a link; the size check counts files, never links",
+                link.display()
+            ),
+            "split={split}"
+        );
+    }
+}
+
+#[test]
+fn a_family_refuses_a_link_at_its_module_file() {
+    let directory = test_support::temp_home().expect("directory");
+    let root = directory.path();
+    fs::create_dir(root.join("src")).expect("source directory");
+    let target = root.join("owned-target");
+    fs::create_dir(&target).expect("owned target");
+    fs::write(target.join("foreign.rs"), "fn foreign() {}\n").expect("foreign source");
+    let link = root.join("src/fam.rs");
+    // A directory junction at the module-file path also works without Windows
+    // symlink privileges. The link guard must run before trying to read a file.
+    test_support::make_dir_link(&target, &link);
+    let family = Family {
+        module: "src/fam",
+        children: None,
+        split: false,
+    };
+    let result = family_report(root, &family, &[]);
+    test_support::remove_dir_link(&link);
+    assert!(target.is_dir(), "unlinking must preserve the target");
+    assert!(target.join("foreign.rs").is_file());
+    let refused = result.expect_err("a linked module file");
+    assert_eq!(
+        refused,
+        format!(
+            "{} is a link; the size check counts files, never links",
+            link.display()
+        )
+    );
 }
 
 #[test]

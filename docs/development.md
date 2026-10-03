@@ -161,7 +161,10 @@ module file and every `.rs` file under its child-module directory, so a module
 split out of it stays counted with it. That directory is `MODULE/` unless the
 family names another one, as `src/main.rs` does with `src/bin_support`, where
 the binary's modules live. A missing module file or a missing child directory
-of a family marked as split fails the check, and so does a link at either. Families are listed in the
+of a family marked as split fails the check, and so does a link at either,
+including a child-directory link whose target is missing. An unsplit family
+may have no child directory, but a dangling link is refused rather than
+treated as absent. Families are listed in the
 `guarded_families!` list there, which also generates one test per family,
 `family::NAME`.
 
