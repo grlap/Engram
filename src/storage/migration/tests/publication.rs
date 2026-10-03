@@ -3,6 +3,51 @@
 
 use super::*;
 
+#[cfg(windows)]
+#[test]
+fn import_path_budget_counts_utf16_and_refuses_the_boundary_before_io() {
+    use std::os::windows::ffi::OsStrExt;
+
+    // The longest suffix is -journal (eight units). No files need to exist.
+    for (tail, allowed) in [("a".repeat(248), true), ("a".repeat(249), false)] {
+        let path = PathBuf::from(format!("C:\\{tail}"));
+        let result = refuse_long_import_path(&path);
+        assert_eq!(result.is_ok(), allowed, "{path:?}: {result:?}");
+        if !allowed {
+            let Err(MigrationError::Refused(reason)) = result else {
+                panic!("expected a path-length refusal");
+            };
+            assert!(reason.contains("260 UTF-16 code units"), "{reason}");
+            assert!(reason.contains("-journal"), "{reason}");
+            assert!(reason.contains("shorter output path"), "{reason}");
+        }
+    }
+    let unicode = PathBuf::from(format!("C:\\{}🙂", "a".repeat(247)));
+    assert_eq!(unicode.as_os_str().encode_wide().count(), 252);
+    assert!(
+        matches!(refuse_long_import_path(&unicode), Err(MigrationError::Refused(reason))
+        if reason.contains("260 UTF-16 code units") && reason.contains("🙂"))
+    );
+    refuse_long_import_path(Path::new("short.db"))
+        .expect("relative paths use their absolute length");
+}
+
+#[cfg(not(windows))]
+#[test]
+fn import_does_not_impose_the_windows_path_budget_on_other_platforms() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let deep = directory.path().join("a".repeat(120)).join("b".repeat(120));
+    fs::create_dir_all(&deep).expect("owned deep directory");
+    let target = deep.join("out.db");
+    assert!(target.as_os_str().len() > 260);
+    import_json(&file, &target).expect("no Windows budget on this platform");
+    assert!(target.is_file());
+}
+
 #[test]
 fn the_store_is_built_in_the_reserved_file_itself() {
     use std::io::Read;

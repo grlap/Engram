@@ -79,6 +79,15 @@ authority records. Protect it like the store itself.
 
 ## Import
 
+On Windows, choose a short output directory. Before creating any file or
+directory, import conservatively refuses an absolute destination or private
+`.engram-migration-<uuid>.tmp` staging path whose length, including any `-wal`,
+`-shm` or `-journal` suffix, reaches 260 UTF-16 code units. The refusal names
+the path and its length and asks for a shorter output path. This restriction
+applies only on Windows, including installations that support longer paths;
+it avoids an opaque SQLite open failure. Other platforms have no added
+260-unit restriction.
+
 Import creates a new store with the current schema, then inserts the file's
 rows by column name inside one transaction. References between rows are checked
 once, at commit. It then rebuilds the search indexes and runs the full doctor.

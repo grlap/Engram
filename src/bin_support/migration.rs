@@ -25,7 +25,9 @@ pub(crate) enum MigrationCommand {
         /// File written by `migration export`.
         #[arg(long)]
         file: PathBuf,
-        /// New store database. An existing file is never replaced.
+        /// New store database. An existing file is never replaced. On Windows,
+        /// keep the absolute output and private staging paths, including SQLite
+        /// sidecars, below 260 UTF-16 code units; choose a short output directory.
         #[arg(long)]
         out: PathBuf,
     },

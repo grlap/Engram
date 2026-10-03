@@ -3,6 +3,96 @@ mod test_support;
 
 use std::process::Command;
 
+#[cfg(windows)]
+#[test]
+fn migration_import_names_long_staging_paths_without_creating_anything() {
+    use std::{fs, os::windows::ffi::OsStrExt, path::Path};
+
+    let directory = test_support::temp_home().expect("fixture");
+    let source = directory.path().join("source.db");
+    drop(engram::SqliteStore::open_unresolved(&source).expect("store"));
+    let file = directory.path().join("export.jsonl");
+    engram::storage::migration::export_json(&source, &file).expect("valid export");
+    let root = std::path::absolute(directory.path()).expect("absolute fixture");
+    let root_units = root.as_os_str().encode_wide().count();
+    assert!(
+        root_units < 219,
+        "fixture root too long: {}",
+        root.display()
+    );
+    let deep = root.join("a".repeat(220 - root_units - 1));
+    fs::create_dir(&deep).expect("owned, creatable parent");
+    let target = deep.join("out.db");
+    let staged_wal = deep.join(format!(".engram-migration-{}.tmp-wal", uuid::Uuid::nil()));
+    assert!(staged_wal.as_os_str().encode_wide().count() > 260);
+    assert!(target.as_os_str().encode_wide().count() + "-journal".len() < 260);
+    let listing = |path: &Path| {
+        let mut names = fs::read_dir(path)
+            .expect("parent listing")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    };
+    let before = listing(&deep);
+    let run = |out: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_engram"))
+            .current_dir(&root)
+            .args(["migration", "import", "--file"])
+            .arg(&file)
+            .arg("--out")
+            .arg(out)
+            .output()
+            .expect("CLI")
+    };
+    let output = run(&target);
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{error}");
+    assert!(error.contains("Windows import path"), "{error}");
+    assert!(error.contains(".engram-migration-"), "{error}");
+    let staged_units = staged_wal.as_os_str().encode_wide().count() - "-wal".len();
+    assert!(
+        error.contains(&format!("length {staged_units} UTF-16 code units")),
+        "{error}"
+    );
+    assert!(
+        error.contains("260") && error.contains("shorter output path"),
+        "{error}"
+    );
+    assert!(!target.exists());
+    assert_eq!(
+        listing(&deep),
+        before,
+        "no file, directory or sidecar created"
+    );
+
+    // The same export is admitted at a short output path.
+    let short = root.join("short.db");
+    let output = run(&short);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        engram::SqliteStore::open_unresolved(&short)
+            .expect("short import")
+            .verify_all()
+            .expect("doctor")
+            .is_healthy()
+    );
+
+    let help = Command::new(env!("CARGO_BIN_EXE_engram"))
+        .args(["migration", "import", "--help"])
+        .output()
+        .expect("help");
+    assert!(help.status.success());
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(
+        help.contains("260") && help.contains("UTF-16") && help.contains("short output directory")
+    );
+}
+
 #[test]
 fn migration_cli_exports_and_imports_explicit_files_without_project_or_active_home() {
     let directory = test_support::temp_home().expect("fixture");

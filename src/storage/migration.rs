@@ -153,11 +153,18 @@ struct Staged {
 
 impl Staged {
     fn beside(destination: &Path) -> Result<Self, MigrationError> {
+        Self::reserve(Self::path_beside(destination))
+    }
+
+    fn path_beside(destination: &Path) -> PathBuf {
         let parent = destination
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        let path = parent.join(format!(".engram-migration-{}.tmp", uuid::Uuid::new_v4()));
+        parent.join(format!(".engram-migration-{}.tmp", uuid::Uuid::new_v4()))
+    }
+
+    fn reserve(path: PathBuf) -> Result<Self, MigrationError> {
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -174,6 +181,26 @@ impl Staged {
     fn publish(self, destination: &Path) -> Result<(), MigrationError> {
         fs::hard_link(&self.path, destination).map_err(|error| publish_failure(destination, &error))
     }
+}
+
+/// SQLite's Windows paths include its sidecars. Conservatively keep each
+/// absolute path below the traditional 260 UTF-16-unit boundary, even on a
+/// Windows installation that supports longer paths. This check creates nothing.
+#[cfg(windows)]
+fn refuse_long_import_path(path: &Path) -> Result<(), MigrationError> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let absolute = std::path::absolute(path)?;
+    for candidate in std::iter::once(absolute.clone()).chain(super::store_sidecars(&absolute)) {
+        let length = candidate.as_os_str().encode_wide().count();
+        if length >= 260 {
+            return Err(refused(format!(
+                "Windows import path {} has length {length} UTF-16 code units; the conservative limit is below 260, including SQLite sidecars; choose a shorter output path",
+                candidate.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// What a failed publication reports. An existing destination is the refusal it
@@ -687,6 +714,14 @@ fn header_of(
 /// Refuses a damaged or truncated file, an unknown table or column, a broken
 /// reference between rows, and a result the doctor finds unhealthy.
 pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationError> {
+    let staged_path = Staged::path_beside(out);
+    #[cfg(windows)]
+    {
+        // Before path probes or reservation: a long path gets the diagnostic,
+        // without creating a directory, a stage or any SQLite sidecar.
+        refuse_long_import_path(out)?;
+        refuse_long_import_path(&staged_path)?;
+    }
     if out.try_exists()? {
         return Err(refused("import destination already exists"));
     }
@@ -700,7 +735,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     // place keeps every sensitive row private through schema creation, the
     // inserts, the journals and the published link. Deleting it first would let
     // SQLite create the replacement at 0644 subject to umask.
-    let staged = Staged::beside(out)?;
+    let staged = Staged::reserve(staged_path)?;
     drop(SqliteStore::open_unresolved(&staged.path)?);
     let mut connection = Connection::open(&staged.path)?;
     connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;")?;
