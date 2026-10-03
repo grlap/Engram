@@ -152,6 +152,7 @@ use project_memory::{
 };
 use task_memory::{fts_query, normalize_project_memory_query};
 
+pub(crate) use work::ListingExpectation;
 pub(crate) use work::RequiredChildSuccessor;
 pub(crate) use work::SelectedStatusNote;
 pub(crate) use work::WorkDiscoveryRow;
@@ -199,7 +200,8 @@ pub(crate) const PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL: &str = "process-def
 #[cfg(test)]
 pub(crate) use work::{
     reset_work_catalog_count_queries, reset_work_event_decode_count,
-    reset_work_item_projection_decode_count, work_catalog_count_queries, work_event_decode_count,
+    reset_work_item_projection_decode_count, work_catalog_classified_queries,
+    work_catalog_count_queries, work_catalog_expiry_queries, work_event_decode_count,
     work_item_projection_decode_count,
 };
 

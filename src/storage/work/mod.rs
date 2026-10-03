@@ -38,6 +38,7 @@ mod observation;
 mod planning;
 pub(crate) use planning::validate_work_plan;
 mod query;
+pub(crate) use query::ListingExpectation;
 pub(in crate::storage) use query::resolve_work_ref_on;
 mod receipts;
 mod record_windows;
@@ -346,6 +347,8 @@ thread_local! {
     static WORK_EVENT_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
     static WORK_ITEM_PROJECTION_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
     static WORK_CATALOG_COUNT_QUERIES: Cell<usize> = const { Cell::new(0) };
+    static WORK_CATALOG_CLASSIFIED_QUERIES: Cell<usize> = const { Cell::new(0) };
+    static WORK_CATALOG_EXPIRY_QUERIES: Cell<usize> = const { Cell::new(0) };
     static DOCTOR_FINISHED_RUN_CUT_READS: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -375,6 +378,22 @@ impl SqliteStore {
 #[cfg(test)]
 pub(crate) fn reset_work_catalog_count_queries() {
     WORK_CATALOG_COUNT_QUERIES.with(|count| count.set(0));
+    WORK_CATALOG_CLASSIFIED_QUERIES.with(|count| count.set(0));
+    WORK_CATALOG_EXPIRY_QUERIES.with(|count| count.set(0));
+}
+
+/// How many times the classified catalog query ran since the last reset:
+/// once for a listing's membership pass, once for its page.
+#[cfg(test)]
+pub(crate) fn work_catalog_classified_queries() -> usize {
+    WORK_CATALOG_CLASSIFIED_QUERIES.with(Cell::get)
+}
+
+/// How many times the project-wide expiry query behind a read cut ran since
+/// the last reset.
+#[cfg(test)]
+pub(crate) fn work_catalog_expiry_queries() -> usize {
+    WORK_CATALOG_EXPIRY_QUERIES.with(Cell::get)
 }
 
 #[cfg(test)]

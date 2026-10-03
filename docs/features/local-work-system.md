@@ -818,14 +818,19 @@ transition such as a deferral ending or a claim expiring under `--ready` or
 order, such as a note on any item or a new item outside the filters, does
 not refuse, and neither does a focus-only read. Restarting costs one fresh
 listing with the same filters; rows already read may appear again. Holder
-words are read at each page's own time. Compact `next`'s ready navigation
-mints its continuation without a fingerprint and keeps the conservative
-basis: any project-feed advance, or crossing a project claim/handoff expiry
-or deferral boundary (including the whole millisecond containing it, since
-the observed time retains sub-millisecond precision), refuses it. Every
-token names its basis; one an earlier build minted names none and is refused
-with fresh navigation. Count, cursor validation, page and holders share one
-snapshot.
+words are read at each page's own time. An `ls` token carries only its
+observed time beside the fingerprint, and checking it reads no project-wide
+expiry. Compact `next`'s ready navigation reads no complete sequence, so it
+mints its continuation with the project cut instead: the project-feed
+position, the observed time and the next project claim/handoff expiry or
+deferral boundary. Any project-feed advance, such as a note on an unrelated
+item, or crossing that boundary (including the whole millisecond containing
+it, since the observed time retains sub-millisecond precision), refuses it.
+Every token names its basis; a token in the shape an earlier build minted is
+refused with fresh navigation. Count, cursor validation, page and holders
+share one snapshot: one ordered pass over the selected sequence yields the
+total, the shown-before count, the anchor check and the fingerprint
+together, and a second reads the page.
 `ls --under PARENT` selects direct children only; `--optional` or `--required`
 narrow that scope and require the parent. Both switches together are refused.
 Ambient catalogs remain count-free and keep their existing keyset contract.

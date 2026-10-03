@@ -11,6 +11,7 @@ use rusqlite::OptionalExtension;
 mod tests;
 
 mod listing;
+pub(crate) use listing::ListingExpectation;
 
 const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
     CASE
@@ -272,7 +273,7 @@ impl SqliteStore {
         query: &WorkCatalogQuery,
     ) -> Result<(WorkCatalogPage, usize, Vec<WorkClaim>), StoreError> {
         self.query_work_catalog_continuation(project_id, now, query, None)
-            .map(|(page, total, _, claims, _, _)| (page, total, claims))
+            .map(|(page, total, _, claims, _)| (page, total, claims))
     }
 }
 
@@ -332,6 +333,8 @@ fn work_catalog_page_on(
     query: &WorkCatalogQuery,
 ) -> Result<WorkCatalogPage, StoreError> {
     let (sql, parameters) = work_catalog_sql(project_id, now, query, true)?;
+    #[cfg(test)]
+    crate::storage::work::WORK_CATALOG_CLASSIFIED_QUERIES.with(|count| count.set(count.get() + 1));
     let mut statement = connection.prepare(&sql)?;
     let ids = statement
         .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {

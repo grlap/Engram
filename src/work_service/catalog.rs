@@ -1,5 +1,6 @@
 use super::*;
 use crate::domain::WorkCatalogReadCut;
+use crate::storage::ListingExpectation;
 
 const LISTING_CURSOR_PREFIX: &str = "c1-";
 const MAX_LISTING_CURSOR_BYTES: usize = 8192;
@@ -14,7 +15,6 @@ struct ListingCursor {
     project: ProjectId,
     #[serde(default, skip_serializing_if = "listing_filters_are_empty")]
     filters: ListingFilters,
-    cut: WorkCatalogReadCut,
     after: WorkId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     after_priority: Option<i32>,
@@ -24,13 +24,18 @@ struct ListingCursor {
 /// What a continuation is checked against. A token without one is refused.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum ListingBasis {
-    /// `ls`: the fingerprint of the listing's complete selected sequence
-    /// when the page was read; a continuation is refused when it differs.
-    Membership { fingerprint: String },
+pub(super) enum ListingBasis {
+    /// `ls`: when the page was read and the fingerprint of the listing's
+    /// complete selected sequence then; a continuation is refused when the
+    /// sequence differs or the clock went back.
+    Membership {
+        observed_at: DateTime<Utc>,
+        fingerprint: String,
+    },
     /// Compact `next`'s ready navigation, which reads no complete sequence:
-    /// any project write or the next project-wide time transition refuses.
-    ProjectCut {},
+    /// its project cut, refused by any project write or the next
+    /// project-wide time transition.
+    ProjectCut { cut: WorkCatalogReadCut },
 }
 
 /// Normalized listing filters without the wire-nulls and zeroed seek fields
@@ -61,10 +66,16 @@ struct ListingFilters {
 }
 
 impl ListingBasis {
-    fn fingerprint(&self) -> Option<&str> {
+    fn expectation(&self) -> ListingExpectation<'_> {
         match self {
-            Self::Membership { fingerprint } => Some(fingerprint),
-            Self::ProjectCut {} => None,
+            Self::Membership {
+                observed_at,
+                fingerprint,
+            } => ListingExpectation::Membership {
+                observed_at: *observed_at,
+                fingerprint,
+            },
+            Self::ProjectCut { cut } => ListingExpectation::ProjectCut(cut),
         }
     }
 }
@@ -115,7 +126,7 @@ pub(crate) struct WorkListingPage {
     pub claims: Vec<WorkClaim>,
     project: ProjectId,
     filters: WorkCatalogQuery,
-    cut: WorkCatalogReadCut,
+    observed_at: DateTime<Utc>,
     membership: String,
 }
 
@@ -129,36 +140,31 @@ impl WorkListingPage {
         listing_continuation(
             &self.project,
             &self.filters,
-            &self.cut,
             after,
             after_priority,
-            Some(&self.membership),
+            ListingBasis::Membership {
+                observed_at: self.observed_at,
+                fingerprint: self.membership.clone(),
+            },
         )
     }
 }
 
-/// Filters must already be normalized by the query's owner. `membership` is
-/// the listing's sequence fingerprint, or `None` for compact `next`'s
-/// project-cut basis.
+/// Filters must already be normalized by the query's owner. `basis` is the
+/// listing's sequence fingerprint, or compact `next`'s project cut.
 pub(super) fn listing_continuation(
     project: &ProjectId,
     filters: &WorkCatalogQuery,
-    cut: &WorkCatalogReadCut,
     after: WorkId,
     after_priority: i32,
-    membership: Option<&str>,
+    basis: ListingBasis,
 ) -> Result<String, StoreError> {
     let cursor = ListingCursor {
         project: project.clone(),
         filters: ListingFilters::from_query(filters),
-        cut: cut.clone(),
         after,
         after_priority: filters.ready_priority_order.then_some(after_priority),
-        basis: membership.map_or(ListingBasis::ProjectCut {}, |fingerprint| {
-            ListingBasis::Membership {
-                fingerprint: fingerprint.to_owned(),
-            }
-        }),
+        basis,
     };
     encode_listing_bytes(&serde_json::to_vec(&cursor)?).ok_or_else(|| {
         invalid("listing continuation metadata is too large; shorten search, label or parent scope")
@@ -202,14 +208,12 @@ impl LocalWorkService {
                 query.after = Some(cursor.after);
                 query.after_priority = cursor.after_priority;
             }
-            let (page, total, preceding, claims, cut, membership) = store
+            let (page, total, preceding, claims, membership) = store
                 .query_work_catalog_continuation(
                     &self.project_id,
                     now,
                     &query,
-                    cursor
-                        .as_ref()
-                        .map(|cursor| (&cursor.cut, cursor.basis.fingerprint())),
+                    cursor.as_ref().map(|cursor| cursor.basis.expectation()),
                 )?;
             Ok(WorkListingPage {
                 items: page
@@ -227,7 +231,7 @@ impl LocalWorkService {
                 claims,
                 project: self.project_id.clone(),
                 filters,
-                cut,
+                observed_at: now,
                 membership,
             })
         })
@@ -370,6 +374,45 @@ mod listing_cursor_tests {
         }
     }
 
+    fn sample_membership() -> ListingBasis {
+        ListingBasis::Membership {
+            observed_at: sample_cut().observed_at,
+            fingerprint: "sample-membership".into(),
+        }
+    }
+
+    // A membership token carries only its observed time beside the
+    // fingerprint; the project position and expiry stay in the project cut.
+    #[test]
+    fn membership_tokens_carry_no_project_cut() {
+        let token = listing_continuation(
+            &ProjectId("customer-workflow".into()),
+            &default_ready_filters(),
+            sample_after(),
+            3,
+            sample_membership(),
+        )
+        .expect("membership token");
+        let basis = listing_cursor_json(&token).expect("json")["basis"].clone();
+        let mut keys: Vec<_> = basis.as_object().expect("basis").keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["fingerprint", "kind", "observed_at"]);
+        let token = listing_continuation(
+            &ProjectId("customer-workflow".into()),
+            &default_ready_filters(),
+            sample_after(),
+            3,
+            ListingBasis::ProjectCut { cut: sample_cut() },
+        )
+        .expect("project-cut token");
+        let cursor = listing_cursor_json(&token).expect("json");
+        assert_eq!(
+            cursor["basis"]["cut"],
+            serde_json::to_value(sample_cut()).expect("cut")
+        );
+        assert!(cursor.get("cut").is_none());
+    }
+
     fn sample_after() -> WorkId {
         WorkId(uuid::Uuid::from_u128(1))
     }
@@ -404,10 +447,9 @@ mod listing_cursor_tests {
         let token = listing_continuation(
             &ProjectId("customer-workflow".into()),
             filters,
-            &sample_cut(),
             sample_after(),
             after_priority,
-            Some("sample-membership"),
+            sample_membership(),
         )
         .expect("dense token");
         let decoded = decode_cursor(&token).expect("roundtrip");
@@ -417,7 +459,11 @@ mod listing_cursor_tests {
             decoded.after_priority,
             filters.ready_priority_order.then_some(after_priority)
         );
-        assert_eq!(decoded.basis.fingerprint(), Some("sample-membership"));
+        assert!(matches!(
+            decoded.basis,
+            ListingBasis::Membership { fingerprint, observed_at }
+                if fingerprint == "sample-membership" && observed_at == sample_cut().observed_at
+        ));
     }
 
     // A token without its basis, as an earlier build minted, is refused
@@ -427,10 +473,9 @@ mod listing_cursor_tests {
         let token = listing_continuation(
             &ProjectId("customer-workflow".into()),
             &sample_filters(),
-            &sample_cut(),
             sample_after(),
             3,
-            Some("sample-membership"),
+            sample_membership(),
         )
         .expect("dense token");
         let mut cursor: serde_json::Value =

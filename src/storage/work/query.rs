@@ -44,6 +44,7 @@ use super::{WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT, WorkEven
 mod tests;
 
 mod catalog;
+pub(crate) use catalog::ListingExpectation;
 pub(super) use catalog::{held_open_child_on, open_children_by_ready_order_on};
 
 mod prerequisites;

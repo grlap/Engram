@@ -582,10 +582,9 @@ impl LocalWorkService {
                         super::catalog::listing_continuation(
                             &self.project_id,
                             &filters,
-                            &cut,
                             row.work.work_id,
                             row.work.priority,
-                            None,
+                            super::catalog::ListingBasis::ProjectCut { cut: cut.clone() },
                         )?,
                     ))
                 } else {
