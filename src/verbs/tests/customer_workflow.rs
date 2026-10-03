@@ -32,6 +32,7 @@ mod terminal_safety;
 mod unlinked_before_seal;
 mod verification_assessment;
 mod verification_rows;
+mod waiver;
 
 fn fixture() -> (
     crate::test_support::TempHome,

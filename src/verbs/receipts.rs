@@ -333,6 +333,7 @@ pub struct VerbError {
 #[derive(Debug, Default)]
 struct VerbErrorContext {
     listing_command: Option<String>,
+    invalid_waiver: bool,
     /// The focus move the refused word made before it refused.
     focus_change: Option<super::focus_change::FocusDisclosure>,
 }
@@ -352,6 +353,7 @@ impl VerbError {
             work_ref: None,
             context: Some(Box::new(VerbErrorContext {
                 listing_command: Some(command.into()),
+                invalid_waiver: false,
                 focus_change: None,
             })),
         }
@@ -363,6 +365,18 @@ impl VerbError {
     ) -> Self {
         self.context.get_or_insert_with(Box::default).focus_change = Some(disclosure);
         self
+    }
+
+    pub(super) fn for_waiver(error: StoreError, work_ref: &str) -> Self {
+        let invalid_waiver = matches!(&error, StoreError::InvalidWork(_));
+        let mut result = Self::at(error, work_ref);
+        if invalid_waiver {
+            result
+                .context
+                .get_or_insert_with(Box::default)
+                .invalid_waiver = true;
+        }
+        result
     }
 
     pub(super) fn focus_change(&self) -> Option<&super::focus_change::FocusDisclosure> {
@@ -406,6 +420,16 @@ impl VerbError {
             };
         }
         let target = self.work_ref.as_deref().unwrap_or("<ref>");
+        if self
+            .context
+            .as_ref()
+            .is_some_and(|context| context.invalid_waiver)
+        {
+            return Guidance {
+                reminders: vec![self.error.to_string()],
+                next: vec![format!("engram work show {target}")],
+            };
+        }
         if let StoreError::WorkNoteReferenceInvalid {
             reason,
             candidates,

@@ -56,6 +56,7 @@ impl AgentVerbs {
         let view = self.target("update", input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
+        let is_waiver = matches!(&input.action, UpdateAction::WaiveRequiredChild { .. });
         let prerequisite_target = match &input.action {
             UpdateAction::After { prerequisite } | UpdateAction::DropAfter { prerequisite }
                 if !prerequisite.trim().is_empty() =>
@@ -95,7 +96,11 @@ impl AgentVerbs {
                 {
                     return VerbError::at(error, prerequisite_ref);
                 }
-                VerbError::at(error, &work_ref)
+                if is_waiver {
+                    VerbError::for_waiver(error, &work_ref)
+                } else {
+                    VerbError::at(error, &work_ref)
+                }
             })?;
         // What an unblock cleared is read from its committed clear, the one
         // that moved the item to the receipt's revision, so a replayed

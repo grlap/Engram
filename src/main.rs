@@ -2467,7 +2467,8 @@ struct WorkUpdateArgs {
     /// Remove one prerequisite edge from this item.
     #[arg(long, value_name = "REF")]
     drop_after: Option<String>,
-    /// Waive one cancelled or superseded required child; requires --reason.
+    /// Waive one cancelled or superseded required child under an open parent
+    /// with open ancestors; requires --reason.
     #[arg(long, value_name = "REF")]
     waive: Option<String>,
     /// Supersede this item with another item; requires --reason.

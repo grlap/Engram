@@ -2193,7 +2193,11 @@ the executable child short refs. `engram work update PARENT --waive CHILD
 that same operation. A completion refusal names the child's current
 `cancelled` or `superseded` lifecycle and returns the CLI word as its one
 runnable command. The mutation rechecks the exact parent and child state
-before recording the attributed waiver.
+before recording the attributed waiver. The parent and its ancestors must be
+Open. A direct waiver beneath a completed, cancelled, or superseded ancestor
+returns `work_invalid` and `engram work show PARENT` in `next`; inspect that
+parent's admitted detach or resolve-first guidance, or file an independent
+root follow-up. It never writes a waiver into a terminal root execution.
 
 `update CHILD --reject "why"` (MCP `action: "reject"` with `reason`) composes
 that waiver with ordinary cancellation in one transaction. Admission requires

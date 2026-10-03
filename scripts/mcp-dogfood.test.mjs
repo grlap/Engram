@@ -997,6 +997,52 @@ test("printed listing continuation preserves literal search and label whitespace
   }
 });
 
+test("direct child waiver under a completed root gives an actionable refusal on CLI and MCP", async (t) => {
+  const home = fixtureHome("engram-terminal-waiver-", t);
+  const session = "terminal-waiver-reader";
+  let client;
+  try {
+    buildAndInit(home);
+    client = new McpClient(home, session);
+    await client.initialize();
+    const rootRef = receipt(await client.call("add", { title: "Root" })).work.short_ref;
+    const parent = receipt(await client.call("add", { title: "Optional parent", under: rootRef, optional: true })).work.short_ref;
+    const child = receipt(await client.call("add", { title: "Required child", under: parent })).work.short_ref;
+    receipt(await client.call("update", { work_ref: child, action: "cancel", reason: "Not needed" }));
+    receipt(await client.call("claim", { work_ref: rootRef }));
+    assert.match(receipt(await client.call("done", { work_ref: rootRef, summary: "Delivered" })).seal, HASH);
+    const expected = `Cannot waive ${child} from ${parent} because an ancestor is not open. Run engram work show ${parent} and follow its admitted detach or resolve-first guidance. For work beneath a completed, cancelled, or superseded ancestor, continue through an admitted detach or file an independent root follow-up.`;
+    const error = structuredError(await client.call("update", { work_ref: parent, action: "waive", child, reason: "Account for omission" }), "work_invalid");
+    assert.equal(error.details.reason, expected);
+    assert.deepEqual(error.next, [`engram work show ${parent}`]);
+    assert.doesNotMatch(JSON.stringify(error), /no active execution|--waive/u);
+    for (const json of [false, true]) {
+      const refused = cliWord(home, session, "update", parent, "--waive", child, "--reason", "Account for omission", ...(json ? ["--json"] : []));
+      assert.notEqual(refused.status, 0);
+      if (json) {
+        const value = JSON.parse(refused.stderr).error;
+        assert.equal(value.code, "work_invalid");
+        assert.equal(value.details.reason, expected);
+        assert.deepEqual(value.next, error.next);
+      } else {
+        assert.ok(refused.stderr.includes(expected), refused.stderr);
+        assert.ok(refused.stderr.includes(`engram work show ${parent}`));
+      }
+    }
+    const tools = await client.tools();
+    assert.match(tools.find(({ name }) => name === "update").inputSchema.properties.child.description.replace(/\s+/gu, " "), /parent and ancestors must be open\. Requires `reason`/u);
+    assert.match(cliWord(home, session, "update", "--help").stdout.replace(/\s+/gu, " "), /open parent with open ancestors; requires --reason/u);
+    // The same operation remains admitted under open ancestry.
+    const open = receipt(await client.call("add", { title: "Open parent" })).work.short_ref;
+    const omitted = receipt(await client.call("add", { title: "Omitted child", under: open })).work.short_ref;
+    receipt(await client.call("update", { work_ref: omitted, action: "cancel", reason: "Not needed" }));
+    assert.equal(receipt(await client.call("update", { work_ref: open, action: "waive", child: omitted, reason: "Account for omission" })).operation, "waive_required_child");
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(home); }
+  }
+});
+
 test("required successor resolution agrees across CLI, MCP, listing and done", async (t) => {
   const engramHome = fixtureHome("engram-mcp-successor-", t);
   let client;

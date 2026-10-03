@@ -311,7 +311,18 @@ fn cancelled_required_child_blocks_completion_until_an_attributed_waiver() {
         "{:?}",
         seal.required_child_seals
     );
-    assert_eq!(seal.required_child_waivers, vec![waiver]);
+    assert_eq!(seal.required_child_waivers, vec![waiver.clone()]);
+    let before = test_database_shape_snapshot(&store.connection).unwrap();
+    assert_eq!(
+        store
+            .waive_required_child(&waiver_request, &DevelopmentNoopRedactor)
+            .expect("historical replay after completion"),
+        waiver,
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).unwrap(),
+        before
+    );
 }
 
 #[test]

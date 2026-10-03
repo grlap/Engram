@@ -2702,7 +2702,11 @@ or waiver, the refusal names that lifecycle and returns the runnable agent comma
 update uses `action: "waive"`, `child`, and `reason`; both translate into the
 existing typed `work_update:waive_required_child` operation. The project-bound
 session records the reason-attributed, audited waiver, after which retrying
-`done` re-evaluates the current completion barrier.
+`done` re-evaluates the current completion barrier. The parent and all its
+ancestors must be Open. An explicit waiver under a terminal ancestor returns
+`work_invalid`, explains the refusal, and offers `engram work show PARENT` in
+`error.next`. Follow that parent's admitted detach or resolve-first guidance,
+or file an independent root follow-up.
 
 Recoverable completion refusals add `recovery { cause, item, command }` to the
 receipt. `cause` is a tagged value for `open_obligation`,

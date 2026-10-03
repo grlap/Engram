@@ -365,7 +365,8 @@ struct UpdateArgs {
     unlabels: Option<Vec<String>>,
     /// Prerequisite item for `after` or `drop_after`.
     prerequisite: Option<String>,
-    /// Cancelled or superseded required child for `waive`.
+    /// Cancelled or superseded required child for `waive`; its parent and
+    /// ancestors must be open. Requires `reason`.
     child: Option<String>,
     /// Replacement item for supersede.
     replacement: Option<String>,

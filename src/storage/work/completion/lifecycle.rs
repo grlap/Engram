@@ -14,6 +14,7 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+use super::child_barriers::ancestors_admit_execution;
 use crate::{RejectRequiredChildReceipt, RejectRequiredChildRequest};
 
 impl SqliteStore {
@@ -662,6 +663,12 @@ fn waive_required_child_on(
         return Err(StoreError::InvalidWork(
             "completion waiver requires a directly required cancelled or superseded child".into(),
         ));
+    }
+    if !ancestors_admit_execution(transaction, &parent)? {
+        return Err(StoreError::InvalidWork(format!(
+            "Cannot waive {} from {} because an ancestor is not open. Run engram work show {} and follow its admitted detach or resolve-first guidance. For work beneath a completed, cancelled, or superseded ancestor, continue through an admitted detach or file an independent root follow-up.",
+            child.short_ref, parent.short_ref, parent.short_ref,
+        )));
     }
     let mut root_execution = active_root_execution(transaction, parent.root_id)?;
     if root_execution
