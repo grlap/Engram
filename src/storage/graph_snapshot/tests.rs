@@ -954,12 +954,15 @@ fn load_uses_body_semantics_and_exact_typed_source_bytes() {
             .sources
             .first_mut()
             .expect("one source snapshot");
+        let stored_id = source.hash.clone();
         mutate(&mut source.canonical_json);
-        source.hash = CanonicalObject::freeze(&source.canonical_json)
-            .expect("freeze mutated source")
-            .key()
-            .clone();
-        document.body.items[0].source_snapshot_id = Some(source.hash.clone());
+        // The source snapshot keeps the id it was stored under, and the
+        // item still names it; an id never follows content.
+        assert_eq!(source.hash, stored_id);
+        assert_eq!(
+            document.body.items[0].source_snapshot_id.as_ref(),
+            Some(&stored_id)
+        );
         rebind_snapshot_body(&mut document);
         let mut destination =
             SqliteStore::open(directory.path().join(format!("{name}.db"))).expect("destination");

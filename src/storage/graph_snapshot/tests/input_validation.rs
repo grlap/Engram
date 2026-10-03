@@ -208,20 +208,15 @@ fn terminal_snapshot_layers_bind_their_latest_disposal_event() {
                     WorkGraphSnapshotRecordPayload::Native { history: target } => {
                         **target = history;
                     }
-                    WorkGraphSnapshotRecordPayload::Restored {
-                        canonical_json,
-                        object_id,
-                    } => {
+                    // The inherited record keeps the id it was stored
+                    // under; an id never follows content.
+                    WorkGraphSnapshotRecordPayload::Restored { canonical_json, .. } => {
                         let mut restored: RestoredRecord =
                             serde_json::from_value(canonical_json.clone())
                                 .expect("restored record");
                         restored.history = history;
                         *canonical_json =
                             serde_json::to_value(&restored).expect("changed inherited record");
-                        *object_id = CanonicalObject::freeze(&restored)
-                            .expect("rehash inherited record")
-                            .key()
-                            .clone();
                     }
                 }
                 rebind_snapshot_body(&mut corrupt);
@@ -358,10 +353,9 @@ fn nonterminal_snapshot_layers_refuse_a_latest_disposal_event() {
                 };
                 match &mut corrupt.body.records[0].payload {
                     WorkGraphSnapshotRecordPayload::Native { history } => change_history(history),
-                    WorkGraphSnapshotRecordPayload::Restored {
-                        object_id,
-                        canonical_json,
-                    } => {
+                    // The inherited record keeps the id it was stored
+                    // under; an id never follows content.
+                    WorkGraphSnapshotRecordPayload::Restored { canonical_json, .. } => {
                         let mut restored: RestoredRecord =
                             serde_json::from_value(canonical_json.clone())
                                 .expect("inherited record");
@@ -369,10 +363,6 @@ fn nonterminal_snapshot_layers_refuse_a_latest_disposal_event() {
                         change_history(&mut restored.history);
                         *canonical_json =
                             serde_json::to_value(&restored).expect("changed inherited record");
-                        *object_id = CanonicalObject::freeze(&restored)
-                            .expect("rehash record")
-                            .key()
-                            .clone();
                     }
                 }
                 rebind_snapshot_body(&mut corrupt);
@@ -485,10 +475,8 @@ fn load_validates_exact_and_internal_shape_of_every_restored_generation() {
         .to_owned()
         + "+00:00";
     canonical_json["history"]["events"][0]["occurred_at"] = serde_json::json!(created_at);
-    *object_id = CanonicalObject::freeze(canonical_json)
-        .expect("freeze nonpreserved scalar")
-        .key()
-        .clone();
+    // Content changes under the inherited record's own stored id.
+    assert_eq!(*object_id, carried_id(&carried.document, 0));
     rebind_snapshot_body(&mut nonpreserved_scalar);
     let mut destination =
         SqliteStore::open(directory.path().join("generation-unknown.db")).expect("destination");
@@ -511,10 +499,7 @@ fn load_validates_exact_and_internal_shape_of_every_restored_generation() {
         panic!("first generation must be restored");
     };
     canonical_json["item"]["lifecycle"] = serde_json::json!("completed");
-    *object_id = CanonicalObject::freeze(canonical_json)
-        .expect("freeze invalid old generation")
-        .key()
-        .clone();
+    assert_eq!(*object_id, carried_id(&carried.document, 0));
     rebind_snapshot_body(&mut invalid_old_lifecycle);
     let mut destination =
         SqliteStore::open(directory.path().join("generation-lifecycle.db")).expect("destination");
@@ -814,4 +799,266 @@ fn load_refuses_incompatible_and_corrupt_documents_without_partial_state() {
         ),
         Err(StoreError::GraphDestinationNotEmpty)
     ));
+}
+
+/// The stored id of the carried record at `position` in a saved document.
+fn carried_id(document: &WorkGraphSnapshotDocument, position: usize) -> crate::ObjectId {
+    match &document.body.records[position].payload {
+        WorkGraphSnapshotRecordPayload::Restored { object_id, .. } => object_id.clone(),
+        WorkGraphSnapshotRecordPayload::Native { .. } => panic!("not a carried record"),
+    }
+}
+
+/// The gate notes of `work` across native and carried layers, as
+/// (name, evidence reference, refs).
+fn gate_notes(
+    document: &WorkGraphSnapshotDocument,
+    work: crate::WorkId,
+) -> Vec<(String, Option<String>, Vec<String>)> {
+    document
+        .body
+        .records
+        .iter()
+        .filter(|record| record.work_id == work)
+        .flat_map(|record| match &record.payload {
+            WorkGraphSnapshotRecordPayload::Native { history } => history.notes.clone(),
+            WorkGraphSnapshotRecordPayload::Restored { canonical_json, .. } => {
+                serde_json::from_value::<crate::RestoredRecord>(canonical_json.clone())
+                    .expect("carried record")
+                    .history
+                    .notes
+            }
+        })
+        .filter_map(|note| {
+            note.gate
+                .map(|gate| (gate.name, gate.evidence_ref, note.refs))
+        })
+        .collect()
+}
+
+fn gated_source(
+    directory: &std::path::Path,
+    project: &ProjectId,
+) -> (SqliteStore, crate::WorkItem) {
+    let mut source = SqliteStore::open(directory.join("source.db")).expect("source");
+    let root = create_root(&mut source, project, "Gated", "gated-root");
+    let claim = source
+        .claim_work(
+            &ClaimWorkRequest {
+                work_id: root.work_id,
+                expected_work_revision: root.revision,
+                expected_run_id: root.active_run_id,
+                holder: crate::SessionId("gate-session".into()),
+                ttl_seconds: 900,
+                recovery_reason: None,
+                actor: actor("gate-session"),
+                idempotency_key: "claim-gated-root".into(),
+                claimed_at: at(2),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("claim gated root");
+    for (name, reference, second) in [
+        ("cargo-test", Some("logs/test.txt"), 3),
+        ("cargo-fmt", None, 4),
+    ] {
+        let current = source.get_work_item(root.work_id).expect("current root");
+        source
+            .record_gate_evidence(
+                &crate::domain::RecordGateEvidenceRequest {
+                    work_id: root.work_id,
+                    run_id: claim.run_id,
+                    expected_work_revision: current.revision,
+                    holder: claim.holder.clone(),
+                    claim_id: claim.claim_id,
+                    claim_fence: claim.fence,
+                    name: name.into(),
+                    failed: Vec::new(),
+                    evidence_ref: reference.map(str::to_owned),
+                    actor: actor("gate-session"),
+                    recorded_at: at(second),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("record gate");
+    }
+    (source, root)
+}
+
+fn save_graph(
+    store: &mut SqliteStore,
+    project: &ProjectId,
+    second: i64,
+) -> WorkGraphSnapshotDocument {
+    store
+        .save_work_graph_snapshot(
+            project,
+            &actor("save-session"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(second),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save graph")
+        .document
+}
+
+fn load_graph(
+    directory: &std::path::Path,
+    name: &str,
+    project: &ProjectId,
+    document: &WorkGraphSnapshotDocument,
+    second: i64,
+) -> SqliteStore {
+    let mut store = SqliteStore::open(directory.join(name)).expect("destination");
+    store
+        .load_work_graph_snapshot(
+            project,
+            &actor("load-session"),
+            &snapshot_bytes(document),
+            false,
+            at(second),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("load graph");
+    store
+}
+
+// A gate note keeps the evidence reference it was recorded with through a
+// save, a load and a second save, and again when that save's carried layer
+// is loaded and saved once more; with a reference and without one.
+#[test]
+fn a_gate_note_round_trips_its_evidence_reference() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let project = ProjectId("snapshot-gate-refs".into());
+    let (mut source, root) = gated_source(directory.path(), &project);
+    let first = save_graph(&mut source, &project, 5);
+    let expected = vec![
+        (
+            "cargo-test".to_owned(),
+            Some("logs/test.txt".to_owned()),
+            vec!["logs/test.txt".to_owned()],
+        ),
+        ("cargo-fmt".to_owned(), None, Vec::new()),
+    ];
+    assert_eq!(gate_notes(&first, root.work_id), expected);
+
+    let mut second_store = load_graph(directory.path(), "second.db", &project, &first, 6);
+    let second = save_graph(&mut second_store, &project, 7);
+    assert_eq!(gate_notes(&second, root.work_id), expected);
+    assert!(
+        second
+            .body
+            .records
+            .iter()
+            .any(|record| record.work_id == root.work_id
+                && matches!(
+                    record.payload,
+                    WorkGraphSnapshotRecordPayload::Restored { .. }
+                )),
+        "the second save carries the first layer"
+    );
+
+    let mut third_store = load_graph(directory.path(), "third.db", &project, &second, 8);
+    let third = save_graph(&mut third_store, &project, 9);
+    assert_eq!(gate_notes(&third, root.work_id), expected);
+}
+
+// A gate note whose refs are not exactly what the store holds for its
+// evidence reference is a corrupt file, in a native layer or a carried one,
+// for both a dry run and a load, and nothing is written.
+#[test]
+fn a_gate_note_whose_refs_disagree_with_its_reference_is_refused() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let project = ProjectId("snapshot-gate-ref-refusal".into());
+    let (mut source, root) = gated_source(directory.path(), &project);
+    let first = save_graph(&mut source, &project, 5);
+    let referenced = Some("logs/test.txt".to_owned());
+    let cases: [(&str, Option<String>, Vec<&str>); 5] = [
+        ("missing", referenced.clone(), vec![]),
+        (
+            "extra",
+            referenced.clone(),
+            vec!["logs/test.txt", "logs/zz-extra.txt"],
+        ),
+        (
+            "extra-before",
+            referenced.clone(),
+            vec!["logs/other.txt", "logs/test.txt"],
+        ),
+        ("mismatched", referenced, vec!["logs/other.txt"]),
+        ("unreferenced", None, vec!["logs/test.txt"]),
+    ];
+    for (label, reference, refs) in cases {
+        let mut changed = first.clone();
+        let record = changed
+            .body
+            .records
+            .iter_mut()
+            .find(|record| record.work_id == root.work_id)
+            .expect("gated record");
+        let WorkGraphSnapshotRecordPayload::Native { history } = &mut record.payload else {
+            panic!("the source save holds a native layer");
+        };
+        let note = history
+            .notes
+            .iter_mut()
+            .find(|note| {
+                note.gate
+                    .as_ref()
+                    .is_some_and(|gate| gate.name == "cargo-test")
+            })
+            .expect("referenced gate note");
+        note.gate.as_mut().expect("gate").evidence_ref = reference;
+        note.refs = refs.into_iter().map(str::to_owned).collect();
+        rebind_snapshot_body(&mut changed);
+        println!("case {label}");
+        assert_corrupt_without_writes(
+            &project,
+            &snapshot_bytes(&changed),
+            "gate note refs disagree with its evidence reference",
+        );
+    }
+
+    // The same rule holds for a carried layer, which keeps its record id.
+    let mut second_store = load_graph(directory.path(), "second.db", &project, &first, 6);
+    let mut carried = save_graph(&mut second_store, &project, 7);
+    let record = carried
+        .body
+        .records
+        .iter_mut()
+        .find(|record| {
+            record.work_id == root.work_id
+                && matches!(
+                    record.payload,
+                    WorkGraphSnapshotRecordPayload::Restored { .. }
+                )
+        })
+        .expect("carried layer");
+    let WorkGraphSnapshotRecordPayload::Restored {
+        object_id,
+        canonical_json,
+    } = &mut record.payload
+    else {
+        unreachable!("selected a carried layer")
+    };
+    let kept_id = object_id.clone();
+    let mut restored: crate::RestoredRecord =
+        serde_json::from_value(canonical_json.clone()).expect("carried record");
+    restored
+        .history
+        .notes
+        .iter_mut()
+        .find(|note| note.gate.is_some())
+        .expect("carried gate note")
+        .refs
+        .push("logs/zz-extra.txt".into());
+    *canonical_json = serde_json::to_value(&restored).expect("carried JSON");
+    assert_eq!(*object_id, kept_id, "the carried record keeps its id");
+    rebind_snapshot_body(&mut carried);
+    assert_corrupt_without_writes(
+        &project,
+        &snapshot_bytes(&carried),
+        "gate note refs disagree with its evidence reference",
+    );
 }

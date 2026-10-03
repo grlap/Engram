@@ -268,8 +268,12 @@ and load never refuse text an ordinary write admitted. A memory body keeps the
 whitespace its author wrote and must only be non-blank within its live byte
 bound. Gate history passes the stored gate rules: a non-empty bounded name,
 bounded failure labels in strictly sorted order, a bounded reference, and a
-pass exactly when no failure is recorded. A work-history record's actor needs
-a non-empty actor id and session binding and valid attribution provenance; a
+pass exactly when no failure is recorded. A gate note's refs are exactly what
+the store holds for its reference: none when the gate has no reference, and
+that one reference otherwise; anything else is a corrupt file, refused by load
+and its dry run and by save's check of its own document, never normalized, so
+a loaded store saves the same reference again. A work-history record's actor
+needs a non-empty actor id and session binding and valid attribution provenance; a
 project-memory version or tombstone actor is held to the attribution
 `remember` and `forget` admit (non-blank, bounded actor, kind, reason and
 session fields and bounded provenance), so a dry run refuses whatever the real

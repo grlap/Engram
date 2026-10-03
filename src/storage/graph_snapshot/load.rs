@@ -827,6 +827,18 @@ fn validate_history(
             if gate.passed != gate.failed.is_empty() {
                 return Err(corrupt("gate fields are not consistent"));
             }
+            // The store holds a gate's evidence reference as the note's only
+            // ref, and a save carries exactly that, so refs that say anything
+            // else would not survive a save of the loaded store unchanged.
+            let refs_match = match gate.evidence_ref.as_deref() {
+                None => note.refs.is_empty(),
+                Some(reference) => note.refs.len() == 1 && note.refs[0] == reference,
+            };
+            if !refs_match {
+                return Err(corrupt(
+                    "gate note refs disagree with its evidence reference",
+                ));
+            }
         }
     }
     for event in &history.events {
