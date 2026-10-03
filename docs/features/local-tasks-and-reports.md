@@ -27,6 +27,10 @@ The current local-work completion seal is implemented; the obsolete standalone
 barrier/report types and dummy publication adapter have been removed. Consult
 [the source-tree inventory](../shipped.md) for implemented capabilities.
 
+The [checkpoint and seal evidence design note](../checkpoint-evidence-membership.md)
+keeps the seal's selected evidence list and separates it from repeated
+default-all checkpoint growth, with the audit and report-assembly consequences.
+
 ## Multi-session coordination
 
 - A stable project id resolves every session and isolated worktree to one
