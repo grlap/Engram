@@ -36,8 +36,10 @@ fn claim_for(
     service
         .work_focus(&item.short_ref, at(second))
         .expect("focus the item to claim");
+    // The session may hold other items, so the claim names its target.
     service
-        .work_update(
+        .work_update_on(
+            Some(&item.short_ref),
             WorkUpdateInput::Claim {
                 ttl_seconds: Some(ttl_seconds),
                 recovery_reason: recovery_reason.map(Into::into),

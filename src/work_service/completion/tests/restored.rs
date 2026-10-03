@@ -579,8 +579,10 @@ fn restored_origin_required_child_reopen_removes_the_native_parent_barrier_credi
     service
         .work_focus(&child.short_ref, at(13))
         .expect("focus completed child");
+    // The session holds the parent, so the reopen names the child.
     service
-        .work_update(
+        .work_update_on(
+            Some(&child.short_ref),
             WorkUpdateInput::Reopen {
                 reason: "child needs another pass".into(),
                 idempotency_key: "reopen-native-child".into(),

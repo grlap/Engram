@@ -2,6 +2,7 @@ use super::super::test_support::*;
 use super::super::*;
 use crate::domain::GATE_EVIDENCE_SUMMARY;
 
+mod implicit_target;
 mod observations;
 mod read_snapshots;
 mod reject_retry;
@@ -1709,8 +1710,11 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
                 at(1_100 + i64::try_from(sample_index).expect("select timestamp")),
             )
             .expect("select claim target");
+        // The writer holds the items it claimed before, so each claim names
+        // its target; the decode budgets below are unchanged.
         measure_scale_operation(&mut claim_samples, || {
-            writer.work_update(
+            writer.work_update_on(
+                Some(&work.short_ref),
                 WorkUpdateInput::Claim {
                     ttl_seconds: Some(3_600),
                     recovery_reason: None,

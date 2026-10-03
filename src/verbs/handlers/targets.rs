@@ -4,10 +4,7 @@
 use super::{
     AgentVerbs, DateTime, Holder, StoreError, Utc, VerbError, WorkFocusView, WorkLifecycle,
 };
-use crate::storage::ImplicitFocusState;
-
-/// The most held items a refused bare word names; the rest are counted.
-const IMPLICIT_TARGET_HELD_SHOWN: usize = 3;
+use crate::storage::{IMPLICIT_TARGET_HELD_SHOWN, ImplicitFocusState};
 
 impl AgentVerbs {
     /// The item `word` acts on: the named one, focused, or else the ambient

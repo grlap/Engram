@@ -276,6 +276,128 @@ impl LocalWorkService {
         })
     }
 
+    /// The protocol basis of a core operation that may act on the ambient
+    /// focus: [`Self::protocol_basis`] for a named target. With none, the
+    /// operation follows the agent words' implicit-target rule: when the
+    /// focus is not an item this session holds while it holds other live
+    /// claims in the project, it is refused with
+    /// [`StoreError::WorkImplicitTargetConflict`] and nothing is recorded.
+    /// The focus, its claim and the session's held claims come from one
+    /// snapshot, and the basis returned is the one checked, so a concurrent
+    /// focus change cannot pass the check and then redirect the write.
+    ///
+    /// A retry of an act already admitted is exempt, so a lost response is
+    /// answered even after the focus moved: a caller key under which this
+    /// session began an attempt of the same intent that finished, or whose
+    /// core write `core_operation` committed before the attempt could finish.
+    /// Any other request with that key, and an attempt that wrote nothing,
+    /// is checked like a new act.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the retry exemption needs the operation, its key, its intent and its core write"
+    )]
+    pub(super) fn ambient_protocol_basis<T: Serialize>(
+        &self,
+        store: &SqliteStore,
+        target: Option<WorkId>,
+        operation: &str,
+        core_operation: &str,
+        caller_key: &str,
+        intent: &WorkProtocolIntent<'_, T>,
+        now: DateTime<Utc>,
+    ) -> Result<WorkProtocolBasis, StoreError> {
+        if target.is_some()
+            || self.admitted_retry(store, operation, core_operation, caller_key, intent)?
+        {
+            return self.protocol_basis(store, true, false, target, now);
+        }
+        store.work_read_snapshot(|store| {
+            let work = self.focused_item(store, None, now)?;
+            let claim = store.current_work_claim(work.work_id)?;
+            let held = store.work_held_refs_in_project(&self.project_id, &self.session_id, now)?;
+            if held.iter().any(|(work_id, _)| *work_id == work.work_id) {
+                return Ok(WorkProtocolBasis {
+                    focused_work: Some(work),
+                    claim,
+                    handoffs: Vec::new(),
+                });
+            }
+            let others: Vec<String> = held
+                .into_iter()
+                .filter(|(work_id, _)| *work_id != work.work_id)
+                .map(|(_, short_ref)| short_ref)
+                .collect();
+            if others.is_empty() {
+                return Ok(WorkProtocolBasis {
+                    focused_work: Some(work),
+                    claim,
+                    handoffs: Vec::new(),
+                });
+            }
+            let held_elsewhere = claim.as_ref().is_some_and(|claim| {
+                claim.state == crate::domain::WorkClaimState::Active
+                    && claim.expires_at > now
+                    && claim.holder != self.session_id
+            });
+            let focus_state = if held_elsewhere {
+                crate::storage::ImplicitFocusState::HeldElsewhere
+            } else if work.lifecycle != crate::domain::WorkLifecycle::Open {
+                crate::storage::ImplicitFocusState::NotOpen
+            } else {
+                crate::storage::ImplicitFocusState::Unclaimed
+            };
+            let more = others
+                .len()
+                .saturating_sub(crate::storage::IMPLICIT_TARGET_HELD_SHOWN);
+            Err(StoreError::WorkImplicitTargetConflict(Box::new(
+                crate::storage::ImplicitTargetConflict {
+                    operation: operation.to_owned(),
+                    focus: work.short_ref.clone(),
+                    focus_state,
+                    held: others
+                        .into_iter()
+                        .take(crate::storage::IMPLICIT_TARGET_HELD_SHOWN)
+                        .collect(),
+                    more,
+                },
+            )))
+        })
+    }
+
+    /// Whether a keyed request repeats an act this session already admitted:
+    /// its attempt for the same intent finished, or its core write committed.
+    fn admitted_retry<T: Serialize>(
+        &self,
+        store: &SqliteStore,
+        operation: &str,
+        core_operation: &str,
+        caller_key: &str,
+        intent: &WorkProtocolIntent<'_, T>,
+    ) -> Result<bool, StoreError> {
+        let caller_key = caller_key.trim();
+        if caller_key.is_empty() {
+            return Ok(false);
+        }
+        Ok(
+            match store.work_protocol_attempt_finished(
+                &self.project_id,
+                &self.session_id,
+                operation,
+                caller_key,
+                CanonicalObject::freeze(intent)?.key(),
+            )? {
+                None => false,
+                Some(true) => true,
+                Some(false) => store
+                    .work_operation_result_value(
+                        core_operation,
+                        &self.core_operation_key(operation, caller_key, core_operation)?,
+                    )?
+                    .is_some(),
+            },
+        )
+    }
+
     /// The core idempotency key of every service operation except a plan:
     /// proposals of a root or a decomposition, updates, completion and
     /// handoff. Plans never use it: storage derives a plan's key itself, from

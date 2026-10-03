@@ -54,14 +54,22 @@ impl LocalWorkService {
         };
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
-        let basis = self.protocol_basis(
-            &store,
-            matches!(input, WorkProposeInput::Decompose { .. }),
-            false,
-            target,
-            now,
-        )?;
         let intent = self.protocol_intent(&input);
+        // A decomposition acts on the focus when it names no parent, under
+        // the same implicit-target rule as the agent words; a root binds none.
+        let basis = if matches!(input, WorkProposeInput::Decompose { .. }) {
+            self.ambient_protocol_basis(
+                &store,
+                target,
+                protocol_operation,
+                core_operation,
+                raw_key,
+                &intent,
+                now,
+            )?
+        } else {
+            self.protocol_basis(&store, false, false, target, now)?
+        };
         let auto_decomposition = protocol_operation == crate::storage::DECOMPOSE_PROTOCOL_OPERATION
             && raw_key.trim().is_empty();
         let raw_key =

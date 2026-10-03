@@ -182,6 +182,17 @@ Repeating the word with the item named acts as before. A bare `handoff` keeps
 the focus without this check: its recipient accepts an item it does not hold
 yet, and an offer or a cancel already needs the claim.
 
+The host's core operations follow the same rule when they name no item: a
+decomposition under the focus, and every `work core update` form, claims,
+checkpoints and evidence capture included. They are refused the same way
+before any claim or attempt is written, from one read of the focus, its claim
+and the held claims. A root creation or an atomic plan names no focus and is
+not affected. A retry of an act already admitted is exempt, so a lost
+response is answered even after the focus moved: a caller key under which
+this session began an attempt of the same intent that finished, or whose
+core write committed before the attempt could finish. The same key with
+another payload, or an attempt that wrote nothing, is checked like a new act.
+
 These are the reads that record nothing:
 
 - `next --peek` (MCP `next` with `peek: true`);

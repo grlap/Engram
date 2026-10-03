@@ -622,8 +622,10 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
     service
         .work_focus(&waived.short_ref, at(5))
         .expect("focus child to waive");
+    // The session holds the parent, so the cancel names the child.
     service
-        .work_update(
+        .work_update_on(
+            Some(&waived.short_ref),
             WorkUpdateInput::Cancel {
                 reason: "the child outcome is no longer required".into(),
                 idempotency_key: "cancel-required-child".into(),
@@ -719,8 +721,10 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
     service
         .work_focus(&sealed.short_ref, at(13))
         .expect("focus remaining required child");
+    // The session holds the parent, so the claim names the child.
     service
-        .work_update(
+        .work_update_on(
+            Some(&sealed.short_ref),
             WorkUpdateInput::Claim {
                 ttl_seconds: Some(300),
                 recovery_reason: None,

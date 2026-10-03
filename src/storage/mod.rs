@@ -54,6 +54,10 @@ pub use schema_diagnostics::{
     StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
 };
 
+/// The most held items an implicit-target refusal names; the rest are
+/// counted in `more`.
+pub(crate) const IMPLICIT_TARGET_HELD_SHOWN: usize = 3;
+
 /// A word that named no item, the focus it would have acted on, and the
 /// items this session holds instead, by short ref.
 #[derive(Debug)]

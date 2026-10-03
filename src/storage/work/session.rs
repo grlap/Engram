@@ -588,6 +588,40 @@ impl SqliteStore {
         Ok(eligible)
     }
 
+    /// This session's attempt of `operation` under the caller's
+    /// `idempotency_key` for the intent fingerprint `request_hash`, the
+    /// fingerprint [`Self::begin_work_protocol_attempt`] compares: `None`
+    /// when there is none for that intent, else whether it finished. Reads
+    /// only.
+    pub(crate) fn work_protocol_attempt_finished(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        operation: &str,
+        idempotency_key: &str,
+        request_hash: &ObjectId,
+    ) -> Result<Option<bool>, StoreError> {
+        let idempotency_key = normalize_text(idempotency_key, "work idempotency key")?;
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT result_id IS NOT NULL AND result_json IS NOT NULL
+                 FROM work_protocol_attempts
+                 WHERE project_id = ?1 AND session_id = ?2
+                   AND operation = ?3 AND idempotency_key = ?4
+                   AND request_hash = ?5",
+                params![
+                    project_id.0,
+                    session_id.0,
+                    operation,
+                    idempotency_key,
+                    request_hash.as_str()
+                ],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()?)
+    }
+
     /// Starts or replays one caller-visible ambient protocol intent before any
     /// mutable focus, claim, revision, or handoff state is inferred.
     pub(crate) fn begin_work_protocol_attempt<T: Serialize, B: Serialize>(

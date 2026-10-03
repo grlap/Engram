@@ -519,14 +519,25 @@ impl LocalWorkService {
     ) -> Result<WorkUpdateResult, StoreError> {
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
-        let basis = self.protocol_basis(&store, true, false, target, now)?;
-        let intent = self.protocol_intent(&input);
         let (operation, core_operation, raw_key) = update_metadata(&input);
         let protocol_operation = if matches!(&input, WorkUpdateInput::Reject { .. }) {
             REJECT_PROTOCOL_OPERATION.to_owned()
         } else {
             format!("work_update:{operation}")
         };
+        // Every update form, claims included, acts on the focus when it names
+        // no item, under the agent words' implicit-target rule, checked before
+        // any claim or attempt is written.
+        let intent = self.protocol_intent(&input);
+        let basis = self.ambient_protocol_basis(
+            &store,
+            target,
+            &protocol_operation,
+            core_operation,
+            raw_key,
+            &intent,
+            now,
+        )?;
         let auto_rejection =
             raw_key.trim().is_empty() && protocol_operation == REJECT_PROTOCOL_OPERATION;
         let keyless_claim = match &input {
