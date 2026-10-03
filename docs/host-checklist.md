@@ -48,12 +48,14 @@ agents and CLI activity; then restart every consumer against the selected
 store with the new executable after verification. Installation does not
 restart those processes. For this repository, consult
 [Authority and Git](../AGENTS.md#authority-and-git) for installation and
-restart authority. Engram's coordinator sends TermAl restart requests to the
-Advisor with the build fingerprint and reason. Agents keep working while
-that request is pending: do not hold a landing window, stop consumers or
-pause proactively. The interruption happens when Greg performs the reset;
-recover mailboxes, gates and reviews afterward, and recover or rerun work
-the reset interrupted.
+restart authority. When a TermAl restart is needed for running sessions to use
+a landed fix, the Engram and TermAl coordinators agree on a moment when running
+work can resume. The TermAl coordinator sends Greg 'restart now' through
+Engram::Advisor, with the build hash and reason. Agents keep working while that
+restart is pending: do not hold a landing window, stop consumers or pause
+proactively. The interruption happens when Greg performs the restart; recover
+mailboxes, gates and reviews afterward, and recover or rerun work the restart
+interrupted.
 
 Until the actual cutover, stores awaiting repair or migration keep serving
 their existing older consumers. Do not start new-build consumers on those stores or

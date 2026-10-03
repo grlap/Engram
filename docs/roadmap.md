@@ -119,6 +119,13 @@ leaves the machine. They do not protect against:
 - an off-host claim that is false: for a directory target it is the
   operator's assertion, shown as unverified;
 - losing work recorded after the newest copy's cut;
+- the target losing or altering its copies between checks: ordinary
+  `backup status` reports recorded evidence; only the newest copy is
+  checked by the next push or `backup status --check-target`, so older
+  retained copies are not re-checked;
+- disclosure at the target: Engram does not encrypt copies, and a store
+  copy is readable by anyone who can read the target, so the target must
+  be readable only by the operator's own account;
 - damage the full check cannot see, such as wrong rows that still decode,
   once retention (three copies by default) has removed every copy taken
   before it;
