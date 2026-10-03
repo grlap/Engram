@@ -2,8 +2,7 @@
 //! hold a verification requirement, are decoded again when an exact retry
 //! replays them: an ordinary update, a note, a gate and a completion. Each
 //! replay refuses a requirement that names an environment, with a value or
-//! as null, rather than reading past it; all but the completion also name
-//! the member.
+//! as null, rather than reading past it, and names the member.
 
 use super::*;
 
@@ -176,18 +175,14 @@ fn replayed_results_whose_obligation_page_names_an_environment_are_refused_by_na
         serde_json::to_value(&replayed).expect("replay JSON"),
         serde_json::to_value(&completed).expect("first JSON")
     );
-    // A completion result is an untagged union of the receipt and the
-    // refusal, so its decoder reports only that the stored result matches
-    // neither shape; it still refuses rather than replaying past the member.
+    // A stored receipt is decoded as the receipt its seal claims, so the
+    // member is named here too.
     for environment in environments() {
         name_an_environment_in_the_newest_result(&database, "work_complete", environment);
         let error = service
             .work_complete(completion.clone(), at(14))
             .expect_err("a replayed completion naming an environment is refused");
         assert!(matches!(error, StoreError::Json(_)), "{error:?}");
-        assert!(
-            error.to_string().contains("WorkCompleteResult"),
-            "completion: {error}"
-        );
+        refused_by_name(&error, "completion");
     }
 }

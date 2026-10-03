@@ -7,6 +7,7 @@ use chrono::Duration;
 mod historical;
 mod identity;
 mod late_note_parity;
+mod replay_decode;
 mod restored;
 mod untested;
 

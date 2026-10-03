@@ -14,6 +14,28 @@ fn landing_frozen(input: &WorkCompleteInput, seal: &CompletionSeal) -> Result<()
     }
 }
 
+/// Decodes a stored completion result by its discriminant, so that a result
+/// this build cannot read is refused with the reason of the one shape it
+/// claims, not the untagged union's "matches no variant". A present `seal`
+/// selects the receipt, even when null or malformed; otherwise a `code`
+/// selects the refusal. The reason names an unknown or missing member and
+/// otherwise only the kind of problem, never a stored value.
+fn replayed_completion_result(result: serde_json::Value) -> Result<WorkCompleteResult, StoreError> {
+    let refused = |reason: &str| {
+        StoreError::Json(<serde_json::Error as serde::de::Error>::custom(format!(
+            "stored work_complete result: {reason}"
+        )))
+    };
+    let decoded = if result.get("seal").is_some() {
+        serde_json::from_value(result).map(WorkCompleteResult::Completed)
+    } else if result.get("code").is_some() {
+        serde_json::from_value(result).map(WorkCompleteResult::Refused)
+    } else {
+        return Err(refused("neither a `seal` nor a refusal `code`"));
+    };
+    decoded.map_err(|error| refused(&crate::storage::undecodable_json_reason(&error)))
+}
+
 impl LocalWorkService {
     /// Completes ambient focused work under inferred run/claim/fence state.
     ///
@@ -88,7 +110,7 @@ impl LocalWorkService {
             now,
         })?;
         if let Some(result) = attempt.result {
-            let mut result: WorkCompleteResult = serde_json::from_value(result)?;
+            let mut result = replayed_completion_result(result)?;
             match &mut result {
                 WorkCompleteResult::Completed(receipt) => {
                     ensure_completion_replay_target(&basis, receipt.work_id, &raw_key)?;
