@@ -1917,7 +1917,12 @@ impl SqliteStore {
         let content = super::fts_verification::fts_content(
             connection,
             "SELECT object_id, title, body FROM object_fts",
-            |row| Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+            |row| {
+                Ok((
+                    super::fts_verification::text(row, 1)?,
+                    super::fts_verification::text(row, 2)?,
+                ))
+            },
         )?;
         let mut heads = HashSet::new();
         let mut statement = connection
@@ -1935,7 +1940,8 @@ impl SqliteStore {
             // An unreadable table is reported once below, never as every
             // memory's row gone missing.
             if let Ok(content) = &content
-                && content.get(&version_id).map(Vec::as_slice) != Some(&[(title, body)][..])
+                && content.get(&Some(version_id.clone())).map(Vec::as_slice)
+                    != Some(&[(Some(title), Some(body))][..])
             {
                 invalid.push(format!("object_fts:{version_id}:projection_binding"));
             }
@@ -1944,7 +1950,10 @@ impl SqliteStore {
         drop(statement);
         match &content {
             Ok(content) => {
-                if content.keys().any(|object_id| !heads.contains(object_id)) {
+                if content
+                    .keys()
+                    .any(|object_id| object_id.as_ref().is_none_or(|id| !heads.contains(id)))
+                {
                     invalid.push("object_fts:orphaned_rows".into());
                 }
             }

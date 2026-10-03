@@ -736,6 +736,25 @@ fn doctor_names_every_catalog_binding_defect() {
         invalid.contains(&"work_catalog:orphaned_fts_rows".to_owned()),
         "{invalid:?}"
     );
+    // A row whose key or text is not text is a finding, never a conversion
+    // error that stops doctor.
+    for key in ["NULL", "42"] {
+        let invalid = catalog_findings(
+            &store,
+            &format!("INSERT INTO work_catalog_fts (work_id, search_text) VALUES ({key}, 'x')"),
+        );
+        assert!(
+            invalid.contains(&"work_catalog:orphaned_fts_rows".to_owned()),
+            "{key} key: {invalid:?}"
+        );
+    }
+    for value in ["NULL", "X'FF'", "7"] {
+        let invalid = catalog_findings(
+            &store,
+            &format!("UPDATE work_catalog_fts SET search_text = {value} WHERE work_id = '{id}'"),
+        );
+        assert!(invalid.contains(&binding), "{value}: {invalid:?}");
+    }
     let invalid = catalog_findings(
         &store,
         &format!("UPDATE work_items SET item_json = X'7B7D' WHERE work_id = '{id}'"),
@@ -789,7 +808,7 @@ fn catalog_fts_scan_cost_measurement() {
         let content = crate::storage::fts_verification::fts_content(
             &store.connection,
             "SELECT work_id, search_text FROM work_catalog_fts",
-            |row| row.get::<_, String>(1),
+            |row| crate::storage::fts_verification::text(row, 1),
         )
         .unwrap()
         .unwrap();

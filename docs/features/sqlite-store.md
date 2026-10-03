@@ -255,7 +255,9 @@ full-text table (the memory index and the work catalog) read-only and in time
 bounded by the table's size: one pass over its stored text binds every row to
 its memory head or work item, naming a changed, repeated or missing row and
 any orphan, and SQLite's own `integrity_check` of the table compares every
-posting with that text. A table too damaged to read is reported once, never as
+posting with that text. A row whose key or text is not text (NULL, a number
+or a blob) is such a finding too: an orphan when its key is not text, a
+binding finding when its text is not. A table too damaged to read is reported once, never as
 every row gone missing; a busy, I/O or other operational failure is an error,
 not a finding. Runtime heads, status,
 claims, feeds, ordering, and idempotency tables are durable parts of

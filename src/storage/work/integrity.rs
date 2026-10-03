@@ -1484,7 +1484,7 @@ pub(super) fn verify_work_catalog_projections(
     let content = crate::storage::fts_verification::fts_content(
         connection,
         "SELECT work_id, search_text FROM work_catalog_fts",
-        |row| row.get::<_, String>(1),
+        |row| crate::storage::fts_verification::text(row, 1),
     )?;
     let mut work_ids = HashSet::new();
     let mut statement = connection.prepare(
@@ -1533,7 +1533,8 @@ pub(super) fn verify_work_catalog_projections(
         // An unreadable catalog is reported once below, never as every
         // item's row gone missing.
         let fts_bound = content.as_ref().map_or(true, |content| {
-            content.get(&work_id).map(Vec::as_slice) == Some(std::slice::from_ref(&expected_search))
+            content.get(&Some(work_id.clone())).map(Vec::as_slice)
+                == Some(std::slice::from_ref(&Some(expected_search.clone())))
         });
         if item.work_id.0.to_string() != work_id
             || assigned_to_key != expected_assigned
@@ -1547,7 +1548,10 @@ pub(super) fn verify_work_catalog_projections(
     drop(statement);
     match &content {
         Ok(content) => {
-            if content.keys().any(|work_id| !work_ids.contains(work_id)) {
+            if content
+                .keys()
+                .any(|work_id| work_id.as_ref().is_none_or(|id| !work_ids.contains(id)))
+            {
                 invalid.push("work_catalog:orphaned_fts_rows".into());
             }
         }

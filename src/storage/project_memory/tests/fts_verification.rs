@@ -117,6 +117,29 @@ fn doctor_names_every_memory_index_binding_defect() {
         invalid.contains(&"object_fts:orphaned_rows".to_owned()),
         "{invalid:?}"
     );
+    // A row whose key or text is not text is a finding, never a conversion
+    // error that stops doctor: a NULL or numeric key reads as an orphan, and
+    // NULL or blob text no longer binds its head.
+    for key in ["NULL", "42"] {
+        let invalid = damaged(
+            &store,
+            &format!("INSERT INTO object_fts (object_id, title, body) VALUES ({key}, 't', 'b')"),
+        );
+        assert!(
+            invalid.contains(&"object_fts:orphaned_rows".to_owned()),
+            "{key} key: {invalid:?}"
+        );
+    }
+    for (column, value) in [("body", "NULL"), ("title", "X'FF'"), ("body", "7")] {
+        let invalid = damaged(
+            &store,
+            &format!("UPDATE object_fts SET {column} = {value} WHERE object_id = '{head}'"),
+        );
+        assert!(
+            invalid.contains(&binding),
+            "{column} = {value}: {invalid:?}"
+        );
+    }
 }
 
 // Postings that disagree with the stored text are caught by the index check
@@ -199,7 +222,12 @@ fn memory_fts_check_cost_measurement() {
         let content = crate::storage::fts_verification::fts_content(
             &store.connection,
             "SELECT object_id, title, body FROM object_fts",
-            |row| Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+            |row| {
+                Ok((
+                    crate::storage::fts_verification::text(row, 1)?,
+                    crate::storage::fts_verification::text(row, 2)?,
+                ))
+            },
         )
         .unwrap()
         .unwrap();

@@ -75,14 +75,32 @@ pub(crate) fn fts_content_scans() -> usize {
     FTS_CONTENT_SCANS.with(std::cell::Cell::get)
 }
 
+/// A column's stored text, or `None` when the value is not valid text (NULL,
+/// a number, a blob or bytes that are not UTF-8): a damaged full-text row is
+/// a finding, never a conversion error that stops the check.
+pub(super) fn text(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Option<String>> {
+    Ok(match row.get_ref(index)? {
+        rusqlite::types::ValueRef::Text(bytes) => {
+            std::str::from_utf8(bytes).ok().map(str::to_owned)
+        }
+        _ => None,
+    })
+}
+
+/// A full-text table's stored rows by key: `None` holds the rows whose key is
+/// not text.
+pub(super) type FtsContent<T> = HashMap<Option<String>, Vec<T>>;
+
 /// One pass over a full-text table's stored content, grouped by the key the
-/// first column holds, every row kept so a repeat stays visible. A table too
-/// damaged to read gives its detail instead, so no row is invented missing.
+/// first column holds, every row kept so a repeat stays visible. A row whose
+/// key is not text is kept under `None`, which binds to nothing and so reads
+/// as an orphan. A table too damaged to read gives its detail instead, so no
+/// row is invented missing.
 pub(super) fn fts_content<T>(
     connection: &Connection,
     sql: &str,
     row: impl Fn(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
-) -> Result<Result<HashMap<String, Vec<T>>, String>, StoreError> {
+) -> Result<Result<FtsContent<T>, String>, StoreError> {
     #[cfg(test)]
     FTS_CONTENT_SCANS.with(|count| count.set(count.get() + 1));
     let mut statement = match connection.prepare(sql) {
@@ -93,16 +111,14 @@ pub(super) fn fts_content<T>(
         Ok(rows) => rows,
         Err(error) => return corruption(error).map(Err),
     };
-    let mut content: HashMap<String, Vec<T>> = HashMap::new();
+    let mut content: FtsContent<T> = HashMap::new();
     loop {
         let next = match rows.next() {
             Ok(Some(next)) => next,
             Ok(None) => return Ok(Ok(content)),
             Err(error) => return corruption(error).map(Err),
         };
-        let read = next
-            .get::<_, String>(0)
-            .and_then(|key| row(next).map(|value| (key, value)));
+        let read = text(next, 0).and_then(|key| row(next).map(|value| (key, value)));
         match read {
             Ok((key, value)) => content.entry(key).or_default().push(value),
             Err(error) => return corruption(error).map(Err),
