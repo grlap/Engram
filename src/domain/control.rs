@@ -9,6 +9,8 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::ObjectId;
 
+mod named_root_state;
+
 use super::{
     AcceptanceEvaluationPolicy, ActorContext, ChangeCursor, ContextPacket, FeedPosition, ProjectId,
     RootExecutionId, SessionId, TaskDelta, TaskId, WorkClaimId, WorkClaimState, WorkId, WorkRunId,
@@ -356,7 +358,10 @@ pub struct NamedRootBindingReceipt {
 /// recorded `named_root_bind` events and the claim's own lifecycle: the
 /// host's authoritative read for when to name a root again. The variant set
 /// is closed.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+///
+/// Decoding is variant-aware (see `named_root_state`): a field the state does
+/// not name, or a repeated key, is refused rather than dropped.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum NamedRootState {
     /// No root is bound: none was named, the latest one was ended, or the

@@ -511,9 +511,12 @@ finished since, of that name and the claim's newest release the later one
 decides. An ended root reads `none`, even when a release follows it. A
 handoff or a recovery records no release, so the state stays `bound`; the
 claim's `revision` and fence advance on those too, so neither tells a host
-when to name again. The variant set is closed. A replayed `session_bind`
-reports the state at the replay, and a replayed `turn_begin` returns its
-receipt as stored.
+when to name again. The variant set is closed, and each state carries
+exactly its own fields: wherever Engram decodes a state, in a request, a
+stored receipt or a stored observation, a field its state does not name, a
+field of another state, or a repeated key is refused rather than dropped. A
+replayed `session_bind` reports the state at the replay, and a replayed
+`turn_begin` returns its receipt as stored.
 
 A host reads any claim's root with the host-private `named_root_read`
 operation, including a claim no session is bound to any more, such as one

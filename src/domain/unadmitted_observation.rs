@@ -44,31 +44,8 @@ pub struct ObservationRootBasis {
     /// The claim's newest recorded root event at the cut, bound or ended;
     /// `None` only when the claim never had one.
     pub latest_event: Option<ObjectId>,
-    #[serde(deserialize_with = "strict_root_state")]
+    /// Decoded by variant: a field the state does not name is refused.
     pub state: NamedRootState,
-}
-
-/// A root state decoded strictly: each variant takes exactly its own fields,
-/// so a field the state does not name is refused, never dropped.
-fn strict_root_state<'de, D>(deserializer: D) -> Result<NamedRootState, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let value = strict::StrictValue::deserialize(deserializer)?.0;
-    let object = value
-        .as_object()
-        .ok_or_else(|| D::Error::custom("root_basis.state must be an object"))?;
-    let known: &[&str] = match object.get("state").and_then(serde_json::Value::as_str) {
-        Some("bound") => &["state", "workspace_id", "generation", "named_at"],
-        Some("unbound_by_release") => &["state", "last_generation", "released_at_position"],
-        // `none`, or a state the decoder below refuses by name.
-        _ => &["state"],
-    };
-    if let Some(field) = object.keys().find(|key| !known.contains(&key.as_str())) {
-        return Err(D::Error::unknown_field(field, known));
-    }
-    serde_json::from_value(value).map_err(D::Error::custom)
 }
 
 /// The window the host actually observed. It need not reach back to the

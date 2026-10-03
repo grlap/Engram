@@ -594,3 +594,153 @@ fn a_begin_receipt_stored_without_the_state_replays_without_it() {
     let report = fixture.store.verify_all().expect("doctor");
     assert!(report.is_healthy(), "{report:?}");
 }
+
+/// Every way a root state can carry what its state does not name: a field no
+/// state names, a field of another state, and a repeated tag.
+fn tampered_states(state: &str) -> Vec<(String, &'static str)> {
+    let open = state.strip_prefix('{').expect("an object");
+    vec![
+        (
+            format!(r#"{{"root_hint":"x",{open}"#),
+            "unknown field `root_hint`",
+        ),
+        (
+            format!(r#"{{"last_generation":9,{open}"#),
+            "unknown field `last_generation`",
+        ),
+        (
+            format!(r#"{{"state":"bound",{open}"#),
+            "duplicate field `state`",
+        ),
+    ]
+}
+
+/// The session status, a named-root read and a stored begin receipt each
+/// decode the root state strictly: what its state does not name, or a
+/// repeated key, is refused, and the stored receipt replays unchanged once
+/// its recorded bytes are back.
+#[test]
+fn every_decoded_root_state_refuses_what_its_state_does_not_name() {
+    let (mut fixture, _work, claim, mut host) = bound_host();
+    host_binds(
+        &mut fixture.store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        11,
+        "name-B-9",
+        11,
+    )
+    .expect("host names B");
+    let named = bound("workspace-B", 9, 11);
+    let wire = serde_json::to_string(&named).expect("state");
+
+    let status = fixture
+        .store
+        .control_status(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            at(12),
+        )
+        .expect("session status");
+    assert_eq!(status.named_root, Some(named.clone()));
+    let read = fixture
+        .store
+        .read_named_root(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            claim.run_id,
+            claim.claim_id,
+        )
+        .expect("named-root read");
+    assert_eq!(read.named_root, named);
+    let status_text = serde_json::to_string(&status).expect("status");
+    let read_text = serde_json::to_string(&read).expect("read");
+    assert_eq!(
+        serde_json::from_str::<crate::domain::ControlSessionStatus>(&status_text)
+            .expect("status reads back"),
+        status
+    );
+    assert_eq!(
+        serde_json::from_str::<crate::domain::NamedRootRead>(&read_text).expect("read reads back"),
+        read
+    );
+    for (state, expected) in tampered_states(&wire) {
+        let error = serde_json::from_str::<crate::domain::ControlSessionStatus>(
+            &status_text.replacen(&wire, &state, 1),
+        )
+        .expect_err("tampered status");
+        assert!(error.to_string().contains(expected), "{error}");
+        let error = serde_json::from_str::<crate::domain::NamedRootRead>(
+            &read_text.replacen(&wire, &state, 1),
+        )
+        .expect_err("tampered read");
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+
+    let grant = host.grant(&mut fixture.store, &[EffectClass::Observe], false, 13);
+    let key = host.key("begin");
+    let begin = |store: &mut SqliteStore| {
+        store.begin_control_turn(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            &grant.grant_id,
+            &[],
+            &key,
+            at(14),
+        )
+    };
+    let receipt = begin(&mut fixture.store).expect("begin host turn");
+    assert!(matches!(
+        &receipt,
+        ControlTurnBeginDecision::Begin { receipt } if receipt.named_root == Some(named.clone())
+    ));
+    let stored_result = |store: &SqliteStore| -> Vec<u8> {
+        store
+            .connection
+            .query_row(
+                "SELECT result_json FROM control_operation_results
+                 WHERE operation = 'turn_begin' AND idempotency_key = ?1",
+                [&key],
+                |row| row.get(0),
+            )
+            .expect("the stored begin result")
+    };
+    let recorded = stored_result(&fixture.store);
+    let canonical = String::from_utf8(crate::canonical::canonical_bytes(&named).expect("bytes"))
+        .expect("utf-8");
+    let recorded_text = String::from_utf8(recorded.clone()).expect("utf-8");
+    assert!(recorded_text.contains(&canonical), "{recorded_text}");
+    let write_result = |store: &SqliteStore, bytes: &[u8]| {
+        store
+            .connection
+            .execute(
+                "UPDATE control_operation_results SET result_json = ?1
+                 WHERE operation = 'turn_begin' AND idempotency_key = ?2",
+                rusqlite::params![bytes, key],
+            )
+            .expect("store the begin result");
+    };
+    for (state, expected) in tampered_states(&canonical) {
+        write_result(
+            &fixture.store,
+            recorded_text.replacen(&canonical, &state, 1).as_bytes(),
+        );
+        let error = begin(&mut fixture.store).expect_err("a tampered receipt is refused");
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+    write_result(&fixture.store, &recorded);
+    assert_eq!(
+        begin(&mut fixture.store).expect("the recorded receipt replays"),
+        receipt
+    );
+    assert_eq!(stored_result(&fixture.store), recorded);
+}
