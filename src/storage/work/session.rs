@@ -8,7 +8,7 @@ use super::super::{
     BeginWorkProtocolAttempt, DECOMPOSE_PROTOCOL_OPERATION, SqliteStore, StaleRecoveryContext,
     StoreError,
 };
-use super::completion::feed_head;
+use super::completion::{ancestors_admit_execution, feed_head};
 use super::feeds::{
     load_typed_work_object, require_work_protocol_result_object,
     validate_work_protocol_result_binding,
@@ -558,6 +558,9 @@ impl SqliteStore {
             .collect::<Result<Vec<_>, _>>()?;
         drop(statement);
         if child_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        if !ancestors_admit_execution(&self.connection, parent)? {
             return Ok(Vec::new());
         }
         let root_execution = active_root_execution(&self.connection, parent.root_id)?;

@@ -5,6 +5,7 @@
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+use super::completion::ancestors_admit_execution;
 use super::feeds::load_typed_work_object;
 use super::query::{
     active_root_execution_optional, latest_canonical_work_event_for_item_optional, load_work_item,
@@ -95,17 +96,23 @@ pub(super) fn required_child_successor_on(
             "required-child successor has an invalid identity binding",
         ));
     }
+    let parent = child
+        .parent_id
+        .map(|parent| load_work_item(connection, parent))
+        .transpose()?;
+    let can_waive = match parent {
+        Some(parent) if parent.lifecycle == WorkLifecycle::Open => {
+            ancestors_admit_execution(connection, &parent)?
+        }
+        _ => false,
+    };
     let mut result = RequiredChildSuccessor {
         successor: successor_id,
         lifecycle: successor.lifecycle,
         reason: "successor is not completed; explicit waiver still required",
         resolution: None,
         waived: false,
-        can_waive: child
-            .parent_id
-            .map(|parent| load_work_item(connection, parent))
-            .transpose()?
-            .is_some_and(|parent| parent.lifecycle == WorkLifecycle::Open),
+        can_waive,
     };
     if successor.lifecycle != WorkLifecycle::Completed {
         return Ok(Some(result));

@@ -217,6 +217,8 @@ impl ChildObligationGroup {
         page: &WorkChildSummaryPage,
         parent: &super::WorkItemSummary,
         requirement: &str,
+        waivable: &[crate::work_service::RequiredChildWaiverCandidate],
+        can_detach: bool,
     ) -> Self {
         let parent_ref = &parent.short_ref;
         let items = page
@@ -227,8 +229,14 @@ impl ChildObligationGroup {
                     work.lifecycle,
                     super::WorkLifecycle::Cancelled | super::WorkLifecycle::Superseded
                 );
-                let can_waive = disposed && parent.lifecycle == super::WorkLifecycle::Open;
-                let child_resolution = ShowChildSuccessor::for_work(work);
+                let can_waive = disposed
+                    && waivable
+                        .iter()
+                        .any(|candidate| candidate.short_ref == work.short_ref);
+                let mut child_resolution = ShowChildSuccessor::for_work(work);
+                if !can_waive && let Some(resolution) = &mut child_resolution {
+                    resolution.remedy = None;
+                }
                 ChildObligationRow {
                     work_ref: work.short_ref.clone(),
                     title: short_with_limit(&work.title, super::MAX_COMPACT_TITLE_BYTES),
@@ -237,6 +245,8 @@ impl ChildObligationGroup {
                             "engram work update {parent_ref} --waive {} --reason \"…\"",
                             work.short_ref
                         )
+                    } else if disposed && can_detach {
+                        super::handlers::detach_command(parent_ref)
                     } else {
                         format!("engram work show {}", work.short_ref)
                     },
@@ -246,6 +256,8 @@ impl ChildObligationGroup {
                                 || "disposed required child still needs an explicit waiver".into(),
                                 ShowChildSuccessor::line,
                             )
+                        } else if parent.lifecycle == super::WorkLifecycle::Open {
+                            "waiver is unavailable; resolve the parent's execution context".into()
                         } else {
                             "parent is terminal; inspect retained child context".into()
                         }
@@ -297,17 +309,28 @@ pub(super) struct ShowChildObligations {
 }
 
 impl ShowChildObligations {
-    pub(super) fn new(groups: &WorkChildObligations, parent: &super::WorkItemSummary) -> Self {
+    pub(super) fn new(
+        groups: &WorkChildObligations,
+        view: &crate::work_service::WorkFocusView,
+    ) -> Self {
         Self {
             required_owed: ChildObligationGroup::for_show(
                 &groups.required_owed,
-                parent,
+                &view.status.work,
                 "required",
+                &view.waivable_required_children,
+                view.allowed_next
+                    .iter()
+                    .any(|next| next == "work_update:detach"),
             ),
             open_optional: ChildObligationGroup::for_show(
                 &groups.open_optional,
-                parent,
+                &view.status.work,
                 "optional",
+                &view.waivable_required_children,
+                view.allowed_next
+                    .iter()
+                    .any(|next| next == "work_update:detach"),
             ),
         }
     }

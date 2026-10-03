@@ -1,5 +1,357 @@
 use super::*;
 
+#[test]
+fn completed_root_parent_remains_readable_and_detachable_after_child_detach() {
+    let (_directory, verbs, database, project) = fixture();
+    let root = add(&verbs, "Root", None, false, 0);
+    let parent = add(&verbs, "Optional parent", Some(&root), true, 1);
+    let child = add(&verbs, "Required child", Some(&parent), false, 2);
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: root.clone(),
+                ttl_seconds: None,
+                recover: None,
+            },
+            at(3),
+        )
+        .expect("claim root");
+    let done = verbs
+        .done(
+            DoneInput {
+                work_ref: Some(root.clone()),
+                summary: Some("Root delivered".into()),
+                ..DoneInput::default()
+            },
+            at(4),
+        )
+        .expect("complete root with optional subtree");
+    assert!(!done.owed);
+    let store = SqliteStore::open(&database).expect("store");
+    let root_item = store.resolve_work_ref(&project, &root).expect("root");
+    let root_run = store.latest_work_run(root_item.work_id).unwrap().unwrap();
+    let connection = rusqlite::Connection::open(&database).expect("connection");
+    let retained = || {
+        let header: Vec<u8> = connection
+            .query_row(
+                "SELECT header_json FROM work_root_executions WHERE root_execution_id = ?1",
+                [root_run.root_execution_id.0.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let members = connection.prepare(
+            "SELECT member_hash, member_json FROM work_root_members WHERE root_execution_id = ?1 ORDER BY member_hash",
+        ).unwrap().query_map([root_run.root_execution_id.0.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        }).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        let seal: Vec<u8> = connection
+            .query_row(
+                "SELECT seal_json FROM work_completion_seals WHERE work_id = ?1",
+                [root_item.work_id.0.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        (header, members, seal)
+    };
+    let before = retained();
+    let refusal = verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(parent.clone()),
+                action: UpdateAction::Detach {
+                    reason: "Continue independently".into(),
+                },
+            },
+            at(5),
+        )
+        .expect_err("open descendant still blocks parent detach");
+    let payload = crate::mcp::store_error_value(&refusal.error);
+    assert_eq!(payload["error"]["code"], "work_detach_refused");
+    assert_eq!(
+        payload["error"]["details"]["reason"],
+        "resolve open descendants before detaching their parent"
+    );
+    assert_eq!(
+        payload["error"]["details"]["remedy"],
+        format!("engram work show {child}")
+    );
+    verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(child.clone()),
+                action: UpdateAction::Detach {
+                    reason: "Child needs independent execution".into(),
+                },
+            },
+            at(6),
+        )
+        .expect("detach child");
+    let shown_child = verbs.show(&child, at(7)).expect("show detached child");
+    assert!(!shown_child.text().contains("--waive"));
+    assert!(
+        !serde_json::to_string(&shown_child.value)
+            .unwrap()
+            .contains("--waive")
+    );
+    for verbose in [false, true] {
+        let listed = verbs
+            .ls(
+                &LsInput {
+                    under: Some(parent.clone()),
+                    required: true,
+                    all: true,
+                    verbose,
+                    ..LsInput::default()
+                },
+                at(7),
+            )
+            .expect("list retained required child");
+        assert_eq!(listed.value["total"], 1);
+        assert!(!listed.text().contains("--waive"));
+        assert!(
+            !serde_json::to_string(&listed.value)
+                .unwrap()
+                .contains("--waive")
+        );
+    }
+    let shown = verbs
+        .show(&parent, at(7))
+        .expect("show stranded intermediate parent");
+    assert!(!shown.text().contains("--waive"));
+    assert!(
+        !serde_json::to_string(&shown.value)
+            .unwrap()
+            .contains("--waive")
+    );
+    assert_eq!(
+        shown.value["child_obligations"]["required_owed"]["items"][0]["remedy"],
+        super::super::super::handlers::detach_command(&parent)
+    );
+    let view = verbs
+        .service
+        .work_focus(&parent, at(7))
+        .expect("parent guidance");
+    assert!(view.waivable_required_children.is_empty());
+    note(
+        &verbs,
+        &parent,
+        "Retained parent can receive observations",
+        8,
+    );
+    verbs
+        .service
+        .select_work(&parent, at(9))
+        .expect("select parent");
+    let focused = verbs
+        .next(&NextInput::default(), at(9))
+        .expect("focused next");
+    assert_eq!(focused.value["focus"]["ref"], parent);
+    assert!(!focused.text().contains("--waive"));
+    let detached = verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(parent.clone()),
+                action: UpdateAction::Detach {
+                    reason: "Parent needs independent execution".into(),
+                },
+            },
+            at(10),
+        )
+        .expect("detach intermediate parent");
+    let successor = detached.value["receipt"]["work_ref"]
+        .as_str()
+        .expect("successor");
+    assert_ne!(successor, parent);
+    let successor_item = store.resolve_work_ref(&project, successor).unwrap();
+    assert!(successor_item.parent_id.is_none());
+    assert_eq!(successor_item.root_id, successor_item.work_id);
+    note(
+        &verbs,
+        successor,
+        "Independent successor accepts observations",
+        11,
+    );
+    assert_eq!(
+        store.resolve_work_ref(&project, &parent).unwrap().lifecycle,
+        WorkLifecycle::Superseded
+    );
+    assert_eq!(store.get_work_item(root_item.work_id).unwrap(), root_item);
+    assert_eq!(
+        store.latest_work_run(root_item.work_id).unwrap().unwrap(),
+        root_run
+    );
+    assert_eq!(retained(), before);
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn parent_detach_guidance_requires_all_open_descendants_to_be_resolved() {
+    let (_directory, verbs, _database, _project) = fixture();
+    let root = add(&verbs, "Root", None, false, 0);
+    let parent = add(&verbs, "Optional parent", Some(&root), true, 1);
+    let child = add(&verbs, "Required child", Some(&parent), false, 2);
+    let sibling = add(&verbs, "Open sibling", Some(&parent), false, 3);
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: root.clone(),
+                ttl_seconds: None,
+                recover: None,
+            },
+            at(4),
+        )
+        .unwrap();
+    verbs
+        .done(
+            DoneInput {
+                work_ref: Some(root),
+                summary: Some("Root delivered".into()),
+                ..DoneInput::default()
+            },
+            at(5),
+        )
+        .unwrap();
+    verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(child.clone()),
+                action: UpdateAction::Detach {
+                    reason: "Child continues independently".into(),
+                },
+            },
+            at(6),
+        )
+        .unwrap();
+    let shown = verbs.show(&parent, at(7)).unwrap();
+    let detach = super::super::super::handlers::detach_command(&parent);
+    assert!(!shown.text().contains(&detach));
+    assert!(
+        !serde_json::to_string(&shown.value)
+            .unwrap()
+            .contains("--detach")
+    );
+    let rows = shown.value["child_obligations"]["required_owed"]["items"]
+        .as_array()
+        .unwrap();
+    let row = rows.iter().find(|row| row["ref"] == child).unwrap();
+    assert_eq!(row["remedy"], format!("engram work show {child}"));
+    let refusal = verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(parent),
+                action: UpdateAction::Detach {
+                    reason: "Parent cannot leave open descendants".into(),
+                },
+            },
+            at(8),
+        )
+        .expect_err("open sibling still blocks detach");
+    let payload = crate::mcp::store_error_value(&refusal.error);
+    assert_eq!(payload["error"]["code"], "work_detach_refused");
+    assert_eq!(
+        payload["error"]["details"]["reason"],
+        "resolve open descendants before detaching their parent"
+    );
+    assert_eq!(
+        payload["error"]["details"]["remedy"],
+        format!("engram work show {sibling}")
+    );
+}
+
+#[test]
+fn superseded_child_waiver_guidance_remains_available_under_an_open_root() {
+    let (_directory, verbs, _database, _project) = fixture();
+    let parent = add(&verbs, "Open root", None, false, 0);
+    let child = add(&verbs, "Required child", Some(&parent), false, 1);
+    let successor = add(&verbs, "Independent successor", None, false, 2);
+    verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(child.clone()),
+                action: UpdateAction::Supersede {
+                    replacement: successor,
+                    reason: "Continue in independent work".into(),
+                },
+            },
+            at(3),
+        )
+        .unwrap();
+    let command = format!("engram work update {parent} --waive {child} --reason \"…\"");
+    let shown = verbs.show(&child, at(4)).unwrap();
+    assert!(shown.text().contains(&command));
+    assert_eq!(
+        shown.value["status"]["work"]["child_resolution"]["remedy"],
+        command
+    );
+    for verbose in [false, true] {
+        let listed = verbs
+            .ls(
+                &LsInput {
+                    under: Some(parent.clone()),
+                    required: true,
+                    all: true,
+                    verbose,
+                    ..LsInput::default()
+                },
+                at(4),
+            )
+            .unwrap();
+        assert!(listed.text().contains(&command));
+        assert!(
+            serde_json::to_string(&listed.value)
+                .unwrap()
+                .contains("--waive")
+        );
+    }
+}
+
+#[test]
+fn child_waiver_rendering_preserves_live_and_terminal_parent_guidance() {
+    let (_directory, verbs, _database, _project) = fixture();
+    let parent = add(&verbs, "Parent", None, false, 0);
+    let child = add(&verbs, "Required child", Some(&parent), false, 1);
+    verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(child.clone()),
+                action: UpdateAction::Cancel {
+                    reason: "Not needed".into(),
+                },
+            },
+            at(2),
+        )
+        .unwrap();
+    let shown = verbs.show(&parent, at(3)).unwrap();
+    let row = &shown.value["child_obligations"]["required_owed"]["items"][0];
+    assert_eq!(
+        row["remedy"],
+        format!("engram work update {parent} --waive {child} --reason \"…\"")
+    );
+    assert_eq!(
+        row["resolve_first"],
+        "disposed required child still needs an explicit waiver"
+    );
+    verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(parent.clone()),
+                action: UpdateAction::Cancel {
+                    reason: "Parent retired".into(),
+                },
+            },
+            at(4),
+        )
+        .unwrap();
+    let shown = verbs.show(&parent, at(5)).unwrap();
+    let row = &shown.value["child_obligations"]["required_owed"]["items"][0];
+    assert_eq!(
+        row["resolve_first"],
+        "parent is terminal; inspect retained child context"
+    );
+    assert_eq!(row["remedy"], format!("engram work show {child}"));
+    assert!(!shown.text().contains("--waive"));
+}
+
 pub(super) fn stranded_child(verbs: &AgentVerbs) -> (String, String) {
     let parent = add(verbs, "Parent", None, false, 0);
     let child = add(verbs, "Follow-up", Some(&parent), true, 1);

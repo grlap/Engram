@@ -1353,7 +1353,7 @@ pub(super) fn show_lines(
         }
     }
     if let Some(groups) = &view.child_obligations {
-        lines.extend(ShowChildObligations::new(groups, work).lines());
+        lines.extend(ShowChildObligations::new(groups, view).lines());
     }
     if !view.prerequisites.is_empty() {
         lines.push(format!(
@@ -1623,7 +1623,22 @@ pub(super) fn show_receipt_value(
         },
         holder,
         held_until,
-        children: view.children.iter().map(show_relation).collect(),
+        children: view
+            .children
+            .iter()
+            .map(|item| {
+                let mut relation = show_relation(item);
+                if !view
+                    .waivable_required_children
+                    .iter()
+                    .any(|candidate| candidate.short_ref == item.short_ref)
+                    && let Some(resolution) = &mut relation.child_resolution
+                {
+                    resolution.remedy = None;
+                }
+                relation
+            })
+            .collect(),
         children_omitted: (view.child_count > view.children.len())
             .then(|| view.child_count - view.children.len()),
         children_navigation: (view.child_count > view.children.len())
@@ -1631,7 +1646,7 @@ pub(super) fn show_receipt_value(
         child_obligations: view
             .child_obligations
             .as_ref()
-            .map(|groups| ShowChildObligations::new(groups, work)),
+            .map(|groups| ShowChildObligations::new(groups, view)),
         prerequisites: view.prerequisites.iter().map(show_relation).collect(),
         handoffs: view
             .handoffs
