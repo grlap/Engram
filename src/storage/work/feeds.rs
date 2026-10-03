@@ -1030,6 +1030,30 @@ pub(super) fn append_planned_prerequisite_event(
     append_work_event_on(transaction, event, None, Some(basis))
 }
 
+/// Only the ordinary prerequisite transition supplies this basis: the one it
+/// validated for the same item earlier in this transaction, so the append
+/// does not validate it a second time. It is refused for another item or any
+/// other transition.
+pub(super) fn append_checked_relation_event(
+    transaction: &Transaction<'_>,
+    event: &WorkEventDraft,
+    checked: super::planning::CheckedRelationBasis,
+) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
+    let (work_id, basis) = checked.into_parts();
+    if work_id != event.work_id
+        || !matches!(
+            event.transition,
+            crate::domain::WorkTransition::PrerequisiteAdded { .. }
+                | crate::domain::WorkTransition::PrerequisiteRemoved { .. }
+        )
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "a checked relation basis belongs to one item's prerequisite change".into(),
+        ));
+    }
+    append_work_event_on(transaction, event, None, Some(&basis))
+}
+
 fn append_work_event_on(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,

@@ -1130,3 +1130,214 @@ fn decomposition_enforces_default_depth_budget() {
         Err(StoreError::InvalidWork(message)) if message.contains("hierarchy depth")
     ));
 }
+
+// An ordinary prerequisite change validates the item's prior relations once
+// and hands that basis to its own append. The fingerprint the event records
+// is the one an independent reading of the resulting edges gives. A no-op
+// change validates once and appends nothing.
+#[test]
+fn an_ordinary_prerequisite_change_validates_its_relations_once() {
+    let project = "project-prerequisite-once";
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let mut create = |key: &str, second: i64| {
+        store
+            .create_work(
+                &root_request(project, key, second),
+                &DevelopmentNoopRedactor,
+            )
+            .expect(key)
+    };
+    let dependent = create("dependent", 0);
+    let prerequisites = [create("first", 1), create("second", 2), create("third", 3)];
+    let change =
+        |store: &mut SqliteStore, prerequisite: &WorkItem, add: bool, key: &str, second: i64| {
+            let current = store.get_work_item(dependent.work_id).expect("dependent");
+            let request = ChangeWorkPrerequisiteRequest {
+                work_id: current.work_id,
+                prerequisite_id: prerequisite.work_id,
+                expected_revision: current.revision,
+                authority: delegated(project, "planner"),
+                actor: actor("planner"),
+                idempotency_key: key.into(),
+                changed_at: at(second),
+            };
+            let before = super::relation_basis_validations();
+            let changed = if add {
+                store.add_work_prerequisite(&request, &DevelopmentNoopRedactor)
+            } else {
+                store.remove_work_prerequisite(&request, &DevelopmentNoopRedactor)
+            }
+            .expect("prerequisite change");
+            (changed, super::relation_basis_validations() - before)
+        };
+    // The fingerprint built here from the expected edges alone.
+    let expected_fingerprint = |edges: &[&WorkItem]| {
+        let mut prerequisite_ids = edges.iter().map(|item| item.work_id).collect::<Vec<_>>();
+        prerequisite_ids.sort_by_key(|id| id.0);
+        CanonicalObject::freeze(&WorkRelationBasis {
+            schema_version: SCHEMA_VERSION,
+            prerequisite_ids,
+            active_blockers: Vec::new(),
+        })
+        .expect("expected fingerprint")
+        .key()
+        .clone()
+    };
+    let recorded_fingerprint = |store: &SqliteStore| {
+        super::super::query::latest_canonical_work_event_for_item_optional(
+            &store.connection,
+            dependent.work_id,
+        )
+        .expect("latest event")
+        .expect("an event")
+        .relation_fingerprint
+    };
+
+    for (count, prerequisite) in prerequisites.iter().enumerate() {
+        let (_, validations) = change(
+            &mut store,
+            prerequisite,
+            true,
+            &format!("add-{count}"),
+            10 + i64::try_from(count).unwrap(),
+        );
+        assert_eq!(
+            validations, 1,
+            "add {count} validates once with {count} prior edges"
+        );
+        let edges = prerequisites.iter().take(count + 1).collect::<Vec<_>>();
+        assert_eq!(recorded_fingerprint(&store), expected_fingerprint(&edges));
+    }
+
+    // Adding an edge that already exists validates once and appends nothing.
+    let revision = store
+        .get_work_item(dependent.work_id)
+        .expect("dependent")
+        .revision;
+    let (unchanged, validations) = change(&mut store, &prerequisites[0], true, "add-again", 20);
+    assert_eq!(validations, 1);
+    assert_eq!(
+        unchanged.revision, revision,
+        "a no-op change appends nothing"
+    );
+
+    let (_, validations) = change(&mut store, &prerequisites[1], false, "remove", 21);
+    assert_eq!(validations, 1, "a removal validates once");
+    assert_eq!(
+        recorded_fingerprint(&store),
+        expected_fingerprint(&[&prerequisites[0], &prerequisites[2]])
+    );
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+// The single validation still comes first: an ordinary add or removal on an
+// item whose projected edges disagree with its canonical history is refused
+// before anything is written, whether an edge was dropped or one was added
+// behind the history.
+#[test]
+fn an_ordinary_prerequisite_change_refuses_a_corrupt_edge_set() {
+    let project = "project-prerequisite-corrupt";
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let mut create = |key: &str, second: i64| {
+        store
+            .create_work(
+                &root_request(project, key, second),
+                &DevelopmentNoopRedactor,
+            )
+            .expect(key)
+    };
+    let dependent = create("dependent", 0);
+    let first = create("first", 1);
+    let second = create("second", 2);
+    let third = create("third", 3);
+    let request = |store: &SqliteStore, prerequisite: &WorkItem, key: &str, second: i64| {
+        let current = store.get_work_item(dependent.work_id).expect("dependent");
+        ChangeWorkPrerequisiteRequest {
+            work_id: current.work_id,
+            prerequisite_id: prerequisite.work_id,
+            expected_revision: current.revision,
+            authority: delegated(project, "planner"),
+            actor: actor("planner"),
+            idempotency_key: key.into(),
+            changed_at: at(second),
+        }
+    };
+    let added = request(&store, &first, "add-first", 10);
+    store
+        .add_work_prerequisite(&added, &DevelopmentNoopRedactor)
+        .expect("add first");
+    let feed = FeedId::Project(dependent.project_id.clone());
+    let edges = |store: &SqliteStore| {
+        store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM work_prerequisites WHERE work_id = ?1",
+                [dependent.work_id.0.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("edge count")
+    };
+    let refuses_every_change = |store: &mut SqliteStore, label: &str| {
+        let head = store.work_feed_head(&feed).expect("feed head");
+        let revision = store
+            .get_work_item(dependent.work_id)
+            .expect("item")
+            .revision;
+        let edge_count = edges(store);
+        for (prerequisite, add) in [(&second, true), (&first, false), (&third, false)] {
+            let change = request(store, prerequisite, &format!("{label}-{add}"), 20);
+            let refused = if add {
+                store.add_work_prerequisite(&change, &DevelopmentNoopRedactor)
+            } else {
+                store.remove_work_prerequisite(&change, &DevelopmentNoopRedactor)
+            };
+            assert!(
+                matches!(refused, Err(StoreError::InvalidWorkProjection(_))),
+                "{label}: change ({add}) must be refused, got {refused:?}"
+            );
+            assert_eq!(store.work_feed_head(&feed).expect("feed"), head, "{label}");
+            assert_eq!(
+                store
+                    .get_work_item(dependent.work_id)
+                    .expect("item")
+                    .revision,
+                revision,
+                "{label}"
+            );
+            assert_eq!(edges(store), edge_count, "{label}: no edge written");
+        }
+    };
+
+    // An edge added behind the canonical history.
+    let event_id = store
+        .connection
+        .query_row(
+            "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
+            [dependent.work_id.0.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("latest event");
+    store
+        .connection
+        .execute(
+            "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_id)
+             VALUES (?1, ?2, ?3)",
+            params![
+                dependent.work_id.0.to_string(),
+                third.work_id.0.to_string(),
+                event_id
+            ],
+        )
+        .expect("insert an edge behind history");
+    refuses_every_change(&mut store, "extra edge");
+
+    // An edge the canonical history has, dropped from the projection.
+    store
+        .connection
+        .execute(
+            "DELETE FROM work_prerequisites WHERE work_id = ?1",
+            [dependent.work_id.0.to_string()],
+        )
+        .expect("drop every projected edge");
+    refuses_every_change(&mut store, "omitted edge");
+}

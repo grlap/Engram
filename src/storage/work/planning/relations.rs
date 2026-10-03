@@ -7,8 +7,8 @@ use super::{
     CanonicalObject, ChangeWorkPrerequisiteRequest, Connection, ObjectId, OptionalExtension,
     PlanRelationBasis, PlanningValidation, SCHEMA_VERSION, StoreError, Transaction, WorkBlocker,
     WorkEventDraft, WorkId, WorkItem, WorkLifecycle, WorkRelationBasis, WorkTransition,
-    active_run_snapshot, append_work_event, assert_revision, load_work_item, params,
-    persist_work_item, rebase_planning_claim, validate_planning_authority, work_is_ancestor_of,
+    active_run_snapshot, assert_revision, load_work_item, params, persist_work_item,
+    rebase_planning_claim, validate_planning_authority, work_is_ancestor_of,
 };
 
 /// Changes one edge using the ordinary checks within a caller-owned transaction.
@@ -39,7 +39,9 @@ pub(super) fn change_work_prerequisite_with_validation_on(
 ) -> Result<WorkItem, StoreError> {
     let mut item = load_work_item(transaction, request.work_id)?;
     let prerequisite = load_work_item(transaction, request.prerequisite_id)?;
-    if let Some(relations) = planned_relations.as_ref() {
+    // The ordinary path validates the item's relations once here and hands
+    // that basis to its own append; the atomic plan carries its own.
+    let checked = if let Some(relations) = planned_relations.as_ref() {
         if !matches!(validation, PlanningValidation::AtomicPlan)
             || relations.work_id != item.work_id
         {
@@ -47,9 +49,10 @@ pub(super) fn change_work_prerequisite_with_validation_on(
                 "planned relation basis has the wrong owner".into(),
             ));
         }
+        None
     } else {
-        require_work_item_relation_integrity(transaction, item.work_id)?;
-    }
+        Some(checked_work_relation_basis(transaction, item.work_id)?)
+    };
     assert_revision(&item, request.expected_revision)?;
     validate_planning_authority(
         transaction,
@@ -127,20 +130,28 @@ pub(super) fn change_work_prerequisite_with_validation_on(
         actor: request.actor.clone(),
         created_at: request.changed_at,
     };
-    let (event_id, _) = if let Some(relations) = planned_relations {
-        let appended = super::super::feeds::append_planned_prerequisite_event(
-            transaction,
-            &event,
-            &relations.basis,
-        )?;
-        apply_work_relation_transition(
-            &mut relations.basis,
-            &event.transition,
-            event.blocker.as_ref(),
-        )?;
-        appended
-    } else {
-        append_work_event(transaction, &event)?
+    let (event_id, _) = match (planned_relations, checked) {
+        (Some(relations), _) => {
+            let appended = super::super::feeds::append_planned_prerequisite_event(
+                transaction,
+                &event,
+                &relations.basis,
+            )?;
+            apply_work_relation_transition(
+                &mut relations.basis,
+                &event.transition,
+                event.blocker.as_ref(),
+            )?;
+            appended
+        }
+        (None, Some(checked)) => {
+            super::super::feeds::append_checked_relation_event(transaction, &event, checked)?
+        }
+        (None, None) => {
+            return Err(StoreError::InvalidWorkProjection(
+                "a prerequisite change has no validated relation basis".into(),
+            ));
+        }
     };
     if add {
         transaction.execute(
@@ -198,6 +209,45 @@ pub(in crate::storage::work) fn work_relation_fingerprint(
     Ok(CanonicalObject::freeze(basis)?.key().clone())
 }
 
+/// An item's relation basis, validated against its latest canonical
+/// fingerprint inside the caller's transaction, for that item's one
+/// prerequisite append to reuse instead of validating again. Its fields are
+/// private, so only [`checked_work_relation_basis`] builds one, and the
+/// append it is handed to refuses it for any other item.
+pub(in crate::storage::work) struct CheckedRelationBasis {
+    work_id: WorkId,
+    basis: WorkRelationBasis,
+}
+
+impl CheckedRelationBasis {
+    /// The item the basis was validated for, and the basis itself.
+    pub(in crate::storage::work) fn into_parts(self) -> (WorkId, WorkRelationBasis) {
+        (self.work_id, self.basis)
+    }
+}
+
+/// Validates `work_id`'s relations once, keeping the result for its append.
+pub(in crate::storage::work) fn checked_work_relation_basis(
+    transaction: &Transaction<'_>,
+    work_id: WorkId,
+) -> Result<CheckedRelationBasis, StoreError> {
+    Ok(CheckedRelationBasis {
+        work_id,
+        basis: validated_current_work_relation_basis(transaction, work_id)?,
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    static RELATION_BASIS_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many relation-basis validations ran on this thread.
+#[cfg(test)]
+pub(in crate::storage::work) fn relation_basis_validations() -> usize {
+    RELATION_BASIS_VALIDATIONS.with(std::cell::Cell::get)
+}
+
 /// The projected relations and the latest event's relation fingerprint are
 /// compared, so outside a transaction they are read from one commit.
 pub(in crate::storage::work) fn validated_current_work_relation_basis(
@@ -213,6 +263,8 @@ fn validated_relation_basis_on_snapshot(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<WorkRelationBasis, StoreError> {
+    #[cfg(test)]
+    RELATION_BASIS_VALIDATIONS.with(|count| count.set(count.get() + 1));
     let basis = projected_work_relation_basis(connection, work_id)?;
     let actual = work_relation_fingerprint(&basis)?;
     let expected = if let Some(latest) =

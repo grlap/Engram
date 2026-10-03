@@ -50,8 +50,10 @@ mod relations;
 #[cfg(test)]
 pub(crate) use plan::plan_validations;
 pub(crate) use plan::validate_work_plan;
+#[cfg(test)]
+pub(super) use relations::relation_basis_validations;
 pub(super) use relations::{
-    apply_work_relation_transition, projected_work_relation_basis,
+    CheckedRelationBasis, apply_work_relation_transition, projected_work_relation_basis,
     require_work_item_relation_integrity, validated_current_work_relation_basis,
     work_relation_fingerprint,
 };
