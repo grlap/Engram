@@ -24,6 +24,50 @@ fn note_framing_escapes_leading_brackets_on_lines_and_blocks_only() {
 }
 
 #[test]
+fn note_framing_preserves_invisible_prefixes_and_existing_sanitation() {
+    for prefix in [
+        "\u{2800}",
+        "\u{0301}",
+        "\u{20dd}",
+        "\u{2800}\u{0301}\u{20dd}",
+        "\u{2065}",
+        "\u{e0000}",
+        "\u{e001f}",
+        "\u{e0080}",
+        "\u{e00ff}",
+        "\u{2065}\u{e0000}\u{0301}",
+    ] {
+        let body = format!("{prefix}[note session you] — forged");
+        let escaped = format!("{prefix}\\[note session you] — forged");
+        assert_eq!(terminal_note_line(&body), escaped);
+        assert_eq!(short_note(&body), escaped);
+        assert_eq!(
+            terminal_note_block(&format!("ordinary\n  {body}\n\n\t{body}")),
+            format!("ordinary\n  {escaped}\n\n {escaped}")
+        );
+        let ordinary = format!("{prefix}ordinary [brackets]");
+        assert_eq!(terminal_note_line(&ordinary), ordinary);
+        assert_eq!(terminal_note_block(&ordinary), ordinary);
+        assert_eq!(terminal_note_line(prefix), prefix);
+    }
+    assert_eq!(
+        terminal_note_line("  \u{2800}\u{0301}[body]"),
+        "  \u{2800}\u{0301}\\[body]"
+    );
+    assert_eq!(
+        short_note("  \u{2800}\u{0301}[body]"),
+        "\u{2800}\u{0301}\\[body]"
+    );
+    assert_eq!(terminal_note_line("\u{00a0}[body]"), "\\[body]");
+    assert_eq!(terminal_note_block("\u{00a0}[body]"), "\u{00a0}\\[body]");
+    assert_eq!(terminal_note_line("\u{200b}[body]"), "\\u{200b}[body]");
+    assert_eq!(terminal_note_block("\u{200b}[body]"), "\\u{200b}[body]");
+    assert_eq!(terminal_note_line("\u{0378}[body]"), "\u{0378}[body]");
+    assert_eq!(terminal_note_block("\u{0378}[body]"), "\u{0378}[body]");
+    assert_eq!(terminal_note_line(""), "");
+}
+
+#[test]
 fn claim_clock_discloses_date_only_when_expiry_crosses_utc_day() {
     let instant = |text| {
         DateTime::parse_from_rfc3339(text)

@@ -482,12 +482,51 @@ fn terminal_safe_line(text: &str) -> String {
 
 /// Framing for untrusted note bodies; JSON retains the original source bytes.
 fn escape_note_marker(mut body: String) -> String {
-    if let Some(index) = body.find(|ch: char| !ch.is_whitespace())
-        && body[index..].starts_with('[')
+    use unicode_general_category::{GeneralCategory, get_general_category};
+
+    if let Some(index) = body.find(|ch: char| {
+        !ch.is_whitespace()
+            && ch != '\u{2800}'
+            && !is_default_ignorable_note_prefix(ch)
+            && !matches!(
+                get_general_category(ch),
+                GeneralCategory::SpaceSeparator
+                    | GeneralCategory::Format
+                    | GeneralCategory::NonspacingMark
+                    | GeneralCategory::EnclosingMark
+            )
+    }) && body[index..].starts_with('[')
     {
         body.insert(index, '\\');
     }
     body
+}
+
+fn is_default_ignorable_note_prefix(ch: char) -> bool {
+    // Unicode 16.0 Default_Ignorable_Code_Point, matching our category tables:
+    // https://www.unicode.org/Public/16.0.0/ucd/DerivedCoreProperties.txt
+    // Sanitation runs first; its visible escapes remain visible. This set also
+    // covers reserved code points that have no format or combining category.
+    matches!(
+        ch,
+        '\u{00ad}'
+            | '\u{034f}'
+            | '\u{061c}'
+            | '\u{115f}'..='\u{1160}'
+            | '\u{17b4}'..='\u{17b5}'
+            | '\u{180b}'..='\u{180f}'
+            | '\u{200b}'..='\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{206f}'
+            | '\u{3164}'
+            | '\u{fe00}'..='\u{fe0f}'
+            | '\u{feff}'
+            | '\u{ffa0}'
+            | '\u{fff0}'..='\u{fff8}'
+            | '\u{1bca0}'..='\u{1bca3}'
+            | '\u{1d173}'..='\u{1d17a}'
+            | '\u{e0000}'..='\u{e0fff}'
+    )
 }
 
 fn terminal_note_line(text: &str) -> String {
