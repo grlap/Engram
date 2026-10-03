@@ -110,7 +110,7 @@ pub(crate) fn doctor(
     };
     let stored_path_policy = store.stored_host_path_policy()?;
     println!(
-        "Engram store is healthy ({} immutable object(s), {} graph snapshot audit(s), {} control record(s), {} work record(s) checked)",
+        "Engram store is healthy ({} canonical object and projection check(s), {} graph snapshot audit(s), {} control record(s), {} work record(s) checked)",
         report.checked_objects,
         report.checked_graph_snapshot_audits,
         report.checked_control_records,
@@ -253,7 +253,11 @@ fn diagnose_policy_recovery(database: &Path, project_id: &ProjectId, json: bool)
             report.checked_control_records
         );
         for finding in &report.invalid_control_records {
-            println!("INVALID {}: {}", finding.record, finding.detail);
+            println!(
+                "INVALID {}: {}",
+                engram::terminal_error_line(&finding.record),
+                engram::terminal_error_line(&finding.detail)
+            );
         }
         println!("Guidance: {}", report.guidance);
     }
@@ -353,7 +357,7 @@ fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool)
         );
     } else {
         println!(
-            "Engram rebuildable projections repaired and verified ({} immutable object(s), {} graph snapshot audit(s), {} control record(s), {} work record(s) checked)",
+            "Engram rebuildable projections repaired and verified ({} canonical object and projection check(s), {} graph snapshot audit(s), {} control record(s), {} work record(s) checked)",
             report.checked_objects,
             report.checked_graph_snapshot_audits,
             report.checked_control_records,

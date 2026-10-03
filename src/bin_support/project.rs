@@ -4,7 +4,7 @@
 use std::{
     env,
     fmt::Write as _,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -65,8 +65,6 @@ impl ProjectFileRefusal {
             eprintln!("error: project_resolution_failed: project selection refused");
             if let Some(details) = value["error"]["details"].as_object() {
                 for (name, value) in details {
-                    // JSON framing escapes ASCII controls; Unicode escaping
-                    // also neutralises bidi, separator and invisible controls.
                     eprintln!("  {name}: {}", terminal_detail(value));
                 }
             }
@@ -76,17 +74,20 @@ impl ProjectFileRefusal {
     }
 }
 
+/// A detail as one terminal-safe line. A string, such as an attempted path,
+/// prints as written, so a Windows path keeps its single backslashes. An
+/// ASCII control and every non-ASCII scalar, which covers bidi, separator and
+/// invisible controls, is escaped as its UTF-16 `\uXXXX` units at this
+/// CLI-only boundary. Any other value prints as JSON.
 fn terminal_detail(value: &Value) -> String {
-    let json = value.to_string();
-    let mut text = String::with_capacity(json.len());
-    for character in json.chars() {
-        if character.is_ascii() {
+    let Value::String(value) = value else {
+        return value.to_string();
+    };
+    let mut text = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character.is_ascii() && !character.is_ascii_control() {
             text.push(character);
         } else {
-            // Conservatively escape every non-ASCII scalar at this CLI-only
-            // boundary without duplicating the library's private text policy.
-            // Keep the framed value valid JSON, including supplementary
-            // scalars represented by a UTF-16 surrogate pair.
             for unit in character.encode_utf16(&mut [0; 2]) {
                 let _ = write!(text, "\\u{unit:04x}");
             }
@@ -95,12 +96,27 @@ fn terminal_detail(value: &Value) -> String {
     text
 }
 
+/// Reads the project id, refusing with a kind a caller can act on: no file
+/// (`missing`), any other read failure (`unreadable`), content that is not
+/// UTF-8 (`undecodable`) or blank content (`empty`).
 pub(crate) fn read_project_id(project_file: &Path) -> anyhow::Result<String> {
-    let text = fs::read_to_string(project_file).map_err(|error| {
+    let bytes = fs::read(project_file).map_err(|error| {
+        let kind = if error.kind() == io::ErrorKind::NotFound {
+            "missing"
+        } else {
+            "unreadable"
+        };
         ProjectFileRefusal::new(
             project_file,
-            "unreadable",
+            kind,
             format!("failed to read {}: {error}", project_file.display()),
+        )
+    })?;
+    let text = String::from_utf8(bytes).map_err(|_| {
+        ProjectFileRefusal::new(
+            project_file,
+            "undecodable",
+            format!("project file {} is not valid UTF-8", project_file.display()),
         )
     })?;
     let project_id = text.trim();

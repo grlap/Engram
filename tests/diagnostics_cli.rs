@@ -155,6 +155,69 @@ fn doctor_discloses_the_verified_snapshot_in_json_and_text() {
     )));
 }
 
+// The aggregate count covers canonical objects and the projections checked
+// against them, so it is labelled as checks; only the verified snapshot line
+// counts immutable objects, and the JSON fields keep their names.
+#[test]
+fn doctor_labels_its_checked_count_apart_from_the_verified_snapshot() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let home = directory.path();
+    success(home, &["init"]);
+    let work = ["work", "--actor-id", "labels", "--session-id", "labels"];
+    success(home, &[&work[..], &["add", "Counted work"]].concat());
+    success(
+        home,
+        &[
+            &work[..],
+            &["remember", "A remembered note is projected too"],
+        ]
+        .concat(),
+    );
+    let report = diagnosis(home);
+    let checked = report["checked"]["objects"].as_u64().unwrap();
+    let objects = report["verified_snapshot"]["object_count"]
+        .as_u64()
+        .unwrap();
+    assert_ne!(
+        checked, objects,
+        "the fixture must make the checks differ from the snapshot's objects"
+    );
+    let healthy = String::from_utf8(success(home, &["doctor"]).stdout).unwrap();
+    let repaired =
+        String::from_utf8(success(home, &["doctor", "--repair-projections"]).stdout).unwrap();
+    let repaired_json: Value = serde_json::from_slice(
+        &success(home, &["doctor", "--repair-projections", "--json"]).stdout,
+    )
+    .unwrap();
+    assert_eq!(repaired_json["checked_objects"], checked);
+    for (text, summary) in [
+        (&healthy, "Engram store is healthy ("),
+        (
+            &repaired,
+            "Engram rebuildable projections repaired and verified (",
+        ),
+    ] {
+        assert!(
+            text.contains(&format!(
+                "{summary}{checked} canonical object and projection check(s), "
+            )),
+            "{text}"
+        );
+        let immutable: Vec<_> = text
+            .lines()
+            .filter(|line| line.contains("immutable object"))
+            .collect();
+        assert_eq!(
+            immutable,
+            [format!(
+                "Verified snapshot: {objects} immutable object(s); selected project feed head position {}",
+                report["verified_snapshot"]["project_feed_head"]["position"]
+            )],
+            "{text}"
+        );
+    }
+}
+
 #[test]
 fn version_next_and_doctor_share_runtime_identity_across_processes() {
     let directory = crate::test_support::temp_home().unwrap();
@@ -678,5 +741,223 @@ fn healthy_store_path_policy_refusal_is_actionable_and_not_corruption() {
     success(
         home,
         &["--host-path-policy", "case_sensitive", "doctor", "--json"],
+    );
+}
+
+/// Runs read-only policy recovery on `home` and returns its JSON report and
+/// text output, checking that the store's bytes did not change.
+fn recovery_reports(home: &Path, database: &Path) -> (Value, String) {
+    let before = fs::read(database).unwrap();
+    let json = run(home, &["doctor", "--recover-policy", "--json"]);
+    let text = run(home, &["doctor", "--recover-policy"]);
+    assert_eq!(fs::read(database).unwrap(), before, "recovery is read-only");
+    let mut text_output = String::from_utf8(text.stdout).unwrap();
+    text_output.push_str(&String::from_utf8(text.stderr).unwrap());
+    let report: Value = serde_json::from_slice(&json.stdout).unwrap_or_else(|_| {
+        panic!(
+            "recovery JSON: {}{}",
+            String::from_utf8_lossy(&json.stdout),
+            String::from_utf8_lossy(&json.stderr)
+        )
+    });
+    (report, text_output)
+}
+
+// A recovery finding names the record and the shape of the problem: an
+// unknown or missing member by name, otherwise the category and position,
+// never a value the record holds.
+#[test]
+fn policy_recovery_never_repeats_a_value_from_a_record_that_does_not_decode() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let home = directory.path();
+    success(home, &["init"]);
+    let database = Path::new(diagnosis(home)["database"].as_str().unwrap()).to_owned();
+    let (healthy, healthy_text) = recovery_reports(home, &database);
+    assert_eq!(
+        healthy["control_policy"]["invalid_control_records"],
+        json!([])
+    );
+    assert!(!healthy_text.contains("INVALID"), "{healthy_text}");
+
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    let (rule_set, stored): (String, Vec<u8>) = connection
+        .query_row(
+            "SELECT object_id, canonical_json FROM objects WHERE object_kind = 'obligation_rule_set'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let stored = String::from_utf8(stored).unwrap();
+    let marker = "\"check_kind\":\"";
+    let start = stored
+        .find(marker)
+        .expect("the stock rule set names a check kind")
+        + marker.len();
+    let end = start + stored[start..].find('"').unwrap();
+    let hostile = "hostile-check-kind-7f3a";
+    let store_rule_set = |bytes: &str| {
+        connection
+            .execute(
+                "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+                rusqlite::params![bytes.as_bytes(), rule_set],
+            )
+            .unwrap();
+    };
+    // A member name holding an escape sequence, written as JSON escapes it,
+    // beside the check kind in the requirement that refuses unknown members.
+    let member_at = start - marker.len();
+    let unknown_member = format!(
+        "{}\"evil\\u001b[31m\":1,{}",
+        &stored[..member_at],
+        &stored[member_at..]
+    );
+    for (bytes, shape, hidden) in [
+        (
+            format!("{}{hostile}{}", &stored[..start], &stored[end..]),
+            "a field of the wrong type or value at line 1 column",
+            Some(hostile),
+        ),
+        (unknown_member, "unknown field `evil\u{1b}[31m`", None),
+        (
+            stored.replacen("\"rules\":", "\"rules_renamed\":", 1),
+            "missing field `rules`",
+            None,
+        ),
+        (
+            stored[..stored.len() - 2].to_owned(),
+            "truncated JSON at line 1 column",
+            None,
+        ),
+        (
+            format!("{}#{}", &stored[..member_at], &stored[member_at..]),
+            "malformed JSON at line 1 column",
+            None,
+        ),
+    ] {
+        store_rule_set(&bytes);
+        let (report, text) = recovery_reports(home, &database);
+        let findings = report["control_policy"]["invalid_control_records"]
+            .as_array()
+            .unwrap();
+        assert!(!findings.is_empty(), "{report}");
+        let details: Vec<&str> = findings
+            .iter()
+            .map(|finding| finding["detail"].as_str().unwrap())
+            .collect();
+        assert!(
+            details
+                .iter()
+                .any(|detail| detail.starts_with("a record does not decode: ")),
+            "{details:?}"
+        );
+        if let Some(hidden) = hidden {
+            assert!(!report.to_string().contains(hidden), "{report}");
+            assert!(!text.contains(hidden), "{text}");
+            assert!(
+                details.iter().any(|detail| detail.contains(shape)),
+                "{details:?}"
+            );
+            assert!(text.contains(shape), "{text}");
+        } else if shape.starts_with("unknown field `evil") {
+            // The member is named, and the text framing escapes its control.
+            assert!(
+                details
+                    .iter()
+                    .any(|detail| detail.contains("unknown field `evil\u{1b}[31m`")),
+                "{details:?}"
+            );
+            assert!(!text.contains('\u{1b}'), "{text}");
+            assert!(text.contains("unknown field `evil"), "{text}");
+        } else {
+            assert!(
+                details.iter().any(|detail| detail.contains(shape)),
+                "{details:?}"
+            );
+            assert!(text.contains(shape), "{text}");
+        }
+        assert!(text.contains("INVALID control_policy"), "{text}");
+    }
+    store_rule_set(&stored);
+    let (restored, _) = recovery_reports(home, &database);
+    assert_eq!(
+        restored["control_policy"]["invalid_control_records"],
+        json!([])
+    );
+
+    // A stored record id column holding text that is no id is named by its
+    // shape too, never repeated.
+    let authority: String = connection
+        .query_row(
+            "SELECT authority_id FROM control_policy_versions",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let hostile_id = "hostile-authority-id-9c1e";
+    // The corruption fixture writes around the foreign key a writer keeps.
+    connection
+        .execute_batch("PRAGMA foreign_keys = OFF")
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE control_policy_versions SET authority_id = ?1",
+            [hostile_id],
+        )
+        .unwrap();
+    let (report, text) = recovery_reports(home, &database);
+    assert!(!report.to_string().contains(hostile_id), "{report}");
+    assert!(!text.contains(hostile_id), "{text}");
+    assert!(
+        report["control_policy"]["invalid_control_records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["detail"] == "a stored record id is not a valid record id"),
+        "{report}"
+    );
+    connection
+        .execute(
+            "UPDATE control_policy_versions SET authority_id = ?1",
+            [&authority],
+        )
+        .unwrap();
+    let (restored, _) = recovery_reports(home, &database);
+    assert_eq!(
+        restored["control_policy"]["invalid_control_records"],
+        json!([])
+    );
+
+    // A canonical object stored under another kind is named by the kind that
+    // was asked for, never by the stored kind text.
+    let hostile_kind = "hostile-kind-5d2b";
+    connection
+        .execute(
+            "UPDATE objects SET object_kind = ?1 WHERE object_id = ?2",
+            rusqlite::params![hostile_kind, rule_set],
+        )
+        .unwrap();
+    let (report, text) = recovery_reports(home, &database);
+    assert!(!report.to_string().contains(hostile_kind), "{report}");
+    assert!(!text.contains(hostile_kind), "{text}");
+    assert!(
+        report["control_policy"]["invalid_control_records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["detail"].as_str().unwrap().ends_with(
+                "is stored under another kind than the \"obligation_rule_set\" requested"
+            )),
+        "{report}"
+    );
+    connection
+        .execute(
+            "UPDATE objects SET object_kind = 'obligation_rule_set' WHERE object_id = ?1",
+            [&rule_set],
+        )
+        .unwrap();
+    let (restored, _) = recovery_reports(home, &database);
+    assert_eq!(
+        restored["control_policy"]["invalid_control_records"],
+        json!([])
     );
 }

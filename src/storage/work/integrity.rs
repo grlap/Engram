@@ -171,13 +171,28 @@ pub(super) fn verify_json_projection<T: DeserializeOwned + Serialize + PartialEq
         let (id, bytes) = row?;
         *checked += 1;
         seen.insert(id.clone());
-        let matches = expected.get(&id).is_some_and(|expected| {
-            let projected = decode_projection_bytes::<T>(&bytes);
-            let canonical = decode_preserved_projection::<T>(expected);
-            matches!((projected, canonical), (Some(projected), Some(canonical)) if projected == canonical)
-        });
-        if !matches {
+        let Some(expected) = expected.get(&id) else {
             invalid.push(format!("{kind}:{id}"));
+            continue;
+        };
+        let projected = decode_projection_bytes::<T>(&bytes);
+        match (projected, decode_preserved_projection::<T>(expected)) {
+            (Some(projected), Some(canonical)) if projected == canonical => {}
+            // The canonical side itself does not survive its own type: that
+            // is named apart from projection drift. The projection is still
+            // compared with what the canonical side decodes to, so a
+            // projection that fails its own guard or differs from it is
+            // reported beside the canonical label.
+            (projected, None) => match canonical_without_its_representation::<T>(expected) {
+                Some(canonical) => {
+                    invalid.push(format!("{kind}:{id}:canonical_representation"));
+                    if projected.as_ref() != Some(&canonical) {
+                        invalid.push(format!("{kind}:{id}"));
+                    }
+                }
+                None => invalid.push(format!("{kind}:{id}")),
+            },
+            _ => invalid.push(format!("{kind}:{id}")),
         }
     }
     for id in expected.keys().filter(|id| !seen.contains(*id)) {
@@ -823,6 +838,20 @@ pub(super) fn verify_completion_rows(
         let (seal_id, work_id, run_id, root_execution_id, bytes) = row?;
         *checked += 1;
         seen.insert(seal_id.clone());
+        // A canonical seal that does not survive its own type is named apart
+        // from projection damage; whatever the projection can still be checked
+        // against (its own guard, its bindings, the checks below) is checked.
+        // The projection is compared with what the canonical seal decodes
+        // to even then, so drift is still reported beside that label.
+        let canonical = expected.get(&seal_id).and_then(|expected| {
+            decode_preserved_projection::<CompletionSeal>(&expected.3).or_else(|| {
+                let lost = canonical_without_its_representation::<CompletionSeal>(&expected.3)?;
+                invalid.push(format!(
+                    "completion_seal:{seal_id}:canonical_representation"
+                ));
+                Some(lost)
+            })
+        });
         let Some(seal) = decode_projection_bytes::<CompletionSeal>(&bytes) else {
             invalid.push(format!("completion_seal:{seal_id}:projection_binding"));
             continue;
@@ -831,8 +860,7 @@ pub(super) fn verify_completion_rows(
             expected.0 == work_id
                 && expected.1 == run_id
                 && expected.2 == root_execution_id
-                && decode_preserved_projection::<CompletionSeal>(&expected.3)
-                    .is_some_and(|canonical| seal == canonical)
+                && canonical.as_ref() == Some(&seal)
         });
         if !valid {
             invalid.push(format!("completion_seal:{seal_id}:projection_binding"));
@@ -1808,6 +1836,7 @@ pub(super) fn verify_canonical_work_rows(
              LEFT JOIN objects object ON object.object_id = projection.seal_id
              ORDER BY projection.seal_id",
             typed_projection_bytes_equal::<CompletionSeal> as fn(&[u8], &[u8]) -> bool,
+            canonical_side_finding::<CompletionSeal> as fn(&[u8], &[u8]) -> Option<bool>,
         ),
         (
             "work_handoff_offer",
@@ -1817,9 +1846,10 @@ pub(super) fn verify_canonical_work_rows(
              LEFT JOIN objects object ON object.object_id = projection.offer_object_id
              ORDER BY projection.offer_id",
             typed_projection_bytes_equal::<WorkHandoffOffer> as fn(&[u8], &[u8]) -> bool,
+            canonical_side_finding::<WorkHandoffOffer> as fn(&[u8], &[u8]) -> Option<bool>,
         ),
     ];
-    for (kind, sql, equivalent) in projections {
+    for (kind, sql, equivalent, canonical_side) in projections {
         let mut statement = connection.prepare(sql)?;
         let rows = statement.query_map([], |row| {
             Ok((
@@ -1844,7 +1874,19 @@ pub(super) fn verify_canonical_work_rows(
                 _ => false,
             };
             if !valid {
-                invalid.push(format!("{kind}:{stored_hash}"));
+                // A canonical side that does not survive its own type is named
+                // apart; a projection that fails its own guard or differs
+                // from what that side decodes to is still reported beside it.
+                let finding = canonical
+                    .as_deref()
+                    .filter(|_| object_kind.as_deref() == Some(kind))
+                    .and_then(|bytes| canonical_side(&projection, bytes));
+                if finding.is_some() {
+                    invalid.push(format!("{kind}:{stored_hash}:canonical_representation"));
+                }
+                if finding != Some(false) {
+                    invalid.push(format!("{kind}:{stored_hash}"));
+                }
             }
         }
     }
@@ -1886,6 +1928,33 @@ fn json_members_preserved(stored: &serde_json::Value, serialized: &serde_json::V
         }
         _ => stored == serialized,
     }
+}
+
+/// The value a canonical value decodes to as `T` when it does not survive
+/// being written back (a member lost or a scalar respelled): a failure of the
+/// canonical side's representation, which is labelled apart from projection
+/// drift. `None` when the value decodes and survives, or does not decode.
+fn canonical_without_its_representation<T: DeserializeOwned + Serialize>(
+    stored: &serde_json::Value,
+) -> Option<T> {
+    let decoded = T::deserialize(stored).ok()?;
+    (!preserves_projection_representation(stored, &decoded)).then_some(decoded)
+}
+
+/// For stored canonical bytes whose representation is lost, whether the
+/// projection bytes also fail: they fail their own guard or differ from
+/// what the canonical bytes decode to. `None` when the canonical
+/// representation is not lost.
+fn canonical_side_finding<T: DeserializeOwned + Serialize + PartialEq>(
+    projection: &[u8],
+    canonical: &[u8],
+) -> Option<bool> {
+    let decoded = serde_json::from_slice::<T>(canonical).ok()?;
+    let stored = serde_json::from_slice::<serde_json::Value>(canonical).ok()?;
+    if preserves_projection_representation(&stored, &decoded) {
+        return None;
+    }
+    Some(decode_projection_bytes::<T>(projection).as_ref() != Some(&decoded))
 }
 
 fn decode_projection_bytes<T: DeserializeOwned + Serialize>(bytes: &[u8]) -> Option<T> {

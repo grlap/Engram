@@ -2087,7 +2087,10 @@ identity resolves to the same opaque SQLite path for every worktree and
 session on the host. Relative project-file paths resolve from the caller's
 current directory; Engram does not search ancestors or select another project.
 If that file is missing, unreadable, invalid UTF-8, or empty, every CLI work
-word refuses before store opening or session setup. For those work words,
+word refuses before store opening or session setup, with `details.kind`
+naming which: `missing` (no such file), `unreadable` (any other read failure,
+such as a directory in its place), `undecodable` (content that is not UTF-8)
+or `empty` (blank content). For those work words,
 text and `--json` emit
 `project_resolution_failed` on stderr with exit status 1 and no stdout.
 The operator commands `readiness --json` and `control-session-inspect --json`
@@ -2103,7 +2106,12 @@ For the work words, error details name the reason, attempted `project_file`,
 The `next` command uses `--project-file 'PROJECT_DIRECTORY/.engram-project'`
 with `work next`; replace the placeholder with the intended absolute project
 directory, or change to that directory before retrying. No project is created
-implicitly. Paths and OS error text are safely framed in terminal output.
+implicitly. Paths and OS error text are safely framed in terminal output:
+text mode prints each string detail as written, so a Windows path keeps its
+single backslashes, and escapes every ASCII control and non-ASCII character
+(bidi controls included) as `\uXXXX`. Text is for reading: a literal
+backslash sequence in a path looks like an escape there, so `--json`, which
+keeps `details.project_file` as the raw path, is the unambiguous form.
 
 `doctor` verifies every canonical object plus
 record-bound control projection, reports the active immutable policy id, epoch,

@@ -876,3 +876,191 @@ fn repair_refusal_names_invalid_labels_and_rolls_back_rebuildable_changes() {
         "refused repair rolls back DDL"
     );
 }
+
+/// Respells the UTC timestamp at `path` in one stored JSON cell with an
+/// offset, which decodes to the same instant but is not the writer's
+/// spelling.
+fn respell_timestamp(
+    store: &SqliteStore,
+    table: &str,
+    column: &str,
+    key: &str,
+    id: &str,
+    path: &str,
+) {
+    let original: String = store
+        .connection
+        .query_row(
+            &format!("SELECT json_extract({column}, ?1) FROM {table} WHERE {key} = ?2"),
+            params![path, id],
+            |row| row.get(0),
+        )
+        .expect("writer timestamp");
+    let offset = format!(
+        "{}+00:00",
+        original.strip_suffix('Z').expect("UTC writer spelling")
+    );
+    let changed = store
+        .connection
+        .execute(
+            &format!(
+                "UPDATE {table} SET {column} = CAST(json_set({column}, ?1, ?2) AS BLOB) WHERE {key} = ?3"
+            ),
+            params![path, offset, id],
+        )
+        .expect("respell timestamp");
+    assert_eq!(changed, 1);
+}
+
+// A canonical value that decodes but does not survive being written back is
+// named as a canonical-side representation failure, apart from projection
+// drift; a projection-only change keeps the projection label.
+#[test]
+fn canonical_representation_failures_are_labelled_apart_from_projection_drift() {
+    let store = all_projection_families();
+    let before = canonical_inventory(&store);
+    let first = |sql: &str| -> (String, String) {
+        store
+            .connection
+            .query_row(sql, [], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("fixture row")
+    };
+    let (offer_object, _) =
+        first("SELECT offer_object_id, offer_id FROM work_handoff_offers LIMIT 1");
+    let (work, event) = first(
+        "SELECT item.work_id, item.latest_event_id FROM work_items item
+         JOIN work_handoff_offers offer ON offer.work_id = item.work_id LIMIT 1",
+    );
+    let (seal, _) = first("SELECT seal_id, work_id FROM work_completion_seals LIMIT 1");
+    for (table, column, key, id, path, canonical_label, projection_label, projection) in [
+        (
+            "objects",
+            "canonical_json",
+            "object_id",
+            offer_object.clone(),
+            "$.offered_at",
+            format!("work_handoff_offer:{offer_object}:canonical_representation"),
+            format!("work_handoff_offer:{offer_object}"),
+            (
+                "work_handoff_offers",
+                "offer_json",
+                "offer_object_id",
+                offer_object.clone(),
+            ),
+        ),
+        (
+            "objects",
+            "canonical_json",
+            "object_id",
+            event.clone(),
+            "$.work.created_at",
+            format!("work_item:{work}:canonical_representation"),
+            format!("work_item:{work}"),
+            ("work_items", "item_json", "work_id", work.clone()),
+        ),
+        (
+            "objects",
+            "canonical_json",
+            "object_id",
+            seal.clone(),
+            "$.completed_at",
+            format!("completion_seal:{seal}:canonical_representation"),
+            format!("completion_seal:{seal}:projection_binding"),
+            (
+                "work_completion_seals",
+                "seal_json",
+                "seal_id",
+                seal.clone(),
+            ),
+        ),
+    ] {
+        store
+            .connection
+            .execute_batch("SAVEPOINT corrupt")
+            .expect("canonical savepoint");
+        respell_timestamp(&store, table, column, key, &id, path);
+        let report = store.verify_all().expect("diagnose canonical respelling");
+        assert!(
+            report.invalid_work_records.contains(&canonical_label),
+            "{path}: {report:?}"
+        );
+        assert!(
+            !report.invalid_work_records.contains(&projection_label),
+            "{path}: the projection did not drift: {report:?}"
+        );
+        // Projection damage in the same row is still reported beside the
+        // canonical label, never hidden by it: a member the projection's own
+        // guard refuses, and a well-typed member that differs from what the
+        // canonical side decodes to.
+        restore_savepoint(&store);
+        let (projection_table, projection_column, projection_key, projection_id) = &projection;
+        let semantic = match *projection_table {
+            "work_handoff_offers" => ("$.to", "'someone-else'"),
+            "work_items" => ("$.title", "'A title that drifted'"),
+            _ => (
+                "$.claim_fence",
+                "json_extract(seal_json, '$.claim_fence') + 1",
+            ),
+        };
+        for (member, value) in [("$.injected", "'x'"), semantic] {
+            store
+                .connection
+                .execute_batch("SAVEPOINT corrupt")
+                .expect("joint savepoint");
+            respell_timestamp(&store, table, column, key, &id, path);
+            let changed = store
+                .connection
+                .execute(
+                    &format!(
+                        "UPDATE {projection_table}                          SET {projection_column} =                          CAST(json_set({projection_column}, '{member}', {value}) AS BLOB)                          WHERE {projection_key} = ?1"
+                    ),
+                    [projection_id],
+                )
+                .expect("change the projection");
+            assert_eq!(changed, 1);
+            let report = store.verify_all().expect("diagnose both sides");
+            for label in [&canonical_label, &projection_label] {
+                assert!(
+                    report.invalid_work_records.contains(label),
+                    "{path} with {member}: {label} must be reported: {report:?}"
+                );
+            }
+            restore_savepoint(&store);
+        }
+    }
+    // The same respelling in the projection alone is projection drift.
+    store
+        .connection
+        .execute_batch("SAVEPOINT corrupt")
+        .expect("projection savepoint");
+    respell_timestamp(
+        &store,
+        "work_items",
+        "item_json",
+        "work_id",
+        &work,
+        "$.created_at",
+    );
+    let report = store.verify_all().expect("diagnose projection respelling");
+    assert!(
+        report
+            .invalid_work_records
+            .contains(&format!("work_item:{work}")),
+        "{report:?}"
+    );
+    assert!(
+        !report
+            .invalid_work_records
+            .iter()
+            .any(|label| label.ends_with(":canonical_representation")),
+        "{report:?}"
+    );
+    restore_savepoint(&store);
+    assert!(
+        store
+            .verify_all()
+            .expect("healthy after rollback")
+            .is_healthy()
+    );
+    assert_eq!(canonical_inventory(&store), before);
+}

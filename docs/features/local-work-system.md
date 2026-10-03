@@ -488,7 +488,12 @@ hold it. Apart from Git's answer, it prints each landing's installed build as
 `show` does, in full beside "asserted, unchecked"; the build never enters the
 verdict and is never compared with the executable running the check. When the
 repository cannot be read, every landing is still listed with its installed
-build, each marked as not checked.
+build, each marked as not checked, except one whose stored shape fails
+validation, which reads malformed. An absent installed build has two JSON
+shapes on purpose: the check's report gives every landing the same members
+and writes `installed_build: null`, while `show` and the `done` receipt keep
+the seal's own shape and omit the member. Both carry
+`installed_build_assurance` "no installed build recorded".
 
 Every new seal also declares completion-obligation schema V1 and records the
 exact `(definition, terminal resolution)` pairs applicable at its pre-seal

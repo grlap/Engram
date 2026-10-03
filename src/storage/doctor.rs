@@ -470,7 +470,7 @@ impl SqliteStore {
                 .invalid_control_records
                 .push(ControlPolicyRecoveryFinding {
                     record: "control_policy_state:active".into(),
-                    detail: error.to_string(),
+                    detail: recovery_detail(&error),
                 });
         }
 
@@ -557,7 +557,7 @@ impl SqliteStore {
                         Ok(())
                     });
                 let invalid_detail = match valid {
-                    Err(error) => Some(error.to_string()),
+                    Err(error) => Some(recovery_detail(&error)),
                     Ok(()) if active_policy_epoch.is_some_and(|epoch| projected_epoch > epoch) => {
                         Some(format!(
                             "policy epoch {projected_epoch} is an orphaned successor of the active selector"
@@ -1013,5 +1013,32 @@ impl SqliteStore {
             params![version_id.as_str(), version.title, version.body],
         )?;
         Ok(())
+    }
+}
+
+/// A recovery finding's detail. A record that does not decode is described by
+/// the shape of the problem (an unknown or missing member by name, otherwise
+/// the category and position), never by a value the record holds, and a
+/// stored record id that is not an id is named without repeating it; other
+/// failures keep their own words.
+fn recovery_detail(error: &StoreError) -> String {
+    match error {
+        StoreError::InvalidStoredKey(_) => {
+            return "a stored record id is not a valid record id".into();
+        }
+        // The stored kind is a value the record holds; only the kind that
+        // was asked for, a constant of this build, is named.
+        StoreError::ObjectKindMismatch {
+            hash, requested, ..
+        } => {
+            return format!(
+                "object {hash} is stored under another kind than the {requested:?} requested"
+            );
+        }
+        _ => {}
+    }
+    match super::undecodable_record_reason(error) {
+        Some(reason) => format!("a record does not decode: {reason}"),
+        None => error.to_string(),
     }
 }

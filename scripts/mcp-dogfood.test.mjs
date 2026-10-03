@@ -1856,12 +1856,13 @@ test("doctor checks recorded landings against a local repository only on request
     git("commit", "-q", "--allow-empty", "-m", "landed");
     const landed = git("rev-parse", "HEAD");
     git("update-ref", "refs/remotes/origin/master", landed);
+    const doneReceipts = new Map();
     const land = (title, commit, installedBuild) => {
       const ref = cliJson(engramHome, session, "add", title).work.short_ref;
       cliJson(engramHome, session, "claim", ref);
-      cliJson(engramHome, session, "done", ref, "Landed", "--landed", commit, "--remote", "origin",
-        "--branch", "master", "--pushed-at", "2026-09-29T05:00:00Z",
-        ...(installedBuild ? ["--installed-build", installedBuild] : []));
+      doneReceipts.set(ref, cliJson(engramHome, session, "done", ref, "Landed", "--landed", commit,
+        "--remote", "origin", "--branch", "master", "--pushed-at", "2026-09-29T05:00:00Z",
+        ...(installedBuild ? ["--installed-build", installedBuild] : [])));
       return ref;
     };
     const doctor = (...args) => spawnSync(binary, ["--home", engramHome, ...args], { cwd: root, encoding: "utf8" });
@@ -1923,6 +1924,15 @@ test("doctor checks recorded landings against a local repository only on request
     }
     const bare = buildReport.landings.find(({ work_ref }) => work_ref === verifiedRef);
     assert.deepEqual([bare.installed_build, bare.installed_build_assurance], [null, "no installed build recorded"]);
+    // The documented difference: the check's report writes an absent build as
+    // null, while show keeps the seal's shape and omits the member.
+    assert.ok(Object.hasOwn(bare, "installed_build"));
+    const bareShown = cliJson(engramHome, session, "show", verifiedRef).landing;
+    assert.ok(!Object.hasOwn(bareShown, "installed_build"), JSON.stringify(bareShown));
+    assert.equal(bareShown.installed_build_assurance, "no installed build recorded");
+    const bareDone = doneReceipts.get(verifiedRef).landing;
+    assert.ok(!Object.hasOwn(bareDone, "installed_build"), JSON.stringify(bareDone));
+    assert.equal(bareDone.installed_build_assurance, "no installed build recorded");
     const buildText = doctor("doctor", "--check-landings", "--repo", repository).stdout;
     for (const [, build] of builtRefs) {
       assert.ok(buildText.split(/\r?\n/u).includes(`  installed build: ${build} (asserted, unchecked)`), buildText);
@@ -1959,6 +1969,30 @@ test("doctor checks recorded landings against a local repository only on request
     }
     assert.equal(refusedLines.filter((line) => line === "  installed build: no installed build recorded").length, 2,
       refusedText.stdout);
+
+    // A directory that does not exist is no different: every landing is still
+    // listed with its installed build in full and its assurance words, in
+    // JSON and text, with Git's answer unavailable.
+    const missing = join(engramHome, "no-such-directory");
+    const missingJson = doctor("doctor", "--check-landings", "--repo", missing, "--json");
+    assert.notEqual(missingJson.status, 0);
+    const missingReport = JSON.parse(missingJson.stdout);
+    assert.ok(missingReport.repository_problem, missingJson.stdout);
+    assert.deepEqual(statuses(missingReport).map(([ref]) => ref).sort(), [...everyRef].sort());
+    for (const entry of missingReport.landings) {
+      assert.equal(entry.status, "unverifiable");
+      const build = builtRefs.find(([ref]) => ref === entry.work_ref)?.[1] ?? null;
+      assert.deepEqual([entry.installed_build, entry.installed_build_assurance],
+        [build, build ? "asserted, unchecked" : "no installed build recorded"]);
+    }
+    const missingText = doctor("doctor", "--check-landings", "--repo", missing);
+    assert.notEqual(missingText.status, 0);
+    const missingLines = missingText.stdout.split(/\r?\n/u);
+    for (const [, build] of builtRefs) {
+      assert.ok(missingLines.includes(`  installed build: ${build} (asserted, unchecked)`), missingText.stdout);
+    }
+    assert.equal(missingLines.filter((line) => line === "  installed build: no installed build recorded").length, 2,
+      missingText.stdout);
 
     // Without the flag, the doctor's audit is unchanged and runs no check.
     const audit = doctor("doctor", "--json");

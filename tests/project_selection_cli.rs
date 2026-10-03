@@ -2,6 +2,7 @@
 mod test_support;
 
 use std::{
+    fmt::Write as _,
     fs,
     path::Path,
     process::{Command, Output},
@@ -55,16 +56,41 @@ fn refused(output: &Output) -> Value {
     value
 }
 
+/// The text line a detail must print: a string as written, with each ASCII
+/// control and non-ASCII scalar escaped as its UTF-16 `\uXXXX` units; any
+/// other value as JSON.
+fn expected_text_detail(field: &Value) -> String {
+    let Value::String(field) = field else {
+        return field.to_string();
+    };
+    let mut expected = String::new();
+    for character in field.chars() {
+        if character.is_ascii() && !character.is_ascii_control() {
+            expected.push(character);
+        } else {
+            for unit in character.encode_utf16(&mut [0; 2]) {
+                let _ = write!(expected, "\\u{unit:04x}");
+            }
+        }
+    }
+    expected
+}
+
+fn text_detail<'a>(text: &'a str, key: &str) -> &'a str {
+    let prefix = format!("  {key}: ");
+    let lines: Vec<_> = text
+        .lines()
+        .filter_map(|line| line.strip_prefix(&prefix))
+        .collect();
+    assert_eq!(lines.len(), 1, "{text}");
+    lines[0]
+}
+
 fn assert_text_details(text: &str, value: &Value) {
     for (key, field) in value["error"]["details"].as_object().unwrap() {
-        let prefix = format!("  {key}: ");
-        let lines: Vec<_> = text
-            .lines()
-            .filter_map(|line| line.strip_prefix(&prefix))
-            .collect();
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].is_ascii());
-        assert_eq!(serde_json::from_str::<Value>(lines[0]).unwrap(), *field);
+        let line = text_detail(text, key);
+        assert!(line.is_ascii());
+        assert_eq!(line, expected_text_detail(field));
     }
 }
 
@@ -96,7 +122,7 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
     ];
     for args in words {
         let value = refused(&run(&cwd, &home, None, args, true));
-        assert_eq!(value["error"]["details"]["kind"], "unreadable");
+        assert_eq!(value["error"]["details"]["kind"], "missing");
         let reported_cwd = assert_reported_cwd(&value, &cwd);
         assert_eq!(
             value["error"]["details"]["searched_directory"],
@@ -114,6 +140,16 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
         assert!(text.stdout.is_empty(), "{:?}", text.stdout);
         let text = String::from_utf8(text.stderr).unwrap();
         assert_text_details(&text, &value);
+        // The attempted path prints as written: on Windows, with the single
+        // backslashes a caller would type, never doubled by JSON framing.
+        let project_file = value["error"]["details"]["project_file"].as_str().unwrap();
+        if project_file.is_ascii() {
+            assert_eq!(text_detail(&text, "project_file"), project_file);
+        }
+        if cfg!(windows) {
+            assert!(project_file.contains('\\'));
+            assert!(!text_detail(&text, "project_file").contains("\\\\"));
+        }
         assert!(text.contains("next:\n  engram --project-file "));
         assert!(!home.exists());
         assert!(!cwd.join(".engram-project").exists());
@@ -127,7 +163,9 @@ fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance(
     let project_file = directory.path().join(".engram-project");
     for (bytes, kind) in [
         (b" \n\t".as_slice(), "empty"),
-        (b"\xff\xfe".as_slice(), "unreadable"),
+        (b"".as_slice(), "empty"),
+        (b"\xff\xfe".as_slice(), "undecodable"),
+        (b"project-\xc3".as_slice(), "undecodable"),
     ] {
         fs::write(&project_file, bytes).unwrap();
         let value = refused(&run(directory.path(), &home, None, &["ls"], true));
@@ -135,15 +173,20 @@ fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance(
         assert_eq!(fs::read(&project_file).unwrap(), bytes);
         assert!(!home.exists());
     }
+    // A directory named as the project file exists but cannot be read as one.
     let unreadable = directory.path().join("project-is-directory");
     fs::create_dir(&unreadable).unwrap();
-    refused(&run(
+    let value = refused(&run(
         directory.path(),
         &home,
         Some(&unreadable),
         &["ls"],
         true,
     ));
+    assert_eq!(value["error"]["details"]["kind"], "unreadable");
+    let absent = directory.path().join("absent").join(".engram-project");
+    let value = refused(&run(directory.path(), &home, Some(&absent), &["ls"], true));
+    assert_eq!(value["error"]["details"]["kind"], "missing");
     let hostile = Path::new(
         "missing\nnext:\n  injected\u{1b}[31m\u{009b}\u{202e}\u{2028}\u{2029}\u{2066}\u{e000}\u{fe0f}\u{e0100}",
     );

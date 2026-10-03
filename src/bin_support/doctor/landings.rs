@@ -268,6 +268,18 @@ fn installed_build_line(landing: &engram::domain::CompletionLanding) -> String {
     )
 }
 
+/// A landing's status when the repository could not be read: only the shape
+/// check that needs no git runs, so a malformed landing still reads as
+/// malformed and any other as unverifiable, never as verified.
+fn status_without_repository(recorded: &RecordedLanding) -> LandingStatus {
+    recorded
+        .landing
+        .validate()
+        .map_or_else(LandingStatus::Malformed, |()| {
+            LandingStatus::Unverifiable("the repository could not be read".into())
+        })
+}
+
 fn unverifiable(run: GitRun) -> LandingStatus {
     LandingStatus::Unverifiable(match run {
         GitRun::Exit(code) => format!("git exited with {code}"),
@@ -490,12 +502,7 @@ pub(crate) fn check_landings(
         .map(|landing| {
             let status = match &problem {
                 None => check_landing(repository, landing),
-                Some(_) => landing
-                    .landing
-                    .validate()
-                    .map_or_else(LandingStatus::Malformed, |()| {
-                        LandingStatus::Unverifiable("the repository could not be read".into())
-                    }),
+                Some(_) => status_without_repository(landing),
             };
             (landing, status)
         })
@@ -1018,5 +1025,53 @@ mod tests {
         // Git resolves a unique prefix, but 40 characters are not this
         // repository's id of the commit.
         assert_eq!(status(&landed[..40]), LandingStatus::CommitAbsent);
+    }
+
+    // A stored installed build is shown through the terminal text policy: a
+    // value holding controls, as a seal written around validation might, can
+    // neither forge a line nor reach the terminal raw. A legitimate build is
+    // shown in full, and an absent one says so.
+    #[test]
+    fn the_installed_build_line_passes_the_terminal_text_policy() {
+        let mut landing = recorded(&"a".repeat(40), "origin", "master").landing;
+        assert_eq!(
+            installed_build_line(&landing),
+            "installed build: no installed build recorded"
+        );
+        let build = "0123456789abcdef".repeat(4);
+        landing.installed_build = Some(build.clone());
+        assert_eq!(
+            installed_build_line(&landing),
+            format!("installed build: {build} (asserted, unchecked)")
+        );
+        landing.installed_build = Some(format!("{build}\u{1b}[31m\u{7}\nnext:\u{202e}fake"));
+        let line = installed_build_line(&landing);
+        for raw in ['\u{1b}', '\u{7}', '\n', '\r', '\u{202e}'] {
+            assert!(!line.contains(raw), "{line:?}");
+        }
+        assert!(
+            line.starts_with(&format!("installed build: {build}")),
+            "{line}"
+        );
+        assert!(line.ends_with(" (asserted, unchecked)"), "{line}");
+        assert_eq!(line.lines().count(), 1);
+    }
+
+    // Without a repository, a landing whose stored shape fails validation is
+    // still named malformed, never verified or merely unverifiable, and its
+    // installed build stays on its own line.
+    #[test]
+    fn without_a_repository_a_malformed_landing_reads_malformed() {
+        let mut malformed = recorded("not-a-commit", "origin", "master");
+        malformed.landing.installed_build = Some("0123456789abcdef".repeat(4));
+        let status = status_without_repository(&malformed);
+        assert!(matches!(status, LandingStatus::Malformed(_)), "{status:?}");
+        assert_eq!(status.word(), "malformed");
+        assert!(installed_build_line(&malformed.landing).contains(&"0123456789abcdef".repeat(4)));
+        let valid = recorded(&"a".repeat(40), "origin", "master");
+        assert_eq!(
+            status_without_repository(&valid),
+            LandingStatus::Unverifiable("the repository could not be read".into())
+        );
     }
 }
