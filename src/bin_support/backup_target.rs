@@ -34,7 +34,9 @@ use super::{
         DEFAULT_CAPTURE_DEADLINE, DEFAULT_TRANSPORT_DEADLINE, KindReport, Outcome, PushSettings,
         push,
     },
-    backup::restore::{RestoreSettings, Restored, report_text, restore},
+    backup::restore::{
+        Abandonment, RestoreSettings, Restored, abandon_pending, report_text, restore,
+    },
     graph::engram_home_and_project_digest,
 };
 
@@ -112,17 +114,34 @@ pub(crate) enum BackupCommand {
     },
     /// Install one `store` copy from the configured target onto this home,
     /// which must hold no store for the project. Changes no row of the copy.
+    /// With `--abandon-pending`, abandon instead the pending restore of that
+    /// copy: remove its own staging file, archive its record and clear it,
+    /// without contacting the target.
     Restore {
         /// The copy's name, as `backup list` prints it.
         copy: String,
         /// The operator who states that the origin store will never run
         /// again; recorded as asserted context.
-        #[arg(long, value_name = "NAME")]
+        #[arg(long, value_name = "NAME", conflicts_with = "abandon_pending")]
         origin_retired_by: Option<String>,
+        /// Abandon the pending restore of COPY, only when COPY is the copy it
+        /// names and no store or sidecar stands where it would go.
+        #[arg(long, requires = "abandoned_by")]
+        abandon_pending: bool,
+        /// The operator who abandons the pending restore; recorded in its
+        /// archive as asserted context.
+        #[arg(long, value_name = "NAME", requires = "abandon_pending")]
+        abandoned_by: Option<String>,
         #[arg(long)]
         json: bool,
-        /// Seconds the requests to the target may take together.
-        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_READ_DEADLINE.as_secs())]
+        /// Seconds the requests to the target may take together; abandoning
+        /// contacts no target and takes none.
+        #[arg(
+            long,
+            value_name = "SECONDS",
+            default_value_t = DEFAULT_READ_DEADLINE.as_secs(),
+            conflicts_with = "abandon_pending"
+        )]
         deadline_secs: u64,
     },
 }
@@ -301,9 +320,36 @@ pub(crate) fn run(database: &Path, project: &ProjectId, command: BackupCommand) 
         }
         BackupCommand::Restore {
             copy,
+            abandon_pending: true,
+            abandoned_by,
+            json,
+            ..
+        } => {
+            let outcome = abandon_pending(
+                home,
+                project,
+                database,
+                &copy,
+                abandoned_by.as_deref(),
+                &RestoreSettings::new(ReadSettings::new(DEFAULT_READ_DEADLINE)),
+            );
+            let abandoned = finish(outcome, false, json)?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&abandon_receipt(&abandoned))?
+                );
+            } else {
+                print!("{}", abandon_text(&abandoned));
+            }
+            return Ok(true);
+        }
+        BackupCommand::Restore {
+            copy,
             origin_retired_by,
             json,
             deadline_secs,
+            ..
         } => {
             let run = restore(
                 home,
@@ -572,6 +618,45 @@ fn print_restored(restored: &Restored, json: bool) -> Result<()> {
     }
     print!("{}", report_text(restored));
     Ok(())
+}
+
+/// The `--json` receipt of an abandoned pending restore.
+pub(crate) fn abandon_receipt(abandoned: &Abandonment) -> serde_json::Value {
+    json!({
+        "schema_version": READ_SCHEMA_VERSION,
+        "abandoned": abandoned.copy,
+        "abandoned_by": abandoned.abandoned_by,
+        "abandoned_at": abandoned.abandoned_at.to_rfc3339(),
+        "staging": abandoned.staging.display().to_string(),
+        "staging_removed": abandoned.staging_removed,
+        "archive": abandoned.archive.display().to_string(),
+        "warnings": abandoned.warnings,
+    })
+}
+
+/// The text an abandoned pending restore prints.
+pub(crate) fn abandon_text(abandoned: &Abandonment) -> String {
+    let staging = if abandoned.staging_removed {
+        format!(
+            "its staging file {} was removed",
+            abandoned.staging.display()
+        )
+    } else {
+        format!(
+            "its staging file {} was already gone",
+            abandoned.staging.display()
+        )
+    };
+    let mut text = format!(
+        "abandoned the pending restore of {} (by {}, asserted); {staging}; its record is archived at {}\n  no store was installed, and another copy can now be restored\n",
+        abandoned.copy,
+        abandoned.abandoned_by,
+        abandoned.archive.display()
+    );
+    for warning in &abandoned.warnings {
+        text = text + "warning: " + warning + "\n";
+    }
+    text
 }
 
 /// The `--json` receipt of a fetch.

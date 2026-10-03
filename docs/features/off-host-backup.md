@@ -635,7 +635,24 @@ never take for a store; neither `doctor` nor `readiness` creates a store
 beside it. A restore that stops before it writes its pending record leaves
 no record, and may leave its staging file. One that stops after the record
 and before the move leaves no store and the record pending; a retry of the
-same copy finishes it, and another copy is refused while it is pending. A
+same copy finishes it, and another copy is refused while it is pending. The
+refusal and the pending status line name both ways on: run
+`engram backup restore <copy> --origin-retired-by <operator>` again, or
+abandon it with
+`engram backup restore <copy> --abandon-pending --abandoned-by <operator>`.
+A retry fetches the copy again, checks it against the pending copy's
+SHA-256, points the record at the new staging file and only then removes
+the earlier one, so a record write that fails leaves the earlier file and
+record as they were; a process that ends between the two leaves the earlier
+staging file behind, no longer named by the record. A pending restore whose
+copy is gone from the target cannot be finished, and abandoning it is the
+way on: bound to that copy, under the push lock, with no store in place and
+without contacting the target, it removes only the restore's own staging
+file, through the store's directory and `projects` held open from the home
+without following a link, archives the record whole as
+`store.restore-abandoned-<UTC time>Z.json`
+with who abandoned it and when, and only then clears it, so another copy can
+be restored. A
 no-replace rename within one directory is all or nothing for a process that
 stops, so a restore that stops after the move leaves the whole copy in
 place with its record pending. A retry of the same copy then completes the

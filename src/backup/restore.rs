@@ -8,6 +8,10 @@
 //! The record is host-local and asserted context. It is no backup receipt and
 //! qualifies no copy; `backup target clear` leaves it in place. `backup status`
 //! and `doctor` read it without contacting any target.
+//!
+//! A pending restore the operator abandons is archived whole, beside the
+//! active record, in an envelope that names who abandoned it and when, and the
+//! active record is then cleared.
 
 use std::{
     fs, io,
@@ -51,6 +55,37 @@ pub struct RestoreRecord {
     pub state: RestoreState,
     pub pending_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// An abandoned pending restore, as its archive keeps it: who abandoned it and
+/// when, and the pending record as it was parsed, every field kept.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AbandonedRestore {
+    pub format_version: u32,
+    pub abandoned: Statement,
+    pub pending: serde_json::Value,
+}
+
+/// An archived abandoned restore, and what the operator should know about it.
+#[derive(Debug)]
+pub struct Archived {
+    pub archive: PathBuf,
+    /// A temporary file the move left behind that could not be removed.
+    pub warnings: Vec<String>,
+}
+
+/// Why archiving an abandoned pending restore stopped.
+#[derive(Debug)]
+pub enum AbandonError {
+    /// No archive was written; the pending record stays active.
+    Archive(TargetError),
+    /// The archive was written, but the active record could not be cleared,
+    /// so it stays pending.
+    Clear {
+        archive: PathBuf,
+        error: TargetError,
+    },
 }
 
 /// What the home records about a restore.
@@ -188,6 +223,167 @@ pub fn keep_completed_record(
             Err(source) => return Err(TargetError::Io { path: kept, source }),
         }
     }
+}
+
+/// The name of the archive of a pending restore abandoned at `at`, or of the
+/// `suffix`th one abandoned in the same second.
+fn abandoned_name(at: DateTime<Utc>, suffix: u32) -> String {
+    let stamp = at.format("%Y%m%dT%H%M%SZ");
+    if suffix == 0 {
+        format!("store.restore-abandoned-{stamp}.json")
+    } else {
+        format!("store.restore-abandoned-{stamp}-{suffix}.json")
+    }
+}
+
+/// Archives the project's pending restore record, abandoned by `by` at `at`,
+/// and then clears the active record. The archive is written whole to a
+/// temporary file beside the record and then moved, without replacing
+/// anything, to a name stamped with `at` in UTC,
+/// `store.restore-abandoned-<YYYYMMDDTHHMMSSZ>.json`; a name already taken
+/// moves on to the next free `-N` suffix. So a process that ends midway leaves
+/// at most a temporary file, never a partial archive. Returns where it was
+/// archived. When the active record cannot be cleared after that, a later
+/// abandonment archives the record again under the next name.
+///
+/// # Errors
+///
+/// [`AbandonError::Archive`] for a lock taken for another kind or project, an
+/// active record that is not a readable pending one, or an archive that could
+/// not be written; the pending record then stays active.
+/// [`AbandonError::Clear`] when the archive was written but the active record
+/// could not be removed.
+pub fn archive_abandoned_pending(
+    home: &Path,
+    project: &ProjectId,
+    lock: &PushLock,
+    by: &str,
+    at: DateTime<Utc>,
+) -> Result<Archived, AbandonError> {
+    let paths = RecordPaths::new(home, project, CopyKind::Store);
+    super::target::held(&paths, lock).map_err(AbandonError::Archive)?;
+    let current = restore_record_path(home, project);
+    let io_at = |path: &Path| {
+        let path = path.to_path_buf();
+        move |source| TargetError::Io { path, source }
+    };
+    let bytes = fs::read(&current)
+        .map_err(io_at(&current))
+        .map_err(AbandonError::Archive)?;
+    let invalid = |reason: String| {
+        AbandonError::Archive(TargetError::Invalid {
+            reason: format!("{} cannot be abandoned: {reason}", current.display()),
+        })
+    };
+    let record = parse(&bytes, project).map_err(invalid)?;
+    if record.state != RestoreState::Pending {
+        return Err(invalid("it is not a pending restore".into()));
+    }
+    let pending: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|error| invalid(error.to_string()))?;
+    let envelope = AbandonedRestore {
+        format_version: RECORD_FORMAT_VERSION,
+        abandoned: Statement {
+            by: by.to_owned(),
+            at,
+        },
+        pending,
+    };
+    let mut body = serde_json::to_vec_pretty(&envelope)
+        .map_err(|error| invalid(format!("its archive cannot be encoded: {error}")))?;
+    body.push(b'\n');
+    // A temporary file that cannot be removed after a failure is named with
+    // that failure.
+    let failed = |path: PathBuf, source: io::Error, left: Option<(PathBuf, io::Error)>| {
+        let source = match left {
+            None => source,
+            Some((temporary, error)) => io::Error::new(
+                source.kind(),
+                format!(
+                    "{source}; its temporary file {} could not be removed: {error}",
+                    temporary.display()
+                ),
+            ),
+        };
+        AbandonError::Archive(TargetError::Io { path, source })
+    };
+    let mut temporary = tempfile::Builder::new()
+        .prefix("store.restore-abandoned.")
+        .suffix(".tmp")
+        .tempfile_in(&paths.directory)
+        .map_err(|source| failed(paths.directory.clone(), source, None))?;
+    if let Err(source) =
+        io::Write::write_all(&mut temporary, &body).and_then(|()| temporary.as_file().sync_all())
+    {
+        let path = temporary.path().to_path_buf();
+        let left = temporary.close().err().map(|error| (path.clone(), error));
+        return Err(failed(path, source, left));
+    }
+    let mut pending_archive = temporary.into_temp_path();
+    let temporary = pending_archive.to_path_buf();
+    let mut suffix = 0_u32;
+    let archive = loop {
+        let archive = paths.directory.join(abandoned_name(at, suffix));
+        match pending_archive.persist_noclobber(&archive) {
+            Ok(()) => break archive,
+            Err(error) if error.error.kind() == io::ErrorKind::AlreadyExists => {
+                pending_archive = error.path;
+                suffix += 1;
+            }
+            Err(error) => {
+                let temporary = error.path.to_path_buf();
+                let left = error.path.close().err().map(|left| (temporary, left));
+                return Err(failed(archive, error.error, left));
+            }
+        }
+    };
+    // Outside Windows the move can be a hard link whose unlink failed, which
+    // leaves the temporary file beside the archive; it is removed or named.
+    #[cfg(test)]
+    tests::after_archive_move(&archive, &temporary);
+    let mut warnings = Vec::new();
+    if fs::symlink_metadata(&temporary).is_ok() {
+        #[cfg(test)]
+        let removed = tests::remove_temporary(&temporary);
+        #[cfg(not(test))]
+        let removed = fs::remove_file(&temporary);
+        if let Err(error) = removed {
+            warnings.push(format!(
+                "the archive's temporary file {} could not be removed: {error}",
+                temporary.display()
+            ));
+        }
+    }
+    fs::remove_file(&current).map_err(|source| AbandonError::Clear {
+        archive: archive.clone(),
+        error: TargetError::Io {
+            path: current.clone(),
+            source,
+        },
+    })?;
+    Ok(Archived { archive, warnings })
+}
+
+/// The commands that go on from a pending restore of `copy`: run it again
+/// with the operator's statement, or abandon it, bound to that copy. A name is
+/// given as `--option=value`, whose quoting both POSIX shells and PowerShell
+/// read as one argument; a copy name holds only letters, digits and hyphens,
+/// so it stays bare.
+#[must_use]
+pub fn pending_ways_on(copy: &str, retired_by: Option<&str>) -> String {
+    let [retry, abandon] = pending_commands(copy, retired_by);
+    format!("run `{retry}` again to finish it, or `{abandon}` to abandon it")
+}
+
+/// The two commands [`pending_ways_on`] names: the retry and the abandonment.
+#[must_use]
+pub fn pending_commands(copy: &str, retired_by: Option<&str>) -> [String; 2] {
+    let copy = crate::shell::argument(copy);
+    let by = retired_by.map_or_else(|| "NAME".to_owned(), crate::shell::argument);
+    [
+        format!("engram backup restore {copy} --origin-retired-by={by}"),
+        format!("engram backup restore {copy} --abandon-pending --abandoned-by=NAME"),
+    ]
 }
 
 #[cfg(test)]

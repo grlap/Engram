@@ -767,3 +767,148 @@ fn a_restored_store_equals_the_pushed_copy_byte_for_byte_and_row_for_row_and_doc
     assert_eq!(restored_rows, pushed_rows);
     assert_ne!(restored_rows, changed_rows);
 }
+
+#[test]
+fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
+    use engram::backup::{
+        CopyKind,
+        restore::{RestoreRecord, RestoreState, write_restore_record},
+        target::{PushLock, RECORD_FORMAT_VERSION, RecordPaths, Statement},
+    };
+    let homes = Homes::new();
+    homes.set_target("pending");
+    // The target's directory is gone: a word that contacted it would fail.
+    fs::remove_dir_all(homes.path("copies")).unwrap();
+    let project = ProjectId(PROJECT.into());
+    let home = homes.path("pending");
+    let copy = "20261002T000000Z-pending";
+    let write = |staging: &Path| {
+        let lock =
+            PushLock::try_acquire(&RecordPaths::new(&home, &project, CopyKind::Store)).unwrap();
+        let now = chrono::Utc::now();
+        write_restore_record(
+            &home,
+            &project,
+            &lock,
+            &RestoreRecord {
+                format_version: RECORD_FORMAT_VERSION,
+                project: PROJECT.into(),
+                copy: copy.into(),
+                sha256: "ef".repeat(32),
+                origin_host: Some("old-host".into()),
+                origin_retired: Statement {
+                    by: "Greg O'Neil".into(),
+                    at: now,
+                },
+                staging: staging.display().to_string(),
+                state: RestoreState::Pending,
+                pending_at: now,
+                completed_at: None,
+            },
+        )
+        .unwrap();
+    };
+
+    // The status line names both ways on, the stored name quoted.
+    write(Path::new("staging"));
+    let status = text(&homes.succeeded("pending", &["backup", "status"]).stdout);
+    for way in [
+        format!("engram backup restore {copy} --origin-retired-by='Greg O'\"'\"'Neil'"),
+        format!("engram backup restore {copy} --abandon-pending --abandoned-by=NAME"),
+    ] {
+        assert!(status.contains(&way), "{status}");
+    }
+
+    // The flags go together, and never with a statement about the origin.
+    for args in [
+        vec!["backup", "restore", copy, "--abandon-pending"],
+        vec!["backup", "restore", copy, "--abandoned-by", "greg"],
+        vec![
+            "backup",
+            "restore",
+            copy,
+            "--abandon-pending",
+            "--abandoned-by",
+            "greg",
+            "--origin-retired-by",
+            "greg",
+        ],
+    ] {
+        let output = homes.engram("pending", &args);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{args:?}: {}",
+            text(&output.stderr)
+        );
+    }
+
+    // A staging path that is not the restore's own is refused, removing
+    // nothing and leaving the restore pending.
+    let refusal = homes.refused(
+        "pending",
+        &[
+            "backup",
+            "restore",
+            copy,
+            "--abandon-pending",
+            "--abandoned-by",
+            "greg",
+        ],
+        "backup_restore_staging_unowned",
+    );
+    assert!(
+        refusal["message"]
+            .as_str()
+            .unwrap()
+            .contains("stays pending"),
+        "{refusal}"
+    );
+    let status = text(&homes.succeeded("pending", &["backup", "status"]).stdout);
+    assert!(status.contains("restore: pending since "), "{status}");
+
+    // Its own staging file is removed and its record archived.
+    let directory = homes.database("pending").parent().unwrap().to_path_buf();
+    fs::create_dir_all(&directory).unwrap();
+    let staging = directory.join(format!(".backup-restore-{}.staging", uuid::Uuid::now_v7()));
+    fs::write(&staging, b"staged copy").unwrap();
+    write(&staging);
+    let output = homes.succeeded(
+        "pending",
+        &[
+            "backup",
+            "restore",
+            copy,
+            "--abandon-pending",
+            "--abandoned-by",
+            "greg",
+            "--json",
+        ],
+    );
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["schema_version"], 1);
+    assert_eq!(receipt["abandoned"], copy);
+    assert_eq!(receipt["abandoned_by"], "greg");
+    assert_eq!(receipt["staging_removed"], true);
+    assert_eq!(receipt["staging"], staging.display().to_string());
+    assert!(!staging.exists());
+    let archive = PathBuf::from(receipt["archive"].as_str().unwrap());
+    let envelope: Value = serde_json::from_slice(&fs::read(&archive).unwrap()).unwrap();
+    assert_eq!(envelope["abandoned"]["by"], "greg");
+    assert_eq!(envelope["pending"]["copy"], copy);
+    let status = text(&homes.succeeded("pending", &["backup", "status"]).stdout);
+    assert!(!status.contains("restore:"), "{status}");
+    homes.refused(
+        "pending",
+        &[
+            "backup",
+            "restore",
+            copy,
+            "--abandon-pending",
+            "--abandoned-by",
+            "greg",
+        ],
+        "backup_restore_not_pending",
+    );
+    assert!(!homes.database("pending").exists());
+}

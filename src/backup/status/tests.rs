@@ -431,7 +431,7 @@ fn a_recorded_restore_is_shown_pending_restored_or_unreadable_after_the_kinds() 
     assert_eq!(
         last,
         format!(
-            "restore: pending since {}: 20261001T000000Z-copy (sha256 {}) from host old-host; origin retired by greg at {} (asserted); run `engram backup restore 20261001T000000Z-copy --origin-retired-by greg` again to finish it",
+            "restore: pending since {}: 20261001T000000Z-copy (sha256 {}) from host old-host; origin retired by greg at {} (asserted); run `engram backup restore 20261001T000000Z-copy --origin-retired-by=greg` again to finish it, or `engram backup restore 20261001T000000Z-copy --abandon-pending --abandoned-by=NAME` to abandon it",
             at(2).to_rfc3339(),
             "cd".repeat(32),
             at(1).to_rfc3339()

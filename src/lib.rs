@@ -16,6 +16,7 @@ pub mod memory;
 pub mod phase_trace;
 pub mod project;
 pub mod schema;
+pub mod shell;
 pub mod storage;
 pub mod verbs;
 pub mod work_service;

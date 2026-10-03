@@ -35,8 +35,8 @@ const MANIFEST_LIMIT: u64 = 1 << 20;
 const CHUNK: usize = 1 << 16;
 
 /// How often a removal or rename that another program holds open is retried.
-const SHARING_RETRIES: u32 = 20;
-const SHARING_PAUSE: Duration = Duration::from_millis(100);
+pub(super) const SHARING_RETRIES: u32 = 20;
+pub(super) const SHARING_PAUSE: Duration = Duration::from_millis(100);
 
 /// The directory adapter for one configured target.
 pub(crate) struct DirectoryAdapter<'a> {
@@ -1219,7 +1219,7 @@ pub(super) fn remove_with_retry(path: &Path) -> io::Result<()> {
 
 /// Windows reports a file another process holds open as a sharing or lock
 /// violation.
-fn is_sharing_violation(error: &io::Error) -> bool {
+pub(super) fn is_sharing_violation(error: &io::Error) -> bool {
     matches!(error.raw_os_error(), Some(32 | 33)) && cfg!(windows)
 }
 

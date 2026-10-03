@@ -1,3 +1,5 @@
+use std::{io, path::Path};
+
 use chrono::TimeZone;
 
 use super::*;
@@ -161,3 +163,249 @@ fn a_completed_record_is_kept_aside_under_its_utc_completion_time_and_never_repl
     );
     assert!(kept.exists());
 }
+
+#[test]
+fn an_abandoned_pending_record_is_archived_whole_under_a_new_name_and_cleared() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let lock = PushLock::try_acquire(&paths).unwrap();
+    // Nothing pending: nothing is archived.
+    assert!(matches!(
+        archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(5)),
+        Err(AbandonError::Archive(_))
+    ));
+    // A completed record is never abandoned.
+    let mut completed = pending();
+    completed.state = RestoreState::Completed;
+    completed.completed_at = Some(at(2));
+    write_restore_record(home.path(), &project(), &lock, &completed).unwrap();
+    assert!(matches!(
+        archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(5)),
+        Err(AbandonError::Archive(_))
+    ));
+    assert_eq!(
+        read_restore_record(home.path(), &project()),
+        RestoreRecords::Recorded(Box::new(completed))
+    );
+
+    // Names already taken in that second are passed over, and left alone.
+    let taken = [
+        "store.restore-abandoned-20261002T120005Z.json",
+        "store.restore-abandoned-20261002T120005Z-1.json",
+    ];
+    for name in taken {
+        fs::write(paths.directory.join(name), name).unwrap();
+    }
+    write_restore_record(home.path(), &project(), &lock, &pending()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(restore_record_path(home.path(), &project())).unwrap())
+            .unwrap();
+    let archived =
+        archive_abandoned_pending(home.path(), &project(), &lock, "Greg O'Neil", at(5)).unwrap();
+    assert_eq!(archived.warnings, Vec::<String>::new());
+    let archive = archived.archive;
+    assert_eq!(
+        archive.file_name().unwrap().to_string_lossy(),
+        "store.restore-abandoned-20261002T120005Z-2.json"
+    );
+    for name in taken {
+        assert_eq!(
+            fs::read(paths.directory.join(name)).unwrap(),
+            name.as_bytes()
+        );
+    }
+    let envelope: AbandonedRestore = serde_json::from_slice(&fs::read(&archive).unwrap()).unwrap();
+    assert_eq!(envelope.format_version, RECORD_FORMAT_VERSION);
+    assert_eq!(
+        envelope.abandoned,
+        Statement {
+            by: "Greg O'Neil".into(),
+            at: at(5),
+        }
+    );
+    // The pending record is kept as it was parsed, every field of it.
+    assert_eq!(envelope.pending, original);
+    let kept: RestoreRecord = serde_json::from_value(envelope.pending).unwrap();
+    assert_eq!(kept, pending());
+    // The active record is cleared: no restore is pending any more.
+    assert_eq!(
+        read_restore_record(home.path(), &project()),
+        RestoreRecords::None
+    );
+}
+
+#[test]
+fn the_ways_on_from_a_pending_restore_quote_what_a_shell_would_split() {
+    assert_eq!(
+        pending_ways_on("20261002T120000Z-copy", Some("greg")),
+        "run `engram backup restore 20261002T120000Z-copy --origin-retired-by=greg` again to finish it, or `engram backup restore 20261002T120000Z-copy --abandon-pending --abandoned-by=NAME` to abandon it"
+    );
+    assert_eq!(
+        pending_ways_on("odd copy", Some("Greg O'Neil")),
+        "run `engram backup restore 'odd copy' --origin-retired-by='Greg O'\"'\"'Neil'` again to finish it, or `engram backup restore 'odd copy' --abandon-pending --abandoned-by=NAME` to abandon it"
+    );
+    assert!(pending_ways_on("c", None).contains("--origin-retired-by=NAME"));
+}
+
+/// The commands of the ways on from a pending restore.
+fn ways_on_commands(copy: &str, by: &str) -> Vec<String> {
+    let commands = pending_commands(copy, Some(by));
+    let sentence = pending_ways_on(copy, Some(by));
+    for command in &commands {
+        assert!(sentence.contains(command.as_str()), "{sentence}");
+    }
+    commands.to_vec()
+}
+
+thread_local! {
+    static LEAVE_TEMPORARY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FAIL_TEMPORARY_REMOVAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Puts the temporary file back beside the archive after the move, as the
+/// hard-link fallback leaves it when its unlink fails.
+pub(super) fn after_archive_move(archive: &Path, temporary: &Path) {
+    if LEAVE_TEMPORARY.get() {
+        fs::copy(archive, temporary).unwrap();
+    }
+}
+
+/// Removes a leftover temporary file, or fails without removing it when a
+/// test asks.
+pub(super) fn remove_temporary(path: &Path) -> io::Result<()> {
+    if FAIL_TEMPORARY_REMOVAL.get() {
+        Err(io::Error::other("stopped by a test"))
+    } else {
+        fs::remove_file(path)
+    }
+}
+
+#[test]
+fn a_temporary_file_the_archive_move_leaves_is_removed_or_named() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let lock = PushLock::try_acquire(&paths).unwrap();
+    let temporaries = || {
+        fs::read_dir(&paths.directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| {
+                Path::new(name)
+                    .extension()
+                    .is_some_and(|extension| extension == "tmp")
+            })
+            .collect::<Vec<_>>()
+    };
+    LEAVE_TEMPORARY.set(true);
+    write_restore_record(home.path(), &project(), &lock, &pending()).unwrap();
+    let removed = archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(5)).unwrap();
+    assert_eq!(removed.warnings, Vec::<String>::new());
+    assert_eq!(temporaries(), Vec::<String>::new());
+
+    FAIL_TEMPORARY_REMOVAL.set(true);
+    write_restore_record(home.path(), &project(), &lock, &pending()).unwrap();
+    let named = archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(6)).unwrap();
+    let left = temporaries();
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert_eq!(named.warnings.len(), 1, "{:?}", named.warnings);
+    assert!(named.warnings[0].contains(&left[0]), "{:?}", named.warnings);
+    // The archive stands and the record is cleared all the same.
+    assert!(named.archive.is_file());
+    assert_eq!(
+        read_restore_record(home.path(), &project()),
+        RestoreRecords::None
+    );
+    LEAVE_TEMPORARY.set(false);
+    FAIL_TEMPORARY_REMOVAL.set(false);
+}
+
+const HOSTILE_NAME: &str =
+    "Greg O'Neil’s ‘x’ $name $(printf injected) `printf injected`; | & > # \"“”";
+
+#[cfg(unix)]
+#[test]
+fn the_ways_on_round_trip_a_hostile_name_through_a_posix_shell() {
+    for name in [HOSTILE_NAME, DOTTED_NAME] {
+        for (command, expected) in ways_on_commands("odd copy", name).into_iter().zip([
+            vec![
+                "engram".to_owned(),
+                "backup".into(),
+                "restore".into(),
+                "odd copy".into(),
+                format!("--origin-retired-by={name}"),
+            ],
+            vec![
+                "engram".to_owned(),
+                "backup".into(),
+                "restore".into(),
+                "odd copy".into(),
+                "--abandon-pending".into(),
+                "--abandoned-by=NAME".into(),
+            ],
+        ]) {
+            // set collects the arguments instead of running anything.
+            let output = std::process::Command::new("sh")
+                .args(["-c", &format!("set -- {command}; printf '%s\\n' \"$@\"")])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{command}");
+            let printed = String::from_utf8(output.stdout).unwrap();
+            assert_eq!(printed.lines().collect::<Vec<_>>(), expected, "{command}");
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn the_ways_on_round_trip_a_hostile_name_through_powershell() {
+    // Parse, never run, the command. SafeGetValue accepts only constant
+    // values, so an interpolated expression also fails the test.
+    let script = r"
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseInput($env:ENGRAM_TEST_COMMAND, [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0 -or $ast.EndBlock.Statements.Count -ne 1) { throw 'not one literal command' }
+$pipeline = $ast.EndBlock.Statements[0]
+if ($pipeline.PipelineElements.Count -ne 1) { throw 'unexpected pipeline' }
+$command = $pipeline.PipelineElements[0]
+if ($command.Redirections.Count -ne 0) { throw 'unexpected redirection' }
+$values = @($command.CommandElements | ForEach-Object { $_.SafeGetValue() })
+ConvertTo-Json -Compress -EscapeHandling EscapeNonAscii -InputObject $values
+";
+    for name in [HOSTILE_NAME, DOTTED_NAME] {
+        for (command, expected) in ways_on_commands("odd copy", name).into_iter().zip([
+            serde_json::json!([
+                "engram",
+                "backup",
+                "restore",
+                "odd copy",
+                format!("--origin-retired-by={name}")
+            ]),
+            serde_json::json!([
+                "engram",
+                "backup",
+                "restore",
+                "odd copy",
+                "--abandon-pending",
+                "--abandoned-by=NAME"
+            ]),
+        ]) {
+            let output = std::process::Command::new("pwsh")
+                .args(["-NoProfile", "-NonInteractive", "-Command", script])
+                .env("ENGRAM_TEST_COMMAND", &command)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{command}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let values: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(values, expected, "{command}");
+        }
+    }
+}
+
+/// A plausible operator name with characters a shell may split at.
+const DOTTED_NAME: &str = "greg.lapinski:ops/+x";

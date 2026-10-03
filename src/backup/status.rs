@@ -400,10 +400,9 @@ pub fn restore_line(restore: &RestoreStatus) -> String {
             format!("restore: restored {origin}; completed {}", at.to_rfc3339())
         }
         _ => format!(
-            "restore: pending since {}: {origin}; run `engram backup restore {} --origin-retired-by {}` again to finish it",
+            "restore: pending since {}: {origin}; {}",
             record.pending_at.to_rfc3339(),
-            record.copy,
-            record.origin_retired.by
+            super::restore::pending_ways_on(&record.copy, Some(&record.origin_retired.by))
         ),
     }
 }

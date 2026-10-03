@@ -131,23 +131,7 @@ pub(super) fn ready_navigation_command(
     })
 }
 
-pub(super) fn shell_quote(value: &str) -> String {
-    let mut quoted = String::from("'");
-    for ch in value.chars() {
-        // PowerShell recognizes these typographic delimiters as well. A
-        // double-quoted single character between literal segments works in
-        // both shells; only ASCII quote characters are used as syntax.
-        if matches!(ch, '\'' | '\u{2018}' | '\u{2019}' | '\u{201a}' | '\u{201b}') {
-            quoted.push_str("'\"");
-            quoted.push(ch);
-            quoted.push_str("\"'");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
+pub(super) use crate::shell::quote as shell_quote;
 
 /// Fits rows, footer, and the last-emitted-key continuation as one receipt.
 pub(super) fn fit_list_receipt(

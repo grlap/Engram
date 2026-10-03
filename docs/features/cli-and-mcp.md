@@ -1896,7 +1896,24 @@ pending restore in `<home>/backup-records/<project digest>/store.restore.json`
 into place with a rename that never replaces anything, checks the installed
 store and marks the record completed. A restore stopped before the move is
 finished by a retry of the same copy, and another copy is refused while it is
-pending (`backup_restore_pending_other`). A restore stopped after the move is
+pending (`backup_restore_pending_other`), naming both ways on: run `engram
+backup restore COPY --origin-retired-by NAME` again, or abandon it with
+`engram backup restore COPY --abandon-pending --abandoned-by NAME`. The
+printed commands give a name as `--option=value` and quote a value that a
+shell would split, which both POSIX shells and PowerShell read as one
+argument. A retry fetches the copy
+again into a new staging file, checks that it holds the pending copy's
+SHA-256 (`backup_restore_pending_mismatch` otherwise, and the new file is
+removed), points the pending record at it, and only then removes the
+earlier staging file. When the record cannot be written, the earlier
+staging file and the record stay as they were and the new file is removed.
+A later refusal of the new copy for its format or its check leaves it in
+place with the record naming it; a refusal that removes the new copy, such
+as another project's rows, leaves the record naming a staging file that is
+gone, which a retry and an abandonment both accept. A process that ends
+between that write and the removal leaves the
+earlier staging file behind, no longer named by the record; nothing else
+beside the store is ever removed. A restore stopped after the move is
 completed by a retry of the same copy only when `engram.db` holds the
 recorded SHA-256 with no `-journal` and no `-wal` that holds any bytes (an
 empty `-wal` and an `-shm`, which a read leaves, are allowed); it then prints
@@ -1916,6 +1933,49 @@ the target. The `--json` receipt carries `schema_version` 1, the copy,
 store, bytes, SHA-256, origin host and statement, `completed_interrupted`,
 `kept_record` and `authority`; a refusal under `--json` is printed as for
 `fetch`. See [off-host backup](off-host-backup.md#restore).
+
+`backup restore COPY --abandon-pending --abandoned-by NAME [--json]`
+abandons the pending restore of COPY instead, for a restore that cannot be
+finished, for example because its copy is gone from the target. Nothing
+else abandons a restore, and abandoning takes no `--origin-retired-by`.
+Holding the push lock and contacting no target, it refuses without a
+non-blank name free of control characters
+(`backup_restore_abandoner_unstated`), when no restore is pending
+(`backup_restore_not_pending`), when the pending restore names another copy
+(`backup_restore_pending_other`), and when `engram.db` or any of its `-wal`,
+`-shm` or `-journal` files stands where the store goes
+(`backup_restore_store_exists`); it takes no `--deadline-secs`. It
+removes only the staging file the record names, and only once it has
+checked that the file is a regular file named
+`.backup-restore-<uuid>.staging`, spelled through no `..`, directly in
+`<home>/projects/<project digest>/` as this home spells it. That directory
+and `projects` are opened from the home without following a link and are
+held open while the file is removed by its name in them, so neither can be
+redirected in between: a link or reparse point there, at the file, or a path
+that cannot be examined, is refused (`backup_restore_staging_unowned`) and
+nothing is removed. On Windows the file is removed by the store directory's
+full path, once that path is checked to lead to the directory held, which
+also serves a home on a network share. A staging file already gone is allowed, and a removal
+that fails leaves the restore pending. Then it archives the pending record
+beside it as `store.restore-abandoned-<UTC time>Z.json`, or under the next
+free `-N` suffix, written whole to a temporary file first and moved there
+without replacing anything: an envelope with `format_version`,
+`abandoned` (`by` and `at`, asserted context) and `pending`, the record
+exactly as it was parsed. Only then is the active record cleared, so
+`backup status` and `doctor` no longer show a pending restore and another
+copy can be restored. An archive that cannot be written, or an active record
+that cannot be cleared, leaves the restore pending, says whether its staging
+file was already removed, and abandoning can be run again, which after a
+record that could not be cleared archives it once more under the next name;
+an abandoned restore is never reported as completed. Archives are kept as provenance and
+no word lists them. The `--json` receipt carries `schema_version` 1,
+`abandoned` (the copy), `abandoned_by`, `abandoned_at`, `staging`,
+`staging_removed`, `archive` and `warnings`, which names a temporary file
+the archive's move left behind and could not remove; a removal of the
+staging file counts only once the held directory no longer holds it. A
+pending record written while the home was spelled differently, by case or
+as a relative path, names its staging file outside this spelling and is
+refused; run the abandonment with the home spelled as it was then.
 
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence
