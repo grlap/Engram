@@ -1554,7 +1554,9 @@ This is the contract a host builds its push trigger on.
   and writing the records, removing leftover stages and record files,
   removing the stage, and printing the report. These are local steps,
   usually brief but not guaranteed to be.
-- 0 is accepted and expires at once. With a zero capture deadline the push
+- 0 is accepted and expires at once, unlike `backup status`'s
+  `--check-deadline-secs`, which must be at least 1. With a zero capture
+  deadline the push
   still resolves an earlier pending attempt, which may ask the target, and
   then fails with `backup_capture_deadline` before it creates a stage. With
   a zero transport deadline no request starts and the push fails with
@@ -1683,6 +1685,10 @@ changes nothing. A confirmation renews only the copy's last confirmation,
 never the time the store's content was observed in it, so an old copy that
 is confirmed again still reads `backup_stale`. A check stalled inside the
 operating system past its deadline ends the process, which still exits 0.
+The check deadline is at least 1 second: `--check-deadline-secs 0` is a
+usage error, refused with exit 2 before anything is read, as every other
+usage error is. This differs from `backup push`, whose deadlines accept 0
+and expire at once.
 
 #### The `backup status --json` receipt
 

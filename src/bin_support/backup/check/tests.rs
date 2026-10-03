@@ -171,25 +171,84 @@ fn an_unreachable_target_is_reported_beside_the_evidence_without_changing_it() {
 fn a_check_that_reached_the_target_and_passed_its_deadline_times_out_without_changing_anything() {
     let fixture = fixture();
     let before = fixture.state_bytes();
+    let (reached, reached_seen) = mpsc::channel::<()>();
+    let reached = Mutex::new(reached);
+    let reached_seen = Mutex::new(reached_seen);
     let (release, held) = mpsc::channel::<()>();
-    let held = Arc::new(Mutex::new(held));
+    let held = Mutex::new(held);
     let mut hurried = CheckSettings::new(Duration::from_millis(300));
+    // The worker says it reached the target, then holds its read.
     hurried.after_reach = Some(Arc::new(move || {
+        let _ = reached.lock().unwrap().send(());
+        let _ = held.lock().unwrap().recv();
+    }));
+    // However late the worker is scheduled, the check tells whether it
+    // reached the target only once it has.
+    hurried.before_classify = Some(Arc::new(move || {
+        reached_seen
+            .lock()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(60))
+            .expect("the worker reached the target");
+    }));
+
+    let run = fixture.check(&hurried, Utc::now());
+    let report = run.reports[0].clone();
+    let during = fixture.state_bytes();
+    // The worker is let go and joined before anything is asserted.
+    release.send(()).unwrap();
+    let worker = run.abandoned.expect("the worker passed its deadline");
+    worker.join().unwrap();
+    assert_eq!(report.outcome, CheckOutcome::TimedOut);
+    assert_eq!(report.code, Some("backup_check_timed_out"));
+    assert!(!report.recorded);
+    assert_eq!(during, before);
+    // The worker's late answer records nothing either.
+    assert_eq!(fixture.state_bytes(), before);
+}
+
+#[test]
+fn a_check_whose_worker_never_reached_the_target_before_its_deadline_reads_unreachable() {
+    let fixture = fixture();
+    let before = fixture.state_bytes();
+    let (release, held) = mpsc::channel::<()>();
+    let held = Mutex::new(held);
+    let mut hurried = CheckSettings::new(Duration::from_millis(300));
+    // The worker is held before it even looks at the target.
+    hurried.before_reach = Some(Arc::new(move || {
         let _ = held.lock().unwrap().recv();
     }));
 
     let run = fixture.check(&hurried, Utc::now());
-    let report = &run.reports[0];
-    assert_eq!(report.outcome, CheckOutcome::TimedOut);
-    assert_eq!(report.code, Some("backup_check_timed_out"));
-    assert!(!report.recorded);
-    assert_eq!(fixture.state_bytes(), before);
+    let report = run.reports[0].clone();
+    let during = fixture.state_bytes();
     release.send(()).unwrap();
-    run.abandoned
-        .expect("the worker passed its deadline")
-        .join()
-        .unwrap();
-    // The worker's late answer records nothing either.
+    let worker = run.abandoned.expect("the worker passed its deadline");
+    worker.join().unwrap();
+    assert_eq!(report.outcome, CheckOutcome::Unreachable);
+    assert_eq!(report.code, Some("backup_target_unreachable"));
+    assert!(!report.recorded);
+    assert_eq!(during, before);
+    assert_eq!(fixture.state_bytes(), before);
+}
+
+#[test]
+fn a_zero_check_deadline_starts_no_request_and_says_nothing_about_the_target() {
+    let fixture = fixture();
+    let before = fixture.state_bytes();
+    let run = fixture.check(&CheckSettings::new(Duration::ZERO), Utc::now());
+    let report = &run.reports[0];
+    assert_eq!(report.outcome, CheckOutcome::Unknown);
+    assert_eq!(report.code, Some("backup_target_unconfirmed"));
+    assert!(
+        report
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("no request was started")),
+        "{report:?}"
+    );
+    assert!(!report.recorded);
+    assert!(run.abandoned.is_none());
     assert_eq!(fixture.state_bytes(), before);
 }
 

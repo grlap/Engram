@@ -52,8 +52,14 @@ pub(crate) enum BackupCommand {
         /// confirmation or a missing copy under the push lock.
         #[arg(long)]
         check_target: bool,
-        /// Seconds a target check may take.
-        #[arg(long, value_name = "SECONDS", default_value_t = DEFAULT_CHECK_DEADLINE.as_secs(), requires = "check_target")]
+        /// Seconds a target check may take, at least 1.
+        #[arg(
+            long,
+            value_name = "SECONDS",
+            default_value_t = DEFAULT_CHECK_DEADLINE.as_secs(),
+            value_parser = clap::value_parser!(u64).range(1..),
+            requires = "check_target"
+        )]
         check_deadline_secs: u64,
     },
     /// Capture the store and bring the copy at each configured target up to

@@ -194,6 +194,68 @@ fn a_state_with_an_impossible_cut_is_unreadable_and_status_does_not_crash() {
 }
 
 #[test]
+fn a_zero_check_deadline_is_refused_before_any_work() {
+    let root = test_support::temp_home().unwrap();
+    let zero = [
+        "backup",
+        "status",
+        "--check-target",
+        "--check-deadline-secs",
+        "0",
+        "--json",
+    ];
+    // Refused before the project is resolved: there is no project file yet.
+    let refused = engram(root.path(), &zero);
+    assert_eq!(refused.status.code(), Some(2), "{}", text(&refused.stderr));
+    assert_eq!(text(&refused.stdout), "");
+    assert!(
+        text(&refused.stderr).contains("--check-deadline-secs"),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert!(!root.path().join("home").exists());
+
+    // With a copy to check, a refused check still changes nothing, and the
+    // smallest deadline is taken.
+    setup(root.path());
+    let copies = root.path().join("copies");
+    fs::create_dir_all(&copies).unwrap();
+    set_target(root.path(), &copies);
+    let push = engram(root.path(), &["backup", "push"]);
+    assert!(push.status.success(), "{}", text(&push.stderr));
+    let state = RecordPaths::new(
+        &root.path().join("home"),
+        &ProjectId(PROJECT.into()),
+        CopyKind::Store,
+    )
+    .state;
+    let before = fs::read(&state).unwrap();
+    let refused = engram(root.path(), &zero);
+    assert_eq!(refused.status.code(), Some(2), "{}", text(&refused.stderr));
+    assert_eq!(text(&refused.stdout), "");
+    assert_eq!(fs::read(&state).unwrap(), before);
+
+    let accepted = engram(
+        root.path(),
+        &[
+            "backup",
+            "status",
+            "--check-target",
+            "--check-deadline-secs",
+            "1",
+            "--json",
+        ],
+    );
+    assert!(accepted.status.success(), "{}", text(&accepted.stderr));
+    let receipt: Value = serde_json::from_slice(&accepted.stdout).unwrap();
+    assert_eq!(
+        receipt["checks"].as_array().map(Vec::len),
+        Some(1),
+        "{receipt}"
+    );
+}
+
+#[test]
 fn check_target_records_a_missing_copy_and_reports_an_unreachable_target() {
     let root = test_support::temp_home().unwrap();
     setup(root.path());

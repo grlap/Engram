@@ -39,10 +39,19 @@ pub(crate) const DEFAULT_CHECK_DEADLINE: Duration = Duration::from_mins(10);
 pub(crate) struct CheckSettings {
     pub deadline: Duration,
     pub target_free_space: FreeSpace,
+    /// Runs on the worker before it tries to reach the target, so a test can
+    /// hold a worker that never reached it past the deadline.
+    #[cfg(test)]
+    pub before_reach: Option<Arc<dyn Fn() + Send + Sync>>,
     /// Runs on the worker once it has reached the target, so a test can hold
     /// the read past its deadline.
     #[cfg(test)]
     pub after_reach: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Runs when the deadline has passed with the worker still running, just
+    /// before the check tells whether it reached the target, so a test can
+    /// wait for a milestone the worker reaches late.
+    #[cfg(test)]
+    pub before_classify: Option<Arc<dyn Fn() + Send + Sync>>,
     /// Runs after the target answered and before the result is recorded, so
     /// a test can let a push record a newer receipt in between.
     #[cfg(test)]
@@ -55,7 +64,11 @@ impl CheckSettings {
             deadline,
             target_free_space: engram::backup::available_space,
             #[cfg(test)]
+            before_reach: None,
+            #[cfg(test)]
             after_reach: None,
+            #[cfg(test)]
+            before_classify: None,
             #[cfg(test)]
             before_record: None,
         }
@@ -75,7 +88,8 @@ pub(crate) enum CheckOutcome {
     /// The target was reached, and the read passed its deadline before it
     /// could say; nothing against the copy.
     TimedOut,
-    /// The target was reached but could not be read well enough to say.
+    /// The target was reached but could not be read well enough to say, or,
+    /// for a caller that gave a zero deadline, no request was started.
     Unknown,
     /// No target is configured, or it has no copy of its own to check.
     NothingToCheck,
@@ -169,6 +183,8 @@ fn check_kind(
     let reached = Arc::new(AtomicBool::new(false));
     let worker_reached = Arc::clone(&reached);
     #[cfg(test)]
+    let before_reach = settings.before_reach.clone();
+    #[cfg(test)]
     let after_reach = settings.after_reach.clone();
     let manifest = receipt.manifest.clone();
     let mut transport = Transport {
@@ -176,14 +192,18 @@ fn check_kind(
         used: Duration::ZERO,
     };
     let answer = transport.run(move |left| {
+        #[cfg(test)]
+        if let Some(hook) = before_reach {
+            hook();
+        }
         // The milestone that tells a target that was reached from one that
         // never answered, when the deadline passes before the read is done.
         if fs::metadata(&target.root).is_ok_and(|metadata| metadata.is_dir()) {
             worker_reached.store(true, Ordering::SeqCst);
-        }
-        #[cfg(test)]
-        if let Some(hook) = after_reach {
-            hook();
+            #[cfg(test)]
+            if let Some(hook) = after_reach {
+                hook();
+            }
         }
         target.adapter(left).confirm(&target.project, &manifest)
     });
@@ -191,7 +211,24 @@ fn check_kind(
     report.copy = Some(receipt.manifest.copy.clone());
     let confirmation = match answer {
         Ok(confirmation) => confirmation,
-        Err(worker) => {
+        Err(None) => {
+            // Only a zero deadline starts no request, and the command refuses
+            // one, so only a direct caller, such as a test, gets here. The
+            // target was never asked, so nothing is said about it either way.
+            classify(
+                &mut report,
+                &Confirmation::Unknown {
+                    reason: "no request was started because the check deadline was zero".into(),
+                },
+            );
+            return (report, None);
+        }
+        Err(Some(worker)) => {
+            #[cfg(test)]
+            if let Some(hook) = &settings.before_classify {
+                hook();
+            }
+            let worker = Some(worker);
             let reason = format!("the check passed its deadline of {:?}", settings.deadline);
             let confirmation = if reached.load(Ordering::SeqCst) {
                 Confirmation::TimedOut { reason }
