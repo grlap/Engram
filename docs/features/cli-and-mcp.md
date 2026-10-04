@@ -1077,10 +1077,20 @@ Rules that matter:
   detail, and how many blockers remain, and
   history names each raised and cleared blocker by the same selector, kind
   and detail, clears recorded before selectors existed included.
-- Every answer ends with `reminders` (what is owed, in words) and `next`
-  (commands you can run now). Ordinary mutation words never ask for fences or
-  idempotency keys. Words accept record ids as inputs only for scoped evidence
-  citations and note-detail navigation. Structured receipts also return record
+- Every answer a word gives ends with `reminders` (what is owed, in words)
+  and `next` (commands you can run now). In ordinary `engram mcp`, arguments
+  a word's input schema rejects, such as an undeclared field, a value of the
+  wrong type or an action word that does not exist, never reach the word:
+  the MCP library refuses them first, as a tool error (`isError: true`)
+  whose only content is text describing the problem, with no structured
+  JSON, `reminders` or `next`. The text names an undeclared field and the
+  accepted ones, and an unknown value, but a type error may not name its
+  field. Correct the arguments against the word's input schema and call
+  again; the connection stays usable. The [read-only mode](#read-only-mode)
+  refuses such arguments to its read words itself, before the library, as a
+  structured `mcp_read_only_refused` error. Ordinary mutation words never
+  ask for fences or idempotency keys. Words accept record ids as inputs only
+  for scoped evidence citations and note-detail navigation. Structured receipts also return record
   ids in fields such as `seal`, `evidence`, and `evaluation`.
   Optional criterion linking explicitly reuses note locators and the
   `acceptance_basis` read token; it grants no authority.
@@ -2465,11 +2475,11 @@ refused TOOL: …", "details": {"mode": "read_only", "tool": TOOL,
 "restriction": R}, "reminders": […], "next": […]}}`, where `R` is
 `tool_not_admitted`, `argument_not_admitted`, `next_without_peek` or
 `memories_with_context_generation`; the code is stable. Like every tool
-error, it carries `reminders`, one line naming the restriction, and `next`,
-the read to make instead: `engram work next --peek` after a tool that is not
-a read word or a `next` without the peek, `engram work memories` after a
-listing with a generation, and nothing after undeclared arguments. The read words open
-the store read-only for each call, and the connection never opens or holds
+error Engram itself returns, it carries `reminders`, one line naming the
+restriction, and `next`, the read to make instead: `engram work next
+--peek` after a tool that is not a read word or a `next` without the peek,
+`engram work memories` after a listing with a generation, and nothing after
+undeclared arguments. The read words open the store read-only for each call, and the connection never opens or holds
 the writable one, so nothing it does writes the database or its WAL; SQLite
 may still coordinate through the shared-memory file. A missing or
 uninitialized store refuses and is not created. Ordinary `engram mcp` is

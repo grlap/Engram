@@ -61,6 +61,11 @@ that read does not settle the standing recovery direction.
 
 Use [the agent words](../../features/cli-and-mcp.md#using-engram-as-an-agent)
 and follow each receipt's `reminders`, `next` and continuation commands.
+In ordinary `engram mcp`, an argument a word's input schema rejects (an
+undeclared field, a wrong type or an unknown action) is refused before the
+word runs, as a text-only tool error with neither `reminders` nor `next`. Its
+text describes the problem, though a type error may not name the field:
+correct the arguments against the word's input schema and call again.
 The words are `next`, `ls`, `show`, `add`, `claim`, `update`, `gate`, `evaluate`,
 `note`, `done`, `handoff`, `remember`, `memories` and `forget`; MCP `search`
 is the form of CLI `ls --search --all`.

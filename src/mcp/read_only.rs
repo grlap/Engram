@@ -40,8 +40,8 @@ impl Restriction {
         }
     }
 
-    /// The read the caller can make instead, as every error's `next` gives
-    /// one; arguments a read word does not declare have no fixed one.
+    /// The read the caller can make instead, as every Engram error's `next`
+    /// gives one; arguments a read word does not declare have no fixed one.
     fn next(self) -> &'static [&'static str] {
         match self {
             Self::ToolNotAdmitted | Self::NextWithoutPeek => &["engram work next --peek"],
@@ -102,7 +102,8 @@ fn declares<T: DeserializeOwned>(arguments: &Map<String, Value>) -> bool {
 }
 
 /// The refusal a host reads: an MCP tool error whose JSON names the mode and,
-/// like every other tool error, carries `reminders` and `next`.
+/// like every other tool error Engram itself returns, carries `reminders` and
+/// `next`.
 pub(super) fn refusal(name: &str, restriction: Restriction) -> Value {
     json!({
         "error": {
@@ -287,8 +288,8 @@ mod tests {
         let result = CallToolResult::structured_error(value.clone());
         assert_eq!(result.is_error, Some(true));
         assert_eq!(result.structured_content, Some(value));
-        // Like every tool error, each refusal carries its reminders and the
-        // read the caller can make instead.
+        // Like every tool error Engram itself returns, each refusal carries
+        // its reminders and the read the caller can make instead.
         for (restriction, next) in [
             (
                 Restriction::ToolNotAdmitted,

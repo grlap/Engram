@@ -1372,7 +1372,8 @@ test("status resume recovers both roles across CLI and MCP process replacement w
     const wrongAction = await client.call("update", { work_ref: x, action: "cancel", clear_external: true, reason: "must not cancel" });
     const wrongActionError = structuredError(wrongAction, "invalid_argument");
     assert.equal(wrongActionError.details.field, "clear_external");
-    // Like every tool error: the reason as the reminder, and no command.
+    // Like every tool error Engram itself returns: the reason as the
+    // reminder, and no command.
     assert.deepEqual(wrongActionError.reminders, [wrongActionError.message]);
     assert.deepEqual(wrongActionError.next, []);
     const mixedAction = cli(coordinator, "coordinator-new", "update", x, "--clear-external", "--release");
@@ -1396,6 +1397,47 @@ test("status resume recovers both roles across CLI and MCP process replacement w
     const blank = cli(coordinator, "coordinator-new", "update", x, "--external", "  ");
     assert.notEqual(blank.status, 0);
     assert.equal(receipt(await client.call("show", { work_ref: x })).external_ref, undefined);
+  } finally {
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
+  }
+});
+
+test("an argument a word's schema rejects is a text-only tool error and the connection stays usable", async (t) => {
+  const engramHome = fixtureHome("engram-schema-rejected-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "schema-rejected");
+    await client.initialize();
+    const reference = receipt(await client.call("add", { title: "Schema-rejected arguments" })).work.short_ref;
+    // The MCP library refuses these before the word runs: a tool error, not
+    // a JSON-RPC failure, whose only content is text describing the problem,
+    // without the structured error, reminders or next a word's own refusal
+    // carries. It names an undeclared field or an unknown value; a type
+    // error names the type it expected, not the field.
+    const cases = [
+      ["an undeclared field", "update", { work_ref: reference, undeclared_field: true }, /unknown field `undeclared_field`/u],
+      ["an unknown action", "update", { work_ref: reference, action: "no_such_action" }, /unknown variant `no_such_action`/u],
+      ["a wrong type", "next", { peek: "yes" }, /invalid type: string "yes", expected a boolean/u],
+    ];
+    for (const [label, tool, arguments_, named] of cases) {
+      const refused = await client.call(tool, arguments_);
+      assert.equal(refused.isError, true, `${label}: ${JSON.stringify(refused)}`);
+      assert.equal(refused.structuredContent, undefined, `${label}: ${JSON.stringify(refused)}`);
+      assert.ok(refused.content.length > 0, label);
+      for (const content of refused.content) assert.equal(content.type, "text", label);
+      const text = refused.content.map(({ text }) => text).join("\n");
+      assert.match(text, named, `${label}: ${text}`);
+      assert.doesNotMatch(text, /"reminders"|"next"/u, `${label}: ${text}`);
+      // The connection stays usable: the next valid call answers normally.
+      const shown = receipt(await client.call("show", { work_ref: reference }));
+      assert.equal(shown.status.work.title, "Schema-rejected arguments", label);
+      assert.ok(Array.isArray(shown.next), label);
+    }
   } finally {
     try {
       if (client) await client.close();
@@ -1724,7 +1766,8 @@ test("read-only MCP lists the read words and refuses every writing call as a too
       assert.equal(error.details.tool, name);
       assert.equal(error.details.restriction, restriction);
       assert.match(error.message, /^MCP read-only mode refused /u);
-      // Like every tool error: reminders in words, and the read to make instead.
+      // Like every tool error Engram itself returns: reminders in words, and
+      // the read to make instead.
       assert.equal(error.reminders.length, 1);
       assert.match(error.reminders[0], /^this connection is read-only: /u);
       const instead = {

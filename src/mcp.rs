@@ -930,7 +930,7 @@ impl McpServer {
 }
 
 /// What `initialize` tells an ordinary connection.
-const INSTRUCTIONS: &str = "Fourteen words: next, ls, show, add, claim, update, gate, evaluate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before execution; evaluate records attributed acceptance verdicts that an evaluated project policy consumes at done; note accepts project-bound non-holders on open/blocked work without granting execution authority; completed note/gate append late evidence without reopening; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer ends with reminders and runnable next commands. Keyless same-holder claim calls renew without shortening expiry. A restored completed gate always appends: inspect show before repeating an uncertain call. Other identical calls retain exact retry semantics.";
+const INSTRUCTIONS: &str = "Fourteen words: next, ls, show, add, claim, update, gate, evaluate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before execution; evaluate records attributed acceptance verdicts that an evaluated project policy consumes at done; note accepts project-bound non-holders on open/blocked work without granting execution authority; completed note/gate append late evidence without reopening; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer a word gives ends with reminders and runnable next commands; arguments a word's input schema rejects (an undeclared field, a wrong type, an unknown action) are refused before the word runs, as a text-only tool error that describes the problem, though a type error may not name the field. Keyless same-holder claim calls renew without shortening expiry. A restored completed gate always appends: inspect show before repeating an uncertain call. Other identical calls retain exact retry semantics.";
 
 #[allow(
     clippy::unused_async_trait_impl,
@@ -1417,9 +1417,10 @@ fn error_code(error: &StoreError) -> &'static str {
     }
 }
 
-/// An argument combination a tool refuses before it runs. Like every agent
-/// tool error it carries `reminders` and `next`: the reason, and no command,
-/// as a verb error with no specific remedy does.
+/// An argument combination a tool refuses before it runs. Like every tool
+/// error Engram itself returns, it carries `reminders` and `next`: the
+/// reason, and no command, as a verb error with no specific remedy does. An
+/// argument the MCP library rejects first carries text only.
 fn invalid_argument(field: &str, message: &str) -> CallToolResult {
     CallToolResult::structured_error(json!({
         "error": {
@@ -2342,8 +2343,9 @@ mod tests {
         assert!(format!("{:?}", server.work_service).contains("store_initialized: false"));
     }
 
-    // Every update argument refused before the tool runs carries the two
-    // fields every agent tool error does: its reason, and no command.
+    // Every update argument Engram refuses before the tool runs carries the
+    // two fields every tool error Engram itself returns does: its reason, and
+    // no command.
     #[test]
     fn invalid_argument_errors_carry_reminders_and_next() {
         let directory = crate::test_support::temp_home().expect("temporary MCP home");
