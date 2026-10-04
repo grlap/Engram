@@ -648,6 +648,17 @@ Rules that matter:
   mutation rechecks its current admission. Core callers select it with the
   existing `participated` section. See the
   [resume discovery contract](local-work-system.md#agent-native-protocol).
+  Unexpected failure of this advisory group emits no partial rows, omission
+  count or navigation. It instead sets `stranded_children_unavailable: true`
+  and a fixed `stranded_children_error_class`, rendered as
+  `stranded children: unavailable (<class>)` in text. The marker survives byte
+  fitting in both next modes. Other sections remain usable; their failures
+  and mutation admission remain strict. Healthy empty results and budget cuts
+  do not emit this marker. Discovery uses indexed Open children and stops at
+  one canonical session anchor per Completed parent; unrelated closed history
+  is excluded, while unmatched candidate-parent history can still be scanned.
+  Parent and child identities give a stable order for paging and probe reuse,
+  with no chronological meaning.
 - `update CHILD --detach "why"` (MCP `update { work_ref: CHILD, action:
   "detach", reason: "why" }`) atomically creates an independent root and
   supersedes an Open child stranded beneath a terminal ancestor. It copies

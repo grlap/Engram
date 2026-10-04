@@ -1123,6 +1123,28 @@ the advisory snapshot and final byte ceiling of the other discovery groups.
 Changing a child or reopening its parent is reflected by the next read;
 discovery never selects focus, claims work, or changes stored delivery bytes.
 
+Stranded discovery starts from indexed Open children and looks up their direct
+Completed parents. Parent and child identities provide a stable order for
+paging and probe reuse; they express no chronology. Each parent is checked
+once in the same snapshot. Native
+events, run evidence, restored evidence, observations and restored history are
+probed in that order, stopping at the first matching canonical session anchor.
+Only that restored generation is decoded for attribution. Unrelated Completed
+history does not increase this read's work. The bound includes all Open
+candidates and the relevant candidate-parent history up to a match; a parent
+with no matching session can require scanning its relevant history. Existing
+indexes suffice; there is no durable attribution projection.
+
+The entire stranded group is advisory. An unexpected discovery, canonical
+validation or remedy error emits no rows, count or navigation, and instead
+sets `stranded_children_unavailable: true` and a fixed bounded
+`stranded_children_error_class`. The marker survives byte fitting in both
+ordinary `next` and `next --peek`; other sections remain usable. Empty results
+and byte cuts are successful reads, with the omission rules above. Admission
+for mutations remains strict. Initialization, schema/policy admission,
+snapshot establishment, delivery and independently requested sections still
+refuse their own failures; this boundary suppresses only the stranded group.
+
 Discovery first selects Open candidates with indexed assignment/claim filters,
 then probes their note, event, and run-feed bindings. Unrelated closed history
 is not scanned for JSON payloads. Latest positions include work events, all note

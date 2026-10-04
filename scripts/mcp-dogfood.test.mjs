@@ -3680,6 +3680,105 @@ test("next discovers never-read stranded children with bounded CLI and MCP remed
   }
 });
 
+test("stranded descendant remedies and unavailable diagnostics agree on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-stranded-unavailable-", t);
+  let client;
+  let database;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "participant");
+    await client.initialize();
+    const parent = receipt(await client.call("add", {title: "Delivered parent"})).work.short_ref;
+    const child = cliJson(engramHome, "writer", "add", "Stranded child", "--under", parent, "--optional").work.short_ref;
+    const descendant = cliJson(engramHome, "writer", "add", "Open descendant", "--under", child, "--optional").work.short_ref;
+    receipt(await client.call("claim", {work_ref: parent}));
+    receipt(await client.call("done", {work_ref: parent, summary: "Delivered parent"}));
+    const focus = receipt(await client.call("add", {title: "Independent focus"})).work.short_ref;
+    receipt(await client.call("claim", {work_ref: focus}));
+    const ready = cliJson(engramHome, "writer", "add", "Independent ready work").work.short_ref;
+    const captures = [];
+    const check = async (unavailable) => {
+      for (const verbose of [false, true]) {
+        for (const peek of [false, true]) {
+          const result = await client.call("next", {peek, verbose});
+          const mcp = receipt(result);
+          const flags = [...(peek ? ["--peek"] : []), ...(verbose ? ["--verbose"] : [])];
+          const cli = cliJson(engramHome, "participant", "next", ...flags);
+          const text = cliText(engramHome, "participant", "next", ...flags);
+          for (const value of [mcp, cli]) {
+            assert.ok(value.ready.some(row => (row.ref ?? row.work?.short_ref) === ready));
+            assert.equal(value.held.length, 1);
+            if (unavailable) {
+              assert.equal(value.stranded_children_unavailable, true);
+              assert.equal(value.stranded_children_error_class, "stored_json_invalid");
+              for (const key of ["stranded_children", "stranded_children_omitted", "stranded_children_next"]) {
+                assert.equal(Object.hasOwn(value, key), false, key);
+              }
+            } else {
+              assert.equal(Object.hasOwn(value, "stranded_children_unavailable"), false);
+              assert.equal(value.stranded_children.length, 1);
+              const row = value.stranded_children[0];
+              assert.equal(row.ref, child);
+              assert.equal(row.parent_ref, parent);
+              assert.equal(row.blocked_reason, `parent ${parent} is completed; resolve open descendants before detaching their parent`);
+              assert.equal(row.remedy, `engram work show ${descendant}`);
+              assert.doesNotMatch(row.remedy, /--detach/u);
+            }
+            assert.ok(Buffer.byteLength(JSON.stringify(value)) < 12 * 1024);
+          }
+          assert.deepEqual(mcp.stranded_children, cli.stranded_children);
+          assert.ok(text.includes(unavailable ? "stranded children: unavailable (stored_json_invalid)" : `engram work show ${descendant}`));
+          captures.push({unavailable, peek, verbose, result, cli, text});
+        }
+      }
+    };
+    await check(false);
+    const childBefore = cliJson(engramHome, "writer", "show", child);
+    const parentBefore = cliJson(engramHome, "writer", "show", parent);
+    const projectDirectory = readdirSync(join(engramHome, "projects"), {withFileTypes: true}).filter(entry => entry.isDirectory());
+    assert.equal(projectDirectory.length, 1);
+    const {DatabaseSync} = await import("node:sqlite");
+    database = new DatabaseSync(join(engramHome, "projects", projectDirectory[0].name, "engram.db"));
+    const event = database.prepare(`SELECT object_id, canonical_json FROM work_feed_entries
+      JOIN objects USING(object_id) JOIN work_items USING(work_id)
+      WHERE feed_kind = 'project' AND short_ref = ? AND work_feed_entries.object_kind = 'work_event'
+      ORDER BY position DESC LIMIT 1`).get(child);
+    assert.ok(event);
+    database.prepare("UPDATE objects SET canonical_json = ? WHERE object_id = ?").run(Buffer.from("{}"), event.object_id);
+    await check(true);
+    const contextArguments = ["--peek", "--context-generation", `stranded-unavailable-${Date.now()}`];
+    const contextNudge = cliWord(engramHome, "participant", "next", ...contextArguments);
+    assert.equal(contextNudge.status, 0, contextNudge.stderr);
+    assert.equal(contextNudge.signal, null);
+    assert.ok(contextNudge.stdout.includes("stranded children: unavailable (stored_json_invalid)"));
+    assert.ok(contextNudge.stdout.includes(focus));
+    assert.ok(contextNudge.stdout.includes(ready));
+    const refused = await client.call("update", {work_ref: child, action: "detach", reason: "Must remain strict"});
+    assert.equal(refused.isError, true);
+    assert.notEqual(cliWord(engramHome, "participant", "update", child, "--detach", "Must remain strict").status, 0);
+    database.prepare("UPDATE objects SET canonical_json = ? WHERE object_id = ?").run(event.canonical_json, event.object_id);
+    database.close();
+    database = undefined;
+    assert.deepEqual(cliJson(engramHome, "writer", "show", child).status, childBefore.status);
+    assert.deepEqual(cliJson(engramHome, "writer", "show", parent).status, parentBefore.status);
+    await check(false);
+    if (process.env.ENGRAM_CAPTURE_STRANDED_UNAVAILABLE_RECEIPT === "1") {
+      const directory = join(root, "target", "tmp", `stranded-unavailable-reader-capture-${Date.now()}`);
+      mkdirSync(directory, {recursive: true});
+      const executable = process.platform === "win32" ? `${binary}.exe` : binary;
+      const readiness = spawnSync(binary, ["--home", engramHome, "readiness", "--json"], {cwd: root, encoding: "utf8"});
+      assert.equal(readiness.status, 0, readiness.stderr);
+      const path = join(directory, "payload.json");
+      writeFileSync(path, JSON.stringify({executable, executable_sha256: createHash("sha256").update(readFileSync(executable)).digest("hex"), readiness: JSON.parse(readiness.stdout), parent, child, descendant, focus, ready, captures, context_nudge: {arguments: ["work", "next", ...contextArguments], status: contextNudge.status, signal: contextNudge.signal, stdout: contextNudge.stdout, stderr: contextNudge.stderr}, refused}, null, 2));
+      console.error(`Stranded unavailable reader capture: ${path}`);
+    }
+  } finally {
+    if (database) database.close();
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("detach exposes the same remedy and independent root through MCP", async (t) => {
   const engramHome = fixtureHome("engram-mcp-detach-", t);
   let client;

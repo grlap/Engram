@@ -118,6 +118,11 @@ impl WorkReadyNavigation {
 /// Recent participation is navigation, never a recorded obligation or authority.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct WorkDiscoveryView {
+    /// The entire advisory group failed; no partial or unverified rows follow.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub stranded_children_unavailable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stranded_children_error_class: Option<&'static str>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub stranded_children: Vec<WorkStrandedChild>,
     #[serde(skip_serializing_if = "discovery_count_is_zero")]

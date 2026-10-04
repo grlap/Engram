@@ -1468,6 +1468,15 @@ pub(super) fn append_stranded_children_lines(
     lines: &mut Vec<String>,
     discovery: &crate::work_service::WorkDiscoveryView,
 ) {
+    if discovery.stranded_children_unavailable {
+        lines.push(format!(
+            "stranded children: unavailable ({})",
+            discovery
+                .stranded_children_error_class
+                .unwrap_or("store_error")
+        ));
+        return;
+    }
     if discovery.stranded_children.is_empty() && discovery.stranded_children_omitted == 0 {
         return;
     }
