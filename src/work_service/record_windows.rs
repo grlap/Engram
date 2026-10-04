@@ -437,68 +437,70 @@ fn project_record(
     let mut verification = None;
     let mut gate = None;
     let mut complete_member = None;
-    let (label, summary, refs, actor, recorded_at) =
-        match store.work_record_content(project, work, entry)? {
-            WorkRecordContent::Note(mut note) => {
-                super::projection::project_full_note(&mut note)?;
-                note_body_bytes = Some(note.summary.len());
-                verification = note.verification.take();
-                gate = note.gate.take();
-                let label = if crate::domain::status_note_role(&note.actor).is_some() {
-                    "status".into()
-                } else {
-                    serde_json::to_value(note.kind)?
-                        .as_str()
-                        .unwrap_or("note")
-                        .to_owned()
-                };
-                let summary = if kind == WorkRecordKind::History {
-                    let summary = compact_text(&note.summary);
-                    summary_truncated = summary != note.summary;
-                    summary
-                } else {
-                    note.summary
-                };
-                let refs = if kind == WorkRecordKind::History {
-                    Vec::new()
-                } else {
-                    note.refs
-                };
-                (label, summary, refs, note.actor, note.recorded_at)
-            }
-            WorkRecordContent::Event(event, position) => {
-                let projected = project_work_event(store, &event, &position)?;
-                (
-                    projected.change_kind,
-                    super::history_display::HistoryDisplay::load(store, &event, &position)?
-                        .summary(false),
-                    Vec::new(),
-                    event.actor.clone(),
-                    event.created_at,
-                )
-            }
-            WorkRecordContent::InheritedHistory {
-                kind,
-                summary,
-                actor,
-                recorded_at,
-                member,
-            } => {
-                // The window shows a compact summary but keeps the original
-                // size, and says when it shortened it so the row offers its
-                // detail; the detail read keeps the whole text.
-                note_body_bytes = Some(summary.len());
-                let shown = if detail {
-                    complete_member = Some(member);
-                    summary
-                } else {
-                    let compact = compact_text(&summary);
-                    summary_truncated = compact != summary;
-                    compact
-                };
-                (kind, shown, Vec::new(), actor, recorded_at)
-            }
-        };
+    let (label, summary, refs, actor, recorded_at) = match store
+        .work_record_content(project, work, entry)?
+    {
+        WorkRecordContent::Note(mut note) => {
+            super::projection::project_full_note(&mut note)?;
+            note_body_bytes = Some(note.summary.len());
+            verification = note.verification.take();
+            gate = note.gate.take();
+            let label = if crate::domain::status_note_role(&note.actor).is_some() {
+                "status".into()
+            } else {
+                serde_json::to_value(note.kind)?
+                    .as_str()
+                    .unwrap_or("note")
+                    .to_owned()
+            };
+            let summary = if kind == WorkRecordKind::History {
+                let summary = compact_text(&note.summary);
+                summary_truncated = summary != note.summary;
+                summary
+            } else {
+                note.summary
+            };
+            let refs = if kind == WorkRecordKind::History {
+                Vec::new()
+            } else {
+                note.refs
+            };
+            (label, summary, refs, note.actor, note.recorded_at)
+        }
+        WorkRecordContent::Event(event, position) => {
+            // One read of the event's facts serves the change kind and the
+            // displayed summary.
+            let display = super::history_display::HistoryDisplay::load(store, &event, &position)?;
+            (
+                display.stored_summary().change_kind,
+                display.summary(false),
+                Vec::new(),
+                event.actor.clone(),
+                event.created_at,
+            )
+        }
+        WorkRecordContent::InheritedHistory {
+            kind,
+            summary,
+            actor,
+            recorded_at,
+            member,
+        } => {
+            // The window shows a compact summary but keeps the original
+            // size, and says when it shortened it so the row offers its
+            // detail; the detail read keeps the whole text.
+            note_body_bytes = Some(summary.len());
+            let shown = if detail {
+                complete_member = Some(member);
+                summary
+            } else {
+                let compact = compact_text(&summary);
+                summary_truncated = compact != summary;
+                compact
+            };
+            (kind, shown, Vec::new(), actor, recorded_at)
+        }
+    };
     Ok(WorkRecordRow {
         gate,
         family: entry.record_family,

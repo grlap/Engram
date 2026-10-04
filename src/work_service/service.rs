@@ -14,11 +14,10 @@ use super::{
     bindable_control_work_binding, bounded_prerequisite_summaries, child_lifecycle_is_unfinished,
     child_lifecycle_priority, compact_text, count_omission, disclosed_work_obligation_page,
     ensure_agent_response_budget, fit_focus_response, normalize_actor_context,
-    prioritized_focus_evidence, project_work_event, ready_work_summary,
-    required_child_waiver_candidate, restored_work_evidence_summary,
-    validate_process_default_work_session, work_evidence_kind_word, work_evidence_summary,
-    work_handoff_summary, work_item_summary, work_lifecycle_word, work_memory_index,
-    work_observation_summary, work_run_summary,
+    prioritized_focus_evidence, ready_work_summary, required_child_waiver_candidate,
+    restored_work_evidence_summary, validate_process_default_work_session, work_evidence_kind_word,
+    work_evidence_summary, work_handoff_summary, work_item_summary, work_lifecycle_word,
+    work_memory_index, work_observation_summary, work_run_summary,
 };
 
 /// Only safe agent detail requests full contract text. Core/list projections
@@ -914,13 +913,13 @@ impl LocalWorkService {
                     event.work_id.0, work_id.0
                 )));
             }
-            let summary = project_work_event(store, &event, &entry.position)?;
+            // One read of the event's facts serves the stored summary and the
+            // transient display.
+            let display =
+                super::history_display::HistoryDisplay::load(store, &event, &entry.position)?;
+            let summary = display.stored_summary();
             history.push(WorkChange {
-                history_display: Some(super::history_display::HistoryDisplay::load(
-                    store,
-                    &event,
-                    &entry.position,
-                )?),
+                history_display: Some(display),
                 capture: None,
                 completion_checkpoint: None,
                 display_producer: Some((

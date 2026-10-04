@@ -1,4 +1,5 @@
-//! Transient event facts for receipt history; stored delivery summaries stay fixed.
+//! Event facts for receipt history, read once and shared by the transient
+//! display and the stored delivery summary, whose bytes stay fixed.
 
 use super::{FeedPosition, SqliteStore, StoreError, WorkEvent, WorkTransition};
 
@@ -36,6 +37,9 @@ impl HistoryDisplay {
         } else {
             Vec::new()
         };
+        // A clear event carries only the blocker's id; the blocker it removed
+        // is read from its retained row, checked against the event that raised
+        // it, never from the active set or a row position.
         let cleared = match &event.transition {
             WorkTransition::Unblocked { blocker_id } => {
                 store.cleared_work_blocker(event.work_id, blocker_id)?
@@ -47,6 +51,12 @@ impl HistoryDisplay {
             fields,
             cleared,
         })
+    }
+
+    /// The stored delivery summary, built from the same facts as the
+    /// transient display, so neither reads the planning or blocker rows twice.
+    pub(super) fn stored_summary(&self) -> super::WorkChangeSummary {
+        super::agent_work_event_summary_with(&self.event, &self.fields, self.cleared.as_ref())
     }
 
     pub(crate) fn summary(&self, include_title: bool) -> String {

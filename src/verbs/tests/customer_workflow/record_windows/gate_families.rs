@@ -568,3 +568,65 @@ fn note_window_modes_are_bound_even_when_no_gate_changes_the_membership() {
         );
     }
 }
+
+// A gate whose failure list is too large to show beside the window's
+// essential context is shown as a detail placeholder, and the placeholder
+// keeps the gate's typed name and result beside `body_omitted`.
+#[test]
+fn a_gate_shown_as_a_body_placeholder_keeps_its_typed_gate() {
+    let (_directory, verbs, _, _) = fixture();
+    let work = add(&verbs, "Oversized gate failures", None, false, 0);
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: work.clone(),
+                ttl_seconds: Some(600),
+                recover: None,
+            },
+            at(1),
+        )
+        .unwrap();
+    verbs
+        .gate(
+            GateInput {
+                work_ref: Some(work.clone()),
+                name: "oversized".into(),
+                failed: (0..16)
+                    .map(|failure| format!("failure {failure:02}: {}", "x".repeat(230)))
+                    .collect(),
+                evidence_ref: Some("test:oversized".into()),
+            },
+            at(2),
+        )
+        .unwrap();
+    let (source, page) = verbs
+        .service
+        .work_record_window(&work, WorkRecordKind::NotesWithGates, None, at(3))
+        .unwrap();
+    let fit = |budget| {
+        crate::verbs::record_windows::fit_window(
+            source.clone(),
+            &page,
+            |view| verbs.render_show(view, at(3)),
+            verbs.service.display_identity(),
+            budget,
+        )
+    };
+    let complete = fit(MAX_AGENT_WORK_RESPONSE_BYTES).unwrap();
+    let row = &complete.value["notes"][0];
+    assert!(row.get("body_omitted").is_none(), "{row}");
+    assert_eq!(row["gate"], json!({ "name": "oversized", "passed": false }));
+    // Shrink the budget until the complete failure list no longer fits.
+    let mut budget = emitted_receipt_bytes(&complete);
+    let placeholder = loop {
+        budget -= 64;
+        let receipt = fit(budget).expect("the first row is always represented");
+        if receipt.value["notes"][0]["body_omitted"] == json!(true) {
+            break receipt;
+        }
+    };
+    let row = &placeholder.value["notes"][0];
+    assert!(row.get("summary").is_none(), "{row}");
+    assert_eq!(row["gate"], json!({ "name": "oversized", "passed": false }));
+    assert!(emitted_receipt_bytes(&placeholder) <= budget);
+}

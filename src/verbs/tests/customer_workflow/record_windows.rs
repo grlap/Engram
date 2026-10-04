@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 mod corrections;
 mod gate_families;
 mod inherited_detail;
+mod newest_history;
 mod restored_order;
 
 fn window(

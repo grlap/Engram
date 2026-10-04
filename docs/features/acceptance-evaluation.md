@@ -645,7 +645,8 @@ Under an evaluated policy `done`:
    citations fall outside its evidence, the same closure the self-asserted
    route keeps;
 5. reports the provenance read back from the frozen seal:
-   `acceptance: evaluated (<mode>, <assurance>) by <evaluator>` in the `done`
+   `acceptance: evaluated (<mode>; recorded under <assurance> identity) by
+   <evaluator>` in the `done`
    text and in the completed item's `show` text, with
    `acceptance: {provenance, evaluation, mode, assurance, evaluator,
    evaluator_model}` in `done` JSON and in the completed item's `show` JSON.
@@ -828,7 +829,7 @@ tests cite the row identifier in a nearby comment.
 | --- | --- | --- |
 | B01 | self-asserted policy (no allowed modes); `done` without evaluation | seals as today; receipt names `self-asserted`; `evaluate` refuses "policy does not enable acceptance evaluation" |
 | B02 | evaluated policy; no evaluation; `done` | refuse `MissingAcceptanceEvaluation` for criterion 1; command names `evaluate`; no seal, no capture side effects beyond the existing pending attempt |
-| B03 | `same_session` allowed; evaluator = holder; all `pass` (judgment) | record accepted; `done` seals; seal binds the evaluation; receipt `evaluated (same_session, asserted)` |
+| B03 | `same_session` allowed; evaluator = holder; all `pass` (judgment) | record accepted; `done` seals; seal binds the evaluation; receipt `evaluated (same_session; recorded under asserted identity)` |
 | B04 | policy `[sub_agent, independent_session]`; same-session record | refuse at write; nothing appended |
 | B05 | task mode `independent_session`; evaluator session = holder | refuse at write (independence) |
 | B06 | `independent_session` from a distinct session; holder runs `done` | record accepted; seal |
@@ -868,7 +869,7 @@ tests cite the row identifier in a nearby comment.
 | B40 | `work_run_evidence.verification_result` disagrees with the canonical `VerificationEvidence` | `evaluate` refuses with an invalid-projection error; nothing is admitted from the column |
 | B41 | citations as `show --notes --gates` prints them: a gate and a holder note together (judgment); a non-holder observation; another item's note; an artifact path | accepted, the record keeps the full ids / refused naming the locator and "observation" / refused ("not a note/gate on this item") / refused ("not the recorded evidence identity") |
 | B42 | `require_source_freshness`; `show` after an evaluation with a fingerprint; `done` without one | `show` reports the fingerprint as checked at `done`, not stale; `done` refuses `source` and the remedy names `--source-fingerprint` |
-| B43 | self-asserted and evaluated completions read through `done`, completed `show`, and `next --peek` on the focused evaluated item | `acceptance: self-asserted` in `done` and `show` text with `provenance: self_asserted` in both `done` and completed `show` JSON / `acceptance: evaluated (same_session, asserted) by <evaluator>` with the JSON `acceptance` block in both; `next` prints `evaluation: <mode> P/N pass, fresh` under the focus |
+| B43 | self-asserted and evaluated completions read through `done`, completed `show`, and `next --peek` on the focused evaluated item | `acceptance: self-asserted` in `done` and `show` text with `provenance: self_asserted` in both `done` and completed `show` JSON / `acceptance: evaluated (same_session; recorded under asserted identity) by <evaluator>` with the JSON `acceptance` block in both; `next` prints `evaluation: <mode> P/N pass, fresh` under the focus |
 | B44 | `update --evaluation-mode same_session`, then `--clear-evaluation-mode`, then a clear on the already unpinned item | `show` history and a peer's `next` deltas carry two `revised` entries naming `evaluation mode` and one reading `no planning change` |
 | B45 | `add` with an empty or whitespace `--evaluation-mode` for a root and for a `--under` child; omitted; a valid word | refused before any effect (no item, project feed and focus unchanged) / created without a pin / created pinned |
 | B46 | completed evaluated item whose bound evaluation object no longer decodes | `show` still reads: text `acceptance: provenance unavailable (…)` with `diagnostic class: <class>`, JSON `acceptance: {provenance: unavailable, error_class}`; `doctor` reports the store unhealthy; a self-asserted completed `show` returns `acceptance: {provenance: self_asserted}` |
@@ -886,7 +887,7 @@ tests cite the row identifier in a nearby comment.
 | B58 | `fail`, the run's executor revises its criteria, and an evaluator that never held the run names the failure with `fail`; the executor revises again; another such evaluation names it with `needs_human`; or a planner revises in between and the executor rewords back to the original criteria | the failure is still carried as the original record (`carried_failure.evaluation` unchanged, `revised_by: executor`, `judged_criteria` the original ones, and `newest_judged_bindings` those the naming evaluation judged); a revert to the original criteria after a failing evaluation named it stays carried, and so does a second failing review of the reverted criteria; the executor's `same_session` pass without `--supersedes` is refused `carried_failure_unacknowledged`, and naming it `carried_failure_self_acknowledged`; only a passing evaluation from such an evaluator that names it ends the carry, and `done` seals |
 | B59 | a task with no mode set, a policy admitting same_session and another mode; the holder evaluates same_session / a policy admitting only same_session | refuse at write: not marked for same-session, request an independent evaluation from the host, same-session needs a mark by someone other than the executor; nothing appended / records |
 | B60 | a task marked same_session at creation by the session that later executes it, or marked by the holder after a failed independent evaluation; the holder evaluates same_session, in any policy | refuse at write: the mark was set by a session that evaluates, holds or executes the run; clearing the mark leaves an unmarked task, refused as B59 |
-| B61 | a task marked same_session by a peer or operator; the holder revises other fields, then evaluates same_session | records; the mark keeps its author; `done` seals with `evaluated (same_session, …)` |
+| B61 | a task marked same_session by a peer or operator; the holder revises other fields, then evaluates same_session | records; the mark keeps its author; `done` seals with `evaluated (same_session; recorded under … identity)` |
 | B62 | B61, then the holder releases and the mark's author claims the run | `done` refuses `acceptance_evaluation_stale` (policy); the author's own same_session evaluation refuses at write |
 | B63 | policy admits `sub_agent`; a `sub_agent` evaluation recorded from the holder's own session / from a distinct child session under the holder; then that child session claims the run | refuse at write: recorded from a session that holds, executes or held the run / records, and `done` seals / `done` refuses `acceptance_evaluation_stale` (policy) |
 | B64 | a child marked same_session by the session that later executes it; a peer detaches it after its parent ends; the executor claims the successor and evaluates same_session / a peer then clears the mark and sets it again | refuse at write: the mark has no author recorded on the successor / records |

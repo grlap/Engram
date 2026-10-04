@@ -140,7 +140,7 @@ fn fit_acceptance_prefix(
     })
 }
 
-fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
+pub(super) fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
     if crate::work_service::shorten_status_previews(
         &mut view.status.work.current_status,
         &mut view.status.work.status_observation,
@@ -159,11 +159,13 @@ fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
     }
     // Only remove fields actually emitted by show. In particular, memories,
     // obligations, and child acceptance metadata are not presentation rows.
+    // History is held oldest first: shed the oldest shown event and keep the
+    // newest.
     if let Some(index) = view
         .history
         .items
         .iter()
-        .rposition(|entry| matches!(entry.delivery, WorkChangeProjection::Visible(_)))
+        .position(|entry| matches!(entry.delivery, WorkChangeProjection::Visible(_)))
     {
         view.history.items.remove(index);
         view.history.omitted += 1;

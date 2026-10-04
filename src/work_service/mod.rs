@@ -1120,14 +1120,19 @@ fn verified_bounded_work_changes(
         let display_producer = source_display_producer(&entry.object_kind, &object);
         let (capture, completion_checkpoint) = change_context::hydrate(store, &entry, &object)?;
         let history_display = history_display::hydrate(store, &entry, &object)?;
-        let delivery = agent_change_object(
-            store,
-            project_id,
-            focused_root_id,
-            &entry.object_kind,
-            object,
-            Some(&entry.position),
-        )?;
+        // A work event's display and its delivered summary share one read of
+        // its facts; every other kind is projected as before.
+        let delivery = match &history_display {
+            Some(display) => WorkChangeProjection::Visible(display.stored_summary()),
+            None => agent_change_object(
+                store,
+                project_id,
+                focused_root_id,
+                &entry.object_kind,
+                object,
+                Some(&entry.position),
+            )?,
+        };
         changes.push(WorkChange {
             history_display,
             capture,
@@ -1963,41 +1968,7 @@ fn project_work_event(
     event: &WorkEvent,
     position: &FeedPosition,
 ) -> Result<WorkChangeSummary, StoreError> {
-    let fields = if matches!(event.transition, WorkTransition::Revised { .. }) {
-        let previous = store.work_planning_before(position, event)?;
-        let current = serde_json::to_value(&event.work)?;
-        [
-            ("title", "title"),
-            ("outcome", "outcome"),
-            ("acceptance", "acceptance"),
-            ("kind", "kind"),
-            ("priority", "priority"),
-            ("labels", "labels"),
-            ("external_ref", "external reference"),
-            ("assigned_to", "assignment"),
-            ("deferred_until", "deferral"),
-            ("evaluation_mode", "evaluation mode"),
-        ]
-        .into_iter()
-        .filter_map(|(key, word)| (previous[key] != current[key]).then_some(word))
-        .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-    // A clear event carries only the blocker's id; the blocker it removed is
-    // read from its retained row, checked against the event that raised it,
-    // never from the active set or a row position.
-    let cleared = match &event.transition {
-        WorkTransition::Unblocked { blocker_id } => {
-            store.cleared_work_blocker(event.work_id, blocker_id)?
-        }
-        _ => None,
-    };
-    Ok(agent_work_event_summary_with(
-        event,
-        &fields,
-        cleared.as_ref(),
-    ))
+    Ok(history_display::HistoryDisplay::load(store, event, position)?.stored_summary())
 }
 
 #[cfg(test)]

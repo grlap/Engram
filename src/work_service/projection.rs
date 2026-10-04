@@ -1326,7 +1326,9 @@ pub(crate) fn shed_work_next_focus(response: &mut WorkNextView) -> bool {
 }
 
 fn trim_focus_once(focus: &mut WorkFocusView) -> bool {
-    if focus.history.items.pop().is_some() {
+    // History is held oldest first: shed the oldest event and keep the newest.
+    if !focus.history.items.is_empty() {
+        focus.history.items.remove(0);
         focus.history.omitted = focus.history.omitted.saturating_add(1);
         return true;
     }
