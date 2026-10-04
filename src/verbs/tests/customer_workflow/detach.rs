@@ -65,10 +65,15 @@ fn completed_root_parent_remains_readable_and_detachable_after_child_detach() {
             .contains(&format!("execution blocked by ancestor {root} (completed)"))
     );
     assert!(!shown_child.text().contains("parent completed"));
-    assert!(
-        shown_child
-            .next
-            .contains(&format!("engram work show {root}"))
+    assert_eq!(
+        shown_child.value["next"],
+        serde_json::json!([
+            format!("engram work update {child} --detach \"Continue as independent work\""),
+            format!("engram work note {child} \"…\""),
+            format!("engram work show {root}"),
+            format!("engram work show {parent}"),
+            format!("engram work show {child} --history")
+        ])
     );
     let child_item = store.resolve_work_ref(&project, &child).unwrap();
     let child_run = store.latest_work_run(child_item.work_id).unwrap().unwrap();
@@ -477,7 +482,15 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
             cause
         ])
     );
-    assert_eq!(shown.value["next"][0], command);
+    assert_eq!(
+        shown.value["next"],
+        serde_json::json!([
+            command,
+            format!("engram work note {child} \"…\""),
+            format!("engram work show {parent}"),
+            format!("engram work show {child} --history")
+        ])
+    );
     // The advisory retains the child's remedy without steering focus away
     // from the completed parent.
     let next = verbs.next(&NextInput::default(), at(5)).expect("next");

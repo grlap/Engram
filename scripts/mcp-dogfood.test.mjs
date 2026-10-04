@@ -3740,14 +3740,21 @@ test("claim and show identify the terminal ancestor on CLI and MCP", async (t) =
     buildAndInit(engramHome);
     client = new McpClient(engramHome, "ancestor-reader");
     await client.initialize();
+    const captures = [];
     for (const grandparent of [false, true]) {
-      const rootRef = receipt(await client.call("add", {
+      const rootWork = receipt(await client.call("add", {
         title: grandparent ? "Grandparent root" : "Direct parent root",
-      })).work.short_ref;
+      })).work;
+      const rootRef = rootWork.short_ref;
+      const rootIdentity = cliJson(engramHome, "ancestor-reader", "core", "inspect", rootRef).status.work;
+      assert.equal(rootIdentity.short_ref, rootRef);
+      assert.match(rootIdentity.work_id, /^[0-9a-f-]{36}$/u);
       const parent = grandparent
         ? receipt(await client.call("add", { title: "Open parent", under: rootRef, optional: true })).work.short_ref
         : rootRef;
       const child = receipt(await client.call("add", { title: "Stranded child", under: parent, optional: true })).work.short_ref;
+      assert.equal(receipt(await client.call("show", { work_ref: child })).blocking_ancestor, undefined);
+      assert.equal(cliJson(engramHome, "ancestor-reader", "core", "inspect", child).status.blocking_ancestor, undefined);
       receipt(await client.call("claim", { work_ref: rootRef }));
       receipt(await client.call("done", { work_ref: rootRef, summary: "Delivered" }));
       const ancestor = { ref: rootRef, lifecycle: "completed" };
@@ -3757,13 +3764,52 @@ test("claim and show identify the terminal ancestor on CLI and MCP", async (t) =
         assert.deepEqual(shown.blocking_ancestor, ancestor);
         assert.equal(shown.parent_ref, parent);
         assert.equal(shown.parent_lifecycle, grandparent ? "open" : "completed");
-        assert.ok(shown.next.includes(`engram work show ${rootRef}`));
-        assert.ok(shown.next.includes(`engram work update ${child} --detach "Continue as independent work"`));
+        assert.deepEqual(shown.next, [
+          `engram work update ${child} --detach "Continue as independent work"`,
+          `engram work note ${child} "…"`,
+          `engram work show ${rootRef}`,
+          ...(grandparent ? [`engram work show ${parent}`] : []),
+          `engram work show ${child} --history`,
+        ]);
         assert.ok(shown.reminders.includes(`execution blocked by ancestor ${rootRef} (completed)`));
         assert.ok(!shown.reminders.includes("parent completed"));
       }
       const text = cliText(engramHome, "ancestor-reader", "show", child);
       assert.ok(text.includes(`execution blocked by ancestor ${rootRef} (completed)`), text);
+      const richAncestor = {work_id: rootIdentity.work_id, short_ref: rootRef, lifecycle: "completed"};
+      const lists = [];
+      for (const verbose of [false, true]) {
+        const mcp = receipt(await client.call("ls", {blocked: true, verbose}));
+        const cli = cliJson(engramHome, "ancestor-reader", "ls", "--blocked", ...(verbose ? ["--verbose"] : []));
+        for (const listed of [mcp, cli]) {
+          const row = listed.items.find(item => (verbose ? item.work.short_ref : item.ref) === child);
+          assert.ok(row, JSON.stringify(listed));
+          assert.deepEqual(row.blocking_ancestor, ancestor);
+          assert.equal(row.blocking_parent, verbose ? "completed" : undefined);
+        }
+        lists.push({verbose, mcp, cli});
+      }
+      const coreFocus = cliJson(engramHome, "ancestor-reader", "core", "focus", child);
+      const coreInspect = cliJson(engramHome, "ancestor-reader", "core", "inspect", child);
+      for (const view of [coreFocus, coreInspect]) {
+        assert.deepEqual(view.status.blocking_ancestor, richAncestor);
+        assert.equal(view.status.blocking_parent, "completed");
+      }
+      const coreNext = cliJson(engramHome, "ancestor-reader", "core", "next", "--sections", "focus,catalog", "--blocked-only");
+      assert.deepEqual(coreNext.focus.status.blocking_ancestor, richAncestor);
+      const catalogChild = coreNext.catalog.items.find(item => item.work.short_ref === child);
+      assert.ok(catalogChild);
+      assert.deepEqual(catalogChild.blocking_ancestor, richAncestor);
+      assert.equal(catalogChild.blocking_parent, "completed");
+      const mcpNextResponse = await client.call("next", {peek: true, verbose: true});
+      const mcpNext = receipt(mcpNextResponse);
+      const cliNext = cliJson(engramHome, "ancestor-reader", "next", "--peek", "--verbose");
+      for (const next of [mcpNext, cliNext]) {
+        assert.deepEqual(next.focus.status.blocking_ancestor, richAncestor);
+      }
+      assert.equal(receipt(await client.call("show", {work_ref: rootRef})).blocking_ancestor, undefined);
+      assert.equal(cliJson(engramHome, "ancestor-reader", "core", "inspect", rootRef).status.blocking_ancestor, undefined);
+      captures.push({grandparent, ancestor, richAncestor, show, cliShow, lists, coreFocus, coreInspect, coreNext, mcpNextResponse, cliNext});
       const history = receipt(await client.call("show", { work_ref: rootRef })).history;
       const mcpError = structuredError(await client.call("claim", { work_ref: child }), "work_invalid");
       const cliResult = cliWord(engramHome, "ancestor-reader", "claim", child, "--json");
@@ -3778,6 +3824,16 @@ test("claim and show identify the terminal ancestor on CLI and MCP", async (t) =
       }
       assert.deepEqual(receipt(await client.call("show", { work_ref: rootRef })).history, history);
       assert.equal(receipt(await client.call("show", { work_ref: child })).holder, undefined);
+    }
+    if (process.env.ENGRAM_CAPTURE_ANCESTOR_RECEIPT === "1") {
+      const directory = join(root, "target", "tmp", `ancestor-reader-capture-${Date.now()}`);
+      mkdirSync(directory, {recursive: true});
+      const executable = process.platform === "win32" ? `${binary}.exe` : binary;
+      const readiness = spawnSync(binary, ["--home", engramHome, "readiness", "--json"], {cwd: root, encoding: "utf8"});
+      assert.equal(readiness.status, 0, readiness.stderr);
+      const path = join(directory, "payload.json");
+      writeFileSync(path, JSON.stringify({executable, executable_sha256: createHash("sha256").update(readFileSync(executable)).digest("hex"), readiness: JSON.parse(readiness.stdout), captures}, null, 2));
+      console.error(`Ancestor reader capture: ${path}`);
     }
   } finally {
     try { if (client) await client.close(); }

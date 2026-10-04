@@ -675,13 +675,30 @@ Rules that matter:
 - `show CHILD` names its direct parent with `parent_ref`, `parent_title`, and
   `parent_lifecycle`; `status.work.child_requirement` is always `required` or
   `optional` for a child. Text includes `parent: REF "title" (lifecycle),
-  required|optional` and `next` offers `engram work show PARENT`. This relationship
+  required|optional` and `next` offers `engram work show PARENT` once, including
+  when that parent is also the blocking ancestor. Admitted recovery remains
+  first and history navigation follows parent inspection. This relationship
   survives acceptance/note trimming. Roots print `parent: root` and omit
   parent fields and child requirement. The safe focus read loads one bounded
   parent row in its existing snapshot; its private carrier does not change the
   ambient/core wire. CLI JSON and MCP agree.
-- Open work blocked by a non-open ancestor exposes `blocking_ancestor: { ref,
-  lifecycle }` in show and list JSON. Direct parent fields remain separate.
+- Open work blocked by a non-open ancestor exposes `blocking_ancestor` with
+  deliberately different shapes across receipts:
+
+  | Receipt | Ancestor fields |
+  | --- | --- |
+  | `show`, compact and verbose native `ls`, refusal `details.blocking_ancestor` | `{ ref, lifecycle }` |
+  | Core `focus`/`inspect`, core `next` focus and catalog, verbose native `next` focus | `{ work_id, short_ref, lifecycle }` |
+
+  `work_id` is the typed ancestor identity; `short_ref` and `ref` name that same
+  ancestor. Native verbose `ls` keeps the compact ancestor object even though
+  its work row includes raw identity. This is a deliberate receipt distinction,
+  not a global confidentiality boundary. The nearest non-open ancestor is
+  selected, including a proposed ancestor. The catalog's `blocking_parent`
+  is that ancestor's lifecycle, not necessarily the direct parent's lifecycle.
+  Direct parent fields remain separate. Roots, closed items and items with
+  all ancestors open omit `blocking_ancestor`; independent blockers and
+  prerequisites do not manufacture an ancestor.
   Claim keeps the `work_invalid` code and adds `details.blocking_ancestor`,
   with `show CHILD` and `show ANCESTOR` navigation. Execution stays refused;
   only the existing detach admission supplies a detach command in show.

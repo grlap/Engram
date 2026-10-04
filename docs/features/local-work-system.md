@@ -1966,6 +1966,15 @@ ancestor by ref and lifecycle and offer the exact detach command only when
 currently admitted. `show` preserves the direct parent's ref, title and
 lifecycle separately from `blocking_ancestor: { ref, lifecycle }`; an open
 direct parent is never labeled completed because its root is completed.
+The native show and both native list modes use that compact ancestor object;
+core focus/inspect, core next focus/catalog and verbose native next focus retain
+`{ work_id, short_ref, lifecycle }`. These identify the same nearest non-open
+ancestor, including one still proposed. The catalog's `blocking_parent` holds
+that ancestor's lifecycle rather than a direct-parent relationship. Roots and
+closed items omit the ancestor, as do items whose ancestors are all open.
+When the blocking ancestor is the direct parent, show offers its inspection
+command once, after admitted recovery and before history navigation. A distinct
+direct parent and blocking ancestor each retain their own inspection command.
 Claim refuses with `work_invalid`, typed `details.blocking_ancestor`, and
 commands to show the affected item and ancestor. Independent blockers and
 prerequisites remain separate; a root-execution generation barrier with all

@@ -1038,9 +1038,10 @@ impl AgentVerbs {
         let mut guidance = self.guidance(view, "show", now);
         if let Some(parent) = &view.parent {
             // Keep actionable recovery first; parent navigation precedes optional history.
-            guidance
-                .next
-                .push(format!("engram work show {}", parent.short_ref));
+            let command = format!("engram work show {}", parent.short_ref);
+            if !guidance.next.contains(&command) {
+                guidance.next.push(command);
+            }
         }
         if view.history.total + view.restored_history.total > 0 {
             guidance.next.push(format!(

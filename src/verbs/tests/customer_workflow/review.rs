@@ -296,6 +296,86 @@ fn child_request(parent: &crate::WorkItem) -> crate::DecomposeWorkRequest {
 }
 
 #[test]
+fn ancestor_receipts_keep_proposed_lifecycle_and_distinct_native_core_shapes() {
+    let (directory, verbs, path, project) = fixture();
+    let root = add(&verbs, "Open root", None, false, 0);
+    let parent_ref = add(&verbs, "Proposed parent", Some(&root), true, 1);
+    let child = add(&verbs, "Open child", Some(&parent_ref), true, 2);
+    let mut document = snapshot(&path, &project, &root);
+    let parent = document
+        .body
+        .items
+        .iter_mut()
+        .find(|item| item.short_ref == parent_ref)
+        .expect("parent");
+    parent.lifecycle = WorkLifecycle::Proposed;
+    let parent_id = parent.work_id;
+    document.manifest.body_sha256 = crate::CanonicalObject::freeze(&document.body)
+        .expect("body")
+        .key()
+        .clone();
+    let (restored, _store, _path) = load(directory.path(), &document);
+    let compact = serde_json::json!({"ref": parent_ref, "lifecycle": "proposed"});
+    let rich = serde_json::json!({
+        "work_id": parent_id, "short_ref": parent_ref, "lifecycle": "proposed"
+    });
+    let shown = restored.show(&child, at(102)).expect("child");
+    assert_eq!(shown.value["blocking_ancestor"], compact);
+    assert_eq!(shown.value["parent_lifecycle"], "proposed");
+    assert!(
+        !shown
+            .next
+            .iter()
+            .any(|command| command.contains("--detach"))
+    );
+    let core = restored
+        .service
+        .inspect_work(&child, at(102))
+        .expect("core");
+    let core = serde_json::to_value(core).expect("JSON");
+    assert_eq!(core["status"]["blocking_ancestor"], rich);
+    assert_eq!(core["status"]["blocking_parent"], "proposed");
+    for verbose in [false, true] {
+        let listed = restored
+            .ls(
+                &LsInput {
+                    blocked: true,
+                    verbose,
+                    ..LsInput::default()
+                },
+                at(102),
+            )
+            .expect("list");
+        let row = listed.value["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .find(|row| {
+                if verbose {
+                    row["work"]["short_ref"] == child
+                } else {
+                    row["ref"] == child
+                }
+            })
+            .expect("child row");
+        assert_eq!(row["blocking_ancestor"], compact);
+        if verbose {
+            assert_eq!(row["blocking_parent"], "proposed");
+        } else {
+            assert!(row.get("blocking_parent").is_none());
+        }
+    }
+    assert!(
+        restored
+            .show(&root, at(102))
+            .expect("root")
+            .value
+            .get("blocking_ancestor")
+            .is_none()
+    );
+}
+
+#[test]
 fn phoenix_proposed_parent_refusal_names_inspection_not_terminal_followup() {
     let (directory, verbs, path, project) = fixture();
     let work = add(&verbs, "Proposed parent", None, false, 0);
