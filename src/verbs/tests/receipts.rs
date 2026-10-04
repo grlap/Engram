@@ -137,6 +137,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
             participated: (5..10).map(row).collect(),
             assigned_omitted: 2,
             participated_omitted: 3,
+            ..WorkDiscoveryView::default()
         },
         focus: None,
         held: Vec::new(),

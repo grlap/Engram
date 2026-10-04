@@ -30,6 +30,7 @@ mod remaining_children;
 mod response_budget;
 mod review;
 mod status_resume;
+mod stranded_children;
 mod terminal_safety;
 mod unlinked_before_seal;
 mod verification_assessment;

@@ -3441,6 +3441,71 @@ test("full contract text round-trips through CLI and MCP show", async (t) => {
   }
 });
 
+test("next discovers never-read stranded children with bounded CLI and MCP remedies", async (t) => {
+  const engramHome = fixtureHome("engram-stranded-next-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const parent = cliJson(engramHome, "writer", "add", "Parent").work.short_ref;
+    const children = Array.from({length: 8}, (_, index) =>
+      cliJson(engramHome, "writer", "add", `Follow-up ${index}`, "--under", parent, "--optional").work.short_ref);
+    client = new McpClient(engramHome, "participant");
+    await client.initialize();
+    receipt(await client.call("claim", {work_ref: parent}));
+    receipt(await client.call("done", {work_ref: parent, summary: "Delivered parent"}));
+    const captures = [];
+    // This session has never shown, focused, claimed, or noted any child.
+    for (const verbose of [false, true]) {
+      for (const peek of [true, false, true]) {
+        const mcp = receipt(await client.call("next", {peek, verbose}));
+        const cli = cliJson(engramHome, "participant", "next", ...(peek ? ["--peek"] : []), ...(verbose ? ["--verbose"] : []));
+        assert.deepEqual(mcp.stranded_children, cli.stranded_children);
+        assert.equal(mcp.stranded_children.length, 5);
+        assert.equal(mcp.stranded_children_omitted, 3);
+        assert.equal(mcp.stranded_children_next, "engram work ls --blocked");
+        assert.deepEqual(mcp.held, []);
+        const focus = verbose ? mcp.focus.status.work.short_ref : mcp.focus.ref;
+        assert.equal(focus, parent);
+        for (const row of mcp.stranded_children) {
+          assert.ok(children.includes(row.ref));
+          assert.equal(row.parent_ref, parent);
+          assert.equal(row.child_requirement, "optional");
+          assert.equal(row.blocked_reason, `parent ${parent} is completed; continue as independent work`);
+          assert.equal(row.remedy, `engram work update ${row.ref} --detach "Continue as independent work"`);
+        }
+        assert.ok(Buffer.byteLength(JSON.stringify(mcp)) < 12 * 1024);
+        const text = cliText(engramHome, "participant", "next", "--peek");
+        assert.ok(Buffer.byteLength(text) < 12 * 1024);
+        assert.ok(text.endsWith("\n"));
+        assert.ok(text.includes("(3 more stranded children not shown)"));
+        assert.ok(text.includes(mcp.stranded_children[0].remedy));
+        captures.push({peek, verbose, mcp, cli, text});
+      }
+    }
+    const before = cliJson(engramHome, "writer", "show", parent).history;
+    const child = captures[0].mcp.stranded_children[0].ref;
+    const detached = receipt(await client.call("update", {work_ref: child, action: "detach", reason: "Continue as independent work"}));
+    assert.notEqual(detached.receipt.work_ref, child);
+    const after = receipt(await client.call("next", {peek: true}));
+    assert.ok(!after.stranded_children.some(row => row.ref === child));
+    assert.equal(after.stranded_children_omitted, 2);
+    assert.deepEqual(cliJson(engramHome, "writer", "show", parent).history, before);
+    if (process.env.ENGRAM_CAPTURE_STRANDED_RECEIPT === "1") {
+      const directory = join(root, "target", "tmp", `stranded-reader-capture-${Date.now()}`);
+      mkdirSync(directory, {recursive: true});
+      const executable = process.platform === "win32" ? `${binary}.exe` : binary;
+      const readiness = spawnSync(binary, ["--home", engramHome, "readiness", "--json"], {cwd: root, encoding: "utf8"});
+      assert.equal(readiness.status, 0, readiness.stderr);
+      const path = join(directory, "payload.json");
+      writeFileSync(path, JSON.stringify({executable, executable_sha256: createHash("sha256").update(readFileSync(executable)).digest("hex"), readiness: JSON.parse(readiness.stdout), parent, children, captures, detached, after}, null, 2));
+      console.error(`Stranded reader capture: ${path}`);
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("detach exposes the same remedy and independent root through MCP", async (t) => {
   const engramHome = fixtureHome("engram-mcp-detach-", t);
   let client;

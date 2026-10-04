@@ -72,6 +72,9 @@ is the form of CLI `ls --search --all`.
 `next` with `peek: true` (`engram work next --peek`) reads orientation;
 ordinary `next` advances delivery and is a separate action.
 Inspect held and assigned work, then ready candidates with `show REF`.
+`next` may also name stranded children beneath completed work this session
+participated in. Read each blocked reason and its remedy; detach is suggested
+only when admitted at that read. This advice changes neither focus nor claims.
 Read the item's full acceptance and status before `claim REF` and execution.
 For a lapsed claim, inspect the offered recovery command and record its reason.
 

@@ -1101,6 +1101,28 @@ This is asserted context, not authenticated identity. Terminal rendering escapes
 controls and collapses whitespace to one line per discovery row; structured
 values retain their bounded content.
 
+`next` also shows `stranded_children`: currently Open direct required or
+optional children of Completed parents in which the calling session
+participated. Canonical events, notes and observations establish participation;
+restored history retains the original session attribution, never the loader's.
+No prior child read or claim is needed. Each advisory row carries `ref`,
+`parent_ref`, `child_requirement`, a 192-byte bounded `title`, `blocked_reason`
+and an untruncated `remedy`. Detach is offered only when the existing detach
+admission permits it at this snapshot. Otherwise the row names the current
+obstacle and its remedy, such as clearing an exact blocker, removing an
+incomplete prerequisite, or inspecting the child or an open descendant.
+Mutation rechecks admission; this advice grants no claim or authority.
+
+The group selects at most five distinct children in parent-id then child-id
+order. `stranded_children_omitted` is the exact nonzero remainder, including
+whole rows removed for byte fit; `stranded_children_next` then names
+`engram work ls --blocked`, a broader current-state listing. The count and
+navigation remain when no row fits. Empty arrays and zero counts are absent.
+This group uses the existing `participated` core section selection and shares
+the advisory snapshot and final byte ceiling of the other discovery groups.
+Changing a child or reopening its parent is reflected by the next read;
+discovery never selects focus, claims work, or changes stored delivery bytes.
+
 Discovery first selects Open candidates with indexed assignment/claim filters,
 then probes their note, event, and run-feed bindings. Unrelated closed history
 is not scanned for JSON payloads. Latest positions include work events, all note

@@ -42,6 +42,7 @@ use super::{WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT, WorkEven
 mod tests;
 
 mod ancestor;
+mod stranded;
 use ancestor::{parent_execution_guidance, projected_blocking_ancestor};
 
 mod catalog;

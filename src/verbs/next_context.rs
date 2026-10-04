@@ -208,6 +208,7 @@ impl Context {
         lines: &mut Vec<String>,
         discovery: &WorkDiscoveryView,
     ) {
+        super::receipts::append_stranded_children_lines(lines, discovery);
         for (name, rows, omitted) in [
             ("assigned", &self.assigned, discovery.assigned_omitted),
             (

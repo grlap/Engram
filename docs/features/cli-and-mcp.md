@@ -595,6 +595,20 @@ Rules that matter:
   not authenticated identity. This is recent-work discovery, not a review
   obligation or claim; keep owed decisions on a claimed coordination item.
   See the [resume discovery contract](local-work-system.md#agent-native-protocol).
+- `next` and `next --peek` also show `stranded_children`, at most five Open
+  direct children beneath Completed parents in which this session participated,
+  even without a prior child read or claim. Rows contain `{ref, parent_ref,
+  child_requirement, title, blocked_reason, remedy}`. The remedy is the
+  currently admitted detach command, or the current detach obstacle's exact
+  remedy. Restored history attributes participation to its original session.
+  `stranded_children_omitted` counts all unshown rows, including whole rows
+  removed to fit the strict 12 KiB JSON and terminal-text budgets. When rows
+  are omitted, `stranded_children_next` provides the broader
+  `engram work ls --blocked` listing, even if zero rows fit. Empty arrays and
+  zero counts are absent. This snapshot advice never changes focus or claims;
+  mutation rechecks its current admission. Core callers select it with the
+  existing `participated` section. See the
+  [resume discovery contract](local-work-system.md#agent-native-protocol).
 - `update CHILD --detach "why"` (MCP `update { work_ref: CHILD, action:
   "detach", reason: "why" }`) atomically creates an independent root and
   supersedes an Open child stranded beneath a terminal ancestor. It copies

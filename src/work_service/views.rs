@@ -119,6 +119,12 @@ impl WorkReadyNavigation {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct WorkDiscoveryView {
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stranded_children: Vec<WorkStrandedChild>,
+    #[serde(skip_serializing_if = "discovery_count_is_zero")]
+    pub stranded_children_omitted: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stranded_children_next: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub assigned: Vec<WorkDiscoverySummary>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub participated: Vec<WorkDiscoverySummary>,
@@ -144,8 +150,26 @@ impl WorkDiscoveryView {
             self.assigned_omitted += 1;
             return true;
         }
+        if self.stranded_children.pop().is_some() {
+            self.stranded_children_omitted += 1;
+            self.stranded_children_next = Some("engram work ls --blocked".into());
+            return true;
+        }
         false
     }
+}
+
+/// Snapshot advice only: neither a claim nor permission to execute.
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkStrandedChild {
+    #[serde(rename = "ref")]
+    pub work_ref: String,
+    pub parent_ref: String,
+    pub child_requirement: ChildRequirement,
+    pub title: String,
+    pub blocked_reason: String,
+    /// A detach intent or an admitted remedy for the current detach refusal.
+    pub remedy: String,
 }
 
 #[allow(

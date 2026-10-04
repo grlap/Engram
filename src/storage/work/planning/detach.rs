@@ -23,8 +23,8 @@ mod tests;
 
 impl SqliteStore {
     /// Read-only diagnostic for explicit post-completion follow-up guidance.
-    /// Catalog/next keep their cheaper projected advisory; mutation still
-    /// rechecks this exact admission under its own transaction.
+    /// Stranded-child discovery uses this admission on its advisory snapshot;
+    /// mutation rechecks it under its own transaction.
     pub(crate) fn check_work_detach_admission(
         &self,
         work_id: crate::WorkId,

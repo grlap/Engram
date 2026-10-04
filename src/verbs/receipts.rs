@@ -1411,6 +1411,7 @@ pub(super) fn append_discovery_lines(
     lines: &mut Vec<String>,
     discovery: &crate::work_service::WorkDiscoveryView,
 ) {
+    append_stranded_children_lines(lines, discovery);
     for (name, rows, omitted) in [
         ("assigned", &discovery.assigned, discovery.assigned_omitted),
         (
@@ -1428,6 +1429,42 @@ pub(super) fn append_discovery_lines(
         }
         if omitted > 0 {
             lines.push(format!("  ({omitted} more {name} not shown)"));
+        }
+    }
+}
+
+pub(super) fn append_stranded_children_lines(
+    lines: &mut Vec<String>,
+    discovery: &crate::work_service::WorkDiscoveryView,
+) {
+    if discovery.stranded_children.is_empty() && discovery.stranded_children_omitted == 0 {
+        return;
+    }
+    lines.push(format!(
+        "stranded children ({} shown):",
+        discovery.stranded_children.len()
+    ));
+    for row in &discovery.stranded_children {
+        lines.push(format!(
+            "  {} \"{}\" under {} ({}): {}",
+            row.work_ref,
+            terminal_safe_line(&row.title),
+            row.parent_ref,
+            match row.child_requirement {
+                crate::ChildRequirement::Required => "required",
+                crate::ChildRequirement::Optional => "optional",
+            },
+            terminal_safe_line(&row.blocked_reason)
+        ));
+        lines.push(format!("    {}", terminal_safe_line(&row.remedy)));
+    }
+    if discovery.stranded_children_omitted > 0 {
+        lines.push(format!(
+            "  ({} more stranded children not shown)",
+            discovery.stranded_children_omitted
+        ));
+        if let Some(command) = &discovery.stranded_children_next {
+            lines.push(format!("  more blocked work: {command}"));
         }
     }
 }

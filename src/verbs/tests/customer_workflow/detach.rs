@@ -478,14 +478,15 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
         ])
     );
     assert_eq!(shown.value["next"][0], command);
-    // Reading the child does not steer ambient next away from the completed
-    // parent. Its own show and blocked listing retain the explicit remedy.
+    // The advisory retains the child's remedy without steering focus away
+    // from the completed parent.
     let next = verbs.next(&NextInput::default(), at(5)).expect("next");
     assert_eq!(next.value["focus"]["ref"], parent);
     assert_eq!(next.value["focus"]["state"], "completed");
     assert_eq!(next.value["reminders"], serde_json::json!([]));
     assert!(!next.next.contains(&command));
-    assert!(!next.text().contains(&command));
+    assert!(next.text().contains(&command));
+    assert_eq!(next.value["stranded_children"][0]["remedy"], command);
     // Explicit selection remains supported and retains the original focused
     // detach guidance; only implicit read-side steering is removed.
     verbs

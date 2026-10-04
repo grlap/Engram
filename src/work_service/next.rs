@@ -499,6 +499,42 @@ impl LocalWorkService {
                 }
             }
         }
+        if sections.contains(&WorkNextSection::Participated) {
+            let page = store.stranded_work_children(&self.project_id, &self.session_id)?;
+            discovery.stranded_children_omitted = page.omitted;
+            discovery.stranded_children_next =
+                (page.omitted > 0).then(|| "engram work ls --blocked".into());
+            for (child, parent) in page.items {
+                let (blocked_reason, remedy) =
+                    match store.check_work_detach_admission(child.work_id, now) {
+                        Ok(()) => (
+                            format!(
+                                "parent {} is completed; continue as independent work",
+                                parent.short_ref
+                            ),
+                            format!(
+                                "engram work update {} --detach \"Continue as independent work\"",
+                                child.short_ref
+                            ),
+                        ),
+                        Err(StoreError::WorkDetachRefused { reason, remedy, .. }) => (
+                            format!("parent {} is completed; {reason}", parent.short_ref),
+                            remedy,
+                        ),
+                        Err(error) => return Err(error),
+                    };
+                discovery
+                    .stranded_children
+                    .push(super::views::WorkStrandedChild {
+                        work_ref: child.short_ref,
+                        parent_ref: parent.short_ref,
+                        child_requirement: child.child_requirement,
+                        title: compact_text_to(&child.title, 192),
+                        blocked_reason,
+                        remedy,
+                    });
+            }
+        }
         let agent_lists = agent_options
             .map(|options| self.agent_next_lists(store, options.list_limit, options.verbose, now))
             .transpose()?;
