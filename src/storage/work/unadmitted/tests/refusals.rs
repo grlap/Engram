@@ -386,3 +386,116 @@ fn the_closing_sighting_must_agree_with_the_root_basis() {
     );
     observe(&mut fixture, stated_ended, 8).expect("an ended generation agrees");
 }
+
+/// The endpoint's own invalid-request refusal, which its host handles as
+/// definitive, carrying the text rule's reason.
+fn source_text_refused(error: &StoreError) -> bool {
+    matches!(
+        error,
+        StoreError::ExecutionObservationInvalid(reason)
+            if reason.contains("control or bidirectional formatting character")
+    )
+}
+
+// New host source text holding a control or bidirectional formatting
+// character is refused whole, naming the field and recording nothing, in
+// every place the request carries a workspace or a revision; an observed
+// check's source and a lone watcher change included. Other format
+// characters and Windows extended paths are kept.
+#[test]
+fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
+    let mut fixture = fixture();
+    let base = inter_turn_change(&fixture, "source-text");
+    let unsafe_text = "rev\u{202E}b";
+    let mut cases: Vec<(&str, &str, ExecutionObserveInput)> = Vec::new();
+    {
+        let mut input = base.clone();
+        input.occurrence = ObservedOccurrence::InterTurnChange {
+            source_change: content_change("rev-a", unsafe_text),
+        };
+        cases.push((
+            "sighting revision",
+            "source_change.sighting.source_basis.source_revision",
+            input,
+        ));
+    }
+    {
+        let mut input = base.clone();
+        input.occurrence = ObservedOccurrence::InterTurnChange {
+            source_change: content_change("rev\u{1}a", "rev-b"),
+        };
+        cases.push((
+            "baseline revision",
+            "source_change.baseline.source_revision",
+            input,
+        ));
+    }
+    {
+        let mut input = base.clone();
+        input.occurrence = ObservedOccurrence::InterTurnChange {
+            source_change: ObservedSourceChange::WatcherOnly {
+                workspace_id: "workspace\u{061C}A".into(),
+                observed_at: at(5),
+            },
+        };
+        cases.push(("watcher workspace", "source_change.workspace_id", input));
+    }
+    {
+        let mut input = base.clone();
+        let mut check = passed_check("checked");
+        check.source_basis = Some(ExecutionSourceBasis {
+            workspace_id: "workspace\u{2066}A".into(),
+            source_revision: "rev-b".into(),
+            source_root_generation: None,
+            source_root_state: None,
+        });
+        input.occurrence = ObservedOccurrence::ObservedCheck {
+            host_turn_ref: "turn".into(),
+            check,
+        };
+        cases.push((
+            "observed check workspace",
+            "observed_checks[0].source_basis.workspace_id",
+            input,
+        ));
+    }
+    for (case, field, input) in cases {
+        let before = footprint(&fixture.store);
+        let refused = observe(&mut fixture, input, 7).expect_err(case);
+        assert!(source_text_refused(&refused), "{case}: {refused:?}");
+        assert!(refused.to_string().contains(field), "{case}: {refused}");
+        assert!(
+            !refused
+                .to_string()
+                .chars()
+                .any(crate::domain::is_refused_source_text_char),
+            "{case}: the refused text is echoed"
+        );
+        assert_eq!(footprint(&fixture.store), before, "{case} left effects");
+    }
+
+    // A Windows extended path, a zero-width joiner and a variation selector
+    // are kept byte for byte.
+    let kept = "\\\\?\\C:\\work\u{200D}tree\u{FE0F}";
+    let mut input = inter_turn_change(&fixture, "kept-text");
+    let mut change = content_change("rev-a", "rev-b");
+    if let ObservedSourceChange::ContentComparison {
+        workspace_id,
+        baseline,
+        sighting,
+    } = &mut change
+    {
+        *workspace_id = kept.into();
+        baseline.workspace_id = kept.into();
+        sighting.source_basis.workspace_id = kept.into();
+    }
+    input.occurrence = ObservedOccurrence::InterTurnChange {
+        source_change: change,
+    };
+    let receipt = observe(&mut fixture, input, 7).expect("kept text records");
+    let recorded = stored(&fixture.store, &receipt.observation);
+    let RecordedOccurrence::InterTurnChange { source_change } = &recorded.occurrence else {
+        panic!("an inter-turn change: {recorded:?}");
+    };
+    assert_eq!(source_change.workspace_id(), kept);
+}

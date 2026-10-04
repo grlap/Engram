@@ -1124,6 +1124,14 @@ pub enum StoreError {
     InvalidControlSession(String),
     #[error("named-root binding refused: {0}")]
     NamedRootBindingRefused(String),
+    /// New host-supplied source text (a workspace id or source revision)
+    /// holds a control character or a bidirectional formatting control.
+    /// The whole request is refused and nothing is recorded; the field is
+    /// named, never echoed.
+    #[error(
+        "host source text refused: {field} holds a control or bidirectional formatting character"
+    )]
+    SourceBasisTextRefused { field: String },
     /// The requested run and claim are unknown or do not belong together;
     /// never a named-root state.
     #[error("named-root read refused: {0}")]

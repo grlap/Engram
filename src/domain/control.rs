@@ -492,6 +492,27 @@ pub struct ExecutionSourceBasis {
     pub source_root_state: Option<SourceRootState>,
 }
 
+/// Whether `character` is refused in NEW host-supplied source text (a
+/// workspace id or source revision): a C0 or C1 control character, or a
+/// character of Unicode's `Bidi_Control` property. Other format characters,
+/// such as the zero-width joiners, variation selectors and the soft hyphen,
+/// stay accepted, and accepted text is kept byte for byte. Text already
+/// stored is read as stored and never checked against this.
+#[must_use]
+pub fn is_refused_source_text_char(character: char) -> bool {
+    character.is_control()
+        || matches!(
+            character,
+            '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+        )
+}
+
+/// Whether `text` holds a character [`is_refused_source_text_char`] refuses.
+#[must_use]
+pub fn holds_refused_source_text(text: &str) -> bool {
+    text.chars().any(is_refused_source_text_char)
+}
+
 /// Host-supplied portion of one execution observation recorded at turn
 /// checkpoint. Storage supplies the bound run, claim, session, grant, actor,
 /// and recording timestamp.

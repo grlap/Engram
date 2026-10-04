@@ -431,7 +431,17 @@ change and the core recognised a repeated state.
 `source_revision` is a host-computed fingerprint of the complete relevant
 content state, including committed and dirty content. `workspace_id` is the
 host-recorded workspace identity, compared byte-for-byte; Engram never
-derives it from path text. For runs without a named-root event, equal revisions
+derives it from path text. New host source text, a `workspace_id` or
+`source_revision` on an observation or an environment, may not hold a C0 or
+C1 control character or a character of Unicode's `Bidi_Control` property
+(U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069). Such a checkpoint is
+refused whole as `source_basis_text_refused`, naming the field by its
+position and never echoing the text, and records nothing; the host resends
+what it can without that basis. Other format characters, such as the
+zero-width joiners, variation selectors and the soft hyphen, and Windows
+extended paths are kept byte for byte. The rule is checked after an exact
+retry would replay, so a checkpoint admitted before it still replays, and
+text already stored keeps reading as stored. For runs without a named-root event, equal revisions
 in different workspaces retain the earlier comparison rule. After a claim has
 named a root, the optional positive `source_root_generation` and
 `source_root_state` (`named` or `ended`) travel together on a sighting. They
@@ -484,7 +494,14 @@ is recorded, and the sighting is unbound. The event's run-feed position
 orders durable events; `named_at` is audit time, not an ordering. A
 duplicate, stale generation, invalid lifecycle transition, wrong
 session or malformed field returns `named_root_binding_refused` with the
-reason; ordinary missing or wrong routing credentials retain their existing
+reason. Generation history is never reset by a release: a re-claimed claim
+names only a generation larger than any it recorded before. A new
+`workspace_id` holding a control or bidirectional formatting character, as
+the checkpoint rule above defines it, is also refused as
+`named_root_binding_refused`, the reason naming `workspace_id`, since the
+host treats that code as definitive (an `ended` request repeats the stored
+workspace and is not checked);
+ordinary missing or wrong routing credentials retain their existing
 `control_session_not_bound`, `control_session_token_mismatch`, and
 `control_connection_superseded` codes. The host is the identity and policy
 enforcement point; the routing token alone is not cryptographic authentication.
@@ -899,7 +916,10 @@ depth (including inside `root_basis.state` and `claimed_actor`) or an
 unknown variant is refused as `invalid_request`; a decoded request that
 breaks a rule above, an asserted actor with any assurance but `asserted` or
 an oversized field, and a receipt over 16 KiB are refused as
-`execution_observation_invalid`; a binding, cut or root basis the store
+`execution_observation_invalid`, as is a new workspace id or source
+revision, in a source change or an observed check's source, holding a
+control or bidirectional formatting character, the reason naming the field;
+a binding, cut or root basis the store
 does not hold as `execution_observation_basis_mismatch`; and an
 `account_if_eligible` basis that does not name the project's current policy
 epoch, policy and obligation rule set as

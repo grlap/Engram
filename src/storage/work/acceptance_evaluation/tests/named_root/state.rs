@@ -2,7 +2,10 @@
 //! session status and in a turn's begin receipt.
 
 use super::*;
-use crate::domain::NamedRootState;
+use crate::domain::{
+    EnvironmentComponents, EnvironmentEvidenceInput, ExecutionObservationInput, NamedRootState,
+    holds_refused_source_text, is_refused_source_text_char,
+};
 
 /// The claim's named-root state as Engram derives it now.
 fn state(store: &SqliteStore, claim: &WorkClaim) -> NamedRootState {
@@ -743,4 +746,357 @@ fn every_decoded_root_state_refuses_what_its_state_does_not_name() {
         receipt
     );
     assert_eq!(stored_result(&fixture.store), recorded);
+}
+
+// New host source text, a workspace id or a source revision, refuses a
+// control character or a bidirectional formatting control on every admitted
+// host path, and root-generation history stays monotone across a release.
+/// Every C0 and C1 control character and every character of Unicode's
+/// `Bidi_Control` property is refused; other format characters and Windows
+/// path spellings are not.
+#[test]
+fn the_refused_set_is_the_controls_and_the_bidi_controls() {
+    let bidi_controls = [
+        '\u{061C}', '\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}',
+        '\u{202E}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
+    ];
+    for character in ('\u{0}'..='\u{1F}')
+        .chain(['\u{7F}'])
+        .chain('\u{80}'..='\u{9F}')
+        .chain(bidi_controls)
+    {
+        assert!(is_refused_source_text_char(character), "{character:?}");
+    }
+    for character in [
+        ' ',
+        '~',
+        '\u{A0}',
+        '\u{AD}',
+        '\u{200B}',
+        '\u{200C}',
+        '\u{200D}',
+        '\u{2060}',
+        '\u{FE0F}',
+        '\u{FEFF}',
+        '\u{1F600}',
+    ] {
+        assert!(!is_refused_source_text_char(character), "{character:?}");
+    }
+    for kept in [
+        "\\\\?\\C:\\work",
+        "\\\\?\\UNC\\server\\share\\work",
+        "C:\\work\\tree",
+        "content-v1:0123abcd",
+        "work\u{200D}tree\u{FE0F}",
+    ] {
+        assert!(!holds_refused_source_text(kept), "{kept:?}");
+    }
+}
+
+fn observation(host: &HostSession, workspace: &str, revision: &str) -> ExecutionObservationInput {
+    ExecutionObservationInput {
+        observation_id: host.key("source-text"),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"source-text action"),
+        effect: EffectClass::MutateLocal,
+        outcome: ExecutionOutcome::Succeeded,
+        source_changed: false,
+        reported_source_change: None,
+        source_basis: Some(ExecutionSourceBasis {
+            workspace_id: workspace.into(),
+            source_revision: revision.into(),
+            source_root_generation: None,
+            source_root_state: None,
+        }),
+        observed_at: Some(at(31)),
+    }
+}
+
+fn environment(workspace: &str, component_workspace: &str) -> EnvironmentEvidenceInput {
+    let components = EnvironmentComponents {
+        toolchain: "rustc-test".into(),
+        sandbox: None,
+        workspace_id: component_workspace.into(),
+        capability_map_revision: 1,
+    };
+    EnvironmentEvidenceInput {
+        source_basis: ExecutionSourceBasis {
+            workspace_id: workspace.into(),
+            source_revision: "revision-B".into(),
+            source_root_generation: None,
+            source_root_state: None,
+        },
+        environment_fingerprint: CanonicalObject::freeze(&components)
+            .expect("freeze components")
+            .key()
+            .clone(),
+        components: Some(components),
+        observed_at: at(31),
+    }
+}
+
+fn object_count(store: &SqliteStore) -> i64 {
+    store
+        .connection
+        .query_row("SELECT COUNT(*) FROM objects", [], |row| row.get(0))
+        .expect("object count")
+}
+
+/// A turn checkpoint whose observation or environment carries refused
+/// source text is refused whole, naming the field and recording nothing; the
+/// host's resend without that basis checkpoints.
+#[test]
+fn a_checkpoint_refuses_unsafe_source_text_whole_and_admits_the_resend() {
+    let (mut fixture, _work, _claim, mut host) = bound_host();
+    let store = &mut fixture.store;
+    let grant = host.grant(store, &[EffectClass::MutateLocal], true, 30);
+    host.begin(store, &grant, 31);
+    let checkpoint = |store: &mut SqliteStore,
+                      observations: &[ExecutionObservationInput],
+                      environments: &[EnvironmentEvidenceInput],
+                      key: &str| {
+        store.checkpoint_control_turn_with_evidence(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            &grant.grant_id,
+            TurnNextIntent::Continue,
+            observations,
+            &[],
+            environments,
+            key,
+            at(32),
+        )
+    };
+    let cases = [
+        (
+            vec![observation(&host, "workspace\u{202E}B", "revision-B")],
+            Vec::new(),
+            "observations[0].source_basis.workspace_id",
+        ),
+        (
+            vec![observation(&host, "workspace-B", "revision\u{0}B")],
+            Vec::new(),
+            "observations[0].source_basis.source_revision",
+        ),
+        (
+            Vec::new(),
+            vec![environment("workspace\u{2069}B", "workspace\u{2069}B")],
+            "environment_evidence[0].source_basis.workspace_id",
+        ),
+        (
+            Vec::new(),
+            vec![environment("workspace\u{85}B", "workspace\u{85}B")],
+            "environment_evidence[0].source_basis.workspace_id",
+        ),
+    ];
+    for (index, (observations, environments, field)) in cases.into_iter().enumerate() {
+        let before = object_count(store);
+        let refused = checkpoint(
+            store,
+            &observations,
+            &environments,
+            &format!("refused-{index}"),
+        )
+        .expect_err(field);
+        assert!(
+            matches!(&refused, StoreError::SourceBasisTextRefused { field: named } if named == field),
+            "{refused:?}"
+        );
+        assert_eq!(
+            crate::host::store_error_code(&refused),
+            "source_basis_text_refused"
+        );
+        assert_eq!(object_count(store), before, "{field} recorded nothing");
+    }
+    // The observation-only resend under the refused request's own key: a
+    // refusal records no operation under that key, so the resend is a fresh
+    // request, not an idempotency conflict.
+    let mut resend = observation(&host, "workspace-B", "revision-B");
+    resend.source_basis = None;
+    resend.observed_at = None;
+    assert!(matches!(
+        checkpoint(store, &[resend], &[], "refused-0").expect("the resend checkpoints"),
+        ControlTurnCheckpointDecision::Checkpointed { .. }
+    ));
+}
+
+/// Naming a root refuses a workspace with refused text, recording nothing,
+/// and keeps a Windows extended path with a zero-width joiner byte for byte.
+#[test]
+fn naming_a_root_refuses_unsafe_workspace_text_and_keeps_other_text_exact() {
+    let (mut fixture, _work, claim, host) = bound_host();
+    let before = object_count(&fixture.store);
+    let refused = host_binds(
+        &mut fixture.store,
+        &host,
+        &claim,
+        "workspace\u{202D}B",
+        9,
+        NamedRootBindingKind::Bound,
+        11,
+        "name-unsafe",
+        11,
+    )
+    .expect_err("refused text");
+    assert!(
+        matches!(
+            &refused,
+            StoreError::NamedRootBindingRefused(reason)
+                if reason.starts_with("workspace_id holds a control or bidirectional formatting character")
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(object_count(&fixture.store), before);
+    let kept = "\\\\?\\C:\\work\u{200D}tree";
+    host_binds(
+        &mut fixture.store,
+        &host,
+        &claim,
+        kept,
+        9,
+        NamedRootBindingKind::Bound,
+        11,
+        "name-kept",
+        11,
+    )
+    .expect("kept text names the root");
+    let state = crate::storage::work::named_root_state_on(
+        &fixture.store.connection,
+        claim.run_id,
+        claim.claim_id,
+        i64::MAX,
+    )
+    .expect("named-root state");
+    assert!(
+        matches!(&state, NamedRootState::Bound { workspace_id, generation: 9, .. } if workspace_id == kept),
+        "{state:?}"
+    );
+    // Ending a root carries no new host text: it must repeat the stored
+    // workspace, so the text rule does not apply and a mismatch is the
+    // ordinary binding refusal.
+    let ended = host_binds(
+        &mut fixture.store,
+        &host,
+        &claim,
+        "workspace\u{202D}B",
+        9,
+        NamedRootBindingKind::Ended,
+        11,
+        "end-mismatch",
+        12,
+    )
+    .expect_err("an end must repeat the bound workspace");
+    assert!(
+        matches!(ended, StoreError::NamedRootBindingRefused(_)),
+        "{ended:?}"
+    );
+    host_binds(
+        &mut fixture.store,
+        &host,
+        &claim,
+        kept,
+        9,
+        NamedRootBindingKind::Ended,
+        11,
+        "end-kept",
+        12,
+    )
+    .expect("the kept root ends");
+}
+
+/// Root-generation history stays monotone across a claim release: the claim
+/// id is reused after release, so a re-claim may not name the released
+/// generation or an older one again, the released state stays unbound until
+/// a larger generation is named, and the store stays sound.
+#[test]
+fn a_reclaimed_claim_names_only_a_larger_generation_after_its_release() {
+    let (mut fixture, work, claim, host) = bound_host();
+    host_binds(
+        &mut fixture.store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        11,
+        "name-B-9",
+        11,
+    )
+    .expect("host names B at 9");
+    release_runner(&mut fixture, &work, &claim, 20);
+    let current = fixture.store.get_work_item(work.work_id).expect("item");
+    let reclaimed = super::claim(
+        &mut fixture.store,
+        &current,
+        "runner",
+        "reclaim-runner",
+        22,
+        3_600,
+    );
+    assert_eq!(reclaimed.claim_id, claim.claim_id, "the claim id is reused");
+    let state = |store: &SqliteStore| {
+        crate::storage::work::named_root_state_on(
+            &store.connection,
+            reclaimed.run_id,
+            reclaimed.claim_id,
+            i64::MAX,
+        )
+        .expect("named-root state")
+    };
+    let released = state(&fixture.store);
+    assert!(
+        matches!(
+            released,
+            NamedRootState::UnboundByRelease {
+                last_generation: 9,
+                ..
+            }
+        ),
+        "{released:?}"
+    );
+    for (generation, key) in [(9, "rename-B-9"), (5, "rename-B-5")] {
+        let refused = host_binds(
+            &mut fixture.store,
+            &host,
+            &reclaimed,
+            "workspace-B",
+            generation,
+            NamedRootBindingKind::Bound,
+            23,
+            key,
+            23,
+        )
+        .expect_err("a generation no larger than the history is stale");
+        assert!(
+            matches!(refused, StoreError::NamedRootBindingRefused(_)),
+            "{generation}: {refused:?}"
+        );
+        assert_eq!(
+            state(&fixture.store),
+            released,
+            "{generation} binds nothing"
+        );
+    }
+    host_binds(
+        &mut fixture.store,
+        &host,
+        &reclaimed,
+        "workspace-B",
+        10,
+        NamedRootBindingKind::Bound,
+        24,
+        "name-B-10",
+        24,
+    )
+    .expect("a larger generation binds");
+    assert!(
+        matches!(
+            state(&fixture.store),
+            NamedRootState::Bound { generation: 10, .. }
+        ),
+        "the fresh generation binds"
+    );
+    let report = fixture.store.verify_all().expect("doctor");
+    assert!(report.is_healthy(), "{report:?}");
 }

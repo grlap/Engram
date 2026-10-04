@@ -577,7 +577,11 @@ fn the_longest_fields_fit_the_refusal_and_every_show_surface() {
         ),
     )
     .expect("the declared evaluation records");
-    host.basis.workspace_id = format!("w{}w", "\u{1}".repeat(510));
+    // The widest host source text admission now takes: quotes, since a
+    // control or bidirectional formatting character is refused in new host
+    // source text. Stored control-character text keeps reading, and its
+    // width is covered by the done-budget test's direct fixture below.
+    host.basis.workspace_id = format!("w{}w", "\"".repeat(510));
     let long_revision = format!("v{}v", "\\".repeat(510));
     host.report(store, &[(false, Some(long_revision.as_str()))], 30);
 
@@ -771,7 +775,7 @@ fn a_change_in_the_declared_workspace_is_exempt_and_another_workspace_is_named()
 
 // The widest admitted text: a title and attempt key of control characters,
 // sixteen criteria, an undeclared evaluation whose cut revision and the quiet
-// sighting after it are 512 control characters in a 512-byte workspace.
+// sighting after it are 512 escaped characters in a 512-byte workspace.
 // Every show surface still answers within the agent budget.
 #[test]
 fn the_widest_admitted_text_fits_every_show_surface() {
@@ -812,10 +816,13 @@ fn the_widest_admitted_text_fits_every_show_surface() {
             .expect("the claim is held");
     let note = fixture.evidence.clone();
     let mut host = HostSession::bind(store, &work, &claim, 10);
-    host.basis.workspace_id = format!("w{}w", "\u{1}".repeat(510));
+    // Host source text is admitted only without control or bidirectional
+    // formatting characters, so its widest admitted form is escaped quotes
+    // and backslashes.
+    host.basis.workspace_id = format!("w{}w", "\"".repeat(510));
     host.report(
         store,
-        &[(false, Some(format!("a{}a", "\u{1}".repeat(510)).as_str()))],
+        &[(false, Some(format!("a{}a", "\\".repeat(510)).as_str()))],
         20,
     );
     let read = cut(store, &work);
@@ -840,7 +847,7 @@ fn the_widest_admitted_text_fits_every_show_surface() {
     record(store, &request).expect("the undeclared evaluation records");
     host.report(
         store,
-        &[(false, Some(format!("b{}b", "\u{2}".repeat(510)).as_str()))],
+        &[(false, Some(format!("b{}b", "\"".repeat(510)).as_str()))],
         30,
     );
     assert!(status_observation(store, &work).is_some());

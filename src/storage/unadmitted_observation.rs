@@ -219,6 +219,16 @@ impl SqliteStore {
         input
             .validate_shape(now)
             .map_err(StoreError::ExecutionObservationInvalid)?;
+        // New host source text only: a stored record re-validates its shape
+        // without this rule and keeps reading as stored. The endpoint's own
+        // invalid-request code is kept, which the host already handles.
+        for (field, text) in input.source_texts() {
+            if crate::domain::holds_refused_source_text(text) {
+                return Err(StoreError::ExecutionObservationInvalid(format!(
+                    "{field} holds a control or bidirectional formatting character"
+                )));
+            }
+        }
         let idempotency_key = input.idempotency_key.clone();
         if let ObservationPolicyBasis::AccountIfEligible {
             project_policy_epoch,

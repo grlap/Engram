@@ -1387,6 +1387,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidTaskProjection(_)
         | StoreError::InvalidControlSession(_)
         | StoreError::NamedRootBindingRefused(_)
+        | StoreError::SourceBasisTextRefused { .. }
         | StoreError::NamedRootReadRefused(_)
         | StoreError::ExecutionObservationInvalid(_)
         | StoreError::ExecutionObservationBasisMismatch(_)

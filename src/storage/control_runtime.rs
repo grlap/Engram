@@ -90,6 +90,18 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(replay);
         }
+        // Only a new name carries new host text: ending a root repeats the
+        // stored bound workspace byte for byte, so a root named before this
+        // rule can still be ended.
+        // The host treats this endpoint's own refusal code as definitive, so
+        // the text rule keeps it.
+        if kind == super::NamedRootBindingKind::Bound
+            && crate::domain::holds_refused_source_text(workspace_id)
+        {
+            return Err(StoreError::NamedRootBindingRefused(
+                "workspace_id holds a control or bidirectional formatting character".into(),
+            ));
+        }
         if session.phase == SessionPhase::Exited || actor.session_id.as_ref() != Some(session_id) {
             return Err(StoreError::NamedRootBindingRefused(
                 "named-root binding requires an active host session".into(),
@@ -1190,6 +1202,10 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(replay);
         }
+        // Checked after replay, so an exact retry of a checkpoint admitted
+        // before this rule still replays; the whole request is refused and
+        // the host resends what it can without the refused basis.
+        refuse_unsafe_checkpoint_source_text(observations, environment_evidence)?;
         let grant = Self::load_turn_grant(&transaction, session_id, grant_id)?
             .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
         let snapshot = TurnCheckpointSnapshot {
@@ -1669,6 +1685,50 @@ pub(super) fn resolve_verification_environment_on(
         return Err(StoreError::EnvironmentBasisMismatch(hash.to_string()));
     }
     Ok(Some(hash))
+}
+
+/// Refuses NEW host-supplied checkpoint source text holding a control or
+/// bidirectional formatting character, naming the field and never echoing
+/// the text. Only admission calls this: stored producers are re-validated
+/// elsewhere and keep reading as stored.
+fn refuse_unsafe_source_text(text: &str, field: &str) -> Result<(), StoreError> {
+    if crate::domain::holds_refused_source_text(text) {
+        return Err(StoreError::SourceBasisTextRefused {
+            field: field.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn refuse_unsafe_source_basis(
+    basis: &crate::domain::ExecutionSourceBasis,
+    label: &str,
+) -> Result<(), StoreError> {
+    refuse_unsafe_source_text(&basis.workspace_id, &format!("{label}.workspace_id"))?;
+    refuse_unsafe_source_text(&basis.source_revision, &format!("{label}.source_revision"))
+}
+
+/// The turn checkpoint's host source text: each observation's source basis
+/// and each environment's source basis. An environment's component workspace
+/// must equal its source basis workspace, which is checked before this, so
+/// the basis check covers it. Fields are named by position, since the host's
+/// own ids are host text too.
+fn refuse_unsafe_checkpoint_source_text(
+    observations: &[ExecutionObservationInput],
+    environment_evidence: &[EnvironmentEvidenceInput],
+) -> Result<(), StoreError> {
+    for (index, observation) in observations.iter().enumerate() {
+        if let Some(basis) = &observation.source_basis {
+            refuse_unsafe_source_basis(basis, &format!("observations[{index}].source_basis"))?;
+        }
+    }
+    for (index, environment) in environment_evidence.iter().enumerate() {
+        refuse_unsafe_source_basis(
+            &environment.source_basis,
+            &format!("environment_evidence[{index}].source_basis"),
+        )?;
+    }
+    Ok(())
 }
 
 fn validate_execution_source_basis(

@@ -579,6 +579,68 @@ impl ExecutionObserveInput {
     }
 }
 
+impl ExecutionObserveInput {
+    /// Every host-supplied workspace id and source revision the request
+    /// carries, each with the field that holds it, named by position: the
+    /// host's own ids are host text too, so none is used as a label.
+    #[must_use]
+    pub fn source_texts(&self) -> Vec<(String, &str)> {
+        fn basis<'a>(label: &str, basis: &'a ExecutionSourceBasis) -> [(String, &'a str); 2] {
+            [
+                (format!("{label}.workspace_id"), basis.workspace_id.as_str()),
+                (
+                    format!("{label}.source_revision"),
+                    basis.source_revision.as_str(),
+                ),
+            ]
+        }
+        let mut texts = Vec::new();
+        let (source_change, checks): (Option<&ObservedSourceChange>, Vec<&ObservedCheck>) =
+            match &self.occurrence {
+                ObservedOccurrence::UnadmittedTurn {
+                    source_change,
+                    observed_checks,
+                    ..
+                } => (source_change.as_ref(), observed_checks.iter().collect()),
+                ObservedOccurrence::InterTurnChange { source_change } => {
+                    (Some(source_change), Vec::new())
+                }
+                ObservedOccurrence::ObservedCheck { check, .. } => (None, vec![check]),
+            };
+        if let Some(change) = source_change {
+            texts.push((
+                "source_change.workspace_id".to_owned(),
+                change.workspace_id(),
+            ));
+            if let ObservedSourceChange::ContentComparison { baseline, .. } = change {
+                texts.push((
+                    "source_change.baseline.workspace_id".to_owned(),
+                    baseline.workspace_id.as_str(),
+                ));
+                texts.push((
+                    "source_change.baseline.source_revision".to_owned(),
+                    baseline.source_revision.as_str(),
+                ));
+            }
+            if let Some(sighting) = change.sighting() {
+                texts.extend(basis(
+                    "source_change.sighting.source_basis",
+                    &sighting.source_basis,
+                ));
+            }
+        }
+        for (index, check) in checks.into_iter().enumerate() {
+            if let Some(source_basis) = &check.source_basis {
+                texts.extend(basis(
+                    &format!("observed_checks[{index}].source_basis"),
+                    source_basis,
+                ));
+            }
+        }
+        texts
+    }
+}
+
 impl UnadmittedExecutionObservation {
     /// Checks a stored record's own shape: the same rules its request
     /// passed, against its record time, plus the constants it must carry.

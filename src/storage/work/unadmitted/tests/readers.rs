@@ -269,7 +269,9 @@ fn escape_heavy_records_fit_the_observation_window() {
                 sighting: MeasuredSighting {
                     source_basis: ExecutionSourceBasis {
                         workspace_id: workspace.clone(),
-                        source_revision: "\u{1}".repeat(MAX_OBSERVED_SOURCE_BYTES),
+                        // Host source text refuses control characters, so
+                        // its widest admitted escape is a quote.
+                        source_revision: "\"".repeat(MAX_OBSERVED_SOURCE_BYTES),
                         source_root_generation: None,
                         source_root_state: None,
                     },
