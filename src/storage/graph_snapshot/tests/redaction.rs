@@ -486,7 +486,8 @@ fn widened_restricted_load_stores_only_audited_placeholders() {
             .query_row("SELECT memory_id FROM memory_heads", [], |row| row.get(0))
             .expect("restored memory identity");
         let memory_id = uuid::Uuid::parse_str(&stored_id).expect("valid UUID");
-        assert_eq!(memory_id.get_version_num(), 8);
+        // A minted, time-ordered random id, never one derived from content.
+        assert_eq!(memory_id.get_version_num(), 7);
         assert_eq!(memory_id.get_variant(), uuid::Variant::RFC4122);
         memory_ids.push(memory_id);
         let (_, audits) = destination
@@ -522,7 +523,8 @@ fn widened_restricted_load_stores_only_audited_placeholders() {
         );
         assert!(destination.verify_all().expect("integrity").is_healthy());
     }
-    assert_eq!(memory_ids[0], memory_ids[1]);
+    // Each load stores a new record, so equal bytes never give equal ids.
+    assert_ne!(memory_ids[0], memory_ids[1]);
 }
 
 #[test]

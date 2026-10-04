@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::*;
 
 #[test]
@@ -290,5 +292,140 @@ fn snapshot_retains_live_memory_revisions_but_never_carries_retired_bodies() {
     assert_eq!(restored.len(), 1);
     for body in bodies {
         assert!(restored.iter().all(|entry| entry.version.body != body));
+    }
+}
+
+/// The memory id, version id and assertion id of every restored memory
+/// object, by project key; assertions are matched to their version.
+fn restored_chains(store: &SqliteStore) -> HashMap<String, Vec<(String, String)>> {
+    let mut statement = store
+        .connection
+        .prepare(
+            "SELECT json_extract(version.canonical_json, '$.project_key'),
+                    json_extract(version.canonical_json, '$.memory_id'),
+                    json_extract(assertion.canonical_json, '$.memory_id')
+             FROM objects AS version
+             JOIN objects AS assertion
+               ON assertion.object_kind = 'memory_assertion_event'
+              AND json_extract(assertion.canonical_json, '$.version') = version.object_id
+             WHERE version.object_kind = 'memory_version'",
+        )
+        .unwrap();
+    let mut chains: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    for row in statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+    {
+        let (key, version_id, assertion_id): (String, String, String) = row.unwrap();
+        chains
+            .entry(key)
+            .or_default()
+            .push((version_id, assertion_id));
+    }
+    chains
+}
+
+// The snapshot carries no memory id, so each load mints one per restored
+// chain: every version and assertion of a chain, tombstone included, share
+// it, and loading the same bytes again mints a different one.
+#[test]
+fn each_load_mints_one_fresh_memory_id_per_restored_chain() {
+    let project = ProjectId("restored-memory-id".into());
+    let mut source = SqliteStore::open_in_memory().unwrap();
+    let remember = |source: &mut SqliteStore, key: &str, body: &str, second: i64, revise: bool| {
+        source
+            .remember_project_memory(
+                &RememberProjectMemoryRequest {
+                    project_id: project.clone(),
+                    session_id: actor("author").session_id.unwrap(),
+                    key: Some(key.into()),
+                    body: body.into(),
+                    actor: actor("author"),
+                    created_at: at(second),
+                    revise,
+                    expected_revision: None,
+                    retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .unwrap();
+    };
+    for (revision, body) in ["first", "second", "third"].into_iter().enumerate() {
+        let revision = i64::try_from(revision).unwrap();
+        remember(&mut source, "chain", body, revision, revision > 0);
+    }
+    remember(&mut source, "gone", "retired soon", 5, false);
+    source
+        .forget_project_memory(
+            &crate::domain::ForgetProjectMemoryRequest {
+                project_id: project.clone(),
+                session_id: actor("author").session_id.unwrap(),
+                key: "gone".into(),
+                actor: actor("author"),
+                created_at: at(6),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let saved = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("save"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(10),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let bytes = snapshot_bytes(&saved.document);
+    // The snapshot names no memory id, so load has none to keep.
+    assert!(!String::from_utf8_lossy(&bytes).contains("memory_id"));
+
+    let mut loads = Vec::new();
+    for _ in 0..2 {
+        let mut destination = SqliteStore::open_in_memory().unwrap();
+        destination
+            .load_work_graph_snapshot(
+                &project,
+                &actor("load"),
+                &bytes,
+                false,
+                at(11),
+                &DevelopmentNoopRedactor,
+            )
+            .unwrap();
+        assert!(destination.verify_all().unwrap().is_healthy());
+        let chains = restored_chains(&destination);
+        let mut ids = HashMap::new();
+        for (key, versions) in &chains {
+            let id = &versions[0].0;
+            assert!(
+                versions
+                    .iter()
+                    .all(|(version, assertion)| version == id && assertion == id),
+                "{key}: {versions:?}"
+            );
+            assert_eq!(uuid::Uuid::parse_str(id).unwrap().get_version_num(), 7);
+            ids.insert(key.clone(), id.clone());
+        }
+        assert_eq!(chains["chain"].len(), 3, "every revision is restored");
+        // A retired memory travels as its tombstone alone, never its bodies.
+        assert_eq!(chains["gone"].len(), 1, "the tombstone is restored");
+        assert_ne!(ids["chain"], ids["gone"]);
+        let head: String = destination
+            .connection
+            .query_row(
+                "SELECT memory_id FROM memory_heads WHERE version_id IN (
+                     SELECT object_id FROM objects
+                     WHERE json_extract(canonical_json, '$.project_key') = 'chain')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(head, ids["chain"]);
+        loads.push(ids);
+    }
+    for key in ["chain", "gone"] {
+        assert_ne!(loads[0][key], loads[1][key], "{key} is minted per load");
     }
 }

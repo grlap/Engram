@@ -372,9 +372,10 @@ lands, or nothing does.
   provenance marker with the snapshot body's content fingerprint. That marker
   is never exported. The save and load audit events record the transfer; the
   file does not carry the destination memory's
-  provenance. The current loader also derives each restored memory's `MemoryId`
-  from that fingerprint and its key, a known exception to the minted-id rule.
-  A redacted body lands as the typed placeholder under its `redacted` marker,
+  provenance. The file carries no `MemoryId`, so load mints one random id per
+  restored memory, shared by every version and assertion of that memory,
+  tombstone included; loading the same file again mints different ids. The
+  fingerprint stays provenance only. A redacted body lands as the typed placeholder under its `redacted` marker,
   and the project-memory shape admits
   both. Load always replaces restricted bodies with this placeholder, even
   from a widened file; only that file retains the human-readable plaintext,
@@ -495,12 +496,11 @@ a nonempty destination where `engram restore --replace` overwrites one.
   encoding and canonicalization, not the file as its head payload, because a
   portable head must also carry the executable shared state this file omits.
 - Not canonical-object interchange for work: canonical bytes and content
-  fingerprints are passed as provenance strings where useful; work record ids
-  are not derived from them. Source snapshots and inherited `RestoredRecord`s
+  fingerprints are passed as provenance strings where useful; record ids are
+  not derived from them. Source snapshots and inherited `RestoredRecord`s
   keep their supplied record ids and canonical bytes; each native history layer
-  gets a newly minted id. Content fingerprints compare work-record content,
-  not record identity. The current restored-memory `MemoryId` exception is
-  described under Load.
+  and each restored memory gets a newly minted id. Content fingerprints compare
+  content, not record identity.
 - Not execution recovery: claims, runs, root executions, waivers,
   checkpoints, seals, and evidence are never rebuilt from a file. A loaded
   store starts every item's execution from scratch with its history beside

@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
-use sha2::{Digest, Sha256};
 
 use super::{
     REDACTED_MEMORY_PLACEHOLDER, RESTORED_MEMORY_SOURCE, RESTORED_REDACTED_MEMORY_SOURCE,
@@ -1379,6 +1378,10 @@ fn insert_memory_on(
     memory: &crate::WorkGraphSnapshotMemory,
     loaded_at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
+    // The snapshot carries no memory id, so the restored chain is a new
+    // record: one id, minted here and shared by every version and assertion
+    // of the chain. The snapshot's fingerprint stays provenance only.
+    let memory_id = MemoryId::new();
     let mut previous = None;
     for revision in &memory.history {
         let prior = crate::WorkGraphSnapshotMemory {
@@ -1397,6 +1400,7 @@ fn insert_memory_on(
             transaction,
             project_id,
             body_hash,
+            memory_id,
             &prior,
             loaded_at,
             previous.as_ref(),
@@ -1407,6 +1411,7 @@ fn insert_memory_on(
         transaction,
         project_id,
         body_hash,
+        memory_id,
         memory,
         loaded_at,
         previous.as_ref(),
@@ -1415,10 +1420,15 @@ fn insert_memory_on(
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one restored version binds its project, provenance, chain id, content, time, parent and head role"
+)]
 fn insert_memory_version_on(
     transaction: &Transaction<'_>,
     project_id: &ProjectId,
     body_hash: &ObjectId,
+    memory_id: MemoryId,
     memory: &crate::WorkGraphSnapshotMemory,
     loaded_at: DateTime<Utc>,
     previous: Option<&ObjectId>,
@@ -1465,7 +1475,6 @@ fn insert_memory_version_on(
             RESTORED_MEMORY_SOURCE,
         ),
     };
-    let memory_id = restored_memory_id(body_hash, &memory.key);
     let version = MemoryVersion {
         schema_version: crate::schema::SCHEMA_VERSION,
         memory_id,
@@ -1537,18 +1546,6 @@ fn insert_memory_version_on(
         )?;
     }
     Ok(version_object.key().clone())
-}
-
-fn restored_memory_id(body_hash: &ObjectId, key: &str) -> MemoryId {
-    let mut digest = Sha256::new();
-    digest.update(b"engram-restored-project-memory-v1\0");
-    digest.update(body_hash.as_str().as_bytes());
-    digest.update([0]);
-    digest.update(key.as_bytes());
-    let bytes = digest.finalize();
-    let mut uuid_bytes = [0_u8; 16];
-    uuid_bytes.copy_from_slice(&bytes[..16]);
-    MemoryId(uuid::Builder::from_custom_bytes(uuid_bytes).into_uuid())
 }
 
 fn graph_destination_is_empty_on(
