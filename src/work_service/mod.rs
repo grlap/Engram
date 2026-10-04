@@ -104,7 +104,7 @@ mod test_support;
 pub(crate) use catalog::WorkListingPage;
 #[cfg(test)]
 pub(crate) use catalog::{encode_listing_cursor_json, listing_cursor_json};
-pub use evaluate::EVALUATE_WORD_RESERVE;
+pub use evaluate::{EVALUATE_WORD_ONLY_RESERVE, EVALUATE_WORD_RESERVE};
 #[cfg(test)]
 pub(crate) use evaluation_windows::MAX_ROW_VERDICTS;
 pub(crate) use evaluation_windows::{

@@ -48,7 +48,12 @@ use crate::{DevelopmentNoopRedactor, ObjectId, SqliteStore, StoreError};
 /// and by measuring a real word receipt against its service result. The
 /// word's focus disclosure is reserved on top: the word fits its receipt to
 /// the budget less that disclosure's room.
-pub const EVALUATE_WORD_RESERVE: usize = 3072 + crate::storage::FOCUS_CHANGE_RESERVE;
+pub const EVALUATE_WORD_RESERVE: usize =
+    EVALUATE_WORD_ONLY_RESERVE + crate::storage::FOCUS_CHANGE_RESERVE;
+
+/// The room for the word's own envelope alone, without the focus disclosure
+/// reserved beside it; the derivation above measures against this.
+pub const EVALUATE_WORD_ONLY_RESERVE: usize = 3072;
 
 const SERVICE_ENVELOPE_BUDGET: usize = MAX_AGENT_WORK_RESPONSE_BYTES - EVALUATE_WORD_RESERVE;
 

@@ -9,6 +9,7 @@ mod identity;
 mod late_note_parity;
 mod replay_decode;
 mod restored;
+mod restored_evidence_repair;
 mod untested;
 
 #[test]

@@ -1141,7 +1141,7 @@ fn the_minimal_evaluate_receipt_is_bounded() {
 // bound.
 #[test]
 fn the_reserve_covers_the_derived_word_envelope() {
-    use crate::work_service::{EVALUATE_WORD_RESERVE, MAX_SUMMARY_BYTES};
+    use crate::work_service::{EVALUATE_WORD_ONLY_RESERVE, MAX_SUMMARY_BYTES};
     let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("work.sqlite3");
     let project = ProjectId("evaluate-reserve-derivation".into());
@@ -1279,8 +1279,8 @@ fn the_reserve_covers_the_derived_word_envelope() {
     let derived =
         crate::verbs::receipts::compact_receipt_json_bytes(&envelope).expect("compact bytes");
     assert!(
-        derived <= EVALUATE_WORD_RESERVE,
-        "derived word-only envelope {derived} bytes exceeds the reserve {EVALUATE_WORD_RESERVE}"
+        derived <= EVALUATE_WORD_ONLY_RESERVE,
+        "derived word-only envelope {derived} bytes exceeds the word-only reserve {EVALUATE_WORD_ONLY_RESERVE}"
     );
     // The text form carries no verdict rows: one bounded summary line, the
     // full-detail line, and guidance.
@@ -1297,7 +1297,7 @@ fn the_reserve_covers_the_derived_word_envelope() {
 // construction; the finished receipt is what the shared strict rule measures.
 #[test]
 fn the_word_envelope_stays_within_its_reserve() {
-    use crate::work_service::EVALUATE_WORD_RESERVE;
+    use crate::work_service::EVALUATE_WORD_ONLY_RESERVE;
     let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("work.sqlite3");
     let project = ProjectId("evaluate-reserve".into());
@@ -1394,8 +1394,8 @@ fn the_word_envelope_stays_within_its_reserve() {
         crate::verbs::receipts::compact_receipt_json_bytes(&receipt.value).expect("compact bytes");
     let service_bytes = serde_json::to_vec(&service).expect("service bytes").len();
     assert!(
-        word_bytes < service_bytes + EVALUATE_WORD_RESERVE,
-        "word {word_bytes} bytes, service {service_bytes} bytes, reserve {EVALUATE_WORD_RESERVE}"
+        word_bytes < service_bytes + EVALUATE_WORD_ONLY_RESERVE,
+        "word {word_bytes} bytes, service {service_bytes} bytes, word-only reserve {EVALUATE_WORD_ONLY_RESERVE}"
     );
     assert!(
         format!("{}\n", receipt.text()).len() < MAX_AGENT_WORK_RESPONSE_BYTES,

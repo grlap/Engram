@@ -26,6 +26,13 @@ mod tests;
 /// afresh.
 pub(crate) struct ValidatedPlan {
     input: WorkPlanInput,
+    parts: PlanParts,
+}
+
+/// What whole-plan validation computes. Admission works from these; only a
+/// plan validated ahead of admission also keeps the input it came from, for
+/// the exact-input comparison that decides its reuse.
+struct PlanParts {
     drafts: Vec<ChildWorkDraft>,
     notes: Vec<Vec<String>>,
     parents: Vec<Option<usize>>,
@@ -68,7 +75,7 @@ impl SqliteStore {
         admit: impl Fn(&WorkPlanReceipt) -> Result<(), StoreError>,
     ) -> Result<WorkPlanReceipt, StoreError> {
         let plan = match validated {
-            Some(validated) if validated.input == request.plan => validated,
+            Some(validated) if validated.input == request.plan => validated.parts,
             _ => validate_plan(&request.plan)?,
         };
         normalize_text(&request.project_id.0, "plan project")?;
@@ -170,7 +177,10 @@ fn plan_operation_key(
 /// Validates a whole plan before any store or protocol effect, for admission
 /// to reuse when it is given exactly this plan.
 pub(crate) fn validate_work_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
-    validate_plan(input)
+    Ok(ValidatedPlan {
+        parts: validate_plan(input)?,
+        input: input.clone(),
+    })
 }
 
 fn validate_existing_on(
@@ -219,7 +229,7 @@ fn valid_key(value: &str) -> bool {
     clippy::too_many_lines,
     reason = "whole-input validation precedes every planning write"
 )]
-fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
+fn validate_plan(input: &WorkPlanInput) -> Result<PlanParts, StoreError> {
     #[cfg(test)]
     PLAN_VALIDATIONS.with(|count| count.set(count.get() + 1));
     let invalid = |message: &str| StoreError::InvalidWork(format!("plan: {message}"));
@@ -397,8 +407,7 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
     if !plan_graph_is_acyclic(&adjacency) {
         return Err(StoreError::WorkDependencyCycle);
     }
-    Ok(ValidatedPlan {
-        input: input.clone(),
+    Ok(PlanParts {
         drafts,
         notes,
         parents,
@@ -448,7 +457,7 @@ fn item_at(items: &[Option<WorkItem>], index: usize) -> Result<&WorkItem, StoreE
 fn admit_plan_on<R: Redactor>(
     transaction: &Transaction<'_>,
     request: &ProposeWorkPlanRequest,
-    plan: &ValidatedPlan,
+    plan: &PlanParts,
     existing: &HashMap<String, WorkId>,
     redactor: &R,
 ) -> Result<WorkPlanReceipt, StoreError> {

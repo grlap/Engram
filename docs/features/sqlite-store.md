@@ -215,10 +215,16 @@ explicit operator path: it compares the live schema with a fresh in-memory
 schema created by the same running code, verifies control-policy bindings,
 recreates every declared rebuildable object, repopulates FTS from verified
 durable rows in one transaction, and runs full integrity verification
-afterward. Missing or malformed durable tables are never recreated, and a
-uniqueness violation makes the projection transaction roll back.
-An integrity refusal includes the invalid-record labels as well as counts;
-the failed repair rolls back its rebuildable changes too.
+afterward. Missing or malformed durable tables are never recreated. A
+restored record, restored evidence object or observation that cannot be
+projected (it does not decode, its generation is out of range, its work item
+is missing, its planning basis does not hold, or its row breaks a
+constraint) is named as a typed finding such as
+`work_restored_evidence:ID:missing_item`, once, while every other row is
+still checked; the repair then refuses and rolls back, committing nothing,
+reporting no healthy result and deleting no data. An integrity refusal
+includes the invalid-record labels as well as counts; the failed repair rolls
+back its rebuildable changes too.
 
 The read-only `--recover-policy` path cannot run SQLite crash recovery. When a
 non-clean shutdown leaves a WAL that SQLite itself must recover, diagnostics
@@ -249,8 +255,12 @@ changing its verifier at the same time.
 
 ## Rebuildable and durable projections
 
-Declared indexes, triggers, and full-text search (FTS5) content are disposable
-and rebuilt explicitly from verified durable rows. `engram doctor` checks each
+Declared indexes, triggers, full-text search (FTS5) content, the observation
+index `work_observations`, and the restored-history projections
+`work_restored_records` and `work_restored_evidence` are disposable and
+rebuilt explicitly from verified durable rows and canonical objects; a row
+that cannot be rebuilt is named and refused as described above, never
+silently dropped. `engram doctor` checks each
 full-text table (the memory index and the work catalog) read-only and in time
 bounded by the table's size: one pass over its stored text binds every row to
 its memory head or work item, naming a changed, repeated or missing row and
