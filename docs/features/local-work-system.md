@@ -808,6 +808,13 @@ complete selected sequence: every matching item in listing order, with its
 priority under ready order. Ordinary catalog ordering
 remains ascending work id; `ls --ready` uses priority then work id. Neither
 is a dense feed ordering or an execution cursor.
+
+`--blocked` excludes completed, cancelled and superseded work, including
+restored items, even with `--all`. Their historical blockers remain stored
+and inspectable through `show` and unfiltered `ls --all`. Proposed work
+retains its existing treatment; deferred work with an independent blocker
+still matches. This is a query filter, with no lifecycle events or row changes.
+
 The token is opaque to the caller but not confidential: it encodes readable
 filters, project and session context, without encryption. It is navigation,
 not authentication, and creates no server-side state or canonical object.

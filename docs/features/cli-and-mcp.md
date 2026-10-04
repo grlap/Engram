@@ -536,10 +536,11 @@ Rules that matter:
   `--blocked`. `--ready` selects open work only, since only open work is
   ready, so `--all` adds nothing to it: `ls --all --ready` lists exactly what
   `ls --ready` lists, in the same order. `--blocked` selects work with an
-  active blocker or an unmet prerequisite, so with `--all` it also lists a
-  completed, cancelled or superseded item that still carries an active
-  blocker. Compact rows omit the constant plain-ready sentence and keep
-  additional reasons such as prior-claim recovery. Show claim reminders and
+  active blocker or an unmet prerequisite, excluding completed, cancelled
+  and superseded work even with `--all`. Historical blockers remain stored
+  and inspectable through `show` and unfiltered `ls --all`. Proposed work
+  keeps its existing treatment. Compact rows omit the constant plain-ready
+  sentence and keep additional reasons such as prior-claim recovery. Show claim reminders and
   verbose/core reason codes are unchanged. Verbose `next` retains its
   requested richer list limit. Delivery and memory advertisement behavior
   are unchanged. Host-core `ready_work` ranking is a separate path.
@@ -2677,7 +2678,10 @@ blocker detail. These views remain advisory; lifecycle mutations revalidate
 their canonical work-event basis under the write lock.
 The `--blocked`/`blocked_only` filter is independent of derived availability:
 it returns work with an active blocker or incomplete prerequisite even when
-the item is deferred or its lifecycle is closed.
+the item is deferred, but excludes completed, cancelled and superseded work.
+Proposed work retains its existing treatment. Historical blockers remain
+inspectable through `show` and unfiltered `ls --all`; filtering writes no
+events and changes no stored rows.
 Source changes retain dense positions and explicit compact summaries instead
 of canonical work snapshots or memory bodies. A change's `object_id` is the
 id of the source record the summary was projected from; it names that record

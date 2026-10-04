@@ -490,6 +490,8 @@ fn work_catalog_sql(
         classified_filters.push(format!("availability IN ({})", placeholders.join(", ")));
     }
     if query.blocked_only {
+        candidate_filters
+            .push("candidate.lifecycle NOT IN ('completed', 'cancelled', 'superseded')".into());
         classified_filters.push("(has_blocker OR availability = 'blocked')".into());
     }
     if page && let Some(after) = query.after {

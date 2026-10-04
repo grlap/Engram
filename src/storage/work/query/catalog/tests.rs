@@ -395,7 +395,8 @@ fn catalog_uses_unicode_keys_and_ready_ranking_is_deterministic() {
     );
     assert_eq!(
         blocked_availability.get(&terminal.work_id),
-        Some(&WorkAvailability::Closed)
+        None,
+        "ended work with historical prerequisites is not a blocked candidate"
     );
     assert_eq!(
         blocked_availability.get(&dependent.work_id),

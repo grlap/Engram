@@ -76,8 +76,8 @@ pub struct LsInput {
     /// Assigned to this actor, or held by this session.
     pub mine: bool,
     /// Include completed, cancelled, and superseded items. A ready listing
-    /// selects open work only, so this adds nothing to it; a blocked one gains
-    /// ended items that still carry an active blocker.
+    /// selects open work only, so this adds nothing to it; a blocked listing
+    /// excludes ended items even when this is set.
     pub all: bool,
     pub label: Option<String>,
     pub under: Option<String>,

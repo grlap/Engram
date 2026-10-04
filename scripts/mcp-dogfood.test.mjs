@@ -4184,6 +4184,109 @@ test("short orientation continues the complete ready set through real CLI and MC
   }
 });
 
+test("blocked listing excludes ended history from exact CLI and MCP pages", async (t) => {
+  const engramHome = fixtureHome("engram-blocked-history-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const actor = "blocked-history-reader";
+    client = new McpClient(engramHome, actor);
+    await client.initialize();
+    const tools = await client.tools();
+    assert.match(tools.find(({name}) => name === "ls").inputSchema.properties.all.description, /blocked excludes ended items even with all/u);
+    const help = cliWord(engramHome, actor, "ls", "--help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /--blocked excludes ended items even with --all/u);
+    const add = async (title) => receipt(await client.call("add", {title})).work;
+    const open = await add("Matching open blocker");
+    const dependent = await add("Matching open prerequisite");
+    const cancelled = await add("Matching cancelled blocker");
+    const superseded = await add("Matching superseded blocker");
+    const completed = await add("Matching completed history");
+    const prerequisite = await add("Unsatisfied prerequisite");
+    const satisfied = await add("Satisfied prerequisite");
+    const replacement = await add("Replacement");
+    for (const work of [open, cancelled, superseded]) {
+      receipt(await client.call("update", {work_ref: work.short_ref, action: "blocked", text: "Historical obstacle"}));
+    }
+    for (const work of [prerequisite, satisfied]) {
+      receipt(await client.call("update", {work_ref: dependent.short_ref, action: "after", prerequisite: work.short_ref}));
+    }
+    for (const work of [completed, satisfied]) {
+      receipt(await client.call("claim", {work_ref: work.short_ref}));
+      receipt(await client.call("done", {work_ref: work.short_ref, summary: "Delivered"}));
+    }
+    const historical = [cancelled, superseded].map((work) => cliJson(engramHome, actor, "show", work.short_ref).blockers);
+    receipt(await client.call("update", {work_ref: cancelled.short_ref, action: "cancel", reason: "Ended with retained history"}));
+    receipt(await client.call("update", {work_ref: superseded.short_ref, action: "supersede", replacement: replacement.short_ref, reason: "Replacement owns delivery"}));
+    const rich = receipt(await client.call("ls", {all: true, verbose: true}));
+    const identities = new Map(rich.items.map(({work}) => [work.short_ref, work.work_id]));
+    const expected = [open, dependent].sort((a, b) => identities.get(a.short_ref).localeCompare(identities.get(b.short_ref))).map(({short_ref}) => short_ref);
+    const captures = [];
+    for (const all of [false, true]) {
+      for (const verbose of [false, true]) {
+        let after;
+        const collected = [];
+        do {
+          const input = {all, blocked: true, search: "Matching", limit: 1, verbose, after};
+          const args = ["--blocked", "--search", "Matching", "--limit", "1", ...(all ? ["--all"] : []), ...(verbose ? ["--verbose"] : []), ...(after ? ["--after", after] : []), "--json"];
+          const cli = cliWord(engramHome, actor, "ls", ...args);
+          assert.equal(cli.status, 0, cli.stderr);
+          const page = JSON.parse(cli.stdout);
+          const mcp = await client.call("ls", input);
+          const other = receipt(mcp);
+          for (const field of ["items", "total", "shown_before", "omitted", "more"]) assert.deepEqual(other[field], page[field], field);
+          assert.equal(Boolean(other.after), Boolean(page.after));
+          assert.equal(page.total, 2);
+          assert.equal(page.shown_before, collected.length);
+          assert.equal(page.items.length, 1);
+          const row = page.items[0];
+          const ref = verbose ? row.work.short_ref : row.ref;
+          collected.push(ref);
+          assert.equal(page.omitted, 2 - collected.length);
+          assert.equal(page.more, collected.length < 2);
+          assert.equal(verbose ? row.work.lifecycle : row.state, verbose ? "open" : "blocked");
+          if (verbose) assert.equal(row.availability, "blocked");
+          if (verbose && ref === dependent.short_ref) assert.deepEqual(row.blocked_by, [identities.get(prerequisite.short_ref)]);
+          captures.push({input, arguments: args, cli: {status: cli.status, signal: cli.signal, stdout: cli.stdout, stderr: cli.stderr}, mcp});
+          after = page.after;
+          assert.ok(collected.length <= 2);
+        } while (after);
+        assert.deepEqual(collected, expected);
+      }
+    }
+    const history = [];
+    for (const [index, work] of [cancelled, superseded].entries()) {
+      const shown = cliJson(engramHome, actor, "show", work.short_ref);
+      assert.deepEqual(shown.blockers, historical[index]);
+      assert.deepEqual(receipt(await client.call("show", {work_ref: work.short_ref})).blockers, historical[index]);
+      history.push(shown);
+      const empty = cliJson(engramHome, actor, "ls", "--all", "--blocked", "--search", work.title);
+      assert.equal(empty.total, 0);
+      assert.deepEqual(empty.items, []);
+      assert.equal(empty.more, false);
+      assert.equal(empty.omitted, 0);
+      assert.equal(empty.after, undefined);
+    }
+    const everything = cliJson(engramHome, actor, "ls", "--all", "--search", "Matching");
+    assert.equal(everything.total, 5);
+    for (const work of [cancelled, superseded, completed]) assert.ok(everything.items.some(({ref}) => ref === work.short_ref));
+    if (process.env.ENGRAM_CAPTURE_BLOCKED_HISTORY_RECEIPT === "1") {
+      const directory = join(root, "target", "tmp", `blocked-history-reader-capture-${Date.now()}`);
+      mkdirSync(directory, {recursive: true});
+      const executable = process.platform === "win32" ? `${binary}.exe` : binary;
+      const readiness = spawnSync(binary, ["--home", engramHome, "readiness", "--json"], {cwd: root, encoding: "utf8"});
+      assert.equal(readiness.status, 0, readiness.stderr);
+      const path = join(directory, "payload.json");
+      writeFileSync(path, JSON.stringify({executable, executable_sha256: createHash("sha256").update(readFileSync(executable)).digest("hex"), readiness: JSON.parse(readiness.stdout), fixtures: {open, dependent, cancelled, superseded, completed, prerequisite, satisfied}, rich, captures, history, everything}, null, 2));
+      console.error(`Blocked history reader capture: ${path}`);
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("Phoenix planning revisions and exact list counts through MCP", async (t) => {
   const engramHome = fixtureHome("engram-phoenix-planning-", t);
   let client;

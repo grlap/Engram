@@ -72,8 +72,9 @@ The words are `next`, `ls`, `show`, `add`, `claim`, `update`, `gate`, `evaluate`
 `note`, `done`, `handoff`, `remember`, `memories` and `forget`; MCP `search`
 is the form of CLI `ls --search --all`.
 `ls --ready` lists open work only, so adding `--all` to it changes nothing;
-`ls --all --blocked` also lists ended items that still carry an active
-blocker.
+`ls --blocked` excludes completed, cancelled and superseded work even with
+`--all`. Historical blockers remain visible in `show` and unfiltered
+`ls --all`; proposed work keeps its existing treatment.
 `next` with `peek: true` (`engram work next --peek`) reads orientation;
 ordinary `next` advances delivery and is a separate action.
 Inspect held and assigned work, then ready candidates with `show REF`.

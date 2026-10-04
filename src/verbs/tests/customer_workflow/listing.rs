@@ -1,6 +1,7 @@
 use super::*;
 
 mod basis;
+mod blocked_history;
 mod corrections;
 
 #[test]
@@ -840,10 +841,9 @@ fn listing_cursor_follows_membership_and_order_not_unrelated_writes() {
 // The ready filter selects open work only, so the all filter adds nothing to
 // it: all with ready lists exactly the ready set, in readiness order, with no
 // completed or cancelled item. The blocked filter selects an active blocker
-// or an unmet prerequisite, so all with blocked adds an ended item that still
-// carries an active blocker, and only that.
+// or an unmet prerequisite on non-ended work, even when all is set.
 #[test]
-fn all_adds_nothing_to_ready_and_only_blocked_ended_items_to_blocked() {
+fn all_adds_nothing_to_ready_and_excludes_ended_items_from_blocked() {
     let (_directory, verbs, _, _) = fixture();
     let low = add_ready(&verbs, "Low priority ready", 3, 0);
     let high = add_ready(&verbs, "High priority ready", 1, 1);
@@ -893,17 +893,15 @@ fn all_adds_nothing_to_ready_and_only_blocked_ended_items_to_blocked() {
         }),
         vec![blocked.clone()]
     );
-    let mut all_blocked = refs(LsInput {
+    let all_blocked = refs(LsInput {
         blocked: true,
         all: true,
         ..LsInput::default()
     });
-    all_blocked.sort();
-    let mut expected = vec![blocked.clone(), blocked_then_cancelled.clone()];
-    expected.sort();
     assert_eq!(
-        all_blocked, expected,
-        "only ended items with an active blocker join"
+        all_blocked,
+        vec![blocked.clone()],
+        "historical blockers do not make ended work a blocked candidate"
     );
     // The all filter alone includes every ended item.
     let everything = refs(LsInput {
