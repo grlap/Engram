@@ -192,10 +192,8 @@ fn the_printed_command_clears_its_own_blocker_and_history_names_it() {
     let mut cleared_history = history_summaries(&last, "unblocked");
     cleared_history.sort();
     let mut expected = vec![
-        format!(
-            "cleared blocker {second} (human_decision) \"Await the release\": \"Wait on three things\""
-        ),
-        format!("cleared blocker {third} (manual) \"Await the release\": \"Wait on three things\""),
+        format!("cleared blocker {second} (human_decision) \"Await the release\""),
+        format!("cleared blocker {third} (manual) \"Await the release\""),
     ];
     expected.sort();
     assert_eq!(cleared_history, expected);
@@ -204,7 +202,7 @@ fn the_printed_command_clears_its_own_blocker_and_history_names_it() {
     let blocked = history_summaries(&last, "blocked");
     assert!(
         blocked.contains(&format!(
-            "blocker {second} (human_decision) \"Await the release\": \"Wait on three things\""
+            "blocker {second} (human_decision) \"Await the release\""
         )),
         "{blocked:?}"
     );
@@ -338,7 +336,7 @@ fn a_clear_recorded_before_selectors_reads_with_its_blocker_and_its_bytes_unchan
     assert_eq!(
         history_summaries(&shown, "unblocked"),
         [format!(
-            "cleared blocker {selector} (manual) \"Await the vendor\": \"Wait once\""
+            "cleared blocker {selector} (manual) \"Await the vendor\""
         )]
     );
     assert_eq!(stored(), before);

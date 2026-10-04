@@ -79,6 +79,7 @@ pub(crate) use focus::WorkAuthoredContract;
 mod handoff;
 mod import;
 pub use import::{MAX_WORK_IMPORT_INPUT_BYTES, parse_work_import_input};
+mod history_display;
 pub(crate) mod identity;
 mod memories;
 mod next;
@@ -1118,6 +1119,7 @@ fn verified_bounded_work_changes(
         let from_current_session = source_is_from_session(&entry.object_kind, &object, session_id);
         let display_producer = source_display_producer(&entry.object_kind, &object);
         let (capture, completion_checkpoint) = change_context::hydrate(store, &entry, &object)?;
+        let history_display = history_display::hydrate(store, &entry, &object)?;
         let delivery = agent_change_object(
             store,
             project_id,
@@ -1127,6 +1129,7 @@ fn verified_bounded_work_changes(
             Some(&entry.position),
         )?;
         changes.push(WorkChange {
+            history_display,
             capture,
             completion_checkpoint,
             display_producer,
@@ -1237,6 +1240,7 @@ fn verify_staged_work_change_page(
                 "staged work attribution differs from the receiving session".into(),
             ));
         }
+        change.history_display = history_display::hydrate(store, &entry, &object)?;
         change.display_producer = source_display_producer(&entry.object_kind, &object);
         (change.capture, change.completion_checkpoint) =
             change_context::hydrate(store, &entry, &object)?;
@@ -2147,21 +2151,11 @@ fn work_transition_summary(
 }
 
 fn work_evidence_kind_word(kind: WorkEvidenceKind) -> &'static str {
-    match kind {
-        WorkEvidenceKind::Generic => "generic",
-        WorkEvidenceKind::Verification => "verification",
-        WorkEvidenceKind::Environment => "environment",
-    }
+    kind.word()
 }
 
 fn work_lifecycle_word(lifecycle: WorkLifecycle) -> &'static str {
-    match lifecycle {
-        WorkLifecycle::Proposed => "proposed",
-        WorkLifecycle::Open => "open",
-        WorkLifecycle::Completed => "completed",
-        WorkLifecycle::Cancelled => "cancelled",
-        WorkLifecycle::Superseded => "superseded",
-    }
+    lifecycle.word()
 }
 
 fn work_transition_kind(transition: &WorkTransition) -> &'static str {

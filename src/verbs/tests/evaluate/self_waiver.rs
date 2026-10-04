@@ -759,7 +759,7 @@ fn a_completion_sealed_before_the_rules_tightened_is_unchanged() {
     assert!(
         shown
             .text()
-            .contains("acceptance: evaluated (same_session, asserted) by "),
+            .contains("acceptance: evaluated (same_session; recorded under asserted identity) by "),
         "{}",
         shown.text()
     );

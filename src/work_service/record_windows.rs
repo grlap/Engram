@@ -37,6 +37,7 @@ pub(crate) struct WorkRecordWindow {
 }
 
 pub(crate) struct WorkRecordRow {
+    pub gate: Option<crate::GateEvidenceRecord>,
     pub family: WorkRecordFamily,
     pub locator: String,
     pub kind: String,
@@ -434,6 +435,7 @@ fn project_record(
     let mut note_body_bytes = None;
     let mut summary_truncated = false;
     let mut verification = None;
+    let mut gate = None;
     let mut complete_member = None;
     let (label, summary, refs, actor, recorded_at) =
         match store.work_record_content(project, work, entry)? {
@@ -441,6 +443,7 @@ fn project_record(
                 super::projection::project_full_note(&mut note)?;
                 note_body_bytes = Some(note.summary.len());
                 verification = note.verification.take();
+                gate = note.gate.take();
                 let label = if crate::domain::status_note_role(&note.actor).is_some() {
                     "status".into()
                 } else {
@@ -467,7 +470,8 @@ fn project_record(
                 let projected = project_work_event(store, &event, &position)?;
                 (
                     projected.change_kind,
-                    projected.summary,
+                    super::history_display::HistoryDisplay::load(store, &event, &position)?
+                        .summary(false),
                     Vec::new(),
                     event.actor.clone(),
                     event.created_at,
@@ -496,6 +500,7 @@ fn project_record(
             }
         };
     Ok(WorkRecordRow {
+        gate,
         family: entry.record_family,
         locator: entry.locator.clone(),
         body_bytes: note_body_bytes.unwrap_or(summary.len()),

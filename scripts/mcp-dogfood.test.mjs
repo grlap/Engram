@@ -1869,8 +1869,8 @@ test("show names each of several blockers, and its printed command clears only t
       .map(({ summary }) => summary)
       .sort();
     assert.deepEqual(clearedHistory, [
-      `cleared blocker ${second.blocker} (manual) "Await the release": "Wait on three things"`,
-      `cleared blocker ${third.blocker} (manual) "Await the vendor": "Wait on three things"`,
+      `cleared blocker ${second.blocker} (manual) "Await the release"`,
+      `cleared blocker ${third.blocker} (manual) "Await the vendor"`,
     ].sort());
   } finally {
     try { if (client) await client.close(); }
@@ -3760,7 +3760,7 @@ test("Phoenix planning revisions and exact list counts through MCP", async (t) =
     let shown = receipt(await client.call("show", { work_ref: first.short_ref }));
     assert.deepEqual(shown.status.work.acceptance, ["B", "A"]);
     assert.equal(shown.status.work.title, "Searchable first");
-    assert.ok(shown.history.items.some(({ kind, summary }) => kind === "revised" && summary.startsWith("acceptance:")));
+    assert.ok(shown.history.items.some(({ kind, summary }) => kind === "revised" && summary === "acceptance"));
     for (const acceptance of [[], [""], ["good", " "]]) {
       structuredError(await client.call("update", { work_ref: first.short_ref, action: "revise", acceptance }), "work_invalid");
     }
@@ -4203,7 +4203,7 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     assert.doesNotMatch(cliSealed.acceptance.evaluator, /evaluated-peer/u);
     const cliText = cliWord(engramHome, holder, "show", cliRef);
     assert.equal(cliText.status, 0, cliText.stderr);
-    assert.match(cliText.stdout, /acceptance: evaluated \(independent_session, asserted\) by peer-[0-9a-f]+/u);
+    assert.match(cliText.stdout, /acceptance: evaluated \(independent_session; recorded under asserted identity\) by peer-[0-9a-f]+/u);
   } finally {
     try { if (client) await client.close(); }
     finally { removeFixtureHomes(engramHome); }
@@ -5118,7 +5118,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async (t
     assert.ok(completed.history.items.length > 0);
     assert.ok(
       completed.history.items.some(
-        ({ kind, summary }) => kind === "completed" && summary === '"Dogfood local work"',
+        ({ kind, summary }) => kind === "completed" && summary === "completed",
       ),
       JSON.stringify(completed.history),
     );
@@ -5559,6 +5559,44 @@ test("evaluation history over MCP: a failing record then a passing one from one 
     for (const row of afterDone.evaluations) {
       assert.equal(row.stale, null, JSON.stringify(row));
       assert.equal(row.stale_judged, false);
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
+
+test("typed terse gates and generic vocabulary agree on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-receipt-facts-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "fact-reader");
+    await client.initialize();
+    const work = receipt(await client.call("add", { title: "Receipt facts" })).work.short_ref;
+    receipt(await client.call("claim", { work_ref: work }));
+    receipt(await client.call("gate", { work_ref: work, name: "Checks", failed: ["failed check"] }));
+    receipt(await client.call("gate", { work_ref: work, name: "Checks" }));
+    const mcp = receipt(await client.call("show", { work_ref: work }));
+    const cli = cliJson(engramHome, "fact-reader", "show", work);
+    for (const value of [mcp, cli]) {
+      assert.deepEqual(value.notes.map(row => row.gate), [
+        { name: "checks", passed: false }, { name: "checks", passed: true },
+      ]);
+      assert.deepEqual(value.notes.map(row => row.kind), ["generic", "generic"]);
+      assertTerseShow(value);
+    }
+    assert.match(cliText(engramHome, "fact-reader", "show", work), /latest generic/u);
+    for (const value of [
+      receipt(await client.call("show", { work_ref: work, notes: true, gates: true })),
+      cliJson(engramHome, "fact-reader", "show", work, "--notes", "--gates"),
+    ]) {
+      assert.equal(value.notes.length, 2);
+      assert.deepEqual(value.notes.map(row => row.gate), [
+        { name: "checks", passed: false }, { name: "checks", passed: true },
+      ]);
+      assert.equal(value.notes_window.total, 2);
     }
   } finally {
     try { if (client) await client.close(); }

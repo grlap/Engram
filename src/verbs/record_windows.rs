@@ -819,6 +819,9 @@ fn row_value(
             row.locator
         ));
     }
+    if let Some(gate) = &row.gate {
+        value["gate"] = json!({ "name": gate.name, "passed": gate.passed });
+    }
     if let Some(facts) = &row.verification {
         value["verification"] = verification_value(facts);
     }

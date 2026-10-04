@@ -13,6 +13,33 @@ are thin faces over it; transport code does not redefine memory policy. The
 agent sees fourteen words; every host and operator control lives under
 [Host integration](#host-integration).
 
+## History and evidence receipt facts
+
+Evidence kinds use the same words in structured and rendered output:
+`generic`, `verification`, and `environment`. The `notes` family and `note`
+command remain names for navigation, independent of a row's evidence kind.
+Lifecycle words are `proposed`, `open`, `completed`, `cancelled`, and
+`superseded`; derived availability remains a separate fact.
+
+Terse show notes, note windows (including body placeholders), and note detail
+retain an optional typed `gate: {name, passed}`. Ordinary prose does not create
+that field. Gate rows remain in the notes window with the `gates` family,
+unchanged totals and locators; the binding-evidence page has its own unchanged
+shape.
+
+Native event history renders from private canonical event facts. Selectors,
+child references, counts, lifecycle and reasons precede an optional item title
+within the 192-byte UTF-8 summary ceiling. Single-item history omits the repeated
+title. Stored delivery summaries and staged payload bytes are unchanged;
+replay hydrates the private facts again. Restored history keeps its deterministic
+generation/member presentation order. Byte-pressure omission removes earlier
+restored entries first, retaining the newest tail with exact omission counts.
+
+Completed show and done distinguish recording identity from the verdict basis:
+`recorded under asserted identity` describes the evaluator's recorded identity.
+Criterion `observed` or `judgment` bases remain separate facts. Structured
+acceptance provenance retains its existing field names and values.
+
 ## Using Engram as an agent
 
 Record changed duties, waits, decisions, and the next permitted action with
@@ -1152,7 +1179,7 @@ Rules that matter:
   with `update REF --accept "criterion"`, have the host evaluate it (the
   host refuses to evaluate an item without criteria), then run `done` again.
   `done` and the completed item's `show` say where the sealed
-  acceptance came from (`evaluated (<mode>, <assurance>) by <evaluator>` or
+  acceptance came from (`evaluated (<mode>; recorded under <assurance> identity) by <evaluator>` or
   `self-asserted`); `add --evaluation-mode MODE` pins a task's mode
   from creation, `update REF --evaluation-mode MODE` pins it later, and
   `--clear-evaluation-mode` releases it. `show` prints the pin as

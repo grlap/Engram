@@ -272,6 +272,8 @@ impl FromStr for WorkNextSection {
 /// agreement, and the compact `delivery` is projected from the record, not fingerprinted.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkChange {
+    #[serde(skip)]
+    pub(crate) history_display: Option<super::history_display::HistoryDisplay>,
     /// Read-side capture identity; never part of the frozen delivery bytes.
     #[serde(skip)]
     pub(crate) capture: Option<crate::storage::WorkRecordAddress>,

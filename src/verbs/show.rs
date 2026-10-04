@@ -169,7 +169,8 @@ fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
         view.history.omitted += 1;
         return true;
     }
-    if view.restored_history.items.pop().is_some() {
+    if !view.restored_history.items.is_empty() {
+        view.restored_history.items.remove(0);
         view.restored_history.omitted += 1;
         return true;
     }
@@ -325,6 +326,8 @@ pub(super) struct ShowHandoff {
 
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowNote {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) gate: Option<ShowGate>,
     pub(super) kind: WorkEvidenceKind,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) non_holder: bool,
@@ -337,6 +340,12 @@ pub(super) struct ShowNote {
     /// A native verification record's typed result, beside its summary.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) verification_result: Option<crate::domain::VerificationResult>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShowGate {
+    pub(super) name: String,
+    pub(super) passed: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -534,7 +543,7 @@ pub(super) fn acceptance_provenance_line(
         }
         Some(WorkAcceptanceProvenance::SelfAsserted) => "acceptance: self-asserted".into(),
         Some(WorkAcceptanceProvenance::Evaluated(details)) => format!(
-            "acceptance: evaluated ({}, {}) by {}",
+            "acceptance: evaluated ({}; recorded under {} identity) by {}",
             details.mode.word(),
             assurance_word(details.assurance),
             evaluator_label(&details.evaluator, identity)
@@ -1477,7 +1486,10 @@ pub(super) fn show_receipt_value(
             WorkChangeProjection::Visible(summary) => Some(ShowHistoryItem {
                 generation: None,
                 kind: summary.change_kind.clone(),
-                summary: strip_kind_prefix(&summary.summary, &summary.change_kind),
+                summary: change.history_display.as_ref().map_or_else(
+                    || strip_kind_prefix(&summary.summary, &summary.change_kind),
+                    |display| display.summary(false),
+                ),
                 by: summary.actor_id.as_deref().map(|actor| {
                     actor_label(
                         &change.display_producer.as_ref().map_or_else(
@@ -1708,6 +1720,10 @@ pub(super) fn show_notes(view: &WorkFocusView, identity: DisplayIdentity<'_>) ->
     notes
         .into_iter()
         .map(|note| ShowNote {
+            gate: note.gate.map(|gate| ShowGate {
+                name: gate.name,
+                passed: gate.passed,
+            }),
             kind: note.evidence_kind,
             non_holder: note.non_holder,
             summary: note.summary,

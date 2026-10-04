@@ -916,6 +916,11 @@ impl LocalWorkService {
             }
             let summary = project_work_event(store, &event, &entry.position)?;
             history.push(WorkChange {
+                history_display: Some(super::history_display::HistoryDisplay::load(
+                    store,
+                    &event,
+                    &entry.position,
+                )?),
                 capture: None,
                 completion_checkpoint: None,
                 display_producer: Some((

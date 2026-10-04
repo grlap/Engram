@@ -1862,9 +1862,9 @@ fn a_broken_evaluated_seal_binding_is_disclosed_as_unavailable_provenance() {
         .expect("show the evaluated completion");
     assert_eq!(healthy.value["acceptance"]["provenance"], "evaluated");
     assert!(
-        healthy
-            .text()
-            .contains("acceptance: evaluated (same_session, asserted) by you"),
+        healthy.text().contains(
+            "acceptance: evaluated (same_session; recorded under asserted identity) by you"
+        ),
         "{}",
         healthy.text()
     );

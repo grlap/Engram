@@ -1330,7 +1330,8 @@ fn trim_focus_once(focus: &mut WorkFocusView) -> bool {
         focus.history.omitted = focus.history.omitted.saturating_add(1);
         return true;
     }
-    if focus.restored_history.items.pop().is_some() {
+    if !focus.restored_history.items.is_empty() {
+        focus.restored_history.items.remove(0);
         focus.restored_history.omitted = focus.restored_history.omitted.saturating_add(1);
         return true;
     }

@@ -18,6 +18,7 @@ mod work_import;
 mod work_observation;
 mod work_plan;
 mod work_requests;
+mod work_words;
 
 pub use crate::schema::{
     COMPLETION_ENVIRONMENT_SCHEMA_VERSION, COMPLETION_OBLIGATION_SCHEMA_VERSION,

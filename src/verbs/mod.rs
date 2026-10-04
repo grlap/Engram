@@ -203,7 +203,10 @@ fn collapsed_changes(
                     .clone()
                     .unwrap_or_else(|| summary.object_kind.clone()),
                 summary.change_kind.clone(),
-                strip_kind_prefix(&summary.summary, &summary.change_kind),
+                change.history_display.as_ref().map_or_else(
+                    || strip_kind_prefix(&summary.summary, &summary.change_kind),
+                    |display| display.summary(true),
+                ),
                 summary.actor_id.clone(),
                 summary.actor_context.clone(),
             )),
@@ -259,7 +262,9 @@ fn collapsed_changes(
             "checkpoint" => "checkpointed",
             other => other,
         };
-        let rendered_text = if matches!(kind.as_str(), "evidence" | "checkpoint") {
+        let rendered_text = if change.history_display.is_some() {
+            terminal_safe_line(text)
+        } else if matches!(kind.as_str(), "evidence" | "checkpoint") {
             short_note(text)
         } else {
             short(text)
@@ -341,21 +346,11 @@ fn availability_word(availability: WorkAvailability) -> &'static str {
 }
 
 fn lifecycle_word(lifecycle: WorkLifecycle) -> &'static str {
-    match lifecycle {
-        WorkLifecycle::Proposed => "proposed",
-        WorkLifecycle::Open => "open",
-        WorkLifecycle::Completed => "completed",
-        WorkLifecycle::Cancelled => "cancelled",
-        WorkLifecycle::Superseded => "superseded",
-    }
+    lifecycle.word()
 }
 
 fn evidence_kind_word(kind: WorkEvidenceKind) -> &'static str {
-    match kind {
-        WorkEvidenceKind::Generic => "note",
-        WorkEvidenceKind::Verification => "verification",
-        WorkEvidenceKind::Environment => "environment",
-    }
+    kind.word()
 }
 
 fn child_summary_line(child: &WorkItemSummary) -> String {

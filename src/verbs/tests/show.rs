@@ -510,7 +510,7 @@ fn show_reports_the_true_note_total_and_latest_feed_entry() {
             })
     );
     assert!(receipt.text().contains(
-        "notes: 130 recorded; latest note by you: \"latest append with older asserted timestamp\""
+        "notes: 130 recorded; latest generic by you: \"latest append with older asserted timestamp\""
     ));
 }
 

@@ -113,11 +113,8 @@ fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() 
                 .as_array()
                 .expect("history")
                 .iter()
-                .any(|row| row["summary"]
-                    .as_str()
-                    .is_some_and(|summary| summary.starts_with(
-                        "title, outcome, acceptance, kind, priority, labels, assignment, deferral:"
-                    ))),
+                .any(|row| row["summary"].as_str().is_some_and(|summary| summary
+                    == "title, outcome, acceptance, kind, priority, labels, assignment, deferral")),
             "{}",
             shown.value["history"]
         );
@@ -141,10 +138,7 @@ fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() 
                 .expect("history")
                 .iter()
                 .all(|row| row["kind"] == "revised"
-                    && row["summary"]
-                        .as_str()
-                        .expect("summary")
-                        .starts_with("acceptance:"))
+                    && row["summary"].as_str().expect("summary").eq("acceptance"))
         );
         verbs
             .update(
@@ -163,7 +157,7 @@ fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() 
                 .iter()
                 .any(|row| row["summary"]
                     .as_str()
-                    .is_some_and(|summary| summary.starts_with("no planning change:")))
+                    .is_some_and(|summary| summary == "no planning change"))
         );
         let store = SqliteStore::open(path).expect("store");
         for entry in store
@@ -235,7 +229,7 @@ fn a_revision_that_only_reorders_criteria_lists_acceptance_in_history() {
         .map(|row| row["summary"].as_str().expect("summary"))
         .collect();
     assert_eq!(revisions.len(), 1, "{revisions:?}");
-    assert!(revisions[0].starts_with("acceptance:"), "{revisions:?}");
+    assert!(revisions[0].eq("acceptance"), "{revisions:?}");
 }
 
 #[test]
@@ -292,10 +286,7 @@ fn phoenix_acceptance_replacement_is_presence_aware_audited_and_terminal_safe() 
             .expect("history")
             .iter()
             .any(|row| row["kind"] == "revised"
-                && row["summary"]
-                    .as_str()
-                    .expect("summary")
-                    .starts_with("acceptance:"))
+                && row["summary"].as_str().expect("summary").eq("acceptance"))
     );
     let store = SqliteStore::open(&database).expect("store");
     let item = store

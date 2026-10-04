@@ -362,7 +362,7 @@ test("Phoenix update --accept replaces criteria and ls reports exact totals", (t
     json("add", "Planning second");
     json("update", first, "--accept", "B", "--accept", "A");
     assert.deepEqual(json("show", first).status.work.acceptance, ["B", "A"]);
-    assert.ok(json("show", first).history.items.some(({ kind, summary }) => kind === "revised" && summary.startsWith("acceptance:")));
+    assert.ok(json("show", first).history.items.some(({ kind, summary }) => kind === "revised" && summary === "acceptance"));
     json("update", first, "--title", "Planning renamed");
     assert.deepEqual(json("show", first).status.work.acceptance, ["B", "A"]);
     for (const args of [["--accept"], ["--accept", ""], ["--accept", "good", "--accept", " "]]) {
@@ -1132,7 +1132,7 @@ test("CLI actor context is attribution while actor and session remain principals
     );
     const showText = word("show", workRef);
     assert.equal(showText.status, 0, showText.stderr);
-    assert.match(showText.stdout, new RegExp(`latest note by you \\(${actorContext}\\)`, "u"));
+    assert.match(showText.stdout, new RegExp(`latest generic by you \\(${actorContext}\\)`, "u"));
 
     const remembered = word(
       "remember",

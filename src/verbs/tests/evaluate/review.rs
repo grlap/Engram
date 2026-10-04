@@ -560,7 +560,7 @@ fn done_show_and_next_disclose_completion_provenance() {
     assert!(
         completed
             .text()
-            .contains("acceptance: evaluated (same_session, asserted) by "),
+            .contains("acceptance: evaluated (same_session; recorded under asserted identity) by "),
         "{}",
         completed.text()
     );
@@ -576,7 +576,7 @@ fn done_show_and_next_disclose_completion_provenance() {
     assert!(
         shown
             .text()
-            .contains("acceptance: evaluated (same_session, asserted) by "),
+            .contains("acceptance: evaluated (same_session; recorded under asserted identity) by "),
         "{}",
         shown.text()
     );
@@ -593,20 +593,27 @@ fn done_show_and_next_disclose_completion_provenance() {
                 ..evaluate_input(
                     &independent.work_ref,
                     basis(&database, &independent),
-                    vec![verdict(1, "pass", "asserted", &hashes)],
+                    vec![verdict(1, "pass", "judgment", &hashes)],
                 )
             },
             at(17),
         )
         .expect("the peer evaluates independently");
+    let evaluated = verbs
+        .show(&independent.work_ref, at(17))
+        .expect("show the live independent evaluation");
+    assert_eq!(
+        evaluated.value["acceptance_evaluation"]["verdicts"][0]["basis"],
+        "judgment"
+    );
     let completed = verbs
         .done(done_input(&independent.work_ref), at(18))
         .expect("the holder completes on the peer's pass");
     assert!(!completed.owed, "{}", completed.text());
     assert!(
-        completed
-            .text()
-            .contains("acceptance: evaluated (independent_session, asserted) by "),
+        completed.text().contains(
+            "acceptance: evaluated (independent_session; recorded under asserted identity) by "
+        ),
         "{}",
         completed.text()
     );
@@ -628,9 +635,9 @@ fn done_show_and_next_disclose_completion_provenance() {
         .show(&independent.work_ref, at(19))
         .expect("show the independently evaluated item");
     assert!(
-        shown
-            .text()
-            .contains("acceptance: evaluated (independent_session, asserted) by "),
+        shown.text().contains(
+            "acceptance: evaluated (independent_session; recorded under asserted identity) by "
+        ),
         "{}",
         shown.text()
     );
@@ -639,6 +646,9 @@ fn done_show_and_next_disclose_completion_provenance() {
         shown.value["acceptance"]["evaluation"],
         passing.value["evaluation"]["hash"]
     );
+    assert_eq!(completed.value["acceptance"]["assurance"], "asserted");
+    assert_eq!(shown.value["acceptance"]["assurance"], "asserted");
+    assert_eq!(shown.value["acceptance"], completed.value["acceptance"]);
 }
 
 // Round 4 (Medium): the word recovers an exact resend after a revision change
@@ -920,7 +930,7 @@ fn evaluation_mode_revisions_are_disclosed_in_history_and_peer_next() {
     assert_eq!(
         revised
             .iter()
-            .filter(|summary| summary.starts_with("evaluation mode:"))
+            .filter(|summary| summary.as_str() == "evaluation mode")
             .count(),
         2,
         "{revised:?}"
@@ -1535,7 +1545,7 @@ fn source_freshness_is_checked_at_done_with_an_actionable_remedy() {
     assert!(
         sealed
             .text()
-            .contains("acceptance: evaluated (same_session, asserted) by "),
+            .contains("acceptance: evaluated (same_session; recorded under asserted identity) by "),
         "{}",
         sealed.text()
     );
