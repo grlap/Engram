@@ -123,9 +123,9 @@ pub(super) fn refusal(name: &str, restriction: Restriction) -> Value {
 #[cfg(test)]
 mod tests {
     use super::super::McpServer;
+    use super::super::parameters::Parameters;
     use super::{READ_ONLY_REFUSED, READ_TOOLS, Restriction, admit, refusal};
     use crate::{ProjectId, SessionId};
-    use rmcp::handler::server::wrapper::Parameters;
     use rmcp::model::CallToolResult;
     use serde_json::{Map, Value, json};
 

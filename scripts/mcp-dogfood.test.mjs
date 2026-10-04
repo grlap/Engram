@@ -1541,15 +1541,24 @@ test("an argument a word's schema rejects is a text-only tool error and the conn
     client = new McpClient(engramHome, "schema-rejected");
     await client.initialize();
     const reference = receipt(await client.call("add", { title: "Schema-rejected arguments" })).work.short_ref;
-    // The MCP library refuses these before the word runs: a tool error, not
-    // a JSON-RPC failure, whose only content is text describing the problem,
-    // without the structured error, reminders or next a word's own refusal
-    // carries. It names an undeclared field or an unknown value; a type
-    // error names the type it expected, not the field.
+    // The fields these refusals name are the ones the listed input schemas
+    // declare; an extractor rmcp's tool macro stopped recognising would list
+    // empty schemas while still refusing, so the schemas are checked too.
+    const listed = new Map((await client.tools()).map((tool) => [tool.name, tool.inputSchema]));
+    assert.ok(listed.get("next")?.properties?.peek, JSON.stringify(listed.get("next")));
+    assert.ok(listed.get("update")?.properties?.action, JSON.stringify(listed.get("update")));
+    assert.ok(listed.get("evaluate")?.properties?.verdicts, JSON.stringify(listed.get("evaluate")));
+    // Engram's argument extractor refuses these before the word runs, and
+    // the MCP library routes the refusal as a tool error, not a JSON-RPC
+    // failure, whose only content is text describing the problem, without
+    // the structured error, reminders or next a word's own refusal carries.
+    // Each names the field it concerns, after the
+    // "failed to deserialize parameters:" prefix the library routes by.
     const cases = [
-      ["an undeclared field", "update", { work_ref: reference, undeclared_field: true }, /unknown field `undeclared_field`/u],
-      ["an unknown action", "update", { work_ref: reference, action: "no_such_action" }, /unknown variant `no_such_action`/u],
-      ["a wrong type", "next", { peek: "yes" }, /invalid type: string "yes", expected a boolean/u],
+      ["an undeclared field", "update", { work_ref: reference, undeclared_field: true }, /^failed to deserialize parameters: field `undeclared_field`: unknown field `undeclared_field`/u],
+      ["an unknown action", "update", { work_ref: reference, action: "no_such_action" }, /^failed to deserialize parameters: field `action`: unknown variant `no_such_action`/u],
+      ["a wrong type", "next", { peek: "yes" }, /^failed to deserialize parameters: field `peek`: invalid type: string "yes", expected a boolean$/u],
+      ["a nested wrong type", "evaluate", { work_ref: reference, mode: "same_session", acceptance_basis: 1, evidence_basis: 1, verdicts: [{ criterion: "one" }] }, /^failed to deserialize parameters: field `verdicts\[0\]\.criterion`: invalid type/u],
     ];
     for (const [label, tool, arguments_, named] of cases) {
       const refused = await client.call(tool, arguments_);

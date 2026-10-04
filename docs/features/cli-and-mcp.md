@@ -1156,12 +1156,17 @@ Rules that matter:
   and `next` (commands you can run now). In ordinary `engram mcp`, arguments
   a word's input schema rejects, such as an undeclared field, a value of the
   wrong type or an action word that does not exist, never reach the word:
-  the MCP library refuses them first, as a tool error (`isError: true`)
-  whose only content is text describing the problem, with no structured
-  JSON, `reminders` or `next`. The text names an undeclared field and the
-  accepted ones, and an unknown value, but a type error may not name its
-  field. Correct the arguments against the word's input schema and call
-  again; the connection stays usable. The [read-only mode](#read-only-mode)
+  Engram's argument extractor refuses them first, and the MCP library
+  returns the refusal as a tool error (`isError: true`) whose only content
+  is text describing the problem, with no structured JSON, `reminders` or
+  `next`. After the `failed to deserialize parameters:` prefix the library
+  routes by, the text names the field it concerns, a nested one by
+  its path (``field `peek` ``, ``field `action` ``,
+  ``field `verdicts[0].criterion` ``),
+  then what was wrong: the expected type, the unknown value or, for an
+  undeclared field, the accepted ones. A missing required field is named in
+  that message itself. Correct the arguments against the word's input schema
+  and call again; the connection stays usable. The [read-only mode](#read-only-mode)
   refuses such arguments to its read words itself, before the library, as a
   structured `mcp_read_only_refused` error. Ordinary mutation words never
   ask for fences or idempotency keys. Words accept record ids as inputs only

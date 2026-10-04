@@ -1,10 +1,12 @@
 //! MCP stdio surface for the fifteen agent-facing tools: the fourteen work
 //! words plus `search`.
 
+mod parameters;
 #[cfg(test)]
 pub(crate) mod prose_sweep;
 mod read_only;
 mod remedies;
+use parameters::Parameters;
 pub(crate) use remedies::{
     CATALOG_CURSOR_REMEDY, CRITERION_LINK_REMEDY, PEER_DECOMPOSITION_REMEDY, SHOW_CURSOR_REMEDY,
     project_memory_remedy,
@@ -15,7 +17,7 @@ use std::{path::PathBuf, sync::Arc};
 use chrono::Utc;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
-    handler::server::{router::tool::ToolRouter, tool::ToolCallContext, wrapper::Parameters},
+    handler::server::{router::tool::ToolRouter, tool::ToolCallContext},
     model::{CallToolRequestParams, CallToolResponse, CallToolResult},
     schemars::JsonSchema,
     service::RequestContext,
@@ -939,7 +941,7 @@ impl McpServer {
 }
 
 /// What `initialize` tells an ordinary connection.
-const INSTRUCTIONS: &str = "Fourteen words: next, ls, show, add, claim, update, gate, evaluate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before execution; evaluate records attributed acceptance verdicts that an evaluated project policy consumes at done; note accepts project-bound non-holders on open/blocked work without granting execution authority; completed note/gate append late evidence without reopening; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer a word gives ends with reminders and runnable next commands; arguments a word's input schema rejects (an undeclared field, a wrong type, an unknown action) are refused before the word runs, as a text-only tool error that describes the problem, though a type error may not name the field. Keyless same-holder claim calls renew without shortening expiry. A restored completed gate always appends: inspect show before repeating an uncertain call. Other identical calls retain exact retry semantics.";
+const INSTRUCTIONS: &str = "Fourteen words: next, ls, show, add, claim, update, gate, evaluate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before execution; evaluate records attributed acceptance verdicts that an evaluated project policy consumes at done; note accepts project-bound non-holders on open/blocked work without granting execution authority; completed note/gate append late evidence without reopening; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer a word gives ends with reminders and runnable next commands; arguments a word's input schema rejects (an undeclared field, a wrong type, an unknown action) are refused before the word runs, as a text-only tool error that names the field and describes the problem. Keyless same-holder claim calls renew without shortening expiry. A restored completed gate always appends: inspect show before repeating an uncertain call. Other identical calls retain exact retry semantics.";
 
 #[allow(
     clippy::unused_async_trait_impl,
