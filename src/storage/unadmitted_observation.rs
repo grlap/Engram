@@ -24,7 +24,7 @@ pub(super) const EXECUTION_OBSERVE_OPERATION: &str = "execution_observe";
 /// it. Credentials and the server clock stay out, so a retry after a
 /// reconnection by the same session replays.
 #[derive(Serialize)]
-struct ExecutionObserveIntent<'a> {
+pub(super) struct ExecutionObserveIntent<'a> {
     control_schema_version: u16,
     operation: &'static str,
     session_id: &'a SessionId,
@@ -38,7 +38,7 @@ struct ExecutionObserveIntent<'a> {
 }
 
 impl<'a> ExecutionObserveIntent<'a> {
-    fn of(session_id: &'a SessionId, input: &'a ExecutionObserveInput) -> Self {
+    pub(super) fn of(session_id: &'a SessionId, input: &'a ExecutionObserveInput) -> Self {
         Self {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             operation: EXECUTION_OBSERVE_OPERATION,

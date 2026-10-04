@@ -1100,3 +1100,201 @@ fn a_reclaimed_claim_names_only_a_larger_generation_after_its_release() {
     let report = fixture.store.verify_all().expect("doctor");
     assert!(report.is_healthy(), "{report:?}");
 }
+
+/// Leaves the stored operation under `key` as an admission made before the
+/// text rule left it: the row answers for `intent`, a request the rule now
+/// refuses.
+fn admitted_before_the_text_rule(
+    store: &SqliteStore,
+    host: &HostSession,
+    operation: &str,
+    key: &str,
+    intent: &CanonicalObject,
+) {
+    let rows = store
+        .connection
+        .execute(
+            "UPDATE control_operation_results SET intent_hash = ?1, intent_json = ?2
+             WHERE session_id = ?3 AND operation = ?4 AND idempotency_key = ?5",
+            rusqlite::params![
+                intent.key().as_str(),
+                intent.bytes(),
+                host.session_id.0,
+                operation,
+                key
+            ],
+        )
+        .expect("rewrite the stored intent");
+    assert_eq!(rows, 1, "{operation} {key}");
+}
+
+/// The text rule runs after replay: an exact retry of a checkpoint or a
+/// naming admitted before the rule, whose text the rule now refuses, still
+/// answers with its stored receipt, while a fresh request with that text is
+/// refused.
+#[test]
+fn an_exact_retry_admitted_before_the_text_rule_replays() {
+    let (mut fixture, _work, claim, mut host) = bound_host();
+    let store = &mut fixture.store;
+    let grant = host.grant(store, &[EffectClass::MutateLocal], true, 30);
+    host.begin(store, &grant, 31);
+    let checkpoint =
+        |store: &mut SqliteStore, observations: &[ExecutionObservationInput], key: &str| {
+            store.checkpoint_control_turn_with_evidence(
+                &host.project_id,
+                &host.session_id,
+                &host.connection_token,
+                &host.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                observations,
+                &[],
+                &[],
+                key,
+                at(32),
+            )
+        };
+    let admitted = checkpoint(
+        store,
+        &[observation(&host, "workspace-B", "revision-B")],
+        "checkpoint-before",
+    )
+    .expect("checkpointed");
+    let retry = [observation(&host, "workspace\u{202E}B", "revision-B")];
+    let refused = checkpoint(store, &retry, "checkpoint-fresh").expect_err("refused text");
+    assert!(
+        matches!(refused, StoreError::SourceBasisTextRefused { .. }),
+        "{refused:?}"
+    );
+    let intent = CanonicalObject::freeze(&crate::storage::ControlTurnCheckpointFingerprint {
+        control_schema_version: crate::schema::CONTROL_SCHEMA_VERSION,
+        session_id: &host.session_id,
+        grant_id: &grant.grant_id,
+        next_intent: TurnNextIntent::Continue,
+        observations: &retry,
+        verification_evidence: &[],
+        environment_evidence: &[],
+        idempotency_key: "checkpoint-before",
+    })
+    .expect("checkpoint intent");
+    admitted_before_the_text_rule(
+        store,
+        &host,
+        "turn_checkpoint",
+        "checkpoint-before",
+        &intent,
+    );
+    let before = object_count(store);
+    let replayed = checkpoint(store, &retry, "checkpoint-before").expect("the retry replays");
+    assert_eq!(format!("{replayed:?}"), format!("{admitted:?}"));
+    assert_eq!(object_count(store), before, "a replay records nothing");
+
+    let named = host_binds(
+        store,
+        &host,
+        &claim,
+        "workspace-B",
+        9,
+        NamedRootBindingKind::Bound,
+        33,
+        "name-before",
+        33,
+    )
+    .expect("named");
+    let unsafe_workspace = "workspace\u{202D}B";
+    let refused = host_binds(
+        store,
+        &host,
+        &claim,
+        unsafe_workspace,
+        10,
+        NamedRootBindingKind::Bound,
+        33,
+        "name-fresh",
+        33,
+    )
+    .expect_err("refused text");
+    assert!(
+        matches!(&refused, StoreError::NamedRootBindingRefused(reason) if reason.starts_with("workspace_id holds")),
+        "{refused:?}"
+    );
+    let intent = CanonicalObject::freeze(&crate::storage::NamedRootBindingFingerprint {
+        control_schema_version: crate::schema::CONTROL_SCHEMA_VERSION,
+        session_id: &host.session_id,
+        claim_id: &claim.claim_id,
+        claim_fence: claim.fence,
+        workspace_id: unsafe_workspace,
+        generation: 9,
+        named_at: at(33),
+        kind: NamedRootBindingKind::Bound,
+        end_reason: None,
+        idempotency_key: "name-before",
+    })
+    .expect("naming intent");
+    admitted_before_the_text_rule(store, &host, "named_root_bind", "name-before", &intent);
+    let before = object_count(store);
+    let replayed = host_binds(
+        store,
+        &host,
+        &claim,
+        unsafe_workspace,
+        9,
+        NamedRootBindingKind::Bound,
+        33,
+        "name-before",
+        34,
+    )
+    .expect("the retry replays");
+    assert_eq!(replayed, named);
+    assert_eq!(object_count(store), before, "a replay records nothing");
+}
+
+/// The text rule runs after replay, but the trimmed-field rule runs before
+/// it: at a field's start or end, a refused character that is also
+/// whitespace (a tab, a line or page break, or U+0085) keeps the checkpoint's
+/// trimmed-field refusal, `invalid_control_session`; inside the field it is
+/// the text refusal.
+#[test]
+fn an_edge_whitespace_control_keeps_the_trimmed_field_refusal() {
+    let (mut fixture, _work, _claim, mut host) = bound_host();
+    let store = &mut fixture.store;
+    let grant = host.grant(store, &[EffectClass::MutateLocal], true, 30);
+    host.begin(store, &grant, 31);
+    let mut checkpoint = |workspace: &str, key: &str| {
+        store
+            .checkpoint_control_turn_with_evidence(
+                &host.project_id,
+                &host.session_id,
+                &host.connection_token,
+                &host.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &[observation(&host, workspace, "revision-B")],
+                &[],
+                &[],
+                key,
+                at(32),
+            )
+            .expect_err(workspace)
+    };
+    for (index, edge) in ["workspace-B\t", "\nworkspace-B", "workspace-B\u{85}"]
+        .into_iter()
+        .enumerate()
+    {
+        let refused = checkpoint(edge, &format!("edge-{index}"));
+        assert!(
+            matches!(refused, StoreError::InvalidControlSession(_)),
+            "{edge:?}: {refused:?}"
+        );
+        assert_eq!(
+            crate::host::store_error_code(&refused),
+            "invalid_control_session"
+        );
+    }
+    let inside = checkpoint("workspace\tB", "inside");
+    assert_eq!(
+        crate::host::store_error_code(&inside),
+        "source_basis_text_refused",
+        "{inside:?}"
+    );
+}

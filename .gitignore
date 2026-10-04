@@ -6,18 +6,14 @@
 
 # Local Engram state. Exports intended for sharing must be written elsewhere.
 /.engram/
+# SQLite stores anywhere in the checkout stay local.
+*.db
 
 # Local tooling and editor state
 .DS_Store
 .idea/
 .vscode/
 *.diff
-
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
-.beads/proxieddb/
 
 # Codex split worktrees live inside the checkout under .worktrees/
 .worktrees/

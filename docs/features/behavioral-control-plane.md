@@ -441,7 +441,12 @@ what it can without that basis. Other format characters, such as the
 zero-width joiners, variation selectors and the soft hyphen, and Windows
 extended paths are kept byte for byte. The rule is checked after an exact
 retry would replay, so a checkpoint admitted before it still replays, and
-text already stored keeps reading as stored. For runs without a named-root event, equal revisions
+text already stored keeps reading as stored. These fields must also be
+trimmed, and that older rule runs first: a refused character that is also
+whitespace (a tab, a line feed, a carriage return, a vertical tab, a form
+feed or U+0085) at a field's start or end is refused as
+`invalid_control_session`, the trimmed-field refusal, and inside the field as
+`source_basis_text_refused`. For runs without a named-root event, equal revisions
 in different workspaces retain the earlier comparison rule. After a claim has
 named a root, the optional positive `source_root_generation` and
 `source_root_state` (`named` or `ended`) travel together on a sighting. They
@@ -918,7 +923,9 @@ breaks a rule above, an asserted actor with any assurance but `asserted` or
 an oversized field, and a receipt over 16 KiB are refused as
 `execution_observation_invalid`, as is a new workspace id or source
 revision, in a source change or an observed check's source, holding a
-control or bidirectional formatting character, the reason naming the field;
+control or bidirectional formatting character, the reason naming the field
+by the path its request carries (`check.source_basis` for a single observed
+check, `observed_checks[i].source_basis` for an unadmitted turn's checks);
 a binding, cut or root basis the store
 does not hold as `execution_observation_basis_mismatch`; and an
 `account_if_eligible` basis that does not name the project's current policy

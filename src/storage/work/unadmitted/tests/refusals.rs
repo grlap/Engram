@@ -453,9 +453,30 @@ fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
             host_turn_ref: "turn".into(),
             check,
         };
+        // A single observed check is named by the path its request carries.
         cases.push((
             "observed check workspace",
-            "observed_checks[0].source_basis.workspace_id",
+            "check.source_basis.workspace_id",
+            input,
+        ));
+    }
+    {
+        let mut input = base.clone();
+        let mut second = passed_check("second");
+        second.source_basis = Some(ExecutionSourceBasis {
+            workspace_id: "workspace-a".into(),
+            source_revision: "rev\u{200F}b".into(),
+            source_root_generation: None,
+            source_root_state: None,
+        });
+        input.occurrence = ObservedOccurrence::UnadmittedTurn {
+            host_turn_ref: "turn".into(),
+            source_change: None,
+            observed_checks: vec![passed_check("first"), second],
+        };
+        cases.push((
+            "unadmitted turn check revision",
+            "observed_checks[1].source_basis.source_revision",
             input,
         ));
     }
@@ -463,7 +484,13 @@ fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
         let before = footprint(&fixture.store);
         let refused = observe(&mut fixture, input, 7).expect_err(case);
         assert!(source_text_refused(&refused), "{case}: {refused:?}");
-        assert!(refused.to_string().contains(field), "{case}: {refused}");
+        let reason = refused.to_string();
+        assert!(reason.contains(field), "{case}: {refused}");
+        assert_eq!(
+            reason.contains("observed_checks"),
+            field.starts_with("observed_checks"),
+            "{case}: {refused}"
+        );
         assert!(
             !refused
                 .to_string()
@@ -498,4 +525,56 @@ fn host_source_text_with_a_control_or_bidi_character_is_refused_whole() {
         panic!("an inter-turn change: {recorded:?}");
     };
     assert_eq!(source_change.workspace_id(), kept);
+}
+
+// The text rule runs after replay: an exact retry of an observation admitted
+// before the rule, whose text the rule now refuses, still answers with its
+// stored receipt.
+#[test]
+fn an_exact_retry_of_an_observation_admitted_before_the_text_rule_replays() {
+    let mut fixture = fixture();
+    let key = "admitted-before-the-rule";
+    let first = inter_turn_change(&fixture, key);
+    let admitted = observe(&mut fixture, first, 7).expect("recorded");
+    let mut retry = inter_turn_change(&fixture, key);
+    retry.occurrence = ObservedOccurrence::InterTurnChange {
+        source_change: content_change("rev-a", "rev\u{202E}b"),
+    };
+    // A fresh request with this text is refused.
+    let mut fresh = retry.clone();
+    fresh.idempotency_key = "fresh".into();
+    let refused = observe(&mut fixture, fresh, 7).expect_err("refused text");
+    assert!(source_text_refused(&refused), "{refused:?}");
+    // The stored operation as an admission before the rule left it: the
+    // key's row answers for the retry's exact intent.
+    let intent = CanonicalObject::freeze(
+        &crate::storage::unadmitted_observation::ExecutionObserveIntent::of(
+            &fixture.host.status.session_id,
+            &retry,
+        ),
+    )
+    .expect("intent");
+    let rows = fixture
+        .store
+        .connection
+        .execute(
+            "UPDATE control_operation_results SET intent_hash = ?1, intent_json = ?2
+             WHERE session_id = ?3 AND operation = 'execution_observe' AND idempotency_key = ?4",
+            rusqlite::params![
+                intent.key().as_str(),
+                intent.bytes(),
+                fixture.host.status.session_id.0,
+                key
+            ],
+        )
+        .expect("rewrite the stored intent");
+    assert_eq!(rows, 1);
+    let before = footprint(&fixture.store);
+    let replayed = observe(&mut fixture, retry, 9).expect("the exact retry replays");
+    assert_eq!(replayed, admitted);
+    assert_eq!(
+        footprint(&fixture.store),
+        before,
+        "a replay records nothing"
+    );
 }

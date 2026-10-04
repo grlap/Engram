@@ -595,18 +595,31 @@ impl ExecutionObserveInput {
             ]
         }
         let mut texts = Vec::new();
-        let (source_change, checks): (Option<&ObservedSourceChange>, Vec<&ObservedCheck>) =
-            match &self.occurrence {
-                ObservedOccurrence::UnadmittedTurn {
-                    source_change,
-                    observed_checks,
-                    ..
-                } => (source_change.as_ref(), observed_checks.iter().collect()),
-                ObservedOccurrence::InterTurnChange { source_change } => {
-                    (Some(source_change), Vec::new())
-                }
-                ObservedOccurrence::ObservedCheck { check, .. } => (None, vec![check]),
-            };
+        // Each check is labelled by the path the request itself carries: an
+        // unadmitted turn lists its checks, a single observed check names one.
+        let (source_change, checks): (
+            Option<&ObservedSourceChange>,
+            Vec<(String, &ObservedCheck)>,
+        ) = match &self.occurrence {
+            ObservedOccurrence::UnadmittedTurn {
+                source_change,
+                observed_checks,
+                ..
+            } => (
+                source_change.as_ref(),
+                observed_checks
+                    .iter()
+                    .enumerate()
+                    .map(|(index, check)| (format!("observed_checks[{index}]"), check))
+                    .collect(),
+            ),
+            ObservedOccurrence::InterTurnChange { source_change } => {
+                (Some(source_change), Vec::new())
+            }
+            ObservedOccurrence::ObservedCheck { check, .. } => {
+                (None, vec![("check".to_owned(), check)])
+            }
+        };
         if let Some(change) = source_change {
             texts.push((
                 "source_change.workspace_id".to_owned(),
@@ -629,12 +642,9 @@ impl ExecutionObserveInput {
                 ));
             }
         }
-        for (index, check) in checks.into_iter().enumerate() {
+        for (label, check) in checks {
             if let Some(source_basis) = &check.source_basis {
-                texts.extend(basis(
-                    &format!("observed_checks[{index}].source_basis"),
-                    source_basis,
-                ));
+                texts.extend(basis(&format!("{label}.source_basis"), source_basis));
             }
         }
         texts
