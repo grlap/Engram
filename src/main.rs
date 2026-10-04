@@ -538,7 +538,7 @@ enum WorkCommand {
         /// Only items assigned to you or held by this session.
         #[arg(long)]
         mine: bool,
-        /// Include completed, cancelled, and superseded items.
+        /// Include completed, cancelled, and superseded items. --ready selects open work only, so --all adds nothing to it; with --blocked, --all adds ended items that still carry an active blocker.
         #[arg(long)]
         all: bool,
         /// Exact case-insensitive label.

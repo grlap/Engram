@@ -204,8 +204,11 @@ session does not hold while it holds others, the word is refused with
 - `next` offers the explicit command for each. For the focus it offers only
   a command its state admits: `details.focus_state` is `unclaimed`,
   `held_elsewhere` or `not_open`, and the command is a claim where the word
-  needs one, a late `gate --work-ref` on finished work, or `show` where
-  nothing else applies.
+  needs one, or `show` where nothing else applies. On open work an explicit
+  `note` is offered, as an observation; on completed work an explicit
+  `note` and a late `gate NAME --work-ref` are offered, as late findings.
+  `not_open` also covers cancelled, superseded and proposed work, which
+  admits no note or gate from this session, so it is offered `show` alone.
 
 Repeating the word with the item named acts as before. A bare `handoff` keeps
 the focus without this check: its recipient accepts an item it does not hold
@@ -377,7 +380,25 @@ The agent `work_claim_held` error uses `details.work_ref` and the display
 `details.holder`, not `work_id` or `holder_session_id`. It retains `expires_at`,
 `expires_at_ms` and `remedy`; its message and reminder use a human-readable
 expiry. CLI JSON and MCP carry the same envelope. Host-core errors keep their
-raw identifiers. Other work-error variants are not covered by this conversion.
+raw identifiers.
+Agent refusals that concern one work item name it by short reference in the
+same way: `work_not_found`, a revision conflict, `work_not_open`, a refused
+peer decomposition, an already satisfied prerequisite, a refused detach, a
+claim mismatch or lapse, a release that needs a reason, a refused completion
+or bound verification, a completion that needs recovery, missing acceptance
+criteria, refused, refused-at-admission, carried-failure and moved-basis
+evaluations, and open work obligations. Where the core envelope's `details`
+carry `work_id`, the agent ones carry `work_ref` in its place (a refused
+evaluation and open work obligations have no details object, and keep none).
+The message names the `w-…` reference where it rendered the item's raw id,
+and a reminder that repeats the message word for word does the same, on CLI
+text, CLI JSON and MCP alike. The code, every other detail and scoped record
+ids (evaluations, seals, evidence, observations) are unchanged, and
+caller-supplied text, such as a reason or a criterion, is never rewritten,
+even when it quotes the item's raw id. An ambiguous
+short reference keeps its candidates' full work ids, in the message, in
+`details.candidates` and in each offered `show` command, since a colliding
+short reference cannot tell them apart.
 Project-memory attribution, caller-owned process-default session notices and
 encoded continuation context also retain their documented contracts. Compact
 rows retain up to 80 UTF-8 bytes of title. Their hybrid `state` is availability
@@ -494,7 +515,12 @@ Rules that matter:
   expired cut, including feed, priority, or time changes, refuses with a
   fresh same-filter `ls --ready` command. Exactly-once concatenation holds
   only while that cut remains valid. `ls --ready` cannot be combined with
-  `--blocked`. Compact rows omit the constant plain-ready sentence and keep
+  `--blocked`. `--ready` selects open work only, since only open work is
+  ready, so `--all` adds nothing to it: `ls --all --ready` lists exactly what
+  `ls --ready` lists, in the same order. `--blocked` selects work with an
+  active blocker or an unmet prerequisite, so with `--all` it also lists a
+  completed, cancelled or superseded item that still carries an active
+  blocker. Compact rows omit the constant plain-ready sentence and keep
   additional reasons such as prior-claim recovery. Show claim reminders and
   verbose/core reason codes are unchanged. Verbose `next` retains its
   requested richer list limit. Delivery and memory advertisement behavior

@@ -76,6 +76,10 @@ pub struct ImplicitTargetConflict {
     /// What can be done on the focus, so the refusal offers a command that
     /// works there.
     pub focus_state: ImplicitFocusState,
+    /// The focus lifecycle, which tells finished work, where late notes and
+    /// gates are admitted, from cancelled, superseded and proposed work,
+    /// where they are not. Guidance only: the published state stays coarse.
+    pub focus_lifecycle: crate::domain::WorkLifecycle,
     /// At most a few held items; `more` counts the rest.
     pub held: Vec<String>,
     pub more: usize,

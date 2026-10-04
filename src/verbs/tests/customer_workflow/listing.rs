@@ -836,3 +836,81 @@ fn listing_cursor_follows_membership_and_order_not_unrelated_writes() {
         StoreError::WorkCatalogCursorInvalid { .. }
     ));
 }
+
+// The ready filter selects open work only, so the all filter adds nothing to
+// it: all with ready lists exactly the ready set, in readiness order, with no
+// completed or cancelled item. The blocked filter selects an active blocker
+// or an unmet prerequisite, so all with blocked adds an ended item that still
+// carries an active blocker, and only that.
+#[test]
+fn all_adds_nothing_to_ready_and_only_blocked_ended_items_to_blocked() {
+    let (_directory, verbs, _, _) = fixture();
+    let low = add_ready(&verbs, "Low priority ready", 3, 0);
+    let high = add_ready(&verbs, "High priority ready", 1, 1);
+    let blocked = add(&verbs, "Blocked open", None, false, 2);
+    let blocked_then_cancelled = add(&verbs, "Blocked then cancelled", None, false, 3);
+    let completed = add(&verbs, "Completed", None, false, 4);
+    for work in [&blocked, &blocked_then_cancelled] {
+        verbs
+            .update(
+                UpdateInput {
+                    work_ref: Some(work.clone()),
+                    action: UpdateAction::Blocked {
+                        detail: "waiting".into(),
+                    },
+                },
+                at(5),
+            )
+            .unwrap();
+    }
+    super::terminalize(&verbs, &blocked_then_cancelled, WorkLifecycle::Cancelled);
+    super::terminalize(&verbs, &completed, WorkLifecycle::Completed);
+    let refs = |input: LsInput| {
+        verbs.ls(&input, at(10)).unwrap().value["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["ref"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let ready = refs(LsInput {
+        ready: true,
+        ..LsInput::default()
+    });
+    assert_eq!(ready, vec![high.clone(), low.clone()], "readiness order");
+    assert_eq!(
+        refs(LsInput {
+            ready: true,
+            all: true,
+            ..LsInput::default()
+        }),
+        ready
+    );
+    assert_eq!(
+        refs(LsInput {
+            blocked: true,
+            ..LsInput::default()
+        }),
+        vec![blocked.clone()]
+    );
+    let mut all_blocked = refs(LsInput {
+        blocked: true,
+        all: true,
+        ..LsInput::default()
+    });
+    all_blocked.sort();
+    let mut expected = vec![blocked.clone(), blocked_then_cancelled.clone()];
+    expected.sort();
+    assert_eq!(
+        all_blocked, expected,
+        "only ended items with an active blocker join"
+    );
+    // The all filter alone includes every ended item.
+    let everything = refs(LsInput {
+        all: true,
+        ..LsInput::default()
+    });
+    for terminal in [&blocked_then_cancelled, &completed] {
+        assert!(everything.contains(terminal), "{terminal}: {everything:?}");
+    }
+}

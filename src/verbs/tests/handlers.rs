@@ -1329,6 +1329,50 @@ fn invalid_context_generation_guidance_retries_next_without_the_bad_advisory() {
     assert_eq!(guidance.next, vec!["engram work next"]);
 }
 
+// A memories read refused for its context generation offers the memories
+// retry, in every form of the read, never an advancing next.
+#[test]
+fn a_memories_read_refused_for_its_context_generation_retries_memories() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let verbs = AgentVerbs::new(
+        directory.path().join("engram.sqlite3"),
+        ProjectId("memories-generation-retry".into()),
+        "agent".into(),
+        SessionId("memories-generation-session".into()),
+        None,
+    );
+    let forms = [
+        ("listing", None, false, None),
+        ("search", Some("rules"), false, None),
+        ("full", Some("memory-key"), true, None),
+        ("history", Some("memory-key"), true, Some(1)),
+    ];
+    for (form, query, full, revision) in forms {
+        let refused = verbs
+            .memories(
+                &MemoriesInput {
+                    revision,
+                    query: query.map(str::to_owned),
+                    after: None,
+                    full,
+                    context_generation: Some("two words".into()),
+                },
+                at(0),
+            )
+            .expect_err(form);
+        assert!(
+            matches!(&refused.error, StoreError::InvalidProjectMemory(reason) if reason.contains("context_generation")),
+            "{form}: {:?}",
+            refused.error
+        );
+        assert_eq!(
+            refused.guidance().next,
+            vec!["engram work memories"],
+            "{form}"
+        );
+    }
+}
+
 #[test]
 fn ambiguous_reference_guidance_names_candidates_and_uses_full_ids() {
     let first = crate::WorkId::new();

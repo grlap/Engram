@@ -92,7 +92,9 @@ pub struct LsInput {
     pub ready: bool,
     /// Assigned to this actor, or held by this session.
     pub mine: bool,
-    /// Include completed, cancelled, and superseded items.
+    /// Include completed, cancelled, and superseded items. A ready listing
+    /// selects open work only, so this adds nothing to it; a blocked one gains
+    /// ended items that still carry an active blocker.
     pub all: bool,
     pub label: Option<String>,
     pub under: Option<String>,
@@ -1396,7 +1398,8 @@ impl AgentVerbs {
             )
             .into());
         }
-        crate::storage::validate_context_generation(input.context_generation.as_deref())?;
+        crate::storage::validate_context_generation(input.context_generation.as_deref())
+            .map_err(|error| VerbError::from(error).retrying("memories"))?;
         if input.full {
             if input.after.is_some() {
                 return Err(StoreError::InvalidProjectMemory(

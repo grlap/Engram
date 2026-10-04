@@ -69,6 +69,9 @@ correct the arguments against the word's input schema and call again.
 The words are `next`, `ls`, `show`, `add`, `claim`, `update`, `gate`, `evaluate`,
 `note`, `done`, `handoff`, `remember`, `memories` and `forget`; MCP `search`
 is the form of CLI `ls --search --all`.
+`ls --ready` lists open work only, so adding `--all` to it changes nothing;
+`ls --all --blocked` also lists ended items that still carry an active
+blocker.
 `next` with `peek: true` (`engram work next --peek`) reads orientation;
 ordinary `next` advances delivery and is a separate action.
 Inspect held and assigned work, then ready candidates with `show REF`.

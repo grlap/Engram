@@ -200,7 +200,7 @@ struct LsArgs {
     ready: Option<bool>,
     /// Only items assigned to this actor or held by this session.
     mine: Option<bool>,
-    /// Include completed, cancelled, and superseded items.
+    /// Include completed, cancelled, and superseded items. ready selects open work only, so all adds nothing to it; with blocked, all adds ended items that still carry an active blocker.
     all: Option<bool>,
     /// Exact case-insensitive label.
     label: Option<String>,
@@ -1885,6 +1885,22 @@ mod tests {
         }
     }
 
+    /// The agent projection of a shared refusal that concerns `work`: the
+    /// message and details name the item by short reference.
+    fn agent_work_projection(shared: &Value, work: &crate::WorkItem) -> (Value, Value) {
+        let message = shared["error"]["message"]
+            .as_str()
+            .expect("message")
+            .replacen(&format!("{:?}", work.work_id), &work.short_ref, 1);
+        let mut details = shared["error"]["details"].clone();
+        let Value::Object(fields) = &mut details else {
+            panic!("details object: {details}");
+        };
+        assert_eq!(fields.remove("work_id"), Some(json!(work.work_id)));
+        fields.insert("work_ref".into(), json!(work.short_ref));
+        (json!(message), details)
+    }
+
     #[test]
     fn evaluation_admission_errors_keep_status_and_deciding_causes_across_service_and_mcp() {
         for case in [
@@ -1944,8 +1960,11 @@ mod tests {
                 .expect("structured admission error");
             let error = &value["error"];
             assert_eq!(error["code"], "acceptance_evaluation_refused");
-            assert_eq!(error["message"], shared["error"]["message"]);
-            assert_eq!(error["details"], shared["error"]["details"]);
+            // The agent envelope names the item by short reference; every
+            // other detail, the cause included, is the shared one.
+            let (message, details) = agent_work_projection(&shared, &fixture.work);
+            assert_eq!(error["message"], message);
+            assert_eq!(error["details"], details);
             let cause: crate::AcceptanceEvaluationAdmissionCause =
                 serde_json::from_value(error["details"]["cause"].clone()).unwrap();
             let remedy = crate::work_service::evaluation_admission_remedy(&cause);
@@ -2015,7 +2034,7 @@ mod tests {
                 None,
             );
             let response = server.done(Parameters(DoneArgs {
-                work_ref: Some(fixture.work.short_ref),
+                work_ref: Some(fixture.work.short_ref.clone()),
                 summary: Some("delivered".into()),
                 note: None,
                 links: None,
@@ -2076,7 +2095,14 @@ mod tests {
                 work: fixture.work.work_id,
                 reason: details["reason"].as_str().expect("reason").into(),
             };
-            assert_eq!(error["message"], legacy.to_string());
+            assert_eq!(
+                error["message"],
+                legacy.to_string().replacen(
+                    &format!("{:?}", fixture.work.work_id),
+                    &fixture.work.short_ref,
+                    1
+                )
+            );
             let guidance = crate::work_service::bound_verification_remedy(&cause);
             assert_eq!(details["remedy"], guidance);
             assert!(
@@ -2095,8 +2121,11 @@ mod tests {
             };
             let shared = store_error_value(&typed);
             assert_eq!(shared["error"]["code"], error["code"]);
-            assert_eq!(shared["error"]["message"], error["message"]);
-            assert_eq!(shared["error"]["details"], error["details"]);
+            // The agent envelope names the item by short reference; the
+            // raw core one keeps the work id, and every other field agrees.
+            let (message, projected) = agent_work_projection(&shared, &fixture.work);
+            assert_eq!(message, error["message"]);
+            assert_eq!(projected, error["details"]);
         }
     }
 
@@ -2131,6 +2160,7 @@ mod tests {
                 operation: "note".into(),
                 focus: "w-added".into(),
                 focus_state: crate::storage::ImplicitFocusState::Unclaimed,
+                focus_lifecycle: crate::domain::WorkLifecycle::Open,
                 held: vec!["w-held".into()],
                 more: 2,
             },

@@ -526,70 +526,166 @@ fn a_held_focus_is_unaffected_and_a_new_child_is_named() {
 }
 
 // The command offered for the unheld focus fits what the word can do there:
-// never a claim of finished work or of work another session holds.
+// never a claim of finished work or of work another session holds, and a
+// note or late gate only where the core admits it: completed work, never
+// cancelled, superseded or proposed work.
 #[test]
 fn the_focus_command_fits_the_focus_state() {
+    use crate::domain::WorkLifecycle as Life;
     use crate::storage::ImplicitFocusState as State;
     use crate::verbs::receipts::implicit_focus_command as command;
     let focus = "w-focus";
-    assert_eq!(
-        command("note", focus, State::Unclaimed),
-        "engram work note w-focus \"…\""
-    );
-    assert_eq!(
-        command("note", focus, State::NotOpen),
-        "engram work note w-focus \"…\""
-    );
-    assert_eq!(
-        command("note", focus, State::HeldElsewhere),
-        "engram work note w-focus \"…\""
-    );
-    assert_eq!(
-        command("gate", focus, State::Unclaimed),
-        "engram work claim w-focus"
-    );
-    assert_eq!(
-        command("gate", focus, State::NotOpen),
-        "engram work gate NAME --work-ref w-focus"
-    );
-    assert_eq!(
-        command("gate", focus, State::HeldElsewhere),
-        "engram work show w-focus"
-    );
-    assert_eq!(
-        command("done", focus, State::Unclaimed),
-        "engram work claim w-focus"
-    );
-    assert_eq!(
-        command("done", focus, State::NotOpen),
-        "engram work show w-focus"
-    );
-    assert_eq!(
-        command("done", focus, State::HeldElsewhere),
-        "engram work show w-focus"
-    );
-    assert_eq!(
-        command("update", focus, State::Unclaimed),
-        "engram work update w-focus …"
-    );
-    assert_eq!(
-        command("update", focus, State::NotOpen),
-        "engram work show w-focus"
-    );
-    assert_eq!(
-        command("update", focus, State::HeldElsewhere),
-        "engram work show w-focus"
-    );
-    assert_eq!(
-        command("evaluate", focus, State::Unclaimed),
-        "engram work evaluate w-focus …"
-    );
-    assert_eq!(
-        command("evaluate", focus, State::HeldElsewhere),
-        "engram work evaluate w-focus …"
-    );
-    assert_eq!(
-        command("evaluate", focus, State::NotOpen),
-        "engram work show w-focus"
-    );
+    let show = "engram work show w-focus";
+    let open = [
+        ("note", State::Unclaimed, "engram work note w-focus \"…\""),
+        (
+            "note",
+            State::HeldElsewhere,
+            "engram work note w-focus \"…\"",
+        ),
+        ("gate", State::Unclaimed, "engram work claim w-focus"),
+        ("gate", State::HeldElsewhere, show),
+        ("done", State::Unclaimed, "engram work claim w-focus"),
+        ("done", State::HeldElsewhere, show),
+        ("update", State::Unclaimed, "engram work update w-focus …"),
+        ("update", State::HeldElsewhere, show),
+        (
+            "evaluate",
+            State::Unclaimed,
+            "engram work evaluate w-focus …",
+        ),
+        (
+            "evaluate",
+            State::HeldElsewhere,
+            "engram work evaluate w-focus …",
+        ),
+    ];
+    for (word, state, expected) in open {
+        assert_eq!(
+            command(word, focus, state, Life::Open),
+            expected,
+            "{word} {state:?}"
+        );
+    }
+    let completed = [
+        ("note", "engram work note w-focus \"…\""),
+        ("gate", "engram work gate NAME --work-ref w-focus"),
+        ("done", show),
+        ("update", show),
+        ("evaluate", show),
+    ];
+    for (word, expected) in completed {
+        assert_eq!(
+            command(word, focus, State::NotOpen, Life::Completed),
+            expected,
+            "{word} completed"
+        );
+    }
+    for lifecycle in [Life::Cancelled, Life::Superseded, Life::Proposed] {
+        for word in ["note", "gate", "done", "update", "evaluate"] {
+            assert_eq!(
+                command(word, focus, State::NotOpen, lifecycle),
+                show,
+                "{word} {lifecycle:?}"
+            );
+        }
+    }
+}
+
+// The reported flow: hold X, add Y, end Y, then a bare note and a bare gate.
+// Every command offered for the focus is one the core admits there: on
+// cancelled or superseded work only the read, on completed work the explicit
+// note and the late gate, and each one runs.
+#[test]
+fn every_command_offered_for_an_ended_focus_is_admitted() {
+    for ending in ["cancelled", "superseded", "completed"] {
+        let agent = agent(&format!("implicit-ended-{ending}"));
+        let held = add(&agent, "Held work", None, 1);
+        claim(&agent, &held, 600, 2);
+        let replacement = add(&agent, "Replacement", None, 3);
+        let ended = add(&agent, "Ended focus", None, 4);
+        match ending {
+            "cancelled" | "superseded" => {
+                let action = if ending == "cancelled" {
+                    UpdateAction::Cancel {
+                        reason: "not needed".into(),
+                    }
+                } else {
+                    UpdateAction::Supersede {
+                        replacement: replacement.clone(),
+                        reason: "replaced".into(),
+                    }
+                };
+                agent
+                    .verbs
+                    .update(
+                        UpdateInput {
+                            work_ref: Some(ended.clone()),
+                            action,
+                        },
+                        at(5),
+                    )
+                    .expect("end the focus");
+            }
+            _ => {
+                claim(&agent, &ended, 600, 5);
+                agent
+                    .verbs
+                    .done(
+                        DoneInput {
+                            work_ref: Some(ended.clone()),
+                            summary: Some("delivered".into()),
+                            ..DoneInput::default()
+                        },
+                        at(6),
+                    )
+                    .expect("complete the focus");
+            }
+        }
+        for (word, second) in [("note", 10), ("gate", 20)] {
+            let refused = if word == "note" {
+                note(&agent, None, second)
+            } else {
+                gate(&agent, None, second)
+            };
+            let (error, _, focus, _) = conflict(refused);
+            assert_eq!(focus, ended, "{ending} {word}");
+            let next = error.guidance().next;
+            let for_focus: Vec<&String> = next
+                .iter()
+                .filter(|command| command.contains(ended.as_str()))
+                .collect();
+            assert_eq!(for_focus.len(), 1, "{ending} {word}: {next:?}");
+            let command = for_focus[0].as_str();
+            match (ending, word) {
+                ("completed", "note") => {
+                    assert_eq!(command, format!("engram work note {ended} \"…\""));
+                    note(&agent, Some(&ended), second + 1).expect("the offered late note runs");
+                }
+                ("completed", "gate") => {
+                    assert_eq!(command, format!("engram work gate NAME --work-ref {ended}"));
+                    gate(&agent, Some(&ended), second + 1).expect("the offered late gate runs");
+                }
+                _ => {
+                    assert_eq!(
+                        command,
+                        format!("engram work show {ended}"),
+                        "{ending} {word}"
+                    );
+                    agent
+                        .verbs
+                        .show(&ended, at(second + 1))
+                        .expect("the offered read runs");
+                    // The commands the core refuses on this focus are not offered.
+                    assert!(note(&agent, Some(&ended), second + 2).is_err(), "{ending}");
+                    assert!(gate(&agent, Some(&ended), second + 3).is_err(), "{ending}");
+                }
+            }
+            // The held item is offered as well.
+            assert!(
+                next.iter().any(|command| command.contains(held.as_str())),
+                "{ending} {word}: {next:?}"
+            );
+        }
+    }
 }

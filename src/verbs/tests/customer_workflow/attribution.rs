@@ -502,3 +502,315 @@ fn attribution_release_handoff_and_errors_keep_identity_in_audit_only() {
         peer_session
     );
 }
+
+/// Every listed refusal that concerns a work item, built around `work`.
+fn refusals_naming_work(work: crate::WorkId) -> Vec<StoreError> {
+    let record = crate::ObjectId::from_canonical_bytes(b"an evaluation record");
+    let admission: crate::domain::AcceptanceEvaluationAdmissionCause =
+        serde_json::from_value(json!({
+            "kind": "eligibility",
+            "mismatch": "mode_disallowed",
+            "requested_mode": "same_session",
+            "task_mark": null,
+            "admitted_modes": ["independent_session"],
+            "remedy": "request_eligible_evaluation",
+        }))
+        .unwrap();
+    vec![
+        StoreError::WorkNotFound(work),
+        StoreError::WorkRevisionConflict {
+            work,
+            expected: 2,
+            current: 3,
+        },
+        StoreError::WorkNotOpen(work),
+        StoreError::WorkPeerDecompositionRefused { parent: work },
+        StoreError::WorkPrerequisiteAlreadySatisfied(work),
+        StoreError::WorkDetachRefused {
+            work_id: work,
+            reason: "the child has a live claim".into(),
+            remedy: "release the claim first".into(),
+        },
+        StoreError::WorkClaimMismatch { work },
+        StoreError::WorkClaimLapsed {
+            work,
+            expired_at: at(5),
+        },
+        StoreError::WorkReleaseWaiverRequired { work },
+        StoreError::WorkCompletionRefused {
+            work,
+            reason: "a criterion is unmet".into(),
+        },
+        StoreError::WorkBoundVerificationRefused {
+            work,
+            reason: "criterion 1 requires test verification".into(),
+            cause: Box::new(crate::domain::WorkBoundVerificationCause {
+                criterion: 1,
+                requirement: crate::domain::VerificationRequirement {
+                    check_kind: crate::domain::VerificationKind::Test,
+                    check_fingerprint: None,
+                },
+                mismatch: crate::domain::VerificationEvidenceMismatch::StaleSourceRevision,
+                verification: record.clone(),
+                satisfied_by: record.clone(),
+                producer_observation: record.clone(),
+                result: crate::domain::VerificationResult::Passed,
+                remedy: crate::domain::BoundVerificationRemedy::RunCurrentCheck,
+                stale_source: None,
+            }),
+        },
+        StoreError::WorkCompletionRecoveryRequired {
+            work,
+            cause: crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+                reason: crate::AcceptanceStaleReason::Mutation,
+            },
+            context: Box::default(),
+        },
+        StoreError::AcceptanceCriteriaRequired { work },
+        StoreError::AcceptanceEvaluationRefused {
+            work,
+            reason: "no criterion verdicts".into(),
+        },
+        StoreError::AcceptanceEvaluationAdmissionRefused {
+            work,
+            reason: "mode same_session is not allowed".into(),
+            cause: Box::new(admission),
+        },
+        StoreError::AcceptanceEvaluationCarriedFailure {
+            work,
+            refusal: crate::storage::CarriedFailureRefusal::Unacknowledged,
+            failed: Some(record.clone()),
+            reason: "the carried failure is not named".into(),
+        },
+        StoreError::AcceptanceEvaluationBasisMoved {
+            work,
+            moved: crate::storage::EvaluationBasisMove::CheckRecorded,
+            reason: "a check was recorded after the basis".into(),
+            observation: None,
+        },
+        StoreError::OpenWorkObligations {
+            work,
+            obligations: Vec::new(),
+            omitted_count: 0,
+        },
+    ]
+}
+
+// The agent rendering of every listed refusal names its work item by short
+// reference, on CLI text and in the shared JSON/MCP envelope, while the raw
+// host/core envelope, the code and scoped record ids stay as they were.
+#[test]
+fn listed_refusals_name_their_work_by_short_reference_on_agent_surfaces() {
+    let (_directory, verbs, _, _) = fixture();
+    let work = crate::WorkId::new();
+    let raw = work.0.to_string();
+    let short = crate::verbs::short_ref_for_work_id(work);
+    let refusals = refusals_naming_work(work);
+    assert_eq!(
+        refusals.len(),
+        18,
+        "the listed variants other than the ambiguous reference"
+    );
+    for error in refusals {
+        let core = crate::mcp::store_error_value(&error);
+        let label = format!("{:?}", core["error"]["code"]);
+        let verb_error = VerbError::from(error);
+        let text = verbs.error_message(&verb_error);
+        assert!(!text.contains(&raw), "{label}: {text}");
+        let projected = verbs.project_error(&verb_error, core.clone());
+        let projected_text = projected.to_string();
+        assert!(!projected_text.contains(&raw), "{label}: {projected_text}");
+        assert_eq!(projected["error"]["code"], core["error"]["code"], "{label}");
+        assert_eq!(projected["error"]["message"], json!(text), "{label}");
+        if core["error"]["details"].get("work_id").is_some() {
+            // The raw envelope keeps the id; the agent one names the ref.
+            assert_eq!(core["error"]["details"]["work_id"], json!(raw), "{label}");
+            assert_eq!(
+                projected["error"]["details"]["work_ref"],
+                json!(short),
+                "{label}"
+            );
+        }
+        if core["error"]["message"].as_str().unwrap().contains(&raw) {
+            assert!(text.contains(&short), "{label}: {text}");
+        }
+        // Scoped record ids are kept as the raw envelope carries them.
+        for key in ["failed_evaluation", "cause"] {
+            if let Some(value) = core["error"]["details"].get(key) {
+                assert_eq!(&projected["error"]["details"][key], value, "{label} {key}");
+            }
+        }
+        let guidance = verbs.error_guidance(&verb_error);
+        for line in guidance.reminders.iter().chain(&guidance.next) {
+            assert!(!line.contains(&raw), "{label}: {line}");
+        }
+    }
+}
+
+// An ambiguous short reference keeps the full-work-id fallback: the agent
+// message lists the candidates by full id, never as a debug dump, and the
+// offered commands show each candidate by its full id. The caller's
+// reference is not rewritten.
+#[test]
+fn an_ambiguous_reference_keeps_the_full_id_fallback_on_agent_surfaces() {
+    let (_directory, verbs, _, _) = fixture();
+    let first = crate::WorkId::new();
+    let second = crate::WorkId::new();
+    let candidate = |work_id: crate::WorkId, title: &str| crate::WorkReferenceCandidate {
+        work_id,
+        short_ref: "w-collision".into(),
+        title: title.into(),
+        lifecycle: WorkLifecycle::Open,
+    };
+    let error = VerbError::at(
+        StoreError::WorkReferenceAmbiguous {
+            reference: "w-collision".into(),
+            candidates: vec![candidate(first, "First"), candidate(second, "Second")],
+            more: 1,
+        },
+        "w-collision",
+    );
+    let text = verbs.error_message(&error);
+    assert_eq!(
+        text,
+        format!(
+            "work reference \"w-collision\" is ambiguous; use a full work id for one of {}, {}; 1 additional candidates omitted",
+            first.0, second.0
+        )
+    );
+    assert!(!text.contains("WorkReferenceCandidate"), "{text}");
+    let core = crate::mcp::store_error_value(&error.error);
+    let projected = verbs.project_error(&error, core.clone());
+    assert_eq!(projected["error"]["code"], core["error"]["code"]);
+    assert_eq!(projected["error"]["message"], json!(text));
+    assert_eq!(projected["error"]["details"], core["error"]["details"]);
+    assert_eq!(
+        verbs.error_guidance(&error).next,
+        vec![
+            format!("engram work show {}", first.0),
+            format!("engram work show {}", second.0),
+        ]
+    );
+}
+
+// The claim-held refusal keeps its existing agent projection.
+#[test]
+fn the_claim_held_refusal_keeps_its_agent_projection() {
+    let (_directory, verbs, _, _) = fixture();
+    let work = crate::WorkId::new();
+    let error = VerbError::from(StoreError::WorkClaimHeld {
+        work,
+        holder: "holder-session".into(),
+        expires_at: 1_000,
+    });
+    let core = crate::mcp::store_error_value(&error.error);
+    let projected = verbs.project_error(&error, core);
+    let details = &projected["error"]["details"];
+    assert!(details.get("work_id").is_none());
+    assert!(details.get("holder_session_id").is_none());
+    assert_eq!(
+        details["work_ref"],
+        json!(crate::verbs::short_ref_for_work_id(work))
+    );
+    assert!(!projected.to_string().contains("holder-session"));
+}
+
+// Caller-supplied text is never rewritten, even when it quotes the item's
+// own raw id: only the refusal's structural rendering of its item becomes the
+// short reference, in the message and in a reminder that repeats it; a
+// reminder carrying a criterion or reason keeps it byte for byte.
+#[test]
+fn caller_text_quoting_the_raw_id_is_never_rewritten_on_agent_surfaces() {
+    let (_directory, verbs, _, _) = fixture();
+    let work = crate::WorkId::new();
+    let quoted = format!("inspect {work:?} first");
+    let short = crate::verbs::short_ref_for_work_id(work);
+    for error in [
+        StoreError::WorkCompletionRecoveryRequired {
+            work,
+            cause: crate::WorkCompletionRecoveryCause::MissingAcceptance {
+                criterion: quoted.clone(),
+            },
+            context: Box::default(),
+        },
+        StoreError::WorkCompletionRefused {
+            work,
+            reason: quoted.clone(),
+        },
+        StoreError::AcceptanceEvaluationRefused {
+            work,
+            reason: quoted.clone(),
+        },
+        StoreError::WorkDetachRefused {
+            work_id: work,
+            reason: quoted.clone(),
+            remedy: "release the claim first".into(),
+        },
+    ] {
+        let raw_message = error.to_string();
+        let verb_error = VerbError::from(error);
+        let label = raw_message.clone();
+        let message = verbs.error_message(&verb_error);
+        // The caller's text survives whole in the agent message.
+        assert!(message.contains(&quoted), "{label}: {message}");
+        if raw_message.starts_with("detach refused") {
+            // A message that names no item is not touched at all.
+            assert_eq!(message, raw_message);
+        } else {
+            assert!(message.contains(&short), "{label}: {message}");
+            assert_eq!(
+                message.matches(&format!("{work:?}")).count(),
+                raw_message.matches(&format!("{work:?}")).count() - 1,
+                "{label}: only the structural rendering is replaced"
+            );
+        }
+        let projected = verbs.project_error(
+            &verb_error,
+            crate::mcp::store_error_value(&verb_error.error),
+        );
+        assert_eq!(projected["error"]["message"], json!(message), "{label}");
+        let raw_guidance = verb_error.guidance();
+        let guidance = verbs.error_guidance(&verb_error);
+        assert_eq!(guidance.next, raw_guidance.next, "{label}");
+        for (agent, raw) in guidance.reminders.iter().zip(&raw_guidance.reminders) {
+            if *raw == raw_message {
+                assert_eq!(agent, &message, "{label}");
+            } else {
+                assert_eq!(agent, raw, "{label}: a reminder with caller text is kept");
+            }
+        }
+    }
+}
+
+// Two listed refusals carry no details object in the core envelope; their
+// agent projection keeps it absent and names the item in the message alone.
+#[test]
+fn refusals_without_details_name_their_work_in_the_message_alone() {
+    let (_directory, verbs, _, _) = fixture();
+    let work = crate::WorkId::new();
+    let short = crate::verbs::short_ref_for_work_id(work);
+    for error in [
+        StoreError::AcceptanceEvaluationRefused {
+            work,
+            reason: "no criterion verdicts".into(),
+        },
+        StoreError::OpenWorkObligations {
+            work,
+            obligations: Vec::new(),
+            omitted_count: 0,
+        },
+    ] {
+        let core = crate::mcp::store_error_value(&error);
+        assert_eq!(core["error"]["details"], Value::Null, "{core}");
+        let verb_error = VerbError::from(error);
+        let projected = verbs.project_error(&verb_error, core);
+        assert_eq!(projected["error"]["details"], Value::Null);
+        assert!(
+            projected["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(&short),
+            "{projected}"
+        );
+    }
+}

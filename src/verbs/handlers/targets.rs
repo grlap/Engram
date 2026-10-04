@@ -61,6 +61,7 @@ impl AgentVerbs {
                 operation: word.to_owned(),
                 focus: focus.status.work.short_ref.clone(),
                 focus_state,
+                focus_lifecycle: focus.status.work.lifecycle,
                 held: held.into_iter().take(IMPLICIT_TARGET_HELD_SHOWN).collect(),
                 more,
             },

@@ -362,6 +362,9 @@ struct VerbErrorContext {
     invalid_waiver: bool,
     /// The focus move the refused word made before it refused.
     focus_change: Option<super::focus_change::FocusDisclosure>,
+    /// The read word a refused context generation came from, so its retry
+    /// repeats that word instead of advancing another.
+    retry_word: Option<&'static str>,
 }
 
 impl VerbError {
@@ -379,10 +382,16 @@ impl VerbError {
             work_ref: None,
             context: Some(Box::new(VerbErrorContext {
                 listing_command: Some(command.into()),
-                invalid_waiver: false,
-                focus_change: None,
+                ..VerbErrorContext::default()
             })),
         }
+    }
+
+    /// Names the read word whose context generation was refused, so the
+    /// guidance retries that word.
+    pub(super) fn retrying(mut self, word: &'static str) -> Self {
+        self.context.get_or_insert_with(Box::default).retry_word = Some(word);
+        self
     }
 
     pub(super) fn with_focus_change(
@@ -597,6 +606,7 @@ impl VerbError {
                     operation,
                     focus,
                     focus_state,
+                    focus_lifecycle,
                     held,
                     ..
                 } = conflict.as_ref();
@@ -604,7 +614,12 @@ impl VerbError {
                     .iter()
                     .map(|work_ref| implicit_target_command(operation, work_ref))
                     .collect();
-                next.push(implicit_focus_command(operation, focus, *focus_state));
+                next.push(implicit_focus_command(
+                    operation,
+                    focus,
+                    *focus_state,
+                    *focus_lifecycle,
+                ));
                 (vec![self.error.to_string()], next)
             }
             StoreError::ProjectMemoryExists(key) => (
@@ -655,11 +670,15 @@ impl VerbError {
                 ],
                 Vec::new(),
             ),
+            // The word that refused the generation is retried: memories
+            // repeats memories, while next (the default) repeats next.
             StoreError::InvalidProjectMemory(reason) if reason.contains("context_generation") => {
-                (
-                    vec![reason.clone()],
-                    vec!["engram work next".into()],
-                )
+                let word = self
+                    .context
+                    .as_ref()
+                    .and_then(|context| context.retry_word)
+                    .unwrap_or("next");
+                (vec![reason.clone()], vec![format!("engram work {word}")])
             }
             StoreError::InvalidProjectMemory(reason) => {
                 (vec![reason.clone()], vec!["engram work memories".into()])
@@ -848,19 +867,20 @@ pub(super) fn implicit_focus_command(
     operation: &str,
     focus: &str,
     state: crate::storage::ImplicitFocusState,
+    lifecycle: crate::domain::WorkLifecycle,
 ) -> String {
     use crate::storage::ImplicitFocusState as State;
+    let completed = lifecycle == crate::domain::WorkLifecycle::Completed;
     match (operation, state) {
-        // Admitted on the focus as it stands: a note on an unheld item is an
-        // observation and on finished work a late finding; a gate on
-        // finished work is a late finding; planning acts on open work nobody
-        // holds; an independent evaluation, on any open work.
-        ("note", _)
-        | ("gate", State::NotOpen)
-        | ("update", State::Unclaimed)
-        | ("evaluate", State::Unclaimed | State::HeldElsewhere) => {
-            implicit_target_command(operation, focus)
-        }
+        // Admitted on the focus as it stands: a note on open work is an
+        // observation and an independent evaluation acts on any open work;
+        // planning acts on open work nobody holds.
+        ("note" | "evaluate", State::Unclaimed | State::HeldElsewhere)
+        | ("update", State::Unclaimed) => implicit_target_command(operation, focus),
+        // On completed work a note or a gate is a late finding. Cancelled,
+        // superseded and proposed work admits neither, so it falls through to
+        // the read alone.
+        ("note" | "gate", State::NotOpen) if completed => implicit_target_command(operation, focus),
         // On open work nobody holds, a gate or done needs the claim first.
         ("gate" | "done", State::Unclaimed) => format!("engram work claim {focus}"),
         _ => format!("engram work show {focus}"),

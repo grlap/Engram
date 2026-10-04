@@ -2311,16 +2311,32 @@ test("peek orientation preserves pending context and memory signals on CLI and M
       "termal-2",
       false,
     );
-    // A generation is a plain token on both words and both routes.
-    for (const word of ["next", "memories"]) {
+    // A generation is a plain token on both words and both routes, and the
+    // refusal retries the word that sent it: memories in every form of the
+    // read, next for next.
+    const generationForms = [
+      ["next", {}, []],
+      ["memories", {}, []],
+      ["memories", { query: "rules" }, ["rules"]],
+      ["memories", { query: "memory-key", full: true }, ["memory-key", "--full"]],
+      ["memories", { query: "memory-key", full: true, revision: 1 }, ["memory-key", "--full", "--revision", "1"]],
+    ];
+    for (const [word, mcpArguments, cliArguments] of generationForms) {
       const refused = structuredError(
-        await client.call(word, { context_generation: "two words" }),
+        await client.call(word, { ...mcpArguments, context_generation: "two words" }),
         "memory_invalid",
       );
       assert.match(refused.details.remedy, /1 to 256 ASCII letters, digits, dots, underscores or dashes/);
-      const cliRefused = cliWord(engramHome, session, word, "--context-generation", "two words", "--json");
+      assert.deepEqual(refused.next, [`engram work ${word}`], JSON.stringify(mcpArguments));
+      const cliRefused = cliWord(engramHome, session, word, ...cliArguments, "--context-generation", "two words", "--json");
       assert.notEqual(cliRefused.status, 0);
-      assert.match(JSON.parse(cliRefused.stderr).error.message, /context_generation must be 1 to 256 ASCII/);
+      const cliError = JSON.parse(cliRefused.stderr).error;
+      assert.match(cliError.message, /context_generation must be 1 to 256 ASCII/);
+      assert.deepEqual(cliError.next, [`engram work ${word}`], cliArguments.join(" "));
+      const cliText = cliWord(engramHome, session, word, ...cliArguments, "--context-generation", "two words");
+      assert.notEqual(cliText.status, 0);
+      assert.match(cliText.stderr, new RegExp(`next:\\n\\s+engram work ${word}\\n`, "u"), cliText.stderr);
+      if (word === "memories") assert.doesNotMatch(cliText.stderr, /engram work next/u, cliText.stderr);
     }
     // A host that sends a value outside the set gets, from the peek itself,
     // a refusal its agent can act on: the typed error and its remedy, never

@@ -353,6 +353,7 @@ impl LocalWorkService {
                     operation: operation.to_owned(),
                     focus: work.short_ref.clone(),
                     focus_state,
+                    focus_lifecycle: work.lifecycle,
                     held: others
                         .into_iter()
                         .take(crate::storage::IMPLICIT_TARGET_HELD_SHOWN)
