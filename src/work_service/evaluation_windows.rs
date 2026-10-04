@@ -15,6 +15,13 @@ const MAX_WINDOW_RECORDS: usize = 16;
 /// through the record's complete detail.
 pub(crate) const MAX_ROW_VERDICTS: usize = 16;
 
+/// A record id that names no evaluation of the item.
+pub(crate) const UNKNOWN_EVALUATION_REFUSAL: crate::argument_names::Twin =
+    crate::argument_names::Twin {
+        cli: "no evaluation of this item has that record id; list them with --evaluations",
+        mcp: "no evaluation of this item has that record id; list them with show evaluations",
+    };
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct EvaluationCursor {
@@ -258,12 +265,7 @@ impl LocalWorkService {
         record: &str,
         now: DateTime<Utc>,
     ) -> Result<WorkEvaluationDetail, StoreError> {
-        let unknown = || {
-            StoreError::InvalidWork(
-                "no evaluation of this item has that record id; list them with --evaluations"
-                    .into(),
-            )
-        };
+        let unknown = || StoreError::InvalidWork(UNKNOWN_EVALUATION_REFUSAL.cli.into());
         let evaluation = ObjectId::from_stored(record.to_owned()).ok_or_else(unknown)?;
         let identity = self.display_identity();
         let store = self.read_store_at(now)?;

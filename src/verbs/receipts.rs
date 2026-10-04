@@ -12,6 +12,7 @@ use super::{
     compact_state_word, json, kind_word, lifecycle_word, render_agent_receipt_text, short,
     short_ref_for_work_id, short_with_limit, terminal_safe_line, terminal_short,
 };
+use crate::argument_names::ArgumentNames;
 
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShownBlockingAncestor {
@@ -430,14 +431,14 @@ impl VerbError {
     /// Words and commands that resolve the failure, when a fixed table knows.
     #[must_use]
     pub fn guidance(&self) -> Guidance {
-        self.guidance_with_holder("another session")
+        self.guidance_with_holder("another session", ArgumentNames::Cli)
     }
 
     #[allow(
         clippy::too_many_lines,
         reason = "the fixed refusal-to-guidance table stays contiguous and exhaustively reviewable"
     )]
-    pub(super) fn guidance_with_holder(&self, holder: &str) -> Guidance {
+    pub(super) fn guidance_with_holder(&self, holder: &str, names: ArgumentNames) -> Guidance {
         // The refusal's headline already states the reason; guidance adds
         // only the fresh command.
         if let StoreError::WorkCatalogCursorInvalid { .. }
@@ -613,9 +614,14 @@ impl VerbError {
                 (vec![self.error.to_string()], next)
             }
             StoreError::ProjectMemoryExists(key) => (
-                vec![format!(
-                    "project memory {key} already exists; use remember --key {key} --revise to retain its attributed history"
-                )],
+                vec![match names {
+                    ArgumentNames::Cli => format!(
+                        "project memory {key} already exists; use remember --key {key} --revise to retain its attributed history"
+                    ),
+                    ArgumentNames::Mcp => format!(
+                        "project memory {key} already exists; use remember with key {key} and revise to retain its attributed history"
+                    ),
+                }],
                 vec![
                     format!("engram work memories {key} --full"),
                     "engram work memories".into(),
@@ -623,7 +629,11 @@ impl VerbError {
             ),
             StoreError::ProjectMemoryRetired(key) => (
                 vec![format!(
-                    "project memory {key} is retired permanently; retry remember with an explicit --key"
+                    "project memory {key} is retired permanently; retry remember with an explicit {}",
+                    match names {
+                        ArgumentNames::Cli => "--key",
+                        ArgumentNames::Mcp => "key",
+                    }
                 )],
                 vec!["engram work memories".into()],
             ),
@@ -644,7 +654,13 @@ impl VerbError {
                     missing.as_ref();
                 (
                     vec![if sections.is_empty() {
-                        format!("project memory {key} revision {revision} has no sections; add `{section}` with --append and its markers")
+                        format!(
+                            "project memory {key} revision {revision} has no sections; add `{section}` with {} and its markers",
+                            match names {
+                                ArgumentNames::Cli => "--append",
+                                ArgumentNames::Mcp => "append",
+                            }
+                        )
                     } else {
                         format!(
                             "project memory {key} revision {revision} has no section `{section}`; its sections are: {}",

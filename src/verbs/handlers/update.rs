@@ -205,6 +205,7 @@ impl AgentVerbs {
             &candidates,
             &action,
             super::super::MAX_AGENT_WORK_RESPONSE_BYTES,
+            self.argument_names,
         )
     }
 
@@ -377,7 +378,8 @@ impl AgentVerbs {
                 }
                 if fields.is_empty() {
                     return Err(StoreError::InvalidWork(
-                        "update needs one action: --release, --blocked, --unblock, --cancel, or a field to change"
+                        super::super::argument_wording::UPDATE_NEEDS_ACTION_REFUSAL
+                            .cli
                             .into(),
                     )
                     .into());

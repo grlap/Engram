@@ -175,6 +175,7 @@ fn assert_recovery_claim_guidance(receipt: &Receipt, work_ref: &str) {
     assert!(actions.contains(&WORK_UPDATE_CLAIM_RECOVERY_ACTION));
 }
 
+mod argument_wording;
 mod claims;
 mod customer_workflow;
 mod evaluate;

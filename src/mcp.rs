@@ -1,7 +1,14 @@
 //! MCP stdio surface for the fifteen agent-facing tools: the fourteen work
 //! words plus `search`.
 
+#[cfg(test)]
+pub(crate) mod prose_sweep;
 mod read_only;
+mod remedies;
+pub(crate) use remedies::{
+    CATALOG_CURSOR_REMEDY, CRITERION_LINK_REMEDY, PEER_DECOMPOSITION_REMEDY, SHOW_CURSOR_REMEDY,
+    project_memory_remedy,
+};
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -21,7 +28,9 @@ use crate::{
     AddInput, AgentVerbs, ClaimInput, ClaimUnderInput, DoneInput, EvaluateInput, ForgetInput,
     GateInput, HandoffAction, HandoffInput, LocalWorkService, LsInput, MemoriesInput, NextInput,
     NoteInput, ProjectId, Receipt, RememberInput, SessionId, UpdateAction, UpdateInput, VerbError,
-    WorkItemKind, parse_defer_date,
+    WorkItemKind,
+    argument_names::ArgumentNames,
+    parse_defer_date,
     storage::{PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL, StoreError},
     work_service::COMPLETED_WORK_LATE_FINDING_REFUSAL,
 };
@@ -972,7 +981,7 @@ impl ServerHandler for McpServer {
 
 fn verb(outcome: Result<Receipt, VerbError>, words: &AgentVerbs) -> CallToolResult {
     let value = match outcome {
-        Ok(receipt) => Ok(receipt.value),
+        Ok(receipt) => Ok(words.spell_receipt(receipt).value),
         Err(error) => {
             let guidance = words.error_guidance(&error);
             let mut value = words.project_error(&error, store_error_value(&error.error));
@@ -981,6 +990,11 @@ fn verb(outcome: Result<Receipt, VerbError>, words: &AgentVerbs) -> CallToolResu
             Err(value)
         }
     };
+    // Every MCP answer a test produces is swept for a CLI flag in its prose.
+    #[cfg(test)]
+    match &value {
+        Ok(value) | Err(value) => prose_sweep::assert_prose_names_fields(value),
+    }
     let started = crate::phase_trace::start();
     let result = match value {
         Ok(value) => CallToolResult::structured(value),
@@ -1008,7 +1022,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
         }
         StoreError::ProjectMemoryExists(key) => json!({
             "key": key,
-            "remedy": format!("read memories {key} --full; use remember with --key {key} --revise to retain history"),
+            "remedy": project_memory_remedy(error, ArgumentNames::Cli),
         }),
         StoreError::ProjectMemoryRevisionConflict {
             key,
@@ -1016,7 +1030,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
             current,
         } => json!({
             "key": key, "expected_revision": expected, "current_revision": current,
-            "remedy": format!("read memories {key} --full and reconcile before revising"),
+            "remedy": project_memory_remedy(error, ArgumentNames::Cli),
         }),
         StoreError::ProjectMemoryRevisionNotFound {
             key,
@@ -1024,7 +1038,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
             current,
         } => json!({
             "key": key, "revision": revision, "current_revision": current,
-            "remedy": format!("read memories {key} --full for history navigation"),
+            "remedy": project_memory_remedy(error, ArgumentNames::Cli),
         }),
         StoreError::ProjectMemorySectionNotFound(missing) => json!({
             "key": missing.key, "revision": missing.revision, "section": missing.section,
@@ -1097,11 +1111,11 @@ pub fn store_error_value(error: &StoreError) -> Value {
         }
         StoreError::WorkCatalogCursorInvalid { reason } => json!({
             "reason": reason,
-            "remedy": "repeat the listing without --after, then continue from the new token",
+            "remedy": CATALOG_CURSOR_REMEDY.cli,
         }),
         StoreError::WorkShowCursorInvalid { reason } => json!({
             "reason": reason,
-            "remedy": "repeat show without --after, then continue from the new token",
+            "remedy": SHOW_CURSOR_REMEDY.cli,
         }),
         StoreError::WorkNoteReferenceInvalid {
             reason,
@@ -1114,7 +1128,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
         StoreError::WorkCriterionLinkInvalid { criterion, reason } => {
             let mut details = json!({
                 "reason": reason,
-                "remedy": "read show for the current acceptance basis and show --notes --gates for existing current-run evidence; an explicit author link is not verification",
+                "remedy": CRITERION_LINK_REMEDY.cli,
             });
             if let (Some(position), Value::Object(fields)) = (criterion, &mut details) {
                 fields.insert("criterion".into(), json!(position));
@@ -1184,7 +1198,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
         }),
         StoreError::WorkPeerDecompositionRefused { parent } => json!({
             "work_id": parent,
-            "remedy": "ask the parent holder to add required children or prerequisites; a peer may use add --under REF --optional",
+            "remedy": PEER_DECOMPOSITION_REMEDY.cli,
         }),
         StoreError::WorkPrerequisiteAlreadySatisfied(work) => json!({
             "work_id": work,
@@ -1843,10 +1857,15 @@ mod tests {
                 matches!(case, "unconfirmed" | "no_basis" | "long_unconfirmed"),
                 "{case}"
             );
-            assert!(value["reminders"].as_array().unwrap().iter().any(|line| {
-                line.as_str()
-                    .is_some_and(|text| text.contains(&refusal.remedy))
-            }));
+            // Over MCP the remedy names the field the caller passes.
+            let spelled = mcp_spelled(&refusal.remedy);
+            assert!(
+                value["reminders"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|line| { line.as_str().is_some_and(|text| text.contains(&spelled)) })
+            );
             assert!(
                 value["next"]
                     .as_array()
@@ -1885,19 +1904,33 @@ mod tests {
         }
     }
 
-    /// The agent projection of a shared refusal that concerns `work`: the
-    /// message and details name the item by short reference.
+    /// The MCP spelling of a text that may end with a sentence naming an
+    /// argument.
+    fn mcp_spelled(text: &str) -> String {
+        crate::verbs::respell(ArgumentNames::Mcp, text).into_owned()
+    }
+
+    /// The MCP agent projection of a shared refusal that concerns `work`:
+    /// the message and details name the item by short reference, and the
+    /// arguments their sentences name by MCP field.
     fn agent_work_projection(shared: &Value, work: &crate::WorkItem) -> (Value, Value) {
-        let message = shared["error"]["message"]
-            .as_str()
-            .expect("message")
-            .replacen(&format!("{:?}", work.work_id), &work.short_ref, 1);
+        let message = mcp_spelled(
+            &shared["error"]["message"]
+                .as_str()
+                .expect("message")
+                .replacen(&format!("{:?}", work.work_id), &work.short_ref, 1),
+        );
         let mut details = shared["error"]["details"].clone();
         let Value::Object(fields) = &mut details else {
             panic!("details object: {details}");
         };
         assert_eq!(fields.remove("work_id"), Some(json!(work.work_id)));
         fields.insert("work_ref".into(), json!(work.short_ref));
+        for key in ["reason", "remedy"] {
+            if let Some(Value::String(text)) = fields.get_mut(key) {
+                *text = mcp_spelled(text);
+            }
+        }
         (json!(message), details)
     }
 
@@ -1967,7 +2000,7 @@ mod tests {
             assert_eq!(error["details"], details);
             let cause: crate::AcceptanceEvaluationAdmissionCause =
                 serde_json::from_value(error["details"]["cause"].clone()).unwrap();
-            let remedy = crate::work_service::evaluation_admission_remedy(&cause);
+            let remedy = mcp_spelled(&crate::work_service::evaluation_admission_remedy(&cause));
             assert_eq!(error["details"]["remedy"], remedy);
             if case == "wrong_basis" {
                 // The basis is the fault: the valid check it cites is not

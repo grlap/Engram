@@ -61,15 +61,18 @@ impl LsInput {
 
     pub(super) fn validate_listing(&self) -> Result<(), VerbError> {
         if self.ready && self.blocked {
-            return Err(
-                StoreError::InvalidWork("choose --ready or --blocked, not both".into()).into(),
-            );
+            return Err(StoreError::InvalidWork(
+                super::argument_wording::READY_WITH_BLOCKED_REFUSAL
+                    .cli
+                    .into(),
+            )
+            .into());
         }
         if (self.optional || self.required) && self.under.is_none()
             || self.optional && self.required
         {
             return Err(StoreError::InvalidWork(
-                "choose --optional or --required with --under PARENT".into(),
+                super::argument_wording::CHILD_FILTER_REFUSAL.cli.into(),
             )
             .into());
         }
@@ -186,7 +189,7 @@ pub(super) fn fit_list_receipt(
         } else if byte_limited {
             Some("page is byte-bounded; continue with the same filters and ordering".to_owned())
         } else {
-            Some("page reached --limit; continue with the same filters and ordering".to_owned())
+            Some(super::argument_wording::PAGE_LIMIT_HINT.cli.to_owned())
         };
         let mut lines = vec![format!("showing {visible} of {} item(s):", page.total)];
         lines.extend(

@@ -8,7 +8,7 @@ use super::receipts::{CompactNextReceipt, compact_row_line};
 use super::{Value, json};
 use crate::work_service::{WorkCurrentStatus, WorkDiscoverySummary, WorkDiscoveryView};
 
-pub(super) const CLIPPED_STATUS_REMINDER: &str = "read full status via its --note locator before acting on approval or STOP conditions; a clipped prefix grants no permission";
+pub(super) const CLIPPED_STATUS_REMINDER: &str = super::argument_wording::CLIPPED_STATUS.cli;
 
 #[derive(Clone)]
 pub(super) struct CompactChange {

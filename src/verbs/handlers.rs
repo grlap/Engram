@@ -33,27 +33,10 @@ pub struct AgentVerbs {
     pub(super) actor_id: String,
     session_id: SessionId,
     fit_effective_session: Option<SessionId>,
-    argument_names: ArgumentNames,
+    pub(super) argument_names: ArgumentNames,
 }
 
-/// How a word's guidance names one of its arguments: as the CLI flag, or as
-/// the MCP field the caller actually passes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum ArgumentNames {
-    #[default]
-    Cli,
-    Mcp,
-}
-
-impl ArgumentNames {
-    /// The reminder `add` gives when the caller supplied no criterion.
-    fn defaulted_acceptance_reminder(self) -> &'static str {
-        match self {
-            Self::Cli => "acceptance defaulted to the title being done; set --accept",
-            Self::Mcp => "acceptance defaulted to the title being done; set acceptance",
-        }
-    }
-}
+use super::argument_wording::{self as wording, ArgumentNames};
 
 /// The status `show`, `claim` and `done` give while an item's only criterion
 /// is still its title placeholder: what is observed, since the same sentence
@@ -159,11 +142,9 @@ fn parse_supplied_evaluation_mode(
     };
     let word = word.trim();
     if word.is_empty() {
-        return Err(StoreError::InvalidWork(
-            "evaluation mode must not be blank; pass same_session, sub_agent, or independent_session, or leave it out (--clear-evaluation-mode clears an existing pin)"
-                .into(),
-        )
-        .into());
+        return Err(
+            StoreError::InvalidWork(wording::BLANK_EVALUATION_MODE_REFUSAL.cli.into()).into(),
+        );
     }
     crate::domain::AcceptanceEvaluationMode::parse(word)
         .map(Some)
@@ -376,10 +357,10 @@ fn parse_retiring_target(
         return if value.is_none() {
             Ok(ProjectMemoryRetiringTargetChange::Clear)
         } else {
-            Err(StoreError::InvalidProjectMemory(
-                "--retires-with and --clear-retires-with cannot be combined".into(),
+            Err(
+                StoreError::InvalidProjectMemory(wording::RETIRES_WITH_COMBINED_REFUSAL.cli.into())
+                    .into(),
             )
-            .into())
         };
     }
     let Some(value) = value else {
@@ -1124,8 +1105,8 @@ impl AgentVerbs {
             );
         }
         let reminder = input.acceptance.is_empty().then(|| {
-            self.argument_names
-                .defaulted_acceptance_reminder()
+            wording::DEFAULTED_ACCEPTANCE_REMINDER
+                .spelled(self.argument_names)
                 .to_owned()
         });
         let has_initial_notes = !input.notes.is_empty();
@@ -1167,10 +1148,9 @@ impl AgentVerbs {
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty());
         if input.optional && input.under.is_none() {
-            return Err(StoreError::InvalidWork(
-                "optional work needs a parent; use --under REF with --optional".into(),
-            )
-            .into());
+            return Err(
+                StoreError::InvalidWork(wording::OPTIONAL_NEEDS_PARENT_REFUSAL.cli.into()).into(),
+            );
         }
         let evaluation_mode = parse_supplied_evaluation_mode(input.evaluation_mode.as_deref())?;
         let acceptance_bindings = parse_bindings(&input.bindings)?;
@@ -1394,7 +1374,7 @@ impl AgentVerbs {
     ) -> Result<Receipt, VerbError> {
         if input.revision.is_some() && !input.full {
             return Err(StoreError::InvalidProjectMemory(
-                "--revision requires --full and a memory key".into(),
+                wording::REVISION_NEEDS_FULL_REFUSAL.cli.into(),
             )
             .into());
         }
@@ -1403,14 +1383,31 @@ impl AgentVerbs {
         if input.full {
             if input.after.is_some() {
                 return Err(StoreError::InvalidProjectMemory(
-                    "--full cannot be combined with --after".into(),
+                    wording::FULL_WITH_AFTER_REFUSAL.cli.into(),
                 )
                 .into());
             }
             let key = input.query.as_deref().ok_or_else(|| {
-                StoreError::InvalidProjectMemory("--full requires a memory key".into())
+                StoreError::InvalidProjectMemory(wording::FULL_NEEDS_KEY_REFUSAL.cli.into())
             })?;
-            let envelope = self.service.project_memory_full(key, input.revision, now)?;
+            let mut envelope = self.service.project_memory_full(key, input.revision, now)?;
+            // The reminder that names the arguments keeping or clearing a
+            // dropped retirement target names them as this caller passes them.
+            if let Some(dropped) = &envelope.memory.retiring_target_dropped {
+                let cli = crate::work_service::retiring_target_dropped_reminder(
+                    dropped,
+                    ArgumentNames::Cli,
+                );
+                let spelled = crate::work_service::retiring_target_dropped_reminder(
+                    dropped,
+                    self.argument_names,
+                );
+                for reminder in &mut envelope.reminders {
+                    if *reminder == cli {
+                        reminder.clone_from(&spelled);
+                    }
+                }
+            }
             let lines = envelope.terminal_lines();
             return Ok(Receipt::assemble(
                 lines,
@@ -1679,6 +1676,7 @@ impl AgentVerbs {
                     &refusal.recovery,
                     refusal.recovery.item.work_id != after.status.work.work_id,
                     &evaluation,
+                    self.argument_names,
                 );
                 if let Some(resolution) = &child_resolution {
                     reminder.push_str("; ");
@@ -1792,7 +1790,12 @@ impl AgentVerbs {
             };
             let action = super::memory_retirement::RetirementAction::Completed;
             let reserve = retirement_candidates.as_ref().map_or(Ok(0), |candidates| {
-                super::memory_retirement::reserve(&receipt, candidates, &action)
+                super::memory_retirement::reserve(
+                    &receipt,
+                    candidates,
+                    &action,
+                    self.argument_names,
+                )
             })?;
             let composed = super::child_obligations::done_with_acceptance(
                 &receipt,
@@ -1808,6 +1811,7 @@ impl AgentVerbs {
                     candidates,
                     &action,
                     super::FOCUS_DISCLOSED_BUDGET,
+                    self.argument_names,
                 ),
                 None => Ok(composed),
             };

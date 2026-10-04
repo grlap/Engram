@@ -582,7 +582,8 @@ fn completion_recovery_reminder_names_each_disposed_child_lifecycle() {
             completion_recovery_reminder(
                 &recovery,
                 true,
-                &crate::verbs::handlers::EvaluationRemedy::default()
+                &crate::verbs::handlers::EvaluationRemedy::default(),
+                crate::argument_names::ArgumentNames::Cli,
             ),
             format!(
                 "required child w-000000000001 \"Disposed child\" is {word} without a completion seal or waiver"
@@ -616,7 +617,8 @@ fn completion_recovery_reminder_names_the_verification_source_remedy() {
         completion_recovery_reminder(
             &recovery,
             false,
-            &crate::verbs::handlers::EvaluationRemedy::default()
+            &crate::verbs::handlers::EvaluationRemedy::default(),
+            crate::argument_names::ArgumentNames::Cli,
         ),
         "w-000000000003 acceptance evaluation is stale (verification_source): a pass on a bound criterion cites a check that ran on another source than the one evaluated, or before a later change to it; run the check on the current source, then evaluate again citing it, declaring the source revision the host reports"
     );
@@ -664,7 +666,12 @@ fn completion_recovery_reminder_names_the_identity_remedy_for_the_task() {
         ),
     ] {
         assert_eq!(
-            completion_recovery_reminder(&recovery, false, &remedy),
+            completion_recovery_reminder(
+                &recovery,
+                false,
+                &remedy,
+                crate::argument_names::ArgumentNames::Cli,
+            ),
             format!(
                 "{cause}; {}",
                 crate::work_service::missing_evaluation_remedy(mark, &admitted)

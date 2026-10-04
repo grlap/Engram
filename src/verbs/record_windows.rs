@@ -56,7 +56,9 @@ impl AgentVerbs {
             if other_modes || input.evaluations || input.evaluation.is_some() {
                 return Err(VerbError::at(
                     StoreError::InvalidWork(
-                        "choose --observations with optional --after, alone".into(),
+                        super::argument_wording::OBSERVATIONS_ALONE_REFUSAL
+                            .cli
+                            .into(),
                     ),
                     work_ref,
                 ));
@@ -68,7 +70,8 @@ impl AgentVerbs {
         {
             return Err(VerbError::at(
                 StoreError::InvalidWork(
-                    "choose --evaluations with optional --after, or --evaluation RECORD_ID alone"
+                    super::argument_wording::EVALUATIONS_ALONE_REFUSAL
+                        .cli
                         .into(),
                 ),
                 work_ref,
@@ -92,10 +95,7 @@ impl AgentVerbs {
                     || input.note.is_some()))
         {
             return Err(VerbError::at(
-                StoreError::InvalidWork(
-                    "choose --notes [--gates] or --history with optional --after, --note LOCATOR with optional --after, or --full"
-                        .into(),
-                ),
+                StoreError::InvalidWork(super::argument_wording::SHOW_WINDOWS_REFUSAL.cli.into()),
                 work_ref,
             ));
         }

@@ -2,6 +2,7 @@
 
 use serde_json::json;
 
+use super::argument_wording::ArgumentNames;
 use super::{Receipt, VerbError, receipts};
 use crate::{domain::ProjectMemoryRetirementCandidates, storage::StoreError};
 
@@ -25,11 +26,17 @@ impl RetirementAction {
         }
     }
 
-    fn instruction(&self) -> String {
+    /// What to do with the candidates, naming the argument that retargets a
+    /// memory as the caller passes it.
+    fn instruction(&self, names: ArgumentNames) -> String {
         match self {
             Self::Completed => "forget candidates after review; nothing was forgotten".into(),
             Self::Superseded { replacement } => format!(
-                "review each: revise it with --retires-with local:{replacement}, clear its target, or forget it after checking; nothing was changed"
+                "review each: revise it with {} local:{replacement}, clear its target, or forget it after checking; nothing was changed",
+                match names {
+                    ArgumentNames::Cli => "--retires-with",
+                    ArgumentNames::Mcp => "retires_with",
+                }
             ),
             Self::Cancelled => "review each: the memory stays in force until revised to another item, its target cleared, or forgotten; nothing was changed".into(),
         }
@@ -41,6 +48,7 @@ fn render(
     result: &Result<ProjectMemoryRetirementCandidates, StoreError>,
     action: &RetirementAction,
     visible: usize,
+    names: ArgumentNames,
 ) -> Receipt {
     let mut receipt = base.clone();
     match result {
@@ -68,7 +76,7 @@ fn render(
                 })
                 .collect::<Vec<_>>();
             let omitted = candidates.total.saturating_sub(shown);
-            let instruction = action.instruction();
+            let instruction = action.instruction(names);
             let mut value = json!({
                 "action": action.word(),
                 "total": candidates.total,
@@ -102,8 +110,9 @@ pub(super) fn reserve(
     base: &Receipt,
     result: &Result<ProjectMemoryRetirementCandidates, StoreError>,
     action: &RetirementAction,
+    names: ArgumentNames,
 ) -> Result<usize, VerbError> {
-    let minimal = render(base, result, action, 0);
+    let minimal = render(base, result, action, 0, names);
     Ok(minimal.text().len().saturating_sub(base.text().len()).max(
         receipts::compact_receipt_json_bytes(&minimal.value)?
             .saturating_sub(receipts::compact_receipt_json_bytes(&base.value)?),
@@ -117,12 +126,13 @@ pub(super) fn append(
     result: &Result<ProjectMemoryRetirementCandidates, StoreError>,
     action: &RetirementAction,
     budget: usize,
+    names: ArgumentNames,
 ) -> Result<Receipt, VerbError> {
     let count = result
         .as_ref()
         .map_or(0, |candidates| candidates.keys.len());
     for visible in (1..=count).rev() {
-        let receipt = render(base, result, action, visible);
+        let receipt = render(base, result, action, visible, names);
         if receipts::agent_receipt_fits(&receipt, budget)? {
             return Ok(receipt);
         }
@@ -131,5 +141,5 @@ pub(super) fn append(
     // already committed, so the receipt keeps saying which memories name the
     // item, as completion keeps its irreducible facts. `done` reserves this
     // form before fitting its other sections; an `update` receipt is small.
-    Ok(render(base, result, action, 0))
+    Ok(render(base, result, action, 0, names))
 }

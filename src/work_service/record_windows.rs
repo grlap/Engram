@@ -9,6 +9,13 @@ use crate::storage::{
 };
 use std::collections::BTreeMap;
 
+/// A continuation cursor given for a record that has no assessment to page.
+pub(crate) const ASSESSMENT_CONTINUATION_REFUSAL: crate::argument_names::Twin =
+    crate::argument_names::Twin {
+        cli: "only a verification record's assessment continues; drop --after",
+        mcp: "only a verification record's assessment continues; drop after",
+    };
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RecordCursor {
@@ -304,9 +311,7 @@ impl LocalWorkService {
                 // bound to it, so real input meets the record check above;
                 // this refuses a cursor that names a note with no assessment.
                 (None, Some(_)) => {
-                    return Err(invalid(
-                        "only a verification record's assessment continues; drop --after",
-                    ));
+                    return Err(invalid(ASSESSMENT_CONTINUATION_REFUSAL.cli));
                 }
                 (None, None) => None,
                 (Some(assessment), cursor) => Some(assessment_page(

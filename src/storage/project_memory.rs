@@ -19,6 +19,32 @@ mod tests;
 use history::memory_full;
 pub(in crate::storage) use history::project_memory_history_on;
 
+use crate::argument_names::Twin;
+
+/// The refusals of `remember` and `memories` that name their arguments; the
+/// core raises the CLI spelling and the agent projection shows MCP callers
+/// the field names.
+pub(crate) const REVISE_NEEDS_KEY_REFUSAL: Twin = Twin {
+    cli: "--revise requires --key; --expected-revision requires --revise and a positive revision",
+    mcp: "revise requires key; expected_revision requires revise and a positive revision",
+};
+pub(crate) const PARTIAL_EDIT_NEEDS_REVISE_REFUSAL: Twin = Twin {
+    cli: "--append and --section revise a memory: they require --revise, --key and --expected-revision",
+    mcp: "append and section revise a memory: they require revise, key and expected_revision",
+};
+pub(crate) const CLEAR_TARGET_NEEDS_REVISE_REFUSAL: Twin = Twin {
+    cli: "clearing a retirement target requires --revise",
+    mcp: "clearing a retirement target requires revise",
+};
+pub(crate) const FILTERED_SEARCH_AFTER_REFUSAL: Twin = Twin {
+    cli: "filtered memory search does not accept --after; refine the query instead",
+    mcp: "filtered memory search does not accept after; refine the query instead",
+};
+pub(crate) const UNSAFE_KEY_REFUSAL: Twin = Twin {
+    cli: "memory body cannot produce a safe key; pass --key KEY",
+    mcp: "memory body cannot produce a safe key; pass key",
+};
+
 /// A context generation is a plain token, so that the `memories` command a
 /// peek prints with it reaches either supported shell, and the terminal, as
 /// exactly the value that was supplied.
@@ -148,12 +174,12 @@ impl SqliteStore {
             || request.expected_revision == Some(0)
         {
             return Err(StoreError::InvalidProjectMemory(
-                "--revise requires --key; --expected-revision requires --revise and a positive revision".into(),
+                REVISE_NEEDS_KEY_REFUSAL.cli.into(),
             ));
         }
         if partial && (!request.revise || request.expected_revision.is_none()) {
             return Err(StoreError::InvalidProjectMemory(
-                "--append and --section revise a memory: they require --revise, --key and --expected-revision".into(),
+                PARTIAL_EDIT_NEEDS_REVISE_REFUSAL.cli.into(),
             ));
         }
         let mut request = request.clone();
@@ -232,7 +258,7 @@ impl SqliteStore {
         );
         if clears_target && !request.revise {
             return Err(StoreError::InvalidProjectMemory(
-                "clearing a retirement target requires --revise".into(),
+                CLEAR_TARGET_NEEDS_REVISE_REFUSAL.cli.into(),
             ));
         }
         let retiring_target = match &request.retiring_target {
@@ -564,7 +590,7 @@ impl SqliteStore {
         let normalized_query = normalize_project_memory_query(query)?;
         if normalized_query.is_some() && after.is_some() {
             return Err(StoreError::InvalidProjectMemory(
-                "filtered memory search does not accept --after; refine the query instead".into(),
+                FILTERED_SEARCH_AFTER_REFUSAL.cli.into(),
             ));
         }
         let normalized_after = after.map(validate_project_memory_key).transpose()?;
@@ -1300,7 +1326,7 @@ fn slug_project_memory_key(body: &str) -> Result<String, StoreError> {
     }
     if slug.is_empty() {
         return Err(StoreError::InvalidProjectMemory(
-            "memory body cannot produce a safe key; pass --key KEY".into(),
+            UNSAFE_KEY_REFUSAL.cli.into(),
         ));
     }
     validate_project_memory_key(&slug)

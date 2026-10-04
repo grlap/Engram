@@ -13,7 +13,9 @@ use crate::storage::StoreError;
 pub(super) fn edit(append: bool, section: Option<&str>) -> Result<ProjectMemoryEdit, StoreError> {
     match (append, section.map(str::trim)) {
         (true, Some(_)) => Err(StoreError::InvalidProjectMemory(
-            "--append and --section are alternatives; choose one".into(),
+            super::argument_wording::APPEND_WITH_SECTION_REFUSAL
+                .cli
+                .into(),
         )),
         (true, None) => Ok(ProjectMemoryEdit::Append),
         (false, Some(name)) => Ok(ProjectMemoryEdit::Section {

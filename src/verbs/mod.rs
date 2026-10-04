@@ -38,6 +38,9 @@ use crate::{
 };
 
 mod acceptance;
+mod argument_wording;
+#[cfg(test)]
+pub(crate) use argument_wording::respell;
 mod attribution;
 mod child_obligations;
 mod evaluation_guidance;
@@ -308,10 +311,8 @@ fn collapsed_changes(
     lines
 }
 
-pub(crate) const GATE_WORK_REF_REQUIRED: &str =
-    "no item is selected for this gate; use gate NAME --work-ref REF";
-pub(crate) const EVALUATE_WORK_REF_REQUIRED: &str =
-    "no item is selected for this evaluation; use evaluate REF --mode MODE …";
+pub(crate) const GATE_WORK_REF_REQUIRED: &str = argument_wording::GATE_NEEDS_TARGET.cli;
+pub(crate) const EVALUATE_WORK_REF_REQUIRED: &str = argument_wording::EVALUATE_NEEDS_TARGET.cli;
 
 fn strip_kind_prefix(summary: &str, kind: &str) -> String {
     let prefix = format!("{kind}: ");

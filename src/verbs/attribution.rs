@@ -1,8 +1,12 @@
 //! Display-only identity shaping. Core errors and canonical audit remain raw.
 
+use std::borrow::Cow;
+
+use super::argument_wording::{ArgumentNames, respell, respell_receipt_text};
 use super::{AgentVerbs, Guidance, SessionId, StoreError, Value, VerbError, json};
 
-pub(super) const HANDOFF_DISPLAY_TARGET_REFUSAL: &str = "a peer display label is not a handoff target; ask the host or coordinator for the recipient's real session id, then use handoff --to SESSION";
+pub(super) const HANDOFF_DISPLAY_TARGET_REFUSAL: &str =
+    super::argument_wording::HANDOFF_LABEL_TARGET.cli;
 
 /// The work item a refusal concerns, for the refusals whose agent rendering
 /// names it by short reference instead of its raw work id. The host/core
@@ -53,29 +57,40 @@ impl AgentVerbs {
                 .service
                 .display_identity()
                 .session(&SessionId(holder.clone()));
-            return error.guidance_with_holder(&label);
+            return error.guidance_with_holder(&label, self.argument_names);
         }
-        let mut guidance = error.guidance();
+        let mut guidance = error.guidance_with_holder("another session", self.argument_names);
         // A reminder that repeats the refusal's message word for word is
         // replaced by the agent message, which names the item by short
-        // reference. Every other reminder is left as written: it may carry a
-        // reason or criterion a caller supplied.
-        if work_named_first_in_message(&error.error).is_some() {
-            let raw_message = error.error.to_string();
-            for reminder in &mut guidance.reminders {
-                if *reminder == raw_message {
-                    *reminder = self.error_message(error);
-                }
+        // reference and its arguments as this caller passes them. Any other
+        // reminder keeps its words, a reason or criterion a caller supplied
+        // among them; only a registered sentence that names arguments and
+        // ends it is respelled for an MCP caller.
+        let raw_message = error.error.to_string();
+        for reminder in &mut guidance.reminders {
+            if *reminder == raw_message {
+                *reminder = self.error_message(error);
+            } else if let Cow::Owned(spelled) = respell(self.argument_names, reminder) {
+                *reminder = spelled;
             }
         }
         guidance
     }
-    /// Render an agent refusal without a raw claim-holder identity, and with
-    /// the work item it concerns named by short reference. Other diagnostic
-    /// text and caller-provided bodies are not a secrecy boundary and are
-    /// never rewritten.
+    /// Render an agent refusal without a raw claim-holder identity, with the
+    /// work item it concerns named by short reference, and with a registered
+    /// sentence that names arguments, when it ends the refusal, spelled as
+    /// this caller passes them. Other diagnostic text and caller-provided
+    /// bodies are not a secrecy boundary and are never rewritten.
     #[must_use]
     pub fn error_message(&self, error: &VerbError) -> String {
+        let message = self.error_message_with_short_refs(error);
+        match respell(self.argument_names, &message) {
+            Cow::Owned(spelled) => spelled,
+            Cow::Borrowed(_) => message,
+        }
+    }
+
+    fn error_message_with_short_refs(&self, error: &VerbError) -> String {
         match &error.error {
             StoreError::WorkClaimHeld {
                 work,
@@ -150,22 +165,68 @@ impl AgentVerbs {
             }
             return value;
         }
-        let ambiguous = matches!(error.error, StoreError::WorkReferenceAmbiguous { .. });
-        let work = refused_work(&error.error);
-        if work.is_none() && !ambiguous {
-            return value;
-        }
         // The item the refusal concerns is named by short reference; scoped
         // evidence, seal and evaluation ids and the candidates' full ids stay.
-        if let (Some(work), Some(Value::Object(details))) =
-            (work, value.pointer_mut("/error/details"))
-            && details.remove("work_id").is_some()
+        if let (Some(work), Some(Value::Object(details))) = (
+            refused_work(&error.error),
+            value.pointer_mut("/error/details"),
+        ) && details.remove("work_id").is_some()
         {
             details.insert("work_ref".into(), json!(super::short_ref_for_work_id(work)));
+        }
+        // An MCP caller reads the arguments a reason or remedy names as the
+        // fields it passes.
+        if self.argument_names == ArgumentNames::Mcp
+            && let Some(Value::Object(details)) = value.pointer_mut("/error/details")
+        {
+            for key in ["reason", "remedy"] {
+                if let Some(Value::String(text)) = details.get_mut(key)
+                    && let Cow::Owned(spelled) = respell(self.argument_names, text)
+                {
+                    *text = spelled;
+                }
+            }
+            if let Some(remedy) =
+                crate::mcp::project_memory_remedy(&error.error, ArgumentNames::Mcp)
+            {
+                details.insert("remedy".into(), json!(remedy));
+            }
         }
         if let Some(Value::Object(fields)) = value.get_mut("error") {
             fields.insert("message".into(), json!(self.error_message(error)));
         }
         value
+    }
+
+    /// A successful receipt as this caller reads it: for MCP, a sentence a
+    /// receipt can carry that names arguments and ends a reminder, the listing
+    /// hint or a completion refusal's remedy is spelled with the field names;
+    /// none of them grows the already fitted receipt. Lines only the CLI
+    /// prints and runnable commands are left as they are.
+    #[must_use]
+    pub(crate) fn spell_receipt(&self, mut receipt: super::Receipt) -> super::Receipt {
+        if self.argument_names == ArgumentNames::Cli {
+            return receipt;
+        }
+        let names = self.argument_names;
+        let spell = |text: &mut String| {
+            if let Cow::Owned(spelled) = respell_receipt_text(names, text) {
+                *text = spelled;
+            }
+        };
+        receipt.reminders.iter_mut().for_each(spell);
+        if let Some(Value::Array(reminders)) = receipt.value.get_mut("reminders") {
+            for reminder in reminders {
+                if let Value::String(text) = reminder {
+                    spell(text);
+                }
+            }
+        }
+        for key in ["hint", "remedy"] {
+            if let Some(Value::String(text)) = receipt.value.get_mut(key) {
+                spell(text);
+            }
+        }
+        receipt
     }
 }

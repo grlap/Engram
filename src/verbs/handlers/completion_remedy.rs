@@ -11,10 +11,13 @@ pub(in crate::verbs) struct EvaluationRemedy {
     pub(in crate::verbs) admitted: Vec<crate::domain::AcceptanceEvaluationMode>,
 }
 
+/// What a completion refusal still owes, with a source remedy that names an
+/// argument spelled as the caller passes it.
 pub(in crate::verbs) fn completion_recovery_reminder(
     recovery: &crate::WorkCompletionRecovery,
     include_title: bool,
     evaluation: &EvaluationRemedy,
+    names: crate::argument_names::ArgumentNames,
 ) -> String {
     let item = &recovery.item;
     let label = if include_title {
@@ -55,7 +58,13 @@ pub(in crate::verbs) fn completion_recovery_reminder(
         crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason } => match reason {
             crate::AcceptanceStaleReason::Source => format!(
                 "{label} acceptance evaluation is stale (source): {}",
-                recovery.source.as_deref().map_or("read the current source and request a fresh acceptance evaluation, then retry done", crate::work_service::source_recovery_remedy)
+                recovery.source.as_deref().map_or(
+                    std::borrow::Cow::Borrowed("read the current source and request a fresh acceptance evaluation, then retry done"),
+                    |source| super::super::argument_wording::respell(
+                        names,
+                        crate::work_service::source_recovery_remedy(source),
+                    ),
+                )
             ),
             // Two causes share this reason and the refusal does not say which,
             // so the remedy is the one a missing evaluation of this task gets.

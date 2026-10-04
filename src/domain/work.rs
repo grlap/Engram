@@ -797,9 +797,7 @@ pub(crate) fn normalize_gate_evidence_input(
     if let Some(value) = evidence_ref.as_deref()
         && (value.len() > MAX_GATE_REF_BYTES || value.chars().any(is_unsafe_rendered_text_char))
     {
-        return Err(format!(
-            "gate --ref must be a control- and format-free opaque reference of at most {MAX_GATE_REF_BYTES} UTF-8 bytes"
-        ));
+        return Err(gate_ref_refusal_twin().0);
     }
 
     Ok(NormalizedGateEvidenceInput {
@@ -834,8 +832,28 @@ pub(crate) fn is_unsafe_rendered_text_char(ch: char) -> bool {
 
 fn gate_input_too_large(detail: &str) -> String {
     format!(
-        "gate_input_too_large: {detail}; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+        "gate_input_too_large: {detail}; {}",
+        GATE_INPUT_TOO_LARGE_REMEDY.cli
     )
+}
+
+/// How an oversized gate input is recorded instead, naming the gate's
+/// failure-label and reference arguments as each surface passes them.
+pub const GATE_INPUT_TOO_LARGE_REMEDY: crate::argument_names::Twin = crate::argument_names::Twin {
+    cli: "rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE",
+    mcp: "rerun with one aggregate failed entry and evidence_ref OPAQUE_REFERENCE",
+};
+
+/// The refusal of an unusable gate reference, as (CLI, MCP) spellings: the
+/// CLI passes it as `--ref`, an MCP caller as `evidence_ref`.
+#[must_use]
+pub fn gate_ref_refusal_twin() -> (String, String) {
+    let refusal = |argument: &str| {
+        format!(
+            "gate {argument} must be a control- and format-free opaque reference of at most {MAX_GATE_REF_BYTES} UTF-8 bytes"
+        )
+    };
+    (refusal("--ref"), refusal("evidence_ref"))
 }
 
 /// Evidence captured under a live work claim or appended as an attributed late

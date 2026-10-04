@@ -2,6 +2,12 @@
 
 use crate::domain::{AcceptanceSourceRecoveryCause, AcceptanceSourceRemedy};
 
+/// The one source remedy that names a word's argument.
+pub(crate) const MEASURE_SOURCE_REMEDY: crate::argument_names::Twin = crate::argument_names::Twin {
+    cli: "obtain a fresh source measurement from the host and retry done with it (--source-fingerprint F); copying the evaluated fingerprint is not a measurement",
+    mcp: "obtain a fresh source measurement from the host and retry done with it (source_fingerprint); copying the evaluated fingerprint is not a measurement",
+};
+
 pub(crate) fn source_recovery_remedy(cause: &AcceptanceSourceRecoveryCause) -> &'static str {
     match cause.remedy {
         AcceptanceSourceRemedy::EndTurnReadAndRetry => {
@@ -10,9 +16,7 @@ pub(crate) fn source_recovery_remedy(cause: &AcceptanceSourceRecoveryCause) -> &
         AcceptanceSourceRemedy::ReadSourceAndEvaluate => {
             "read the named root's current source and request a new acceptance evaluation of it, then retry done"
         }
-        AcceptanceSourceRemedy::MeasureSourceAndRetry => {
-            "obtain a fresh source measurement from the host and retry done with it (--source-fingerprint F); copying the evaluated fingerprint is not a measurement"
-        }
+        AcceptanceSourceRemedy::MeasureSourceAndRetry => MEASURE_SOURCE_REMEDY.cli,
         AcceptanceSourceRemedy::EvaluateCurrentSource => {
             "request a new acceptance evaluation of the current source with its host-measured source basis, then retry done; copying an earlier fingerprint is insufficient"
         }

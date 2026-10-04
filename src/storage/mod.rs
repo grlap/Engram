@@ -165,12 +165,20 @@ use project_memory::{
 };
 use task_memory::{fts_query, normalize_project_memory_query};
 
+pub(crate) use project_memory::{
+    CLEAR_TARGET_NEEDS_REVISE_REFUSAL, FILTERED_SEARCH_AFTER_REFUSAL,
+    PARTIAL_EDIT_NEEDS_REVISE_REFUSAL, REVISE_NEEDS_KEY_REFUSAL, UNSAFE_KEY_REFUSAL,
+};
 pub(crate) use work::ListingExpectation;
 pub(crate) use work::RequiredChildSuccessor;
 #[cfg(test)]
 pub(crate) use work::RestoredMember;
 pub(crate) use work::SelectedStatusNote;
 pub(crate) use work::WorkDiscoveryRow;
+pub(crate) use work::{
+    AMBIGUOUS_LOCATOR_REFUSAL, CHECKPOINT_LOCATOR_REFUSAL, CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL,
+    FOREIGN_LOCATOR_REFUSAL, HISTORY_LOCATOR_REFUSAL,
+};
 pub(crate) use work::{
     AssessmentBoundary, RecordedObligationEnd, VerificationAssessment,
     VerificationObligationAssessment,
@@ -1029,19 +1037,34 @@ impl CarriedFailureRefusal {
     }
 
     /// What the evaluator does next. The refusal message and the MCP details
-    /// both carry this text, because a host may relay only the message.
+    /// both carry this text, because a host may relay only the message. This
+    /// is the CLI spelling; an MCP caller reads the field names.
     #[must_use]
     pub const fn remedy(self) -> &'static str {
+        self.remedy_twin().cli
+    }
+
+    /// The remedy in both spellings: two of them name the `supersedes`
+    /// argument, which an MCP caller passes as a field.
+    #[must_use]
+    pub const fn remedy_twin(self) -> crate::argument_names::Twin {
+        use crate::argument_names::Twin;
         match self {
-            Self::Unacknowledged => {
-                "show the evaluator the failed verdicts and the criteria and their bindings before and after the revision, have it judge whether the revised criteria still deliver the requested outcome, and submit with --supersedes RECORD_ID naming the failed evaluation; after a revision by the run's executor, that evaluator must be one that never held the run"
-            }
+            Self::Unacknowledged => Twin {
+                cli: "show the evaluator the failed verdicts and the criteria and their bindings before and after the revision, have it judge whether the revised criteria still deliver the requested outcome, and submit with --supersedes RECORD_ID naming the failed evaluation; after a revision by the run's executor, that evaluator must be one that never held the run",
+                mcp: "show the evaluator the failed verdicts and the criteria and their bindings before and after the revision, have it judge whether the revised criteria still deliver the requested outcome, and submit with supersedes RECORD_ID naming the failed evaluation; after a revision by the run's executor, that evaluator must be one that never held the run",
+            },
             Self::SelfAcknowledged => {
-                "have an evaluator that never held this run name the failure: an independent_session evaluation, or a sub_agent under its own host-issued session, widening the acceptance-evaluation policy, or changing or clearing the task's evaluation mode, if they allow neither; or, while no later failing evaluation has named the failure, revise the criteria and their bindings back to the ones it judged"
+                const NAMES_NO_ARGUMENT: &str = "have an evaluator that never held this run name the failure: an independent_session evaluation, or a sub_agent under its own host-issued session, widening the acceptance-evaluation policy, or changing or clearing the task's evaluation mode, if they allow neither; or, while no later failing evaluation has named the failure, revise the criteria and their bindings back to the ones it judged";
+                Twin {
+                    cli: NAMES_NO_ARGUMENT,
+                    mcp: NAMES_NO_ARGUMENT,
+                }
             }
-            Self::NothingToSupersede => {
-                "submit without --supersedes: no failing evaluation's criteria were revised on this run"
-            }
+            Self::NothingToSupersede => Twin {
+                cli: "submit without --supersedes: no failing evaluation's criteria were revised on this run",
+                mcp: "submit without supersedes: no failing evaluation's criteria were revised on this run",
+            },
         }
     }
 }

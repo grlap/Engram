@@ -399,6 +399,19 @@ even when it quotes the item's raw id. An ambiguous
 short reference keeps its candidates' full work ids, in the message, in
 `details.candidates` and in each offered `show` command, since a colliding
 short reference cannot tell them apart.
+A refusal, remedy or reminder that tells the caller to pass an argument names
+it as that caller passes it. The CLI, its text and its JSON keep the flags,
+such as `--revise requires --key`, while MCP names the fields, such as
+`revise requires key`; this applies to the message, `details.reason`,
+`details.remedy` and the reminders of a refusal, and to the reminders, a
+listing's `hint`, a completion refusal's `remedy` and the
+`memory_retirement.instruction` of a receipt. A text that carries its own
+values, such as a memory key, a retirement target or a replacement item, is
+built in the caller's spelling. A fixed sentence is written in both spellings
+and replaced whole only where it ends the text, so an arbitrary `--flag`, and
+a caller's reason or citation before such a sentence, are never rewritten.
+Runnable `engram work …` commands in `next` and elsewhere stay CLI syntax on
+every surface, and the host/core envelope keeps the CLI spelling.
 Project-memory attribution, caller-owned process-default session notices and
 encoded continuation context also retain their documented contracts. Compact
 rows retain up to 80 UTF-8 bytes of title. Their hybrid `state` is availability

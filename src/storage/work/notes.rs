@@ -6,12 +6,32 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::super::StoreError;
 use super::execution::work_evidence_kind_on;
 use super::feeds::load_typed_work_object;
+use crate::argument_names::Twin;
 use crate::domain::{
     ActorContext, EnvironmentEvidence, ExecutionObservation, ExecutionOutcome, GateEvidenceRecord,
     VerificationEvidence, VerificationKind, VerificationResult, WorkEvidence, WorkEvidenceKind,
     WorkId, WorkObservation,
 };
 use crate::{ObjectId, RestoredWorkEvidence};
+
+/// Criterion-evidence refusals that send the caller to the notes-and-gates
+/// window, which an MCP caller opens with show's notes and gates fields.
+pub(crate) const AMBIGUOUS_LOCATOR_REFUSAL: Twin = Twin {
+    cli: "note locator is ambiguous; use the complete locator from show --notes --gates",
+    mcp: "note locator is ambiguous; use the complete locator from show with notes and gates",
+};
+pub(crate) const CHECKPOINT_LOCATOR_REFUSAL: Twin = Twin {
+    cli: "this is a checkpoint, not its note evidence; use the note locator from show --notes --gates",
+    mcp: "this is a checkpoint, not its note evidence; use the note locator from show with notes and gates",
+};
+pub(crate) const HISTORY_LOCATOR_REFUSAL: Twin = Twin {
+    cli: "this is a history event, not note/gate evidence; use show --notes --gates",
+    mcp: "this is a history event, not note/gate evidence; use show with notes and gates",
+};
+pub(crate) const FOREIGN_LOCATOR_REFUSAL: Twin = Twin {
+    cli: "locator is not a note/gate on this item; use this item's show --notes --gates locators",
+    mcp: "locator is not a note/gate on this item; use the locators this item's show with notes and gates prints",
+};
 
 pub(crate) struct WorkNoteRecord {
     pub kind: WorkEvidenceKind,
@@ -244,10 +264,7 @@ impl super::super::SqliteStore {
             })
             .collect();
         if matches.len() > 1 {
-            return Ok(Err(refuse(
-                "note locator is ambiguous; use the complete locator from show --notes --gates",
-                false,
-            )));
+            return Ok(Err(refuse(AMBIGUOUS_LOCATOR_REFUSAL.cli, false)));
         }
         let Some(row) = matches.first() else {
             let kind: Option<String> = self.connection.query_row(
@@ -258,15 +275,9 @@ impl super::super::SqliteStore {
             ).optional()?;
             return Ok(Err(refuse(
                 match kind.as_deref() {
-                    Some("work_checkpoint") => {
-                        "this is a checkpoint, not its note evidence; use the note locator from show --notes --gates"
-                    }
-                    Some("work_event") => {
-                        "this is a history event, not note/gate evidence; use show --notes --gates"
-                    }
-                    _ => {
-                        "locator is not a note/gate on this item; use this item's show --notes --gates locators"
-                    }
+                    Some("work_checkpoint") => CHECKPOINT_LOCATOR_REFUSAL.cli,
+                    Some("work_event") => HISTORY_LOCATOR_REFUSAL.cli,
+                    _ => FOREIGN_LOCATOR_REFUSAL.cli,
                 },
                 !matches!(kind.as_deref(), Some("work_checkpoint" | "work_event")),
             )));

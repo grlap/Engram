@@ -64,16 +64,19 @@ pub(crate) mod blocker_selector;
 mod bound_verification;
 mod evaluation_admission;
 pub(crate) use bound_verification::bound_verification_remedy;
-pub(crate) use evaluation_admission::evaluation_admission_remedy;
+pub(crate) use evaluation_admission::{READ_RUN_EVIDENCE_REMEDY, evaluation_admission_remedy};
 mod catalog;
 mod change_context;
 mod completion;
 mod continuation;
 mod deciding;
 mod source_recovery;
-pub(crate) use source_recovery::{shown_source_recovery, source_recovery_remedy};
+pub(crate) use source_recovery::{
+    MEASURE_SOURCE_REMEDY, shown_source_recovery, source_recovery_remedy,
+};
 mod evaluate;
 mod evaluation_windows;
+pub(crate) use evaluation_windows::UNKNOWN_EVALUATION_REFUSAL;
 mod focus;
 pub(crate) use focus::WorkAuthoredContract;
 mod handoff;
@@ -90,6 +93,7 @@ pub(crate) use deciding::{ShownDecidingObservation, bounded as bounded_shown_fie
 pub(crate) use projection::normalize_actor_context;
 mod propose;
 mod record_windows;
+pub(crate) use record_windows::ASSESSMENT_CONTINUATION_REFUSAL;
 mod service;
 mod status;
 pub(crate) mod unadmitted;
@@ -197,10 +201,9 @@ impl ProjectMemoryFullResponse {
         if memory.revision == memory.current_revision
             && let Some(dropped) = &memory.retiring_target_dropped
         {
-            reminders.push(format!(
-                "revision {} dropped the retirement target without a clear; to keep it, revise with --retires-with {}, or to let it go, revise with --clear-retires-with",
-                dropped.revision,
-                retiring_target_command_form(&dropped.target)
+            reminders.push(retiring_target_dropped_reminder(
+                dropped,
+                crate::argument_names::ArgumentNames::Cli,
             ));
         }
         next.push("engram work memories".into());
@@ -235,6 +238,24 @@ impl ProjectMemoryFullResponse {
         ));
         lines
     }
+}
+
+/// The reminder a full read of the current version gives when a revision
+/// dropped the retirement target without a clear, naming the arguments that
+/// keep or clear it as the caller passes them.
+pub(crate) fn retiring_target_dropped_reminder(
+    dropped: &crate::domain::ProjectMemoryRetiringTargetDropped,
+    names: crate::argument_names::ArgumentNames,
+) -> String {
+    let (retires_with, clear) = match names {
+        crate::argument_names::ArgumentNames::Cli => ("--retires-with", "--clear-retires-with"),
+        crate::argument_names::ArgumentNames::Mcp => ("retires_with", "clear_retires_with"),
+    };
+    format!(
+        "revision {} dropped the retirement target without a clear; to keep it, revise with {retires_with} {}, or to let it go, revise with {clear}",
+        dropped.revision,
+        retiring_target_command_form(&dropped.target)
+    )
 }
 
 /// The `--retires-with` form of a stored target as shown to a reader,

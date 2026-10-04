@@ -469,6 +469,7 @@ fn the_advisory_keeps_its_count_under_a_tight_budget_and_discloses_a_failed_look
         &candidates,
         &RetirementAction::Completed,
         crate::work_service::MAX_AGENT_WORK_RESPONSE_BYTES,
+        crate::argument_names::ArgumentNames::Cli,
     )
     .unwrap();
     assert_eq!(roomy.value["memory_retirement"]["total"], 20);
@@ -485,12 +486,19 @@ fn the_advisory_keeps_its_count_under_a_tight_budget_and_discloses_a_failed_look
         .text()
         .len()
         .max(crate::verbs::receipts::compact_receipt_json_bytes(&base.value).unwrap());
-    let smallest = reserve(&base, &candidates, &RetirementAction::Completed).unwrap();
+    let smallest = reserve(
+        &base,
+        &candidates,
+        &RetirementAction::Completed,
+        crate::argument_names::ArgumentNames::Cli,
+    )
+    .unwrap();
     let tight = append(
         &base,
         &candidates,
         &RetirementAction::Completed,
         base_bytes + smallest + 200,
+        crate::argument_names::ArgumentNames::Cli,
     )
     .unwrap();
     let shown = tight.value["memory_retirement"]["items"]
@@ -506,6 +514,7 @@ fn the_advisory_keeps_its_count_under_a_tight_budget_and_discloses_a_failed_look
         &candidates,
         &RetirementAction::Completed,
         base_bytes / 2,
+        crate::argument_names::ArgumentNames::Cli,
     )
     .unwrap();
     assert_eq!(
@@ -522,6 +531,7 @@ fn the_advisory_keeps_its_count_under_a_tight_budget_and_discloses_a_failed_look
         &failed,
         &RetirementAction::Completed,
         crate::work_service::MAX_AGENT_WORK_RESPONSE_BYTES,
+        crate::argument_names::ArgumentNames::Cli,
     )
     .unwrap();
     assert!(disclosed.value["memory_retirement"]["error_class"].is_string());

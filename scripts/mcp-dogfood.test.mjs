@@ -328,6 +328,7 @@ class McpClient {
     }
     // Catch the former 14s pathology; precise bounds live in Rust decode/statement-count regressions.
     assert.ok(elapsed < 10000, `${name} took ${elapsed.toFixed(1)}ms; sanity limit is 10000ms`);
+    assertProseNamesFields(name, result);
     return result;
   }
 
@@ -457,6 +458,35 @@ function assertRecordParity(actual, expected) {
     actualWindow.read_cut.observed_at = expectedWindow.read_cut.observed_at;
   }
   assert.deepEqual(copy, expected);
+}
+
+// Over MCP, a sentence that tells the caller to pass an argument names the
+// field: no CLI flag appears in an answer's system prose (a refusal's
+// message, reason, remedy and reminders, or a receipt's reminders, hint,
+// remedy and memory-retirement instruction) outside an embedded runnable
+// command, which keeps CLI syntax: anything in backticks, or a bare
+// `engram …` command up to a semicolon, a comma before a space or a line
+// end. Other fields carry caller data and are not swept. Every MCP call this
+// suite makes is swept, so a sentence added later without its MCP spelling
+// fails here. The Rust sweep in src/mcp/prose_sweep.rs applies the same rule.
+function assertProseNamesFields(word, result) {
+  const value = result?.structuredContent;
+  if (value === undefined || value === null) return;
+  const error = value.error;
+  const source = error ?? value;
+  const texts = error
+    ? [error.message, error.details?.reason, error.details?.remedy]
+    : [value.hint, value.remedy, value.memory_retirement?.instruction];
+  texts.push(...(Array.isArray(source.reminders) ? source.reminders : []));
+  for (const text of texts) {
+    if (typeof text !== "string") continue;
+    const prose = text
+      .split("`")
+      .filter((_, index) => index % 2 === 0)
+      .join("")
+      .replace(/engram .*?(?=;|, |\n|$)/gu, "");
+    assert.doesNotMatch(prose, /(^|[\s('"])--[a-z]/u, `${word}: a CLI flag in MCP prose: ${text}`);
+  }
 }
 
 function structuredError(result, code) {
@@ -2435,6 +2465,23 @@ test("peek orientation preserves pending context and memory signals on CLI and M
       assert.match(cliText.stderr, new RegExp(`next:\\n\\s+engram work ${word}\\n`, "u"), cliText.stderr);
       if (word === "memories") assert.doesNotMatch(cliText.stderr, /engram work next/u, cliText.stderr);
     }
+    // A refusal that says which argument to pass names the field over MCP
+    // and the flag on the CLI; its offered command is CLI syntax on both.
+    const fullWithoutKey = structuredError(await client.call("memories", { full: true }), "memory_invalid");
+    assert.match(fullWithoutKey.message, /full requires a memory key in query$/u);
+    assert.doesNotMatch(
+      JSON.stringify([fullWithoutKey.message, fullWithoutKey.details, fullWithoutKey.reminders]),
+      /--full/u,
+    );
+    assert.deepEqual(fullWithoutKey.next, ["engram work memories"]);
+    const cliFullJson = cliWord(engramHome, session, "memories", "--full", "--json");
+    assert.notEqual(cliFullJson.status, 0);
+    const cliFullError = JSON.parse(cliFullJson.stderr).error;
+    assert.match(cliFullError.message, /--full requires a memory key$/u);
+    assert.deepEqual(cliFullError.next, ["engram work memories"]);
+    const cliFullText = cliWord(engramHome, session, "memories", "--full");
+    assert.notEqual(cliFullText.status, 0);
+    assert.match(cliFullText.stderr, /--full requires a memory key/u, cliFullText.stderr);
     // A host that sends a value outside the set gets, from the peek itself,
     // a refusal its agent can act on: the typed error and its remedy, never
     // a crash or an empty block.
@@ -2588,9 +2635,13 @@ test("project memory revisions agree on CLI MCP history conflicts and terminal r
     const missingRevision = structuredError(await client.call("memories", { query: key, full: true, revision: 4 }), "memory_revision_not_found");
     const cliMissing = cliWord(engramHome, "memory-revision-peer", "memories", key, "--full", "--revision", "4", "--json");
     assert.notEqual(cliMissing.status, 0);
-    for (const error of [missingRevision, JSON.parse(cliMissing.stderr).error]) {
+    // The remedy names the memories arguments as each caller passes them.
+    for (const [error, read] of [
+      [missingRevision, `read memories with query ${key} and full`],
+      [JSON.parse(cliMissing.stderr).error, `read memories ${key} --full`],
+    ]) {
       assert.equal(error.code, "memory_revision_not_found");
-      assert.deepEqual(error.details, { key, revision: 4, current_revision: 3, remedy: `read memories ${key} --full for history navigation` });
+      assert.deepEqual(error.details, { key, revision: 4, current_revision: 3, remedy: `${read} for history navigation` });
       assert.deepEqual(error.next, [`engram work memories ${key} --full --revision 3`]);
       assert.deepEqual(error.reminders, [`project memory ${key} has no revision 4; valid revisions are 1..3`]);
     }
@@ -2614,7 +2665,7 @@ test("project memory revisions agree on CLI MCP history conflicts and terminal r
     assert.equal(listed.memories[0].revision, 3);
     assert.equal(listed.memories[0].first_line, "Current body");
     const exists = structuredError(await client.call("remember", { key, text: "Use revise" }), "memory_exists");
-    assert.match(exists.details.remedy, /--revise/);
+    assert.equal(exists.details.remedy, `read memories with query ${key} and full; use remember with key ${key} and revise to retain history`);
     receipt(await client.call("forget", { key }));
     structuredError(await client.call("remember", args), "memory_retired");
     structuredError(await client.call("memories", { query: key, full: true, revision: 1 }), "memory_retired");
@@ -2682,9 +2733,10 @@ test("missing-focus gate offers discovery on CLI and MCP", async (t) => {
     const mcp = structuredError(await client.call("gate", { name: "check" }), "work_invalid");
     const cli = cliWord(engramHome, "gate-discovery-cli", "gate", "check", "--json");
     assert.notEqual(cli.status, 0);
-    for (const error of [mcp, JSON.parse(cli.stderr).error]) {
+    // The reminder names the gate argument as each caller passes it.
+    for (const [error, pass] of [[mcp, "pass work_ref"], [JSON.parse(cli.stderr).error, "use gate NAME --work-ref REF"]]) {
       assert.deepEqual(error.next, ["engram work next"]);
-      assert.deepEqual(error.reminders, ["no item is selected for this gate; use gate NAME --work-ref REF"]);
+      assert.deepEqual(error.reminders, [`no item is selected for this gate; ${pass}`]);
     }
   } finally {
     try { if (client) await client.close(); }
@@ -3993,7 +4045,7 @@ test("Phoenix planning revisions and exact list counts through MCP", async (t) =
     assert.equal(listed.items.length, 1);
     assert.equal(listed.omitted, 1);
     assert.equal(listed.more, true);
-    assert.match(listed.hint, /--limit/u);
+    assert.equal(listed.hint, "page reached limit; continue with the same filters and ordering");
     receipt(await client.call("claim", { work_ref: first.short_ref }));
     const done = receipt(await client.call("done", { work_ref: first.short_ref, summary: "A and B verified" }));
     assert.match(done.seal, HASH);
@@ -4359,7 +4411,12 @@ test("evaluated acceptance policy over the real transports: locators, source fre
       "--evidence-basis", String(base.evidence_basis), "--verdict", "1=pass:asserted",
       "--rationale", "1=the gate passed", "--evidence", `1=${observation.locator}`, "--json");
     assert.equal(cliCitation.status, 1, cliCitation.stderr);
-    assert.deepEqual(JSON.parse(cliCitation.stderr).error.details, refused.details);
+    // The transports agree on every detail; the remedy names the show
+    // arguments as each caller passes them.
+    const cliCitationDetails = JSON.parse(cliCitation.stderr).error.details;
+    assert.deepEqual({ ...cliCitationDetails, remedy: null }, { ...refused.details, remedy: null });
+    assert.match(cliCitationDetails.remedy, /^read this run.s show --notes --gates and cite/u);
+    assert.match(refused.details.remedy, /^read this run.s show with notes and gates and cite/u);
     const evaluated = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
     assert.equal(evaluated.evaluation.passed, 1);
     assert.equal(evaluated.evaluation.verdicts_total, 1);
@@ -4372,7 +4429,7 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     assert.match(unmeasured.remedy, /fresh source measurement/u);
     const unmeasuredShow = receipt(await client.call("show", { work_ref: ref }));
     assert.equal(unmeasuredShow.acceptance_evaluation.source_recovery, undefined);
-    assert.ok(unmeasured.reminders.some((line) => line.includes("--source-fingerprint")), JSON.stringify(unmeasured.reminders));
+    assert.ok(unmeasured.reminders.some((line) => line.includes("retry done with it (source_fingerprint)")), JSON.stringify(unmeasured.reminders));
     const changed = receipt(await client.call("done", { work_ref: ref, summary: "Delivered", source_fingerprint: "sha256:tree-b" }));
     assert.equal(changed.code, "acceptance_evaluation_stale");
     assert.equal(changed.recovery.source.mismatch, "completion_fingerprint_mismatch");
@@ -4679,7 +4736,7 @@ test("a carried failure over the real transports: shown, refused until another e
     const refused = structuredError(await client.call("evaluate", request), "acceptance_evaluation_refused");
     assert.equal(refused.details.reason, "carried_failure_unacknowledged");
     assert.equal(refused.details.failed_evaluation, failedId);
-    assert.match(refused.details.remedy, /--supersedes RECORD_ID/u);
+    assert.match(refused.details.remedy, /submit with supersedes RECORD_ID/u);
     // The executor naming its own failure is not someone else accepting
     // the revision.
     const selfNamed = structuredError(await client.call("evaluate", { ...request, supersedes: failedId }), "acceptance_evaluation_refused");

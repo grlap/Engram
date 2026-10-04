@@ -46,7 +46,7 @@ mod stranded;
 use ancestor::{parent_execution_guidance, projected_blocking_ancestor};
 
 mod catalog;
-pub(crate) use catalog::ListingExpectation;
+pub(crate) use catalog::{CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL, ListingExpectation};
 pub(super) use catalog::{held_open_child_on, open_children_by_ready_order_on};
 
 mod prerequisites;

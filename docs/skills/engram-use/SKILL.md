@@ -66,6 +66,8 @@ undeclared field, a wrong type or an unknown action) is refused before the
 word runs, as a text-only tool error with neither `reminders` nor `next`. Its
 text describes the problem, though a type error may not name the field:
 correct the arguments against the word's input schema and call again.
+Over MCP, a refusal or reminder that says which argument to pass names the
+field (`revise`, `work_ref`); the runnable commands in `next` stay CLI syntax.
 The words are `next`, `ls`, `show`, `add`, `claim`, `update`, `gate`, `evaluate`,
 `note`, `done`, `handoff`, `remember`, `memories` and `forget`; MCP `search`
 is the form of CLI `ls --search --all`.

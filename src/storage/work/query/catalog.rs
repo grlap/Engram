@@ -13,6 +13,14 @@ mod tests;
 mod listing;
 pub(crate) use listing::ListingExpectation;
 
+/// A child-requirement filter without its parent; the listing words refuse
+/// the same combination first.
+pub(crate) const CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL: crate::argument_names::Twin =
+    crate::argument_names::Twin {
+        cli: "optional/required listing needs --under PARENT",
+        mcp: "optional/required listing needs under",
+    };
+
 const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
     CASE
         WHEN candidate.lifecycle != 'open' THEN 'closed'
@@ -369,7 +377,7 @@ fn work_catalog_sql(
     let mut candidate_filters = vec!["candidate.project_id = ?1".to_owned()];
     if query.child_requirement.is_some() && query.parent_id.is_none() {
         return Err(StoreError::InvalidWork(
-            "optional/required listing needs --under PARENT".into(),
+            CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL.cli.into(),
         ));
     }
     if let Some(parent) = query.parent_id {

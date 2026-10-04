@@ -45,8 +45,8 @@ mod planning;
 pub(crate) use planning::plan_validations;
 pub(crate) use planning::validate_work_plan;
 mod query;
-pub(crate) use query::ListingExpectation;
 pub(in crate::storage) use query::resolve_work_ref_on;
+pub(crate) use query::{CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL, ListingExpectation};
 mod receipts;
 mod record_windows;
 mod verification_read;
@@ -107,7 +107,10 @@ use crate::{
     memory::Redactor,
 };
 
-pub(crate) use notes::{VerificationFacts, WorkNoteRecord};
+pub(crate) use notes::{
+    AMBIGUOUS_LOCATOR_REFUSAL, CHECKPOINT_LOCATOR_REFUSAL, FOREIGN_LOCATOR_REFUSAL,
+    HISTORY_LOCATOR_REFUSAL, VerificationFacts, WorkNoteRecord,
+};
 pub(in crate::storage) use observation::observations_on;
 pub(crate) use record_windows::*;
 
