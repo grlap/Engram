@@ -692,9 +692,11 @@ fn discovery_summary(
         title: compact_text(&row.work.title),
         holder,
         // Storage verifies the selected note's session. Raw session detail is
-        // own-actor-only; a shared session spelling does not identify an actor.
-        note_session_id: (row.note_actor_id.as_deref() == Some(identity.actor))
-            .then(|| identity.session.clone()),
+        // own-actor-only; a shared session spelling does not identify an actor,
+        // and a note this actor made as another kind of actor is not its own.
+        note_session_id: (row.note_actor_id.as_deref() == Some(identity.actor)
+            && row.note_actor_kind.as_deref() == Some(super::WORD_ACTOR_KIND))
+        .then(|| identity.session.clone()),
         note: row.note.map(|note| compact_text(&note)),
     }
 }

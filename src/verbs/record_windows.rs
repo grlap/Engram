@@ -793,7 +793,7 @@ fn row_value(
 ) -> Value {
     let omitted = row.body_omitted || placeholder;
     let mut value = json!({ "locator": row.locator, "kind": row.kind, "family": row.family, "body_bytes": row.body_bytes,
-        "by": super::actor_label(&identity.author(&row.actor.actor_id, row.actor.session_id.as_ref()), row.actor.attribution_context()),
+        "by": super::actor_label(&identity.author(&row.actor.actor_id, &row.actor.actor_kind, row.actor.session_id.as_ref()), row.actor.attribution_context()),
         "created_at": row.recorded_at,
         "non_holder": row.actor.provenance_chain.iter().any(crate::domain::is_non_holder_note_marker) });
     if row.family != WorkRecordFamily::History {

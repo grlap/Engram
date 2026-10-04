@@ -295,6 +295,30 @@ impl FromStr for WorkNextSection {
     }
 }
 
+/// The canonical producer of a source record, kept for display labels only:
+/// its actor, the kind of actor it was recorded as, and its session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DisplayProducer {
+    pub(crate) actor_id: String,
+    pub(crate) actor_kind: String,
+    pub(crate) session_id: Option<SessionId>,
+}
+
+impl DisplayProducer {
+    pub(crate) fn of(actor: &crate::domain::ActorContext) -> Self {
+        Self {
+            actor_id: actor.actor_id.clone(),
+            actor_kind: actor.actor_kind.clone(),
+            session_id: actor.session_id.clone(),
+        }
+    }
+
+    /// Its label for a reader.
+    pub(crate) fn label(&self, identity: &super::identity::DisplayIdentity<'_>) -> String {
+        identity.author(&self.actor_id, &self.actor_kind, self.session_id.as_ref())
+    }
+}
+
 /// One source record at an exact project-feed position, exposed as an
 /// authority-redacted projection. The serialized `entry.object_id` field is
 /// that record's id; a page is admitted by decoding it and by dense-interval
@@ -314,7 +338,7 @@ pub struct WorkChange {
     /// from the source record on fresh delivery and staged replay; never
     /// changes the frozen delivery payload.
     #[serde(skip)]
-    pub(crate) display_producer: Option<(String, Option<SessionId>)>,
+    pub(crate) display_producer: Option<DisplayProducer>,
     pub entry: WorkFeedEntry,
     /// Derived from the verified source actor for this receiving session;
     /// persisted in the exact staged page without exposing session identity.
@@ -795,6 +819,11 @@ pub struct WorkEvidenceSummary {
     /// producer, which is not necessarily the actor recording the evidence.
     #[serde(skip)]
     pub(crate) display_actor_session_id: Option<SessionId>,
+    /// The recording actor's kind, copied with its id and session, so that a
+    /// record this session's actor made as another kind of actor is not
+    /// labelled "you".
+    #[serde(skip)]
+    pub(crate) display_actor_kind: Option<String>,
     /// The record's position in its item's root-work feed, which every row
     /// of the evidence page has. Filled for every focus view that carries the
     /// latest note (show, the agent and host focus reads, record windows),

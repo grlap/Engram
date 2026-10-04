@@ -502,7 +502,11 @@ fn evaluator_label(
     identity: DisplayIdentity<'_>,
 ) -> String {
     actor_label(
-        &identity.author(&evaluator.actor_id, evaluator.session_id.as_ref()),
+        &identity.author(
+            &evaluator.actor_id,
+            &evaluator.actor_kind,
+            evaluator.session_id.as_ref(),
+        ),
         evaluator.attribution_context(),
     )
 }
@@ -1402,7 +1406,11 @@ pub(super) fn show_lines(
             .or(last.actor_id.as_deref())
             .map(|actor| {
                 super::terminal_safe_line(&actor_label(
-                    &identity.author(actor, last.display_actor_session_id.as_ref()),
+                    &identity.author(
+                        actor,
+                        last.display_actor_kind.as_deref().unwrap_or_default(),
+                        last.display_actor_session_id.as_ref(),
+                    ),
                     last.actor_context.as_deref(),
                 ))
             });
@@ -1436,7 +1444,11 @@ pub(super) fn show_lines(
         ));
         for entry in &view.restored_history.items {
             let actor = actor_label(
-                &identity.author(&entry.actor.actor_id, entry.actor.session_id.as_ref()),
+                &identity.author(
+                    &entry.actor.actor_id,
+                    &entry.actor.actor_kind,
+                    entry.actor.session_id.as_ref(),
+                ),
                 entry.actor.attribution_context(),
             );
             lines.push(format!(
@@ -1496,7 +1508,7 @@ pub(super) fn show_receipt_value(
                     actor_label(
                         &change.display_producer.as_ref().map_or_else(
                             || identity.actor(actor),
-                            |(actor, session)| identity.author(actor, session.as_ref()),
+                            |producer| producer.label(&identity),
                         ),
                         summary.actor_context.as_deref(),
                     )
@@ -1519,7 +1531,11 @@ pub(super) fn show_receipt_value(
                 kind: entry.kind.clone(),
                 summary: entry.summary.clone(),
                 by: Some(actor_label(
-                    &identity.author(&entry.actor.actor_id, entry.actor.session_id.as_ref()),
+                    &identity.author(
+                        &entry.actor.actor_id,
+                        &entry.actor.actor_kind,
+                        entry.actor.session_id.as_ref(),
+                    ),
                     entry.actor.attribution_context(),
                 )),
                 created_at: entry.created_at,
@@ -1736,7 +1752,11 @@ pub(super) fn show_notes(view: &WorkFocusView, identity: DisplayIdentity<'_>) ->
                 .or(note.actor_id.as_deref())
                 .map(|actor| {
                     actor_label(
-                        &identity.author(actor, note.display_actor_session_id.as_ref()),
+                        &identity.author(
+                            actor,
+                            note.display_actor_kind.as_deref().unwrap_or_default(),
+                            note.display_actor_session_id.as_ref(),
+                        ),
                         note.actor_context.as_deref(),
                     )
                 }),

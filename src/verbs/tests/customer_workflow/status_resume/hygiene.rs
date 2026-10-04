@@ -63,10 +63,11 @@ fn hygiene_status_labels_distinguish_actor_and_session_on_show_and_next() {
     ] {
         let (_dir, reader, path, project) = fixture();
         let reference = assigned(&reader, "Assigned duty", "agent", 0);
-        let expected = reader
-            .service
-            .display_identity()
-            .author(actor, Some(&SessionId(session.into())));
+        let expected = reader.service.display_identity().author(
+            actor,
+            "agent",
+            Some(&SessionId(session.into())),
+        );
         let writer = AgentVerbs::new(path, project, actor.into(), SessionId(session.into()), None);
         writer
             .claim(

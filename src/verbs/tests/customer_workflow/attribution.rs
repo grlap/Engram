@@ -188,10 +188,11 @@ fn attribution_typed_evidence_uses_recorder_not_producer_session() {
             assert!(rich.get("display_actor_session_id").is_none());
             view.evidence_items = vec![evidence.clone()];
             view.latest_evidence_item = Some(evidence);
-            let expected = reader
-                .service
-                .display_identity()
-                .author("agent", recording.as_ref());
+            let expected =
+                reader
+                    .service
+                    .display_identity()
+                    .author("agent", "agent", recording.as_ref());
             let projected = crate::verbs::show::show_receipt_value(
                 &view,
                 Holder::Nobody,
@@ -813,4 +814,192 @@ fn refusals_without_details_name_their_work_in_the_message_alone() {
             "{projected}"
         );
     }
+}
+
+// A record of this session by this actor but made as another kind of actor,
+// a host operator say, is not labelled "you" in show's notes or history; it
+// is labelled by its actor alone. The session's own records, which the agent
+// words make, keep "you".
+#[test]
+fn attribution_another_actor_kind_on_this_session_is_not_you() {
+    let (_directory, reader, path, project) = fixture();
+    let work = add(&reader, "Actor kind attribution", None, false, 0);
+    reader
+        .claim(
+            ClaimInput {
+                work_ref: work.clone(),
+                ttl_seconds: Some(3600),
+                recover: None,
+            },
+            at(1),
+        )
+        .expect("claim");
+    note(&reader, &work, "Agent note", 2);
+    {
+        let mut store = SqliteStore::open(&path).expect("store");
+        let item = store.resolve_work_ref(&project, &work).expect("item");
+        let claim = store
+            .current_work_claim(item.work_id)
+            .expect("claim read")
+            .expect("live claim");
+        store
+            .record_work_note(
+                &crate::domain::RecordWorkNoteRequest {
+                    // A status note, so the current status reads it too.
+                    status: true,
+                    work_id: item.work_id,
+                    run_id: claim.run_id,
+                    expected_work_revision: item.revision,
+                    holder: claim.holder.clone(),
+                    claim_id: claim.claim_id,
+                    claim_fence: claim.fence,
+                    summary: "Operator note".into(),
+                    refs: Vec::new(),
+                    actor: crate::ActorContext {
+                        actor_id: "agent".into(),
+                        actor_kind: "host_operator".into(),
+                        assurance: crate::domain::AssuranceLevel::Asserted,
+                        run_id: None,
+                        session_id: Some(SessionId("agent".into())),
+                        source_tool: None,
+                        source_skill: None,
+                        provenance_chain: Vec::new(),
+                        reason: "record as another kind of actor".into(),
+                    },
+                    idempotency_key: "operator-note".into(),
+                    recorded_at: at(3),
+                },
+                &crate::memory::DevelopmentNoopRedactor,
+            )
+            .expect("operator note");
+    }
+    let actor_label = reader.service.display_identity().actor("agent");
+    assert!(actor_label.starts_with("peer-actor-"), "{actor_label}");
+    let by_summary = |rows: &Value, summary: &str| -> String {
+        rows.as_array()
+            .expect("rows")
+            .iter()
+            .find(|row| {
+                row["summary"]
+                    .as_str()
+                    .is_some_and(|text| text.contains(summary))
+            })
+            .and_then(|row| row["by"].as_str())
+            .unwrap_or_else(|| panic!("no row for {summary}: {rows}"))
+            .to_owned()
+    };
+    let notes = reader.show_with_notes(&work, true, at(4)).expect("notes");
+    assert_eq!(by_summary(&notes.value["notes"], "Agent note"), "you");
+    let operator = by_summary(&notes.value["notes"], "Operator note");
+    assert_ne!(operator, "you");
+    assert!(operator.starts_with(&actor_label), "{operator}");
+    let history = reader
+        .show_records(
+            &work,
+            &crate::verbs::ShowInput {
+                history: true,
+                ..crate::verbs::ShowInput::default()
+            },
+            at(4),
+        )
+        .expect("history");
+    let rows = &history.value["history"]["items"];
+    // The history rows of the operator note are the ones recorded at its time.
+    let operator_rows: Vec<&Value> = rows
+        .as_array()
+        .expect("history rows")
+        .iter()
+        .filter(|row| row["created_at"] == json!(at(3)))
+        .collect();
+    assert!(
+        !operator_rows.is_empty(),
+        "no operator history rows: {rows}"
+    );
+    for row in operator_rows {
+        assert_eq!(row["by"], json!(actor_label), "{row}");
+    }
+    assert!(
+        rows.as_array()
+            .expect("history rows")
+            .iter()
+            .any(|row| row["by"] == json!("you")),
+        "the session's own history keeps you: {rows}"
+    );
+    // Plain show: its latest notes and its current status, which the
+    // operator's status note sets, name the operator by its actor.
+    let shown = reader.show(&work, at(4)).expect("show");
+    assert_eq!(
+        by_summary(&shown.value["notes"], "Operator note"),
+        actor_label,
+        "{}",
+        shown.value
+    );
+    assert_eq!(
+        shown.value["current_status"]["by"],
+        json!(actor_label),
+        "{}",
+        shown.value
+    );
+    assert!(
+        !shown.text().contains("by you: \"Operator note"),
+        "{}",
+        shown.text()
+    );
+    // next: the held row's latest own note is the operator's, which is not
+    // this session's own as an agent, so it is not marked as yours.
+    let next = reader
+        .next(
+            &NextInput {
+                peek: true,
+                ..NextInput::default()
+            },
+            at(4),
+        )
+        .expect("next");
+    let rendered = next.value.to_string();
+    assert!(rendered.contains("Operator note"), "{rendered}");
+    assert!(!rendered.contains("\"note_by\":\"you\""), "{rendered}");
+    assert!(
+        !next.text().contains("[note session you]"),
+        "{}",
+        next.text()
+    );
+    // Released, the item is one this session took part in: next's
+    // participated row carries the session's latest note, the operator's,
+    // and does not mark it as yours.
+    reader
+        .update(
+            UpdateInput {
+                work_ref: Some(work.clone()),
+                action: UpdateAction::Release {
+                    reason: Some("hand back".into()),
+                },
+            },
+            at(5),
+        )
+        .expect("release");
+    let claimless = reader
+        .next(
+            &NextInput {
+                peek: true,
+                ..NextInput::default()
+            },
+            at(6),
+        )
+        .expect("claimless next");
+    let participated = claimless.value["participated"].to_string();
+    assert!(
+        participated.contains("Operator note"),
+        "{}",
+        claimless.value
+    );
+    assert!(
+        !participated.contains("\"note_by\":\"you\""),
+        "{participated}"
+    );
+    assert!(
+        !claimless.text().contains("[note session you]"),
+        "{}",
+        claimless.text()
+    );
 }

@@ -1861,10 +1861,18 @@ fn a_broken_evaluated_seal_binding_is_disclosed_as_unavailable_provenance() {
         .show(&work_ref, at(9))
         .expect("show the evaluated completion");
     assert_eq!(healthy.value["acceptance"]["provenance"], "evaluated");
+    // The fixture records the evaluation as a test actor kind, not as the kind
+    // the agent words record as, so the reader sees it by its actor, not "you".
     assert!(
-        healthy.text().contains(
-            "acceptance: evaluated (same_session; recorded under asserted identity) by you"
-        ),
+        healthy.text().contains(&format!(
+            "acceptance: evaluated (same_session; recorded under asserted identity) by {}",
+            crate::work_service::identity::DisplayIdentity {
+                project: &work.project_id,
+                actor: "runner",
+                session: &SessionId("runner".into()),
+            }
+            .actor("runner")
+        )),
         "{}",
         healthy.text()
     );

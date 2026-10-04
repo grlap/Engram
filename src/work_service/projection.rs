@@ -634,6 +634,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
+                display_actor_kind: Some(evidence.actor.actor_kind.clone()),
                 root_position: None,
                 evidence: evidence_id.clone(),
                 evidence_kind: WorkEvidenceKind::Generic,
@@ -659,6 +660,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
+                display_actor_kind: Some(evidence.actor.actor_kind.clone()),
                 root_position: None,
                 evidence: evidence_id.clone(),
                 evidence_kind: WorkEvidenceKind::Verification,
@@ -684,6 +686,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 display_actor_id: Some(evidence.actor.actor_id.clone()),
                 display_actor_session_id: evidence.actor.session_id.clone(),
+                display_actor_kind: Some(evidence.actor.actor_kind.clone()),
                 root_position: None,
                 evidence: evidence_id.clone(),
                 evidence_kind: WorkEvidenceKind::Environment,
@@ -720,6 +723,7 @@ pub(super) fn restored_work_evidence_summary(
     Ok(WorkEvidenceSummary {
         display_actor_id: Some(evidence.actor.actor_id.clone()),
         display_actor_session_id: evidence.actor.session_id.clone(),
+        display_actor_kind: Some(evidence.actor.actor_kind.clone()),
         root_position: None,
         evidence: evidence_id,
         non_holder: false,
@@ -748,6 +752,7 @@ pub(super) fn work_observation_summary(
     WorkEvidenceSummary {
         display_actor_id: Some(observation.actor.actor_id.clone()),
         display_actor_session_id: observation.actor.session_id.clone(),
+        display_actor_kind: Some(observation.actor.actor_kind.clone()),
         root_position: None,
         evidence: observation_id,
         non_holder: true,

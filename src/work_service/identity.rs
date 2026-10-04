@@ -28,9 +28,22 @@ impl DisplayIdentity<'_> {
         pseudonym(self.project, "actor", actor)
     }
 
-    pub(crate) fn author(&self, actor: &str, session: Option<&SessionId>) -> String {
+    /// The label of a record's author: "you" only for a record of this
+    /// session made by this actor as the kind of actor the agent words record
+    /// as; a record of this session by another actor, or by this actor as
+    /// another kind (a host operator, say), is labelled by its actor alone.
+    ///
+    /// Comparing with `WORD_ACTOR_KIND` is comparing with the reader's own
+    /// kind: the service that builds this identity records every action of
+    /// its own with that kind, and so does the host-control channel. A writer
+    /// that recorded this session's work as another kind would no longer be
+    /// called "you".
+    pub(crate) fn author(&self, actor: &str, kind: &str, session: Option<&SessionId>) -> String {
         match session {
-            Some(session) if session != self.session || actor == self.actor => {
+            Some(session)
+                if session != self.session
+                    || (actor == self.actor && kind == super::WORD_ACTOR_KIND) =>
+            {
                 self.session(session)
             }
             _ => self.actor(actor),
@@ -77,5 +90,53 @@ impl LocalWorkService {
             actor: &self.actor_id,
             session: &self.session_id,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DisplayIdentity, ProjectId, SessionId};
+    use crate::work_service::WORD_ACTOR_KIND;
+
+    /// "You" needs this session, this actor and the kind the words record
+    /// as; a record of this session by this actor as another kind is labelled
+    /// by its actor, as one by another actor is; another session keeps its
+    /// peer label and an actor alone keeps its actor label.
+    #[test]
+    fn author_is_you_only_for_this_session_actor_and_kind() {
+        let project = ProjectId("identity".into());
+        let session = SessionId("reader-session".into());
+        let identity = DisplayIdentity {
+            project: &project,
+            actor: "reader",
+            session: &session,
+        };
+        let other = SessionId("other-session".into());
+        assert_eq!(
+            identity.author("reader", WORD_ACTOR_KIND, Some(&session)),
+            "you"
+        );
+        for kind in ["host_operator", "system", ""] {
+            assert_eq!(
+                identity.author("reader", kind, Some(&session)),
+                identity.actor("reader"),
+                "{kind}"
+            );
+        }
+        assert_eq!(
+            identity.author("someone", WORD_ACTOR_KIND, Some(&session)),
+            identity.actor("someone")
+        );
+        for kind in [WORD_ACTOR_KIND, "host_operator"] {
+            assert_eq!(
+                identity.author("reader", kind, Some(&other)),
+                identity.session(&other),
+                "{kind}"
+            );
+        }
+        assert_eq!(
+            identity.author("reader", WORD_ACTOR_KIND, None),
+            identity.actor("reader")
+        );
     }
 }

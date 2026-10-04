@@ -109,9 +109,11 @@ impl LocalWorkService {
             complete,
             recorded_at: note.recorded_at,
             locator: selected.locator,
-            by: self
-                .display_identity()
-                .author(&note.actor.actor_id, note.actor.session_id.as_ref()),
+            by: self.display_identity().author(
+                &note.actor.actor_id,
+                &note.actor.actor_kind,
+                note.actor.session_id.as_ref(),
+            ),
         }
     }
 }

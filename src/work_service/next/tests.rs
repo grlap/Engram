@@ -8,7 +8,7 @@ mod recovery;
 #[test]
 fn source_notice_actor_fallback_requires_proposal_kind() {
     let nested = serde_json::json!({"notice": {"actor": {
-        "actor_id": "external", "session_id": "source-session"
+        "actor_id": "external", "actor_kind": "agent", "session_id": "source-session"
     }}});
     let session = SessionId("source-session".into());
     for kind in [
@@ -27,9 +27,13 @@ fn source_notice_actor_fallback_requires_proposal_kind() {
     ));
     assert_eq!(
         source_display_producer("work_source_proposal", &nested),
-        Some(("external".into(), Some(session)))
+        Some(views::DisplayProducer {
+            actor_id: "external".into(),
+            actor_kind: "agent".into(),
+            session_id: Some(session),
+        })
     );
-    let direct = serde_json::json!({"actor": {"actor_id": "direct", "session_id": "direct-session"},
+    let direct = serde_json::json!({"actor": {"actor_id": "direct", "actor_kind": "agent", "session_id": "direct-session"},
         "notice": nested["notice"]});
     for kind in ["work_event", "work_source_proposal"] {
         assert!(source_is_from_session(
@@ -39,7 +43,11 @@ fn source_notice_actor_fallback_requires_proposal_kind() {
         ));
         assert_eq!(
             source_display_producer(kind, &direct),
-            Some(("direct".into(), Some(SessionId("direct-session".into()))))
+            Some(views::DisplayProducer {
+                actor_id: "direct".into(),
+                actor_kind: "agent".into(),
+                session_id: Some(SessionId("direct-session".into())),
+            })
         );
     }
 }

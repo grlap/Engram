@@ -321,6 +321,12 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         text.contains("evaluation: same_session ") && text.contains("1/2 pass, fresh"),
         "{text}"
     );
+    // An evaluation this session recorded through the words is its own.
+    assert!(
+        text.lines()
+            .any(|line| line.contains("evaluation: same_session ") && line.contains(" by you ")),
+        "{text}"
+    );
     assert!(text.contains("  1. pass (asserted)"), "{text}");
     assert!(text.contains("  2. fail (judgment)"), "{text}");
     assert_eq!(shown.value["acceptance_evaluation"]["passed"], 1);

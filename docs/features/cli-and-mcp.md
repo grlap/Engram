@@ -65,7 +65,7 @@ edit, including assignment, does renew its existing live claim.
 accountable actor, using project-feed order, unaffected by ordinary notes or
 gates; former-owner notes remain history. It appears at top level on `show`
 and per held/assigned `next` row as `{body_or_first_line, complete, recorded_at,
-locator, by}`. `by` is `you` for this actor and session, or a stable
+locator, by}`. `by` is `you` for this actor and session as an agent, or a stable
 project-scoped `peer-…` display label for another session, including a session
 of the same actor. Actor-only records use a distinct `peer-actor-…` label.
 Text follows the parent line
@@ -345,7 +345,12 @@ optional members remain reachable even when neither obligation group links them.
 Typed count omissions distinguish unfinished from
 terminal children that did not fit. Show, note/history windows and detail,
 compact holders, statuses, reminders and changes use the same display labels.
-`you` identifies this session, not every session using its actor. Another
+`you` identifies this session, not every session using its actor. On a
+record's author (notes, history, statuses, changes, evaluations and `next`'s
+note rows) it also needs the record to be made as the agent this session is: a
+record of this session and actor made as another kind of actor, such as a host
+operator, is labelled by its actor alone. Holder and other session labels name
+the session only. Another
 session has a deterministic project-scoped `peer-…` pseudonym; actor-only
 attribution uses `peer-actor-…`. Labels do not depend on row order or the reader.
 Bounded host-asserted context may follow the label in parentheses.
@@ -622,8 +627,9 @@ Rules that matter:
 - Claimless `next` includes nonempty `assigned` and `participated` sections
   between held and ready work, at most five rows each with exact omitted counts.
   Full rows name the work, title, holder word, and first line of this session's
-  latest own note when present. For the reader's actor, compact rows use
-  `note_by: "you"` and text prints `[note session you]` before the body.
+  latest own note when present. For a note the reader's actor made as an
+  agent, compact rows use `note_by: "you"` and text prints
+  `[note session you]` before the body.
   Rich verbose JSON retains the original `note_session_id` instead.
   Compact repeated rows instead contain only `{ref, context_ref}`; the
   presence of `context_ref` is the discriminator. It names the retained

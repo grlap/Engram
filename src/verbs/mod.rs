@@ -280,7 +280,7 @@ fn collapsed_changes(
                     terminal_safe_actor_label(
                         &change.display_producer.as_ref().map_or_else(
                             || identity.actor(actor),
-                            |(actor, session)| identity.author(actor, session.as_ref())
+                            |producer| producer.label(&identity)
                         ),
                         actor_context.as_deref()
                     )

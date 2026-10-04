@@ -648,7 +648,9 @@ impl HostControlServer {
         }
         ActorContext {
             actor_id: self.actor_id.clone(),
-            actor_kind: "agent".into(),
+            // The kind the work words record as, so the words call these
+            // records this session's own.
+            actor_kind: crate::work_service::WORD_ACTOR_KIND.into(),
             assurance: AssuranceLevel::Asserted,
             run_id: None,
             session_id: Some(self.session_id.clone()),

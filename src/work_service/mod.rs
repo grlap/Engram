@@ -161,6 +161,9 @@ pub(crate) const MAX_TEXT_NEXT_COMMANDS: usize = 4;
 pub(crate) const WORK_UPDATE_CLAIM_ACTION: &str = "work_update:claim";
 pub(crate) const WORK_UPDATE_CLAIM_RECOVERY_ACTION: &str =
     "work_update:claim(recovery_reason_required)";
+/// The actor kind the agent words record their actions as, and so the kind a
+/// record must carry for its reader's display to call it "you".
+pub(crate) const WORD_ACTOR_KIND: &str = "agent";
 pub(crate) const COMPLETED_WORK_LATE_FINDING_REFUSAL: &str = "completed work cannot be mutated; use note or gate to record a late finding without reopening it";
 
 /// Exact structured agent response for one full project-memory read.
@@ -1301,15 +1304,21 @@ pub(crate) fn source_is_from_session(
 fn source_display_producer(
     kind: &str,
     object: &serde_json::Value,
-) -> Option<(String, Option<SessionId>)> {
+) -> Option<views::DisplayProducer> {
     let actor = source_actor(kind, object)?;
-    Some((
-        actor.get("actor_id")?.as_str()?.into(),
-        actor
+    Some(views::DisplayProducer {
+        actor_id: actor.get("actor_id")?.as_str()?.into(),
+        // A source without a recorded kind is never labelled as the reader.
+        actor_kind: actor
+            .get("actor_kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .into(),
+        session_id: actor
             .get("session_id")
             .and_then(serde_json::Value::as_str)
             .map(|session| SessionId(session.into())),
-    ))
+    })
 }
 
 fn ensure_protocol_basis(

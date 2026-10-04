@@ -612,7 +612,7 @@ impl LocalWorkService {
         }
         ActorContext {
             actor_id: self.actor_id.clone(),
-            actor_kind: "agent".into(),
+            actor_kind: super::WORD_ACTOR_KIND.into(),
             assurance: AssuranceLevel::Asserted,
             run_id: None,
             session_id: Some(self.session_id.clone()),
@@ -923,10 +923,7 @@ impl LocalWorkService {
                 history_display: Some(display),
                 capture: None,
                 completion_checkpoint: None,
-                display_producer: Some((
-                    event.actor.actor_id.clone(),
-                    event.actor.session_id.clone(),
-                )),
+                display_producer: Some(super::views::DisplayProducer::of(&event.actor)),
                 from_current_session: event.actor.session_id.as_ref() == Some(&self.session_id),
                 entry,
                 delivery: WorkChangeProjection::Visible(summary),

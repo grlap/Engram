@@ -23,6 +23,8 @@ pub(crate) struct WorkDiscoveryRow {
     pub note_identity: Option<super::record_windows::WorkRecordAddress>,
     /// Private canonical attribution for presentation policy, never serialized.
     pub note_actor_id: Option<String>,
+    /// The kind of actor the note was recorded as, beside its actor id.
+    pub note_actor_kind: Option<String>,
 }
 
 #[derive(Default)]
@@ -190,8 +192,8 @@ impl SqliteStore {
                     })
                     .transpose()?
                     .flatten();
-                let (note, note_actor_id) = note
-                    .map(|(summary, actor)| (Some(summary), Some(actor)))
+                let (note, note_actor_id, note_actor_kind) = note
+                    .map(|(summary, actor, kind)| (Some(summary), Some(actor), Some(kind)))
                     .unwrap_or_default();
                 let note_identity = note
                     .as_ref()
@@ -209,6 +211,7 @@ impl SqliteStore {
                     note,
                     note_identity,
                     note_actor_id,
+                    note_actor_kind,
                 });
             }
             page.omitted = total.saturating_sub(page.items.len());
@@ -305,7 +308,7 @@ fn own_summary(
     raw: &str,
     family: &str,
     kind: &str,
-) -> Result<Option<(String, String)>, StoreError> {
+) -> Result<Option<(String, String, String)>, StoreError> {
     let hash = stored_hash(raw.into())?;
     if family == "handoff" {
         let event: WorkEvent = load_typed_work_object(connection, &hash, kind)?;
@@ -337,6 +340,7 @@ fn own_summary(
     Ok(Some((
         summary.lines().next().unwrap_or_default().to_owned(),
         note.actor.actor_id,
+        note.actor.actor_kind,
     )))
 }
 
