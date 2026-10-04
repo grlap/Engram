@@ -435,6 +435,8 @@ pub struct ReadyWorkSummary {
     pub availability: WorkAvailability,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocking_parent: Option<WorkLifecycle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocking_ancestor: Option<crate::domain::WorkBlockingAncestor>,
     pub reason_codes: Vec<crate::WorkReadinessReason>,
     pub why: Vec<String>,
     pub blocked_by: Vec<WorkId>,

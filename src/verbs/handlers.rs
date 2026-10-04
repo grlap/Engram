@@ -2035,8 +2035,9 @@ impl AgentVerbs {
         }
         let parent_reminder = view
             .status
-            .blocking_parent
-            .map(|lifecycle| format!("parent {}", lifecycle_word(lifecycle)));
+            .blocking_ancestor
+            .as_ref()
+            .map(super::receipts::ancestor_reminder);
         if let Some(words) = &parent_reminder {
             reminders.push(words.clone());
         }
@@ -2087,6 +2088,16 @@ impl AgentVerbs {
                         .unwrap_or(next.len());
                     next.insert(before_done, evidence_read);
                 }
+            }
+        }
+        if let Some(ancestor) = &view.status.blocking_ancestor {
+            let command = format!("engram work show {}", ancestor.short_ref);
+            if !next.contains(&command) {
+                let position = next
+                    .iter()
+                    .position(|command| command.contains(" --history"))
+                    .unwrap_or(next.len());
+                next.insert(position, command);
             }
         }
         if word == "show"

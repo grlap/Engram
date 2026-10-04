@@ -1126,6 +1126,12 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "reason": "note body exceeds the UTF-8 byte limit",
             "remedy": "carry bulk content as a reference",
         }),
+        StoreError::WorkAncestorNotOpen { work, ancestor } => json!({
+            "work_id": work,
+            "blocking_ancestor": {"ref": ancestor.short_ref, "lifecycle": ancestor.lifecycle},
+            "reason": error.to_string(),
+            "remedy": "inspect the affected item and ancestor with show; follow the affected item's admitted next commands",
+        }),
         StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
             "reason": message,
             "remedy": "run next, then show the affected item and follow next",
@@ -1337,7 +1343,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkNotFound(_) => "work_not_found",
         StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
         StoreError::WorkImplicitTargetConflict(_) => "work_implicit_target_conflict",
-        StoreError::InvalidWork(_) => "work_invalid",
+        StoreError::InvalidWork(_) | StoreError::WorkAncestorNotOpen { .. } => "work_invalid",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",
         StoreError::WorkOperationIdempotencyConflict { .. } => "work_idempotency_conflict",

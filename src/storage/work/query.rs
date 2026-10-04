@@ -1,11 +1,9 @@
-use std::collections::HashSet;
-
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params, types::Value};
 
 use super::super::{SqliteStore, StaleRecoveryContext, StoreError};
 use super::completion::{
-    ancestors_admit_execution, applicable_work_obligations_at_cut_on, feed_head,
+    applicable_work_obligations_at_cut_on, blocking_ancestor_on, feed_head,
     load_work_obligation_records_on, work_run_uses_active_root_execution,
 };
 use super::execution::{
@@ -42,6 +40,9 @@ use super::{WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT, WorkEven
 
 #[cfg(test)]
 mod tests;
+
+mod ancestor;
+use ancestor::{parent_execution_guidance, projected_blocking_ancestor};
 
 mod catalog;
 pub(crate) use catalog::ListingExpectation;
@@ -1095,18 +1096,23 @@ fn derive_projected_work_availability(
     let (blocked_by, has_dead_prerequisite) = prerequisite_readiness(prerequisites);
     let mut why = Vec::new();
     let mut reason_codes = Vec::new();
-    let mut blocking_parent = None;
+    let blocking_ancestor = if work.lifecycle == WorkLifecycle::Open {
+        projected_blocking_ancestor(connection, &work)?
+    } else {
+        None
+    };
     let availability = if !matches!(work.lifecycle, WorkLifecycle::Open) {
         reason_codes.push(WorkReadinessReason::LifecycleClosed);
         why.push(format!("lifecycle is {:?}", work.lifecycle));
         WorkAvailability::Closed
-    } else if !projected_ancestors_admit_execution(connection, &work)?
+    } else if blocking_ancestor.is_some()
         || !projected_run_uses_active_root_execution(connection, &work)?
     {
         reason_codes.push(WorkReadinessReason::ParentDisallowsExecution);
-        blocking_parent = parent_execution_guidance(
+        parent_execution_guidance(
             connection,
             &work,
+            blocking_ancestor.as_ref(),
             now,
             blockers.is_empty() && blocked_by.is_empty(),
             &mut reason_codes,
@@ -1141,7 +1147,10 @@ fn derive_projected_work_availability(
     Ok(ReadyWork {
         work,
         availability,
-        blocking_parent,
+        blocking_parent: blocking_ancestor
+            .as_ref()
+            .map(|ancestor| ancestor.lifecycle),
+        blocking_ancestor,
         reason_codes,
         why,
         blocked_by,
@@ -1171,19 +1180,24 @@ fn derive_work_availability(
     let (blocked_by, has_dead_prerequisite) = prerequisite_readiness(prerequisites);
     let mut why = Vec::new();
     let mut reason_codes = Vec::new();
-    let mut blocking_parent = None;
+    let blocking_ancestor = if work.lifecycle == WorkLifecycle::Open {
+        blocking_ancestor_on(connection, &work)?
+    } else {
+        None
+    };
     let availability = if !matches!(work.lifecycle, WorkLifecycle::Open) {
         reason_codes.push(WorkReadinessReason::LifecycleClosed);
         why.push(format!("lifecycle is {:?}", work.lifecycle));
         WorkAvailability::Closed
-    } else if !ancestors_admit_execution(connection, &work)?
+    } else if blocking_ancestor.is_some()
         || !((work.restored && work.active_run_id.is_none())
             || work_run_uses_active_root_execution(connection, &work)?)
     {
         reason_codes.push(WorkReadinessReason::ParentDisallowsExecution);
-        blocking_parent = parent_execution_guidance(
+        parent_execution_guidance(
             connection,
             &work,
+            blocking_ancestor.as_ref(),
             now,
             blockers.is_empty() && blocked_by.is_empty(),
             &mut reason_codes,
@@ -1218,7 +1232,10 @@ fn derive_work_availability(
     Ok(ReadyWork {
         work,
         availability,
-        blocking_parent,
+        blocking_parent: blocking_ancestor
+            .as_ref()
+            .map(|ancestor| ancestor.lifecycle),
+        blocking_ancestor,
         reason_codes,
         why,
         blocked_by,
@@ -1275,84 +1292,6 @@ fn claim_availability(
         why.push("live claim has not checkpointed progress".into());
         Ok(WorkAvailability::Claimed)
     }
-}
-
-fn projected_ancestors_admit_execution(
-    connection: &Connection,
-    item: &WorkItem,
-) -> Result<bool, StoreError> {
-    Ok(projected_blocking_parent_lifecycle(connection, item)?.is_none())
-}
-
-fn parent_execution_guidance(
-    connection: &Connection,
-    item: &WorkItem,
-    now: DateTime<Utc>,
-    independently_unblocked: bool,
-    reasons: &mut Vec<WorkReadinessReason>,
-    why: &mut Vec<String>,
-) -> Result<Option<WorkLifecycle>, StoreError> {
-    if let Some(lifecycle) = projected_blocking_parent_lifecycle(connection, item)? {
-        why.push(format!("parent {}", encode_state(lifecycle)?));
-        if matches!(
-            lifecycle,
-            WorkLifecycle::Completed | WorkLifecycle::Cancelled | WorkLifecycle::Superseded
-        ) && independently_unblocked
-            && catalog::projected_detach_admitted(connection, item, now)?
-        {
-            reasons.push(WorkReadinessReason::DetachAvailable);
-        }
-        Ok(Some(lifecycle))
-    } else {
-        why.push("the ancestor or root-execution generation does not admit execution".into());
-        Ok(None)
-    }
-}
-
-fn projected_blocking_parent_lifecycle(
-    connection: &Connection,
-    item: &WorkItem,
-) -> Result<Option<WorkLifecycle>, StoreError> {
-    let mut parent_id = item.parent_id;
-    let mut visited = HashSet::new();
-    let mut reached_root = item.work_id == item.root_id;
-    while let Some(parent) = parent_id {
-        if !visited.insert(parent) || visited.len() > 1_024 {
-            return Err(StoreError::InvalidWorkProjection(
-                "work hierarchy is cyclic or exceeds the corruption guard".into(),
-            ));
-        }
-        let row: Option<(String, String, Option<String>, String)> = connection
-            .query_row(
-                "SELECT project_id, root_id, parent_id, lifecycle
-                 FROM work_items WHERE work_id = ?1",
-                [parent.0.to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-            )
-            .optional()?;
-        let (project_id, root_id, next_parent, lifecycle) = row.ok_or_else(|| {
-            StoreError::InvalidWorkProjection(format!("work ancestor {parent:?} is missing"))
-        })?;
-        if project_id != item.project_id.0 || root_id != item.root_id.0.to_string() {
-            return Err(StoreError::InvalidWorkProjection(format!(
-                "work ancestor {parent:?} crosses its project or root boundary"
-            )));
-        }
-        if lifecycle != "open" {
-            return serde_json::from_value(serde_json::Value::String(lifecycle))
-                .map(Some)
-                .map_err(StoreError::from);
-        }
-        reached_root |= parent == item.root_id;
-        parent_id = next_parent.map(|value| parse_work_id(&value)).transpose()?;
-    }
-    if !reached_root {
-        return Err(StoreError::InvalidWorkProjection(format!(
-            "work {:?} does not reach its declared root {:?}",
-            item.work_id, item.root_id
-        )));
-    }
-    Ok(None)
 }
 
 fn projected_run_uses_active_root_execution(

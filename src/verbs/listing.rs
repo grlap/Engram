@@ -12,6 +12,8 @@ struct VerboseRow<'a> {
     availability: super::WorkAvailability,
     #[serde(skip_serializing_if = "Option::is_none")]
     blocking_parent: Option<super::WorkLifecycle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    blocking_ancestor: Option<super::receipts::ShownBlockingAncestor>,
     reason_codes: &'a [crate::WorkReadinessReason],
     why: &'a [String],
     blocked_by: &'a [crate::WorkId],
@@ -24,6 +26,7 @@ impl<'a> From<&'a super::ReadyWorkSummary> for VerboseRow<'a> {
             work,
             availability,
             blocking_parent,
+            blocking_ancestor,
             reason_codes,
             why,
             blocked_by,
@@ -36,6 +39,9 @@ impl<'a> From<&'a super::ReadyWorkSummary> for VerboseRow<'a> {
             },
             availability: *availability,
             blocking_parent: *blocking_parent,
+            blocking_ancestor: blocking_ancestor
+                .as_ref()
+                .map(super::receipts::ShownBlockingAncestor::from),
             reason_codes,
             why,
             blocked_by,

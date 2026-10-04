@@ -908,6 +908,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkPrerequisiteAlreadySatisfied(_)
         | StoreError::WorkNotOpen(_)
         | StoreError::WorkParentNotOpen { .. }
+        | StoreError::WorkAncestorNotOpen { .. }
         | StoreError::WorkDetachRefused { .. }
         | StoreError::WorkRejectRefused { .. }
         | StoreError::WorkPeerDecompositionRefused { .. }

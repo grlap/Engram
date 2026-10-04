@@ -13,6 +13,30 @@ use super::{
     short_ref_for_work_id, short_with_limit, terminal_safe_line, terminal_short,
 };
 
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShownBlockingAncestor {
+    #[serde(rename = "ref")]
+    pub(super) work_ref: String,
+    pub(super) lifecycle: super::WorkLifecycle,
+}
+
+impl From<&crate::domain::WorkBlockingAncestor> for ShownBlockingAncestor {
+    fn from(ancestor: &crate::domain::WorkBlockingAncestor) -> Self {
+        Self {
+            work_ref: ancestor.short_ref.clone(),
+            lifecycle: ancestor.lifecycle,
+        }
+    }
+}
+
+pub(super) fn ancestor_reminder(ancestor: &crate::domain::WorkBlockingAncestor) -> String {
+    format!(
+        "execution blocked by ancestor {} ({})",
+        ancestor.short_ref,
+        lifecycle_word(ancestor.lifecycle)
+    )
+}
+
 /// Short list row used by the agent words. Host-only `work core focus` remains
 /// the rich-object boundary for identity and integrity metadata; Summary
 /// `outcome` text is still the 192-byte compact bound. Absent claim and parent
@@ -41,6 +65,8 @@ pub(super) struct CompactWorkRow {
     pub(super) labels_omitted: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) parent_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) blocking_ancestor: Option<ShownBlockingAncestor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) blocked_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -653,6 +679,10 @@ impl VerbError {
                 vec![reason.clone()],
                 vec![format!("engram work handoff {target} --cancel \"…\"")],
             ),
+            StoreError::WorkAncestorNotOpen { ancestor, .. } => (
+                vec![ancestor_reminder(ancestor)],
+                vec![format!("engram work show {target}"), format!("engram work show {}", ancestor.short_ref)],
+            ),
             StoreError::InvalidWork(reason) if reason.starts_with("work is not ready:") => (
                 vec!["this item is not ready; inspect its blockers or deferral".into()],
                 vec![format!("engram work show {target}")],
@@ -910,9 +940,11 @@ pub(super) fn compact_row(
         labels_omitted,
         child_resolution: super::child_obligations::ShowChildSuccessor::for_work(work),
         parent_ref: work.parent_id.map(short_ref_for_work_id),
-        blocked_reason: status
-            .blocking_parent
-            .map(|lifecycle| format!("parent {}", super::lifecycle_word(lifecycle))),
+        blocking_ancestor: status
+            .blocking_ancestor
+            .as_ref()
+            .map(ShownBlockingAncestor::from),
+        blocked_reason: status.blocking_ancestor.as_ref().map(ancestor_reminder),
         ready_reason: compact_ready_reason(status.availability, &status.why),
         remedy: status
             .reason_codes

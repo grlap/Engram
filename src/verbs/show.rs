@@ -840,6 +840,8 @@ pub(super) struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) parent_lifecycle: Option<WorkLifecycle>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) blocking_ancestor: Option<super::receipts::ShownBlockingAncestor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) detached_from: Option<ShowDetachedFrom>,
     pub(super) status: ShowStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1585,6 +1587,11 @@ pub(super) fn show_receipt_value(
         parent_ref: view.parent.as_ref().map(|parent| parent.short_ref.clone()),
         parent_title: view.parent.as_ref().map(|parent| parent.title.clone()),
         parent_lifecycle: view.parent.as_ref().map(|parent| parent.lifecycle),
+        blocking_ancestor: view
+            .status
+            .blocking_ancestor
+            .as_ref()
+            .map(super::receipts::ShownBlockingAncestor::from),
         detached_from: view.detached_from.as_ref().map(|origin| ShowDetachedFrom {
             work_ref: origin.work_ref.clone(),
             reason: (!origin.reason_truncated).then(|| origin.reason.clone()),

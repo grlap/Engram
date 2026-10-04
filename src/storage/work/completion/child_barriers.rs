@@ -442,10 +442,17 @@ pub(super) fn live_descendant_execution_authority(
     Ok(false)
 }
 
-pub(in crate::storage::work) fn ancestors_admit_execution(
-    connection: &Connection,
+pub(in crate::storage::work) struct AncestorExecutionState {
+    pub project_id: crate::domain::ProjectId,
+    pub root_id: WorkId,
+    pub parent_id: Option<WorkId>,
+    pub ancestor: crate::domain::WorkBlockingAncestor,
+}
+
+pub(in crate::storage::work) fn first_blocking_ancestor(
     item: &WorkItem,
-) -> Result<bool, StoreError> {
+    mut load: impl FnMut(WorkId) -> Result<AncestorExecutionState, StoreError>,
+) -> Result<Option<crate::domain::WorkBlockingAncestor>, StoreError> {
     let mut parent_id = item.parent_id;
     let mut visited = HashSet::new();
     let mut reached_root = item.work_id == item.root_id;
@@ -455,18 +462,18 @@ pub(in crate::storage::work) fn ancestors_admit_execution(
                 "work hierarchy is cyclic or exceeds the corruption guard".into(),
             ));
         }
-        let ancestor = load_work_item(connection, parent)?;
-        if ancestor.project_id != item.project_id || ancestor.root_id != item.root_id {
+        let state = load(parent)?;
+        if state.project_id != item.project_id || state.root_id != item.root_id {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "work ancestor {:?} crosses its project or root boundary",
-                ancestor.work_id
+                state.ancestor.work_id
             )));
         }
-        if ancestor.lifecycle != WorkLifecycle::Open {
-            return Ok(false);
+        if state.ancestor.lifecycle != WorkLifecycle::Open {
+            return Ok(Some(state.ancestor));
         }
-        reached_root |= ancestor.work_id == item.root_id;
-        parent_id = ancestor.parent_id;
+        reached_root |= state.ancestor.work_id == item.root_id;
+        parent_id = state.parent_id;
     }
     if !reached_root {
         return Err(StoreError::InvalidWorkProjection(format!(
@@ -474,7 +481,33 @@ pub(in crate::storage::work) fn ancestors_admit_execution(
             item.work_id, item.root_id
         )));
     }
-    Ok(true)
+    Ok(None)
+}
+
+pub(in crate::storage::work) fn blocking_ancestor_on(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<Option<crate::domain::WorkBlockingAncestor>, StoreError> {
+    first_blocking_ancestor(item, |parent| {
+        let ancestor = load_work_item(connection, parent)?;
+        Ok(AncestorExecutionState {
+            project_id: ancestor.project_id,
+            root_id: ancestor.root_id,
+            parent_id: ancestor.parent_id,
+            ancestor: crate::domain::WorkBlockingAncestor {
+                work_id: ancestor.work_id,
+                short_ref: ancestor.short_ref,
+                lifecycle: ancestor.lifecycle,
+            },
+        })
+    })
+}
+
+pub(in crate::storage::work) fn ancestors_admit_execution(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<bool, StoreError> {
+    Ok(blocking_ancestor_on(connection, item)?.is_none())
 }
 
 pub(in crate::storage::work) fn work_run_uses_active_root_execution(

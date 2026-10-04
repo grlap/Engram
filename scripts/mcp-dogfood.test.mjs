@@ -3430,7 +3430,8 @@ test("detach exposes the same remedy and independent root through MCP", async (t
     const blocked = await client.call("ls", { blocked: true });
     const blockedValue = receipt(blocked);
     assert.equal(blockedValue.total, 1);
-    assert.equal(blockedValue.items[0].blocked_reason, "parent completed");
+    assert.equal(blockedValue.items[0].blocked_reason, `execution blocked by ancestor ${parent} (completed)`);
+    assert.deepEqual(blockedValue.items[0].blocking_ancestor, {ref: parent, lifecycle: "completed"});
     assert.equal(blockedValue.items[0].remedy, command);
     // MCP text is the JSON fallback, not the CLI's terminal rendering.
     assert.deepEqual(JSON.parse(blocked.content[0].text), blockedValue);
@@ -3456,6 +3457,58 @@ test("detach exposes the same remedy and independent root through MCP", async (t
     } finally {
       removeFixtureHomes(engramHome);
     }
+  }
+});
+
+test("claim and show identify the terminal ancestor on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-terminal-ancestor-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "ancestor-reader");
+    await client.initialize();
+    for (const grandparent of [false, true]) {
+      const rootRef = receipt(await client.call("add", {
+        title: grandparent ? "Grandparent root" : "Direct parent root",
+      })).work.short_ref;
+      const parent = grandparent
+        ? receipt(await client.call("add", { title: "Open parent", under: rootRef, optional: true })).work.short_ref
+        : rootRef;
+      const child = receipt(await client.call("add", { title: "Stranded child", under: parent, optional: true })).work.short_ref;
+      receipt(await client.call("claim", { work_ref: rootRef }));
+      receipt(await client.call("done", { work_ref: rootRef, summary: "Delivered" }));
+      const ancestor = { ref: rootRef, lifecycle: "completed" };
+      const show = receipt(await client.call("show", { work_ref: child }));
+      const cliShow = cliJson(engramHome, "ancestor-reader", "show", child);
+      for (const shown of [show, cliShow]) {
+        assert.deepEqual(shown.blocking_ancestor, ancestor);
+        assert.equal(shown.parent_ref, parent);
+        assert.equal(shown.parent_lifecycle, grandparent ? "open" : "completed");
+        assert.ok(shown.next.includes(`engram work show ${rootRef}`));
+        assert.ok(shown.next.includes(`engram work update ${child} --detach "Continue as independent work"`));
+        assert.ok(shown.reminders.includes(`execution blocked by ancestor ${rootRef} (completed)`));
+        assert.ok(!shown.reminders.includes("parent completed"));
+      }
+      const text = cliText(engramHome, "ancestor-reader", "show", child);
+      assert.ok(text.includes(`execution blocked by ancestor ${rootRef} (completed)`), text);
+      const history = receipt(await client.call("show", { work_ref: rootRef })).history;
+      const mcpError = structuredError(await client.call("claim", { work_ref: child }), "work_invalid");
+      const cliResult = cliWord(engramHome, "ancestor-reader", "claim", child, "--json");
+      assert.notEqual(cliResult.status, 0);
+      const cliError = JSON.parse(cliResult.stdout || cliResult.stderr).error;
+      for (const error of [mcpError, cliError]) {
+        assert.equal(error.code, "work_invalid");
+        assert.deepEqual(error.details.blocking_ancestor, ancestor);
+        assert.ok(error.next.includes(`engram work show ${child}`));
+        assert.ok(error.next.includes(`engram work show ${rootRef}`));
+        assert.ok(!error.next.some((command) => command.includes("--detach")));
+      }
+      assert.deepEqual(receipt(await client.call("show", { work_ref: rootRef })).history, history);
+      assert.equal(receipt(await client.call("show", { work_ref: child })).holder, undefined);
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
   }
 });
 

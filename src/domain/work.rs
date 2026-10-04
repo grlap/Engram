@@ -1268,6 +1268,14 @@ fn plain_ref_name(value: &str) -> bool {
         })
 }
 
+/// The nearest non-open ancestor that prevents execution.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WorkBlockingAncestor {
+    pub work_id: WorkId,
+    pub short_ref: String,
+    pub lifecycle: WorkLifecycle,
+}
+
 /// Compact candidate returned by readiness queries.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReadyWork {
@@ -1275,6 +1283,8 @@ pub struct ReadyWork {
     pub availability: WorkAvailability,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocking_parent: Option<WorkLifecycle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocking_ancestor: Option<WorkBlockingAncestor>,
     pub reason_codes: Vec<WorkReadinessReason>,
     pub why: Vec<String>,
     pub blocked_by: Vec<WorkId>,

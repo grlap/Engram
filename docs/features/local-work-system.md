@@ -1939,9 +1939,15 @@ ancestor and no open/proposed descendants, live claim, or live handoff.
 Independent active blockers, incomplete prerequisites, or a future deferral
 refuse detach with `work_detach_refused` and a remedy naming what to resolve
 first. It never bypasses those constraints or reopens the parent. `show`,
-`next` with that child focused, and `ls --blocked` name `parent completed` (or
-the actual terminal lifecycle) and offer the exact detach command only when
-currently admitted.
+`next` with that child focused, and `ls --blocked` name the nearest non-open
+ancestor by ref and lifecycle and offer the exact detach command only when
+currently admitted. `show` preserves the direct parent's ref, title and
+lifecycle separately from `blocking_ancestor: { ref, lifecycle }`; an open
+direct parent is never labeled completed because its root is completed.
+Claim refuses with `work_invalid`, typed `details.blocking_ancestor`, and
+commands to show the affected item and ancestor. Independent blockers and
+prerequisites remain separate; a root-execution generation barrier with all
+ancestors open retains its generic refusal without inventing an ancestor.
 Catalog guidance uses current projections; the write transaction verifies the
 full canonical ancestry and relations and repeats admission and expected-revision
 checks. Exact core replay returns the original successor without another creation; an

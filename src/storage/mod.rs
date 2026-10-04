@@ -1299,6 +1299,11 @@ pub enum StoreError {
         parent: crate::domain::WorkId,
         lifecycle: crate::domain::WorkLifecycle,
     },
+    #[error("execution blocked by ancestor {} ({:?})", .ancestor.short_ref, .ancestor.lifecycle)]
+    WorkAncestorNotOpen {
+        work: crate::domain::WorkId,
+        ancestor: crate::domain::WorkBlockingAncestor,
+    },
     #[error(
         "a peer may propose only optional children without prerequisites beneath held work; ask the parent holder to add required children or prerequisites"
     )]

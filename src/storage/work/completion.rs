@@ -91,9 +91,9 @@ use named_root::{
 pub(super) use root_binding::{validate_seal_root_event, validate_stored_seal_root};
 
 pub(super) use child_barriers::{
-    ancestors_admit_execution, feed_head, run_uses_active_root_execution,
-    validate_completion_seal_children_on, validated_required_child_waivers, work_is_ancestor_of,
-    work_run_uses_active_root_execution,
+    AncestorExecutionState, ancestors_admit_execution, blocking_ancestor_on, feed_head,
+    first_blocking_ancestor, run_uses_active_root_execution, validate_completion_seal_children_on,
+    validated_required_child_waivers, work_is_ancestor_of, work_run_uses_active_root_execution,
 };
 use child_barriers::{
     live_descendant_execution_authority, refuse_completed_ancestor, required_child_seals,

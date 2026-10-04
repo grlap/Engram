@@ -213,7 +213,7 @@ test("detach makes a stranded child independently executable through one CLI upd
     assert.equal(blocked.total, 1);
     const text = run([...context, "ls", "--blocked"]);
     assert.equal(text.status, 0, text.stderr);
-    assert.ok(text.stdout.includes("parent completed") && text.stdout.includes(command), text.stdout);
+    assert.ok(text.stdout.includes(`execution blocked by ancestor ${parent} (completed)`) && text.stdout.includes(command), text.stdout);
     for (const action of [["--detach", " "], ["--detach", "why", "--cancel", "why"]]) {
       const refused = run([...context, "update", child, ...action]);
       assert.notEqual(refused.status, 0);

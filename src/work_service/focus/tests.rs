@@ -914,6 +914,7 @@ fn oversized_ready_item_degrades_to_one_progress_making_summary() {
         work: work_item_summary(&work),
         availability: WorkAvailability::Ready,
         blocking_parent: None,
+        blocking_ancestor: None,
         reason_codes: Vec::new(),
         why: vec!["x".repeat(1_000); MAX_FOCUS_RELATIONS],
         blocked_by: vec![WorkId::new(); MAX_FOCUS_RELATIONS],

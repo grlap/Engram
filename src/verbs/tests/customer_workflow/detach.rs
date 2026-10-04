@@ -54,6 +54,55 @@ fn completed_root_parent_remains_readable_and_detachable_after_child_detach() {
         (header, members, seal)
     };
     let before = retained();
+    let shown_child = verbs.show(&child, at(5)).expect("stranded grandchild");
+    let ancestor = serde_json::json!({"ref": root, "lifecycle": "completed"});
+    assert_eq!(shown_child.value["parent_ref"], parent);
+    assert_eq!(shown_child.value["parent_lifecycle"], "open");
+    assert_eq!(shown_child.value["blocking_ancestor"], ancestor);
+    assert!(
+        shown_child
+            .text()
+            .contains(&format!("execution blocked by ancestor {root} (completed)"))
+    );
+    assert!(!shown_child.text().contains("parent completed"));
+    assert!(
+        shown_child
+            .next
+            .contains(&format!("engram work show {root}"))
+    );
+    let child_item = store.resolve_work_ref(&project, &child).unwrap();
+    let child_run = store.latest_work_run(child_item.work_id).unwrap().unwrap();
+    let claim_error = verbs
+        .claim(
+            ClaimInput {
+                work_ref: child.clone(),
+                ttl_seconds: None,
+                recover: None,
+            },
+            at(5),
+        )
+        .expect_err("terminal root prevents claim");
+    let refusal_value = crate::mcp::store_error_value(&claim_error.error);
+    assert_eq!(refusal_value["error"]["code"], "work_invalid");
+    assert_eq!(
+        refusal_value["error"]["details"]["blocking_ancestor"],
+        ancestor
+    );
+    let guidance = claim_error.guidance();
+    assert!(guidance.next.contains(&format!("engram work show {child}")));
+    assert!(guidance.next.contains(&format!("engram work show {root}")));
+    assert!(
+        !guidance
+            .next
+            .iter()
+            .any(|command| command.contains("--detach"))
+    );
+    assert_eq!(
+        store.latest_work_run(child_item.work_id).unwrap().unwrap(),
+        child_run
+    );
+    assert_eq!(store.current_work_claim(child_item.work_id).unwrap(), None);
+    assert_eq!(retained(), before);
     let refusal = verbs
         .update(
             UpdateInput {
@@ -414,13 +463,18 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
     let mut parent_before = verbs.show(&parent, at(5)).expect("parent").value;
     let shown = verbs.show(&child, at(5)).expect("show child");
     let command = format!("engram work update {child} --detach \"Continue as independent work\"");
-    assert!(shown.text().contains("parent completed"));
+    let cause = format!("execution blocked by ancestor {parent} (completed)");
+    assert!(shown.text().contains(&cause));
+    assert_eq!(
+        shown.value["blocking_ancestor"],
+        serde_json::json!({"ref": parent, "lifecycle": "completed"})
+    );
     // The child was added without criteria, so its placeholder status leads.
     assert_eq!(
         shown.value["reminders"],
         serde_json::json!([
             "acceptance is only the title placeholder ('Follow-up is done'); set real criteria by revising acceptance with update",
-            "parent completed"
+            cause
         ])
     );
     assert_eq!(shown.value["next"][0], command);
@@ -442,10 +496,7 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
         .next(&NextInput::default(), at(5))
         .expect("focused next");
     assert!(focused.text().contains(&command));
-    assert_eq!(
-        focused.value["reminders"],
-        serde_json::json!(["parent completed"])
-    );
+    assert_eq!(focused.value["reminders"], serde_json::json!([cause]));
     assert_eq!(focused.value["next"][0], command);
     let listed = verbs
         .ls(
@@ -457,7 +508,7 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
         )
         .expect("blocked");
     assert_eq!(listed.value["total"], 1);
-    assert!(listed.text().contains("parent completed"));
+    assert!(listed.text().contains(&cause));
     assert!(listed.text().contains(&command));
     let receipt = verbs
         .update(
@@ -564,7 +615,7 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
 #[test]
 fn detach_blocked_reason_is_independent_of_readiness_prose() {
     let (_directory, verbs, database, project) = fixture();
-    let (_, child) = stranded_child(&verbs);
+    let (parent, child) = stranded_child(&verbs);
     let service = LocalWorkService::new(
         database,
         project,
@@ -576,7 +627,16 @@ fn detach_blocked_reason_is_independent_of_readiness_prose() {
     assert_eq!(view.status.blocking_parent, Some(WorkLifecycle::Completed));
     view.status.why.clear();
     let row = crate::verbs::receipts::compact_row(&view.status, &std::collections::HashMap::new());
-    assert_eq!(row.blocked_reason.as_deref(), Some("parent completed"));
+    assert_eq!(
+        row.blocked_reason,
+        Some(format!(
+            "execution blocked by ancestor {parent} (completed)"
+        ))
+    );
+    assert_eq!(
+        view.status.blocking_ancestor.as_ref().unwrap().short_ref,
+        parent
+    );
     assert_eq!(
         row.remedy,
         Some(crate::verbs::handlers::detach_command(&child))

@@ -5,6 +5,7 @@ use super::prerequisites::classify_prerequisite_state;
 use super::*;
 use crate::storage::concurrent_commit::{ITEM_FEED_HEAD, read_across_a_concurrent_commit};
 
+mod ancestor_diagnostics;
 mod concurrency;
 
 fn latest_event_id(store: &SqliteStore, work_id: WorkId) -> String {

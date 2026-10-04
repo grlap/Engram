@@ -586,7 +586,8 @@ Rules that matter:
   Open descendants, live ownership, independent blockers, unfinished
   prerequisites, and future deferral refuse with `work_detach_refused` and a
   remedy naming what to resolve first. `show CHILD` and `ls --blocked` display
-  the terminal-parent cause and exact detach command when admitted. `next`
+  the actual blocking ancestor ref and lifecycle, and exact detach command
+  when admitted. `next`
   does so when the child is already focused; reading it does not select focus.
   Inspect the old child's successor after an uncertain response; a keyless
   repeat after supersession refuses without creating another root. See
@@ -599,6 +600,12 @@ Rules that matter:
   parent fields and child requirement. The safe focus read loads one bounded
   parent row in its existing snapshot; its private carrier does not change the
   ambient/core wire. CLI JSON and MCP agree.
+- Open work blocked by a non-open ancestor exposes `blocking_ancestor: { ref,
+  lifecycle }` in show and list JSON. Direct parent fields remain separate.
+  Claim keeps the `work_invalid` code and adds `details.blocking_ancestor`,
+  with `show CHILD` and `show ANCESTOR` navigation. Execution stays refused;
+  only the existing detach admission supplies a detach command in show.
+  Explicit blockers and prerequisites remain separate from this cause.
 - `show REF --notes` (MCP `show { work_ref: REF, notes: true }`) returns
   the newest note/observation window, excluding structured gate evidence,
   rendered oldest to newest within that window. `--notes --gates` (MCP

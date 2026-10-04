@@ -839,6 +839,12 @@ impl SqliteStore {
                     expires_at: claim.expires_at.timestamp_millis(),
                 });
             }
+            if let Some(ancestor) = view.blocking_ancestor {
+                return Err(StoreError::WorkAncestorNotOpen {
+                    work: item.work_id,
+                    ancestor,
+                });
+            }
             return Err(StoreError::InvalidWork(format!(
                 "work is not ready: {:?}",
                 view.availability
