@@ -1,6 +1,131 @@
 use super::*;
 
 #[test]
+fn rejection_checks_intermediate_ancestor_before_any_disposal() {
+    for completed in [false, true] {
+        let (_directory, verbs, path, project) = fixture();
+        let root = add(&verbs, "Open root", None, false, 0);
+        let ancestor = add(&verbs, "Optional ancestor", Some(&root), true, 1);
+        let parent = add(&verbs, "Optional parent", Some(&ancestor), true, 2);
+        let child = add(&verbs, "Required child", Some(&parent), false, 3);
+        if completed {
+            verbs
+                .claim(
+                    ClaimInput {
+                        work_ref: ancestor.clone(),
+                        ttl_seconds: None,
+                        recover: None,
+                    },
+                    at(4),
+                )
+                .unwrap();
+            verbs
+                .done(
+                    DoneInput {
+                        work_ref: Some(ancestor.clone()),
+                        summary: Some("Delivered".into()),
+                        ..DoneInput::default()
+                    },
+                    at(5),
+                )
+                .unwrap();
+        }
+        let mut store = SqliteStore::open(&path).unwrap();
+        assert_eq!(
+            store.resolve_work_ref(&project, &root).unwrap().lifecycle,
+            WorkLifecycle::Open
+        );
+        let parent_item = store.resolve_work_ref(&project, &parent).unwrap();
+        let child_item = store.resolve_work_ref(&project, &child).unwrap();
+        assert_eq!(parent_item.lifecycle, WorkLifecycle::Open);
+        assert_eq!(child_item.lifecycle, WorkLifecycle::Open);
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+        let request = crate::RejectRequiredChildRequest {
+            work_id: child_item.work_id,
+            expected_work_revision: child_item.revision,
+            expected_parent_revision: Some(parent_item.revision),
+            reason: "Evidence refutes finding".into(),
+            actor: crate::ActorContext {
+                actor_id: "agent".into(),
+                actor_kind: "test_agent".into(),
+                assurance: crate::domain::AssuranceLevel::Asserted,
+                run_id: None,
+                session_id: Some(SessionId("agent".into())),
+                source_tool: None,
+                source_skill: None,
+                provenance_chain: Vec::new(),
+                reason: "test rejection".into(),
+            },
+            idempotency_key: "ancestor-rejection".into(),
+            rejected_at: at(6),
+        };
+        let result = store.reject_required_child(&request, &crate::memory::DevelopmentNoopRedactor);
+        if completed {
+            let error = result.unwrap_err();
+            assert_eq!(
+                crate::storage::test_database_shape_snapshot(&connection).unwrap(),
+                before
+            );
+            let payload = crate::mcp::store_error_value(&error);
+            assert_eq!(payload["error"]["code"], "work_reject_refused");
+            assert_eq!(payload["error"]["details"]["child_ref"], child);
+            assert_eq!(payload["error"]["details"]["parent_ref"], parent);
+            assert_eq!(
+                payload["error"]["details"]["reason"],
+                "an ancestor is not open"
+            );
+            assert!(
+                payload["error"]["details"]["remedy"]
+                    .as_str()
+                    .unwrap()
+                    .contains(&format!("ancestor {ancestor} (completed)"))
+            );
+            assert_eq!(
+                VerbError::at(error, &child).guidance().next,
+                [format!("engram work show {child}")]
+            );
+            let mut stale = request.clone();
+            stale.expected_parent_revision = Some(parent_item.revision - 1);
+            assert!(matches!(
+                store.reject_required_child(&stale, &crate::memory::DevelopmentNoopRedactor),
+                Err(StoreError::WorkRevisionConflict { .. })
+            ));
+            assert_eq!(
+                crate::storage::test_database_shape_snapshot(&connection).unwrap(),
+                before
+            );
+            let word_error = verbs
+                .update(
+                    UpdateInput {
+                        work_ref: Some(child.clone()),
+                        action: UpdateAction::Reject {
+                            reason: "Evidence refutes finding".into(),
+                        },
+                    },
+                    at(7),
+                )
+                .unwrap_err();
+            assert_eq!(
+                crate::mcp::store_error_value(&word_error.error)["error"]["code"],
+                "work_reject_refused"
+            );
+            assert_eq!(store.get_work_item(child_item.work_id).unwrap(), child_item);
+        } else {
+            let receipt = result.unwrap();
+            assert_eq!(receipt.child.lifecycle, WorkLifecycle::Cancelled);
+            assert_eq!(receipt.waiver.work_id, child_item.work_id);
+            assert_eq!(receipt.waiver.reason, request.reason);
+            assert_eq!(
+                store.get_work_item(parent_item.work_id).unwrap(),
+                parent_item
+            );
+        }
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+}
+
+#[test]
 fn rejection_correction_closed_root_is_typed_and_atomic() {
     let (_dir, verbs, path, project) = fixture();
     let root = add(&verbs, "Root", None, false, 0);

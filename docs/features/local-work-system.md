@@ -2242,7 +2242,7 @@ root follow-up. It never writes a waiver into a terminal root execution.
 
 `update CHILD --reject "why"` (MCP `action: "reject"` with `reason`) composes
 that waiver with ordinary cancellation in one transaction. Admission requires
-an Open required child, an Open parent, no existing waiver, and a root execution
+an Open required child, an Open parent and ancestors, no existing waiver, and a root execution
 able to record the waiver (including an eligible restored bootstrap). Both existing
 revision and authority checks remain: cancellation respects the live child's
 holder, while parent waiver uses project-bound attribution rather than parent
@@ -2251,6 +2251,10 @@ commits if either transition fails. Exact scoped replay returns both effects.
 Completed work is intercepted first by the existing late-finding refusal
 pointing to `note`/`gate`. Other unsupported shapes return `work_reject_refused`
 with conditional cancel and parent-waive guidance, never partial success.
+When an ancestor is terminal, the refusal names its ref and lifecycle in the
+remedy and offers child inspection and an independent root follow-up. The
+ancestor check precedes cancellation; existing revision and closed-root
+refusals retain their precedence.
 Record evidence rejecting a finding in a note, then reject it; do not complete
 unsatisfied acceptance.
 

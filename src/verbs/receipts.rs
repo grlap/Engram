@@ -455,16 +455,6 @@ impl VerbError {
             };
         }
         let target = self.work_ref.as_deref().unwrap_or("<ref>");
-        if self
-            .context
-            .as_ref()
-            .is_some_and(|context| context.invalid_waiver)
-        {
-            return Guidance {
-                reminders: vec![self.error.to_string()],
-                next: vec![format!("engram work show {target}")],
-            };
-        }
         if let StoreError::WorkNoteReferenceInvalid {
             reason,
             candidates,
@@ -721,6 +711,11 @@ impl VerbError {
                     vec![reason.clone()],
                     vec![format!("engram work note {target} \"…\"")],
                 )
+            }
+            StoreError::InvalidWork(_)
+                if self.context.as_ref().is_some_and(|context| context.invalid_waiver) =>
+            {
+                (vec![message], vec![format!("engram work show {target}")])
             }
             StoreError::WorkRevisionConflict { .. } => (
                 vec!["the item changed underneath this call; look again and repeat it".into()],

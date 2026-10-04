@@ -14,7 +14,7 @@ use super::{
 #[cfg(test)]
 mod tests;
 
-use super::child_barriers::ancestors_admit_execution;
+use super::child_barriers::{ancestors_admit_execution, blocking_ancestor_on};
 use crate::{RejectRequiredChildReceipt, RejectRequiredChildRequest};
 
 impl SqliteStore {
@@ -67,6 +67,7 @@ impl SqliteStore {
             StoreError::InvalidWork("rejection requires an expected parent revision".into())
         })?;
         assert_revision(parent, expected_parent_revision)?;
+        let blocking_ancestor = blocking_ancestor_on(&transaction, parent)?;
         if let Some(root) = super::active_root_execution_optional(&transaction, parent.root_id)? {
             if root
                 .required_child_waivers
@@ -84,12 +85,23 @@ impl SqliteStore {
             let run = load_work_run(&transaction, run_id)?;
             let root = load_root_execution(&transaction, run.root_execution_id)?;
             if root.state != RootExecutionState::Active {
-                return Err(refuse(
+                return Err(reject_refusal_with_ancestor(
+                    &child,
+                    Some(parent),
                     "the root execution is closed and cannot record a child waiver",
+                    blocking_ancestor.as_ref(),
                 ));
             }
             return Err(StoreError::InvalidWorkProjection(
                 "child execution is active but absent from active root selection".into(),
+            ));
+        }
+        if blocking_ancestor.is_some() {
+            return Err(reject_refusal_with_ancestor(
+                &child,
+                Some(parent),
+                "an ancestor is not open",
+                blocking_ancestor.as_ref(),
             ));
         }
         let cancel = DisposeWorkRequest {
@@ -420,6 +432,23 @@ fn reject_refusal(child: &WorkItem, parent: Option<&WorkItem>, reason: &'static 
         parent_ref,
         reason,
     }
+}
+
+fn reject_refusal_with_ancestor(
+    child: &WorkItem,
+    parent: Option<&WorkItem>,
+    reason: &'static str,
+    ancestor: Option<&crate::domain::WorkBlockingAncestor>,
+) -> StoreError {
+    let mut refusal = reject_refusal(child, parent, reason);
+    if let (StoreError::WorkRejectRefused { remedy, .. }, Some(ancestor)) = (&mut refusal, ancestor)
+    {
+        *remedy = format!(
+            "{remedy}; execution blocked by ancestor {} ({}); inspect with engram work show {}; follow admitted detach or resolve-first guidance, or file an independent root with engram work add \"Follow-up title\" --accept \"Delivery criterion\"",
+            ancestor.short_ref, ancestor.lifecycle.word(), child.short_ref,
+        ).into_boxed_str();
+    }
+    refusal
 }
 
 fn dispose_work_on(

@@ -2458,7 +2458,7 @@ struct WorkUpdateArgs {
     /// Cancel the item and say why.
     #[arg(long, value_name = "REASON")]
     cancel: Option<String>,
-    /// Cancel a required child and atomically waive its open parent's barrier.
+    /// Cancel a required child and atomically waive its open parent's barrier; all ancestors must be open.
     #[arg(long, value_name = "REASON")]
     reject: Option<String>,
     /// Make this item wait for another open item.

@@ -1,6 +1,75 @@
 use super::*;
 
 #[test]
+fn waiver_guidance_preserves_specific_invalid_work_remedies() {
+    for (reason, command) in [
+        ("work does not exist", "engram work ls"),
+        (
+            crate::storage::PENDING_HANDOFF_REFUSAL,
+            "engram work handoff w-parent --cancel \"…\"",
+        ),
+        (
+            crate::work_service::COMPLETED_WORK_LATE_FINDING_REFUSAL,
+            "engram work note w-parent \"…\"",
+        ),
+        ("an ancestor is not open", "engram work show w-parent"),
+    ] {
+        let error = VerbError::for_waiver(StoreError::InvalidWork(reason.into()), "w-parent");
+        assert_eq!(error.guidance().next, [command]);
+    }
+}
+
+#[test]
+fn completed_parent_waiver_keeps_late_finding_note_guidance() {
+    let (_directory, verbs, _database, _project) = fixture();
+    let parent = add(&verbs, "Completed parent", None, false, 0);
+    let child = add(&verbs, "Optional child", Some(&parent), true, 1);
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: parent.clone(),
+                ttl_seconds: None,
+                recover: None,
+            },
+            at(2),
+        )
+        .unwrap();
+    verbs
+        .done(
+            DoneInput {
+                work_ref: Some(parent.clone()),
+                summary: Some("Delivered".into()),
+                ..DoneInput::default()
+            },
+            at(3),
+        )
+        .unwrap();
+    let error = verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(parent.clone()),
+                action: UpdateAction::WaiveRequiredChild {
+                    child,
+                    reason: "Late finding".into(),
+                },
+            },
+            at(4),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.guidance().next,
+        [format!("engram work note {parent} \"…\"")]
+    );
+    let payload = crate::mcp::store_error_value(&error.error);
+    assert!(
+        payload["error"]["details"]["remedy"]
+            .as_str()
+            .unwrap()
+            .contains("note")
+    );
+}
+
+#[test]
 fn direct_waiver_under_terminal_ancestors_refuses_without_writing() {
     for intermediate in [false, true] {
         for superseded in [false, true] {

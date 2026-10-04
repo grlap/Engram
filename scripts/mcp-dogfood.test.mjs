@@ -997,6 +997,103 @@ test("printed listing continuation preserves literal search and label whitespace
   }
 });
 
+test("completed parent waiver preserves late finding guidance on CLI and MCP", async (t) => {
+  const home = fixtureHome("engram-completed-waiver-", t);
+  const session = "completed-waiver-reader";
+  let client;
+  try {
+    buildAndInit(home);
+    client = new McpClient(home, session);
+    await client.initialize();
+    const parent = receipt(await client.call("add", { title: "Completed parent" })).work.short_ref;
+    const child = receipt(await client.call("add", { title: "Optional child", under: parent, optional: true })).work.short_ref;
+    receipt(await client.call("claim", { work_ref: parent }));
+    receipt(await client.call("done", { work_ref: parent, summary: "Delivered" }));
+    const args = { work_ref: parent, action: "waive", child, reason: "Late finding" };
+    const error = structuredError(await client.call("update", args), "work_invalid");
+    assert.deepEqual(error.next, [`engram work note ${parent} "…"`]);
+    assert.equal(error.details.remedy, "use note to record a late finding without reopening the completed item");
+    for (const json of [false, true]) {
+      const refused = cliWord(home, session, "update", parent, "--waive", child, "--reason", args.reason, ...(json ? ["--json"] : []));
+      assert.notEqual(refused.status, 0);
+      if (json) assert.deepEqual(JSON.parse(refused.stderr).error.next, error.next);
+      else assert.ok(refused.stderr.includes(error.next[0]), refused.stderr);
+    }
+    const missing = structuredError(await client.call("update", { ...args, work_ref: "w-000000000000" }), "work_invalid");
+    assert.deepEqual(missing.next, ["engram work ls"]);
+    const missingCli = cliWord(home, session, "update", "w-000000000000", "--waive", child, "--reason", args.reason, "--json");
+    assert.notEqual(missingCli.status, 0);
+    assert.deepEqual(JSON.parse(missingCli.stderr).error.next, missing.next);
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(home); }
+  }
+});
+
+test("reject checks terminal ancestors before cancellation on CLI and MCP", async (t) => {
+  const home = fixtureHome("engram-reject-ancestors-", t);
+  const session = "reject-ancestor-reader";
+  const capture = [];
+  let client;
+  try {
+    buildAndInit(home);
+    client = new McpClient(home, session);
+    await client.initialize();
+    for (const shape of ["intermediate", "root", "open"]) {
+      const rootRef = cliJson(home, session, "add", `Root ${shape}`).work.short_ref;
+      const ancestor = cliJson(home, session, "add", `Ancestor ${shape}`, "--under", rootRef, "--optional").work.short_ref;
+      const parent = cliJson(home, session, "add", `Parent ${shape}`, "--under", ancestor, "--optional").work.short_ref;
+      const child = cliJson(home, session, "add", `Child ${shape}`, "--under", parent).work.short_ref;
+      const closed = shape === "root" ? rootRef : ancestor;
+      if (shape !== "open") {
+        cliJson(home, session, "claim", closed);
+        cliJson(home, session, "done", closed, "Delivered");
+      }
+      const before = receipt(await client.call("show", { work_ref: child })).status.work;
+      const args = { work_ref: child, action: "reject", reason: "Evidence refutes finding" };
+      if (shape === "open") {
+        const success = receipt(await client.call("update", args));
+        assert.equal(success.receipt.result.required_child_waived, true);
+        assert.equal(receipt(await client.call("show", { work_ref: child })).status.work.lifecycle, "cancelled");
+        continue;
+      }
+      const mcpResult = await client.call("update", args);
+      const error = structuredError(mcpResult, "work_reject_refused");
+      const cliResult = cliWord(home, session, "update", child, "--reject", args.reason, "--json");
+      assert.notEqual(cliResult.status, 0);
+      const cliError = JSON.parse(cliResult.stderr).error;
+      for (const value of [error, cliError]) {
+        assert.equal(value.code, "work_reject_refused");
+        assert.equal(value.details.child_ref, child);
+        assert.equal(value.details.parent_ref, parent);
+        assert.equal(value.details.reason, shape === "root" ? "the root execution is closed and cannot record a child waiver" : "an ancestor is not open");
+        assert.ok(value.details.remedy.includes(`ancestor ${closed} (completed)`), JSON.stringify(value));
+        assert.ok(value.details.remedy.includes('engram work add "Follow-up title" --accept "Delivery criterion"'));
+        assert.deepEqual(value.next, [`engram work show ${child}`]);
+      }
+      const text = cliWord(home, session, "update", child, "--reject", args.reason);
+      assert.notEqual(text.status, 0);
+      assert.ok(text.stderr.includes(`ancestor ${closed} (completed)`), text.stderr);
+      assert.ok(text.stderr.includes(`engram work show ${child}`));
+      assert.deepEqual(receipt(await client.call("show", { work_ref: child })).status.work, before);
+      assert.equal(receipt(await client.call("show", { work_ref: parent })).status.work.lifecycle, "open");
+      capture.push({ shape, mcp: mcpResult, cli_json: JSON.parse(cliResult.stderr), cli_text: text.stderr });
+    }
+    const tools = await client.tools();
+    assert.match(tools.find(({ name }) => name === "update").description, /parent and ancestors must be open/u);
+    assert.match(cliWord(home, session, "update", "--help").stdout.replace(/\s+/gu, " "), /all ancestors must be open/u);
+    if (process.env.ENGRAM_REJECT_READER_CAPTURE === "1") {
+      const directory = join(root, "target", "tmp", `reject-reader-capture-${Date.now()}`);
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, "payload.json"), JSON.stringify({ captured_at: new Date().toISOString(), binary, executable_sha256: createHash("sha256").update(readFileSync(process.platform === "win32" ? `${binary}.exe` : binary)).digest("hex"), refusals: capture }, null, 2));
+      console.error(`Reject reader payload: ${join(directory, "payload.json")}`);
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(home); }
+  }
+});
+
 test("direct child waiver under a completed root gives an actionable refusal on CLI and MCP", async (t) => {
   const home = fixtureHome("engram-terminal-waiver-", t);
   const session = "terminal-waiver-reader";

@@ -667,7 +667,7 @@ impl McpServer {
     /// Apply exactly one planning or claim action.
     #[tool(
         name = "update",
-        description = "One action: release, blocked, unblock, revise, cancel, reject (required child plus reason; atomically cancels and waives), after/drop_after (prerequisite), waive (child plus reason), supersede (replacement plus reason), or detach (stranded child plus reason)"
+        description = "One action: release, blocked, unblock, revise, cancel, reject (required child plus reason; parent and ancestors must be open; atomically cancels and waives), after/drop_after (prerequisite), waive (child plus reason), supersede (replacement plus reason), or detach (stranded child plus reason)"
     )]
     fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
         if args.external.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
