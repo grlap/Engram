@@ -996,41 +996,7 @@ fn two_claims_over_mcp(project: &str) -> TwoClaims {
     );
     let mut held = Vec::new();
     for (second, title) in [(1, "First held work"), (2, "Second held work")] {
-        let added = verbs
-            .add(
-                AddInput {
-                    external: None,
-                    notes: Vec::new(),
-                    title: title.into(),
-                    outcome: None,
-                    acceptance: vec![format!("{title} is delivered")],
-                    bindings: Vec::new(),
-                    under: None,
-                    optional: false,
-                    priority: None,
-                    labels: Vec::new(),
-                    assignee: None,
-                    kind: None,
-                    evaluation_mode: None,
-                },
-                Utc::now() + chrono::Duration::milliseconds(second),
-            )
-            .expect("add");
-        let work_ref = added.value["work"]["short_ref"]
-            .as_str()
-            .expect("short ref")
-            .to_owned();
-        verbs
-            .claim(
-                crate::verbs::ClaimInput {
-                    work_ref: work_ref.clone(),
-                    ttl_seconds: Some(36_000),
-                    recover: None,
-                },
-                Utc::now() + chrono::Duration::milliseconds(second + 10),
-            )
-            .expect("claim");
-        held.push(work_ref);
+        held.push(add_and_claim(&verbs, title, second));
     }
     let (other, focus) = (held[0].clone(), held[1].clone());
     held.sort();
@@ -1052,6 +1018,116 @@ fn two_claims_over_mcp(project: &str) -> TwoClaims {
         held,
         _directory: directory,
     }
+}
+
+/// Adds an item titled `title` and claims it for this session, at real time
+/// plus `millis`, so the claim is live when the MCP server reads it.
+fn add_and_claim(verbs: &crate::verbs::AgentVerbs, title: &str, millis: i64) -> String {
+    let added = verbs
+        .add(
+            AddInput {
+                external: None,
+                notes: Vec::new(),
+                title: title.into(),
+                outcome: None,
+                acceptance: vec![format!("{title} is delivered")],
+                bindings: Vec::new(),
+                under: None,
+                optional: false,
+                priority: None,
+                labels: Vec::new(),
+                assignee: None,
+                kind: None,
+                evaluation_mode: None,
+            },
+            Utc::now() + chrono::Duration::milliseconds(millis),
+        )
+        .expect("add");
+    let work_ref = added.value["work"]["short_ref"]
+        .as_str()
+        .expect("short ref")
+        .to_owned();
+    claim_live(verbs, &work_ref, millis + 10);
+    work_ref
+}
+
+fn claim_live(verbs: &crate::verbs::AgentVerbs, work_ref: &str, millis: i64) {
+    verbs
+        .claim(
+            crate::verbs::ClaimInput {
+                work_ref: work_ref.to_owned(),
+                ttl_seconds: Some(36_000),
+                recover: None,
+            },
+            Utc::now() + chrono::Duration::milliseconds(millis),
+        )
+        .expect("claim");
+}
+
+/// Over MCP, five live claims with the focus last in ref order: the refusal
+/// names the first two and the focus, counts the other two, offers a command
+/// for each named item, keeps the total in its message and records nothing.
+#[test]
+fn bare_done_over_mcp_beside_many_claims_names_three_and_counts_the_rest() {
+    let directory = crate::test_support::temp_home().expect("temp home");
+    let database = directory.path().join("work.sqlite3");
+    let (project, session) = (
+        ProjectId("mcp-bare-target-many".into()),
+        SessionId("runner".into()),
+    );
+    let verbs = crate::verbs::AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "runner".into(),
+        session.clone(),
+        None,
+    );
+    let mut held: Vec<String> = (0..5)
+        .map(|index| add_and_claim(&verbs, &format!("Held work {index}"), index * 20))
+        .collect();
+    held.sort();
+    let focus = held[4].clone();
+    claim_live(&verbs, &focus, 200);
+    drop(verbs);
+    let server = McpServer::new_with_actor_context(
+        database.clone(),
+        project,
+        "runner".into(),
+        session,
+        None,
+        None,
+    );
+    let before = recorded_rows(&database);
+
+    let response = server.done(Parameters(done_args(None)));
+    assert_eq!(response.is_error, Some(true));
+    let value = response.structured_content.expect("structured error");
+    let error = &value["error"];
+    assert_eq!(error["code"], "work_bare_target_ambiguous", "{value}");
+    let shown = vec![held[0].clone(), held[1].clone(), focus.clone()];
+    assert_eq!(error["details"]["held_refs"], json!(shown), "{value}");
+    assert_eq!(error["details"]["more"], 2, "{value}");
+    assert_eq!(error["details"]["focused_ref"], json!(focus), "{value}");
+    assert_eq!(
+        error["next"],
+        json!(
+            shown
+                .iter()
+                .map(|work_ref| format!("engram work done {work_ref} \"…\""))
+                .collect::<Vec<_>>()
+        ),
+        "{value}"
+    );
+    let message = error["message"].as_str().expect("message");
+    assert!(
+        message.contains("holds 5 live claims") && message.contains("and 2 more"),
+        "{message}"
+    );
+    assert_eq!(
+        recorded_rows(&database),
+        before,
+        "a refusal recorded something"
+    );
 }
 
 /// Every row of the work feed and object tables, so a refusal can be shown
@@ -1124,6 +1200,7 @@ fn bare_done_and_evaluate_refuse_over_mcp_while_several_claims_are_live() {
             "{word}: {value}"
         );
         assert_eq!(error["details"]["focused_ref"], json!(focus), "{word}");
+        assert_eq!(error["details"]["more"], 0, "{word}: {value}");
         let explicit: Vec<String> = held
             .iter()
             .map(|work_ref| match word {

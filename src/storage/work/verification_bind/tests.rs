@@ -1181,6 +1181,26 @@ fn readers_expose_the_bound_branch_only_on_bound_records() {
     assert!(native_assessment.bound.is_none());
 }
 
+/// A file store at `database` holding items A and B of project-a, each
+/// claimed by the runner on its own generation of one named root, with a
+/// passed test of A's root bound to B's first criterion. Returns B's short
+/// ref, the bound record's id and the original's id.
+pub(crate) fn bound_assessment_fixture(database: &std::path::Path) -> (String, ObjectId, ObjectId) {
+    let mut store = SqliteStore::open(database).expect("store");
+    let a = held(&mut store, "item-a", HOLDER, 9, "R1", 2);
+    let b = held(&mut store, "item-b", HOLDER, 10, "R1", 4);
+    let original = native_check(&mut store, &a, "R1", 20);
+    let input = request(&original, "R1", vec![target(&store, &b, "R1", vec![1])]);
+    let VerificationBindOutcome::Bound(receipt) = bind(&mut store, &input, 30) else {
+        panic!("the bind is refused")
+    };
+    (
+        b.work.short_ref,
+        receipt.bound[0].verification.clone(),
+        original,
+    )
+}
+
 /// Every row of every ordinary table, in a stable order. Full-text shadow
 /// tables are compared through the doctor instead.
 fn all_rows(connection: &rusqlite::Connection) -> std::collections::BTreeMap<String, Vec<String>> {

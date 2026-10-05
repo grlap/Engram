@@ -97,6 +97,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "operation": ambiguity.operation,
             "focused_ref": ambiguity.focus,
             "held_refs": ambiguity.held,
+            "more": ambiguity.more,
             "remedy": "repeat the word with the intended item named; nothing was recorded",
         }),
         StoreError::InvalidWork(message)

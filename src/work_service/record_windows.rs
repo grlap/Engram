@@ -9,6 +9,9 @@ use crate::storage::{
 };
 use std::collections::BTreeMap;
 
+#[cfg(test)]
+mod tests;
+
 /// A continuation cursor given for a record that has no assessment to page.
 pub(crate) const ASSESSMENT_CONTINUATION_REFUSAL: crate::argument_names::Twin =
     crate::argument_names::Twin {

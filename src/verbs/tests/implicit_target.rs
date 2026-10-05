@@ -759,6 +759,11 @@ fn bare_done_and_evaluate_refuse_while_several_claims_are_live() {
     let wire = crate::store_error_value(&error.error);
     assert_eq!(wire["error"]["code"], "work_bare_target_ambiguous");
     assert_eq!(wire["error"]["details"]["held_refs"], json!(held), "{wire}");
+    assert_eq!(wire["error"]["details"]["more"], 0, "{wire}");
+    assert!(
+        !guidance.reminders[0].contains("more"),
+        "two claims are all named: {guidance:?}"
+    );
 
     let (error, operation, _, named) = ambiguity(bare_evaluate(&agent, None, 6));
     assert_eq!(operation, "evaluate");
@@ -940,4 +945,86 @@ fn explicit_and_single_claim_done_and_evaluate_act_as_before() {
         )
         .expect("a bare done with one live claim");
     assert_eq!(completed.value["work"]["short_ref"], json!(first));
+}
+
+// Five live claims: the refusal names three held items, the focus always
+// among them in ref order, counts the other two, and offers a command for
+// each named item only; the message keeps the total.
+#[test]
+fn a_bare_done_beside_many_claims_names_three_with_the_focus_and_counts_the_rest() {
+    let agent = agent("bare-target-many-claims");
+    let mut held: Vec<String> = (0..5)
+        .map(|index| add(&agent, &format!("Held work {index}"), None, 1 + index))
+        .collect();
+    for (index, work_ref) in held.iter().enumerate() {
+        claim(
+            &agent,
+            work_ref,
+            3_600,
+            10 + i64::try_from(index).expect("small"),
+        );
+    }
+    held.sort();
+    // The focus last in ref order, and then first: the first two plus the
+    // focus, then the first three.
+    for (second, focus, shown) in [
+        (
+            20,
+            held[4].clone(),
+            vec![held[0].clone(), held[1].clone(), held[4].clone()],
+        ),
+        (
+            30,
+            held[0].clone(),
+            vec![held[0].clone(), held[1].clone(), held[2].clone()],
+        ),
+    ] {
+        claim(&agent, &focus, 3_600, second);
+        let before = recorded(&agent);
+        let (error, operation, named_focus, named) =
+            ambiguity(agent.verbs.done(DoneInput::default(), at(second + 1)));
+        assert_eq!(
+            recorded(&agent),
+            before,
+            "a refused bare done recorded something"
+        );
+        assert_eq!(
+            (operation.as_str(), named_focus.as_str()),
+            ("done", focus.as_str())
+        );
+        assert_eq!(named, shown, "focus {focus}");
+        let guidance = error.guidance();
+        assert!(
+            guidance.reminders[0].contains("holds 5 live claims")
+                && guidance.reminders[0].contains("and 2 more"),
+            "{guidance:?}"
+        );
+        assert_eq!(
+            guidance.next,
+            shown
+                .iter()
+                .map(|work_ref| format!("engram work done {work_ref} \"…\""))
+                .collect::<Vec<_>>()
+        );
+        let wire = crate::store_error_value(&error.error);
+        assert_eq!(
+            wire["error"]["details"]["held_refs"],
+            json!(shown),
+            "{wire}"
+        );
+        assert_eq!(wire["error"]["details"]["more"], 2, "{wire}");
+        assert_eq!(
+            wire["error"]["details"]["focused_ref"],
+            json!(focus),
+            "{wire}"
+        );
+    }
+    let before = recorded(&agent);
+    let (_, _, _, named) = ambiguity(bare_evaluate(&agent, None, 40));
+    assert_eq!(named.len(), 3);
+    assert_eq!(
+        recorded(&agent),
+        before,
+        "a refused bare evaluate recorded something"
+    );
 }

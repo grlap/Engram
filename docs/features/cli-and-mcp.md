@@ -250,9 +250,12 @@ with `work_bare_target_ambiguous`; a focus it does not hold keeps the refusal
 above, which offers the focus:
 - nothing is recorded, and a bare `evaluate` is refused before its attempt
   replay is consulted;
-- `details.held_refs` lists every item the session holds, in ref order, and
-  `details.focused_ref` names the focus;
-- `next` offers the explicit command for each held item.
+- `details.held_refs` lists up to three items the session holds, in ref
+  order and always including the focus, which `details.focused_ref` names;
+  `details.more` counts the held items not listed, and the message gives the
+  total;
+- `next` offers the explicit command for each listed item.
+
 Naming the item acts as before, and an explicit retry replays as before.
 With exactly one live claim, a bare `done` or `evaluate` acts on it as
 before. A bare `note`, `gate` or `handoff` is unchanged.

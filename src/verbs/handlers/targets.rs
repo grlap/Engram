@@ -49,11 +49,14 @@ impl AgentVerbs {
                 let held = self.service.held_work_refs(now)?;
                 if held.len() > 1 {
                     return Err(StoreError::WorkBareTargetAmbiguous(Box::new(
-                        crate::storage::BareTargetAmbiguity {
-                            operation: word.to_owned(),
-                            focus: focus.status.work.short_ref.clone(),
-                            held: held.into_iter().map(|(_, short_ref)| short_ref).collect(),
-                        },
+                        crate::storage::BareTargetAmbiguity::new(
+                            word,
+                            &focus.status.work.short_ref,
+                            &held
+                                .into_iter()
+                                .map(|(_, short_ref)| short_ref)
+                                .collect::<Vec<_>>(),
+                        ),
                     ))
                     .into());
                 }

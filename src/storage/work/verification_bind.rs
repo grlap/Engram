@@ -34,6 +34,8 @@ use crate::domain::{
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::bound_assessment_fixture;
 
 /// Longest idempotency key a bind request may carry.
 const MAX_BIND_IDEMPOTENCY_KEY_BYTES: usize = 512;

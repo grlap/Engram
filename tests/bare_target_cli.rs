@@ -145,6 +145,7 @@ fn bare_done_and_evaluate_refuse_through_the_cli_while_several_claims_are_live()
         assert_eq!(error["details"]["operation"], word, "{error}");
         assert_eq!(error["details"]["focused_ref"], json!(second), "{error}");
         assert_eq!(error["details"]["held_refs"], json!(held), "{error}");
+        assert_eq!(error["details"]["more"], 0, "{error}");
         let explicit: Vec<String> = held
             .iter()
             .map(|work_ref| command.replace("{}", work_ref))
@@ -193,4 +194,52 @@ fn bare_done_and_evaluate_refuse_through_the_cli_while_several_claims_are_live()
         "bare done",
     );
     assert_eq!(completed["work"]["short_ref"], json!(first), "{completed}");
+}
+
+/// Five live claims with the focus last in ref order: the CLI refusal names
+/// the first two and the focus, counts the other two and offers a command for
+/// each named item only.
+#[test]
+fn a_bare_done_through_the_cli_beside_many_claims_names_three_and_counts_the_rest() {
+    let directory = test_support::temp_home().expect("temporary directory");
+    let root = directory.path();
+    fs::write(root.join(".engram-project"), format!("{PROJECT}\n")).expect("project file");
+    let init = engram(root, &["init"]);
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    let mut held: Vec<String> = (0..5)
+        .map(|index| add(root, &format!("Held work {index}")))
+        .collect();
+    for work_ref in &held {
+        acted(&work(root, &["claim", work_ref]), "claim");
+    }
+    held.sort();
+    let focus = held[4].clone();
+    acted(&work(root, &["claim", &focus]), "claim the focus");
+    let before = recorded(root);
+
+    let error = refused(&work(root, &["done", "delivered"]), "done");
+    assert_eq!(error["code"], "work_bare_target_ambiguous", "{error}");
+    let shown = vec![held[0].clone(), held[1].clone(), focus.clone()];
+    assert_eq!(error["details"]["held_refs"], json!(shown), "{error}");
+    assert_eq!(error["details"]["more"], 2, "{error}");
+    assert_eq!(error["details"]["focused_ref"], json!(focus), "{error}");
+    let explicit: Vec<String> = shown
+        .iter()
+        .map(|work_ref| format!("engram work done {work_ref} \"…\""))
+        .collect();
+    assert_eq!(error["next"], json!(explicit), "{error}");
+    let message = error["message"].as_str().expect("message");
+    assert!(
+        message.contains("holds 5 live claims") && message.contains("and 2 more"),
+        "{message}"
+    );
+    assert_eq!(
+        recorded(root),
+        before,
+        "a refused bare done recorded something"
+    );
 }

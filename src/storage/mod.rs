@@ -127,25 +127,61 @@ impl std::fmt::Display for ImplicitTargetConflict {
 }
 
 /// A bare `done` or `evaluate` refused because the session holds more than
-/// one live claim: the word, the focus it would have acted on, and every
-/// item the session holds, by short ref.
+/// one live claim: the word, the focus it would have acted on, and the items
+/// the session holds, by short ref, bounded like the implicit-target
+/// conflict's list.
 #[derive(Debug)]
 pub struct BareTargetAmbiguity {
     pub operation: String,
     pub focus: String,
-    /// Every item this session holds a live claim on, in ref order.
+    /// At most [`IMPLICIT_TARGET_HELD_SHOWN`] held items in ref order, the
+    /// focus always among them.
     pub held: Vec<String>,
+    /// Every live claim this session holds.
+    pub total: usize,
+    /// Held items not in `held`.
+    pub more: usize,
+}
+
+impl BareTargetAmbiguity {
+    /// The refusal for `focus` among `held`, every held ref in ref order:
+    /// the first refs up to the bound, with the focus in place of the last
+    /// of them when it falls beyond, so the list stays in ref order.
+    #[must_use]
+    pub fn new(operation: &str, focus: &str, held: &[String]) -> Self {
+        let total = held.len();
+        let mut shown: Vec<String> = held
+            .iter()
+            .take(IMPLICIT_TARGET_HELD_SHOWN)
+            .cloned()
+            .collect();
+        if shown.len() == IMPLICIT_TARGET_HELD_SHOWN && !shown.iter().any(|held| held == focus) {
+            shown.pop();
+            shown.push(focus.to_owned());
+        }
+        Self {
+            operation: operation.to_owned(),
+            focus: focus.to_owned(),
+            more: total - shown.len(),
+            held: shown,
+            total,
+        }
+    }
 }
 
 impl std::fmt::Display for BareTargetAmbiguity {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "{} named no item, and this session holds {} live claims: {}; nothing was recorded; name the item",
+            "{} named no item, and this session holds {} live claims: {}",
             self.operation,
-            self.held.len(),
+            self.total,
             self.held.join(", ")
-        )
+        )?;
+        if self.more > 0 {
+            write!(formatter, " and {} more", self.more)?;
+        }
+        write!(formatter, "; nothing was recorded; name the item")
     }
 }
 
@@ -169,6 +205,8 @@ pub(crate) fn parent_not_open_remedy(lifecycle: crate::domain::WorkLifecycle) ->
 #[cfg(test)]
 mod test_support;
 
+#[cfg(test)]
+pub(crate) use work::bound_assessment_fixture;
 #[cfg(test)]
 pub(crate) use work::test_support::source_mutation_from_basis;
 #[cfg(test)]

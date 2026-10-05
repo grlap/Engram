@@ -64,6 +64,8 @@ pub(in crate::storage) use unadmitted::{
     unadmitted_observation_is_consistent_on,
 };
 mod verification_bind;
+#[cfg(test)]
+pub(crate) use verification_bind::bound_assessment_fixture;
 pub(in crate::storage) use verification_bind::{
     VerificationBindOutcome, bind_verification_on, bound_receipt_matches_on,
 };
