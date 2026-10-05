@@ -34,10 +34,30 @@ impl AgentVerbs {
     /// holds. When the focus is not an item this session holds while it
     /// holds others, the word is refused and nothing is recorded; the caller
     /// names the item. A session that holds nothing, or whose focus is an
-    /// item it holds, acts on the focus as before.
+    /// item it holds, acts on the focus as before, except that a bare `done`
+    /// or `evaluate` is refused while another claim is live beside it.
     fn implicit_target(&self, word: &str, now: DateTime<Utc>) -> Result<WorkFocusView, VerbError> {
         let focus = self.ambient_focus(now)?;
         if matches!(self.holder(&focus, now), Holder::You(_)) {
+            // Completion and evaluation record a verdict on one item, so a
+            // bare one acts only when that item is certain: refused,
+            // recording nothing, while the session holds another live claim
+            // beside its held focus. Checked before any write and, for
+            // evaluate, before its attempt replay. A focus the session does
+            // not hold falls to the refusal below, which offers the focus.
+            if matches!(word, "done" | "evaluate") {
+                let held = self.service.held_work_refs(now)?;
+                if held.len() > 1 {
+                    return Err(StoreError::WorkBareTargetAmbiguous(Box::new(
+                        crate::storage::BareTargetAmbiguity {
+                            operation: word.to_owned(),
+                            focus: focus.status.work.short_ref.clone(),
+                            held: held.into_iter().map(|(_, short_ref)| short_ref).collect(),
+                        },
+                    ))
+                    .into());
+                }
+            }
             return Ok(focus);
         }
         let held: Vec<String> = self

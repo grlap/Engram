@@ -93,6 +93,12 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "more": conflict.more,
             "remedy": "repeat the word with the intended item named; nothing was recorded",
         }),
+        StoreError::WorkBareTargetAmbiguous(ambiguity) => json!({
+            "operation": ambiguity.operation,
+            "focused_ref": ambiguity.focus,
+            "held_refs": ambiguity.held,
+            "remedy": "repeat the word with the intended item named; nothing was recorded",
+        }),
         StoreError::InvalidWork(message)
             if message == PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL =>
         {
@@ -368,6 +374,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkNotFound(_) => "work_not_found",
         StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
         StoreError::WorkImplicitTargetConflict(_) => "work_implicit_target_conflict",
+        StoreError::WorkBareTargetAmbiguous(_) => "work_bare_target_ambiguous",
         StoreError::InvalidWork(_) | StoreError::WorkAncestorNotOpen { .. } => "work_invalid",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",

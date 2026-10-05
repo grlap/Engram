@@ -243,6 +243,20 @@ Repeating the word with the item named acts as before. A bare `handoff` keeps
 the focus without this check: its recipient accepts an item it does not hold
 yet, and an offer or a cancel already needs the claim.
 
+`done` and `evaluate` record a verdict on one item, so a bare one also needs
+that item to be certain. When the focus is an item this session holds and it
+holds another live claim beside it, a bare `done` or `evaluate` is refused
+with `work_bare_target_ambiguous`; a focus it does not hold keeps the refusal
+above, which offers the focus:
+- nothing is recorded, and a bare `evaluate` is refused before its attempt
+  replay is consulted;
+- `details.held_refs` lists every item the session holds, in ref order, and
+  `details.focused_ref` names the focus;
+- `next` offers the explicit command for each held item.
+Naming the item acts as before, and an explicit retry replays as before.
+With exactly one live claim, a bare `done` or `evaluate` acts on it as
+before. A bare `note`, `gate` or `handoff` is unchanged.
+
 An `add`, `claim` (with or without `--under`), `note`, `gate`, `evaluate` or
 `done` that actually moves this session's focus says so. Its receipt carries a
 top-level `focus_change` and one text line after the headline, for example

@@ -126,6 +126,29 @@ impl std::fmt::Display for ImplicitTargetConflict {
     }
 }
 
+/// A bare `done` or `evaluate` refused because the session holds more than
+/// one live claim: the word, the focus it would have acted on, and every
+/// item the session holds, by short ref.
+#[derive(Debug)]
+pub struct BareTargetAmbiguity {
+    pub operation: String,
+    pub focus: String,
+    /// Every item this session holds a live claim on, in ref order.
+    pub held: Vec<String>,
+}
+
+impl std::fmt::Display for BareTargetAmbiguity {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} named no item, and this session holds {} live claims: {}; nothing was recorded; name the item",
+            self.operation,
+            self.held.len(),
+            self.held.join(", ")
+        )
+    }
+}
+
 pub(crate) const PENDING_HANDOFF_REFUSAL: &str =
     "a live handoff offer blocks this operation; cancel the offer, or let it be accepted or expire";
 
@@ -1187,6 +1210,10 @@ pub enum StoreError {
     /// caller did not mean. Nothing was recorded.
     #[error("{0}")]
     WorkImplicitTargetConflict(Box<ImplicitTargetConflict>),
+    /// A bare `done` or `evaluate` while the session holds more than one
+    /// live claim: which item it means is not certain. Nothing was recorded.
+    #[error("{0}")]
+    WorkBareTargetAmbiguous(Box<BareTargetAmbiguity>),
     /// A host's read of an item's acceptance bindings was refused for a
     /// typed reason; never an empty result.
     #[error("acceptance binding read refused: {reason}")]

@@ -659,6 +659,14 @@ impl VerbError {
                 ));
                 (vec![self.error.to_string()], next)
             }
+            StoreError::WorkBareTargetAmbiguous(ambiguity) => (
+                vec![self.error.to_string()],
+                ambiguity
+                    .held
+                    .iter()
+                    .map(|work_ref| implicit_target_command(&ambiguity.operation, work_ref))
+                    .collect(),
+            ),
             StoreError::ProjectMemoryExists(key) => (
                 vec![match names {
                     ArgumentNames::Cli => format!(

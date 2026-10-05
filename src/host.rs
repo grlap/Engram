@@ -926,6 +926,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
         StoreError::WorkImplicitTargetConflict(_) => "work_implicit_target_conflict",
+        StoreError::WorkBareTargetAmbiguous(_) => "work_bare_target_ambiguous",
         StoreError::WorkCatalogCursorInvalid { .. } => "work_catalog_cursor_invalid",
         StoreError::WorkShowCursorInvalid { .. } => "work_show_cursor_invalid",
         StoreError::WorkNoteReferenceInvalid { .. } => "work_note_reference_invalid",

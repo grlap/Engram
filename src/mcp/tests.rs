@@ -2,7 +2,10 @@
 
 use super::*;
 use super::{
-    arguments::{AddArgs, DoneArgs, EvaluateArgs, ShowArgs},
+    arguments::{
+        AddArgs, DoneArgs, EvaluateArgs, GateArgs, HandoffActionArg, HandoffArgs, NoteArgs,
+        ShowArgs, WorkClaimArgs,
+    },
     parameters::Parameters,
 };
 use crate::{
@@ -1019,4 +1022,337 @@ fn invalid_argument_errors_carry_reminders_and_next() {
         assert_eq!(error["reminders"], json!([error["message"]]), "{field}");
         assert_eq!(error["next"], json!([]), "{field}");
     }
+}
+
+/// One MCP session holding two live claims, the second focused.
+struct TwoClaims {
+    server: McpServer,
+    database: std::path::PathBuf,
+    project: ProjectId,
+    focus: String,
+    other: String,
+    held: Vec<String>,
+    _directory: crate::test_support::TempHome,
+}
+
+fn two_claims_over_mcp(project: &str) -> TwoClaims {
+    let directory = crate::test_support::temp_home().expect("temp home");
+    let database = directory.path().join("work.sqlite3");
+    let (project, session) = (ProjectId(project.into()), SessionId("runner".into()));
+    let verbs = crate::verbs::AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "runner".into(),
+        session.clone(),
+        None,
+    );
+    let mut held = Vec::new();
+    for (second, title) in [(1, "First held work"), (2, "Second held work")] {
+        let added = verbs
+            .add(
+                AddInput {
+                    external: None,
+                    notes: Vec::new(),
+                    title: title.into(),
+                    outcome: None,
+                    acceptance: vec![format!("{title} is delivered")],
+                    bindings: Vec::new(),
+                    under: None,
+                    optional: false,
+                    priority: None,
+                    labels: Vec::new(),
+                    assignee: None,
+                    kind: None,
+                    evaluation_mode: None,
+                },
+                Utc::now() + chrono::Duration::milliseconds(second),
+            )
+            .expect("add");
+        let work_ref = added.value["work"]["short_ref"]
+            .as_str()
+            .expect("short ref")
+            .to_owned();
+        verbs
+            .claim(
+                crate::verbs::ClaimInput {
+                    work_ref: work_ref.clone(),
+                    ttl_seconds: Some(36_000),
+                    recover: None,
+                },
+                Utc::now() + chrono::Duration::milliseconds(second + 10),
+            )
+            .expect("claim");
+        held.push(work_ref);
+    }
+    let (other, focus) = (held[0].clone(), held[1].clone());
+    held.sort();
+    drop(verbs);
+    let server = McpServer::new_with_actor_context(
+        database.clone(),
+        project.clone(),
+        "runner".into(),
+        session,
+        None,
+        None,
+    );
+    TwoClaims {
+        server,
+        database,
+        project,
+        focus,
+        other,
+        held,
+        _directory: directory,
+    }
+}
+
+/// Every row of the work feed and object tables, so a refusal can be shown
+/// to record nothing.
+fn recorded_rows(database: &std::path::Path) -> (i64, i64) {
+    let connection = rusqlite::Connection::open(database).expect("store");
+    let count = |table: &str| {
+        connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count rows")
+    };
+    (count("work_feed_entries"), count("objects"))
+}
+
+fn acted(response: rmcp::model::CallToolResult, word: &str) -> Value {
+    assert_ne!(response.is_error, Some(true), "{word}: {response:?}");
+    response.structured_content.expect("receipt")
+}
+
+fn bare_gate_args(work_ref: Option<&str>) -> GateArgs {
+    GateArgs {
+        work_ref: work_ref.map(Into::into),
+        name: "unit".into(),
+        failed: None,
+        evidence_ref: None,
+    }
+}
+
+fn done_args(work_ref: Option<&str>) -> DoneArgs {
+    DoneArgs {
+        work_ref: work_ref.map(Into::into),
+        summary: Some("delivered".into()),
+        note: None,
+        links: None,
+        link_basis: None,
+        source_fingerprint: None,
+        landing: None,
+    }
+}
+
+/// Over MCP, a bare `done` or `evaluate` while the session holds two live
+/// claims is a structured refusal naming every held ref, recording nothing;
+/// a bare `note`, `gate` and `handoff` still act on the held focus.
+#[test]
+fn bare_done_and_evaluate_refuse_over_mcp_while_several_claims_are_live() {
+    let TwoClaims {
+        _directory: _home,
+        server,
+        database,
+        focus,
+        held,
+        ..
+    } = two_claims_over_mcp("mcp-bare-target");
+    let before = recorded_rows(&database);
+
+    let refused = |response: rmcp::model::CallToolResult, word: &str| {
+        assert_eq!(response.is_error, Some(true), "{word}");
+        let value = response.structured_content.expect("structured error");
+        let error = value["error"].clone();
+        assert_eq!(
+            error["code"], "work_bare_target_ambiguous",
+            "{word}: {value}"
+        );
+        assert_eq!(error["details"]["operation"], word);
+        assert_eq!(
+            error["details"]["held_refs"],
+            json!(held),
+            "{word}: {value}"
+        );
+        assert_eq!(error["details"]["focused_ref"], json!(focus), "{word}");
+        let explicit: Vec<String> = held
+            .iter()
+            .map(|work_ref| match word {
+                "done" => format!("engram work done {work_ref} \"…\""),
+                _ => format!("engram work evaluate {work_ref} …"),
+            })
+            .collect();
+        assert_eq!(error["next"], json!(explicit), "{word}: {value}");
+        assert!(
+            error["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("nothing was recorded")),
+            "{word}: {value}"
+        );
+    };
+    refused(server.done(Parameters(done_args(None))), "done");
+    refused(
+        server.evaluate(Parameters(EvaluateArgs {
+            work_ref: None,
+            mode: "independent_session".into(),
+            acceptance_basis: 1,
+            evidence_basis: 1,
+            verdicts: Vec::new(),
+            attempt: None,
+            source_fingerprint: None,
+            model: None,
+            execution_identity: None,
+            parent_session: None,
+            supersedes: None,
+        })),
+        "evaluate",
+    );
+    assert_eq!(
+        recorded_rows(&database),
+        before,
+        "a refused bare word recorded something"
+    );
+
+    let noted = acted(
+        server.note(Parameters(NoteArgs {
+            status: None,
+            work_ref: None,
+            text: "a finding on the held focus".into(),
+            refs: None,
+        })),
+        "note",
+    );
+    assert_eq!(noted["work"]["short_ref"], json!(focus), "{noted}");
+    let gated = acted(server.gate(Parameters(bare_gate_args(None))), "gate");
+    assert_eq!(gated["work"]["short_ref"], json!(focus), "{gated}");
+    for (action, word) in [
+        (HandoffActionArg::Offer, "handoff offer"),
+        (HandoffActionArg::Cancel, "handoff cancel"),
+    ] {
+        let handed = acted(
+            server.handoff(Parameters(HandoffArgs {
+                work_ref: None,
+                action,
+                to: matches!(action, HandoffActionArg::Offer).then(|| "another-session".into()),
+                summary: None,
+                reason: matches!(action, HandoffActionArg::Cancel).then(|| "kept it".into()),
+                ttl_seconds: Some(600),
+            })),
+            word,
+        );
+        assert!(handed.to_string().contains(&focus), "{word}: {handed}");
+    }
+}
+
+/// Over MCP with two live claims, `done` and `evaluate` naming the item act
+/// as they always have: the evaluation records, its exact resend replays, and
+/// done completes the named item. With one live claim left, a bare `gate`,
+/// `evaluate` and `done` act on it.
+#[test]
+fn explicit_and_single_claim_done_and_evaluate_act_over_mcp() {
+    let TwoClaims {
+        _directory: _home,
+        server,
+        database,
+        project,
+        focus,
+        other,
+        ..
+    } = two_claims_over_mcp("mcp-bare-target-explicit");
+    crate::SqliteStore::open(&database)
+        .expect("store")
+        .set_acceptance_evaluation_policy(
+            &crate::AcceptanceEvaluationPolicy {
+                allowed_modes: vec![crate::AcceptanceEvaluationMode::SameSession],
+                mechanical_basis: crate::domain::MechanicalBasis::Asserted,
+                require_source_freshness: false,
+            },
+            &crate::domain::ActorContext {
+                actor_id: "policy-admin".into(),
+                actor_kind: "host_operator".into(),
+                assurance: crate::domain::AssuranceLevel::Asserted,
+                run_id: None,
+                session_id: None,
+                source_tool: Some("mcp_test".into()),
+                source_skill: None,
+                provenance_chain: Vec::new(),
+                reason: "enable acceptance evaluation for the MCP test".into(),
+            },
+            "enable-evaluated-completion",
+            None,
+            Utc::now(),
+            &crate::DevelopmentNoopRedactor,
+        )
+        .expect("enable same-session evaluation");
+    // A passing evaluation's arguments, citing the item's run evidence
+    // through its run feed head at this moment; `named` decides whether it
+    // names the item. Kept as JSON so an exact resend can repeat it.
+    let evaluation = |work_ref: &str, named: bool| {
+        let store = crate::SqliteStore::open(&database).expect("store");
+        let run = store
+            .resolve_work_ref(&project, work_ref)
+            .expect("resolve")
+            .active_run_id
+            .expect("active run");
+        let citations = store
+            .work_run_evidence(run)
+            .expect("run evidence")
+            .into_iter()
+            .map(|hash| hash.as_str().to_owned())
+            .collect::<Vec<_>>();
+        assert!(!citations.is_empty(), "a gate to cite");
+        json!({
+            "work_ref": named.then(|| work_ref.to_owned()),
+            "mode": "same_session",
+            "acceptance_basis": 1,
+            "evidence_basis": store
+                .work_feed_head(&crate::domain::FeedId::RunExecution(run))
+                .expect("run feed head"),
+            "verdicts": [{
+                "criterion": 1,
+                "verdict": "pass",
+                "basis": "asserted",
+                "rationale": "the gate passed",
+                "evidence": citations,
+            }],
+            "attempt": format!("evaluate-{work_ref}"),
+        })
+    };
+    let evaluate = |arguments: &Value| {
+        server.evaluate(Parameters(
+            serde_json::from_value::<EvaluateArgs>(arguments.clone()).expect("evaluate arguments"),
+        ))
+    };
+
+    acted(
+        server.gate(Parameters(bare_gate_args(Some(&focus)))),
+        "gate",
+    );
+    let explicit = evaluation(&focus, true);
+    let evaluated = acted(evaluate(&explicit), "explicit evaluate");
+    let replayed = acted(evaluate(&explicit), "its exact resend");
+    assert_eq!(evaluated["evaluation"]["replayed"], false, "{evaluated}");
+    assert_eq!(replayed["evaluation"]["replayed"], true, "{replayed}");
+    assert_eq!(
+        replayed["evaluation"]["hash"], evaluated["evaluation"]["hash"],
+        "{replayed}"
+    );
+    let done = acted(server.done(Parameters(done_args(Some(&focus)))), "done");
+    assert_eq!(done["work"]["short_ref"], json!(focus), "{done}");
+
+    acted(
+        server.claim(Parameters(WorkClaimArgs {
+            work_ref: Some(other.clone()),
+            under: None,
+            ttl_seconds: Some(36_000),
+            recover: None,
+        })),
+        "claim",
+    );
+    let gated = acted(server.gate(Parameters(bare_gate_args(None))), "bare gate");
+    assert_eq!(gated["work"]["short_ref"], json!(other), "{gated}");
+    acted(evaluate(&evaluation(&other, false)), "bare evaluate");
+    let completed = acted(server.done(Parameters(done_args(None))), "bare done");
+    assert_eq!(completed["work"]["short_ref"], json!(other), "{completed}");
 }

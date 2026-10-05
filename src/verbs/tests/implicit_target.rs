@@ -689,3 +689,255 @@ fn every_command_offered_for_an_ended_focus_is_admitted() {
         }
     }
 }
+
+fn bare_evaluate(agent: &Agent, work_ref: Option<&str>, second: i64) -> Result<Receipt, VerbError> {
+    agent.verbs.evaluate(
+        EvaluateInput {
+            work_ref: work_ref.map(Into::into),
+            mode: "independent_session".into(),
+            acceptance_basis: 1,
+            evidence_basis: 1,
+            verdicts: Vec::new(),
+            attempt: None,
+            source_fingerprint: None,
+            model: None,
+            execution_identity: None,
+            parent_session: None,
+            supersedes: None,
+        },
+        at(second),
+    )
+}
+
+/// The refusal a bare done or evaluate gets while several claims are live.
+fn ambiguity(result: Result<Receipt, VerbError>) -> (VerbError, String, String, Vec<String>) {
+    let error = result.expect_err("a bare word is refused");
+    let StoreError::WorkBareTargetAmbiguous(ambiguity) = &error.error else {
+        panic!("expected a bare-target refusal, got {:?}", error.error);
+    };
+    let (operation, focus, held) = (
+        ambiguity.operation.clone(),
+        ambiguity.focus.clone(),
+        ambiguity.held.clone(),
+    );
+    (error, operation, focus, held)
+}
+
+// Two live claims, the focus one of them: a bare done or evaluate is refused
+// with every held ref and the explicit commands, and records nothing. Bare
+// note, gate and handoff act on the held focus as before, and a focus the
+// session does not hold keeps the older refusal.
+#[test]
+fn bare_done_and_evaluate_refuse_while_several_claims_are_live() {
+    let agent = agent("bare-target-several-claims");
+    let first = add(&agent, "First held work", None, 1);
+    let second = add(&agent, "Second held work", None, 2);
+    claim(&agent, &first, 3_600, 3);
+    claim(&agent, &second, 3_600, 4);
+    let mut held = vec![first.clone(), second.clone()];
+    held.sort();
+    let before = recorded(&agent);
+
+    let (error, operation, focus, named) = ambiguity(agent.verbs.done(DoneInput::default(), at(5)));
+    assert_eq!(
+        (operation.as_str(), focus.as_str()),
+        ("done", second.as_str())
+    );
+    assert_eq!(named, held, "every held ref, in ref order");
+    let guidance = error.guidance();
+    assert!(
+        guidance.reminders[0].contains("holds 2 live claims")
+            && guidance.reminders[0].contains("nothing was recorded"),
+        "{guidance:?}"
+    );
+    assert_eq!(
+        guidance.next,
+        held.iter()
+            .map(|work_ref| format!("engram work done {work_ref} \"…\""))
+            .collect::<Vec<_>>()
+    );
+    let wire = crate::store_error_value(&error.error);
+    assert_eq!(wire["error"]["code"], "work_bare_target_ambiguous");
+    assert_eq!(wire["error"]["details"]["held_refs"], json!(held), "{wire}");
+
+    let (error, operation, _, named) = ambiguity(bare_evaluate(&agent, None, 6));
+    assert_eq!(operation, "evaluate");
+    assert_eq!(named, held);
+    assert_eq!(
+        error.guidance().next,
+        held.iter()
+            .map(|work_ref| format!("engram work evaluate {work_ref} …"))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        recorded(&agent),
+        before,
+        "a refused bare word recorded something"
+    );
+
+    // Note and gate stay bare-capable on the held focus.
+    let bare = note(&agent, None, 7).expect("bare note on the held focus");
+    assert_eq!(bare.value["work"]["short_ref"], json!(second));
+    let gated = gate(&agent, None, 8).expect("bare gate on the held focus");
+    assert_eq!(gated.value["work"]["short_ref"], json!(second));
+
+    // A focus this session does not hold keeps the older refusal, which
+    // offers the focus, rather than the count's.
+    let unheld = add(&agent, "Filed follow-up", None, 9);
+    let (error, operation, focus, named) = conflict(agent.verbs.done(DoneInput::default(), at(10)));
+    assert_eq!(
+        (operation.as_str(), focus.as_str()),
+        ("done", unheld.as_str())
+    );
+    assert_eq!(named, held);
+    assert!(
+        error
+            .guidance()
+            .next
+            .contains(&format!("engram work claim {unheld}")),
+        "{:?}",
+        error.guidance()
+    );
+    claim(&agent, &second, 3_600, 11);
+    handoff_round_trip(&agent, &second, 12);
+}
+
+/// A bare handoff offer and its cancel both act on the held focus.
+fn handoff_round_trip(agent: &Agent, focus: &str, second: i64) {
+    for (action, at_second) in [
+        (
+            HandoffAction::Offer {
+                to: "another-session".into(),
+                summary: Some("taking over the focused item".into()),
+                ttl_seconds: Some(600),
+            },
+            second,
+        ),
+        (
+            HandoffAction::Cancel {
+                reason: "kept it".into(),
+            },
+            second + 1,
+        ),
+    ] {
+        let receipt = agent
+            .verbs
+            .handoff(
+                HandoffInput {
+                    work_ref: None,
+                    action,
+                },
+                at(at_second),
+            )
+            .expect("bare handoff on the held focus");
+        assert!(receipt.text().contains(focus), "{}", receipt.text());
+    }
+}
+
+/// A passing same-session evaluation of `work_ref`'s one criterion, citing
+/// its run evidence through the current run-feed head; `named` decides
+/// whether the input names the item or leaves it to the focus.
+fn passing_evaluation(agent: &Agent, project: &str, work_ref: &str, named: bool) -> EvaluateInput {
+    let store = SqliteStore::open(&agent.database).expect("store");
+    let run = store
+        .resolve_work_ref(&ProjectId(project.into()), work_ref)
+        .expect("resolve")
+        .active_run_id
+        .expect("active run");
+    let citations = store
+        .work_run_evidence(run)
+        .expect("run evidence")
+        .into_iter()
+        .map(|hash| hash.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert!(!citations.is_empty(), "a gate to cite");
+    let basis = store
+        .work_feed_head(&crate::domain::FeedId::RunExecution(run))
+        .expect("run feed head");
+    EvaluateInput {
+        supersedes: None,
+        work_ref: named.then(|| work_ref.to_owned()),
+        mode: "same_session".into(),
+        acceptance_basis: 1,
+        evidence_basis: basis,
+        verdicts: vec![crate::WorkCriterionVerdictInput {
+            criterion: 1,
+            verdict: "pass".into(),
+            basis: "asserted".into(),
+            rationale: "the gate passed".into(),
+            evidence: citations,
+        }],
+        attempt: Some(format!("evaluate-{work_ref}")),
+        source_fingerprint: None,
+        model: None,
+        execution_identity: None,
+        parent_session: None,
+    }
+}
+
+// With two live claims, done and evaluate naming the item act as they always
+// have: an evaluation records and its exact resend replays, and done
+// completes the named item. Once one live claim remains, a bare gate,
+// evaluate and done act on it.
+#[test]
+fn explicit_and_single_claim_done_and_evaluate_act_as_before() {
+    let project = "bare-target-explicit-then-one";
+    let agent = agent(project);
+    let first = add(&agent, "First held work", None, 1);
+    let second = add(&agent, "Second held work", None, 2);
+    claim(&agent, &first, 3_600, 3);
+    claim(&agent, &second, 3_600, 4);
+    super::evaluate::enable(
+        &agent.database,
+        &[crate::domain::AcceptanceEvaluationMode::SameSession],
+        5,
+    );
+    gate(&agent, Some(&second), 6).expect("explicit gate");
+    let evaluation = passing_evaluation(&agent, project, &second, true);
+    let evaluated = agent
+        .verbs
+        .evaluate(evaluation.clone(), at(7))
+        .expect("an explicit evaluate records while two claims are live");
+    let replayed = agent
+        .verbs
+        .evaluate(evaluation, at(8))
+        .expect("its exact resend replays");
+    assert_eq!(evaluated.value["evaluation"]["replayed"], false);
+    assert_eq!(replayed.value["evaluation"]["replayed"], true);
+    assert_eq!(
+        replayed.value["evaluation"]["hash"], evaluated.value["evaluation"]["hash"],
+        "{}",
+        replayed.value
+    );
+    let done = agent
+        .verbs
+        .done(
+            DoneInput {
+                work_ref: Some(second.clone()),
+                summary: Some("Delivered the second item".into()),
+                ..DoneInput::default()
+            },
+            at(9),
+        )
+        .expect("an explicit done completes the named item");
+    assert_eq!(done.value["work"]["short_ref"], json!(second));
+
+    claim(&agent, &first, 3_600, 10);
+    let gated = gate(&agent, None, 11).expect("a bare gate with one live claim");
+    assert_eq!(gated.value["work"]["short_ref"], json!(first));
+    agent
+        .verbs
+        .evaluate(passing_evaluation(&agent, project, &first, false), at(12))
+        .expect("a bare evaluate with one live claim");
+    let completed = agent
+        .verbs
+        .done(
+            DoneInput {
+                summary: Some("Delivered the first item".into()),
+                ..DoneInput::default()
+            },
+            at(13),
+        )
+        .expect("a bare done with one live claim");
+    assert_eq!(completed.value["work"]["short_ref"], json!(first));
+}
