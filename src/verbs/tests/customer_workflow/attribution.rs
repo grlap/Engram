@@ -260,10 +260,13 @@ fn attribution_staged_replay_keeps_labels_and_exact_payload_bytes() {
         SessionId("agent".into()),
         None,
     );
+    // Verbose keeps every change row whole; a compact preview would point
+    // this one at the same note's continuity row in the participated section.
     let preview = replacement
         .next(
             &NextInput {
                 peek: true,
+                verbose: true,
                 ..Default::default()
             },
             at(3),
@@ -272,6 +275,21 @@ fn attribution_staged_replay_keeps_labels_and_exact_payload_bytes() {
     for line in &first_lines {
         assert!(preview.text().contains(line), "{}", preview.text());
     }
+    let compact = replacement
+        .next(
+            &NextInput {
+                peek: true,
+                ..Default::default()
+            },
+            at(3),
+        )
+        .unwrap()
+        .text();
+    assert!(
+        compact.contains(&format!("{work} noted by peer-"))
+            && compact.contains(&format!("see participated {work}")),
+        "{compact}"
+    );
     assert_eq!(
         before,
         store

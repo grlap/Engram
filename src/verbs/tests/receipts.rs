@@ -123,6 +123,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
         holder: "another session".into(),
         note: Some(controls.clone()),
         note_session_id: Some(SessionId("reader".into())),
+        continuity: None,
     };
     let compact = CompactNextReceipt {
         backup_reminder: None,
@@ -256,6 +257,7 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
         holder: "another session".into(),
         note: Some("Own finding".repeat(12)),
         note_session_id: Some(SessionId("reader".into())),
+        continuity: None,
     };
     receipt.discovery.assigned = (3..5).map(row).collect();
     receipt.discovery.participated = (5..10).map(row).collect();

@@ -64,7 +64,7 @@ pub(in crate::storage) use unadmitted::{
     unadmitted_observation_is_consistent_on,
 };
 
-pub(crate) use discovery::WorkDiscoveryRow;
+pub(crate) use discovery::{DISCOVERY_ROWS, WorkDiscoveryRow};
 
 #[cfg(test)]
 pub(super) mod test_support;

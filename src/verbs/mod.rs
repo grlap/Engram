@@ -154,8 +154,13 @@ fn status_text_lines(
 ) -> Vec<String> {
     let body = terminal_note_block(&status.body_or_first_line);
     let mut body = body.split('\n');
+    let relation = if status.by_relation.is_some() {
+        " (same asserted actor, another session)"
+    } else {
+        ""
+    };
     let mut lines = vec![format!(
-        "{indent}{label}: [{}; {}] {}",
+        "{indent}{label}: [{}; {}{relation}] {}",
         status.recorded_at.to_rfc3339(),
         terminal_safe_line(&status.by),
         body.next().unwrap_or("")

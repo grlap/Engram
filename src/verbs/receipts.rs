@@ -1544,15 +1544,26 @@ pub(super) fn append_discovery_row(
     }
 }
 
+/// Marks a participated row reached through the reader's own asserted actor
+/// in another session; it never says "you" for that other session.
+pub(super) const SAME_ACTOR_DISCOVERY_MARKER: &str =
+    " [note by same asserted actor, another session]";
+
 pub(super) fn discovery_note_text(row: &crate::work_service::WorkDiscoverySummary) -> String {
-    row.note.as_ref().map_or(String::new(), |note| {
-        let session = row
-            .note_session_id
-            .as_ref()
-            .map_or(String::new(), |_| " [note session you]".into());
-        let separator = if session.is_empty() { " " } else { " — " };
+    let continuity = if row.continuity.is_some() {
+        SAME_ACTOR_DISCOVERY_MARKER
+    } else {
+        ""
+    };
+    row.note.as_ref().map_or(continuity.to_owned(), |note| {
+        let marker = if row.note_session_id.is_some() {
+            " [note session you]"
+        } else {
+            continuity
+        };
+        let separator = if marker.is_empty() { " " } else { " — " };
         let body = super::terminal_note_line(note);
-        format!("{session}{separator}{body}")
+        format!("{marker}{separator}{body}")
     })
 }
 

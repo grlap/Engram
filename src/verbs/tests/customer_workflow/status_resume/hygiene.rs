@@ -83,7 +83,14 @@ fn hygiene_status_labels_distinguish_actor_and_session_on_show_and_next() {
         let shown = reader.show(&reference, at(3)).unwrap();
         assert_eq!(shown.value["current_status"]["by"], expected);
         labels.push(shown.value["current_status"]["by"].clone());
-        assert!(shown.text().contains(&format!("; {expected}]")));
+        // The same asserted actor in another session is labelled as such.
+        let relation = if session == "replacement" {
+            " (same asserted actor, another session)"
+        } else {
+            ""
+        };
+        let expected_text = format!("; {expected}{relation}]");
+        assert!(shown.text().contains(&expected_text));
         assert!(
             !shown.value["current_status"]
                 .to_string()
@@ -101,7 +108,11 @@ fn hygiene_status_labels_distinguish_actor_and_session_on_show_and_next() {
                 .unwrap();
             let row = next_status_row(&next, &reference, verbose);
             assert_eq!(row["current_status"]["by"], expected);
-            assert!(next.text().contains(&format!("; {expected}]")));
+            assert_eq!(
+                row["current_status"].get("by_relation").is_some(),
+                !relation.is_empty()
+            );
+            assert!(next.text().contains(&expected_text));
             assert!(
                 !row["current_status"]
                     .to_string()

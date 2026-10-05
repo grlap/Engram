@@ -156,6 +156,7 @@ fn context_receipt() -> CompactNextReceipt {
         locator: "runtime-note-locator".into(),
         identity: Some(capture()),
         by: "you".into(),
+        by_relation: None,
     });
     let assigned = WorkDiscoverySummary {
         note_identity: Some(capture()),
@@ -167,6 +168,7 @@ fn context_receipt() -> CompactNextReceipt {
         external_ref: None,
         note: Some("Different ordinary note".into()),
         note_session_id: None,
+        continuity: None,
     };
     CompactNextReceipt {
         backup_reminder: None,

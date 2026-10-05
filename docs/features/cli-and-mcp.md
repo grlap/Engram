@@ -68,6 +68,13 @@ and per held/assigned `next` row as `{body_or_first_line, complete, recorded_at,
 locator, by}`. `by` is `you` for this actor and session as an agent, or a stable
 project-scoped `peer-…` display label for another session, including a session
 of the same actor. Actor-only records use a distinct `peer-actor-…` label.
+When the status was recorded as an agent by the reader's own actor in another
+session, and both that record and the reader carry an asserted actor id rather
+than a shell default, the status adds
+`by_relation: "same_actor_other_session"` and text appends
+`(same asserted actor, another session)` inside the bracket after the `peer-…`
+label. The relation compares asserted actor ids, not authenticated identity,
+and grants nothing: the other session's claim, focus and authority stay its own.
 Text follows the parent line
 on `show` and is indented beneath `next` rows. Bodies start with a 768-byte
 UTF-8 cap; larger bodies show a bounded first nonblank line. Final text/JSON
@@ -632,6 +639,18 @@ Rules that matter:
   agent, compact rows use `note_by: "you"` and text prints
   `[note session you]` before the body.
   Rich verbose JSON retains the original `note_session_id` instead.
+  After this session's own rows, within the same five, `participated` lists
+  Open work the reader's actor noted, observed or gated as an agent from
+  another session, which this session neither holds nor took part in. Such a
+  row carries `continuity: "same_actor_other_session"`, the first line of that
+  actor's latest such note, and text prints
+  `[note by same asserted actor, another session]` before the body; it never
+  says `you` or names the other session. Both the record and the reader must
+  carry an asserted actor id rather than a shell default, so a defaulted actor
+  gets no continuity rows. Matching compares asserted actor ids, not
+  authenticated identity. The row is navigation only: it inherits no claim,
+  focus or authority, and a claim held by the other session stays its own.
+  Handoff offers and `stranded_children` remain session-based.
   Compact repeated rows instead contain only `{ref, context_ref}`; the
   presence of `context_ref` is the discriminator. It names the retained
   `held REF`, `assigned REF`, or `participated REF` primary row containing

@@ -224,6 +224,22 @@ fn status_resume_both_roles_survive_session_replacement_without_authority() {
                         .display_identity()
                         .session(&SessionId(old_session.into()))
                 );
+                // A replacement session of the same asserted actor is told the
+                // status is its own actor's, from another session, not "you".
+                assert_eq!(
+                    row["current_status"]["by_relation"],
+                    if replacement {
+                        json!(crate::work_service::SAME_ACTOR_OTHER_SESSION)
+                    } else {
+                        Value::Null
+                    }
+                );
+                assert_eq!(
+                    receipt
+                        .text()
+                        .contains("(same asserted actor, another session)] "),
+                    replacement
+                );
                 assert!(receipt.text().contains(expected));
                 assert!(receipt.text().contains("planner:"));
                 if actor == "agent" && !replacement {

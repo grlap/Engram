@@ -174,7 +174,6 @@ pub(crate) use work::RequiredChildSuccessor;
 #[cfg(test)]
 pub(crate) use work::RestoredMember;
 pub(crate) use work::SelectedStatusNote;
-pub(crate) use work::WorkDiscoveryRow;
 pub(crate) use work::{
     AMBIGUOUS_LOCATOR_REFUSAL, CHECKPOINT_LOCATOR_REFUSAL, CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL,
     FOREIGN_LOCATOR_REFUSAL, HISTORY_LOCATOR_REFUSAL,
@@ -183,6 +182,7 @@ pub(crate) use work::{
     AssessmentBoundary, RecordedObligationEnd, VerificationAssessment,
     VerificationObligationAssessment,
 };
+pub(crate) use work::{DISCOVERY_ROWS, WorkDiscoveryRow};
 pub(crate) use work::{VerificationFacts, WorkNoteRecord};
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
 pub(crate) use work::{

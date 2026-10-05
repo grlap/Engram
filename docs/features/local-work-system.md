@@ -1104,7 +1104,22 @@ alone has no note summary. Another session's later note cannot replace that
 summary. For the reader's actor, compact previews use `note_by: "you"` and
 text prints `[note session you]` before the body. Rich verbose JSON retains
 `note_session_id`. Other actors' session fields are omitted.
-This is asserted context, not authenticated identity. Terminal rendering escapes
+This is asserted context, not authenticated identity.
+
+Same-actor continuity follows the session's own `participated` rows within the
+same five-row budget. It lists Open work, not held by this session and without
+its own participation, that the reader's actor noted, observed or gated as an
+agent from another session. Both that record and the reader must carry an
+asserted, non-defaulted actor id; a shell-defaulted actor id on either side
+proves nothing and yields no row. A row carries `continuity:
+"same_actor_other_session"` and that actor's latest such note line, and text
+prints `[note by same asserted actor, another session]` instead of a session
+marker; it never says `you` or discloses the other session's id. Matching
+compares asserted actor ids, not authenticated identity. The row is navigation
+only: no claim, focus, handoff or authority is inherited, and handoff offers
+and stranded-children participation remain session-based. A `current_status`
+recorded the same way adds `by_relation: "same_actor_other_session"`.
+Terminal rendering escapes
 controls and collapses whitespace to one line per discovery row; structured
 values retain their bounded content.
 

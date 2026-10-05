@@ -207,6 +207,10 @@ pub struct WorkDiscoverySummary {
     /// disclosed only when its canonical actor equals the reader's actor.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note_session_id: Option<SessionId>,
+    /// Set on a participated row reached through this reader's own asserted,
+    /// non-defaulted actor in another session: navigation, never authority.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuity: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

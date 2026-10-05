@@ -572,6 +572,25 @@ impl LocalWorkService {
         Ok(())
     }
 
+    /// Whether a record was made by this reader's own actor in another
+    /// session, with both sides asserted rather than defaulted: the same
+    /// byte-exact actor id, recorded as the agent words record, at asserted
+    /// assurance, with no shell-default marker on either side. A defaulted
+    /// actor id names a machine user, not an agent, so it never relates
+    /// sessions. The relation is for navigation and display only; it grants
+    /// nothing.
+    pub(crate) fn same_asserted_actor_elsewhere(&self, actor: &ActorContext) -> bool {
+        self.attribution_defaults.actor.is_none()
+            && actor.actor_id == self.actor_id
+            && actor.actor_kind == super::WORD_ACTOR_KIND
+            && actor.assurance == AssuranceLevel::Asserted
+            && !actor.actor_defaulted()
+            && actor
+                .session_id
+                .as_ref()
+                .is_some_and(|session| *session != self.session_id)
+    }
+
     pub(super) fn actor(&self, tool_name: &str, reason: &str) -> ActorContext {
         let mut provenance_chain = vec![ProvenanceLink {
             relation: ProvenanceRelation::AssertedBy,
@@ -582,18 +601,22 @@ impl LocalWorkService {
             provenance_chain.push(ProvenanceLink {
                 relation: ProvenanceRelation::DerivedFrom,
                 source: match source {
-                    WorkActorDefaultSource::OsUserEnvironment => "defaulted:os_user_environment",
-                    WorkActorDefaultSource::ProcessFallback => "defaulted:process_actor",
+                    WorkActorDefaultSource::OsUserEnvironment => {
+                        crate::domain::DEFAULTED_OS_USER_ACTOR_SOURCE
+                    }
+                    WorkActorDefaultSource::ProcessFallback => {
+                        crate::domain::DEFAULTED_PROCESS_ACTOR_SOURCE
+                    }
                 }
                 .into(),
-                reference: Some("actor_id".into()),
+                reference: Some(crate::domain::DEFAULTED_ACTOR_REFERENCE.into()),
             });
         }
         if self.attribution_defaults.session {
             provenance_chain.push(ProvenanceLink {
                 relation: ProvenanceRelation::DerivedFrom,
-                source: "defaulted:process_session".into(),
-                reference: Some("session_id".into()),
+                source: crate::domain::DEFAULTED_PROCESS_SESSION_SOURCE.into(),
+                reference: Some(crate::domain::DEFAULTED_SESSION_REFERENCE.into()),
             });
         }
         if let Some(actor_context) = &self.actor_context {

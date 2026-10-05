@@ -164,6 +164,9 @@ pub(crate) const WORK_UPDATE_CLAIM_RECOVERY_ACTION: &str =
 /// The actor kind the agent words record their actions as, and so the kind a
 /// record must carry for its reader's display to call it "you".
 pub(crate) const WORD_ACTOR_KIND: &str = "agent";
+/// The relation of a record made by this reader's own asserted actor in
+/// another session: same-actor continuity, shown for navigation only.
+pub const SAME_ACTOR_OTHER_SESSION: &str = "same_actor_other_session";
 pub(crate) const COMPLETED_WORK_LATE_FINDING_REFUSAL: &str = "completed work cannot be mutated; use note or gate to record a late finding without reopening it";
 
 /// Exact structured agent response for one full project-memory read.

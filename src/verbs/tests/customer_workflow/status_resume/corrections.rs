@@ -24,7 +24,16 @@ fn status_correction_verbose_guidance_counts_toward_budget() {
         for reference in &references {
             capture_status(&owner, reference, body, 4);
             capture_status(&peer, reference, body, 5);
-            note(&owner, reference, "Ordinary progress", 6);
+            // The reader is the owner's actor in a replacement session, so the
+            // owner's latest note reaches it as a continuity row. A distinct,
+            // equally long note per capture keeps that row's size fixed;
+            // an identical note would be a retry, leaving the status latest.
+            note(
+                &owner,
+                reference,
+                &format!("Ordinary progress at {:03}", body.len()),
+                6,
+            );
         }
         // Consume exact delivery separately; only advisory fitting is tested.
         for _ in 0..32 {

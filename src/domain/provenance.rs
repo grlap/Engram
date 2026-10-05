@@ -90,24 +90,54 @@ pub(crate) const ACTOR_CONTEXT_PROVENANCE_REFERENCE: &str = "actor_context";
 pub(crate) const ACTOR_CONTEXT_NORMALIZED_REFERENCE: &str = "actor_context_normalized";
 /// Maximum retained UTF-8 bytes for optional host-asserted actor context.
 pub const MAX_ACTOR_CONTEXT_BYTES: usize = 256;
+/// Provenance source marking an actor id taken from an OS-user variable.
+pub(crate) const DEFAULTED_OS_USER_ACTOR_SOURCE: &str = "defaulted:os_user_environment";
+/// Provenance source marking a synthetic actor id this process supplied.
+pub(crate) const DEFAULTED_PROCESS_ACTOR_SOURCE: &str = "defaulted:process_actor";
+/// Provenance reference naming the field a shell default supplied.
+pub(crate) const DEFAULTED_ACTOR_REFERENCE: &str = "actor_id";
+/// Provenance source marking a session id this process supplied.
+pub(crate) const DEFAULTED_PROCESS_SESSION_SOURCE: &str = "defaulted:process_session";
+/// Provenance reference naming a defaulted session id.
+pub(crate) const DEFAULTED_SESSION_REFERENCE: &str = "session_id";
+
+impl ProvenanceLink {
+    /// Whether this link marks the actor id as a shell default.
+    fn defaults_actor(&self) -> bool {
+        self.relation == ProvenanceRelation::DerivedFrom
+            && matches!(
+                self.source.as_str(),
+                DEFAULTED_OS_USER_ACTOR_SOURCE | DEFAULTED_PROCESS_ACTOR_SOURCE
+            )
+            && self.reference.as_deref() == Some(DEFAULTED_ACTOR_REFERENCE)
+    }
+
+    /// Whether this link marks the session id as a process default.
+    fn defaults_session(&self) -> bool {
+        self.relation == ProvenanceRelation::DerivedFrom
+            && self.source == DEFAULTED_PROCESS_SESSION_SOURCE
+            && self.reference.as_deref() == Some(DEFAULTED_SESSION_REFERENCE)
+    }
+}
 
 impl ActorContext {
+    /// Whether this actor id was supplied by a shell default (the OS user or
+    /// a synthetic process actor) rather than asserted by the caller or host.
+    #[must_use]
+    pub(crate) fn actor_defaulted(&self) -> bool {
+        self.provenance_chain
+            .iter()
+            .any(ProvenanceLink::defaults_actor)
+    }
+
     /// Retry comparison excludes only the known shell-default audit markers.
     /// Principals, assurance, host context and all other provenance still bind
     /// the intent. Persist the original actor, never this comparison projection.
     pub(crate) fn retry_stable(&self) -> Self {
         let mut actor = self.clone();
-        actor.provenance_chain.retain(|link| {
-            !(link.relation == ProvenanceRelation::DerivedFrom
-                && matches!(
-                    (link.source.as_str(), link.reference.as_deref()),
-                    ("defaulted:process_session", Some("session_id"))
-                        | (
-                            "defaulted:os_user_environment" | "defaulted:process_actor",
-                            Some("actor_id")
-                        )
-                ))
-        });
+        actor
+            .provenance_chain
+            .retain(|link| !(link.defaults_actor() || link.defaults_session()));
         actor
     }
 

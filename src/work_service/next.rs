@@ -500,6 +500,30 @@ impl LocalWorkService {
                 }
             }
         }
+        if sections.contains(&WorkNextSection::Participated)
+            && self.attribution_defaults.actor.is_none()
+        {
+            // Same-actor continuity follows the session's own rows within the
+            // same budget; it is navigation only and inherits nothing.
+            let page = store.work_discovery_same_actor(
+                &self.project_id,
+                &self.session_id,
+                &self.actor_id,
+                now,
+            )?;
+            let room = crate::storage::DISCOVERY_ROWS.saturating_sub(discovery.participated.len());
+            let shown = page.items.len().min(room);
+            discovery.participated_omitted += page.omitted + (page.items.len() - shown);
+            discovery
+                .participated
+                .extend(page.items.into_iter().take(shown).map(|row| {
+                    let mut summary = discovery_summary(row, self.display_identity(), now);
+                    // The note is by another session; never call it this one's.
+                    summary.note_session_id = None;
+                    summary.continuity = Some(super::SAME_ACTOR_OTHER_SESSION.to_owned());
+                    summary
+                }));
+        }
         if sections.contains(&WorkNextSection::Participated) {
             match self.stranded_children_advice(store, now) {
                 Ok((rows, omitted)) => {
@@ -698,6 +722,7 @@ fn discovery_summary(
             && row.note_actor_kind.as_deref() == Some(super::WORD_ACTOR_KIND))
         .then(|| identity.session.clone()),
         note: row.note.map(|note| compact_text(&note)),
+        continuity: None,
     }
 }
 

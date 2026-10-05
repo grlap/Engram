@@ -20,6 +20,10 @@ pub struct WorkCurrentStatus {
     pub locator: String,
     /// Relative asserted actor/session context; not authenticated identity.
     pub by: String,
+    /// Set when the note is by this reader's own asserted, non-defaulted
+    /// actor in another session: continuity for navigation, not authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by_relation: Option<String>,
 }
 
 impl WorkCurrentStatus {
@@ -114,6 +118,9 @@ impl LocalWorkService {
                 &note.actor.actor_kind,
                 note.actor.session_id.as_ref(),
             ),
+            by_relation: self
+                .same_asserted_actor_elsewhere(&note.actor)
+                .then(|| SAME_ACTOR_OTHER_SESSION.to_owned()),
         }
     }
 }
