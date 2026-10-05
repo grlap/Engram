@@ -28,6 +28,59 @@ fn focused_ref(database: &std::path::Path, project: &ProjectId, session: &str) -
         .map(|work_id| store.get_work_item(work_id).unwrap().short_ref)
 }
 
+// The first three words on a store nothing has opened run at once through one
+// shared session, as an MCP server runs them, each held after it has decided
+// the store is new: all three succeed, each with its own item.
+#[test]
+fn concurrent_first_adds_on_a_new_store_all_succeed() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("work.sqlite3");
+    let session = SessionId("agent".into());
+    let service = Arc::new(LocalWorkService::new(
+        database.clone(),
+        ProjectId("first-words".into()),
+        "agent".into(),
+        session.clone(),
+        None,
+    ));
+    let gate = crate::storage::ColdOpenGate::new(3);
+    let handles = ["One", "Two", "Three"]
+        .into_iter()
+        .map(|title| {
+            let words = AgentVerbs::with_shared_service(
+                Arc::clone(&service),
+                "agent".into(),
+                session.clone(),
+            );
+            let gate = Arc::clone(&gate);
+            std::thread::spawn(move || {
+                crate::storage::hold_cold_open_at(gate);
+                words
+                    .add(
+                        AddInput {
+                            title: title.into(),
+                            ..AddInput::default()
+                        },
+                        at(1),
+                    )
+                    .map(|receipt| receipt.value["work"]["short_ref"].clone())
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut refs = handles
+        .into_iter()
+        .map(|handle| {
+            handle
+                .join()
+                .expect("add thread")
+                .unwrap_or_else(|error| panic!("a first add failed: {error}"))
+        })
+        .collect::<Vec<_>>();
+    refs.sort_by_key(ToString::to_string);
+    refs.dedup();
+    assert_eq!(refs.len(), 3, "three distinct items: {refs:?}");
+}
+
 // Two adds run at once through one shared session, as an MCP server runs
 // them. Each receipt names its own item and the focus its own call set,
 // whatever order they finish in; a following implicit-target note goes to the
@@ -47,8 +100,6 @@ fn concurrent_adds_keep_their_own_refs_and_the_implicit_target_is_the_last_commi
     ));
     let verbs =
         || AgentVerbs::with_shared_service(Arc::clone(&service), "agent".into(), session.clone());
-    // Initialize the store before racing words on it.
-    verbs().ls(&LsInput::default(), at(0)).ok();
     add(&verbs(), "Initial", None, false, 0);
     for round in 1..7_i64 {
         let barrier = Arc::new(std::sync::Barrier::new(2));

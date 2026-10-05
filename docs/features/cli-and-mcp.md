@@ -378,8 +378,13 @@ compact holders, statuses, reminders and changes use the same display labels.
 record's author (notes, history, statuses, changes, evaluations and `next`'s
 note rows) it also needs the record to be made as the agent this session is: a
 record of this session and actor made as another kind of actor, such as a host
-operator, is labelled by its actor alone. Holder and other session labels name
-the session only. Another
+operator, is labelled by its actor alone. `next`'s changes leave out the
+reader's own changes, those whose author would be labelled `you`: the agent
+words' own records, and records the host-control channel makes for this
+session as the agent. A change of this session made as another kind of actor,
+or by another actor, is listed with its label, and a change not visible from
+the reader's focus is listed as not visible, whoever made it. Holder and other session
+labels name the session only. Another
 session has a deterministic project-scoped `peer-…` pseudonym; actor-only
 attribution uses `peer-actor-…`. Labels do not depend on row order or the reader.
 Bounded host-asserted context may follow the label in parentheses.

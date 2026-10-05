@@ -201,6 +201,13 @@ chooses, repairs, or rewrites the active head.
 The first-class work schema stores the current build marker declared in
 `src/schema.rs`. Open preflights that marker before any DDL and refuses a
 store created by a different build without mutation.
+Open reads all of its preflight probes from one snapshot. A new store's core
+schema, initial control policy and work schema commit in one transaction, so
+no opener ever sees part of a store. Several first openers of one new file may
+all find it new: each checks again under the write lock, and one that finds
+the store initialized meanwhile starts its open again once, against that
+store. The switch to write-ahead logging, which SQLite refuses at once while
+another opener holds a lock, is retried within the busy timeout.
 Once both core and work schemas are current, open takes the read-only fast
 path: it verifies required durable objects, columns, policy rows, and host
 path identity without starting a write transaction when every rebuildable

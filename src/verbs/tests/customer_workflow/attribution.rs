@@ -842,6 +842,132 @@ fn refusals_without_details_name_their_work_in_the_message_alone() {
     }
 }
 
+/// Records a note on `work` in the reader's session ("agent") under the
+/// reader's live claim, as `actor_id` of `actor_kind`.
+fn same_session_note(
+    path: &std::path::Path,
+    project: &ProjectId,
+    work: &str,
+    actor_id: &str,
+    actor_kind: &str,
+    summary: &str,
+    second: i64,
+) {
+    let mut store = SqliteStore::open(path).expect("store");
+    let item = store.resolve_work_ref(project, work).expect("item");
+    let claim = store
+        .current_work_claim(item.work_id)
+        .expect("claim read")
+        .expect("live claim");
+    store
+        .record_work_note(
+            &crate::domain::RecordWorkNoteRequest {
+                status: false,
+                work_id: item.work_id,
+                run_id: claim.run_id,
+                expected_work_revision: item.revision,
+                holder: claim.holder.clone(),
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+                summary: summary.into(),
+                refs: Vec::new(),
+                actor: crate::ActorContext {
+                    actor_id: actor_id.into(),
+                    actor_kind: actor_kind.into(),
+                    assurance: crate::domain::AssuranceLevel::Asserted,
+                    run_id: None,
+                    session_id: Some(SessionId("agent".into())),
+                    source_tool: None,
+                    source_skill: None,
+                    provenance_chain: Vec::new(),
+                    reason: "record in this session as another author".into(),
+                },
+                idempotency_key: format!("{actor_id}-{actor_kind}-{second}"),
+                recorded_at: at(second),
+            },
+            &crate::memory::DevelopmentNoopRedactor,
+        )
+        .expect("same-session note");
+}
+
+// next's changes skip only the reader's own changes, by the rule of the "you"
+// label: a note of this session made as another kind of actor, or by another
+// actor, is listed with its actor label, while the session's own agent
+// changes stay out.
+#[test]
+fn changes_list_same_session_records_by_another_kind_or_actor() {
+    let (_directory, reader, path, project) = fixture();
+    let work = add(&reader, "Changes authorship", None, false, 0);
+    reader
+        .claim(
+            ClaimInput {
+                work_ref: work.clone(),
+                ttl_seconds: Some(3600),
+                recover: None,
+            },
+            at(1),
+        )
+        .expect("claim");
+    note(&reader, &work, "Agent note", 2);
+    same_session_note(
+        &path,
+        &project,
+        &work,
+        "agent",
+        "host_operator",
+        "Operator note",
+        3,
+    );
+    same_session_note(
+        &path,
+        &project,
+        &work,
+        "someone",
+        "agent",
+        "Someone note",
+        4,
+    );
+    // Advancing next delivers the feed a page at a time; read it to the end.
+    let mut changes = Vec::new();
+    for second in 5..15 {
+        let next = reader
+            .next(&NextInput::default(), at(second))
+            .expect("next");
+        let page = next.value["changes"]
+            .as_array()
+            .expect("changes")
+            .iter()
+            .map(|change| change.as_str().expect("change line").to_owned())
+            .collect::<Vec<_>>();
+        if page.is_empty() {
+            break;
+        }
+        changes.extend(page);
+    }
+    let identity = reader.service.display_identity();
+    for (summary, actor) in [("Operator note", "agent"), ("Someone note", "someone")] {
+        let label = identity.actor(actor);
+        assert!(
+            changes
+                .iter()
+                .any(|line| line.contains(summary) && line.contains(&format!("by {label}"))),
+            "{summary} is listed by {label}: {changes:#?}"
+        );
+    }
+    assert!(
+        changes.iter().all(|line| !line.contains("Agent note")),
+        "the session's own note stays out: {changes:#?}"
+    );
+    assert!(
+        changes.iter().all(|line| !line.contains("by you")),
+        "{changes:#?}"
+    );
+    assert!(
+        changes.iter().all(|line| !line.contains(" created")),
+        "the session's own add stays out: {changes:#?}"
+    );
+}
+
 // A record of this session by this actor but made as another kind of actor,
 // a host operator say, is not labelled "you" in show's notes or history; it
 // is labelled by its actor alone. The session's own records, which the agent

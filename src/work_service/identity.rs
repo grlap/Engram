@@ -41,13 +41,19 @@ impl DisplayIdentity<'_> {
     pub(crate) fn author(&self, actor: &str, kind: &str, session: Option<&SessionId>) -> String {
         match session {
             Some(session)
-                if session != self.session
-                    || (actor == self.actor && kind == super::WORD_ACTOR_KIND) =>
+                if session != self.session || self.is_reader(actor, kind, Some(session)) =>
             {
                 self.session(session)
             }
             _ => self.actor(actor),
         }
+    }
+
+    /// Whether a record is the reader's own: made in this session by this
+    /// actor as the kind of actor the agent words record as, exactly when
+    /// [`Self::author`] labels it "you".
+    pub(crate) fn is_reader(&self, actor: &str, kind: &str, session: Option<&SessionId>) -> bool {
+        session == Some(self.session) && actor == self.actor && kind == super::WORD_ACTOR_KIND
     }
 }
 
@@ -138,5 +144,20 @@ mod tests {
             identity.author("reader", WORD_ACTOR_KIND, None),
             identity.actor("reader")
         );
+        // The reader's own records are exactly those labelled "you".
+        for (actor, kind, session) in [
+            ("reader", WORD_ACTOR_KIND, Some(&session)),
+            ("reader", "host_operator", Some(&session)),
+            ("someone", WORD_ACTOR_KIND, Some(&session)),
+            ("reader", WORD_ACTOR_KIND, Some(&other)),
+            ("reader", WORD_ACTOR_KIND, None),
+        ] {
+            assert_eq!(
+                identity.is_reader(actor, kind, session),
+                identity.author(actor, kind, session) == "you",
+                "{actor} {kind} {session:?}"
+            );
+        }
+        assert!(identity.is_reader("reader", WORD_ACTOR_KIND, Some(&session)));
     }
 }

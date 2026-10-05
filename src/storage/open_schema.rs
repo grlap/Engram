@@ -17,7 +17,37 @@ use super::{
 };
 
 #[cfg(test)]
-use super::{building_schema_reference, fail_cold_schema_after_ddl};
+use super::{
+    building_schema_reference, cold_open_rendezvous, fail_cold_schema_after_ddl,
+    fail_cold_schema_before_commit,
+};
+
+/// Why an open refuses when, twice running, another opener initialized the
+/// store between its probe and its write lock: a store is initialized once,
+/// so the second time cannot happen; the refusal stops rather than loop.
+const COLD_OPEN_RESTART_REFUSAL: &str =
+    "the store was initialized by another opener twice while this one opened it; open it again";
+
+/// That refusal, typed at its source as SQLite's busy refusal: a race with
+/// another opener is transient, so it is classified as a busy store to open
+/// again, never as a corrupt one.
+fn cold_open_restart_refusal() -> StoreError {
+    StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+        Some(COLD_OPEN_RESTART_REFUSAL.into()),
+    ))
+}
+
+/// What one attempt to open a store found.
+enum OpenAttempt {
+    Opened(SqliteStore),
+    /// Another opener initialized the store between this attempt's probe and
+    /// its write lock; nothing was written, and the open starts again.
+    InitializedMeanwhile {
+        connection: Connection,
+        initial_control_policy: Option<InitialControlPolicy>,
+    },
+}
 
 mod restore_copy;
 mod store_copy;
@@ -25,6 +55,8 @@ pub use restore_copy::{LiveAuthority, RestoreCopyReport, installed_sidecar_probl
 pub(crate) use store_copy::CopyProbePoint;
 pub use store_copy::{CopyInterrupt, VerifiedStoreCopy};
 
+#[cfg(test)]
+mod cold_open_tests;
 #[cfg(test)]
 mod tests;
 
@@ -763,21 +795,57 @@ impl SqliteStore {
         )
     }
 
+    /// Opens the store on `connection`. Openers of a new store decide that it
+    /// is new before they take its write lock, so one may find under the lock
+    /// that another has initialized it meanwhile; that opener starts again
+    /// once, from the top, against the initialized store.
+    fn from_connection_with_busy_timeout(
+        connection: Connection,
+        host_path_policy: Option<HostPathPolicy>,
+        initial_control_policy: Option<InitialControlPolicy>,
+        busy_timeout: Duration,
+    ) -> Result<Self, StoreError> {
+        match Self::open_attempt(
+            connection,
+            host_path_policy,
+            initial_control_policy,
+            busy_timeout,
+        )? {
+            OpenAttempt::Opened(store) => Ok(store),
+            OpenAttempt::InitializedMeanwhile {
+                connection,
+                initial_control_policy,
+            } => match Self::open_attempt(
+                connection,
+                host_path_policy,
+                initial_control_policy,
+                busy_timeout,
+            )? {
+                OpenAttempt::Opened(store) => Ok(store),
+                OpenAttempt::InitializedMeanwhile { .. } => Err(cold_open_restart_refusal()),
+            },
+        }
+    }
+
     #[allow(
         clippy::if_not_else,
         clippy::too_many_lines,
         reason = "the cold-schema branch stays adjacent to the complete idempotent DDL for auditability"
     )]
-    fn from_connection_with_busy_timeout(
+    fn open_attempt(
         mut connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
         initial_control_policy: Option<InitialControlPolicy>,
         busy_timeout: Duration,
-    ) -> Result<Self, StoreError> {
+    ) -> Result<OpenAttempt, StoreError> {
         use crate::phase_trace::control::{ControlPhase, enter};
         enter(ControlPhase::SchemaCheck);
         connection.busy_timeout(busy_timeout)?;
         let read_only = connection.is_readonly("main")?;
+        // Every probe below reads one snapshot, so another opener committing
+        // a new store meanwhile cannot make two of them disagree. An error
+        // drops the connection, which ends the read.
+        connection.execute_batch("BEGIN DEFERRED;")?;
         let store_has_schema = Self::sqlite_user_schema_exists(&connection)?;
         if read_only && !store_has_schema {
             return Err(StoreError::StoreNotInitialized);
@@ -816,17 +884,32 @@ impl SqliteStore {
                 super::schema_diagnostics::CORE_PROJECTION_REFUSAL_PREFIX
             )));
         }
+        // The snapshot ends before the connection settings, which do not
+        // apply inside a transaction, and before any write lock.
+        connection.execute_batch("COMMIT;")?;
         connection.execute_batch(
             "PRAGMA foreign_keys = ON;
              PRAGMA synchronous = NORMAL;",
         )?;
-        let journal_mode =
-            connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))?;
-        if !read_only && !matches!(journal_mode.as_str(), "wal" | "memory") {
-            connection.execute_batch("PRAGMA journal_mode = WAL;")?;
+        if !read_only {
+            Self::use_write_ahead_log(&connection, busy_timeout)?;
         }
         if !read_only && !core_schema_complete {
+            #[cfg(test)]
+            if !building_schema_reference() {
+                cold_open_rendezvous();
+            }
             connection.execute_batch("BEGIN IMMEDIATE;")?;
+            // The probes above ran before this lock; another opener may have
+            // initialized the store since. Every check then runs again on
+            // what it committed.
+            if Self::sqlite_user_schema_exists(&connection)? {
+                connection.execute_batch("ROLLBACK;")?;
+                return Ok(OpenAttempt::InitializedMeanwhile {
+                    connection,
+                    initial_control_policy,
+                });
+            }
             // `project_context_revisions` and `agent_context_revisions` once
             // fenced the turn grant's context packet. Nothing reads or updates
             // them now. They stay, with any rows a store already holds, only
@@ -1092,17 +1175,56 @@ impl SqliteStore {
                 control_policy_preexisted,
                 initial_control_policy,
             )?;
+            work::initialize_schema(&mut connection, allow_initialization)?;
         } else {
             Self::initialize_control_policy_on(&connection, initial_control_policy)?;
+            // The work schema commits with the core schema, so no opener
+            // ever sees a store that has one without the other.
+            work::create_schema_on(&connection)?;
+            #[cfg(test)]
+            if fail_cold_schema_before_commit() {
+                return Err(StoreError::InvalidControlProjection(
+                    "injected cold-schema failure before commit".into(),
+                ));
+            }
             connection.execute_batch("COMMIT;")?;
         }
-        work::initialize_schema(&mut connection, allow_initialization)?;
         let work_schema_version = work::schema_version(&connection)?;
-        Ok(Self {
+        Ok(OpenAttempt::Opened(Self {
             connection,
             work_schema_version,
             host_path_policy,
-        })
+        }))
+    }
+
+    /// Puts the store in write-ahead-log mode, outside any transaction, as
+    /// every writable open does. Switching a new file's journal mode needs
+    /// an exclusive lock, and SQLite refuses the switch at once, without its
+    /// busy wait, while another opener of the same new file holds a lock. The
+    /// switch is retried until `busy_timeout`, reading the mode again first,
+    /// since another opener may have switched it meanwhile.
+    fn use_write_ahead_log(
+        connection: &Connection,
+        busy_timeout: Duration,
+    ) -> Result<(), StoreError> {
+        let deadline = std::time::Instant::now() + busy_timeout;
+        loop {
+            let mode =
+                connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))?;
+            if matches!(mode.as_str(), "wal" | "memory") {
+                return Ok(());
+            }
+            match connection.execute_batch("PRAGMA journal_mode = WAL;") {
+                Ok(()) => return Ok(()),
+                Err(rusqlite::Error::SqliteFailure(error, _))
+                    if error.code == rusqlite::ErrorCode::DatabaseBusy
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 
     fn control_policy_row_exists(connection: &Connection) -> Result<bool, StoreError> {
@@ -1311,6 +1433,13 @@ impl SqliteStore {
             return Err(StoreError::InvalidControlProjection(
                 "current control policy operation-result table is missing".into(),
             ));
+        }
+        // An open's probes already read one snapshot, which these reads join;
+        // a caller outside a transaction takes its own.
+        if !connection.is_autocommit() {
+            let policy = Self::verify_control_policy_history(connection)?;
+            Self::load_obligation_rule_set_on(connection, &policy.obligation_rule_set)?;
+            return Ok(());
         }
         let snapshot = connection.unchecked_transaction()?;
         let policy = Self::verify_control_policy_history(&snapshot)?;

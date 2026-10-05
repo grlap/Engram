@@ -1668,6 +1668,95 @@ const MAX_CONTROL_POLICY_IDEMPOTENCY_KEY_BYTES: usize = 512;
 thread_local! {
     static CONTROL_POLICY_VERSION_LOAD_COUNT: Cell<usize> = const { Cell::new(0) };
     static FAIL_COLD_SCHEMA_AFTER_DDL: Cell<bool> = const { Cell::new(false) };
+    static BEFORE_COLD_LOCK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+    static BETWEEN_WORK_SCHEMA_PROBES: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+    static FAIL_COLD_SCHEMA_BEFORE_COMMIT: Cell<bool> = const { Cell::new(false) };
+}
+
+#[cfg(test)]
+fn fail_cold_schema_before_commit() -> bool {
+    FAIL_COLD_SCHEMA_BEFORE_COMMIT.replace(false)
+}
+
+/// Runs `action` once, on this thread's next open of a new store, after the
+/// open has decided the store is new and before it takes the write lock.
+#[cfg(test)]
+pub(crate) fn before_cold_lock(action: impl FnOnce() + 'static) {
+    BEFORE_COLD_LOCK.with(|slot| *slot.borrow_mut() = Some(Box::new(action)));
+}
+
+/// A point where several openers of a new store wait for each other after
+/// deciding the store is new. Waiting is bounded, so an opener that fails
+/// before arriving turns into a failed test rather than a hung one.
+#[cfg(test)]
+pub(crate) struct ColdOpenGate {
+    arrived: std::sync::Mutex<usize>,
+    all_arrived: std::sync::Condvar,
+    expected: usize,
+}
+
+#[cfg(test)]
+impl ColdOpenGate {
+    pub(crate) fn new(expected: usize) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            arrived: std::sync::Mutex::new(0),
+            all_arrived: std::sync::Condvar::new(),
+            expected,
+        })
+    }
+
+    fn arrive(&self) {
+        let mut arrived = self.arrived.lock().expect("cold-open gate");
+        *arrived += 1;
+        self.all_arrived.notify_all();
+        let (arrived, waited) = self
+            .all_arrived
+            .wait_timeout_while(arrived, std::time::Duration::from_secs(10), |arrived| {
+                *arrived < self.expected
+            })
+            .expect("cold-open gate");
+        drop(arrived);
+        // An opener that never arrived means the race was not staged; the
+        // test must fail rather than pass without it.
+        assert!(
+            !waited.timed_out(),
+            "not every opener reached the cold-open gate"
+        );
+    }
+}
+
+/// Makes this thread's next open of a new store wait at `gate` at that
+/// point, so tests can hold several openers there together.
+#[cfg(test)]
+pub(crate) fn hold_cold_open_at(gate: std::sync::Arc<ColdOpenGate>) {
+    before_cold_lock(move || gate.arrive());
+}
+
+/// Runs `action` once, on this thread's next open of a store without a work
+/// schema marker, between the work-schema probe that reads that marker and
+/// the one that counts work tables.
+#[cfg(test)]
+pub(crate) fn between_work_schema_probes(action: impl FnOnce() + 'static) {
+    BETWEEN_WORK_SCHEMA_PROBES.with(|slot| *slot.borrow_mut() = Some(Box::new(action)));
+}
+
+#[cfg(test)]
+fn run_between_work_schema_probes() {
+    if building_schema_reference() {
+        return;
+    }
+    if let Some(action) = BETWEEN_WORK_SCHEMA_PROBES.with(|slot| slot.borrow_mut().take()) {
+        action();
+    }
+}
+
+#[cfg(test)]
+fn cold_open_rendezvous() {
+    if let Some(action) = BEFORE_COLD_LOCK.with(|slot| slot.borrow_mut().take()) {
+        action();
+    }
 }
 
 #[cfg(test)]

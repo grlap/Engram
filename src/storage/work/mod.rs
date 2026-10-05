@@ -457,7 +457,7 @@ pub(super) use query::{
     on_one_snapshot, verified_work_identity,
 };
 pub(super) use schema::{
-    initialize_schema, is_rebuildable_schema_object, is_rebuilt_projection_table,
+    create_schema_on, initialize_schema, is_rebuildable_schema_object, is_rebuilt_projection_table,
     owns_schema_object, preflight_schema, repair_rebuildable_schema_on,
     require_work_schema_version, schema_version,
 };

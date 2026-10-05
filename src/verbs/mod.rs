@@ -194,8 +194,8 @@ fn append_status_text(
     }
 }
 
-/// One line per change by another session. Your own actions are already in
-/// your receipts and are skipped. A single `note` appends an
+/// One line per change that is not the reader's own. Your own actions, those
+/// the "you" label names, are already in your receipts and are skipped. A single `note` appends an
 /// evidence object, an evidence-added event, and a checkpoint; they collapse
 /// into one `noted` line. Summaries that repeat their change kind as a prefix
 /// lose the prefix.
@@ -222,6 +222,17 @@ fn collapsed_changes(
             WorkChangeProjection::Omitted(_) => None,
         })
         .collect::<Vec<_>>();
+    // A change is the reader's own exactly when its author would be labelled
+    // "you": this session, this actor, and the kind the agent words record
+    // as. A record of this session made as another kind, or by another actor,
+    // is in no receipt of the reader's and is listed with its label.
+    let own = |change: &WorkChange| {
+        change.from_current_session
+            && change
+                .display_producer
+                .as_ref()
+                .is_some_and(|producer| producer.is_reader(&identity))
+    };
     let mut lines = Vec::new();
     let mut last_note: Option<crate::storage::WorkRecordAddress> = None;
     for (index, change) in changes.iter().enumerate() {
@@ -234,7 +245,7 @@ fn collapsed_changes(
             continue;
         };
         // Your own actions are already in your receipts.
-        if change.from_current_session {
+        if own(change) {
             last_note = None;
             continue;
         }
@@ -253,7 +264,7 @@ fn collapsed_changes(
             let precedes_completion = change.capture.as_ref().is_some_and(|capture| {
                 capture.member.is_none()
                     && changes.iter().any(|completion| {
-                        !completion.from_current_session
+                        !own(completion)
                             && matches!(completion.delivery, WorkChangeProjection::Visible(_))
                             && completion.completion_checkpoint.as_ref()
                                 == Some(&change.entry.object_id)

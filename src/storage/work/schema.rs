@@ -73,6 +73,8 @@ pub(in crate::storage) fn preflight_schema(
         |row| row.get::<_, bool>(0),
     )?;
     if !metadata_exists {
+        #[cfg(test)]
+        super::super::run_between_work_schema_probes();
         let existing_work_tables = connection.query_row(
             "SELECT COUNT(*) FROM sqlite_master
              WHERE type = 'table' AND name GLOB 'work_*'",
@@ -161,7 +163,15 @@ pub(in crate::storage) fn initialize_schema(
     }
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     preflight_schema(&transaction, allow_initialization)?;
-    transaction.execute_batch(
+    create_schema_on(&transaction)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+/// Creates the work schema and its marker inside the caller's write
+/// transaction, so a new store's core and work schemas commit together.
+pub(in crate::storage) fn create_schema_on(connection: &Connection) -> Result<(), StoreError> {
+    connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS work_schema_metadata (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
              schema_version INTEGER NOT NULL CHECK(schema_version > 0)
@@ -452,12 +462,12 @@ pub(in crate::storage) fn initialize_schema(
              PRIMARY KEY(project_id, session_id, operation, idempotency_key)
          ) STRICT;",
     )?;
-    transaction.execute(
+    connection.execute(
         "INSERT INTO work_schema_metadata (singleton, schema_version)
          VALUES (1, ?1) ON CONFLICT(singleton) DO NOTHING",
         [CURRENT_WORK_SCHEMA_VERSION],
     )?;
-    transaction.execute_batch(
+    connection.execute_batch(
         "CREATE INDEX IF NOT EXISTS work_feed_entries_work_event_item
              ON work_feed_entries(feed_kind, work_id, position DESC)
              WHERE object_kind = 'work_event' AND work_id IS NOT NULL;
@@ -478,12 +488,11 @@ pub(in crate::storage) fn initialize_schema(
          CREATE INDEX IF NOT EXISTS work_session_state_retention
              ON work_session_state(project_id, updated_at_ms, session_id);",
     )?;
-    super::observation::create_schema(&transaction)?;
-    transaction.execute(
+    super::observation::create_schema(connection)?;
+    connection.execute(
         "UPDATE work_schema_metadata SET schema_version = ?1 WHERE singleton = 1",
         [CURRENT_WORK_SCHEMA_VERSION],
     )?;
-    transaction.commit()?;
     Ok(())
 }
 

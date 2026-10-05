@@ -325,6 +325,12 @@ impl DisplayProducer {
     pub(crate) fn label(&self, identity: &super::identity::DisplayIdentity<'_>) -> String {
         identity.author(&self.actor_id, &self.actor_kind, self.session_id.as_ref())
     }
+
+    /// Whether the record is the reader's own, by the rule that labels it
+    /// "you".
+    pub(crate) fn is_reader(&self, identity: &super::identity::DisplayIdentity<'_>) -> bool {
+        identity.is_reader(&self.actor_id, &self.actor_kind, self.session_id.as_ref())
+    }
 }
 
 /// One source record at an exact project-feed position, exposed as an

@@ -140,6 +140,9 @@ pub(super) fn observe(
     second: i64,
 ) -> Result<ExecutionObservationReceipt, StoreError> {
     let mut observer = actor("observer");
+    // The host-control channel records an observation as the kind the agent
+    // words record as, so the observing session reads it as its own.
+    observer.actor_kind = crate::work_service::WORD_ACTOR_KIND.into();
     observer.run_id = Some(fixture.binding.run_id.0.to_string());
     let host = &fixture.host;
     fixture.store.record_unadmitted_execution_observation(
