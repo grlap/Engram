@@ -2,10 +2,7 @@
 //! detail. The window is fitted to the agent response budget; the detail is an
 //! explicit unbounded read, like `--note` and `--full`.
 
-use super::{
-    AgentVerbs, DateTime, Guidance, MAX_AGENT_WORK_RESPONSE_BYTES, Receipt, StoreError, Utc, Value,
-    VerbError, json,
-};
+use super::{AgentVerbs, DateTime, Guidance, Receipt, StoreError, Utc, Value, VerbError, json};
 use crate::work_service::{WorkEvaluationDetail, WorkEvaluationRow, WorkEvaluationWindow};
 use std::fmt::Write as _;
 
@@ -16,6 +13,7 @@ impl AgentVerbs {
         work_ref: &str,
         after: Option<&str>,
         now: DateTime<Utc>,
+        budget: usize,
     ) -> Result<Receipt, VerbError> {
         let command = format!(
             "engram work show {} --evaluations",
@@ -25,7 +23,7 @@ impl AgentVerbs {
             .service
             .work_evaluation_window(work_ref, after, now)
             .map_err(|error| VerbError::for_listing(error, &command))?;
-        fit_window(&page, MAX_AGENT_WORK_RESPONSE_BYTES)
+        fit_window(&page, budget)
     }
 
     /// One evaluation record of the item, complete.

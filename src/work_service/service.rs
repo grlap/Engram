@@ -20,6 +20,33 @@ use super::{
     work_memory_index, work_observation_summary, work_run_summary,
 };
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+thread_local! {
+    /// One read word's read-only connection, while that word runs on this
+    /// thread; see [`LocalWorkService::one_read_connection`].
+    static READ_SCOPE: RefCell<Option<ReadScope>> = const { RefCell::new(None) };
+}
+
+struct ReadScope {
+    /// The service whose word opened the scope; another service's reads on
+    /// this thread, such as a test's second session, keep their own.
+    owner: usize,
+    store: Option<Rc<SqliteStore>>,
+}
+
+/// A read-only store connection, shared by the reads of one read word.
+pub(crate) struct ReadStore(Rc<SqliteStore>);
+
+impl std::ops::Deref for ReadStore {
+    type Target = SqliteStore;
+
+    fn deref(&self) -> &SqliteStore {
+        &self.0
+    }
+}
+
 /// Only safe agent detail requests full contract text. Core/list projections
 /// retain their existing summary shape and field bounds.
 #[derive(Clone, Copy)]
@@ -165,9 +192,67 @@ impl LocalWorkService {
     /// does that in `store_at`), and never create or initialize a store; a
     /// path without one refuses with `store_not_initialized`. A refusal is
     /// never retried through the writable connection.
-    pub(super) fn read_store_at(&self, now: DateTime<Utc>) -> Result<SqliteStore, StoreError> {
+    pub(super) fn read_store_at(&self, now: DateTime<Utc>) -> Result<ReadStore, StoreError> {
         self.validate_read_attribution(now)?;
-        SqliteStore::open_existing_read_only(&self.database)
+        let owner = self.read_scope_owner();
+        let scoped = READ_SCOPE.with(|scope| -> Result<_, StoreError> {
+            let mut scope = scope.borrow_mut();
+            let Some(scope) = scope.as_mut().filter(|scope| scope.owner == owner) else {
+                return Ok(None);
+            };
+            if scope.store.is_none() {
+                let store = SqliteStore::open_existing_read_only(&self.database)?;
+                // Every read of this word joins one transaction, so the
+                // word's parts share a single snapshot.
+                store.begin_held_read()?;
+                scope.store = Some(Rc::new(store));
+            }
+            Ok(scope.store.clone())
+        })?;
+        match scoped {
+            Some(store) => Ok(ReadStore(store)),
+            None => Ok(ReadStore(Rc::new(SqliteStore::open_existing_read_only(
+                &self.database,
+            )?))),
+        }
+    }
+
+    fn read_scope_owner(&self) -> usize {
+        std::ptr::from_ref(self) as usize
+    }
+
+    /// Runs one read word so that every read it makes on this thread shares
+    /// a single read-only connection and one read transaction, opened by its
+    /// first read and ended when the word returns: a word opens its store
+    /// once and sees one snapshot, however many reads it makes. A word
+    /// already inside such a scope keeps it.
+    pub(crate) fn one_read_connection<T>(&self, read: impl FnOnce() -> T) -> T {
+        struct Restore(Option<ReadScope>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                let ended = READ_SCOPE
+                    .with(|scope| std::mem::replace(&mut *scope.borrow_mut(), self.0.take()));
+                if let Some(store) = ended.and_then(|scope| scope.store) {
+                    // A read-only transaction holds nothing to keep; ending
+                    // it only releases the snapshot.
+                    let _ = store.end_held_read();
+                }
+            }
+        }
+        let owner = self.read_scope_owner();
+        let nested = READ_SCOPE.with(|scope| {
+            scope
+                .borrow()
+                .as_ref()
+                .is_some_and(|scope| scope.owner == owner)
+        });
+        if nested {
+            return read();
+        }
+        let outer =
+            READ_SCOPE.with(|scope| scope.borrow_mut().replace(ReadScope { owner, store: None }));
+        let _restore = Restore(outer);
+        read()
     }
 
     /// The cached writable connection for the one advisory record a read
@@ -1219,6 +1304,7 @@ impl LocalWorkService {
             status.work.acceptance = acceptance;
         }
         let view = WorkFocusView {
+            session_focus: None,
             source,
             source_error_class,
             acceptance_evidence,

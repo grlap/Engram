@@ -13,10 +13,24 @@ struct NextAdvisory {
     catalog: Option<WorkCatalogSummaryPage>,
     discovery: WorkDiscoveryView,
     agent_lists: Option<WorkAgentNextLists>,
+    claim_lapse_reminder: Option<String>,
 }
 
 mod peek;
 mod stranded;
+
+/// The reminder a read carries when its own-claim lapse check failed; the
+/// check is advisory, so the read still answers.
+pub(crate) const CLAIM_LAPSE_UNAVAILABLE: &str =
+    "could not check whether your own claims lapsed; reads never renew a claim";
+
+/// The reminder a read carries when the reader's own claim on `work_ref`
+/// lapsed: the lapse and the renewal command, and nothing else.
+pub(crate) fn own_claim_lapse_reminder(work_ref: &str) -> String {
+    format!(
+        "your claim on {work_ref} lapsed; reads never renew it; renew it with engram work claim {work_ref}"
+    )
+}
 
 impl LocalWorkService {
     /// The agent reminder about this project's backups, read from the records
@@ -25,6 +39,25 @@ impl LocalWorkService {
     pub(crate) fn backup_reminder(&self) -> Option<String> {
         let home = crate::project_home_of(&self.database, &self.project_id)?;
         crate::backup::reminder::backup_reminder(&home, &self.project_id)
+    }
+
+    /// The read reminder that this session's own claim lapsed, naming the item
+    /// and the renewal command. It is read on a read-only connection and
+    /// changes nothing: no claim, fence, expiry or focus moves, and only a
+    /// `claim` renews.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the store or its claim projection cannot
+    /// be read.
+    pub(crate) fn own_claim_lapse_reminder(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Option<String>, StoreError> {
+        let store = self.read_store_at(now)?;
+        Ok(store
+            .own_lapsed_claim_ref(&self.project_id, &self.session_id, now)?
+            .map(|work_ref| own_claim_lapse_reminder(&work_ref)))
     }
 
     /// Returns current focus, ready candidates, and the next bounded project delta.
@@ -244,6 +277,7 @@ impl LocalWorkService {
             catalog,
             discovery,
             agent_lists,
+            claim_lapse_reminder,
         } = store.work_read_snapshot(|store| {
             self.next_advisory(store, limit, &query, now, agent_options, &mut omissions)
         })?;
@@ -272,6 +306,7 @@ impl LocalWorkService {
             omissions,
             memory_advertisement: None,
             backup_reminder: None,
+            claim_lapse_reminder,
             peek: None,
         };
         if fit_core {
@@ -541,6 +576,18 @@ impl LocalWorkService {
         let agent_lists = agent_options
             .map(|options| self.agent_next_lists(store, options.list_limit, options.verbose, now))
             .transpose()?;
+        // The agent words also say when this session's own claim lapsed,
+        // read in this cut on this connection; nothing is renewed.
+        let claim_lapse_reminder = if agent_options.is_some() {
+            store
+                .own_lapsed_claim_ref(&self.project_id, &self.session_id, now)
+                .map_or_else(
+                    |_| Some(CLAIM_LAPSE_UNAVAILABLE.to_owned()),
+                    |lapsed| lapsed.map(|work_ref| own_claim_lapse_reminder(&work_ref)),
+                )
+        } else {
+            None
+        };
 
         Ok(NextAdvisory {
             read_cut,
@@ -549,6 +596,7 @@ impl LocalWorkService {
             catalog,
             discovery,
             agent_lists,
+            claim_lapse_reminder,
         })
     }
 

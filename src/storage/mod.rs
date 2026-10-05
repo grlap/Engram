@@ -43,6 +43,7 @@ pub(crate) use work::{
 };
 pub(crate) use work::{criteria_without_evidence_link, unlinked_criteria_owe_bound_check};
 
+pub(crate) use project_memory::ProjectMemoryAdmission;
 pub(crate) use project_memory::validate_context_generation;
 
 pub(crate) const DECOMPOSE_PROTOCOL_OPERATION: &str = "work_propose:decompose";

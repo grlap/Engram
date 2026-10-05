@@ -388,7 +388,7 @@ impl LocalWorkService {
         // Resolve the explicit target and its advisory sections in one cut.
         store.work_read_snapshot(|store| {
             let item = store.resolve_work_ref(&self.project_id, work_ref)?;
-            self.focus_view_for_projection(
+            let mut view = self.focus_view_for_projection(
                 store,
                 item.work_id,
                 // The agent renderer does not emit the focus-bound memory index.
@@ -396,7 +396,25 @@ impl LocalWorkService {
                 true,
                 super::service::FocusText::Full,
                 now,
-            )
+            )?;
+            view.session_focus = Some(self.session_focus(store, now)?);
+            Ok(view)
+        })
+    }
+
+    /// The session's selection, read in the caller's cut and stated apart
+    /// from an inspected item's holder.
+    pub(super) fn session_focus(
+        &self,
+        store: &SqliteStore,
+        now: DateTime<Utc>,
+    ) -> Result<super::SessionFocus, StoreError> {
+        let focused = store
+            .work_session_state(&self.project_id, &self.session_id, now)?
+            .focused_work_id;
+        Ok(match focused {
+            Some(work_id) => super::SessionFocus::Item(store.get_work_item(work_id)?.short_ref),
+            None => super::SessionFocus::Nothing,
         })
     }
 }

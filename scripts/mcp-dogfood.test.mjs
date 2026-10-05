@@ -2950,7 +2950,12 @@ test("decomposition retry survives parent reread and process restart without dup
     const first = cliJson(engramHome, session, "add", "CLI child", "--under", parent, "--note", "Initial CLI note");
     const after = cliJson(engramHome, session, "show", parent);
     const replay = cliJson(engramHome, session, "add", "CLI child", "--under", parent, "--note", "Initial CLI note");
-    assert.deepEqual(replay, first);
+    // The first add moved the focus to its child and says so; the replay
+    // finds the focus already there and reports no move of its own.
+    const withoutMove = ({ focus_change: moved, ...rest }) => rest;
+    assert.deepEqual(first.focus_change, { from: parent, to: first.work.short_ref });
+    assert.equal(replay.focus_change, undefined);
+    assert.deepEqual(replay, withoutMove(first));
     assert.deepEqual(cliJson(engramHome, session, "show", parent), after);
     assert.deepEqual(cliJson(engramHome, session, "show", first.work.short_ref, "--notes").notes.map(({ summary }) => summary), ["Initial CLI note"]);
     assert.equal(cliJson(engramHome, session, "ls", "--under", parent).total, 1);
@@ -2965,7 +2970,8 @@ test("decomposition retry survives parent reread and process restart without dup
     client = undefined;
     client = new McpClient(engramHome, session);
     await client.initialize();
-    assert.deepEqual(receipt(await client.call("add", input)), created);
+    assert.deepEqual(created.focus_change, { from: mcpParent, to: created.work.short_ref });
+    assert.deepEqual(receipt(await client.call("add", input)), withoutMove(created));
     assert.deepEqual(receipt(await client.call("show", { work_ref: mcpParent })), parentAfter);
     assert.deepEqual(receipt(await client.call("show", { work_ref: created.work.short_ref, notes: true })).notes.map(({ summary }) => summary), ["Initial MCP note"]);
     assert.equal(receipt(await client.call("ls", { under: mcpParent })).total, 1);

@@ -119,6 +119,7 @@ impl LocalWorkService {
                 // There must be no capability for the outer renderer to ack.
                 memory_advertisement: None,
                 backup_reminder: None,
+                claim_lapse_reminder: advisory.claim_lapse_reminder,
             })
         })
     }

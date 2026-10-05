@@ -172,6 +172,7 @@ fn context_receipt() -> CompactNextReceipt {
     };
     CompactNextReceipt {
         backup_reminder: None,
+        claim_lapse_reminder: None,
         focus_evaluation: None,
         evaluation_obligations: None,
         ready_navigation: None,

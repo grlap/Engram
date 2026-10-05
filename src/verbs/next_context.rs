@@ -293,16 +293,22 @@ pub(super) fn refresh_guidance(compact: &mut CompactNextReceipt) {
     // the clipped-status one included: it says what to do before acting.
     let recovery = super::memory_recovery::reminder(compact.peek.as_ref());
     let backup = compact.backup_reminder.clone();
+    let lapse = compact.claim_lapse_reminder.clone();
     compact.guidance.reminders.retain(|reminder| {
         reminder != CLIPPED_STATUS_REMINDER
             && Some(reminder) != recovery.as_ref()
             && Some(reminder) != backup.as_ref()
+            && Some(reminder) != lapse.as_ref()
     });
     if clipped {
         compact
             .guidance
             .reminders
             .insert(0, CLIPPED_STATUS_REMINDER.into());
+    }
+    // The session's own lapsed claim follows the backup reminder, whole.
+    if let Some(lapse) = lapse {
+        compact.guidance.reminders.insert(0, lapse);
     }
     // The backup reminder goes after the direction to list memories and
     // before everything else, whole, so the count limit keeps it too.

@@ -694,6 +694,11 @@ impl AgentVerbs {
                 guidance.reminders.insert(kept_reminders, backup.clone());
                 kept_reminders += 1;
             }
+            // The session's own lapsed claim follows, never shed either.
+            if let Some(lapse) = &view.claim_lapse_reminder {
+                guidance.reminders.insert(kept_reminders, lapse.clone());
+                kept_reminders += 1;
+            }
             let mut peek_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             let mut agent_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             let mut evaluation_obligations = view.focus.as_ref().and_then(|focus| {
@@ -950,7 +955,9 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when the catalog cannot be read.
     pub fn ls(&self, input: &LsInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        self.ls_with_budget(input, now, MAX_AGENT_WORK_RESPONSE_BYTES)
+        self.with_claim_lapse(now, MAX_AGENT_WORK_RESPONSE_BYTES, |budget| {
+            self.ls_with_budget(input, now, budget)
+        })
     }
 
     // Production always uses the protocol budget; tests can exercise the
@@ -1011,15 +1018,22 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when the reference is unknown.
     pub fn show(&self, work_ref: &str, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        self.with_claim_lapse(now, MAX_AGENT_WORK_RESPONSE_BYTES, |budget| {
+            self.show_within(work_ref, now, budget)
+        })
+    }
+
+    pub(super) fn show_within(
+        &self,
+        work_ref: &str,
+        now: DateTime<Utc>,
+        budget: usize,
+    ) -> Result<Receipt, VerbError> {
         let view = self
             .service
             .work_focus_for_agent(work_ref, now)
             .map_err(|error| VerbError::at(error, work_ref))?;
-        fit_show_receipt(
-            view,
-            |view| self.render_show(view, now),
-            MAX_AGENT_WORK_RESPONSE_BYTES,
-        )
+        fit_show_receipt(view, |view| self.render_show(view, now), budget)
     }
 
     pub(super) fn render_show(
@@ -1111,7 +1125,10 @@ impl AgentVerbs {
                 .to_owned()
         });
         let has_initial_notes = !input.notes.is_empty();
-        let mut receipt = self.finish_mutation(self.add_inner(input, now)?);
+        // The new item becomes the focus; the receipt names that move from
+        // this call's own journal, whatever other calls of the session do.
+        let mut receipt =
+            self.disclosing_focus(|| Ok(self.finish_mutation(self.add_inner(input, now)?)))?;
         if has_initial_notes {
             receipt = receipt.with_reminder(
                 "initial observations (no execution credit) recorded at creation".into(),
@@ -1373,6 +1390,17 @@ impl AgentVerbs {
         input: &MemoriesInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
+        self.with_claim_lapse(now, MAX_AGENT_WORK_RESPONSE_BYTES, |budget| {
+            self.memories_within(input, now, budget)
+        })
+    }
+
+    fn memories_within(
+        &self,
+        input: &MemoriesInput,
+        now: DateTime<Utc>,
+        budget: usize,
+    ) -> Result<Receipt, VerbError> {
         if input.revision.is_some() && !input.full {
             return Err(StoreError::InvalidProjectMemory(
                 wording::REVISION_NEEDS_FULL_REFUSAL.cli.into(),
@@ -1422,7 +1450,7 @@ impl AgentVerbs {
         )?;
         loop {
             let receipt = project_memory_list_receipt(&result, filtered)?;
-            if super::receipts::agent_receipt_fits(&receipt, MAX_AGENT_WORK_RESPONSE_BYTES)? {
+            if super::receipts::agent_receipt_fits(&receipt, budget)? {
                 if let (Some(generation), Some(listing)) = (&input.context_generation, listing) {
                     self.service
                         .acknowledge_project_memory_listing(listing, generation, now);

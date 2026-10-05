@@ -1075,8 +1075,12 @@ and every agent instruction file atomic with the code.
 Project-memory list/search and full-read receipts fit both their structured
 JSON/MCP representation and terminal-safe shell rendering under the 12 KiB
 agent response ceiling. A full body is admitted before persistence only when
-both exact envelopes fit; list/search sheds rows with an omission or
-continuation signal when escaping would otherwise exceed the ceiling.
+both exact envelopes fit with room left for a read reminder; list/search
+sheds rows with an omission or continuation signal when escaping would
+otherwise exceed the ceiling. A version stored before that reminder room was
+reserved may exceed the ceiling by at most the reserve when its full read
+carries a reminder (see
+[work claims](features/local-work-system.md#work-claims)).
 
 Agent-facing work has no grant token, validity window, revocation object, or
 routine remint requirement. Its lifecycle mutations are governed by project

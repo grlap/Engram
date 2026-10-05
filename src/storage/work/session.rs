@@ -1361,6 +1361,66 @@ impl SqliteStore {
         Ok(held)
     }
 
+    /// The short ref of open work whose current claim is still recorded as
+    /// this session's, but whose expiry has passed: the session's own lapsed
+    /// claim, for a read reminder. It prefers the session's focused item, then
+    /// the latest expiry, then work id. A released, ended, taken-over or
+    /// terminal claim never counts, and nothing here renews or reclaims.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the claim or item projection is invalid.
+    pub(crate) fn own_lapsed_claim_ref(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        holder: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<Option<String>, StoreError> {
+        self.work_read_snapshot(|store| {
+            let mut statement = store.connection.prepare(
+                "SELECT claim.work_id FROM work_claims claim
+                 JOIN work_items item ON item.work_id = claim.work_id
+                     AND item.active_run_id = claim.run_id
+                 WHERE claim.holder_session_id = ?2 AND claim.state = 'active'
+                   AND claim.expires_at_ms <= ?3
+                   AND item.project_id = ?1 AND item.lifecycle = 'open'
+                 ORDER BY claim.work_id IS (SELECT state.focused_work_id
+                     FROM work_session_state state
+                     WHERE state.project_id = ?1 AND state.session_id = ?2) DESC,
+                   claim.expires_at_ms DESC, claim.work_id
+                 LIMIT 8",
+            )?;
+            let candidates = statement
+                .query_map(
+                    params![project_id.0, holder.0, now.timestamp_millis()],
+                    |row| row.get::<_, String>(0),
+                )?
+                .collect::<Result<Vec<_>, _>>()?;
+            for work_id in candidates {
+                let work_id = super::query::parse_work_id(&work_id)?;
+                let item = super::query::load_work_item(&store.connection, work_id)?;
+                let claim = item
+                    .active_run_id
+                    .map(|run| super::query::load_work_claim_optional(&store.connection, run))
+                    .transpose()?
+                    .flatten();
+                // The canonical rows decide; the millisecond projection only
+                // narrows the candidates.
+                if item.project_id == *project_id
+                    && item.lifecycle == crate::domain::WorkLifecycle::Open
+                    && claim.is_some_and(|claim| {
+                        claim.holder == *holder
+                            && claim.state == crate::domain::WorkClaimState::Active
+                            && claim.expires_at <= now
+                    })
+                {
+                    return Ok(Some(item.short_ref));
+                }
+            }
+            Ok(None)
+        })
+    }
+
     /// Every live claim this session holds on the project's work, each with
     /// the time the session acquired it: the claim event, or the accepted
     /// handoff that gave it the claim. A renewal keeps that time. Rows come in

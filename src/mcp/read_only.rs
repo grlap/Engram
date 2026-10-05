@@ -498,7 +498,11 @@ mod tests {
                 None,
             )
             .unwrap();
-        crate::work_service::ensure_project_memory_full_is_admissible(&full).unwrap();
+        crate::work_service::ensure_project_memory_full_is_admissible(
+            &full,
+            crate::storage::ProjectMemoryAdmission::NewVersion,
+        )
+        .unwrap();
         for names in [
             crate::argument_names::ArgumentNames::Cli,
             crate::argument_names::ArgumentNames::Mcp,
@@ -513,7 +517,11 @@ mod tests {
                     .is_err()
             );
             assert!(
-                crate::work_service::ensure_project_memory_full_is_admissible(&oversized).is_err()
+                crate::work_service::ensure_project_memory_full_is_admissible(
+                    &oversized,
+                    crate::storage::ProjectMemoryAdmission::NewVersion
+                )
+                .is_err()
             );
         }
         for change in [

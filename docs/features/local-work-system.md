@@ -399,6 +399,31 @@ holder mutation on a lapsed claim is refused with one recovery command:
 `engram work claim <ref>`. When the work is ready, that ordinary claim command
 retakes the same holder's claim under the stable project/session binding,
 advances the fence, preserves an active run, and needs no recovery reason.
+The session learns of the lapse before a write refuses: every agent read
+(`next` and `next --peek`, `ls`, `search`, every `show` form and every
+`memories` form) carries the reminder `your claim on REF lapsed; reads never
+renew it; renew it with engram work claim REF` while open work's current
+claim is still recorded as this session's and its expiry has passed. It names
+at most one item, preferring the session's focus, then the latest expiry. It
+is read in the same snapshot as the rest of the receipt (inside `next`'s
+advisory cut; for the other words in the one read transaction their read-only
+connection holds for the whole word), and changes nothing: no claim, fence,
+expiry or focus moves, and only `claim` renews. A released, ended or
+taken-over claim, terminal work, and other sessions' claims give no reminder.
+The check is advisory: if it fails, the read still answers and says `could not
+check whether your own claims lapsed`. Fitted reads reserve its bytes, so
+their `byte_budget` is the ceiling their content was fitted to, and `next`
+keeps it whole like the backup reminder. Every read with a lapsed claim
+carries it. A new project-memory version is admitted with 160 bytes of room
+for it in its full read, so that read fits within 12,288 bytes; versions
+stored before the reserve keep the bound they were admitted under, so they
+can still be revised and retried exactly. Such a stored version's `memories
+KEY --full` read carries the reminder too and may then reach at most 12,448
+bytes (12,288 plus the 160-byte reserve), in JSON and in text; the
+worst-case history navigation its admission reserved usually absorbs it.
+Every other fitted read stays within 12,288 with the reminder. The explicit
+complete reads (`show --full`, full-note detail and `show --evaluation`)
+remain unbounded, as before, and carry it as well.
 `claim --under PARENT` (core update `claim_next_ready`) selects the parent's
 next ready direct child by the same derived readiness and the `ls --ready`
 order, then claims it inside that one write transaction under SQLite's single
@@ -2078,9 +2103,11 @@ guidance names an explicit `--key`. `forget KEY` appends an
 attributed tombstone — not erasure, the version history stays canonical —
 and is idempotent; the key is then retired for good. A raw body is at most
 8 KiB (8192 UTF-8 bytes) and is accepted only when both the exact structured
-full-read envelope and terminal-safe shell rendering fit the 12 KiB ceiling;
-anything larger is rejected before persistence, with escape-heavy boundary
-tests among the named targets.
+full-read envelope and terminal-safe shell rendering fit the 12 KiB ceiling
+less a 160-byte reserve for a read reminder (see
+[work claims](#work-claims)); versions stored before that reserve keep the
+plain 12 KiB bound. Anything larger is rejected before persistence, with
+escape-heavy boundary tests among the named targets.
 
 `remember TEXT --key KEY --revise` appends an attributed immutable revision
 to a live key; it never edits an earlier body. Lists and ordinary full reads
@@ -2207,7 +2234,10 @@ Neither returns bodies; `memories KEY --full` resolves exactly one key —
 typed `memory_not_found`, `memory_binding_invalid`, or `memory_retired` for
 a tombstoned key — and returns the full body as a dedicated response, at most
 8 KiB only when both its structured and terminal-safe envelopes remain under
-the 12 KiB ceiling, never inlined into `next`. The `next.memories` signal is
+the 12 KiB ceiling, never inlined into `next`; a read reminder such as a
+lapsed own claim fits within that ceiling, except for a version stored before
+its reserve, which may reach 12 KiB plus 160 bytes (see
+[work claims](#work-claims)). The `next.memories` signal is
 content-free: a count of retained project notes and a changed-since-recorded-
 advertisement flag, read in
 O(1) from a rebuildable per-project count and change position — no

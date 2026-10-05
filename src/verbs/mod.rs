@@ -43,6 +43,7 @@ mod argument_wording;
 pub(crate) use argument_wording::respell;
 mod attribution;
 mod child_obligations;
+mod claim_lapse;
 mod evaluation_guidance;
 mod evaluation_windows;
 mod focus_change;

@@ -200,7 +200,29 @@ A bare mutation keeps its existing target, not the item just read. These
 reads do not register a fresh process-default session; registration waits for
 a stateful operation.
 
-`add` and `add --under` do move focus, to the item they create. So a bare
+Focus is navigation, not execution ownership: a claim is ownership. Agent
+`show`, and the first page of its notes and history windows, states both as
+separate facts. The headline names the item's holder,
+and `session_focus` (text `session focus: …`) names the reading session's
+selected item, read in the same cut: `this item`, another ref with `not this
+item`, or `none`. `next` names the focus row and the held rows separately; a
+focused item the session does not hold is never shown as held. A completed,
+cancelled or superseded item stays the selected focus until a focus-setting
+word moves it. Receipts name its terminal lifecycle apart from ownership, no
+successor is selected automatically, and its ended run supplies no live
+control binding (`work core held` lists no row for it).
+
+Ambient focus follows the last committed focus-setting operation of the
+session. Implicit targets are therefore unsafe when one session is used
+concurrently, as an MCP server may run several words at once: each call's
+receipt names its own result, but a later bare word acts on whichever
+focus-setting call committed last. Concurrent callers should name the item
+explicitly. A word given an explicit ref acts on that ref and never consults
+the focus, and reads (`show`, `ls`, `search`, `next`, `memories`) never move
+it.
+
+`add` and `add --under` do move focus, to the item they create, and their
+receipt says so with `focus_change`, as described below. So a bare
 `note`, `gate`, `evaluate`, `update` or `done` acts on the focus only when
 this session holds it, or holds nothing else. When the focus is an item this
 session does not hold while it holds others, the word is refused with
@@ -221,8 +243,8 @@ Repeating the word with the item named acts as before. A bare `handoff` keeps
 the focus without this check: its recipient accepts an item it does not hold
 yet, and an offer or a cancel already needs the claim.
 
-A `claim` (with or without `--under`), `note`, `gate`, `evaluate` or `done`
-that actually moves this session's focus says so. Its receipt carries a
+An `add`, `claim` (with or without `--under`), `note`, `gate`, `evaluate` or
+`done` that actually moves this session's focus says so. Its receipt carries a
 top-level `focus_change` and one text line after the headline, for example
 `focus moved from w-… to w-…; the host binds w-…'s claim from its next turn,
 not this one`. The object holds `from` and `to` (work refs, either `null`
@@ -904,7 +926,8 @@ Rules that matter:
   by this session, counted once before limiting. The default limit is 20
   (explicit limits clamp to 1–1000). The complete text and JSON receipts,
   including footer and continuation, fit 12 KiB. The footer names the active
-  `limit` and `byte_budget` (12288 bytes). A continuation is refused only
+  `limit` and `byte_budget` (12288 bytes, less the bytes reserved for a read
+  reminder such as a lapsed own claim when one is carried). A continuation is refused only
   when the listing's membership or order changed since its page
   ([local work](local-work-system.md)), and the refusal states its reason
   once. Nonempty truncated pages include an

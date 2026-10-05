@@ -576,10 +576,12 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
         "count": 0, "items": [], "omitted": 0,
         "navigation": format!("engram work ls --under {parent} --optional")
     });
-    assert_eq!(
-        parent_before,
-        verbs.show(&parent, at(7)).expect("parent").value
-    );
+    let parent_after = verbs.show(&parent, at(7)).expect("parent").value;
+    // The reading session's focus moved with the detach to the new root;
+    // that is the session's selection, not the parent's state.
+    assert_eq!(parent_after["session_focus"], serde_json::json!(new_ref));
+    parent_before["session_focus"] = parent_after["session_focus"].clone();
+    assert_eq!(parent_before, parent_after);
     assert!(
         verbs
             .show(&child, at(7))

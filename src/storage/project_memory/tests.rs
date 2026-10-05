@@ -19,8 +19,11 @@ mod partial;
 pub(super) mod retiring;
 mod revisions;
 
-fn admit_project_memory_full(full: &ProjectMemoryFull) -> Result<(), StoreError> {
-    crate::work_service::ensure_project_memory_full_is_admissible(full)
+fn admit_project_memory_full(
+    full: &ProjectMemoryFull,
+    admission: crate::storage::ProjectMemoryAdmission,
+) -> Result<(), StoreError> {
+    crate::work_service::ensure_project_memory_full_is_admissible(full, admission)
 }
 
 fn actor(session: &str) -> ActorContext {
@@ -1110,12 +1113,23 @@ fn project_memory_context_only_retry_uses_the_stored_delivery_envelope() {
     };
     // Fit the actual current and widest historical CLI/MCP envelopes rather
     // than assuming that the current CLI envelope is the largest one.
-    while admit_project_memory_full(&original).is_err() {
+    while admit_project_memory_full(
+        &original,
+        crate::storage::ProjectMemoryAdmission::NewVersion,
+    )
+    .is_err()
+    {
         assert!(original.actor_id.pop().is_some());
     }
     let mut oversized = original.clone();
     oversized.actor_id.push('a');
-    assert!(admit_project_memory_full(&oversized).is_err());
+    assert!(
+        admit_project_memory_full(
+            &oversized,
+            crate::storage::ProjectMemoryAdmission::NewVersion
+        )
+        .is_err()
+    );
     request.actor.actor_id.clone_from(&original.actor_id);
     let created = store
         .remember_project_memory_with_admission(
@@ -1147,7 +1161,11 @@ fn project_memory_context_only_retry_uses_the_stored_delivery_envelope() {
         workaround: None,
     };
     assert!(
-        admit_project_memory_full(&incoming).is_err(),
+        admit_project_memory_full(
+            &incoming,
+            crate::storage::ProjectMemoryAdmission::NewVersion
+        )
+        .is_err(),
         "the retry's larger transient attribution must cross the response boundary"
     );
     let replay = store

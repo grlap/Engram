@@ -429,9 +429,9 @@ fn admission_judges_a_local_target_in_its_completed_read_form() {
             .remember_project_memory_with_admission(
                 &request(key, body, 2, revise, None, set(local.clone())),
                 &DevelopmentNoopRedactor,
-                |full: &ProjectMemoryFull| {
+                |full: &ProjectMemoryFull, admission| {
                     seen.borrow_mut().push(full.clone());
-                    admit_project_memory_full(full)
+                    admit_project_memory_full(full, admission)
                 },
             )
             .expect("remember");

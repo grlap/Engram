@@ -156,7 +156,7 @@ impl LocalWorkService {
             } else {
                 index.len()
             };
-            let view = self.focus_view_for_projection(
+            let mut view = self.focus_view_for_projection(
                 store,
                 item.work_id,
                 false,
@@ -164,6 +164,7 @@ impl LocalWorkService {
                 super::service::FocusText::Full,
                 now,
             )?;
+            view.session_focus = Some(self.session_focus(store, now)?);
             let mut rows = Vec::new();
             let mut bytes = 0;
             for entry in index[..end].iter().rev().take(64) {

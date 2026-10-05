@@ -20,7 +20,19 @@ fn decomposition_retry_agent_add_rebinds_parent_and_replays_initial_notes() {
         None,
     );
     let replay = restarted.add(input, at(3)).unwrap();
-    assert_eq!(first.value, replay.value);
+    // The first add moved the focus to the child it created and says so; the
+    // replay finds the focus already there, so it reports no move of its own.
+    let child_ref = first.value["work"]["short_ref"].clone();
+    let mut first_value = first.value.clone();
+    let moved = first_value
+        .as_object_mut()
+        .unwrap()
+        .remove("focus_change")
+        .expect("the first add discloses the focus it set");
+    assert_eq!(moved["from"], json!(parent));
+    assert_eq!(moved["to"], child_ref);
+    assert!(replay.value.get("focus_change").is_none());
+    assert_eq!(first_value, replay.value);
     assert_eq!(after.value, restarted.show(&parent, at(4)).unwrap().value);
     let store = SqliteStore::open(&database).unwrap();
     let child = store

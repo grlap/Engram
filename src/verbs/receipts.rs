@@ -172,6 +172,9 @@ pub(super) struct CompactNextReceipt {
     /// The backup reminder, kept among the reminders right after the
     /// direction to list memories and never shed.
     pub(super) backup_reminder: Option<String>,
+    /// The reminder that this session's own claim lapsed, kept right after
+    /// the backup reminder and never shed.
+    pub(super) claim_lapse_reminder: Option<String>,
 }
 
 /// One-line evaluation summary for `next`: mode, pass count, freshness.
@@ -1080,6 +1083,7 @@ pub(super) fn compact_next_receipt(
             next: guidance.next.clone(),
         },
         backup_reminder: view.backup_reminder.clone(),
+        claim_lapse_reminder: view.claim_lapse_reminder.clone(),
     };
     if compact.guidance.reminders.len() > MAX_COMPACT_REMINDER_ITEMS {
         let omitted = compact.guidance.reminders.len() - MAX_COMPACT_REMINDER_ITEMS;
@@ -1176,7 +1180,8 @@ pub(super) fn fit_compact_next_to(
         // the backup reminder follows it and stays too.
         let kept_reminders =
             usize::from(super::memory_recovery::reminder(compact.peek.as_ref()).is_some())
-                + usize::from(compact.backup_reminder.is_some());
+                + usize::from(compact.backup_reminder.is_some())
+                + usize::from(compact.claim_lapse_reminder.is_some());
         if compact.guidance.reminders.len() > kept_reminders {
             compact.guidance.reminders.pop();
             record_compact_omission(&mut compact.omissions, "reminders", 1);

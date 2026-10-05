@@ -57,6 +57,10 @@ pub struct WorkNextView {
     /// filled by the agent `next` from the recorded backup state.
     #[serde(skip)]
     pub(crate) backup_reminder: Option<String>,
+    /// The agent reminder that this session's own claim lapsed, filled by
+    /// the agent `next`; kept like the backup reminder, never renewing.
+    #[serde(skip)]
+    pub(crate) claim_lapse_reminder: Option<String>,
 }
 
 /// Disclosure for a non-advancing orientation read, never a delivery capability.
@@ -662,9 +666,23 @@ pub(crate) struct UnlinkedCriteriaView {
     pub(crate) bound_check_open: bool,
 }
 
+/// A session's selected focus as one read saw it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SessionFocus {
+    /// The session has selected no item.
+    Nothing,
+    /// The selected item's short ref.
+    Item(String),
+}
+
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {
+    /// Agent `show` only: the reading session's selected navigation focus,
+    /// read in the same cut. Selection, not execution ownership, which the
+    /// holder states separately.
+    #[serde(skip)]
+    pub(crate) session_focus: Option<SessionFocus>,
     /// Agent detail only; raw source attribution never widens the ambient wire.
     #[serde(skip)]
     pub(crate) source: Option<crate::domain::WorkSourceLookup>,

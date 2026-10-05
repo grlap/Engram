@@ -2,7 +2,7 @@ use crate::work_service::identity::DisplayIdentity;
 use std::fmt::Write as _;
 
 use super::child_obligations::ShowChildObligations;
-use crate::work_service::{WorkNextSection, WorkSectionOmissionReason};
+use crate::work_service::{SessionFocus, WorkNextSection, WorkSectionOmissionReason};
 
 use super::{
     ChildRequirement, DateTime, Holder, ReadyWorkSummary, Serialize, Utc, WorkAvailability,
@@ -863,6 +863,10 @@ pub(super) struct ShowReceiptValue {
     pub(super) holder: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) held_until: Option<DateTime<Utc>>,
+    /// The reading session's selected focus (a short ref, or null for none),
+    /// a navigation fact stated apart from the item's holder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) session_focus: Option<serde_json::Value>,
     pub(super) children: Vec<ShowRelation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) children_omitted: Option<usize>,
@@ -1114,6 +1118,17 @@ pub(super) fn show_lines(
             )
         },
     ));
+    // Selection is not ownership: the headline says who holds this item,
+    // this line which item the reading session has selected.
+    if let Some(focus) = &view.session_focus {
+        lines.push(match focus {
+            SessionFocus::Item(focused) if *focused == work.short_ref => {
+                "session focus: this item (selection only; the holder is stated above)".into()
+            }
+            SessionFocus::Item(focused) => format!("session focus: {focused}, not this item"),
+            SessionFocus::Nothing => "session focus: none".into(),
+        });
+    }
     if let Some(status) = &work.current_status {
         lines.extend(super::status_text_lines(
             &work.short_ref,
@@ -1660,6 +1675,10 @@ pub(super) fn show_receipt_value(
         },
         holder,
         held_until,
+        session_focus: view.session_focus.as_ref().map(|focus| match focus {
+            SessionFocus::Item(work_ref) => serde_json::Value::String(work_ref.clone()),
+            SessionFocus::Nothing => serde_json::Value::Null,
+        }),
         children: view
             .children
             .iter()

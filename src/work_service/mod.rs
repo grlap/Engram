@@ -86,6 +86,9 @@ mod history_display;
 pub(crate) mod identity;
 mod memories;
 mod next;
+pub(crate) use next::CLAIM_LAPSE_UNAVAILABLE;
+#[cfg(test)]
+pub(crate) use next::own_claim_lapse_reminder;
 mod observation_windows;
 mod operations;
 mod projection;
@@ -342,11 +345,25 @@ pub(crate) fn project_memory_full_response(
     memory: ProjectMemoryFull,
     names: crate::argument_names::ArgumentNames,
 ) -> Result<ProjectMemoryFullResponse, StoreError> {
+    project_memory_full_response_within(memory, names, MAX_PROJECT_MEMORY_FULL_BYTES)
+}
+
+/// Bytes a read reminder the agent words add to any read can take, in JSON
+/// or terminal text: the own-claim lapse reminder or its unavailable notice.
+/// New memories are admitted with this much room left, so their full read
+/// still fits with the reminder.
+pub(crate) const READ_REMINDER_RESERVE: usize = 160;
+
+fn project_memory_full_response_within(
+    memory: ProjectMemoryFull,
+    names: crate::argument_names::ArgumentNames,
+    limit: usize,
+) -> Result<ProjectMemoryFullResponse, StoreError> {
     let response = ProjectMemoryFullResponse::new(memory, names);
     let bytes = serde_json::to_vec(&response)?.len();
-    if bytes > MAX_PROJECT_MEMORY_FULL_BYTES {
+    if bytes > limit {
         return Err(StoreError::InvalidProjectMemory(format!(
-            "serialized full memory response requires {bytes} bytes, exceeding the {MAX_PROJECT_MEMORY_FULL_BYTES}-byte limit"
+            "serialized full memory response requires {bytes} bytes, exceeding the {limit}-byte limit"
         )));
     }
     let terminal_bytes = render_agent_receipt_text(
@@ -355,9 +372,9 @@ pub(crate) fn project_memory_full_response(
         &response.next,
     )
     .len();
-    if terminal_bytes > MAX_PROJECT_MEMORY_FULL_BYTES {
+    if terminal_bytes > limit {
         return Err(StoreError::InvalidProjectMemory(format!(
-            "terminal-safe full memory response requires {terminal_bytes} bytes, exceeding the {MAX_PROJECT_MEMORY_FULL_BYTES}-byte limit"
+            "terminal-safe full memory response requires {terminal_bytes} bytes, exceeding the {limit}-byte limit"
         )));
     }
     Ok(response)
@@ -442,18 +459,28 @@ fn terminal_safe_data_block(text: &str) -> String {
 
 pub(crate) fn ensure_project_memory_full_is_admissible(
     memory: &ProjectMemoryFull,
+    admission: crate::storage::ProjectMemoryAdmission,
 ) -> Result<(), StoreError> {
     // Reserve the largest numeric/history-navigation envelope up front: a
-    // later revision must not make an accepted earlier body unreadable.
+    // later revision must not make an accepted earlier body unreadable. A
+    // new version also leaves room for a read reminder; a stored version
+    // keeps the bound it was admitted under, so history admitted before the
+    // reserve never blocks a revision or an exact retry.
     let mut historical = memory.clone();
     historical.revision = u64::MAX - 1;
     historical.current_revision = u64::MAX;
+    let limit = match admission {
+        crate::storage::ProjectMemoryAdmission::NewVersion => {
+            MAX_PROJECT_MEMORY_FULL_BYTES - READ_REMINDER_RESERVE
+        }
+        crate::storage::ProjectMemoryAdmission::Retained => MAX_PROJECT_MEMORY_FULL_BYTES,
+    };
     for names in [
         crate::argument_names::ArgumentNames::Cli,
         crate::argument_names::ArgumentNames::Mcp,
     ] {
-        project_memory_full_response(memory.clone(), names)?;
-        project_memory_full_response(historical.clone(), names)?;
+        project_memory_full_response_within(memory.clone(), names, limit)?;
+        project_memory_full_response_within(historical.clone(), names, limit)?;
     }
     Ok(())
 }

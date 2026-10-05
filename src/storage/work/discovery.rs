@@ -218,6 +218,23 @@ impl SqliteStore {
         on_one_snapshot(&self.connection, |_| read(self))
     }
 
+    /// Opens a read transaction that every later read on this connection
+    /// joins, so they all see one snapshot until [`Self::end_held_read`].
+    pub(crate) fn begin_held_read(&self) -> Result<(), StoreError> {
+        if self.connection.is_autocommit() {
+            self.connection.execute_batch("BEGIN DEFERRED")?;
+        }
+        Ok(())
+    }
+
+    /// Ends the read transaction [`Self::begin_held_read`] opened.
+    pub(crate) fn end_held_read(&self) -> Result<(), StoreError> {
+        if !self.connection.is_autocommit() {
+            self.connection.execute_batch("COMMIT")?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn work_discovery(
         &self,
         project: &ProjectId,

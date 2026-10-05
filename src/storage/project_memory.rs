@@ -92,7 +92,7 @@ impl SqliteStore {
         request: &RememberProjectMemoryRequest,
         redactor: &R,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
-        self.remember_project_memory_with_admission(request, redactor, |_| Ok(()))
+        self.remember_project_memory_with_admission(request, redactor, |_, _| Ok(()))
     }
 
     #[cfg(test)]
@@ -104,7 +104,7 @@ impl SqliteStore {
     ) -> Result<ProjectMemoryMutationReceipt, StoreError>
     where
         R: Redactor,
-        A: Fn(&ProjectMemoryFull) -> Result<(), StoreError>,
+        A: Fn(&ProjectMemoryFull, ProjectMemoryAdmission) -> Result<(), StoreError>,
     {
         self.remember_project_memory_edit_with_admission(
             request,
@@ -136,7 +136,7 @@ impl SqliteStore {
     ) -> Result<ProjectMemoryMutationReceipt, StoreError>
     where
         R: Redactor,
-        A: Fn(&ProjectMemoryFull) -> Result<(), StoreError>,
+        A: Fn(&ProjectMemoryFull, ProjectMemoryAdmission) -> Result<(), StoreError>,
     {
         let partial = *edit != crate::domain::ProjectMemoryEdit::Whole;
         admit_live_project_memory_sessions(&request.session_id, &request.actor)?;
@@ -311,12 +311,12 @@ impl SqliteStore {
                 let replay_index = usize::try_from(replay_revision - 1).map_err(|_| {
                     StoreError::InvalidProjectMemory("memory revision exceeds its range".into())
                 })?;
-                admit_full_response(&with_read_time_reserve(memory_full(
-                    &key,
-                    &history,
-                    replay_index,
-                    current,
-                )))?;
+                // A replay answers with a stored version: it is judged by the
+                // bound it was admitted under.
+                admit_full_response(
+                    &with_read_time_reserve(memory_full(&key, &history, replay_index, current)),
+                    ProjectMemoryAdmission::Retained,
+                )?;
                 // The change is read from the two revisions the replay names,
                 // never from the current head.
                 let change = replay_index
@@ -383,12 +383,18 @@ impl SqliteStore {
             },
             workaround: retiring_target.as_ref().map(|_| true),
         };
+        // Stored versions must stay readable at the new revision count; only
+        // the version being admitted takes the newer, tighter bound.
         for index in 0..history.len() {
-            admit_full_response(&with_read_time_reserve(memory_full(
-                &key, &history, index, revision,
-            )))?;
+            admit_full_response(
+                &with_read_time_reserve(memory_full(&key, &history, index, revision)),
+                ProjectMemoryAdmission::Retained,
+            )?;
         }
-        admit_full_response(&with_read_time_reserve(full))?;
+        admit_full_response(
+            &with_read_time_reserve(full),
+            ProjectMemoryAdmission::NewVersion,
+        )?;
 
         let prepared =
             prepare_project_memory(&request, &key, existing, retiring_target, clears_target)?;
@@ -607,14 +613,28 @@ impl SqliteStore {
             ));
         }
         let normalized_after = after.map(validate_project_memory_key).transpose()?;
-        let transaction = self.connection.unchecked_transaction()?;
-        let (rows, total_matches) = project_memory_rows_on(
-            &transaction,
-            project_id,
-            normalized_query,
-            normalized_after.as_deref(),
-            PROJECT_MEMORY_LIST_LIMIT + 1,
-        )?;
+        // One snapshot: its own, or an enclosing read transaction it joins.
+        let read = |connection: &Connection| -> Result<_, StoreError> {
+            let rows = project_memory_rows_on(
+                connection,
+                project_id,
+                normalized_query,
+                normalized_after.as_deref(),
+                PROJECT_MEMORY_LIST_LIMIT + 1,
+            )?;
+            let state = records
+                .then(|| project_memory_state_on(connection, project_id).ok())
+                .flatten();
+            Ok((rows, state))
+        };
+        let ((rows, total_matches), state) = if self.connection.is_autocommit() {
+            let transaction = self.connection.unchecked_transaction()?;
+            let read = read(&transaction)?;
+            transaction.commit()?;
+            read
+        } else {
+            read(&self.connection)?
+        };
         let has_more = rows.len() > PROJECT_MEMORY_LIST_LIMIT;
         let memories = rows
             .into_iter()
@@ -633,14 +653,7 @@ impl SqliteStore {
         } else {
             next_after.is_none()
         };
-        let listing = if records {
-            project_memory_state_on(&transaction, project_id)
-                .ok()
-                .map(|(_, change_position)| ProjectMemoryListingCut { change_position })
-        } else {
-            None
-        };
-        transaction.commit()?;
+        let listing = state.map(|(_, change_position)| ProjectMemoryListingCut { change_position });
         Ok((
             ProjectMemoryList {
                 memories,
@@ -1155,6 +1168,16 @@ impl SqliteStore {
         }
         Ok(())
     }
+}
+
+/// Which version a full-read admission check judges.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProjectMemoryAdmission {
+    /// The version this write admits now.
+    NewVersion,
+    /// A version already stored: history re-read at the new revision count,
+    /// or the version an exact retry replays.
+    Retained,
 }
 
 /// Admission sees a full read as it will be read later: a local target's item

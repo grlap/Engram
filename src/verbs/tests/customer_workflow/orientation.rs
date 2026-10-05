@@ -468,6 +468,7 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
     // already fitted result that could have silently lost candidates.
     let with = CompactNextReceipt {
         backup_reminder: None,
+        claim_lapse_reminder: None,
         focus_evaluation: None,
         evaluation_obligations: None,
         ready_navigation: lists.ready_navigation,

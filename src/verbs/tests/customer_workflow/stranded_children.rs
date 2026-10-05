@@ -189,6 +189,7 @@ fn next_stranded_children_have_exact_counts_and_current_detach_refusals() {
         .discovery;
     let compact = CompactNextReceipt {
         backup_reminder: None,
+        claim_lapse_reminder: None,
         ready_navigation: None,
         peek: None,
         read_cut: crate::work_service::WorkNextReadCut {

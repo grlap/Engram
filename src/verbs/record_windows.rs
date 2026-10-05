@@ -50,6 +50,24 @@ impl AgentVerbs {
         input: &ShowInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
+        self.with_claim_lapse(now, MAX_AGENT_WORK_RESPONSE_BYTES, |budget| {
+            self.show_records_within(work_ref, input, now, budget)
+        })
+    }
+
+    /// `show_records` fitted to `budget`; the explicit complete reads (full
+    /// contract, note detail, one evaluation) stay unbounded as before.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "each show mode is dispatched and refused in one place"
+    )]
+    fn show_records_within(
+        &self,
+        work_ref: &str,
+        input: &ShowInput,
+        now: DateTime<Utc>,
+        budget: usize,
+    ) -> Result<Receipt, VerbError> {
         let other_modes =
             input.notes || input.history || input.gates || input.note.is_some() || input.full;
         if input.observations {
@@ -63,7 +81,7 @@ impl AgentVerbs {
                     work_ref,
                 ));
             }
-            return self.show_observations(work_ref, input.after.as_deref(), now);
+            return self.show_observations(work_ref, input.after.as_deref(), now, budget);
         }
         if (input.evaluations && (other_modes || input.evaluation.is_some()))
             || (input.evaluation.is_some() && (other_modes || input.after.is_some()))
@@ -78,7 +96,7 @@ impl AgentVerbs {
             ));
         }
         if input.evaluations {
-            return self.show_evaluations(work_ref, input.after.as_deref(), now);
+            return self.show_evaluations(work_ref, input.after.as_deref(), now, budget);
         }
         if let Some(record) = &input.evaluation {
             return self.show_evaluation(work_ref, record, now);
@@ -230,7 +248,7 @@ impl AgentVerbs {
             ));
         }
         if !input.notes && !input.history {
-            return self.show(work_ref, now);
+            return self.show_within(work_ref, now, budget);
         }
         let kind = if input.gates {
             WorkRecordKind::NotesWithGates
@@ -261,7 +279,7 @@ impl AgentVerbs {
                 }
             },
             self.service.display_identity(),
-            MAX_AGENT_WORK_RESPONSE_BYTES,
+            budget,
         )
         .map_err(|error| VerbError::for_listing(error.error, &command))
     }

@@ -1,10 +1,7 @@
 //! The explicit source-observation window of `show`, fitted to the agent
 //! response budget like the evaluations window.
 
-use super::{
-    AgentVerbs, DateTime, Guidance, MAX_AGENT_WORK_RESPONSE_BYTES, Receipt, StoreError, Utc, Value,
-    VerbError, json,
-};
+use super::{AgentVerbs, DateTime, Guidance, Receipt, StoreError, Utc, Value, VerbError, json};
 use std::fmt::Write as _;
 
 use crate::work_service::{WorkObservationRow, WorkObservationWindow};
@@ -16,6 +13,7 @@ impl AgentVerbs {
         work_ref: &str,
         after: Option<&str>,
         now: DateTime<Utc>,
+        budget: usize,
     ) -> Result<Receipt, VerbError> {
         let command = format!(
             "engram work show {} --observations",
@@ -25,7 +23,7 @@ impl AgentVerbs {
             .service
             .work_observation_window(work_ref, after, now)
             .map_err(|error| VerbError::for_listing(error, &command))?;
-        fit_window(&page, MAX_AGENT_WORK_RESPONSE_BYTES)
+        fit_window(&page, budget)
     }
 }
 
