@@ -188,6 +188,7 @@ impl LocalWorkService {
         &self,
         key: &str,
         revision: Option<u64>,
+        names: crate::argument_names::ArgumentNames,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryFullResponse, StoreError> {
         let full = self.read_store_at(now)?.project_memory_full(
@@ -197,7 +198,7 @@ impl LocalWorkService {
             key,
             revision,
         )?;
-        project_memory_full_response(full).map_err(|error| match error {
+        project_memory_full_response(full, names).map_err(|error| match error {
             StoreError::InvalidProjectMemory(detail) => StoreError::InvalidMemoryProjection(detail),
             other => other,
         })

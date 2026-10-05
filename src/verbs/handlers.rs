@@ -1391,24 +1391,9 @@ impl AgentVerbs {
             let key = input.query.as_deref().ok_or_else(|| {
                 StoreError::InvalidProjectMemory(wording::FULL_NEEDS_KEY_REFUSAL.cli.into())
             })?;
-            let mut envelope = self.service.project_memory_full(key, input.revision, now)?;
-            // The reminder that names the arguments keeping or clearing a
-            // dropped retirement target names them as this caller passes them.
-            if let Some(dropped) = &envelope.memory.retiring_target_dropped {
-                let cli = crate::work_service::retiring_target_dropped_reminder(
-                    dropped,
-                    ArgumentNames::Cli,
-                );
-                let spelled = crate::work_service::retiring_target_dropped_reminder(
-                    dropped,
-                    self.argument_names,
-                );
-                for reminder in &mut envelope.reminders {
-                    if *reminder == cli {
-                        reminder.clone_from(&spelled);
-                    }
-                }
-            }
+            let envelope =
+                self.service
+                    .project_memory_full(key, input.revision, self.argument_names, now)?;
             let lines = envelope.terminal_lines();
             return Ok(Receipt::assemble(
                 lines,

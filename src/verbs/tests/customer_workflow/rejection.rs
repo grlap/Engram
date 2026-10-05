@@ -83,7 +83,11 @@ fn rejection_checks_intermediate_ancestor_before_any_disposal() {
             );
             assert_eq!(
                 VerbError::at(error, &child).guidance().next,
-                [format!("engram work show {child}")]
+                [
+                    format!("engram work show {ancestor}"),
+                    format!("engram work show {child}"),
+                    "engram work add \"Follow-up title\" --accept \"Delivery criterion\"".into(),
+                ]
             );
             let mut stale = request.clone();
             stale.expected_parent_revision = Some(parent_item.revision - 1);
@@ -146,7 +150,7 @@ fn rejection_correction_closed_root_is_typed_and_atomic() {
             DoneInput {
                 links: Vec::new(),
                 link_basis: None,
-                work_ref: Some(root),
+                work_ref: Some(root.clone()),
                 summary: Some("Root delivered".into()),
                 ..DoneInput::default()
             },
@@ -200,12 +204,21 @@ fn rejection_correction_closed_root_is_typed_and_atomic() {
         "the root execution is closed and cannot record a child waiver"
     );
     let remedy = payload["error"]["details"]["remedy"].as_str().unwrap();
-    assert!(remedy.contains("if cancellation is admitted"));
-    assert!(remedy.contains(&format!("{parent} is open and waivable")));
+    assert_eq!(
+        remedy,
+        format!(
+            "execution blocked by ancestor {root} (completed); inspect with engram work show {root}; then inspect with engram work show {child} and follow its admitted detach or resolve-first guidance, or file an independent root with engram work add \"Follow-up title\" --accept \"Delivery criterion\""
+        )
+    );
+    assert_eq!(payload["error"]["details"].as_object().unwrap().len(), 4);
     let error = VerbError::at(error, &child);
     assert_eq!(
         error.guidance().next,
-        vec![format!("engram work show {child}")]
+        vec![
+            format!("engram work show {root}"),
+            format!("engram work show {child}"),
+            "engram work add \"Follow-up title\" --accept \"Delivery criterion\"".into(),
+        ]
     );
     // The actual word must expose the same typed refusal after protocol admission.
     let word_error = verbs

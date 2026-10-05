@@ -127,7 +127,7 @@ fn create_item(store: &mut SqliteStore, project: &str, title: &str) -> crate::Wo
 /// Writes one version of `key` in `project` straight to the store, as an
 /// import file or an older build could, with whatever target it is given and
 /// no resolution or admission.
-fn insert_raw_version(
+pub(in crate::storage::project_memory) fn insert_raw_version(
     store: &mut SqliteStore,
     project: &str,
     key: &str,
@@ -271,7 +271,11 @@ fn a_target_dropped_without_a_clear_is_disclosed_until_restored() {
     assert_eq!(full(&store, key, Some(2)).retiring_target_dropped, expected);
     assert!(full(&store, key, Some(1)).retiring_target_dropped.is_none());
 
-    let response = crate::work_service::project_memory_full_response(current).unwrap();
+    let response = crate::work_service::project_memory_full_response(
+        current,
+        crate::argument_names::ArgumentNames::Cli,
+    )
+    .unwrap();
     assert!(
         response.reminders.iter().any(|reminder| {
             reminder.contains("revision 2 dropped the retirement target without a clear")

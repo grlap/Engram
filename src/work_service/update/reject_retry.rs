@@ -125,8 +125,9 @@ fn refusal_with_remedy(
     };
     let remedy = remedy(&child.short_ref, parent_ref.as_deref()).into_boxed_str();
     StoreError::WorkRejectRefused {
-        child_ref: child.short_ref.clone(),
+        child_ref: child.short_ref.clone().into_boxed_str(),
         parent_ref,
+        blocking_ancestor_ref: None,
         reason,
         remedy,
     }

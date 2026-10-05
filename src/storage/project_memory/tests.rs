@@ -16,11 +16,11 @@ mod fts_terms;
 mod fts_verification;
 mod listing_acknowledgement;
 mod partial;
-mod retiring;
+pub(super) mod retiring;
 mod revisions;
 
 fn admit_project_memory_full(full: &ProjectMemoryFull) -> Result<(), StoreError> {
-    crate::work_service::project_memory_full_response(full.clone()).map(drop)
+    crate::work_service::ensure_project_memory_full_is_admissible(full)
 }
 
 fn actor(session: &str) -> ActorContext {
@@ -1094,6 +1094,29 @@ fn project_memory_context_only_retry_uses_the_stored_delivery_envelope() {
         1_700_000_000_000,
     );
     request.actor.actor_id = "a".repeat(3_850);
+    let mut original = ProjectMemoryFull {
+        revision: 1,
+        current_revision: 1,
+        key: "context-replay-boundary".into(),
+        body: request.body.clone(),
+        remembered_at: request.created_at,
+        actor_id: request.actor.actor_id.clone(),
+        actor_context: None,
+        session_id: request.actor.session_id.clone(),
+        retiring_target: None,
+        retiring_state: None,
+        retiring_target_dropped: None,
+        workaround: None,
+    };
+    // Fit the actual current and widest historical CLI/MCP envelopes rather
+    // than assuming that the current CLI envelope is the largest one.
+    while admit_project_memory_full(&original).is_err() {
+        assert!(original.actor_id.pop().is_some());
+    }
+    let mut oversized = original.clone();
+    oversized.actor_id.push('a');
+    assert!(admit_project_memory_full(&oversized).is_err());
+    request.actor.actor_id.clone_from(&original.actor_id);
     let created = store
         .remember_project_memory_with_admission(
             &request,

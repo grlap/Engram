@@ -180,7 +180,10 @@ pub(crate) struct ProjectMemoryFullResponse {
 
 impl ProjectMemoryFullResponse {
     #[must_use]
-    pub(crate) fn new(memory: ProjectMemoryFull) -> Self {
+    pub(crate) fn new(
+        memory: ProjectMemoryFull,
+        names: crate::argument_names::ArgumentNames,
+    ) -> Self {
         let mut next = Vec::new();
         let mut reminders = Vec::new();
         if memory.revision > 1 {
@@ -207,10 +210,7 @@ impl ProjectMemoryFullResponse {
         if memory.revision == memory.current_revision
             && let Some(dropped) = &memory.retiring_target_dropped
         {
-            reminders.push(retiring_target_dropped_reminder(
-                dropped,
-                crate::argument_names::ArgumentNames::Cli,
-            ));
+            reminders.push(retiring_target_dropped_reminder(dropped, names));
         }
         next.push("engram work memories".into());
         Self {
@@ -340,8 +340,9 @@ pub(crate) fn retiring_target_lines(
 
 pub(crate) fn project_memory_full_response(
     memory: ProjectMemoryFull,
+    names: crate::argument_names::ArgumentNames,
 ) -> Result<ProjectMemoryFullResponse, StoreError> {
-    let response = ProjectMemoryFullResponse::new(memory);
+    let response = ProjectMemoryFullResponse::new(memory, names);
     let bytes = serde_json::to_vec(&response)?.len();
     if bytes > MAX_PROJECT_MEMORY_FULL_BYTES {
         return Err(StoreError::InvalidProjectMemory(format!(
@@ -439,14 +440,22 @@ fn terminal_safe_data_block(text: &str) -> String {
         .join("\n")
 }
 
-fn ensure_project_memory_full_is_admissible(memory: &ProjectMemoryFull) -> Result<(), StoreError> {
-    project_memory_full_response(memory.clone())?;
+pub(crate) fn ensure_project_memory_full_is_admissible(
+    memory: &ProjectMemoryFull,
+) -> Result<(), StoreError> {
     // Reserve the largest numeric/history-navigation envelope up front: a
     // later revision must not make an accepted earlier body unreadable.
     let mut historical = memory.clone();
     historical.revision = u64::MAX - 1;
     historical.current_revision = u64::MAX;
-    project_memory_full_response(historical).map(drop)
+    for names in [
+        crate::argument_names::ArgumentNames::Cli,
+        crate::argument_names::ArgumentNames::Mcp,
+    ] {
+        project_memory_full_response(memory.clone(), names)?;
+        project_memory_full_response(historical.clone(), names)?;
+    }
+    Ok(())
 }
 
 /// Locally derived source used when a shell omits its asserted actor id.

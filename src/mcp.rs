@@ -1195,6 +1195,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
             parent_ref,
             reason,
             remedy,
+            ..
         } => json!({
             "child_ref": child_ref, "parent_ref": parent_ref, "reason": reason, "remedy": remedy,
         }),

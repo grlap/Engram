@@ -1097,9 +1097,13 @@ test("reject checks terminal ancestors before cancellation on CLI and MCP", asyn
         assert.equal(value.details.child_ref, child);
         assert.equal(value.details.parent_ref, parent);
         assert.equal(value.details.reason, shape === "root" ? "the root execution is closed and cannot record a child waiver" : "an ancestor is not open");
-        assert.ok(value.details.remedy.includes(`ancestor ${closed} (completed)`), JSON.stringify(value));
-        assert.ok(value.details.remedy.includes('engram work add "Follow-up title" --accept "Delivery criterion"'));
-        assert.deepEqual(value.next, [`engram work show ${child}`]);
+        assert.deepEqual(Object.keys(value.details).sort(), ["child_ref", "parent_ref", "reason", "remedy"]);
+        assert.equal(value.details.remedy, `execution blocked by ancestor ${closed} (completed); inspect with engram work show ${closed}; then inspect with engram work show ${child} and follow its admitted detach or resolve-first guidance, or file an independent root with engram work add "Follow-up title" --accept "Delivery criterion"`);
+        assert.deepEqual(value.next, [
+          `engram work show ${closed}`,
+          `engram work show ${child}`,
+          'engram work add "Follow-up title" --accept "Delivery criterion"',
+        ]);
       }
       const text = cliWord(home, session, "update", child, "--reject", args.reason);
       assert.notEqual(text.status, 0);

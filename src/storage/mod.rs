@@ -1345,8 +1345,9 @@ pub enum StoreError {
     WorkPeerDecompositionRefused { parent: crate::domain::WorkId },
     #[error("reject refused for {child_ref}: {reason}; {remedy}")]
     WorkRejectRefused {
-        child_ref: String,
+        child_ref: Box<str>,
         parent_ref: Option<String>,
+        blocking_ancestor_ref: Option<Box<str>>,
         reason: &'static str,
         remedy: Box<str>,
     },

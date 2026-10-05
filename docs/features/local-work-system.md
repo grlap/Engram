@@ -2129,7 +2129,10 @@ retiring targets reads a targeted memory without its target, and its revise
 writes a version with neither. The list row and full read then say that the
 target was dropped and by which revision, naming the earlier target, and the
 full read reminds the reader to restore it on a revise with `--retires-with`
-or to acknowledge the drop with `--revise --clear-retires-with`. Reads walk
+or to acknowledge the drop with `--revise --clear-retires-with`. MCP reminders
+name the caller's `retires_with` and `clear_retires_with` fields instead;
+runnable `next` commands retain CLI spelling. Both response forms, including
+their historical navigation, must fit before a memory write is admitted. Reads walk
 back over every version with neither a target nor a clear, so several such
 revisions still show the drop. Until every
 session that writes memories runs a build with retiring targets, targeted
@@ -2304,8 +2307,10 @@ commits if either transition fails. Exact scoped replay returns both effects.
 Completed work is intercepted first by the existing late-finding refusal
 pointing to `note`/`gate`. Other unsupported shapes return `work_reject_refused`
 with conditional cancel and parent-waive guidance, never partial success.
-When an ancestor is terminal, the refusal names its ref and lifecycle in the
-remedy and offers child inspection and an independent root follow-up. The
+When an ancestor is not open, the dedicated refusal names its ref and lifecycle
+in the remedy. Its ordered `next` commands inspect that ancestor, inspect the
+child for admitted detach or resolve-first guidance, and offer an independent
+root follow-up with an acceptance criterion. Detach is not always admitted. The
 ancestor check precedes cancellation; existing revision and closed-root
 refusals retain their precedence.
 Record evidence rejecting a finding in a note, then reject it; do not complete

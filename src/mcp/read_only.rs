@@ -399,6 +399,145 @@ mod tests {
     }
 
     #[test]
+    fn full_memories_build_dropped_target_reminders_for_each_caller() {
+        let name = "dropped-retirement-full";
+        let (directory, writer, reader, work_ref) = servers(name);
+        let database = directory.path().join(format!("{name}.sqlite3"));
+        let project = ProjectId(format!("project-{name}"));
+        let key = "dropped-target";
+        let remembered = writer.remember(Parameters(serde_json::from_value(json!({
+            "key": key, "text": "Original workaround", "retires_with": format!("local:{work_ref}")
+        })).unwrap()));
+        assert_ne!(remembered.is_error, Some(true), "{remembered:?}");
+        let first_at = chrono::DateTime::parse_from_rfc3339(
+            remembered.structured_content.as_ref().unwrap()["remembered_at"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap()
+        .timestamp_millis();
+        let mut store = crate::storage::SqliteStore::open(&database).unwrap();
+        let work = store.resolve_work_ref(&project, &work_ref).unwrap();
+        // A historical writer could omit both the target and its explicit
+        // clear. Modern remember revisions preserve the target instead.
+        store.test_append_memory_revision_without_target(
+            &project.0,
+            key,
+            "Legacy body --caller-data",
+            first_at + 1,
+        );
+        store.test_append_memory_revision_without_target(
+            &project.0,
+            key,
+            "Current body --caller-data",
+            first_at + 2,
+        );
+        let cli = crate::AgentVerbs::new(
+            database.clone(),
+            project.clone(),
+            "reader".into(),
+            SessionId("reader".into()),
+            None,
+        );
+        let input = crate::MemoriesInput {
+            query: Some(key.into()),
+            full: true,
+            ..crate::MemoriesInput::default()
+        };
+        let cli_result = cli.memories(&input, chrono::Utc::now()).unwrap();
+        let mcp_result = reader.memories(Parameters(
+            serde_json::from_value(json!({"query": key, "full": true})).unwrap(),
+        ));
+        assert_ne!(mcp_result.is_error, Some(true), "{mcp_result:?}");
+        let value = mcp_result.structured_content.as_ref().unwrap();
+        let target = format!("local:{}", work.work_id.0);
+        let reminder = format!(
+            "revision 2 dropped the retirement target without a clear; to keep it, revise with retires_with {target}, or to let it go, revise with clear_retires_with"
+        );
+        let cli_reminder = format!(
+            "revision 2 dropped the retirement target without a clear; to keep it, revise with --retires-with {target}, or to let it go, revise with --clear-retires-with"
+        );
+        assert_eq!(value["reminders"], json!([reminder]));
+        assert_eq!(cli_result.value["reminders"], json!([cli_reminder]));
+        assert!(cli_result.text().contains(&cli_reminder));
+        let text = serde_json::to_string(&mcp_result.content).unwrap();
+        assert!(text.contains(&reminder), "{text}");
+        for result in [value, &cli_result.value] {
+            assert_eq!(result["body"], "Current body --caller-data");
+            assert_eq!(result["revision"], 3);
+            assert_eq!(result["retiring_target_dropped"]["revision"], 2);
+        }
+        assert_eq!(value["next"], cli_result.value["next"]);
+        assert!(value["next"][0].as_str().unwrap().contains("--revision 2"));
+        let historical = reader.memories(Parameters(
+            serde_json::from_value(json!({"query": key, "full": true, "revision": 2})).unwrap(),
+        ));
+        assert_ne!(historical.is_error, Some(true), "{historical:?}");
+        let historical = historical.structured_content.unwrap();
+        assert_eq!(historical["body"], "Legacy body --caller-data");
+        assert_eq!(historical["retiring_target_dropped"]["revision"], 2);
+        assert_eq!(historical["reminders"], json!([]));
+        // Both the actual read envelopes and the production write callback
+        // check the current and widest historical-navigation renderings.
+        let full = store
+            .project_memory_full(
+                &project,
+                &SessionId("reader".into()),
+                &crate::ActorContext {
+                    actor_id: "reader".into(),
+                    actor_kind: "agent".into(),
+                    assurance: crate::domain::AssuranceLevel::Asserted,
+                    run_id: None,
+                    session_id: Some(SessionId("reader".into())),
+                    source_tool: None,
+                    source_skill: None,
+                    provenance_chain: Vec::new(),
+                    reason: "read fixture".into(),
+                },
+                key,
+                None,
+            )
+            .unwrap();
+        crate::work_service::ensure_project_memory_full_is_admissible(&full).unwrap();
+        for names in [
+            crate::argument_names::ArgumentNames::Cli,
+            crate::argument_names::ArgumentNames::Mcp,
+        ] {
+            let response =
+                crate::work_service::project_memory_full_response(full.clone(), names).unwrap();
+            assert!(serde_json::to_vec(&response).unwrap().len() <= 12 * 1024);
+            let mut oversized = full.clone();
+            oversized.body = "x".repeat(12 * 1024);
+            assert!(
+                crate::work_service::project_memory_full_response(oversized.clone(), names)
+                    .is_err()
+            );
+            assert!(
+                crate::work_service::ensure_project_memory_full_is_admissible(&oversized).is_err()
+            );
+        }
+        for change in [
+            json!({"clear_retires_with": true}),
+            json!({"retires_with": format!("local:{work_ref}")}),
+        ] {
+            let mut args = change.as_object().unwrap().clone();
+            args.extend(object(
+                json!({"key": key, "text": "Resolved body", "revise": true}),
+            ));
+            let repaired = writer.remember(Parameters(
+                serde_json::from_value(Value::Object(args)).unwrap(),
+            ));
+            assert_ne!(repaired.is_error, Some(true), "{repaired:?}");
+            let repaired = reader.memories(Parameters(
+                serde_json::from_value(json!({"query": key, "full": true})).unwrap(),
+            ));
+            let repaired = repaired.structured_content.unwrap();
+            assert!(repaired.get("retiring_target_dropped").is_none());
+            assert_eq!(repaired["reminders"], json!([]));
+        }
+    }
+
+    #[test]
     fn each_read_word_answers_and_leaves_the_store_unchanged() {
         let (directory, _writer, reader, work_ref) = servers("read-only-reads");
         let database = directory.path().join("read-only-reads.sqlite3");

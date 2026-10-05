@@ -567,8 +567,16 @@ impl VerbError {
                 vec![format!("engram work show {target}")],
             ),
             StoreError::WorkDetachRefused { reason, remedy, .. } => (vec![reason.clone()], vec![remedy.clone()]),
-            StoreError::WorkRejectRefused { child_ref, reason, .. } => (
-                vec![(*reason).to_string()], vec![format!("engram work show {child_ref}")],
+            StoreError::WorkRejectRefused { child_ref, blocking_ancestor_ref, reason, .. } => (
+                vec![(*reason).to_string()],
+                blocking_ancestor_ref.as_ref().map_or_else(
+                    || vec![format!("engram work show {child_ref}")],
+                    |ancestor| vec![
+                        format!("engram work show {ancestor}"),
+                        format!("engram work show {child_ref}"),
+                        "engram work add \"Follow-up title\" --accept \"Delivery criterion\"".into(),
+                    ],
+                ),
             ),
             StoreError::WorkParentNotOpen { lifecycle, .. } => (
                 vec![crate::storage::parent_not_open_remedy(*lifecycle).into()],

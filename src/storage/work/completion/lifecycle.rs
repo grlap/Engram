@@ -428,8 +428,9 @@ fn reject_refusal(child: &WorkItem, parent: Option<&WorkItem>, reason: &'static 
         remedy: format!(
             "inspect with engram work show {child_ref}; if cancellation is admitted, use engram work update {child_ref} --cancel \"why\"{waiver}"
         ).into_boxed_str(),
-        child_ref,
+        child_ref: child_ref.into_boxed_str(),
         parent_ref,
+        blocking_ancestor_ref: None,
         reason,
     }
 }
@@ -440,15 +441,19 @@ fn reject_refusal_with_ancestor(
     reason: &'static str,
     ancestor: Option<&crate::domain::WorkBlockingAncestor>,
 ) -> StoreError {
-    let mut refusal = reject_refusal(child, parent, reason);
-    if let (StoreError::WorkRejectRefused { remedy, .. }, Some(ancestor)) = (&mut refusal, ancestor)
-    {
-        *remedy = format!(
-            "{remedy}; execution blocked by ancestor {} ({}); inspect with engram work show {}; follow admitted detach or resolve-first guidance, or file an independent root with engram work add \"Follow-up title\" --accept \"Delivery criterion\"",
-            ancestor.short_ref, ancestor.lifecycle.word(), child.short_ref,
-        ).into_boxed_str();
+    let Some(ancestor) = ancestor else {
+        return reject_refusal(child, parent, reason);
+    };
+    StoreError::WorkRejectRefused {
+        child_ref: child.short_ref.clone().into_boxed_str(),
+        parent_ref: parent.map(|item| item.short_ref.clone()),
+        blocking_ancestor_ref: Some(ancestor.short_ref.clone().into_boxed_str()),
+        reason,
+        remedy: format!(
+            "execution blocked by ancestor {} ({}); inspect with engram work show {}; then inspect with engram work show {} and follow its admitted detach or resolve-first guidance, or file an independent root with engram work add \"Follow-up title\" --accept \"Delivery criterion\"",
+            ancestor.short_ref, ancestor.lifecycle.word(), ancestor.short_ref, child.short_ref,
+        ).into_boxed_str(),
     }
-    refusal
 }
 
 fn dispose_work_on(

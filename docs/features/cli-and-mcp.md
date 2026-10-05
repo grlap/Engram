@@ -996,9 +996,10 @@ Rules that matter:
   waiver atomically, with the same attributed reason on both existing events.
   The parent and every ancestor must be open. A terminal ancestor refuses
   before cancellation with `work_reject_refused`; its remedy names the
-  ancestor's ref and lifecycle, while `next` offers `show CHILD` to inspect
-  admitted detach or resolve-first guidance. An independent root follow-up
-  is also offered in the remedy.
+  ancestor's ref and lifecycle. Its ordered `next` commands inspect the
+  ancestor, inspect the child for admitted detach or resolve-first guidance,
+  and offer an independent root follow-up with `add` and an acceptance
+  criterion. This does not promise that detach is admitted.
   Existing cancellation ownership and project-bound waiver checks still apply;
   no claim, completion credit, or acceptance change is implied. The receipt
   names both effects. Optional children and other unwaivable shapes return

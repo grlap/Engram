@@ -67,6 +67,19 @@ pub(crate) fn validate_context_generation(
 }
 
 impl SqliteStore {
+    /// Builds an attributed legacy revision that dropped its retirement
+    /// target without recording a clear, for full-read surface regressions.
+    #[cfg(test)]
+    pub(crate) fn test_append_memory_revision_without_target(
+        &mut self,
+        project: &str,
+        key: &str,
+        body: &str,
+        at_ms: i64,
+    ) {
+        tests::retiring::insert_raw_version(self, project, key, body, None, at_ms);
+    }
+
     /// Creates one attributed project episode or replays the identical create.
     ///
     /// # Errors

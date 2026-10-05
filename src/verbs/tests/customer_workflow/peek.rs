@@ -332,7 +332,12 @@ fn peek_preserves_whole_store_and_pending_delivery_under_writer() {
     tx.rollback().unwrap();
     reader
         .service
-        .project_memory_full("orientation", None, at(6))
+        .project_memory_full(
+            "orientation",
+            None,
+            crate::argument_names::ArgumentNames::Cli,
+            at(6),
+        )
         .unwrap();
     assert_peek(&reader.next(&peek_input(false), at(6)).unwrap(), true);
     assert_eq!(
