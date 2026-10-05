@@ -37,7 +37,7 @@ fn phoenix_claim_renewal_refuses_pending_handoff_and_completed_work() {
     let before = store.current_work_claim(root.work_id).unwrap().unwrap();
     let event_count = store.work_event_count(root.work_id).unwrap();
     let error = service.work_update(claim(), at(3)).unwrap_err();
-    let structured = crate::mcp::store_error_value(&error);
+    let structured = crate::store_error_value(&error);
     assert_eq!(
         structured["error"]["details"]["remedy"],
         "cancel the handoff offer, or let it be accepted or expire before retrying"

@@ -119,7 +119,7 @@ fn done_without_criteria_is_refused_by_name_until_criteria_are_added_and_evaluat
             "attempt {attempt}: {refused:?}"
         );
         assert_eq!(
-            crate::mcp::store_error_value(&refused.error)["error"]["code"],
+            crate::store_error_value(&refused.error)["error"]["code"],
             "acceptance_criteria_required"
         );
         let guidance = refused.guidance();

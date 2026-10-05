@@ -419,7 +419,7 @@ fn phoenix_add_under_terminal_parent_returns_typed_root_followup_remedy_without_
             assert!(
                 matches!(&error.error, StoreError::WorkParentNotOpen { parent: id, lifecycle: state } if *id == parent_before.work_id && *state == lifecycle)
             );
-            let json = crate::mcp::store_error_value(&error.error);
+            let json = crate::store_error_value(&error.error);
             assert_eq!(json["error"]["code"], "work_parent_not_open");
             assert_eq!(
                 json["error"]["details"]["remedy"],

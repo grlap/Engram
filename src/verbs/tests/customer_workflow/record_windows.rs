@@ -461,7 +461,7 @@ fn record_windows_note_write_limit_counts_utf8_and_rolls_back_initial_batches() 
             }
         ));
         assert_eq!(
-            crate::mcp::store_error_value(&error.error)["error"]["details"]["remedy"],
+            crate::store_error_value(&error.error)["error"]["details"]["remedy"],
             "carry bulk content as a reference"
         );
     }

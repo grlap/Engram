@@ -631,7 +631,7 @@ fn phoenix_gate_without_focus_names_explicit_target_and_never_guesses_completed_
         vec![crate::verbs::GATE_WORK_REF_REQUIRED]
     );
     assert_eq!(guidance.next, vec!["engram work next"]);
-    let structured = crate::mcp::store_error_value(&error.error);
+    let structured = crate::store_error_value(&error.error);
     assert_eq!(
         structured["error"]["details"]["remedy"],
         crate::verbs::GATE_WORK_REF_REQUIRED

@@ -58,7 +58,7 @@ fn decomposition_correction_concurrent_finish_refusal_is_agent_safe() {
     let error = writer
         .refresh_decomposition_retry_basis(&mut store, &key, &stored, &current)
         .unwrap_err();
-    let value = crate::mcp::store_error_value(&error);
+    let value = crate::store_error_value(&error);
     assert_eq!(value["error"]["code"], "work_decomposition_retry_conflict");
     assert_eq!(value["error"]["details"]["parent_ref"], parent.short_ref);
     assert_eq!(

@@ -67,7 +67,7 @@ fn rejection_checks_intermediate_ancestor_before_any_disposal() {
                 crate::storage::test_database_shape_snapshot(&connection).unwrap(),
                 before
             );
-            let payload = crate::mcp::store_error_value(&error);
+            let payload = crate::store_error_value(&error);
             assert_eq!(payload["error"]["code"], "work_reject_refused");
             assert_eq!(payload["error"]["details"]["child_ref"], child);
             assert_eq!(payload["error"]["details"]["parent_ref"], parent);
@@ -111,7 +111,7 @@ fn rejection_checks_intermediate_ancestor_before_any_disposal() {
                 )
                 .unwrap_err();
             assert_eq!(
-                crate::mcp::store_error_value(&word_error.error)["error"]["code"],
+                crate::store_error_value(&word_error.error)["error"]["code"],
                 "work_reject_refused"
             );
             assert_eq!(store.get_work_item(child_item.work_id).unwrap(), child_item);
@@ -195,7 +195,7 @@ fn rejection_correction_closed_root_is_typed_and_atomic() {
         crate::storage::test_database_shape_snapshot(&connection).unwrap(),
         before
     );
-    let payload = crate::mcp::store_error_value(&error);
+    let payload = crate::store_error_value(&error);
     assert_eq!(payload["error"]["code"], "work_reject_refused");
     assert_eq!(payload["error"]["details"]["child_ref"], child);
     assert_eq!(payload["error"]["details"]["parent_ref"], parent);
@@ -233,7 +233,7 @@ fn rejection_correction_closed_root_is_typed_and_atomic() {
         )
         .unwrap_err();
     assert_eq!(
-        crate::mcp::store_error_value(&word_error.error)["error"]["code"],
+        crate::store_error_value(&word_error.error)["error"]["code"],
         "work_reject_refused"
     );
     assert_eq!(store.get_work_item(child_item.work_id).unwrap(), child_item);

@@ -43,7 +43,7 @@ fn surfaces() -> Surfaces {
 /// Every text an agent reads from a refusal: the message, the structured
 /// details' reason and remedy, and the reminders.
 fn refusal_texts(verbs: &AgentVerbs, error: &VerbError) -> Vec<String> {
-    let mut projected = verbs.project_error(error, crate::mcp::store_error_value(&error.error));
+    let mut projected = verbs.project_error(error, crate::store_error_value(&error.error));
     let guidance = verbs.error_guidance(error);
     if verbs.argument_names == ArgumentNames::Mcp {
         projected["error"]["reminders"] = json!(guidance.reminders);
@@ -516,8 +516,8 @@ fn word_refusals_name_flags_on_the_cli_and_fields_over_mcp() {
         let on_cli = call(&surfaces.cli).expect_err(cli);
         let on_mcp = call(&surfaces.mcp).expect_err(cli);
         assert_eq!(
-            crate::mcp::store_error_value(&on_cli.error)["error"]["code"],
-            crate::mcp::store_error_value(&on_mcp.error)["error"]["code"],
+            crate::store_error_value(&on_cli.error)["error"]["code"],
+            crate::store_error_value(&on_mcp.error)["error"]["code"],
             "{cli}"
         );
         let cli_texts = refusal_texts(&surfaces.cli, &on_cli);
@@ -529,7 +529,7 @@ fn word_refusals_name_flags_on_the_cli_and_fields_over_mcp() {
         }
         // The raw core envelope and the offered commands keep CLI syntax.
         assert!(
-            crate::mcp::store_error_value(&on_mcp.error)["error"]["message"]
+            crate::store_error_value(&on_mcp.error)["error"]["message"]
                 .as_str()
                 .unwrap()
                 .ends_with(cli.as_str()),
@@ -592,7 +592,7 @@ fn core_refusals_and_remedies_name_flags_on_the_cli_and_fields_over_mcp() {
             link(crate::storage::AMBIGUOUS_LOCATOR_REFUSAL.cli),
             vec![
                 crate::storage::AMBIGUOUS_LOCATOR_REFUSAL,
-                crate::mcp::CRITERION_LINK_REMEDY,
+                crate::verbs::error_rendering::remedies::CRITERION_LINK_REMEDY,
             ],
         ),
         (
@@ -637,7 +637,7 @@ fn core_refusals_and_remedies_name_flags_on_the_cli_and_fields_over_mcp() {
             StoreError::WorkCatalogCursorInvalid {
                 reason: "the listing moved".into(),
             },
-            vec![crate::mcp::CATALOG_CURSOR_REMEDY],
+            vec![crate::verbs::error_rendering::remedies::CATALOG_CURSOR_REMEDY],
         ),
         (
             StoreError::WorkShowCursorInvalid {
@@ -647,12 +647,12 @@ fn core_refusals_and_remedies_name_flags_on_the_cli_and_fields_over_mcp() {
             },
             vec![
                 crate::work_service::ASSESSMENT_CONTINUATION_REFUSAL,
-                crate::mcp::SHOW_CURSOR_REMEDY,
+                crate::verbs::error_rendering::remedies::SHOW_CURSOR_REMEDY,
             ],
         ),
         (
             StoreError::WorkPeerDecompositionRefused { parent: work },
-            vec![crate::mcp::PEER_DECOMPOSITION_REMEDY],
+            vec![crate::verbs::error_rendering::remedies::PEER_DECOMPOSITION_REMEDY],
         ),
         (
             StoreError::InvalidWork(
@@ -665,7 +665,7 @@ fn core_refusals_and_remedies_name_flags_on_the_cli_and_fields_over_mcp() {
     ];
     for (error, twins) in cases {
         let label = error.to_string();
-        let core = core_texts(&crate::mcp::store_error_value(&error));
+        let core = core_texts(&crate::store_error_value(&error));
         let error = VerbError::from(error);
         let cli = refusal_texts(&surfaces.cli, &error).join("\n");
         let mcp = refusal_texts(&surfaces.mcp, &error).join("\n");

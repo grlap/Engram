@@ -220,7 +220,7 @@ pub(super) fn typed_refusal(
         reason: reason.clone(),
     };
     assert_eq!(error.to_string(), legacy.to_string());
-    let value = crate::mcp::store_error_value(&error);
+    let value = crate::store_error_value(&error);
     assert_eq!(value["error"]["code"], "acceptance_evaluation_refused");
     assert_eq!(value["error"]["message"], legacy.to_string());
     assert_eq!(value["error"]["details"]["reason"], *reason);

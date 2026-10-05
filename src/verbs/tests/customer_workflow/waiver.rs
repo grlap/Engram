@@ -60,7 +60,7 @@ fn completed_parent_waiver_keeps_late_finding_note_guidance() {
         error.guidance().next,
         [format!("engram work note {parent} \"…\"")]
     );
-    let payload = crate::mcp::store_error_value(&error.error);
+    let payload = crate::store_error_value(&error.error);
     assert!(
         payload["error"]["details"]["remedy"]
             .as_str()
@@ -135,7 +135,7 @@ fn direct_waiver_under_terminal_ancestors_refuses_without_writing() {
                     at(10),
                 )
                 .expect_err("terminal ancestry cannot admit a new waiver");
-            let value = crate::mcp::store_error_value(&error.error);
+            let value = crate::store_error_value(&error.error);
             assert_eq!(value["error"]["code"], "work_invalid");
             let expected = format!(
                 "Cannot waive {child} from {parent} because an ancestor is not open. Run engram work show {parent} and follow its admitted detach or resolve-first guidance. For work beneath a completed, cancelled, or superseded ancestor, continue through an admitted detach or file an independent root follow-up."

@@ -114,7 +114,7 @@ fn an_item_without_criteria_is_refused_by_name_under_an_evaluated_policy() {
     assert!(message.contains("no acceptance criteria"), "{message}");
     assert!(message.contains("at least one criterion"), "{message}");
     assert!(message.contains("host also refuses"), "{message}");
-    let payload = crate::mcp::store_error_value(&error);
+    let payload = crate::store_error_value(&error);
     assert_eq!(payload["error"]["code"], "acceptance_criteria_required");
     let remedy = payload["error"]["details"]["remedy"]
         .as_str()

@@ -1489,7 +1489,7 @@ fn a_declared_revision_the_root_is_about_to_report_records_and_seals_once_sighte
         panic!("{error:?}")
     };
     assert_eq!(context.source.as_deref(), Some(source.as_ref()));
-    let raw = crate::mcp::store_error_value(&error);
+    let raw = crate::store_error_value(&error);
     assert_eq!(
         raw["error"]["details"]["cause"],
         serde_json::json!({"kind":"acceptance_evaluation_stale", "reason":"source"})

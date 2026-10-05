@@ -166,10 +166,10 @@ static REGISTERED: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
         crate::work_service::UNKNOWN_EVALUATION_REFUSAL,
         crate::work_service::READ_RUN_EVIDENCE_REMEDY,
         crate::work_service::MEASURE_SOURCE_REMEDY,
-        crate::mcp::CATALOG_CURSOR_REMEDY,
-        crate::mcp::SHOW_CURSOR_REMEDY,
-        crate::mcp::CRITERION_LINK_REMEDY,
-        crate::mcp::PEER_DECOMPOSITION_REMEDY,
+        crate::verbs::error_rendering::remedies::CATALOG_CURSOR_REMEDY,
+        crate::verbs::error_rendering::remedies::SHOW_CURSOR_REMEDY,
+        crate::verbs::error_rendering::remedies::CRITERION_LINK_REMEDY,
+        crate::verbs::error_rendering::remedies::PEER_DECOMPOSITION_REMEDY,
         crate::domain::GATE_INPUT_TOO_LARGE_REMEDY,
     ];
     twins

@@ -1,7 +1,7 @@
 use super::*;
 
 fn assert_safe_retry_refusal(error: &StoreError, child_ref: &str, parent_ref: &str, key: &str) {
-    let envelope = crate::mcp::store_error_value(error);
+    let envelope = crate::store_error_value(error);
     let value = &envelope["error"];
     assert_eq!(value["code"], "work_reject_refused");
     assert_eq!(value["details"]["child_ref"], child_ref);

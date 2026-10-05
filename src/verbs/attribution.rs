@@ -206,9 +206,10 @@ impl AgentVerbs {
                     *text = spelled;
                 }
             }
-            if let Some(remedy) =
-                crate::mcp::project_memory_remedy(&error.error, ArgumentNames::Mcp)
-            {
+            if let Some(remedy) = crate::verbs::error_rendering::remedies::project_memory_remedy(
+                &error.error,
+                ArgumentNames::Mcp,
+            ) {
                 details.insert("remedy".into(), json!(remedy));
             }
         }

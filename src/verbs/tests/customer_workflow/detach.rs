@@ -87,7 +87,7 @@ fn completed_root_parent_remains_readable_and_detachable_after_child_detach() {
             at(5),
         )
         .expect_err("terminal root prevents claim");
-    let refusal_value = crate::mcp::store_error_value(&claim_error.error);
+    let refusal_value = crate::store_error_value(&claim_error.error);
     assert_eq!(refusal_value["error"]["code"], "work_invalid");
     assert_eq!(
         refusal_value["error"]["details"]["blocking_ancestor"],
@@ -119,7 +119,7 @@ fn completed_root_parent_remains_readable_and_detachable_after_child_detach() {
             at(5),
         )
         .expect_err("open descendant still blocks parent detach");
-    let payload = crate::mcp::store_error_value(&refusal.error);
+    let payload = crate::store_error_value(&refusal.error);
     assert_eq!(payload["error"]["code"], "work_detach_refused");
     assert_eq!(
         payload["error"]["details"]["reason"],
@@ -312,7 +312,7 @@ fn parent_detach_guidance_requires_all_open_descendants_to_be_resolved() {
             at(8),
         )
         .expect_err("open sibling still blocks detach");
-    let payload = crate::mcp::store_error_value(&refusal.error);
+    let payload = crate::store_error_value(&refusal.error);
     assert_eq!(payload["error"]["code"], "work_detach_refused");
     assert_eq!(
         payload["error"]["details"]["reason"],

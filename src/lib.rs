@@ -97,7 +97,7 @@ pub use graph_snapshot::{
     work_graph_snapshot_exporting_build, work_graph_snapshot_format_fingerprint,
 };
 pub use host::{HostControlRequest, HostControlServer};
-pub use mcp::{McpServer, store_error_value};
+pub use mcp::McpServer;
 pub use memory::{DevelopmentNoopRedactor, Redactor};
 pub use project::{
     HostPathProbeError, parse_host_path_policy, probe_host_path_policy, project_database_path,
@@ -110,6 +110,7 @@ pub use storage::{
     EvaluationBasisMove, IntegrityReport, ObligationRuleSetUpdateReceipt, SqliteStore, StoreError,
     describe_host_path_policy, install_store_copy_without_replacing,
 };
+pub use verbs::store_error_value;
 pub use verbs::{
     AddInput, AgentVerbs, ClaimInput, ClaimUnderInput, DoneInput, EvaluateInput, ForgetInput,
     GateInput, Guidance, HandoffAction, HandoffInput, LsInput, MemoriesInput, NextInput, NoteInput,

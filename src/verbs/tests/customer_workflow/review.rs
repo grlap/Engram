@@ -412,7 +412,7 @@ fn phoenix_proposed_parent_refusal_names_inspection_not_terminal_followup() {
             at(102),
         )
         .expect_err("proposed parent");
-    let rendered = crate::mcp::store_error_value(&error.error);
+    let rendered = crate::store_error_value(&error.error);
     let remedy = rendered["error"]["details"]["remedy"]
         .as_str()
         .expect("remedy");

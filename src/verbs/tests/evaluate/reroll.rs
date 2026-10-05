@@ -170,7 +170,7 @@ fn show_full_show_and_next_disclose_the_standing_cause_a_refusal_carries() {
             at(6),
         )
         .expect_err("a re-roll on the same evidence is refused");
-    let value = crate::mcp::store_error_value(&refused.error);
+    let value = crate::store_error_value(&refused.error);
     assert_eq!(value["error"]["code"], "acceptance_evaluation_refused");
     assert_eq!(value["error"]["details"]["cause"], expected);
     assert_eq!(

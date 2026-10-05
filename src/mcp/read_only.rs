@@ -6,7 +6,7 @@
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
-use super::{LsArgs, MemoriesArgs, NextArgs, ShowArgs, WorkSearchArgs};
+use super::arguments::{LsArgs, MemoriesArgs, NextArgs, ShowArgs, WorkSearchArgs};
 
 /// The tools the read-only mode lists and admits.
 pub(super) const READ_TOOLS: [&str; 5] = ["next", "ls", "search", "show", "memories"];

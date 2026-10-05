@@ -357,7 +357,7 @@ fn attribution_release_handoff_and_errors_keep_identity_in_audit_only() {
             at(3),
         )
         .unwrap_err();
-    let raw = crate::mcp::store_error_value(&error.error);
+    let raw = crate::store_error_value(&error.error);
     assert_eq!(raw["error"]["details"]["holder_session_id"], peer_session.0);
     let safe = reader.project_error(&error, raw);
     assert_eq!(
@@ -639,7 +639,7 @@ fn listed_refusals_name_their_work_by_short_reference_on_agent_surfaces() {
         "the listed variants other than the ambiguous reference"
     );
     for error in refusals {
-        let core = crate::mcp::store_error_value(&error);
+        let core = crate::store_error_value(&error);
         let label = format!("{:?}", core["error"]["code"]);
         let verb_error = VerbError::from(error);
         let text = verbs.error_message(&verb_error);
@@ -706,7 +706,7 @@ fn an_ambiguous_reference_keeps_the_full_id_fallback_on_agent_surfaces() {
         )
     );
     assert!(!text.contains("WorkReferenceCandidate"), "{text}");
-    let core = crate::mcp::store_error_value(&error.error);
+    let core = crate::store_error_value(&error.error);
     let projected = verbs.project_error(&error, core.clone());
     assert_eq!(projected["error"]["code"], core["error"]["code"]);
     assert_eq!(projected["error"]["message"], json!(text));
@@ -730,7 +730,7 @@ fn the_claim_held_refusal_keeps_its_agent_projection() {
         holder: "holder-session".into(),
         expires_at: 1_000,
     });
-    let core = crate::mcp::store_error_value(&error.error);
+    let core = crate::store_error_value(&error.error);
     let projected = verbs.project_error(&error, core);
     let details = &projected["error"]["details"];
     assert!(details.get("work_id").is_none());
@@ -791,10 +791,8 @@ fn caller_text_quoting_the_raw_id_is_never_rewritten_on_agent_surfaces() {
                 "{label}: only the structural rendering is replaced"
             );
         }
-        let projected = verbs.project_error(
-            &verb_error,
-            crate::mcp::store_error_value(&verb_error.error),
-        );
+        let projected =
+            verbs.project_error(&verb_error, crate::store_error_value(&verb_error.error));
         assert_eq!(projected["error"]["message"], json!(message), "{label}");
         let raw_guidance = verb_error.guidance();
         let guidance = verbs.error_guidance(&verb_error);
@@ -827,7 +825,7 @@ fn refusals_without_details_name_their_work_in_the_message_alone() {
             omitted_count: 0,
         },
     ] {
-        let core = crate::mcp::store_error_value(&error);
+        let core = crate::store_error_value(&error);
         assert_eq!(core["error"]["details"], Value::Null, "{core}");
         let verb_error = VerbError::from(error);
         let projected = verbs.project_error(&verb_error, core);

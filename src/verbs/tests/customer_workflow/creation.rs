@@ -218,7 +218,7 @@ fn phoenix_add_initial_notes_cover_roots_children_and_peer_proposals() {
         error,
         StoreError::WorkPeerDecompositionRefused { .. }
     ));
-    let payload = crate::mcp::store_error_value(error);
+    let payload = crate::store_error_value(error);
     assert!(
         payload["error"]["details"]["remedy"]
             .as_str()

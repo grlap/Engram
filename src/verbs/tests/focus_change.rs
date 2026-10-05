@@ -293,7 +293,7 @@ fn a_refusal_after_a_move_discloses_it() {
     assert!(matches!(refused.error, StoreError::WorkClaimHeld { .. }));
     let value = agent
         .verbs
-        .project_error(&refused, crate::mcp::store_error_value(&refused.error));
+        .project_error(&refused, crate::store_error_value(&refused.error));
     assert_eq!(value["focus_change"]["from"], json!(first));
     assert_eq!(value["focus_change"]["to"], json!(held));
     assert!(value["focus_change"].get("claim_fence").is_none());
@@ -309,7 +309,7 @@ fn a_refusal_after_a_move_discloses_it() {
     assert_eq!(again.focus_change_line(), None, "focus was already there");
     let value = agent
         .verbs
-        .project_error(&again, crate::mcp::store_error_value(&again.error));
+        .project_error(&again, crate::store_error_value(&again.error));
     assert!(value.get("focus_change").is_none());
 }
 

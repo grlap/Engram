@@ -807,15 +807,6 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
     }
 }
 
-/// Stable code for each way a run can move past an evaluation's basis: a
-/// check asks for a resubmission, an unseen source change voids it.
-pub(crate) const fn evaluation_basis_move_code(moved: crate::EvaluationBasisMove) -> &'static str {
-    match moved {
-        crate::EvaluationBasisMove::CheckRecorded => "acceptance_evaluation_resubmit",
-        crate::EvaluationBasisMove::SourceChanged => "acceptance_evaluation_void",
-    }
-}
-
 /// The fixed wire code of a store error.
 #[must_use]
 pub fn store_error_code(error: &StoreError) -> &'static str {
@@ -863,7 +854,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
             "acceptance_evaluation_refused"
         }
         StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
-            evaluation_basis_move_code(*moved)
+            crate::verbs::error_rendering::evaluation_basis_move_code(*moved)
         }
         StoreError::DifferentBuildSchema | StoreError::InvalidControlProjection(_) => {
             "control_projection_invalid"
@@ -940,6 +931,35 @@ mod tests {
         let error = StoreError::DifferentBuildSchema;
         assert_eq!(store_error_code(&error), "control_projection_invalid");
         assert!(!error.to_string().contains("invalid data"));
+    }
+
+    #[test]
+    fn moved_evaluation_basis_preserves_both_host_wire_codes() {
+        for (moved, expected) in [
+            (
+                crate::EvaluationBasisMove::CheckRecorded,
+                "acceptance_evaluation_resubmit",
+            ),
+            (
+                crate::EvaluationBasisMove::SourceChanged,
+                "acceptance_evaluation_void",
+            ),
+        ] {
+            let error = StoreError::AcceptanceEvaluationBasisMoved {
+                work: crate::WorkId::new(),
+                moved,
+                reason: "evaluation basis moved".into(),
+                observation: None,
+            };
+            let response = HostControlResponse::Error {
+                error: HostControlErrorBody {
+                    code: store_error_code(&error),
+                    message: error.to_string(),
+                },
+            };
+            let wire = serde_json::to_value(response).expect("host response");
+            assert_eq!(wire["error"]["code"], expected);
+        }
     }
 
     #[test]

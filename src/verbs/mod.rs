@@ -44,6 +44,8 @@ pub(crate) use argument_wording::respell;
 mod attribution;
 mod child_obligations;
 mod claim_lapse;
+pub(crate) mod error_rendering;
+pub use error_rendering::store_error_value;
 mod evaluation_guidance;
 mod evaluation_windows;
 mod focus_change;

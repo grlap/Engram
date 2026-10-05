@@ -567,7 +567,7 @@ fn a_mark_a_detach_carries_over_has_no_author_on_the_successor() {
             None
         )
     );
-    let value = crate::mcp::store_error_value(&error.error);
+    let value = crate::store_error_value(&error.error);
     assert_eq!(
         value["error"]["details"]["cause"]["mismatch"],
         "mark_author_unrecorded"

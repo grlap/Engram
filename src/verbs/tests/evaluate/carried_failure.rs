@@ -215,7 +215,7 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
     let refused = verbs
         .evaluate(submission("pass", None), at(8))
         .expect_err("a pass that ignores the failure is refused");
-    let error = crate::mcp::store_error_value(&refused.error);
+    let error = crate::store_error_value(&refused.error);
     assert_eq!(error["error"]["code"], "acceptance_evaluation_refused");
     assert_eq!(
         error["error"]["details"]["reason"],
@@ -236,7 +236,7 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
     let self_named = verbs
         .evaluate(submission("pass", Some(&failed_id)), at(9))
         .expect_err("the executor may not acknowledge its own failure");
-    let error = crate::mcp::store_error_value(&self_named.error);
+    let error = crate::store_error_value(&self_named.error);
     assert_eq!(error["error"]["code"], "acceptance_evaluation_refused");
     assert_eq!(
         error["error"]["details"]["reason"],
@@ -298,7 +298,7 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
         .evaluate(submission("pass", Some(&failed_id)), at(11))
         .expect_err("nothing is carried any more");
     assert_eq!(
-        crate::mcp::store_error_value(&nothing.error)["error"]["details"]["reason"],
+        crate::store_error_value(&nothing.error)["error"]["details"]["reason"],
         "nothing_to_supersede"
     );
     verbs
