@@ -1044,12 +1044,16 @@ Rules that matter:
 - `update CHILD --reject "why"` (MCP `action: "reject", reason: "why"`)
   cancels an open required child and records its open parent's required-child
   waiver atomically, with the same attributed reason on both existing events.
-  The parent and every ancestor must be open. A terminal ancestor refuses
-  before cancellation with `work_reject_refused`; its remedy names the
+  The parent and every ancestor must be open. A non-open direct parent
+  receives the generic `work_reject_refused` before cancellation.
+  Above an open parent, the nearest non-open ancestor, including a
+  Proposed ancestor, refuses with the same code; its remedy names that
   ancestor's ref and lifecycle. Its ordered `next` commands inspect the
   ancestor, inspect the child for admitted detach or resolve-first guidance,
   and offer an independent root follow-up with `add` and an acceptance
-  criterion. This does not promise that detach is admitted.
+  criterion. A Proposed ancestor alone does not admit detach; inspect its
+  resolve-first guidance. Another terminal ancestor in the chain may admit
+  detach, subject to the existing checks.
   Existing cancellation ownership and project-bound waiver checks still apply;
   no claim, completion credit, or acceptance change is implied. The receipt
   names both effects. Optional children and other unwaivable shapes return
@@ -2378,6 +2382,14 @@ current directory and select exactly that file, even for an explicit
 `.engram-project`; failures never fall back. An encountered invalid, unreadable
 or broken-link marker refuses without searching farther. A nested worktree's
 own marker wins; without it search can reach an outer repository's marker.
+Markers must resolve to regular files of at most 4,096 bytes, including
+whitespace; a link to a regular file is allowed. A directory, special-file
+target or oversized marker receives an `unreadable` refusal naming the path
+and reason. File type and length are checked before opening and on the opened
+handle; reads consume at most 4,097 bytes. Unix opens are nonblocking so a FIFO
+substituted after inspection cannot block the open. These checks bound marker
+content, not the duration of stalled filesystem I/O, and do not provide a
+snapshot of concurrently edited regular files.
 The selected marker's parent is the project root, including for the host-path
 probe and doctor's default repository. Search exhaustion names its starting
 directory and the search through root; change into the intended tree or pass

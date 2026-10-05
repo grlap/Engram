@@ -1020,6 +1020,15 @@ fn deciding_observation_suffix(observation: Option<&DecidingObservation>) -> Str
 }
 
 impl EvaluationBasisMove {
+    /// Stable wire code for the way a run moved past an evaluation's basis.
+    #[must_use]
+    pub(crate) const fn code(self) -> &'static str {
+        match self {
+            Self::CheckRecorded => "acceptance_evaluation_resubmit",
+            Self::SourceChanged => "acceptance_evaluation_void",
+        }
+    }
+
     /// What the evaluator does next. The refusal message and the MCP details
     /// both carry this text, because a host may relay only the message.
     #[must_use]

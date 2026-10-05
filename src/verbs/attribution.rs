@@ -37,8 +37,8 @@ fn refused_work(error: &StoreError) -> Option<crate::domain::WorkId> {
 }
 
 /// The work item a refusal's own message renders first, before any reason,
-/// criterion or other text a caller may have supplied: the listed refusals
-/// except the two whose message names no item at all.
+/// criterion or other text a caller may have supplied. Excludes refusals naming
+/// no item or an item other than the refused work, such as the blocking ancestor.
 fn work_named_first_in_message(error: &StoreError) -> Option<crate::domain::WorkId> {
     match error {
         StoreError::WorkPeerDecompositionRefused { .. }

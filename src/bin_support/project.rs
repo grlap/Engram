@@ -4,7 +4,8 @@
 use std::{
     env,
     fmt::Write as _,
-    fs, io,
+    fs,
+    io::{self, Read as _},
     path::{Path, PathBuf},
 };
 
@@ -15,6 +16,7 @@ use serde_json::{Value, json};
 const SELECTION: &str = "When --project-file is omitted, search from the current directory through its ancestors to the filesystem root for the nearest .engram-project. Explicit paths resolve from the current directory and never fall back. An invalid nearest marker refuses without searching farther.";
 const REMEDY: &str = "Change to the intended project directory, or replace PROJECT_DIRECTORY in the next command with its absolute path. No project was selected or created.";
 const NEXT: &str = "engram --project-file 'PROJECT_DIRECTORY/.engram-project' work next";
+const MAX_PROJECT_FILE_BYTES: u64 = 4096;
 
 /// Selected marker pathname, stable project id and host-local database path.
 pub(crate) struct ResolvedProject {
@@ -151,11 +153,65 @@ fn select_with_cwd(
 }
 
 fn read_entry(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    read_entry_after_inspection(path, || Ok(()))
+}
+
+fn read_entry_after_inspection(
+    path: &Path,
+    after_inspection: impl FnOnce() -> io::Result<()>,
+) -> io::Result<Option<Vec<u8>>> {
     match fs::symlink_metadata(path) {
-        Ok(_) => fs::read(path).map(Some),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error),
+        Ok(_) => (),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
     }
+    // Once encountered, a broken link or disappearance refuses rather than
+    // selecting a different project from an ancestor.
+    require_project_file(&fs::metadata(path)?)?;
+    after_inspection()?;
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use cap_fs_ext::OpenOptionsSyncExt;
+        // A FIFO substituted after inspection must not block the open itself.
+        options.nonblock(true);
+    }
+    let file = cap_std::fs::File::open_ambient_with(path, &options, cap_std::ambient_authority())?
+        .into_std();
+    require_project_file(&file.metadata()?)?;
+    read_project_file_bounded(file).map(Some)
+}
+
+fn require_project_file(metadata: &fs::Metadata) -> io::Result<()> {
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "project marker is not a regular file",
+        ));
+    }
+    if metadata.len() > MAX_PROJECT_FILE_BYTES {
+        return Err(project_file_too_large());
+    }
+    Ok(())
+}
+
+fn project_file_too_large() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("project marker is too large (maximum {MAX_PROJECT_FILE_BYTES} bytes)"),
+    )
+}
+
+fn read_project_file_bounded(reader: impl io::Read) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader
+        .take(MAX_PROJECT_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_PROJECT_FILE_BYTES {
+        return Err(project_file_too_large());
+    }
+    Ok(bytes)
 }
 
 fn select_from(
@@ -231,6 +287,8 @@ fn decode_project_id(project_file: &Path, bytes: Vec<u8>) -> anyhow::Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod marker_reads;
 
     #[test]
     fn absolute_explicit_marker_does_not_require_a_working_directory() {

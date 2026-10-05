@@ -403,9 +403,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::AcceptanceEvaluationRefused { .. }
         | StoreError::AcceptanceEvaluationAdmissionRefused { .. }
         | StoreError::AcceptanceEvaluationCarriedFailure { .. } => "acceptance_evaluation_refused",
-        StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
-            evaluation_basis_move_code(*moved)
-        }
+        StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => moved.code(),
         StoreError::GraphDestinationNotEmpty => "graph_destination_not_empty",
         StoreError::GraphProjectMismatch { .. } => "graph_project_mismatch",
         StoreError::GraphDifferentBuild => "different_build",
@@ -447,14 +445,5 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidControlProjection(_)
         | StoreError::ControlPolicyConflict { .. }
         | StoreError::OpenWorkObligations { .. } => "engram_store_error",
-    }
-}
-
-/// Stable code for each way a run can move past an evaluation's basis: a
-/// check asks for a resubmission, an unseen source change voids it.
-pub(crate) const fn evaluation_basis_move_code(moved: crate::EvaluationBasisMove) -> &'static str {
-    match moved {
-        crate::EvaluationBasisMove::CheckRecorded => "acceptance_evaluation_resubmit",
-        crate::EvaluationBasisMove::SourceChanged => "acceptance_evaluation_void",
     }
 }

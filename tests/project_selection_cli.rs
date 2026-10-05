@@ -234,6 +234,40 @@ fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance(
 }
 
 #[test]
+fn non_regular_and_oversized_nearest_markers_refuse_without_fallback_or_mutation() {
+    for non_regular in [false, true] {
+        let directory = test_support::temp_home().unwrap();
+        fs::write(directory.path().join(".engram-project"), "valid-ancestor").unwrap();
+        let nested = directory.path().join("nested");
+        let cwd = nested.join("deep");
+        fs::create_dir_all(&cwd).unwrap();
+        let marker = nested.join(".engram-project");
+        if non_regular {
+            fs::create_dir(&marker).unwrap();
+        } else {
+            fs::write(&marker, vec![b'x'; 4097]).unwrap();
+        }
+        let home = directory.path().join("uncreated-store");
+        for explicit in [None, Some(marker.as_path())] {
+            let value = refused(&run(&cwd, &home, explicit, &["add", "must refuse"], true));
+            assert_eq!(value["error"]["details"]["kind"], "unreadable");
+            let reported = Path::new(value["error"]["details"]["project_file"].as_str().unwrap());
+            assert_eq!(
+                reported.canonicalize().unwrap(),
+                marker.canonicalize().unwrap()
+            );
+            let reason = value["error"]["details"]["reason"].as_str().unwrap();
+            assert!(reason.contains(if non_regular {
+                "not a regular file"
+            } else {
+                "too large"
+            }));
+            assert!(!home.exists());
+        }
+    }
+}
+
+#[test]
 fn explicit_project_file_recovers_without_rebinding_to_the_callers_cwd() {
     let directory = crate::test_support::temp_home().unwrap();
     let project_dir = directory.path().join("intended project");

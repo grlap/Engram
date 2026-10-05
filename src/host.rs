@@ -906,9 +906,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         {
             "acceptance_evaluation_refused"
         }
-        StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => {
-            crate::verbs::error_rendering::evaluation_basis_move_code(*moved)
-        }
+        StoreError::AcceptanceEvaluationBasisMoved { moved, .. } => moved.code(),
         StoreError::DifferentBuildSchema | StoreError::InvalidControlProjection(_) => {
             "control_projection_invalid"
         }
