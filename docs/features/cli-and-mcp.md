@@ -2355,10 +2355,19 @@ or `cancelled`) reads `unavailable (record STATE)` followed by its fields, so
 it never passes for a fast call; only `complete` and `send_failed` records
 are printed as the call's timing.
 
-`--project-file` defaults to the tracked `.engram-project`. Its stable project
+When `--project-file` is omitted, CLI and MCP search from the working directory
+through its ancestors to the filesystem root for the nearest `.engram-project`,
+without stopping at `.git`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and
 session on the host. Relative project-file paths resolve from the caller's
-current directory; Engram does not search ancestors or select another project.
+current directory and select exactly that file, even for an explicit
+`.engram-project`; failures never fall back. An encountered invalid, unreadable
+or broken-link marker refuses without searching farther. A nested worktree's
+own marker wins; without it search can reach an outer repository's marker.
+The selected marker's parent is the project root, including for the host-path
+probe and doctor's default repository. Search exhaustion names its starting
+directory and the search through root; change into the intended tree or pass
+its marker explicitly, rather than create a new marker in a subdirectory.
 If that file is missing, unreadable, invalid UTF-8, or empty, every CLI work
 word refuses before store opening or session setup, with `details.kind`
 naming which: `missing` (no such file), `unreadable` (any other read failure,

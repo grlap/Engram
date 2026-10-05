@@ -94,8 +94,10 @@ fn migration_import_names_long_staging_paths_without_creating_anything() {
 }
 
 #[test]
-fn migration_cli_exports_and_imports_explicit_files_without_project_or_active_home() {
+fn migration_cli_exports_and_imports_explicit_files_without_selecting_a_project_or_active_home() {
     let directory = test_support::temp_home().expect("fixture");
+    // Explicit-file migration bypasses project selection, even beside an invalid marker.
+    std::fs::write(directory.path().join(".engram-project"), b"\xff").unwrap();
     let source = directory.path().join("source.db");
     drop(engram::SqliteStore::open_unresolved(&source).expect("current store"));
     let file = directory.path().join("export.jsonl");
@@ -112,7 +114,10 @@ fn migration_cli_exports_and_imports_explicit_files_without_project_or_active_ho
             .output()
             .expect("CLI");
         assert!(!absent_home.exists());
-        assert!(!directory.path().join(".engram-project").exists());
+        assert_eq!(
+            std::fs::read(directory.path().join(".engram-project")).unwrap(),
+            b"\xff"
+        );
         output
     };
     let exported = run(

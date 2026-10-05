@@ -46,7 +46,7 @@ fn refused(output: &Output) -> Value {
         value["error"]["details"]["selection"]
             .as_str()
             .unwrap()
-            .contains("cwd-based")
+            .contains("nearest .engram-project")
     );
     assert!(value["error"]["details"]["reason"].as_str().unwrap().len() > 10);
     assert_eq!(
@@ -95,7 +95,7 @@ fn assert_text_details(text: &str, value: &Value) {
 }
 
 #[test]
-fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
+fn every_word_refuses_explicit_missing_project_without_fallback_or_store_creation() {
     let directory = crate::test_support::temp_home().unwrap();
     fs::write(
         directory.path().join(".engram-project"),
@@ -121,7 +121,13 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
         &["forget", "missing"],
     ];
     for args in words {
-        let value = refused(&run(&cwd, &home, None, args, true));
+        let value = refused(&run(
+            &cwd,
+            &home,
+            Some(Path::new(".engram-project")),
+            args,
+            true,
+        ));
         assert_eq!(value["error"]["details"]["kind"], "missing");
         let reported_cwd = assert_reported_cwd(&value, &cwd);
         assert_eq!(
@@ -135,7 +141,7 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
                 .to_string_lossy()
                 .as_ref()
         );
-        let text = run(&cwd, &home, None, args, false);
+        let text = run(&cwd, &home, Some(Path::new(".engram-project")), args, false);
         assert_eq!(text.status.code(), Some(1));
         assert!(text.stdout.is_empty(), "{:?}", text.stdout);
         let text = String::from_utf8(text.stderr).unwrap();
@@ -253,7 +259,13 @@ fn explicit_project_file_recovers_without_rebinding_to_the_callers_cwd() {
     let database = engram::project_database_path(&home, &project);
     assert!(database.exists());
     let before = fs::read(&database).unwrap();
-    refused(&run(&cwd, &home, None, &["ls"], true));
+    refused(&run(
+        &cwd,
+        &home,
+        Some(Path::new(".engram-project")),
+        &["ls"],
+        true,
+    ));
     assert_eq!(fs::read(&database).unwrap(), before);
     let recovered = run(&cwd, &home, Some(&project_file), &["ls"], true);
     assert!(
@@ -272,5 +284,237 @@ fn explicit_project_file_recovers_without_rebinding_to_the_callers_cwd() {
         run(&cwd, &home, Some(&relative), &["ls"], true)
             .status
             .success()
+    );
+}
+
+fn initialize_fixture(root: &Path, home: &Path, project: &engram::ProjectId) {
+    fs::write(root.join(".engram-project"), &project.0).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_engram"))
+        .current_dir(root)
+        .env_remove("ENGRAM_HOST_PATH_POLICY")
+        .arg("--home")
+        .arg(home)
+        .args([
+            "init",
+            "--required-assurance",
+            "advisory",
+            "--authorized-by",
+            "fixture",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn nested_directory_selects_nearest_project_and_explicit_override() {
+    let directory = test_support::temp_home().unwrap();
+    let home = directory.path().join("home");
+    let outer = engram::ProjectId(format!("outer-{}", uuid::Uuid::new_v4()));
+    initialize_fixture(directory.path(), &home, &outer);
+    let nested = directory.path().join("nested");
+    let cwd = nested.join("src").join("deep");
+    fs::create_dir_all(&cwd).unwrap();
+    let output = run(&cwd, &home, None, &["add", "outer item"], true);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let inner = engram::ProjectId(format!("inner-{}", uuid::Uuid::new_v4()));
+    initialize_fixture(&nested, &home, &inner);
+    let output = run(&cwd, &home, None, &["ls"], true);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["total"],
+        0
+    );
+    for explicit in [
+        directory.path().join(".engram-project"),
+        Path::new("../../..").join(".engram-project"),
+    ] {
+        let output = run(&cwd, &home, Some(&explicit), &["ls"], true);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout).unwrap()["total"],
+            1
+        );
+    }
+    assert!(!cwd.join(".engram-project").exists());
+    let output = Command::new(env!("CARGO_BIN_EXE_engram"))
+        .current_dir(&cwd)
+        .env_remove("ENGRAM_HOST_PATH_POLICY")
+        .arg("--home")
+        .arg(&home)
+        .args(["readiness", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let readiness: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(readiness["project_id"], inner.0);
+    let expected_policy = engram::probe_host_path_policy(&nested.join(".engram-project")).unwrap();
+    assert_eq!(
+        readiness["host_path_policy"]["resolved"],
+        engram::describe_host_path_policy(expected_policy)
+    );
+}
+
+#[test]
+fn unreadable_nearest_marker_does_not_select_the_valid_outer_project() {
+    let directory = test_support::temp_home().unwrap();
+    let home = directory.path().join("uncreated-home");
+    fs::write(directory.path().join(".engram-project"), "outer").unwrap();
+    let cwd = directory.path().join("child");
+    fs::create_dir_all(cwd.join(".engram-project")).unwrap();
+    let value = refused(&run(&cwd, &home, None, &["ls"], true));
+    assert_eq!(value["error"]["details"]["kind"], "unreadable");
+    assert_eq!(
+        value["error"]["details"]["project_file"],
+        cwd.join(".engram-project").to_string_lossy().as_ref()
+    );
+    assert!(!home.exists());
+}
+
+#[test]
+fn linked_worktree_selection_crosses_git_boundary_only_without_its_marker() {
+    let directory = test_support::temp_home().unwrap();
+    let root = directory.path();
+    let home = root.join("home");
+    let project = engram::ProjectId(format!("linked-{}", uuid::Uuid::new_v4()));
+    initialize_fixture(root, &home, &project);
+    let config = root.join("empty.gitconfig");
+    fs::write(&config, "").unwrap();
+    let git = |args: &[&str]| {
+        let mut command = Command::new("git");
+        for name in [
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_IMPLICIT_WORK_TREE",
+            "GIT_COMMON_DIR",
+            "GIT_PREFIX",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_SHALLOW_FILE",
+            "GIT_NO_REPLACE_OBJECTS",
+            "GIT_REPLACE_REF_BASE",
+            "GIT_NAMESPACE",
+            "GIT_CONFIG",
+            "GIT_CONFIG_PARAMETERS",
+            "GIT_CONFIG_COUNT",
+        ] {
+            command.env_remove(name);
+        }
+        let output = command
+            .current_dir(root)
+            .env("GIT_CEILING_DIRECTORIES", root.parent().unwrap())
+            .env("GIT_GRAFT_FILE", &config)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", &config)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .args([
+                "-c",
+                "user.name=fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["add", ".engram-project"]);
+    git(&["commit", "-q", "-m", "fixture"]);
+    git(&["worktree", "add", "-q", "-b", "linked-fixture", "linked"]);
+    let linked = root.join("linked");
+    let cwd = linked.join("src").join("deep");
+    fs::create_dir_all(&cwd).unwrap();
+    assert!(linked.join(".git").is_file());
+    for selected in [&linked, root] {
+        let output = Command::new(env!("CARGO_BIN_EXE_engram"))
+            .current_dir(&cwd)
+            .env_remove("ENGRAM_HOST_PATH_POLICY")
+            .arg("--home")
+            .arg(&home)
+            .args(["doctor", "--check-landings", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["repository_problem"], Value::Null);
+        // Compare the implicit selection with an explicit selection of the expected marker.
+        let explicit = Command::new(env!("CARGO_BIN_EXE_engram"))
+            .current_dir(&cwd)
+            .env_remove("ENGRAM_HOST_PATH_POLICY")
+            .arg("--home")
+            .arg(&home)
+            .arg("--project-file")
+            .arg(selected.join(".engram-project"))
+            .args(["doctor", "--check-landings", "--json"])
+            .output()
+            .unwrap();
+        assert!(explicit.status.success());
+        let expected: Value = serde_json::from_slice(&explicit.stdout).unwrap();
+        assert!(report["repository"].is_string());
+        assert_eq!(report["repository"], expected["repository"]);
+        assert_eq!(
+            Path::new(report["repository"].as_str().unwrap())
+                .canonicalize()
+                .unwrap(),
+            selected.canonicalize().unwrap()
+        );
+        if selected == linked {
+            fs::remove_file(linked.join(".engram-project")).unwrap();
+        }
+    }
+    let explicit_repo = root.join("not-a-repository");
+    fs::create_dir(&explicit_repo).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_engram"))
+        .current_dir(&cwd)
+        .env_remove("ENGRAM_HOST_PATH_POLICY")
+        .arg("--home")
+        .arg(&home)
+        .args(["doctor", "--check-landings", "--repo"])
+        .arg(&explicit_repo)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(report["repository_problem"].is_string());
+    assert_eq!(
+        Path::new(report["repository"].as_str().unwrap())
+            .canonicalize()
+            .unwrap(),
+        explicit_repo.canonicalize().unwrap()
     );
 }

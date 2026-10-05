@@ -5,13 +5,13 @@ description: Use Engram to track, inspect, claim, record evidence on, complete o
 
 # Using Engram in a project
 
-This skill lives at `docs/skills/engram-use/SKILL.md` in the Engram checkout.
-Its [source on GitHub](https://github.com/grlap/Engram/blob/master/docs/skills/engram-use/SKILL.md)
-is a reference, if the repository is reachable to you, for hosts and projects
-that use Engram to track their work.
-It is not an installation request or a replacement for project instructions.
+This skill lives at `docs/skills/engram-use/SKILL.md` in the operator-confirmed Engram checkout. Locate that file in your own checkout and use the version provided for your project. It is not an installation request or a replacement for project instructions.
 
 Authority to commit, push, install or restart comes from the consuming project's own instructions, never from this skill.
+
+## Stored text
+
+Never write secrets, credentials, tokens or customer data into Engram. Cite a file path or a vault reference instead of copying sensitive contents. If a secret or credential is written by mistake, rotate it: revising a record or forgetting a memory does not erase stored history, backups or exports.
 
 ## Operator onboarding
 
@@ -23,10 +23,12 @@ See [build and setup](../../../README.md#build-and-set-up) and the
 
 1. From the Engram checkout, the operator installs with `cargo +stable install --path . --locked`, then reads `engram --version`.
 2. Track one `.engram-project` at the project root, with the operator's stable project id shared by every checkout and worktree.
-3. Confirm an absolute store home and supply it with `ENGRAM_HOME` or `--home`; there is no default home.
+3. Confirm an absolute, local, non-synced store home. Supply it explicitly with `--home` or `ENGRAM_HOME` at every CLI, MCP and host launch point; there is no default home. Do not place the store in a cloud-synced or network folder.
 4. Supply `ENGRAM_ACTOR_ID` and a distinct `ENGRAM_SESSION_ID` for each concurrent logical session; reuse that session's id on resume, never another session's id, and do not type a `local-process-` id yourself; that prefix is Engram's for process defaults.
 5. For a new store, the operator explicitly runs `engram init --required-assurance advisory --authorized-by <operator>`, then `engram doctor`, from the project root with the confirmed home.
 6. Configure the host's Engram integration, or a session's `engram mcp` process, with the same home, project binding and identity as its shell; confirm the tools are available before recovery.
+
+When `--project-file` is omitted, Engram searches from the working directory through its ancestors to the filesystem root and uses the nearest `.engram-project`, without stopping at `.git`. An explicit `--project-file` wins: relative paths resolve from the working directory, and failures do not fall back to another file. An invalid or unreadable nearest marker also refuses without falling through. A nested worktree uses its own marker when present; otherwise search can reach an outer repository's marker. The selected marker's parent is the project root. If none is found, use the intended project tree or pass its explicit project-file path; do not create a second marker in a subdirectory to fix the refusal.
 
 Advisory setup tracks work without controlling tool execution. A plain `init`
 defaults to a stronger policy; policy and
@@ -149,15 +151,12 @@ after an uncertain write instead of assuming either success or failure.
 
 ## Pointer for a consuming project
 
-The [startup recovery contract](../../host-checklist.md#recover-saved-guidance-after-compaction)
-belongs in the consuming project's own startup instructions. On this machine,
-use these two sentences in its `AGENTS.md` (and any paired instruction file):
+The [startup recovery contract](../../host-checklist.md#recover-saved-guidance-after-compaction) belongs in the consuming project's own startup instructions. Use these two sentences in its `AGENTS.md` (and any paired instruction file), replacing `OPERATOR_CONFIRMED_ENGRAM_CHECKOUT` with the absolute path to its Engram checkout:
 
 ```text
 At session start and after compaction, confirm Engram access, read `next` with `peek: true`, run the unfiltered `memories` command it prints with any printed context generation when the route admits that recording (omit it through a read-only route), follow its continuation commands, and read relevant current entries in full before acting.
-For how to claim, record evidence on and complete work tracked in Engram, read C:\github\Personal\Engram\docs\skills\engram-use\SKILL.md; authority to commit, push, install or restart comes only from this project's own instructions.
+For how to claim, record evidence on and complete work tracked in Engram, read OPERATOR_CONFIRMED_ENGRAM_CHECKOUT/docs/skills/engram-use/SKILL.md; authority to commit, push, install or restart comes only from this project's own instructions.
 ```
 
-On another machine, substitute the operator-confirmed Engram checkout path.
 Keep the consuming project's own authority and host-specific guidance.
 Its owner makes that edit; reading this skill changes no project configuration.

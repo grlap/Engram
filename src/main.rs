@@ -1,7 +1,7 @@
 //! Engram CLI: host/operator administration plus the fourteen-word agent surface.
 
 use std::{
-    env, fs,
+    fs,
     io::{self, Read},
     path::{Path, PathBuf},
     process::ExitCode,
@@ -21,7 +21,7 @@ use engram::{
     WorkAvailability, WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind,
     WorkLifecycle, WorkNextQuery, WorkNextSection, WorkObligationId, WorkProposeInput,
     WorkUpdateInput, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
-    probe_host_path_policy, project_database_path, store_error_value, validate_session_id_length,
+    probe_host_path_policy, store_error_value, validate_session_id_length,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -34,6 +34,7 @@ use bin_support::{
     attribution::resolve_shell_work_attribution,
     doctor::doctor,
     graph::run_graph_from_cli,
+    project::{ResolvedProject, resolve_project},
     store_lifecycle::{backup, initialize, restore},
     terminal_errors::{emit_anyhow_error, emit_host_path_probe_warning, emit_work_text_refusal},
 };
@@ -41,10 +42,10 @@ use bin_support::{
 #[derive(Debug, Parser)]
 #[command(name = "engram", version, about)]
 struct Cli {
-    /// Stable project-id file shared by every worktree; relative paths resolve
-    /// from the current directory, without searching ancestors.
-    #[arg(long, default_value = ".engram-project")]
-    project_file: PathBuf,
+    /// Stable project-id file; omitted searches ancestors for the nearest
+    /// .engram-project. Explicit relative paths resolve from the current directory.
+    #[arg(long)]
+    project_file: Option<PathBuf>,
     /// Host-local Engram data directory (or set `ENGRAM_HOME`).
     #[arg(long)]
     home: Option<PathBuf>,
@@ -1111,7 +1112,11 @@ async fn run_cli() -> Result<ExitCode> {
             .0
             .enter(engram::phase_trace::control::ControlPhase::ProjectResolve);
     }
-    let (project_id, database) = match resolve_project(&cli.project_file, cli.home) {
+    let ResolvedProject {
+        project_file,
+        project_id,
+        database,
+    } = match resolve_project(cli.project_file.as_deref(), cli.home) {
         Ok(project) => project,
         Err(error) => {
             if let Command::Readiness { json } = &cli.command {
@@ -1143,7 +1148,7 @@ async fn run_cli() -> Result<ExitCode> {
             .enter(engram::phase_trace::control::ControlPhase::HostPathProbe);
     }
     let identity = if command_resolves_host_path_identity(&cli.command) {
-        resolve_host_path_identity(&cli.project_file, cli.host_path_policy)
+        resolve_host_path_identity(&project_file, cli.host_path_policy)
     } else {
         None
     };
@@ -1202,7 +1207,7 @@ async fn run_cli() -> Result<ExitCode> {
                 (false, _) => None,
                 (true, Some(repo)) => Some(repo),
                 (true, None) => Some(
-                    std::path::absolute(&cli.project_file)?
+                    project_file
                         .parent()
                         .map_or_else(PathBuf::new, Path::to_path_buf),
                 ),
@@ -2332,18 +2337,6 @@ fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
         input
     };
     serde_json::from_str(json).with_context(|| format!("invalid {label} JSON"))
-}
-
-/// Resolves the stable project id and its host-local database. The project
-/// root is the directory holding the project file; its filesystem identity is
-/// probed through that file.
-fn resolve_project(project_file: &Path, home: Option<PathBuf>) -> Result<(ProjectId, PathBuf)> {
-    let project_id = bin_support::project::read_project_id(project_file)?;
-    let home = home.or_else(|| env::var_os("ENGRAM_HOME").map(PathBuf::from));
-    let home = home.context("pass --home or set ENGRAM_HOME")?;
-    let project_id = ProjectId(project_id);
-    let database = project_database_path(&home, &project_id);
-    Ok((project_id, database))
 }
 
 async fn serve_mcp(server: McpServer) -> Result<()> {

@@ -132,7 +132,7 @@ function shortRef(workId) {
 }
 
 class McpClient {
-  constructor(engramHome, sessionId, actorContext, actorId = sessionId, extraArgs = [], { phaseTrace = true, softTimingMs = SOFT_TIMING_MS } = {}) {
+  constructor(engramHome, sessionId, actorContext, actorId = sessionId, extraArgs = [], { phaseTrace = true, softTimingMs = SOFT_TIMING_MS, cwd = root } = {}) {
     this.engramHome = engramHome;
     this.nextId = 1;
     this.pending = new Map();
@@ -166,7 +166,7 @@ class McpClient {
     if (phaseTrace) environment[PHASE_TRACE_ENV] = "1";
     else delete environment[PHASE_TRACE_ENV];
     this.child = spawn(binary, args, {
-      cwd: root,
+      cwd,
       env: environment,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -4557,17 +4557,49 @@ test("printed shell session preserves import and observation replay identity", (
   }
 });
 
+test("nested MCP startup selects the nearest project marker like CLI", async (t) => {
+  const home = fixtureHome("engram-nested-project-", t);
+  let client;
+  try {
+    const setup = buildAndInit(home);
+    console.error(`MCP fixture setup: ${JSON.stringify(setup)}`);
+    const project = join(home, "project");
+    const cwd = join(project, "src", "deep");
+    mkdirSync(cwd, { recursive: true });
+    writeFileSync(join(project, ".engram-project"), `nested-${randomUUID()}`);
+    const init = spawnSync(binary, ["--home", home, "init", "--required-assurance", "advisory", "--authorized-by", "fixture"], { cwd: project, encoding: "utf8" });
+    assert.equal(init.status, 0, init.stderr);
+    client = new McpClient(home, "nested-mcp", undefined, "nested-mcp", [], { cwd });
+    await client.initialize();
+    const added = receipt(await client.call("add", { title: "Nearest project item", acceptance: ["Fixture"] }));
+    const output = spawnSync(binary, ["--home", home, "work", "ls", "--json"], { cwd: project, encoding: "utf8" });
+    assert.equal(output.status, 0, output.stderr);
+    const listed = JSON.parse(output.stdout);
+    assert.equal(listed.total, 1);
+    assert.equal(listed.items[0].ref, added.work.short_ref);
+    assert.equal(cliJson(home, "outer-mcp", "ls").total, 0);
+    assert.equal(existsSync(join(cwd, ".engram-project")), false);
+  } finally {
+    try { await closeFixtureClients(client); }
+    finally { removeFixtureHomes(home); }
+  }
+});
+
 function buildAndInit(engramHome) {
+  const started = performance.now();
   const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
     cwd: root,
     encoding: "utf8",
   });
   assert.equal(built.status, 0, built.stderr);
+  const buildMs = performance.now() - started;
+  const initStarted = performance.now();
   const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
     cwd: root,
     encoding: "utf8",
   });
   assert.equal(initialized.status, 0, initialized.stderr);
+  return { build_ms: buildMs, init_ms: performance.now() - initStarted };
 }
 
 function cliWord(engramHome, actorId, word, ...agentArgs) {

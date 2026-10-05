@@ -45,6 +45,15 @@ Each project needs a tracked `.engram-project` file containing one stable
 project ID, such as `example.com/team/my-project`. This repository already
 has one. Keep the same ID across checkouts of the same project.
 
+Without `--project-file`, CLI and MCP search from the working directory up
+through its ancestors to the filesystem root for the nearest `.engram-project`,
+without stopping at `.git`. Explicit paths win (relative to the working
+directory), and an invalid or unreadable selected file refuses without falling
+back. A nested worktree uses its own marker if present; otherwise it can find
+an outer repository's marker. The selected marker's parent is the project root.
+If none is found, change into the intended project tree or pass its marker
+explicitly; do not create another marker in a subdirectory to fix the refusal.
+
 Set an absolute data directory, an actor name, and a session ID. For example,
 in a POSIX shell:
 
