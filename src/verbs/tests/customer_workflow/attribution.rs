@@ -543,6 +543,14 @@ fn refusals_naming_work(work: crate::WorkId) -> Vec<StoreError> {
             current: 3,
         },
         StoreError::WorkNotOpen(work),
+        StoreError::WorkAncestorNotOpen {
+            work,
+            ancestor: crate::domain::WorkBlockingAncestor {
+                work_id: crate::WorkId::new(),
+                short_ref: "w-ancestor".into(),
+                lifecycle: WorkLifecycle::Completed,
+            },
+        },
         StoreError::WorkPeerDecompositionRefused { parent: work },
         StoreError::WorkPrerequisiteAlreadySatisfied(work),
         StoreError::WorkDetachRefused {
@@ -627,7 +635,7 @@ fn listed_refusals_name_their_work_by_short_reference_on_agent_surfaces() {
     let refusals = refusals_naming_work(work);
     assert_eq!(
         refusals.len(),
-        18,
+        19,
         "the listed variants other than the ambiguous reference"
     );
     for error in refusals {

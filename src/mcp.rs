@@ -1455,6 +1455,8 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
+    mod agent_error_refs;
+
     /// The MCP `show` tool pages a verification record's obligation
     /// assessment: `note` gives the first eight, and `note` with `after`
     /// the rest.

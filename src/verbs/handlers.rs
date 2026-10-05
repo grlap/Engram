@@ -573,24 +573,28 @@ impl AgentVerbs {
             ..WorkNextQuery::default()
         };
         let mut view = if input.peek {
-            self.service.work_next_peek_for_agent(
-                change_limit,
-                ready_limit,
-                input.verbose,
-                query,
-                now,
-                |changes| {
-                    !super::collapsed_changes(changes, self.service.display_identity()).is_empty()
-                },
-            )?
+            self.service
+                .work_next_peek_for_agent(
+                    change_limit,
+                    ready_limit,
+                    input.verbose,
+                    query,
+                    now,
+                    |changes| {
+                        !super::collapsed_changes(changes, self.service.display_identity())
+                            .is_empty()
+                    },
+                )
+                .map_err(|error| {
+                    VerbError::from(error).retrying(super::receipts::ReadRetry::Next { peek: true })
+                })?
         } else {
-            self.service.work_next_for_agent(
-                change_limit,
-                ready_limit,
-                input.verbose,
-                query,
-                now,
-            )?
+            self.service
+                .work_next_for_agent(change_limit, ready_limit, input.verbose, query, now)
+                .map_err(|error| {
+                    VerbError::from(error)
+                        .retrying(super::receipts::ReadRetry::Next { peek: false })
+                })?
         };
         view.backup_reminder = self.service.backup_reminder();
         let lists = view.agent_lists.take().ok_or_else(|| {
@@ -1407,8 +1411,9 @@ impl AgentVerbs {
             )
             .into());
         }
-        crate::storage::validate_context_generation(input.context_generation.as_deref())
-            .map_err(|error| VerbError::from(error).retrying("memories"))?;
+        crate::storage::validate_context_generation(input.context_generation.as_deref()).map_err(
+            |error| VerbError::from(error).retrying(super::receipts::ReadRetry::Memories),
+        )?;
         if input.full {
             if input.after.is_some() {
                 return Err(StoreError::InvalidProjectMemory(

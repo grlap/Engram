@@ -416,19 +416,23 @@ The agent `work_claim_held` error uses `details.work_ref` and the display
 expiry. CLI JSON and MCP carry the same envelope. Host-core errors keep their
 raw identifiers.
 Agent refusals that concern one work item name it by short reference in the
-same way: `work_not_found`, a revision conflict, `work_not_open`, a refused
-peer decomposition, an already satisfied prerequisite, a refused detach, a
+same way: `work_not_found`, a revision conflict, `work_not_open`, an
+ancestor-blocked claim (`work_invalid`), a refused peer decomposition, an
+already satisfied prerequisite, a refused detach, a
 claim mismatch or lapse, a release that needs a reason, a refused completion
 or bound verification, a completion that needs recovery, missing acceptance
 criteria, refused, refused-at-admission, carried-failure and moved-basis
 evaluations, and open work obligations. Where the core envelope's `details`
 carry `work_id`, the agent ones carry `work_ref` in its place (a refused
 evaluation and open work obligations have no details object, and keep none).
-The message names the `w-…` reference where it rendered the item's raw id,
-and a reminder that repeats the message word for word does the same, on CLI
-text, CLI JSON and MCP alike. The code, every other detail and scoped record
-ids (evaluations, seals, evidence, observations) are unchanged, and
-caller-supplied text, such as a reason or a criterion, is never rewritten,
+The message names the affected item by its `w-…` reference, including the
+ancestor-blocked claim whose core message names only the ancestor. A recovery
+with cause `required_child_unsealed` names its child by short reference in
+the agent message, reminder and `details.cause.child`; the core envelope keeps
+the raw child id. Reminders that repeat a work id from the message use its
+reference too, on CLI text, CLI JSON and MCP alike. The code, remaining details
+and scoped record ids (evaluations, seals, evidence, observations) are unchanged.
+Caller-supplied text, such as a reason or a criterion, is never rewritten,
 even when it quotes the item's raw id. An ambiguous
 short reference keeps its candidates' full work ids, in the message, in
 `details.candidates` and in each offered `show` command, since a colliding
@@ -746,19 +750,23 @@ Rules that matter:
 
   | Receipt | Ancestor fields |
   | --- | --- |
-  | `show`, compact and verbose native `ls`, refusal `details.blocking_ancestor` | `{ ref, lifecycle }` |
-  | Core `focus`/`inspect`, core `next` focus and catalog, verbose native `next` focus | `{ work_id, short_ref, lifecycle }` |
+  | `show`, compact and verbose native `ls`, compact native `next` focus/held/ready rows, refusal `details.blocking_ancestor` | `{ ref, lifecycle }` |
+  | Core `focus`/`inspect`, core `next` focus/ready/catalog, verbose native `next` focus/ready rows | `{ work_id, short_ref, lifecycle }` |
 
   `work_id` is the typed ancestor identity; `short_ref` and `ref` name that same
   ancestor. Native verbose `ls` keeps the compact ancestor object even though
   its work row includes raw identity. This is a deliberate receipt distinction,
-  not a global confidentiality boundary. The nearest non-open ancestor is
+  not a global confidentiality boundary. Verbose native `next` held rows have
+  no `blocking_ancestor`; native `next` does not request a catalog section.
+  Ready rows normally omit the field because ancestor-blocked work is excluded.
+  The nearest non-open ancestor is
   selected, including a proposed ancestor. The catalog's `blocking_parent`
   is that ancestor's lifecycle, not necessarily the direct parent's lifecycle.
   Direct parent fields remain separate. Roots, closed items and items with
   all ancestors open omit `blocking_ancestor`; independent blockers and
   prerequisites do not manufacture an ancestor.
-  Claim keeps the `work_invalid` code and adds `details.blocking_ancestor`,
+  Claim keeps the `work_invalid` code, names the affected item in
+  `details.work_ref`, and adds `details.blocking_ancestor`,
   with `show CHILD` and `show ANCESTOR` navigation. Execution stays refused;
   only the existing detach admission supplies a detach command in show.
   Explicit blockers and prerequisites remain separate from this cause.

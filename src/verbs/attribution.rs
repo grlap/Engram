@@ -23,6 +23,7 @@ fn refused_work(error: &StoreError) -> Option<crate::domain::WorkId> {
         | StoreError::WorkCompletionRefused { work, .. }
         | StoreError::WorkBoundVerificationRefused { work, .. }
         | StoreError::WorkCompletionRecoveryRequired { work, .. }
+        | StoreError::WorkAncestorNotOpen { work, .. }
         | StoreError::AcceptanceCriteriaRequired { work }
         | StoreError::AcceptanceEvaluationRefused { work, .. }
         | StoreError::AcceptanceEvaluationAdmissionRefused { work, .. }
@@ -40,9 +41,9 @@ fn refused_work(error: &StoreError) -> Option<crate::domain::WorkId> {
 /// except the two whose message names no item at all.
 fn work_named_first_in_message(error: &StoreError) -> Option<crate::domain::WorkId> {
     match error {
-        StoreError::WorkPeerDecompositionRefused { .. } | StoreError::WorkDetachRefused { .. } => {
-            None
-        }
+        StoreError::WorkPeerDecompositionRefused { .. }
+        | StoreError::WorkDetachRefused { .. }
+        | StoreError::WorkAncestorNotOpen { .. } => None,
         other => refused_work(other),
     }
 }
@@ -92,6 +93,17 @@ impl AgentVerbs {
 
     fn error_message_with_short_refs(&self, error: &VerbError) -> String {
         match &error.error {
+            StoreError::WorkAncestorNotOpen { work, ancestor } => format!(
+                "execution for work {} blocked by ancestor {} ({:?})",
+                super::short_ref_for_work_id(*work),
+                ancestor.short_ref,
+                ancestor.lifecycle,
+            ),
+            StoreError::WorkCompletionRecoveryRequired { work, cause, .. } => format!(
+                "completion for work {} requires recovery: {}",
+                super::short_ref_for_work_id(*work),
+                super::receipts::completion_recovery_cause_text(cause),
+            ),
             StoreError::WorkClaimHeld {
                 work,
                 holder,
@@ -173,6 +185,14 @@ impl AgentVerbs {
         ) && details.remove("work_id").is_some()
         {
             details.insert("work_ref".into(), json!(super::short_ref_for_work_id(work)));
+        }
+        if let StoreError::WorkCompletionRecoveryRequired {
+            cause: crate::WorkCompletionRecoveryCause::RequiredChildUnsealed { child },
+            ..
+        } = &error.error
+            && let Some(Value::Object(cause)) = value.pointer_mut("/error/details/cause")
+        {
+            cause.insert("child".into(), json!(super::short_ref_for_work_id(*child)));
         }
         // An MCP caller reads the arguments a reason or remedy names as the
         // fields it passes.

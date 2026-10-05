@@ -2453,29 +2453,33 @@ test("peek orientation preserves pending context and memory signals on CLI and M
     );
     // A generation is a plain token on both words and both routes, and the
     // refusal retries the word that sent it: memories in every form of the
-    // read, next for next.
+    // read, and the same peek/advancing intent for next.
     const generationForms = [
       ["next", {}, []],
+      ["next", { peek: true }, ["--peek"]],
+      ["next", { verbose: true }, ["--verbose"]],
+      ["next", { peek: true, verbose: true }, ["--peek", "--verbose"]],
       ["memories", {}, []],
       ["memories", { query: "rules" }, ["rules"]],
       ["memories", { query: "memory-key", full: true }, ["memory-key", "--full"]],
       ["memories", { query: "memory-key", full: true, revision: 1 }, ["memory-key", "--full", "--revision", "1"]],
     ];
     for (const [word, mcpArguments, cliArguments] of generationForms) {
+      const retry = `engram work ${word}${mcpArguments.peek ? " --peek" : ""}`;
       const refused = structuredError(
         await client.call(word, { ...mcpArguments, context_generation: "two words" }),
         "memory_invalid",
       );
       assert.match(refused.details.remedy, /1 to 256 ASCII letters, digits, dots, underscores or dashes/);
-      assert.deepEqual(refused.next, [`engram work ${word}`], JSON.stringify(mcpArguments));
+      assert.deepEqual(refused.next, [retry], JSON.stringify(mcpArguments));
       const cliRefused = cliWord(engramHome, session, word, ...cliArguments, "--context-generation", "two words", "--json");
       assert.notEqual(cliRefused.status, 0);
       const cliError = JSON.parse(cliRefused.stderr).error;
       assert.match(cliError.message, /context_generation must be 1 to 256 ASCII/);
-      assert.deepEqual(cliError.next, [`engram work ${word}`], cliArguments.join(" "));
+      assert.deepEqual(cliError.next, [retry], cliArguments.join(" "));
       const cliText = cliWord(engramHome, session, word, ...cliArguments, "--context-generation", "two words");
       assert.notEqual(cliText.status, 0);
-      assert.match(cliText.stderr, new RegExp(`next:\\n\\s+engram work ${word}\\n`, "u"), cliText.stderr);
+      assert.match(cliText.stderr, new RegExp(`next:\\n\\s+${retry}\\n`, "u"), cliText.stderr);
       if (word === "memories") assert.doesNotMatch(cliText.stderr, /engram work next/u, cliText.stderr);
     }
     // A refusal that says which argument to pass names the field over MCP
@@ -3933,13 +3937,28 @@ test("claim and show identify the terminal ancestor on CLI and MCP", async (t) =
       const cliResult = cliWord(engramHome, "ancestor-reader", "claim", child, "--json");
       assert.notEqual(cliResult.status, 0);
       const cliError = JSON.parse(cliResult.stdout || cliResult.stderr).error;
+      const childIdentity = cliJson(engramHome, "ancestor-reader", "core", "inspect", child).status.work;
       for (const error of [mcpError, cliError]) {
         assert.equal(error.code, "work_invalid");
+        assert.equal(error.details.work_ref, child);
+        assert.equal(error.details.work_id, undefined);
+        assert.ok(error.message.includes(child), error.message);
+        assert.ok(!error.message.includes(childIdentity.work_id), error.message);
         assert.deepEqual(error.details.blocking_ancestor, ancestor);
         assert.ok(error.next.includes(`engram work show ${child}`));
         assert.ok(error.next.includes(`engram work show ${rootRef}`));
         assert.ok(!error.next.some((command) => command.includes("--detach")));
       }
+      const claimText = cliWord(engramHome, "ancestor-reader", "claim", child);
+      assert.notEqual(claimText.status, 0);
+      assert.ok(claimText.stderr.includes(child), claimText.stderr);
+      assert.ok(!claimText.stderr.includes(childIdentity.work_id), claimText.stderr);
+      const coreClaim = cliWord(engramHome, "ancestor-reader", "core", "update", "--work-ref", child, "--input", JSON.stringify({ kind: "claim", ttl_seconds: 300, idempotency_key: `ancestor-claim-${grandparent}` }), "--json");
+      assert.notEqual(coreClaim.status, 0);
+      const coreError = JSON.parse(coreClaim.stderr).error;
+      assert.equal(coreError.details.work_id, childIdentity.work_id);
+      assert.equal(coreError.details.work_ref, undefined);
+      assert.deepEqual(coreError.details.blocking_ancestor, ancestor);
       assert.deepEqual(receipt(await client.call("show", { work_ref: rootRef })).history, history);
       assert.equal(receipt(await client.call("show", { work_ref: child })).holder, undefined);
     }

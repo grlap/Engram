@@ -9,6 +9,39 @@ fn peek_input(verbose: bool) -> NextInput {
 }
 
 #[test]
+fn invalid_generation_retries_the_same_peek_or_advancing_read() {
+    let (_home, reader, path, _) = fixture();
+    for peek in [false, true] {
+        for verbose in [false, true] {
+            let error = reader
+                .next(
+                    &NextInput {
+                        peek,
+                        verbose,
+                        context_generation: Some("two words".into()),
+                        ..Default::default()
+                    },
+                    at(0),
+                )
+                .unwrap_err();
+            assert!(matches!(error.error, StoreError::InvalidProjectMemory(_)));
+            assert_eq!(
+                reader.error_guidance(&error).next,
+                vec![if peek {
+                    "engram work next --peek"
+                } else {
+                    "engram work next"
+                }]
+            );
+        }
+    }
+    assert!(
+        !path.exists(),
+        "generation is refused before opening the store"
+    );
+}
+
+#[test]
 fn peek_residual_wal_writer_process() {
     let Some(path) = std::env::var_os("ENGRAM_PEEK_WAL_FIXTURE") else {
         return;

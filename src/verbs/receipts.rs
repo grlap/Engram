@@ -366,9 +366,34 @@ struct VerbErrorContext {
     invalid_waiver: bool,
     /// The focus move the refused word made before it refused.
     focus_change: Option<super::focus_change::FocusDisclosure>,
-    /// The read word a refused context generation came from, so its retry
-    /// repeats that word instead of advancing another.
-    retry_word: Option<&'static str>,
+    /// The refused read's retry intent, including whether next was a peek.
+    retry_read: Option<ReadRetry>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum ReadRetry {
+    Next { peek: bool },
+    Memories,
+}
+
+impl ReadRetry {
+    fn command(self) -> &'static str {
+        match self {
+            Self::Next { peek: true } => "engram work next --peek",
+            Self::Next { peek: false } => "engram work next",
+            Self::Memories => "engram work memories",
+        }
+    }
+}
+
+pub(super) fn completion_recovery_cause_text(cause: &crate::WorkCompletionRecoveryCause) -> String {
+    match cause {
+        crate::WorkCompletionRecoveryCause::RequiredChildUnsealed { child } => format!(
+            "RequiredChildUnsealed {{ child: {} }}",
+            short_ref_for_work_id(*child),
+        ),
+        other => format!("{other:?}"),
+    }
 }
 
 impl VerbError {
@@ -391,10 +416,9 @@ impl VerbError {
         }
     }
 
-    /// Names the read word whose context generation was refused, so the
-    /// guidance retries that word.
-    pub(super) fn retrying(mut self, word: &'static str) -> Self {
-        self.context.get_or_insert_with(Box::default).retry_word = Some(word);
+    /// Retain the refused read's intent so guidance repeats that read.
+    pub(super) fn retrying(mut self, read: ReadRetry) -> Self {
+        self.context.get_or_insert_with(Box::default).retry_read = Some(read);
         self
     }
 
@@ -458,7 +482,18 @@ impl VerbError {
                 ],
             };
         }
-        let target = self.work_ref.as_deref().unwrap_or("<ref>");
+        let typed_target = match &self.error {
+            StoreError::WorkAncestorNotOpen { work, .. }
+            | StoreError::WorkCompletionRecoveryRequired { work, .. } => {
+                Some(short_ref_for_work_id(*work))
+            }
+            _ => None,
+        };
+        let target = self
+            .work_ref
+            .as_deref()
+            .or(typed_target.as_deref())
+            .unwrap_or("<ref>");
         if let StoreError::WorkNoteReferenceInvalid {
             reason,
             candidates,
@@ -553,7 +588,7 @@ impl VerbError {
                 ],
             ),
             StoreError::WorkCompletionRecoveryRequired { cause, .. } => (
-                vec![format!("completion recovery is required: {cause:?}")],
+                vec![format!("completion recovery is required: {}", completion_recovery_cause_text(cause))],
                 vec![format!("engram work show {target}")],
             ),
             StoreError::AcceptanceCriteriaRequired { .. } => (
@@ -687,15 +722,14 @@ impl VerbError {
                 ],
                 Vec::new(),
             ),
-            // The word that refused the generation is retried: memories
-            // repeats memories, while next (the default) repeats next.
+            // Retry the refused read without the invalid generation.
             StoreError::InvalidProjectMemory(reason) if reason.contains("context_generation") => {
-                let word = self
+                let read = self
                     .context
                     .as_ref()
-                    .and_then(|context| context.retry_word)
-                    .unwrap_or("next");
-                (vec![reason.clone()], vec![format!("engram work {word}")])
+                    .and_then(|context| context.retry_read)
+                    .unwrap_or(ReadRetry::Next { peek: false });
+                (vec![reason.clone()], vec![read.command().into()])
             }
             StoreError::InvalidProjectMemory(reason) => {
                 (vec![reason.clone()], vec!["engram work memories".into()])
