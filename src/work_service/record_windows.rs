@@ -212,7 +212,7 @@ impl LocalWorkService {
     ) -> Result<(String, WorkRecordRow, Option<VerificationAssessmentPage>), StoreError> {
         let cursor = after
             .map(|token| {
-                super::continuation::decode::<AssessmentCursor>("v1-", token)
+                super::continuation::decode::<AssessmentCursor>(ASSESSMENT_CURSOR_PREFIX, token)
                     .ok_or_else(|| invalid("invalid assessment cursor; read the note detail again"))
             })
             .transpose()?;
@@ -292,18 +292,26 @@ impl LocalWorkService {
                     "continuation belongs to another item, project or record",
                 ));
             }
+            let view = cursor
+                .as_ref()
+                .map_or(AssessmentView::Summary, |cursor| cursor.view);
             let assessment = if row.verification.is_some() && row.address.member.is_none() {
-                store.verification_assessment(
-                    item.work_id,
-                    &row.address.hash,
-                    cursor
-                        .as_ref()
-                        .map(|cursor| crate::storage::AssessmentBoundary {
-                            trigger_position: cursor.trigger_position,
-                            obligation_id: cursor.obligation,
-                        }),
-                    MAX_ASSESSMENT_ROWS,
-                )?
+                // The summary classifies every candidate; the history pages
+                // through them in order.
+                let (after, limit) = match view {
+                    AssessmentView::Summary => (None, usize::MAX),
+                    AssessmentView::History => (
+                        cursor
+                            .as_ref()
+                            .and_then(|cursor| cursor.boundary)
+                            .map(|boundary| crate::storage::AssessmentBoundary {
+                                trigger_position: boundary.trigger_position,
+                                obligation_id: boundary.obligation,
+                            }),
+                        MAX_ASSESSMENT_ROWS,
+                    ),
+                };
+                store.verification_assessment(item.work_id, &row.address.hash, after, limit)?
             } else {
                 None
             };
@@ -319,6 +327,7 @@ impl LocalWorkService {
                     &self.project_id,
                     item.work_id,
                     &row.address.hash,
+                    view,
                     assessment,
                     cursor.as_ref(),
                 )?),
@@ -328,8 +337,32 @@ impl LocalWorkService {
     }
 }
 
-/// Obligation assessments shown per page of a verification record's detail.
+/// Obligation assessments shown per page of a verification record's history.
 pub(crate) const MAX_ASSESSMENT_ROWS: usize = 8;
+
+/// The prefix of an assessment continuation: both views, one cursor type.
+const ASSESSMENT_CURSOR_PREFIX: &str = "v2-";
+
+/// Which view of a verification record's assessment a page shows: the
+/// default summary, or the exhaustive history it names.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AssessmentView {
+    /// Exact counts by status and reason, and every row a reader must act
+    /// on: it matches or mismatches at the record's cut, or its obligation
+    /// is still recorded open.
+    Summary,
+    /// Every candidate in trigger-position and id order, a page at a time.
+    History,
+}
+
+/// The last obligation a page showed, in trigger-position and id order.
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AssessmentCursorBoundary {
+    trigger_position: i64,
+    obligation: crate::domain::WorkObligationId,
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -343,40 +376,110 @@ struct AssessmentCursor {
     /// a new obligation or a resolution, makes the continuation stale.
     head: i64,
     total: usize,
-    /// The last obligation shown, in trigger-position and id order.
-    trigger_position: i64,
-    obligation: crate::domain::WorkObligationId,
+    view: AssessmentView,
+    /// The last row shown; none starts the view from its first row.
+    boundary: Option<AssessmentCursorBoundary>,
 }
 
-/// One page of a verification record's reconstructed assessment: exact
-/// counts over every candidate, the rows of this page, and the continuation
-/// to the rest.
+/// One exact count of the summary: candidates with this status and reason.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AssessmentCount {
+    /// `matches`, `mismatch` or `left_out`.
+    pub status: String,
+    /// The mismatch or left-out reason; none for `matches`.
+    pub reason: Option<String>,
+    pub count: usize,
+}
+
+/// One page of a verification record's reconstructed assessment, in either
+/// view, at one cut: exact counts, the rows from here on, and what a
+/// continuation needs to resume the same view at the same cut.
 pub(crate) struct VerificationAssessmentPage {
+    pub view: AssessmentView,
     pub record_position: i64,
     pub cut_position: i64,
+    /// Every candidate of the record's check kind on the run.
     pub total: usize,
-    /// Candidates shown on earlier pages.
+    pub check_kind: crate::domain::VerificationKind,
+    /// Summary only: exact counts over every candidate.
+    pub counts: Vec<AssessmentCount>,
+    /// Summary: every row that must be shown, on any page. History: `total`.
+    pub view_total: usize,
+    /// Rows of this view on earlier pages.
     pub earlier: usize,
+    /// Rows of this view from here on. A summary carries all that remain, for
+    /// the renderer to fit; a history page carries at most one page.
     pub rows: Vec<crate::storage::VerificationObligationAssessment>,
-    pub continuation: Option<String>,
+    cursor: AssessmentCursor,
     /// Where a bound record's check ran and how it was bound here.
     pub bound: Option<crate::domain::AcceptanceBoundVerification>,
 }
 
 impl VerificationAssessmentPage {
-    /// Candidates not on this page, earlier pages included.
+    /// Candidates not on this page, earlier pages included (history view).
     pub(crate) fn omitted(&self) -> usize {
         self.total - self.rows.len()
     }
+
+    /// Whether rows of this view remain after the first `shown` rows here.
+    pub(crate) fn more_after(&self, shown: usize) -> bool {
+        self.earlier + shown < self.view_total
+    }
+
+    /// The continuation that resumes this view after `row`, at the same cut.
+    pub(crate) fn continuation_after(
+        &self,
+        row: &crate::storage::VerificationObligationAssessment,
+    ) -> Result<String, StoreError> {
+        self.encode(
+            self.view,
+            Some(AssessmentCursorBoundary {
+                trigger_position: row.trigger_position,
+                obligation: row.obligation_id,
+            }),
+        )
+    }
+
+    /// The continuation that starts the exhaustive history at the same cut.
+    pub(crate) fn history_start(&self) -> Result<String, StoreError> {
+        self.encode(AssessmentView::History, None)
+    }
+
+    fn encode(
+        &self,
+        view: AssessmentView,
+        boundary: Option<AssessmentCursorBoundary>,
+    ) -> Result<String, StoreError> {
+        super::continuation::encode(
+            ASSESSMENT_CURSOR_PREFIX,
+            &AssessmentCursor {
+                view,
+                boundary,
+                ..self.cursor.clone()
+            },
+        )
+        .ok_or_else(|| invalid("assessment continuation exceeds its budget"))
+    }
+}
+
+/// The serde word of a unit enum variant.
+fn serde_word<T: Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 fn assessment_page(
     project: &ProjectId,
     work: WorkId,
     record: &ObjectId,
+    view: AssessmentView,
     assessment: crate::storage::VerificationAssessment,
     cursor: Option<&AssessmentCursor>,
 ) -> Result<VerificationAssessmentPage, StoreError> {
+    use crate::control::ObligationAssessment;
+    use crate::storage::RecordedObligationEnd;
     let total = assessment.total;
     if let Some(cursor) = cursor {
         if cursor.run != assessment.run_id {
@@ -398,34 +501,84 @@ fn assessment_page(
             ));
         }
     }
-    let shown = assessment.earlier + assessment.rows.len();
-    let continuation = match assessment.rows.last() {
-        Some(last) if shown < total => Some(
-            super::continuation::encode(
-                "v1-",
-                &AssessmentCursor {
-                    project: project.clone(),
-                    work,
-                    run: assessment.run_id,
-                    record: record.clone(),
-                    record_position: assessment.record_position,
-                    head: assessment.head_position,
-                    total,
-                    trigger_position: last.trigger_position,
-                    obligation: last.obligation_id,
-                },
-            )
-            .ok_or_else(|| invalid("assessment continuation exceeds its budget"))?,
-        ),
-        _ => None,
+    let base = AssessmentCursor {
+        project: project.clone(),
+        work,
+        run: assessment.run_id,
+        record: record.clone(),
+        record_position: assessment.record_position,
+        head: assessment.head_position,
+        total,
+        view,
+        boundary: None,
+    };
+    let (counts, view_total, earlier, rows) = match view {
+        AssessmentView::History => (Vec::new(), total, assessment.earlier, assessment.rows),
+        AssessmentView::Summary => {
+            let mut counts = BTreeMap::<(String, Option<String>), usize>::new();
+            for row in &assessment.rows {
+                let key = match row.assessment {
+                    ObligationAssessment::Matches => ("matches".to_owned(), None),
+                    ObligationAssessment::Mismatch(mismatch) => {
+                        ("mismatch".to_owned(), Some(serde_word(&mismatch)))
+                    }
+                    ObligationAssessment::Skipped(skip) => {
+                        ("left_out".to_owned(), Some(serde_word(&skip)))
+                    }
+                };
+                *counts.entry(key).or_insert(0) += 1;
+            }
+            // A row a reader must act on is shown in full, in trigger-position
+            // order: one that matches or mismatches, or whose obligation is
+            // still recorded open. Every other row is left out before
+            // matching and appears only in the counts.
+            let must_show = assessment
+                .rows
+                .into_iter()
+                .filter(|row| {
+                    !matches!(row.assessment, ObligationAssessment::Skipped(_))
+                        || row.recorded == RecordedObligationEnd::Open
+                })
+                .collect::<Vec<_>>();
+            let earlier = match cursor.and_then(|cursor| cursor.boundary) {
+                None => 0,
+                Some(boundary) => {
+                    must_show
+                        .iter()
+                        .position(|row| {
+                            row.trigger_position == boundary.trigger_position
+                                && row.obligation_id == boundary.obligation
+                        })
+                        .ok_or_else(|| {
+                            invalid("continuation boundary no longer matches this record")
+                        })?
+                        + 1
+                }
+            };
+            let view_total = must_show.len();
+            let rows = must_show.into_iter().skip(earlier).collect();
+            let counts = counts
+                .into_iter()
+                .map(|((status, reason), count)| AssessmentCount {
+                    status,
+                    reason,
+                    count,
+                })
+                .collect();
+            (counts, view_total, earlier, rows)
+        }
     };
     Ok(VerificationAssessmentPage {
+        view,
         record_position: assessment.record_position,
         cut_position: assessment.cut_position,
         total,
-        earlier: assessment.earlier,
-        rows: assessment.rows,
-        continuation,
+        check_kind: assessment.check_kind,
+        counts,
+        view_total,
+        earlier,
+        rows,
+        cursor: base,
         bound: assessment.bound,
     })
 }

@@ -898,10 +898,25 @@ Rules that matter:
     whether it reported a change;
   - beside them, the check's own `verification_workspace` and
     `verification_revision`.
-  Text shows it as one line under the row. At most eight rows are shown, with exact `total`,
-  `shown`, `earlier` and `omitted` counts; its `continuation` command,
-  `show REF --note LOCATOR --after CURSOR` (MCP `note` with `after`), shows the
-  rest and refuses once the run has moved on. See the
+  Text shows it as one line under the row. The detail's `assessment` is the
+  summary (`view: "summary"`), with the record's `record_position`, its
+  `cut_position`, the `check_kind` and the `total` of candidates:
+  - `counts` gives exact counts by `status` and `reason` (the `mismatch` code
+    or `left_out` reason) over every candidate;
+  - `must_show` holds, in full and in trigger order, every row a reader must
+    act on: one that matches or mismatches, or whose obligation is still
+    recorded open; every other row left out before matching appears only in
+    `counts`. Whole rows fill a 6 KiB page, with `must_show_total`,
+    `must_show_earlier` and `must_show_remaining`. When rows remain, its
+    `continuation` command shows the next page of them, and text says "more
+    must-show rows";
+  - `history` is the command to the full history at the same cut
+    (`view: "history"`), which pages every candidate in trigger order, at most
+    eight `rows` a page, with exact `total`, `shown`, `earlier` and `omitted`
+    counts and a `continuation` to the next page.
+  Each command is `show REF --note LOCATOR --after CURSOR` (MCP `note` with
+  `after`). A continued page carries the assessment alone, and every
+  continuation refuses once the run has moved on. See the
   [local work system](local-work-system.md) for what each part means.
 - Newly written note bodies are limited to 64 KiB of normalized UTF-8 text.
   `work_note_too_large` reports actual bytes, limit and the remedy to carry

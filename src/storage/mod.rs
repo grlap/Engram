@@ -174,6 +174,7 @@ pub(crate) use work::test_support::source_mutation_from_basis;
 #[cfg(test)]
 pub(crate) use work::test_support::{
     HostCheck, assessed_verification_fixture, bound_verification_refusal_fixture,
+    closed_then_live_verification_fixture, later_ended_and_open_verification_fixture,
     stale_deciding_refusal_fixture, unreported_move_fixture, verification_note_fixture,
 };
 

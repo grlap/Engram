@@ -490,6 +490,18 @@ pub(crate) fn assessed_verification_fixture(
     changes: usize,
     records: usize,
 ) -> (String, Vec<ObjectId>) {
+    let (_, work, _, verifications) =
+        assessed_verification_setup(database, project, holder, changes, records);
+    (work.short_ref, verifications)
+}
+
+fn assessed_verification_setup(
+    database: &std::path::Path,
+    project: &str,
+    holder: &str,
+    changes: usize,
+    records: usize,
+) -> (SqliteStore, WorkItem, WorkClaim, Vec<ObjectId>) {
     let mut store = SqliteStore::open(database).expect("store");
     let mut request = root_request(project, "assessed-verification", 1);
     request.acceptance = vec!["run the tests".into()];
@@ -531,7 +543,99 @@ pub(crate) fn assessed_verification_fixture(
             )
         })
         .collect();
-    (work.short_ref, verifications)
+    (store, work, claim, verifications)
+}
+
+/// A file store at `database` holding one item whose first criterion binds a
+/// test, claimed by `holder`: `closed` source changes and a passing test of
+/// the newest of them, which closes every obligation open so far, then `live`
+/// further changes and a passing test of `last_revision`. Returns the item's
+/// short ref and the two tests' record ids, oldest first.
+pub(crate) fn closed_then_live_verification_fixture(
+    database: &std::path::Path,
+    project: &str,
+    holder: &str,
+    closed: usize,
+    live: usize,
+    last_revision: &str,
+) -> (String, [ObjectId; 2]) {
+    let (mut store, work, claim, first) =
+        assessed_verification_setup(database, project, holder, closed, 1);
+    let second = |index: usize| 3 + i64::try_from(closed + 1 + index).expect("small index");
+    for index in 0..live {
+        source_mutation(
+            &mut store,
+            &work,
+            &claim,
+            holder,
+            &format!("live-change-{index}"),
+            second(index),
+            Some(&format!("L{index}")),
+        );
+    }
+    let last = host_verification_of(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "suite-last",
+        crate::domain::VerificationKind::Test,
+        crate::domain::VerificationResult::Passed,
+        second(live),
+        last_revision,
+    );
+    (work.short_ref, [first[0].clone(), last])
+}
+
+/// A file store at `database` holding one item whose first criterion binds a
+/// test, claimed by `holder`: `closed` source changes and a first passing
+/// test of the newest, then `later` changes that a second passing test
+/// satisfies, then one more change that nothing satisfies. Seen from the
+/// first test, the later changes are left out as not yet defined with their
+/// obligations ended by another record, and the last is left out but still
+/// open. Returns the item's short ref and the first test's record id.
+pub(crate) fn later_ended_and_open_verification_fixture(
+    database: &std::path::Path,
+    project: &str,
+    holder: &str,
+    closed: usize,
+    later: usize,
+) -> (String, ObjectId) {
+    let (mut store, work, claim, first) =
+        assessed_verification_setup(database, project, holder, closed, 1);
+    let second = |index: usize| 3 + i64::try_from(closed + 1 + index).expect("small index");
+    for index in 0..later {
+        source_mutation(
+            &mut store,
+            &work,
+            &claim,
+            holder,
+            &format!("later-change-{index}"),
+            second(index),
+            Some(&format!("L{index}")),
+        );
+    }
+    host_verification_of(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "suite-later",
+        crate::domain::VerificationKind::Test,
+        crate::domain::VerificationResult::Passed,
+        second(later),
+        &format!("L{}", later.saturating_sub(1)),
+    );
+    source_mutation(
+        &mut store,
+        &work,
+        &claim,
+        holder,
+        "still-open-change",
+        second(later + 1),
+        Some("OPEN"),
+    );
+    (work.short_ref, first[0].clone())
 }
 
 /// The records needed to exercise a bound-check completion refusal.

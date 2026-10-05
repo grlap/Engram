@@ -140,17 +140,12 @@ impl AgentVerbs {
                     ),
                     error => VerbError::at(error, work_ref),
                 })?;
-            let continuation = assessment
-                .as_ref()
-                .and_then(|page| page.continuation.as_ref())
-                .map(|token| {
-                    format!(
-                        "engram work show {work_ref} --note {} --after {token}",
-                        row.locator
-                    )
-                });
-            // The continuation names the record's full id, so it stays on the
+            // The continuations name the record's full id, so they stay on the
             // assessment block, like a window row's detail command, not in `next`.
+            let rendered = assessment
+                .as_ref()
+                .map(|page| super::verification_assessment::render(page, &work_ref, &row.locator))
+                .transpose()?;
             // An inherited event or completion came from the history window.
             let next = vec![format!(
                 "engram work show {work_ref} {}",
@@ -160,19 +155,13 @@ impl AgentVerbs {
                     "--notes"
                 }
             )];
-            let assessment_value = assessment
-                .as_ref()
-                .map(|page| super::verification_assessment::value(page, continuation.as_deref()));
             // A continuation page carries the assessment alone; the note itself
             // was on the first page. The service refuses `after` on any other
             // note, so a continued note always has its assessment.
-            if let (Some(_), Some(page)) = (&input.after, &assessment) {
+            if let (Some(_), Some(rendered)) = (&input.after, &rendered) {
                 let mut lines = vec![format!("note {}: assessment continued", row.locator)];
-                super::verification_assessment::append_lines(
-                    &mut lines,
-                    page,
-                    continuation.as_deref(),
-                );
+                lines.extend(rendered.lines.iter().cloned());
+                let assessment_value = &rendered.value;
                 return Ok(Receipt::assemble(
                     lines,
                     Guidance {
@@ -229,13 +218,9 @@ impl AgentVerbs {
                 value["member"] = record.clone();
                 value["member_bytes"] = json!(bytes);
             }
-            if let (Some(page), Some(assessment)) = (&assessment, assessment_value) {
-                super::verification_assessment::append_lines(
-                    &mut lines,
-                    page,
-                    continuation.as_deref(),
-                );
-                value["assessment"] = assessment;
+            if let Some(rendered) = rendered {
+                lines.extend(rendered.lines);
+                value["assessment"] = rendered.value;
             }
             return Ok(Receipt::assemble(
                 lines,

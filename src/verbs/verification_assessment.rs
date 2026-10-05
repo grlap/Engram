@@ -1,14 +1,57 @@
 //! The reconstructed obligation assessment on a verification record's
-//! detail: at most one page of candidates, each with what the current matching
-//! rules say at the record's own run-feed position and, apart from it, the
-//! obligation's recorded end.
+//! detail, each candidate with what the current matching rules say at the
+//! record's own run-feed position and, apart from it, the obligation's
+//! recorded end. The default summary gives exact counts by status and reason
+//! and shows in full every candidate a reader must act on: one that matches
+//! or mismatches at that position, or whose obligation is still recorded
+//! open; the exhaustive history pages through every candidate, one
+//! continuation away at the same cut.
 
-use super::{Value, json};
+use super::{Value, VerbError, json};
 use crate::control::{ObligationAssessment, ObligationSkip};
 use crate::domain::{AcceptanceBoundVerification, StaleSourceDecider, StaleVerificationSource};
 use crate::storage::{RecordedObligationEnd, VerificationObligationAssessment};
-use crate::work_service::{VerificationAssessmentPage, bounded_shown_field};
+use crate::work_service::{AssessmentView, VerificationAssessmentPage, bounded_shown_field};
 use std::fmt::Write as _;
+
+/// Bytes of must-show rows a summary page shows, as compact JSON: whole rows,
+/// and always at least one, so every page advances.
+pub(super) const MUST_SHOW_BUDGET: usize = 6 * 1024;
+
+/// The assessment block of a verification record's detail, rendered for
+/// both surfaces.
+pub(super) struct Rendered {
+    pub(super) value: Value,
+    pub(super) lines: Vec<String>,
+}
+
+/// Renders a page of either view, with the commands that continue it, which
+/// name `work_ref` and the note's `locator`.
+pub(super) fn render(
+    page: &VerificationAssessmentPage,
+    work_ref: &str,
+    locator: &str,
+) -> Result<Rendered, VerbError> {
+    let command =
+        |token: String| format!("engram work show {work_ref} --note {locator} --after {token}");
+    match page.view {
+        AssessmentView::History => {
+            let continuation = match page.rows.last() {
+                Some(last) if page.more_after(page.rows.len()) => {
+                    Some(command(page.continuation_after(last)?))
+                }
+                _ => None,
+            };
+            let mut lines = Vec::new();
+            append_lines(&mut lines, page, continuation.as_deref());
+            Ok(Rendered {
+                value: value(page, continuation.as_deref()),
+                lines,
+            })
+        }
+        AssessmentView::Summary => summary(page, &command),
+    }
+}
 
 /// The words that say what the block is and is not: a reconstruction at the
 /// record's position, not a decision the store recorded.
@@ -19,13 +62,15 @@ pub(super) fn label(page: &VerificationAssessmentPage) -> String {
     )
 }
 
-/// The block as JSON. `continuation` is the complete command to the next
+/// A history page as JSON. `continuation` is the complete command to the next
 /// page, when there is one.
 pub(super) fn value(page: &VerificationAssessmentPage, continuation: Option<&str>) -> Value {
     let mut value = json!({
+        "view": "history",
         "label": label(page),
         "record_position": page.record_position,
         "cut_position": page.cut_position,
+        "check_kind": word(&page.check_kind),
         "total": page.total,
         "shown": page.rows.len(),
         "earlier": page.earlier,
@@ -118,6 +163,129 @@ fn append_bound_lines(lines: &mut Vec<String>, bound: &AcceptanceBoundVerificati
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+    }
+}
+
+/// The summary: exact counts over every candidate, then the must-show rows
+/// that fit the budget, the command to the rest, and the full history.
+fn summary(
+    page: &VerificationAssessmentPage,
+    command: &dyn Fn(String) -> String,
+) -> Result<Rendered, VerbError> {
+    let mut shown = Vec::new();
+    let mut bytes = 0;
+    for row in &page.rows {
+        let value = row_value(row);
+        let size = serde_json::to_vec(&value)
+            .map_err(crate::storage::StoreError::Json)?
+            .len()
+            + 1;
+        if !shown.is_empty() && bytes + size > MUST_SHOW_BUDGET {
+            break;
+        }
+        bytes += size;
+        shown.push((row, value));
+    }
+    let remaining = page.view_total - page.earlier - shown.len();
+    let continuation = match shown.last() {
+        Some((last, _)) if remaining > 0 => Some(command(page.continuation_after(last)?)),
+        _ => None,
+    };
+    let history = command(page.history_start()?);
+    let counts = page
+        .counts
+        .iter()
+        .map(|count| {
+            let mut value = json!({ "status": count.status, "count": count.count });
+            if let Some(reason) = &count.reason {
+                value["reason"] = json!(reason);
+            }
+            value
+        })
+        .collect::<Vec<_>>();
+    let mut value = json!({
+        "view": "summary",
+        "label": label(page),
+        "record_position": page.record_position,
+        "cut_position": page.cut_position,
+        "check_kind": word(&page.check_kind),
+        "total": page.total,
+        "counts": counts,
+        "must_show_total": page.view_total,
+        "must_show_earlier": page.earlier,
+        "must_show_remaining": remaining,
+        "must_show": shown.iter().map(|(_, value)| value.clone()).collect::<Vec<_>>(),
+        "history": history,
+    });
+    if let Some(command) = &continuation {
+        value["continuation"] = json!(command);
+    }
+    if let Some(bound) = &page.bound {
+        value["bound"] = bound_value(bound);
+    }
+    let kind = word(&page.check_kind);
+    let cut = page.cut_position;
+    let mut lines = Vec::new();
+    if let Some(bound) = &page.bound {
+        append_bound_lines(&mut lines, bound);
+    }
+    lines.push(if page.total == 0 {
+        format!(
+            "  obligations of check kind {kind} on the run at cut position {cut}: none ({})",
+            label(page)
+        )
+    } else {
+        format!(
+            "  {} obligations of check kind {kind} on the run at cut position {cut} ({}): {}",
+            page.total,
+            label(page),
+            page.counts
+                .iter()
+                .map(|count| format!("{} {}", count.count, count_words(count)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    });
+    if page.total > 0 && page.view_total == 0 {
+        lines.push("  none matches, mismatches or is still open at this record; the counts cover every one".into());
+    } else if page.view_total > 0 {
+        lines.push(format!(
+            "  {} to act on (matching, mismatching or still open), shown in full{}:",
+            page.view_total,
+            if page.earlier > 0 {
+                format!(" ({} on earlier pages)", page.earlier)
+            } else {
+                String::new()
+            }
+        ));
+    }
+    for (row, _) in &shown {
+        append_row_lines(&mut lines, row);
+    }
+    if let Some(command) = &continuation {
+        lines.push(format!(
+            "  more must-show rows: {remaining}; next: {}",
+            super::terminal_command(command)
+        ));
+    }
+    lines.push(format!(
+        "  full history: {}",
+        super::terminal_command(&history)
+    ));
+    Ok(Rendered { value, lines })
+}
+
+/// What one count counts, in words.
+fn count_words(count: &crate::work_service::AssessmentCount) -> String {
+    match (count.status.as_str(), count.reason.as_deref()) {
+        ("matches", _) => "match at that position".into(),
+        ("mismatch", Some(reason)) => format!("do not match ({})", spaced(reason)),
+        ("left_out", Some(reason)) => format!("left out ({})", spaced(reason)),
+        (status, reason) => format!(
+            "{}{}",
+            spaced(status),
+            reason.map_or(String::new(), |reason| format!(" ({})", spaced(reason)))
+        ),
     }
 }
 
@@ -307,11 +475,7 @@ pub(super) fn append_lines(
     if let Some(bound) = &page.bound {
         append_bound_lines(lines, bound);
     }
-    let kind = page
-        .rows
-        .first()
-        .map(|row| word(&row.check_kind))
-        .unwrap_or_default();
+    let kind = word(&page.check_kind);
     lines.push(if page.total == 0 {
         format!(
             "  obligations of this check kind on the run: none ({})",
@@ -328,37 +492,42 @@ pub(super) fn append_lines(
         )
     });
     for row in &page.rows {
-        let mut subject = format!(
-            "{} version {}",
-            super::terminal_safe_line(&row.rule.rule_id),
-            row.rule.rule_version
-        );
-        if let Some(criterion) = row.criterion {
-            let _ = write!(subject, ", criterion {criterion}");
-        }
-        if row.pinned {
-            subject.push_str(", pinned check");
-        }
-        let status = match row.assessment {
-            ObligationAssessment::Matches => "matches at that position".to_owned(),
-            ObligationAssessment::Mismatch(mismatch) => {
-                format!("does not match: {}", spaced(&word(&mismatch)))
-            }
-            ObligationAssessment::Skipped(skip) => {
-                format!("left out before matching: {}", skip_words(skip))
-            }
-        };
-        lines.push(format!(
-            "    - {subject}, opened at run position {}: {status}; recorded: {}",
-            row.trigger_position,
-            recorded_words(row.recorded)
-        ));
-        if let Some(source) = &row.stale_source {
-            lines.push(format!("      {}", stale_source_line(source)));
-        }
+        append_row_lines(lines, row);
     }
     if let Some(command) = continuation {
         lines.push(format!("  more: {}", super::terminal_command(command)));
+    }
+}
+
+/// One candidate as terminal lines, in either view.
+fn append_row_lines(lines: &mut Vec<String>, row: &VerificationObligationAssessment) {
+    let mut subject = format!(
+        "{} version {}",
+        super::terminal_safe_line(&row.rule.rule_id),
+        row.rule.rule_version
+    );
+    if let Some(criterion) = row.criterion {
+        let _ = write!(subject, ", criterion {criterion}");
+    }
+    if row.pinned {
+        subject.push_str(", pinned check");
+    }
+    let status = match row.assessment {
+        ObligationAssessment::Matches => "matches at that position".to_owned(),
+        ObligationAssessment::Mismatch(mismatch) => {
+            format!("does not match: {}", spaced(&word(&mismatch)))
+        }
+        ObligationAssessment::Skipped(skip) => {
+            format!("left out before matching: {}", skip_words(skip))
+        }
+    };
+    lines.push(format!(
+        "    - {subject}, opened at run position {}: {status}; recorded: {}",
+        row.trigger_position,
+        recorded_words(row.recorded)
+    ));
+    if let Some(source) = &row.stale_source {
+        lines.push(format!("      {}", stale_source_line(source)));
     }
 }
 

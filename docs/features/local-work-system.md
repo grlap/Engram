@@ -1610,11 +1610,23 @@ followed. This context is computed when read and never stored. Apart from
 it, each row gives the obligation's recorded end as stored: open, satisfied by
 this record or another, waived or displaced. Rows name the rule and version,
 check kind, whether the rule pins its check, the criterion a binding rule
-requires and the run position that opened the obligation, never a raw id. A
-page shows at most eight, with exact total, shown, earlier and omitted counts;
+requires and the run position that opened the obligation, never a raw id.
+
+The detail leads with a summary that states the record and cut positions and
+counts every candidate exactly by status and reason, then shows in full, in
+trigger order, every candidate a reader must act on: one that matches or
+does not match at the record, or whose obligation is still recorded open. A
+candidate left out before matching whose obligation has already ended (closed
+by an earlier record, not yet defined and since satisfied by a later one,
+waived or displaced) only adds to its count, so it can neither hide nor
+delay one that still matters. Those rows fill a 6 KiB page, whole rows
+and at least one; when more remain, the summary says how many and gives the
+command to the next page of them. It always gives the command to the full
+history at the same cut, which pages every candidate, closed ones included,
+eight at a time with exact total, shown, earlier and omitted counts.
 `show REF --note LOCATOR --after CURSOR` (MCP `note` with `after`) continues
-it, bound to the item, run, record, its position and the run feed's head, and
-refuses once the run has moved or for any other note. Ordinary `next`, `show`
+either view, bound to the item, run, record, its position and the run feed's
+head, and refuses once the run has moved or for any other note. Ordinary `next`, `show`
 and note windows carry no assessment. The read changes nothing.
 
 The six mutation words `add`, `claim`, `gate`, `evaluate`, `note`, and `done` use one

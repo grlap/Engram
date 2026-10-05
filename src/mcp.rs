@@ -2,6 +2,8 @@
 //! words plus `search`.
 
 mod arguments;
+#[cfg(test)]
+mod assessment_tests;
 mod parameters;
 #[cfg(test)]
 pub(crate) mod prose_sweep;

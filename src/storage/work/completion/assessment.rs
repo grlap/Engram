@@ -361,6 +361,8 @@ pub(crate) struct VerificationAssessment {
     pub cut_position: i64,
     /// The run feed's head at this read; a continuation binds it.
     pub head_position: i64,
+    /// The record's check kind, which every candidate shares.
+    pub check_kind: VerificationKind,
     /// Every obligation of the record's check kind on the run.
     pub total: usize,
     /// Those up to and including the boundary the page continues from.
@@ -414,6 +416,7 @@ impl SqliteStore {
             position: record_position.position + 1,
         };
         let head_position = current_run_feed_cut_on(connection, run_id)?.position;
+        let record_check_kind = evidence.check_kind;
         let check_kind = encode_state(evidence.check_kind)?;
         let run = run_id.0.to_string();
         let boundary =
@@ -536,6 +539,7 @@ impl SqliteStore {
             record_position: record_position.position,
             cut_position: cut.position,
             head_position,
+            check_kind: record_check_kind,
             total,
             earlier,
             boundary_found,
