@@ -86,6 +86,7 @@ fn record_check(
             refs: Vec::new(),
             actor: run_actor,
             recorded_at: at(second),
+            bound_from: None,
         },
     )
     .expect("verification")
@@ -795,6 +796,7 @@ fn a_newer_root_sighting_decides_a_stale_check_and_is_named() {
             refs: Vec::new(),
             actor: run_actor.clone(),
             recorded_at: at(7),
+            bound_from: None,
         },
     )
     .expect("verification");

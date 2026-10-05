@@ -5,14 +5,15 @@
 //! freshness: a satisfied obligation names the check that closed it, even
 //! when a newer check failed or the source moved since.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::ObjectId;
 
 use super::{
-    BuiltinObligationRuleRef, ExecutionOutcome, ExecutionSourceBasis, ProjectId, VerificationKind,
-    VerificationRequirement, VerificationResult, WorkId, WorkObligationId, WorkObligationState,
-    WorkRunId,
+    ActorContext, BindMeasurement, BuiltinObligationRuleRef, ExecutionOutcome,
+    ExecutionSourceBasis, ProjectId, VerificationKind, VerificationRequirement, VerificationResult,
+    WorkId, WorkObligationId, WorkObligationState, WorkRunId,
 };
 
 /// The most criterion rows one page holds.
@@ -132,7 +133,39 @@ pub struct AcceptanceBindingVerification {
     pub check_fingerprint: ObjectId,
     pub result: VerificationResult,
     pub source_basis: ExecutionSourceBasis,
+    /// For a bound record, the original's producer: its record and position
+    /// are on the original's run, not this one.
     pub producer: AcceptanceBindingProducer,
+    /// Present only on a record that binds a check run on another item;
+    /// absent on every native record, whose shape is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound: Option<AcceptanceBoundVerification>,
+}
+
+/// Where a bound record's check ran and how it was bound to this item. The
+/// check's own time is `original_completed_at`; `bound_at` is when it was
+/// credited here.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptanceBoundVerification {
+    /// The original native verification.
+    pub verification: ObjectId,
+    /// The original's item.
+    pub work_ref: String,
+    /// The original's run, on whose feed `original_position` and the
+    /// producer's position lie.
+    pub run: WorkRunId,
+    pub original_position: i64,
+    pub original_basis: ExecutionSourceBasis,
+    pub original_completed_at: DateTime<Utc>,
+    pub binder: ActorContext,
+    pub bound_at: DateTime<Utc>,
+    /// The target run's sighting the binding stood on.
+    pub sighting: ObjectId,
+    pub measurement: BindMeasurement,
+    /// The criterion positions the binder intended; intent, not credit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub criteria: Vec<u32>,
 }
 
 /// The execution observation that produced the verification.

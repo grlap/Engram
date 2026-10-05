@@ -146,6 +146,16 @@ pub enum HostControlRequest {
         environment_evidence: Vec<EnvironmentEvidenceInput>,
         idempotency_key: String,
     },
+    /// Binds one native passed check to other items this session holds whose
+    /// named roots hold the same content: one record per target, all or
+    /// nothing. It creates no observation, turn or focus change.
+    VerificationBind {
+        routing_token: String,
+        idempotency_key: String,
+        original: crate::ObjectId,
+        measurement: crate::domain::BindMeasurement,
+        targets: Vec<crate::domain::VerificationBindTarget>,
+    },
 }
 
 impl HostControlRequest {
@@ -164,6 +174,7 @@ impl HostControlRequest {
             Self::TurnBegin { .. } => "turn_begin",
             Self::ExecutionObserve { .. } => "execution_observe",
             Self::TurnCheckpoint { .. } => "turn_checkpoint",
+            Self::VerificationBind { .. } => "verification_bind",
         }
     }
 }
@@ -179,6 +190,18 @@ enum HostControlResponse {
 struct HostControlErrorBody {
     code: &'static str,
     message: String,
+    /// The typed parts of a refusal that names several, when it has them;
+    /// absent for every other error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<Value>,
+}
+
+/// The typed parts of `error` a host reads as data, when it has them.
+fn store_error_details(error: &StoreError) -> Option<Value> {
+    match error {
+        StoreError::VerificationBindRefused(refusal) => serde_json::to_value(refusal).ok(),
+        _ => None,
+    }
 }
 
 /// Long-lived host-private service over one project-local store.
@@ -513,6 +536,33 @@ impl HostControlServer {
                 now,
             )?)
             .map_err(StoreError::Json),
+            HostControlRequest::VerificationBind {
+                routing_token,
+                idempotency_key,
+                original,
+                measurement,
+                targets,
+            } => {
+                let binder = self.actor(
+                    "verification_bind",
+                    "bind one passed check to other held items of the same content",
+                );
+                serde_json::to_value(self.store.bind_verification(
+                    &self.project_id,
+                    &self.session_id,
+                    &self.connection_token,
+                    &routing_token,
+                    &binder,
+                    &crate::domain::VerificationBindInput {
+                        idempotency_key,
+                        original,
+                        measurement,
+                        targets,
+                    },
+                    now,
+                )?)
+                .map_err(StoreError::Json)
+            }
         }
     }
 
@@ -619,6 +669,7 @@ impl HostControlServer {
                 error: HostControlErrorBody {
                     code: store_error_code(&error),
                     message: error.to_string(),
+                    details: store_error_details(&error),
                 },
             },
         }
@@ -669,6 +720,7 @@ fn parse_frame(frame: Result<Vec<u8>, ()>) -> Result<HostControlRequest, HostCon
         error: HostControlErrorBody {
             code: "invalid_request",
             message,
+            details: None,
         },
     };
     match frame {
@@ -817,6 +869,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::SourceBasisTextRefused { .. } => "source_basis_text_refused",
         StoreError::NamedRootReadRefused(_) => "named_root_read_refused",
         StoreError::ExecutionObservationInvalid(_) => "execution_observation_invalid",
+        StoreError::VerificationBindRefused(_) => "verification_bind_refused",
         StoreError::ExecutionObservationBasisMismatch(_) => "execution_observation_basis_mismatch",
         StoreError::ExecutionObservationPolicyBasisMismatch(_) => {
             "execution_observation_policy_basis_mismatch"
@@ -955,11 +1008,81 @@ mod tests {
                 error: HostControlErrorBody {
                     code: store_error_code(&error),
                     message: error.to_string(),
+                    details: store_error_details(&error),
                 },
             };
             let wire = serde_json::to_value(response).expect("host response");
             assert_eq!(wire["error"]["code"], expected);
         }
+    }
+
+    /// The bind request parses with every field named and refuses an unknown
+    /// one; its refusal carries the typed parts as `details`, which every
+    /// other error leaves out.
+    #[test]
+    fn verification_bind_request_and_refusal_wire_shape() {
+        let id = crate::ObjectId::from_canonical_bytes(b"a record");
+        let binding = crate::domain::ControlWorkBinding {
+            root_execution_id: crate::domain::RootExecutionId::new(),
+            work_id: crate::WorkId::new(),
+            run_id: crate::domain::WorkRunId::new(),
+            work_revision: 3,
+            claim_id: crate::domain::WorkClaimId::new(),
+            claim_fence: 1,
+        };
+        let mut request = serde_json::json!({
+            "operation": "verification_bind",
+            "routing_token": "routing",
+            "idempotency_key": "bind-1",
+            "original": id,
+            "measurement": {
+                "workspace_id": "root",
+                "source_revision": "R1",
+                "measured_at": "2026-10-05T07:00:00Z",
+            },
+            "targets": [{
+                "binding": binding,
+                "sighting": {"observation": id, "source_revision": "R1"},
+                "criteria": [1],
+            }],
+        });
+        let parsed: HostControlRequest =
+            serde_json::from_value(request.clone()).expect("the request parses");
+        assert_eq!(parsed.operation(), "verification_bind");
+        request["unexpected"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<HostControlRequest>(request).is_err());
+
+        let refusal = crate::domain::VerificationBindRefusal {
+            original: None,
+            request: None,
+            targets: vec![crate::domain::VerificationBindTargetRefusal {
+                work_id: binding.work_id,
+                work_ref: "w-target".into(),
+                reason: crate::domain::VerificationBindTargetReason::SightingNotNewest,
+                expected: None,
+                actual: None,
+                remedy: Some("obtain genuine source accounting".into()),
+            }],
+        };
+        let error = StoreError::VerificationBindRefused(Box::new(refusal));
+        let wire = |error: &StoreError| {
+            serde_json::to_value(HostControlResponse::Error {
+                error: HostControlErrorBody {
+                    code: store_error_code(error),
+                    message: error.to_string(),
+                    details: store_error_details(error),
+                },
+            })
+            .expect("host response")
+        };
+        let refused = wire(&error);
+        assert_eq!(refused["error"]["code"], "verification_bind_refused");
+        assert_eq!(
+            refused["error"]["details"]["targets"][0]["reason"],
+            "sighting_not_newest"
+        );
+        let other = wire(&StoreError::DifferentBuildSchema);
+        assert!(other["error"].get("details").is_none(), "{other}");
     }
 
     #[test]

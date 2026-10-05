@@ -131,9 +131,30 @@ pub fn explain_verification_evidence(
             Ok((latest_mutation, position, basis, observed_at))
         })
         .transpose()?;
-    let same_run = producer.project_id == evidence.project_id
-        && producer.binding == evidence.binding
-        && producer.session_id == evidence.session_id
+    // A bound record's check ran on the original's run: its producer belongs
+    // there, while the record and this run's changes belong here. Its position
+    // on this run stands in for the producer's in every comparison with this
+    // run, and its binding time for the check's time; the original's own
+    // facts were validated on the original's run when it was bound.
+    let bound = evidence.bound_from.as_ref();
+    let producer_position = if bound.is_some() {
+        Some(input.evidence_position)
+    } else {
+        input.producer_position
+    };
+    let producer_matches = match bound {
+        Some(source) => {
+            producer.project_id == evidence.project_id
+                && producer.binding.work_id == source.work_id
+                && producer.binding.run_id == source.run_id
+        }
+        None => {
+            producer.project_id == evidence.project_id
+                && producer.binding == evidence.binding
+                && producer.session_id == evidence.session_id
+        }
+    };
+    let same_run = producer_matches
         && mutation.is_none_or(|(latest_mutation, _, _, _)| {
             evidence.project_id == latest_mutation.project_id
                 && evidence.binding.root_execution_id == latest_mutation.binding.root_execution_id
@@ -154,11 +175,10 @@ pub fn explain_verification_evidence(
                 && basis.source_root_generation == Some(root.generation)
                 && basis.source_root_state == Some(SourceRootState::Named)
         };
-        let producer_position = input
-            .producer_position
-            .ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
+        let producer_position =
+            producer_position.ok_or(plain(VerificationEvidenceMismatch::InvalidProducer))?;
         if !correct_root(&evidence.source_basis)
-            || !producer.source_basis.as_ref().is_some_and(correct_root)
+            || (bound.is_none() && !producer.source_basis.as_ref().is_some_and(correct_root))
             || input.evidence_position <= root.binding_position
             || producer_position <= root.binding_position
         {
@@ -226,9 +246,7 @@ pub fn explain_verification_evidence(
     if mutation.is_some_and(|(latest_mutation, latest_mutation_position, _, _)| {
         input.evidence_position <= latest_mutation_position
             || ((input.named_root.is_some() || !latest_mutation.admitted)
-                && input
-                    .producer_position
-                    .is_none_or(|position| position <= latest_mutation_position))
+                && producer_position.is_none_or(|position| position <= latest_mutation_position))
     }) {
         return Err(plain(VerificationEvidenceMismatch::NotAfterMutation));
     }
@@ -237,9 +255,13 @@ pub fn explain_verification_evidence(
         && producer.actor.session_id.as_ref() == Some(&producer.session_id)
         && producer.actor.run_id.as_deref() == Some(producer.binding.run_id.0.to_string().as_str());
     // A check completed before an unadmitted change was recorded may be an
-    // old result whose records arrived late: it cannot follow that change.
+    // old result whose records arrived late: it cannot follow that change,
+    // whenever its record was written, so that floor holds the check's own
+    // completion. A bound record stands on this run at its binding time
+    // against an admitted change, whose revision it was matched to.
+    let run_time = evidence.run_time();
     let times_are_monotone = mutation.is_none_or(|(latest_mutation, _, _, latest_observed_at)| {
-        evidence.completed_at >= latest_observed_at
+        run_time >= latest_observed_at
             && (latest_mutation.admitted || evidence.completed_at >= latest_mutation.recorded_at)
     }) && evidence.completed_at <= evidence.recorded_at
         && producer.observed_at == Some(evidence.completed_at)
@@ -430,6 +452,13 @@ pub fn explain_obligation_satisfaction(
             None,
         );
     }
+    // A bound record's producer is on another run; on this one the record
+    // itself stands in for it.
+    let producer_position = if input.evidence.bound_from.is_some() {
+        Some(input.evidence_position)
+    } else {
+        input.producer_position
+    };
     if input.evidence_position > input.evaluated_cut.position
         || obligation.trigger_position.position > input.evaluated_cut.position
         || input.evidence_position <= obligation.trigger_position.position
@@ -437,8 +466,7 @@ pub fn explain_obligation_satisfaction(
         // after, wherever that change was recorded.
         || (input.named_root.is_some()
             && acceptance_binding_criterion(&obligation.rule).is_none()
-            && input
-                .producer_position
+            && producer_position
                 .is_some_and(|producer| producer <= obligation.trigger_position.position))
     {
         return (
@@ -468,7 +496,7 @@ pub fn explain_obligation_satisfaction(
             latest_mutation: input.latest_mutation,
             named_root: input.named_root,
             evidence_position: input.evidence_position,
-            producer_position: input.producer_position,
+            producer_position,
             measured_sighting: input.measured_sighting,
             requirement: &obligation.requirement,
         })
@@ -476,15 +504,14 @@ pub fn explain_obligation_satisfaction(
         return (ObligationAssessment::Mismatch(mismatch), decider);
     }
     if let Some(trigger) = input.trigger.filter(|trigger| !trigger.admitted) {
-        if input
-            .producer_position
-            .is_none_or(|producer| producer <= obligation.trigger_position.position)
+        if producer_position.is_none_or(|producer| producer <= obligation.trigger_position.position)
         {
             return (
                 ObligationAssessment::Mismatch(VerificationEvidenceMismatch::NotAfterMutation),
                 None,
             );
         }
+        // The unadmitted floor holds the check's own completion.
         if input.evidence.completed_at < trigger.recorded_at {
             return (
                 ObligationAssessment::Mismatch(VerificationEvidenceMismatch::InvalidTime),
@@ -1565,6 +1592,7 @@ mod tests {
             refs: Vec::new(),
             actor,
             recorded_at: verification_time,
+            bound_from: None,
         };
         let latest_mutation = crate::domain::SourceObservation::admitted(
             ObjectId::from_canonical_bytes(b"latest mutation"),

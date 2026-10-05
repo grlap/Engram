@@ -359,6 +359,8 @@ pub(crate) struct VerificationAssessmentPage {
     pub earlier: usize,
     pub rows: Vec<crate::storage::VerificationObligationAssessment>,
     pub continuation: Option<String>,
+    /// Where a bound record's check ran and how it was bound here.
+    pub bound: Option<crate::domain::AcceptanceBoundVerification>,
 }
 
 impl VerificationAssessmentPage {
@@ -424,6 +426,7 @@ fn assessment_page(
         earlier: assessment.earlier,
         rows: assessment.rows,
         continuation,
+        bound: assessment.bound,
     })
 }
 

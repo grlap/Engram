@@ -90,6 +90,33 @@ use named_root::{
 
 pub(super) use root_binding::{validate_seal_root_event, validate_stored_seal_root};
 
+/// A claim's bound named root at a cut, as a bind checks it: its workspace
+/// and generation, its newest sighting with that sighting's run position,
+/// and the position of any later change whose root is unknown.
+pub(super) struct NamedRootAtCut {
+    pub(super) workspace_id: String,
+    pub(super) generation: i64,
+    pub(super) latest_sighting: Option<(i64, crate::domain::SourceObservation)>,
+    pub(super) unknown_change_position: Option<i64>,
+}
+
+/// The claim's bound named root at `cut`, or `None` when it has none.
+pub(super) fn named_root_at_cut_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    claim_id: crate::domain::WorkClaimId,
+    cut: i64,
+) -> Result<Option<NamedRootAtCut>, StoreError> {
+    Ok(
+        named_root_context_on(connection, run_id, claim_id, cut)?.map(|root| NamedRootAtCut {
+            workspace_id: root.binding.workspace_id.clone(),
+            generation: root.binding.generation,
+            latest_sighting: root.latest_sighting,
+            unknown_change_position: root.unknown_change_position,
+        }),
+    )
+}
+
 pub(super) use child_barriers::{
     AncestorExecutionState, ancestors_admit_execution, blocking_ancestor_on, feed_head,
     first_blocking_ancestor, run_uses_active_root_execution, validate_completion_seal_children_on,
@@ -1913,12 +1940,8 @@ fn bind_acceptance_to_obligations_on(
                     &evidence.producer_observation,
                     "execution_observation",
                 )?;
-                let producer_position = run_feed_position_for_object_on(
-                    connection,
-                    run_id,
-                    &evidence.producer_observation,
-                )?
-                .position;
+                let producer_position =
+                    assessment::producer_position_on_run(connection, &evidence, position)?;
                 // The floors of every unadmitted change on the run hold too,
                 // not only the latest change's.
                 let barrier = assessment::unadmitted_barrier(

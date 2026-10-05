@@ -23,6 +23,7 @@ mod project_memory;
 mod schema_diagnostics;
 mod task_memory;
 mod unadmitted_observation;
+mod verification_bind;
 mod work;
 pub(crate) use work::BindingReadRequest;
 #[cfg(test)]
@@ -1168,6 +1169,10 @@ pub enum StoreError {
     /// was recorded.
     #[error("execution observation is invalid: {0}")]
     ExecutionObservationInvalid(String),
+    /// A request to bind one check to several items failed one or more
+    /// checks; nothing was written. The refusal names every failing part.
+    #[error("the verification bind was refused: {}", .0.summary())]
+    VerificationBindRefused(Box<crate::domain::VerificationBindRefusal>),
     /// An `execution_observe` request names a binding, cut or root basis the
     /// store's history does not hold; nothing was recorded.
     #[error("execution observation basis does not match the store: {0}")]

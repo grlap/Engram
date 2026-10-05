@@ -15,6 +15,7 @@ use super::feeds::{
     current_run_feed_cut_on, load_typed_work_object, run_feed_position_for_object_on,
 };
 use super::query::{load_work_item, load_work_run};
+use super::verification_read::bound_verification_read_on;
 use crate::ObjectId;
 use crate::domain::{
     ACCEPTANCE_BINDING_READ_PAGE_BYTES, ACCEPTANCE_BINDING_READ_PAGE_ROWS,
@@ -391,16 +392,33 @@ impl RowReader<'_> {
         {
             return Err(damaged(format!("verification {id} crosses its run")));
         }
-        let producer_id = &evidence.producer_observation;
-        let producer: ExecutionObservation =
-            load_typed_work_object(self.connection, producer_id, "execution_observation")?;
-        if producer.project_id != self.basis.project_id
-            || producer.binding.run_id != self.basis.run_id
-        {
-            return Err(damaged(format!(
-                "producer {producer_id} of verification {id} crosses its run"
-            )));
-        }
+        let (producer, bound) = if let Some(source) = &evidence.bound_from {
+            let (producer, bound) = bound_verification_read_on(
+                self.connection,
+                &self.basis.project_id,
+                id,
+                &evidence,
+                source,
+            )?;
+            (producer, Some(bound))
+        } else {
+            let producer_id = &evidence.producer_observation;
+            let producer: ExecutionObservation =
+                load_typed_work_object(self.connection, producer_id, "execution_observation")?;
+            if producer.project_id != self.basis.project_id
+                || producer.binding.run_id != self.basis.run_id
+            {
+                return Err(damaged(format!(
+                    "producer {producer_id} of verification {id} crosses its run"
+                )));
+            }
+            let producer = AcceptanceBindingProducer {
+                record: producer_id.clone(),
+                position: self.position(producer_id)?,
+                outcome: producer.outcome,
+            };
+            (producer, None)
+        };
         Ok(AcceptanceBindingVerification {
             record: id.clone(),
             position: self.position(id)?,
@@ -408,11 +426,8 @@ impl RowReader<'_> {
             check_fingerprint: evidence.check_fingerprint,
             result: evidence.result,
             source_basis: evidence.source_basis,
-            producer: AcceptanceBindingProducer {
-                record: producer_id.clone(),
-                position: self.position(producer_id)?,
-                outcome: producer.outcome,
-            },
+            producer,
+            bound,
         })
     }
 }

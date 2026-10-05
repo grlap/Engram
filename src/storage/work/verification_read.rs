@@ -11,13 +11,16 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use super::execution::work_evidence_kind_on;
-use super::feeds::{current_run_feed_cut_on, load_typed_work_object};
+use super::feeds::{
+    current_run_feed_cut_on, load_typed_work_object, run_feed_position_for_object_on,
+};
 use super::query::{load_work_item, load_work_run};
 use crate::ObjectId;
 use crate::domain::{
     ACCEPTANCE_VERIFICATION_READ_PAGE_BYTES, ACCEPTANCE_VERIFICATION_READ_PAGE_ROWS,
     AcceptanceBindingProducer, AcceptanceBindingReadBasis, AcceptanceBindingVerification,
-    AcceptanceVerificationPage, AcceptanceVerificationReadRefusal as Refusal, ExecutionObservation,
+    AcceptanceBoundVerification, AcceptanceVerificationPage,
+    AcceptanceVerificationReadRefusal as Refusal, BoundVerificationSource, ExecutionObservation,
     ProjectId, RootExecutionId, VerificationEvidence, VerificationRequirement, WorkEvidenceKind,
     WorkId, WorkRunId,
 };
@@ -333,6 +336,37 @@ impl CandidateScan<'_> {
             Err(StoreError::InvalidWork(reason)) => return Err(damaged(reason)),
             Err(error) => return Err(error),
         }
+        let (producer, bound) = if let Some(source) = &evidence.bound_from {
+            let (producer, bound) = bound_verification_read_on(
+                self.connection,
+                &self.basis.project_id,
+                id,
+                &evidence,
+                source,
+            )?;
+            (producer, Some(bound))
+        } else {
+            (self.native_producer(id, position, &evidence)?, None)
+        };
+        Ok(AcceptanceBindingVerification {
+            record: id.clone(),
+            position,
+            check_kind: evidence.check_kind,
+            check_fingerprint: evidence.check_fingerprint,
+            result: evidence.result,
+            source_basis: evidence.source_basis,
+            producer,
+            bound,
+        })
+    }
+
+    /// A native record's producer, on the basis run, root execution and item.
+    fn native_producer(
+        &self,
+        id: &ObjectId,
+        position: i64,
+        evidence: &VerificationEvidence,
+    ) -> Result<AcceptanceBindingProducer, StoreError> {
         let producer_id = &evidence.producer_observation;
         let producer: ExecutionObservation =
             load_typed_work_object(self.connection, producer_id, "execution_observation")?;
@@ -345,19 +379,10 @@ impl CandidateScan<'_> {
                 "producer {producer_id} of verification {id} crosses its run"
             )));
         }
-        let producer_position = self.producer_position(producer_id, id, position)?;
-        Ok(AcceptanceBindingVerification {
-            record: id.clone(),
-            position,
-            check_kind: evidence.check_kind,
-            check_fingerprint: evidence.check_fingerprint,
-            result: evidence.result,
-            source_basis: evidence.source_basis,
-            producer: AcceptanceBindingProducer {
-                record: producer_id.clone(),
-                position: producer_position,
-                outcome: producer.outcome,
-            },
+        Ok(AcceptanceBindingProducer {
+            record: producer_id.clone(),
+            position: self.producer_position(producer_id, id, position)?,
+            outcome: producer.outcome,
         })
     }
 
@@ -391,6 +416,94 @@ impl CandidateScan<'_> {
             ))),
         }
     }
+}
+
+/// The producer and the bound branch of a bound record `id`, both read on
+/// the original's run: the original must be the native record it names, on
+/// that run at `original_position`, sharing its producer, which is an
+/// execution observation of the same run strictly before the original.
+/// Positions on the original's run are never compared with this run's.
+pub(super) fn bound_verification_read_on(
+    connection: &Connection,
+    project_id: &ProjectId,
+    id: &ObjectId,
+    evidence: &VerificationEvidence,
+    source: &BoundVerificationSource,
+) -> Result<(AcceptanceBindingProducer, AcceptanceBoundVerification), StoreError> {
+    let original: VerificationEvidence =
+        load_typed_work_object(connection, &source.verification, "verification_evidence")?;
+    if original.bound_from.is_some()
+        || original.project_id != *project_id
+        || original.binding.work_id != source.work_id
+        || original.binding.run_id != source.run_id
+        || original.producer_observation != evidence.producer_observation
+    {
+        return Err(damaged(format!(
+            "bound verification {id} does not match its original {}",
+            source.verification
+        )));
+    }
+    let original_position =
+        run_feed_position_for_object_on(connection, source.run_id, &source.verification)?.position;
+    if original_position != source.original_position {
+        return Err(damaged(format!(
+            "bound verification {id} names original position {}, but its original is at {original_position}",
+            source.original_position
+        )));
+    }
+    let producer_id = &evidence.producer_observation;
+    let producer: ExecutionObservation =
+        load_typed_work_object(connection, producer_id, "execution_observation")?;
+    if producer.project_id != *project_id
+        || producer.binding.run_id != source.run_id
+        || producer.binding.work_id != source.work_id
+    {
+        return Err(damaged(format!(
+            "producer {producer_id} of bound verification {id} is not on its original's run"
+        )));
+    }
+    let producer_entry = connection
+        .query_row(
+            "SELECT position, object_kind FROM work_feed_entries
+             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_id = ?2",
+            params![source.run_id.0.to_string(), producer_id.as_str()],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let Some((producer_position, "execution_observation")) = producer_entry
+        .as_ref()
+        .map(|(position, kind)| (*position, kind.as_str()))
+    else {
+        return Err(damaged(format!(
+            "producer {producer_id} of bound verification {id} is not an execution observation on its original's run"
+        )));
+    };
+    if producer_position <= 0 || producer_position >= original_position {
+        return Err(damaged(format!(
+            "producer {producer_id} of bound verification {id} is at {producer_position}, not before its original at {original_position}"
+        )));
+    }
+    let original_item = load_work_item(connection, source.work_id)?;
+    Ok((
+        AcceptanceBindingProducer {
+            record: producer_id.clone(),
+            position: producer_position,
+            outcome: producer.outcome,
+        },
+        AcceptanceBoundVerification {
+            verification: source.verification.clone(),
+            work_ref: original_item.short_ref,
+            run: source.run_id,
+            original_position,
+            original_basis: original.source_basis,
+            original_completed_at: original.completed_at,
+            binder: evidence.actor.clone(),
+            bound_at: evidence.recorded_at,
+            sighting: source.sighting.clone(),
+            measurement: source.measurement.clone(),
+            criteria: source.criteria.clone(),
+        },
+    ))
 }
 
 /// The largest page of up to the row limit that fits the byte limit. A
@@ -560,6 +673,7 @@ mod tests {
                 position: position - 1,
                 outcome: crate::domain::ExecutionOutcome::Succeeded,
             },
+            bound: None,
         }
     }
 

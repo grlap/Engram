@@ -153,9 +153,7 @@ impl VerificationAtCut {
             &evidence.producer_observation,
             "execution_observation",
         )?;
-        let producer_position =
-            run_feed_position_for_object_on(connection, run_id, &evidence.producer_observation)?
-                .position;
+        let producer_position = producer_position_on_run(connection, &evidence, evidence_position)?;
         Ok(Self {
             evidence,
             producer,
@@ -266,6 +264,26 @@ impl VerificationAtCut {
     }
 }
 
+/// The run-feed position on the verification's own run that stands for its
+/// check: the producer observation's, or for a record that binds a check
+/// from another run, the record's own, since that producer is on the
+/// original's run.
+pub(super) fn producer_position_on_run(
+    connection: &Connection,
+    evidence: &VerificationEvidence,
+    evidence_position: i64,
+) -> Result<i64, StoreError> {
+    if evidence.bound_from.is_some() {
+        return Ok(evidence_position);
+    }
+    Ok(run_feed_position_for_object_on(
+        connection,
+        evidence.binding.run_id,
+        &evidence.producer_observation,
+    )?
+    .position)
+}
+
 /// [`unadmitted_barrier_on`] as a matcher mismatch, under the claim's named
 /// root when one is bound.
 pub(super) fn unadmitted_barrier(
@@ -350,6 +368,9 @@ pub(crate) struct VerificationAssessment {
     /// False when the boundary names no obligation of that kind on the run.
     pub boundary_found: bool,
     pub rows: Vec<VerificationObligationAssessment>,
+    /// Where a bound record's check ran and how it was bound here; `None`
+    /// for a native record.
+    pub bound: Option<crate::domain::AcceptanceBoundVerification>,
 }
 
 impl SqliteStore {
@@ -445,6 +466,20 @@ impl SqliteStore {
                 obligation_projection_row,
             )?
             .collect::<Result<Vec<_>, _>>()?;
+        let bound = evidence
+            .bound_from
+            .as_ref()
+            .map(|source| {
+                super::super::verification_read::bound_verification_read_on(
+                    connection,
+                    &evidence.project_id,
+                    evidence_id,
+                    &evidence,
+                    source,
+                )
+                .map(|(_, bound)| bound)
+            })
+            .transpose()?;
         let at_cut = VerificationAtCut::load_on(connection, evidence, evidence_id, cut.clone())?;
         let mut rows = Vec::new();
         for row in &page {
@@ -505,6 +540,7 @@ impl SqliteStore {
             earlier,
             boundary_found,
             rows,
+            bound,
         }))
     }
 }

@@ -389,6 +389,7 @@ fn completion_seals_a_tested_source_change_as_the_exact_terminal_basis() {
                 refs: vec!["command:cargo-test-workspace".into()],
                 actor: run_actor,
                 recorded_at: at(7),
+                bound_from: None,
             },
         )
         .expect("append matching verification evidence");
@@ -1080,6 +1081,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
                 refs: Vec::new(),
                 actor: run_actor,
                 recorded_at: at(11),
+                bound_from: None,
             },
         )
         .expect("append matching host verification");
@@ -1215,6 +1217,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
                 refs: Vec::new(),
                 actor: run_actor.clone(),
                 recorded_at: at(4),
+                bound_from: None,
             },
         )
         .expect("append first test evidence");
@@ -1274,6 +1277,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
                 refs: Vec::new(),
                 actor: run_actor.clone(),
                 recorded_at: at(6),
+                bound_from: None,
             },
         )
         .expect("append final test evidence");

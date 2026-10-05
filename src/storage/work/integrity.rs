@@ -11,7 +11,9 @@ use super::completion::{
     validate_completion_seal_children_on, validate_completion_seal_environment_basis_on,
     validate_completion_seal_obligation_basis_on,
 };
-use super::feeds::{load_typed_work_object, validate_work_protocol_result_binding};
+use super::feeds::{
+    load_typed_work_object, run_feed_position_for_object_on, validate_work_protocol_result_binding,
+};
 use super::planning::{encode_state, normalize_work_catalog_key, work_catalog_search_text};
 use super::query::parse_work_id;
 use crate::{
@@ -295,6 +297,56 @@ pub(super) fn expected_verification_projection(
         &evidence.producer_observation,
         "execution_observation",
     )?;
+    // The check ran under the original's binding and basis. A bound record
+    // carries the original's facts unchanged and its own run, generation,
+    // binder and binding time; it is checked against its original here.
+    let (check_binding, check_basis, original_matches) = match &evidence.bound_from {
+        None => (
+            evidence.binding.clone(),
+            evidence.source_basis.clone(),
+            true,
+        ),
+        Some(source) => {
+            let original = load_typed_work_object::<VerificationEvidence>(
+                connection,
+                &source.verification,
+                "verification_evidence",
+            )?;
+            let original_position =
+                run_feed_position_for_object_on(connection, source.run_id, &source.verification)
+                    .map(|position| position.position)
+                    .ok();
+            let matches = original.bound_from.is_none()
+                && original.result == crate::domain::VerificationResult::Passed
+                && original.project_id == evidence.project_id
+                && original.binding.work_id == source.work_id
+                && original.binding.run_id == source.run_id
+                && original_position == Some(source.original_position)
+                && original.producer_observation == evidence.producer_observation
+                && original.check_kind == evidence.check_kind
+                && original.check_fingerprint == evidence.check_fingerprint
+                && original.result == evidence.result
+                && original.completed_at == evidence.completed_at
+                && original.environment == evidence.environment
+                && original.source_basis.workspace_id == evidence.source_basis.workspace_id
+                && original.source_basis.source_revision == evidence.source_basis.source_revision
+                && original.source_basis.source_root_state
+                    == Some(crate::domain::SourceRootState::Named)
+                && evidence.source_basis.source_root_generation.is_some()
+                && evidence.source_basis.source_root_state
+                    == Some(crate::domain::SourceRootState::Named)
+                && source.measurement.workspace_id == evidence.source_basis.workspace_id
+                && source.measurement.source_revision == evidence.source_basis.source_revision
+                && original.summary == evidence.summary
+                && original.refs == evidence.refs
+                && source.criteria.first().is_none_or(|first| *first >= 1)
+                && source.criteria.windows(2).all(|pair| pair[0] < pair[1])
+                && (source.work_id, source.run_id)
+                    != (evidence.binding.work_id, evidence.binding.run_id)
+                && bound_sighting_matches(connection, evidence_id, &evidence, source)?;
+            (original.binding, original.source_basis, matches)
+        }
+    };
     let environment_matches = if let Some(environment_hash) = &evidence.environment {
         expected_environment_projection(connection, environment_hash)?;
         let environment = load_typed_work_object::<EnvironmentEvidence>(
@@ -303,10 +355,10 @@ pub(super) fn expected_verification_projection(
             "environment_evidence",
         )?;
         environment.project_id == evidence.project_id
-            && environment.binding.root_execution_id == evidence.binding.root_execution_id
-            && environment.binding.work_id == evidence.binding.work_id
-            && environment.binding.run_id == evidence.binding.run_id
-            && environment.source_basis.source_revision == evidence.source_basis.source_revision
+            && environment.binding.root_execution_id == check_binding.root_execution_id
+            && environment.binding.work_id == check_binding.work_id
+            && environment.binding.run_id == check_binding.run_id
+            && environment.source_basis.source_revision == check_basis.source_revision
     } else {
         true
     };
@@ -324,11 +376,14 @@ pub(super) fn expected_verification_projection(
             crate::domain::VerificationResult::Indeterminate
         )
     );
+    let producer_session_matches =
+        evidence.bound_from.is_some() || producer.session_id == evidence.session_id;
     let bound = evidence.schema_version == SCHEMA_VERSION
+        && original_matches
         && producer.project_id == evidence.project_id
-        && producer.binding == evidence.binding
-        && producer.session_id == evidence.session_id
-        && producer.source_basis.as_ref() == Some(&evidence.source_basis)
+        && producer.binding == check_binding
+        && producer_session_matches
+        && producer.source_basis.as_ref() == Some(&check_basis)
         && producer.observed_at == Some(evidence.completed_at)
         && producer.action_fingerprint == evidence.check_fingerprint
         && result_matches
@@ -357,6 +412,49 @@ pub(super) fn expected_verification_projection(
         environment_evidence_id: evidence.environment.map(|hash| hash.to_string()),
         components_json: None,
     })
+}
+
+/// Whether a bound record stood, when it was written, on what the bind
+/// requires on the target's run: the claim's named root in the record's
+/// workspace and generation, whose newest sighting just before the record is
+/// the one it names, at its revision, with no change of unknown place after
+/// that sighting.
+fn bound_sighting_matches(
+    connection: &Connection,
+    evidence_id: &ObjectId,
+    evidence: &VerificationEvidence,
+    source: &crate::domain::BoundVerificationSource,
+) -> Result<bool, StoreError> {
+    let Ok(position) =
+        run_feed_position_for_object_on(connection, evidence.binding.run_id, evidence_id)
+    else {
+        return Ok(false);
+    };
+    let Some(root) = super::completion::named_root_at_cut_on(
+        connection,
+        evidence.binding.run_id,
+        evidence.binding.claim_id,
+        position.position - 1,
+    )?
+    else {
+        return Ok(false);
+    };
+    let basis = &evidence.source_basis;
+    let Some((sighting_position, sighting)) = &root.latest_sighting else {
+        return Ok(false);
+    };
+    Ok(root.workspace_id == basis.workspace_id
+        && Some(root.generation) == basis.source_root_generation
+        && sighting.record == source.sighting
+        && sighting.source_basis.as_ref().is_some_and(|sighted| {
+            sighted.workspace_id == basis.workspace_id
+                && sighted.source_root_generation == basis.source_root_generation
+                && sighted.source_root_state == Some(crate::domain::SourceRootState::Named)
+                && sighted.source_revision == basis.source_revision
+        })
+        && root
+            .unknown_change_position
+            .is_none_or(|unknown| unknown <= *sighting_position))
 }
 
 pub(super) fn expected_environment_projection(

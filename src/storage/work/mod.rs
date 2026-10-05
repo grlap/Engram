@@ -63,6 +63,10 @@ pub(in crate::storage) use unadmitted::{
     check_sighting_matches_root_basis_on, check_source_root_at_cut_on, historical_claim_epoch_on,
     unadmitted_observation_is_consistent_on,
 };
+mod verification_bind;
+pub(in crate::storage) use verification_bind::{
+    VerificationBindOutcome, bind_verification_on, bound_receipt_matches_on,
+};
 
 pub(crate) use discovery::{DISCOVERY_ROWS, WorkDiscoveryRow};
 

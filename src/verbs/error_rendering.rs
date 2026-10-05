@@ -415,6 +415,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::SourceBasisTextRefused { .. }
         | StoreError::NamedRootReadRefused(_)
         | StoreError::ExecutionObservationInvalid(_)
+        | StoreError::VerificationBindRefused(_)
         | StoreError::ExecutionObservationBasisMismatch(_)
         | StoreError::ExecutionObservationPolicyBasisMismatch(_)
         | StoreError::AcceptanceBindingReadRefused { .. }

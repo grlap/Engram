@@ -1890,13 +1890,23 @@ pub(super) fn work_run_evidence_projection_on(
         .iter()
         .map(|candidate| candidate.hash.clone())
         .collect::<HashSet<_>>();
-    let linked_environments = selected
-        .iter()
-        .filter_map(|candidate| candidate.environment.clone())
-        .filter(|hash| !selected_hashes.contains(hash))
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+    // A verification bound from another item's check links the original's
+    // environment, which lies on the original's run, not this one; doctor
+    // holds it equal to the original's. Only this run's environments join
+    // the closure.
+    let mut linked_environments = HashSet::new();
+    for candidate in &selected {
+        let Some(environment) = candidate.environment.clone() else {
+            continue;
+        };
+        if selected_hashes.contains(&environment)
+            || bound_environment_elsewhere(connection, &candidate.hash, &environment)?
+        {
+            continue;
+        }
+        linked_environments.insert(environment);
+    }
+    let linked_environments = linked_environments.into_iter().collect::<Vec<_>>();
     if !linked_environments.is_empty() {
         let closure =
             load_work_evidence_selection_rows_on(connection, run_id, &linked_environments, 0)?;
@@ -1917,6 +1927,39 @@ pub(super) fn work_run_evidence_projection_on(
     selected.sort_by_key(|candidate| candidate.run_position);
     selected.dedup_by(|left, right| left.hash == right.hash);
     Ok(selected)
+}
+
+/// Whether `verification` is a bound record whose linked `environment` is
+/// the environment record on its original's run.
+fn bound_environment_elsewhere(
+    connection: &Connection,
+    verification: &ObjectId,
+    environment: &ObjectId,
+) -> Result<bool, StoreError> {
+    let kind: Option<String> = connection
+        .query_row(
+            "SELECT object_kind FROM objects WHERE object_id = ?1",
+            [verification.as_str()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if kind.as_deref() != Some("verification_evidence") {
+        return Ok(false);
+    }
+    let evidence = load_typed_work_object::<VerificationEvidence>(
+        connection,
+        verification,
+        "verification_evidence",
+    )?;
+    let Some(source) = evidence.bound_from else {
+        return Ok(false);
+    };
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM work_run_evidence
+         WHERE run_id = ?1 AND evidence_id = ?2 AND evidence_kind = 'environment')",
+        params![source.run_id.0.to_string(), environment.as_str()],
+        |row| row.get(0),
+    )?)
 }
 
 /// The run's `limit` newest evidence rows by dense run-execution feed

@@ -793,6 +793,14 @@ impl SqliteStore {
                     .and_then(serde_json::Value::as_str)
                     .is_some(),
                 "named_root_bind" => Self::named_root_receipt_matches(connection, stored, result)?,
+                super::verification_bind::VERIFICATION_BIND_OPERATION => {
+                    super::verification_bind::verification_bind_row_matches(
+                        connection,
+                        &stored.session_id,
+                        intent.clone(),
+                        result,
+                    )?
+                }
                 super::unadmitted_observation::EXECUTION_OBSERVE_OPERATION => {
                     super::unadmitted_observation::execution_observe_row_matches(
                         connection,

@@ -900,6 +900,7 @@ pub(super) fn host_verification_with_outcome(
             refs: vec![format!("command:{key}")],
             actor: run_actor,
             recorded_at: at(second),
+            bound_from: None,
         },
     )
     .expect("append verification evidence");
@@ -1002,6 +1003,7 @@ pub(super) fn host_verification_of_producer(
             refs: vec![format!("command:{key}")],
             actor: run_actor,
             recorded_at: at(recorded_second),
+            bound_from: None,
         },
     )
     .expect("append verification of the stored producer")

@@ -530,16 +530,26 @@ pub(super) fn stale_bound_citation<'a>(
                                     && basis.source_root_generation == Some(root.event.generation)
                                     && basis.source_root_state == Some(SourceRootState::Named)
                             };
-                            let producer_basis = load_typed_work_object::<ExecutionObservation>(
-                                connection,
-                                &producer,
-                                "execution_observation",
-                            )?
-                            .source_basis;
+                            // A bound record's producer ran on the original's
+                            // run under that run's root; the bind matched its
+                            // content to this root, so the record, on this
+                            // run, stands for the check here.
+                            let producer_in_root = if is_bound(connection, citation)? {
+                                true
+                            } else {
+                                let producer_basis =
+                                    load_typed_work_object::<ExecutionObservation>(
+                                        connection,
+                                        &producer,
+                                        "execution_observation",
+                                    )?
+                                    .source_basis;
+                                producer_basis.as_ref().is_some_and(in_root)
+                                    && citation_position(connection, run_id, &producer)?
+                                        .is_some_and(|position| position > root.position)
+                            };
                             in_root(&source_basis)
-                                && producer_basis.as_ref().is_some_and(in_root)
-                                && citation_position(connection, run_id, &producer)?
-                                    .is_some_and(|position| position > root.position)
+                                && producer_in_root
                                 && citation_position(connection, run_id, citation)?
                                     .is_some_and(|position| position > root.position)
                         }
@@ -579,6 +589,45 @@ pub(super) fn stale_bound_citation<'a>(
     Ok(None)
 }
 
+/// Whether the source a check of `run_id` ran on has since moved on that
+/// run, through `through`, read exactly as an evaluation's citation of the
+/// check is read: an accounted unadmitted change it does not follow, a
+/// change that carries no revision, or a newer source record (within the
+/// run's named root there) at another revision. `checked` is the revision
+/// the check ran on.
+pub(in crate::storage::work) fn check_moved_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    citation: &ObjectId,
+    producer: &ObjectId,
+    checked: &str,
+    through: i64,
+) -> Result<bool, StoreError> {
+    let root = named_root_at_on(connection, run_id, through)?;
+    Ok(moved_after_check(
+        connection,
+        run_id,
+        citation,
+        producer,
+        checked,
+        through,
+        root.as_ref(),
+    )?
+    .is_some())
+}
+
+/// Whether `citation` is a verification record bound from another item's
+/// check.
+fn is_bound(connection: &Connection, citation: &ObjectId) -> Result<bool, StoreError> {
+    Ok(load_typed_work_object::<super::VerificationEvidence>(
+        connection,
+        citation,
+        "verification_evidence",
+    )?
+    .bound_from
+    .is_some())
+}
+
 /// Whether the run left `checked`, the revision `producer` ran the check
 /// `citation` on, between that check and `through`, inclusive, read as F3
 /// reads the source after a cut. The newest source record there that
@@ -596,18 +645,25 @@ fn moved_after_check(
     through: i64,
     root: Option<&NamedEvaluationRoot>,
 ) -> Result<Option<Moved>, StoreError> {
-    // The checkpoint admits a check only with a producer on the same run.
-    let ran = citation_position(connection, run_id, producer)?.ok_or_else(|| {
-        StoreError::InvalidWorkProjection(format!(
-            "verification evidence {citation} names producer observation {producer}, which is not on its run feed"
-        ))
-    })?;
-    let recorded = citation_position(connection, run_id, citation)?.unwrap_or(i64::MAX);
     let check = load_typed_work_object::<super::VerificationEvidence>(
         connection,
         citation,
         "verification_evidence",
     )?;
+    let recorded = citation_position(connection, run_id, citation)?.unwrap_or(i64::MAX);
+    // The checkpoint admits a native check only with a producer on the same
+    // run. A bound record's producer is on the original's run, whose
+    // positions are never compared with this run's: on this run the check
+    // stands where the record does.
+    let ran = if check.bound_from.is_some() {
+        recorded
+    } else {
+        citation_position(connection, run_id, producer)?.ok_or_else(|| {
+            StoreError::InvalidWorkProjection(format!(
+                "verification evidence {citation} names producer observation {producer}, which is not on its run feed"
+            ))
+        })?
+    };
     if let Some((change, _)) = unadmitted_barrier_on(
         connection,
         run_id,

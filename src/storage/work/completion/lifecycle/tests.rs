@@ -647,6 +647,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
                     refs: Vec::new(),
                     actor: child_actor,
                     recorded_at: at(7),
+                    bound_from: None,
                 },
             )
             .expect("append child verification evidence");

@@ -1396,6 +1396,7 @@ impl SqliteStore {
                         refs: normalize_typed_evidence_refs(&input.refs),
                         actor: session.actor.clone(),
                         recorded_at: now,
+                        bound_from: None,
                     };
                     verification_hashes.push(work::append_control_verification_evidence_on(
                         &transaction,

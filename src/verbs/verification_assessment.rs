@@ -5,7 +5,7 @@
 
 use super::{Value, json};
 use crate::control::{ObligationAssessment, ObligationSkip};
-use crate::domain::{StaleSourceDecider, StaleVerificationSource};
+use crate::domain::{AcceptanceBoundVerification, StaleSourceDecider, StaleVerificationSource};
 use crate::storage::{RecordedObligationEnd, VerificationObligationAssessment};
 use crate::work_service::{VerificationAssessmentPage, bounded_shown_field};
 use std::fmt::Write as _;
@@ -35,7 +35,90 @@ pub(super) fn value(page: &VerificationAssessmentPage, continuation: Option<&str
     if let Some(command) = continuation {
         value["continuation"] = json!(command);
     }
+    if let Some(bound) = &page.bound {
+        value["bound"] = bound_value(bound);
+    }
     value
+}
+
+/// Where a bound record's check ran and how it was bound here, with
+/// host-recorded text bounded per field. The check's own time and the
+/// binding's time both stay visible.
+fn bound_value(bound: &AcceptanceBoundVerification) -> Value {
+    let basis = &bound.original_basis;
+    json!({
+        "verification": bound.verification.as_str(),
+        "work_ref": bound.work_ref,
+        "run": bound.run.0.to_string(),
+        "original_position": bound.original_position,
+        "original_basis": {
+            "workspace": bounded_shown_field(&basis.workspace_id),
+            "revision": bounded_shown_field(&basis.source_revision),
+            "root_generation": basis.source_root_generation,
+        },
+        "original_completed_at": bound.original_completed_at,
+        "binder": {
+            "actor": bounded_shown_field(&bound.binder.actor_id),
+            "session": bound.binder.session_id.as_ref().map(|session| bounded_shown_field(&session.0)),
+        },
+        "bound_at": bound.bound_at,
+        "sighting": bound.sighting.as_str(),
+        "measurement": {
+            "workspace": bounded_shown_field(&bound.measurement.workspace_id),
+            "revision": bounded_shown_field(&bound.measurement.source_revision),
+            "measured_at": bound.measurement.measured_at,
+        },
+        "criteria": bound.criteria,
+    })
+}
+
+/// The bound branch as terminal lines.
+fn append_bound_lines(lines: &mut Vec<String>, bound: &AcceptanceBoundVerification) {
+    let safe = |value: &str| super::terminal_safe_line(&bounded_shown_field(value));
+    let basis = &bound.original_basis;
+    lines.push(format!(
+        "  bound from verification {} of {} (run {}, run position {}); its producer's position is on that run",
+        bound.verification.as_str(),
+        bound.work_ref,
+        bound.run.0,
+        bound.original_position,
+    ));
+    lines.push(format!(
+        "    the check completed at {} on revision {} in workspace {}{}",
+        bound.original_completed_at.to_rfc3339(),
+        safe(&basis.source_revision),
+        safe(&basis.workspace_id),
+        basis
+            .source_root_generation
+            .map(|generation| format!(", root generation {generation}"))
+            .unwrap_or_default(),
+    ));
+    lines.push(format!(
+        "    bound here at {} by {}{}, on sighting {}; measured revision {} in workspace {} at {}",
+        bound.bound_at.to_rfc3339(),
+        safe(&bound.binder.actor_id),
+        bound
+            .binder
+            .session_id
+            .as_ref()
+            .map(|session| format!(" (session {})", safe(&session.0)))
+            .unwrap_or_default(),
+        bound.sighting.as_str(),
+        safe(&bound.measurement.source_revision),
+        safe(&bound.measurement.workspace_id),
+        bound.measurement.measured_at.to_rfc3339(),
+    ));
+    if !bound.criteria.is_empty() {
+        lines.push(format!(
+            "    intended for criteria {} (intent, not credit)",
+            bound
+                .criteria
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
 }
 
 fn row_value(row: &VerificationObligationAssessment) -> Value {
@@ -221,6 +304,9 @@ pub(super) fn append_lines(
     page: &VerificationAssessmentPage,
     continuation: Option<&str>,
 ) {
+    if let Some(bound) = &page.bound {
+        append_bound_lines(lines, bound);
+    }
     let kind = page
         .rows
         .first()

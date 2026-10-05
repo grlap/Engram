@@ -685,6 +685,63 @@ pub struct VerificationEvidence {
     pub refs: Vec<String>,
     pub actor: ActorContext,
     pub recorded_at: DateTime<Utc>,
+    /// Present only on a record that binds an earlier native check to this
+    /// item: the check ran once, on the original's run, and this record
+    /// credits it here. Absent on every native record, whose canonical bytes
+    /// are therefore unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound_from: Option<BoundVerificationSource>,
+}
+
+impl VerificationEvidence {
+    /// When this record stands on its own run: the check's completion for a
+    /// native record, and the binding's time for a bound one, whose check
+    /// completed earlier on another run. Comparisons with this run's admitted
+    /// source changes use it, since a bound record was matched to their
+    /// revision; an unadmitted change's time floor, like every other fact of
+    /// the check itself, keeps `completed_at`.
+    #[must_use]
+    pub fn run_time(&self) -> DateTime<Utc> {
+        if self.bound_from.is_some() {
+            self.recorded_at
+        } else {
+            self.completed_at
+        }
+    }
+}
+
+/// Where a bound verification record's check ran and how it was bound here.
+/// The binder is the record's `actor` and the binding's time its
+/// `recorded_at`; the check's kind, fingerprint, result and completion time
+/// are the original's, copied unchanged.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoundVerificationSource {
+    /// The original native verification record.
+    pub verification: ObjectId,
+    pub work_id: WorkId,
+    pub run_id: WorkRunId,
+    /// The original record's run-feed position on its own run, fixed when
+    /// it was bound.
+    pub original_position: i64,
+    /// This item's newest source sighting when it was bound, whose revision
+    /// equals the original check's.
+    pub sighting: ObjectId,
+    /// The host's measurement of the shared root when it bound the check.
+    pub measurement: BindMeasurement,
+    /// Criterion positions the binder intended the check for; provenance
+    /// only, never a verdict.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub criteria: Vec<u32>,
+}
+
+/// A host-asserted measurement of a named root's content at bind time.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BindMeasurement {
+    pub workspace_id: String,
+    pub source_revision: String,
+    pub measured_at: DateTime<Utc>,
 }
 
 /// Exact verification property required by one immutable work obligation.
