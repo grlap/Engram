@@ -270,6 +270,27 @@ canonical source object is stored in `objects`, and integrity checks compare
 decoded meaning plus the bound object id. Changing that convention requires
 changing its verifier at the same time.
 
+Decoded meaning is not the whole comparison: integrity verification also
+requires every member a stored value carries to survive being written back by
+its type. A member the type fills in when it is absent is accepted whether it
+is stored or omitted, but a stored member the type drops on writing is not.
+A completion seal shows the case: its `obligations` and `environment` lists
+are omitted when empty, so a seal stored with an explicit `"obligations": []`
+or `"environment": []` decodes to the same seal yet does not survive being
+written back. Integrity verification reports it as invalid, naming the side
+that carries it; `engram doctor` reports these findings, and
+`migration import` runs the same verification on its staged store and refuses
+to publish it:
+
+| Where the explicit `[]` is stored | Findings for that seal |
+| --- | --- |
+| The `seal_json` projection in `work_completion_seals` only | `completion_seal:<id>:projection_binding` and `completion_seal:<id>` |
+| The canonical seal in `objects` only | `completion_seal:<id>:canonical_representation`, reported by both seal checks |
+| Both | All of the above |
+
+An ordinary load decodes such a seal without this check, and verification
+rewrites neither side.
+
 ## Rebuildable and durable projections
 
 Declared indexes, triggers, full-text search (FTS5) content, the observation

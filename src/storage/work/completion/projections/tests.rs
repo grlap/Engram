@@ -1064,3 +1064,157 @@ fn canonical_representation_failures_are_labelled_apart_from_projection_drift() 
     );
     assert_eq!(canonical_inventory(&store), before);
 }
+
+fn seal_rows(store: &SqliteStore, seal: &str) -> (Vec<u8>, Vec<u8>) {
+    let canonical = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [seal],
+            |row| row.get(0),
+        )
+        .expect("canonical seal");
+    let projection = store
+        .connection
+        .query_row(
+            "SELECT seal_json FROM work_completion_seals WHERE seal_id = ?1",
+            [seal],
+            |row| row.get(0),
+        )
+        .expect("seal projection");
+    (canonical, projection)
+}
+
+// A member the seal type skips when empty may be omitted, but an explicit
+// empty list stored in it decodes and then does not survive being written
+// back. Integrity verification refuses it, labelled by the side that carries
+// it; an ordinary load still decodes it, and verification rewrites nothing.
+#[test]
+fn explicit_empty_skipped_seal_members_are_refused_by_integrity_verification() {
+    let mut store = SqliteStore::open_in_memory().expect("native store");
+    let completed = native_history(&mut store);
+    let seal: String = store
+        .connection
+        .query_row(
+            "SELECT seal_id FROM work_completion_seals WHERE work_id = ?1",
+            [completed.0.to_string()],
+            |row| row.get(0),
+        )
+        .expect("native seal");
+    let (canonical, projection) = seal_rows(&store, &seal);
+    let typed: CompletionSeal = serde_json::from_slice(&canonical).expect("typed seal");
+    assert!(typed.obligations.is_empty() && typed.environment.is_empty());
+    let encoded = serde_json::to_value(&typed).expect("encoded seal");
+    for member in ["obligations", "environment"] {
+        assert!(
+            encoded.get(member).is_none(),
+            "normal encoding omits an empty {member}"
+        );
+        for stored in [&canonical, &projection] {
+            let stored: serde_json::Value = serde_json::from_slice(stored).expect("stored seal");
+            assert!(stored.get(member).is_none(), "the fixture omits {member}");
+        }
+    }
+    assert!(
+        store.verify_all().expect("baseline").is_healthy(),
+        "the omitted-member baseline is healthy"
+    );
+    let before = canonical_inventory(&store);
+    let canonical_label = format!("completion_seal:{seal}:canonical_representation");
+    let projection_label = format!("completion_seal:{seal}:projection_binding");
+    let drift_label = format!("completion_seal:{seal}");
+    for member in ["obligations", "environment"] {
+        for (in_canonical, in_projection) in [(false, true), (true, false), (true, true)] {
+            store
+                .connection
+                .execute_batch("SAVEPOINT corrupt")
+                .expect("explicit-member savepoint");
+            for (inject, table, column, key) in [
+                (in_canonical, "objects", "canonical_json", "object_id"),
+                (
+                    in_projection,
+                    "work_completion_seals",
+                    "seal_json",
+                    "seal_id",
+                ),
+            ] {
+                if inject {
+                    let changed = store
+                        .connection
+                        .execute(
+                            &format!(
+                                "UPDATE {table} SET {column} = \
+                                 CAST(json_set({column}, '$.{member}', json('[]')) AS BLOB) \
+                                 WHERE {key} = ?1"
+                            ),
+                            [&seal],
+                        )
+                        .expect("store an explicit empty member");
+                    assert_eq!(changed, 1);
+                }
+            }
+            let stored = seal_rows(&store, &seal);
+            for (injected, bytes) in [(in_canonical, &stored.0), (in_projection, &stored.1)] {
+                let value: serde_json::Value = serde_json::from_slice(bytes).expect("stored JSON");
+                assert_eq!(
+                    value.get(member) == Some(&serde_json::json!([])),
+                    injected,
+                    "{member}: the explicit [] is stored only where injected"
+                );
+                assert_eq!(
+                    serde_json::from_slice::<CompletionSeal>(bytes).expect("decodes"),
+                    typed,
+                    "{member}: an explicit [] decodes as the empty default"
+                );
+            }
+            let loaded: CompletionSeal = load_typed_work_object(
+                &store.connection,
+                &ObjectId::from_stored(seal.clone()).expect("stored seal id"),
+                "completion_seal",
+            )
+            .expect("an ordinary load decodes the seal");
+            assert_eq!(loaded, typed);
+            let report = store.verify_all().expect("diagnose the explicit member");
+            let labels: std::collections::BTreeMap<&str, usize> = report
+                .invalid_work_records
+                .iter()
+                .filter(|label| label.contains(&seal))
+                .fold(std::collections::BTreeMap::new(), |mut counts, label| {
+                    *counts.entry(label.as_str()).or_default() += 1;
+                    counts
+                });
+            // Two checks read each seal: its run binding, and the comparison of
+            // the projection with the object it names. A projection-side
+            // finding is named by each in its own words. A canonical-side
+            // finding is currently named once by each check; that duplicate is
+            // pinned as today's behaviour, not as a requirement, so removing
+            // it only changes the expected count here.
+            let mut expected = std::collections::BTreeMap::new();
+            if in_canonical {
+                expected.insert(canonical_label.as_str(), 2);
+            }
+            if in_projection {
+                expected.insert(projection_label.as_str(), 1);
+                expected.insert(drift_label.as_str(), 1);
+            }
+            assert_eq!(
+                labels, expected,
+                "{member} (canonical {in_canonical}, projection {in_projection}): {report:?}"
+            );
+            assert_eq!(
+                seal_rows(&store, &seal),
+                stored,
+                "{member}: verification rewrites nothing"
+            );
+            restore_savepoint(&store);
+        }
+    }
+    assert!(
+        store
+            .verify_all()
+            .expect("healthy after rollback")
+            .is_healthy()
+    );
+    assert_eq!(canonical_inventory(&store), before);
+    assert_eq!(seal_rows(&store, &seal), (canonical, projection));
+}
