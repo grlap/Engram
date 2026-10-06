@@ -1,6 +1,7 @@
 use chrono::{Duration, TimeZone};
 
 mod audit_validation;
+mod hierarchy_limits;
 mod input_validation;
 mod memory_revisions;
 mod persisted_text;

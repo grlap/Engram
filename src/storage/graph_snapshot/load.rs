@@ -20,6 +20,22 @@ use crate::{
     parse_work_graph_snapshot_document, work_graph_snapshot_format_fingerprint,
 };
 
+#[cfg(test)]
+thread_local! {
+    /// Counts the snapshot items the open-descendant pass of restore
+    /// validation visits, closed ones included, so a test can show that its
+    /// work grows with the snapshot's items and not with roots times items.
+    /// Thread-local rather than global: save validates every generated
+    /// document through the same path, and tests run concurrently.
+    pub(super) static HIERARCHY_PASS_VISITS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+fn count_hierarchy_pass_visit() {
+    #[cfg(test)]
+    HIERARCHY_PASS_VISITS.with(|visits| visits.set(visits.get() + 1));
+}
+
 struct PreparedLoad {
     document: WorkGraphSnapshotDocument,
     body_object: CanonicalObject,
@@ -316,6 +332,12 @@ fn validate_items_and_relations(document: &WorkGraphSnapshotDocument) -> Result<
         }
         validate_snapshot_item_shape(item)?;
     }
+    // Built only once every id is known to be unique, so a duplicate is
+    // refused above rather than collapsed by the map.
+    let by_id = items
+        .iter()
+        .map(|item| (item.work_id, item))
+        .collect::<HashMap<_, _>>();
     let mut blocker_ids = HashSet::new();
     for blocker in &document.body.blockers {
         if !ids.contains(&blocker.work_id) || !blocker_ids.insert(blocker.blocker_id.as_str()) {
@@ -334,16 +356,15 @@ fn validate_items_and_relations(document: &WorkGraphSnapshotDocument) -> Result<
             return Err(corrupt("dangling work relation"));
         }
         if let Some(parent) = item.parent_id {
-            let parent = items
-                .iter()
-                .find(|candidate| candidate.work_id == parent)
+            let parent = by_id
+                .get(&parent)
                 .ok_or_else(|| corrupt("dangling parent"))?;
             if parent.root_id != item.root_id {
                 return Err(corrupt("child crosses its root binding"));
             }
         }
     }
-    validate_hierarchy_limits(items)?;
+    validate_hierarchy_limits(items, &by_id)?;
     validate_combined_graph(items)
 }
 
@@ -398,11 +419,22 @@ fn validate_snapshot_item_shape(item: &crate::WorkGraphSnapshotItem) -> Result<(
     Ok(())
 }
 
-fn validate_hierarchy_limits(items: &[crate::WorkGraphSnapshotItem]) -> Result<(), StoreError> {
-    let by_id = items
-        .iter()
-        .map(|item| (item.work_id, item))
-        .collect::<HashMap<_, _>>();
+/// Refuses a parent chain that cycles or exceeds the depth limit, then a root
+/// whose proposed and open descendants exceed the open-descendant limit.
+///
+/// The count is one pass over the items grouped by `root_id`, so its work
+/// grows with the snapshot's items, closed ones included, and not with roots
+/// times items. Grouping by `root_id` counts exactly what a scan per root
+/// counted because this runs after the relation pass refused a dangling root
+/// and a child whose root differs from its parent's, and after the chain walk
+/// below refused a chain that does not terminate: along a validated chain
+/// every item shares the root id of its top ancestor, whose shape check pins
+/// `work_id == root_id`. A document with both defects keeps the depth
+/// refusal, since the chains are walked first.
+fn validate_hierarchy_limits(
+    items: &[crate::WorkGraphSnapshotItem],
+    by_id: &HashMap<WorkId, &crate::WorkGraphSnapshotItem>,
+) -> Result<(), StoreError> {
     for item in items {
         let mut depth = 0_u32;
         let mut cursor = item.parent_id;
@@ -418,21 +450,23 @@ fn validate_hierarchy_limits(items: &[crate::WorkGraphSnapshotItem]) -> Result<(
             cursor = by_id.get(&parent).and_then(|parent| parent.parent_id);
         }
     }
-    for root in items.iter().filter(|item| item.parent_id.is_none()) {
-        let open_descendants = items
-            .iter()
-            .filter(|item| {
-                item.root_id == root.work_id
-                    && item.work_id != root.work_id
-                    && matches!(
-                        item.lifecycle,
-                        WorkLifecycle::Open | WorkLifecycle::Proposed
-                    )
-            })
-            .count();
-        if open_descendants > super::super::work::MAX_OPEN_WORK_DESCENDANTS as usize {
-            return Err(corrupt("open descendant count exceeds the work limit"));
+    let mut open_descendants = HashMap::<WorkId, usize>::new();
+    for item in items {
+        count_hierarchy_pass_visit();
+        if item.work_id != item.root_id
+            && matches!(
+                item.lifecycle,
+                WorkLifecycle::Open | WorkLifecycle::Proposed
+            )
+        {
+            *open_descendants.entry(item.root_id).or_insert(0) += 1;
         }
+    }
+    if open_descendants
+        .values()
+        .any(|&count| count > super::super::work::MAX_OPEN_WORK_DESCENDANTS as usize)
+    {
+        return Err(corrupt("open descendant count exceeds the work limit"));
     }
     Ok(())
 }

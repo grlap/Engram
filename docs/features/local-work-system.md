@@ -2316,7 +2316,9 @@ leave the item over the bound, never a removal or a repeated add; and it caps
 the prerequisite-id part of an item's relation basis and fingerprint at 1024
 ids (the active-blocker part is not bounded by it, and the project-wide cycle
 scan is a separate cost). An item an older build or a graph restore admitted
-above the bound is read as stored and only stops growing. The open-descendant
+above the bound is read as stored and only stops growing: the bound admits
+new edges on the planning routes, and a recorded relation is preserved rather
+than dropped or refused. The open-descendant
 check counts a root's proposed and open descendants through the project's
 lifecycle index, so its work is bounded by the project's live rows (every
 open root's included) and never by a root's completed, cancelled or

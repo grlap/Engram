@@ -245,10 +245,15 @@ by a last-value-wins decoder;
 the imported graph must pass the same invariant validation ordinary
 mutations apply under the destination's policy — one parent per item, no
 cycle through parents, prerequisites, or supersession, the depth and
-open-descendant bounds, origin and source consistency, scalar constraints,
+open-descendant bounds (counted in one pass over the snapshot's items, closed
+ones included, so the check grows with the snapshot's size and not with its
+number of roots), origin and source consistency, scalar constraints,
 and the format's stable section ordering — and a violation is a typed refusal,
 because a body
 digest anyone can recompute makes relations verifiable, not trustworthy;
+the per-item prerequisite bound is an admission limit of the planning routes,
+not a snapshot invariant, so an item's recorded prerequisites are restored as
+stored, above that bound included, rather than dropped or refused;
 lifecycle and proof must agree both ways — an item is `completed` exactly
 when its newest layer carries a completion summary and time, `cancelled` or
 `superseded` only with a disposal reason and the appropriate successor shape.

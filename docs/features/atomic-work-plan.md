@@ -124,17 +124,22 @@ direct children, but never exceeds the shared per-root descendant or depth
 limits. All 256 tasks can belong to one root, either as direct children or
 across several levels. The 255-open-descendant limit also applies to ordinary
 planning and graph restoration; completed, cancelled and superseded descendants
-do not consume it, and the check never visits them: for an existing root it
-counts live descendants by their root through the project's lifecycle index,
-so its cost follows the project's live rows, not the root's history; for a
-root the plan itself creates it counts that root's new subtree through the
-root index, so a wide forest plan pays for its own rows, not for the
-project's. No planning route admits more than 1024 prerequisites on one item,
-as many as one plan may declare edges, counting the edges the item already
-has, so a plan's fan-in task always fits and a later ordinary add is refused
-once the item is full; an item a graph restore or an older build admitted
-above that stays as stored and only stops growing. Choose separate roots for
-genuinely separate outcomes.
+do not consume it. The planning admission check never visits them: for an
+existing root it counts live descendants by their root through the project's
+lifecycle index, so its cost follows the project's live rows, not the root's
+history; for a root the plan itself creates it counts that root's new subtree
+through the root index, so a wide forest plan pays for its own rows, not for
+the project's. Graph restoration validates the same limit in one pass over
+the snapshot's items, closed ones included, so its work grows with the
+snapshot's size and not with the number of roots. No planning route admits
+more than 1024 prerequisites on one item, as many as one plan may declare
+edges, counting the edges the item already has, so a plan's fan-in task
+always fits and a later ordinary add is refused once the item is full. That
+bound is an admission limit of the planning routes, not a stored invariant:
+an item a graph restore or an older build admitted above it stays as stored
+and only stops growing, because a recorded relation is preserved rather than
+dropped or refused, and a store an older build wrote is never refused for
+it. Choose separate roots for genuinely separate outcomes.
 
 The limits bound input memory, generated work, and the complete result. They
 are not transaction timeouts. The 256-task limit leaves room for maximum-width
