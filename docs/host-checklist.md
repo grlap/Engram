@@ -337,6 +337,168 @@ command semantics. Body presence and task relevance remain context judgments.
 | All discovered broadly applicable constraints are recovered; a body concerns an unrelated future cutover | Defer that body until cutover becomes relevant; preserve the applicable constraints already recovered. |
 | A read-only child cannot record the printed generation | List without it, follow continuations, read relevant full bodies and disclose that the generation direction remains unsettled. |
 
+### Render tool results once and retrieve details selectively
+
+Use this procedure when composing tool results for an agent. It changes
+what an orchestration call forwards into context; it does not change the MCP
+wire format or a host's automatic rendering of directly exposed results.
+
+#### Select one representation without losing content
+
+Inspect the complete result envelope before choosing its representation.
+Engram's [word-result emitter](../src/mcp/tools.rs) uses structured results.
+The [MCP fixtures](../scripts/mcp-dogfood.test.mjs) verify that the JSON text
+block and `structuredContent` carry equal values. Printing that entire
+envelope forwards the same payload twice. Selecting only
+`result.structuredContent` can instead lose `isError`, independent text
+and other content blocks.
+
+For a captured result, remove one plain text block only when its complete
+text exactly equals `JSON.stringify(result.structuredContent)`. Retain every
+other envelope field and block. If comparison fails, the block has extra
+fields, or equality is uncertain, keep it. Different JSON spacing or key
+order may retain harmless duplication; completeness takes precedence.
+
+This conservative JavaScript example returns a display envelope and leaves
+the original result intact. It runs in agent orchestration, not inside Engram:
+
+```javascript
+function oneRepresentation(result) {
+  if (result === null || typeof result !== "object" ||
+      Array.isArray(result) ||
+      result.structuredContent === undefined ||
+      !Array.isArray(result.content) ||
+      result.content.some(block => block === null ||
+        typeof block !== "object" || Array.isArray(block))) return result;
+  let encoded;
+  try {
+    encoded = JSON.stringify(result.structuredContent);
+  } catch {
+    return result;
+  }
+  if (encoded === undefined) return result;
+  const duplicate = result.content.findIndex(block =>
+    block.type === "text" &&
+    Reflect.ownKeys(block).length === 2 &&
+    Object.hasOwn(block, "type") && Object.hasOwn(block, "text") &&
+    block.text === encoded
+  );
+  if (duplicate < 0) return result;
+  return {
+    ...result,
+    content: result.content.filter((_, index) => index !== duplicate),
+  };
+}
+```
+
+Keep `isError`, envelope metadata and the complete structured payload,
+including refusal code, reason and details, warnings, reminders, next
+commands, omission counts, continuations, evidence identities, note locators,
+attribution, revisions and read cuts. Retain independent text and blocks with
+annotations or metadata even if their text looks redundant. Forward image,
+audio and resource content through the host's supported typed-content path;
+do not dump binary data as JSON text or discard it while selecting JSON.
+
+Unexpected result shapes, nonarray content, null or nonobject blocks and
+unencodable structured content pass through intact. Selection failure never
+becomes an empty or successful result.
+
+For a text-only result, keep its complete content and error flag. Ordinary
+schema refusals have no structured payload: the
+[argument extractor](../src/mcp/parameters.rs) and
+[refusal contract](features/cli-and-mcp.md#using-engram-as-an-agent) describe
+that case. For example, `next` with a string `peek` returns:
+
+```text
+failed to deserialize parameters: field `peek`: invalid type: string "yes", expected a boolean
+```
+
+This is a refusal with `isError: true`, not an empty result. Structured
+refusals also retain their error flag and complete error payload.
+
+#### Discover narrowly, then inspect the selected source
+
+For hosts exposing `ALL_TOOLS`, render matching names first, then retrieve
+the selected name's complete declaration. Do not print descriptions and
+schemas for every tool merely to find one. A missing match is an explicit
+discovery gap; inspect the available names instead of guessing a prefix.
+
+```javascript
+text(ALL_TOOLS.filter(tool => /engram.*memories$/.test(tool.name))
+  .map(tool => tool.name));
+// selectedName is supplied by the caller from the names just returned:
+const selected = ALL_TOOLS.find(tool => tool.name === selectedName);
+if (!selected) throw new Error("Selected tool is unavailable");
+text(selected.description);
+```
+
+MCP clients using `tools/list` may still receive the whole catalog internally;
+select the required tool's `inputSchema` for display. This reduces rendered
+metadata, without claiming a filtered discovery protocol.
+
+For source questions, discover likely paths with `rg --files`, locate the
+symbol with `rg -n`, then read the relevant function and its callers or
+contract. Scope patterns with `-g` and searches to known files/directories;
+shell wildcard expansion differs across platforms. For example:
+
+```text
+rg --files src -g '*mcp*'
+rg -n 'CallToolResult::structured' src/mcp/tools.rs
+git diff --stat
+git diff -- docs/host-checklist.md
+```
+
+A path-scoped diff supports inspection of that path, not a claim that the
+whole changeset was reviewed. Discover all changed and untracked paths
+before review, and expand every relevant hunk or file. Required reviewer
+inputs, current governing instructions and relevant recovery bodies must be
+read completely; split reads into contiguous ranges when needed.
+
+For routine work navigation, use
+[compact receipts and detail commands](features/cli-and-mcp.md#using-engram-as-an-agent):
+`show REF --full` retrieves the complete authored title, outcome and
+acceptance, while `show REF --note LOCATOR` retrieves one complete note.
+Follow window/catalog continuations for omitted records; a note detail does
+not replace the rest of its window. Keep the returned exact locators and
+continuation commands rather than inventing a generic "read more" route.
+
+A bounded excerpt must identify the source and the inspected range or
+object, disclose clipping/omissions, and provide the exact next range,
+command, locator or full log path. A clipped body is missing evidence.
+Retrieve the omitted content before relying on it. Preserve error reasons,
+failure labels, warnings, evidence identities and input fingerprints in
+summaries. For check output, use the existing
+[launcher summaries and full logs](development.md#test-launcher); filtered
+output alone never establishes a passing exit status.
+
+#### Source-backed before/after examples
+
+These are representation walkthroughs, not production token measurements.
+`P` below means the complete payload, including its navigation and evidence
+fields. The emitter and MCP fixtures linked above establish the actual
+structured/text duplication and schema-refusal behavior. Extra-content cases
+are illustrative counterexamples; they are not claims that current Engram
+word handlers emit those blocks.
+
+| Case | Before forwarding | After selection |
+| --- | --- | --- |
+| Actual structured receipt | `P` in structured content and matching plain JSON text | `P` once; all other envelope fields retained |
+| Actual structured refusal | Error payload twice and `isError: true` | Complete error once; `isError: true` retained |
+| Actual text-only schema refusal | Error flag and field/type reason in text | Unchanged complete text and error flag |
+| Illustrative independent warning | `P`, matching JSON text, separate warning | `P` once and complete warning |
+| Illustrative image, audio or resource evidence | `P`, matching JSON text, nontext block | `P` once and nontext evidence forwarded intact |
+| Illustrative annotated JSON text | `P` and matching text carrying metadata | Both retained; metadata is not assumed redundant |
+| Illustrative malformed result | Nonarray content or null/nonobject blocks | Original envelope retained unchanged |
+| Tool discovery | Full metadata for every candidate | Matching names, then the selected complete declaration |
+| Source inspection | Whole files or every diff for one symbol | Located function/hunks with explicit coverage and an expansion path |
+| Routine checks | Entire passing test stream | Launcher result, warnings/failures, exit status and full-log path |
+
+Removing one verified duplicate block reduces two payload copies to one.
+Selective reads reduce unrelated output only while retaining everything
+needed for the question, required checks and correct review. Keep original
+captures and full logs in the project's permitted evidence location when
+they are needed for acceptance or later review; record their exact paths.
+
 ## Off-host backup
 
 Engram copies a project's store to an off-host target only when something
