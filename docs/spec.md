@@ -474,8 +474,9 @@ checkpoint-required, until the host reports it (see
 Bounded retention of these records is designed, not built: nothing prunes
 stored grants or results today, so an exact retry of a turn, begin or
 checkpoint request finds its stored result. A session bind keeps only its
-latest key: an exact retry replays while that key is still the session's
-latest, and after a rebind under a new key the older key runs as a fresh bind.
+latest key: an exact retry returns the session's current status, phase
+unchanged, while that key is still its latest, and after a rebind under a new
+key the older key runs as a fresh bind.
 Compact durable request-key tombstones are likewise designed, not built: they
 would bind kind/key/intent/terminal state through work retention, so that
 once pruning exists, pruning or expiry could never reinterpret an old key as
