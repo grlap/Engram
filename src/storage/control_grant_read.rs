@@ -1,6 +1,6 @@
 //! Exact operational grant evidence, without admission or lazy expiry.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, types::Value};
 use serde::Serialize;
 
@@ -123,6 +123,7 @@ fn timestamp(value: &Value) -> Result<Option<DateTime<Utc>>, StoreError> {
     match value {
         Value::Null => Ok(None),
         Value::Integer(ms) => DateTime::from_timestamp_millis(*ms)
+            .filter(|timestamp| (0..=9999).contains(&timestamp.year()))
             .map(Some)
             .ok_or_else(|| invalid("grant timestamp is outside the supported range")),
         _ => Err(invalid("grant timestamp is not integer milliseconds")),

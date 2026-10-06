@@ -163,6 +163,76 @@ fn grant_read_refuses_every_incoherent_shape_and_bad_timestamp() {
 }
 
 #[test]
+fn grant_read_accepts_rfc3339_endpoints_and_refuses_adjacent_milliseconds() {
+    let (store, binding, grant) = fixture();
+    let first = Utc.with_ymd_and_hms(0, 1, 1, 0, 0, 0).unwrap();
+    let last =
+        Utc.with_ymd_and_hms(9999, 12, 31, 23, 59, 59).unwrap() + TimeDelta::milliseconds(999);
+    for endpoint in [first, last] {
+        let ms = endpoint.timestamp_millis();
+        for (state, begun, completed) in [
+            ("begun", ms, None),
+            ("completed", ms, Some(0)),
+            ("completed", 0, Some(ms)),
+        ] {
+            set_facts(&store, &grant, state, Some(begun), completed);
+            let result = own_read(&store, &binding, &grant).unwrap();
+            for (field, expected) in [("begun_at", Some(begun)), ("completed_at", completed)] {
+                if let Some(expected) = expected {
+                    let serialized = result[field].as_str().unwrap();
+                    assert_eq!(
+                        DateTime::parse_from_rfc3339(serialized)
+                            .unwrap()
+                            .timestamp_millis(),
+                        expected,
+                        "{field}: {serialized}"
+                    );
+                } else {
+                    assert!(result[field].is_null());
+                }
+            }
+        }
+    }
+    set_facts(
+        &store,
+        &grant,
+        "completed",
+        Some(last.timestamp_millis()),
+        Some(first.timestamp_millis()),
+    );
+    assert_eq!(
+        own_read(&store, &binding, &grant).unwrap()["state"],
+        "completed"
+    );
+    for (outside, year) in [
+        (first.timestamp_millis() - 1, -1),
+        (last.timestamp_millis() + 1, 10000),
+    ] {
+        assert_eq!(
+            DateTime::<Utc>::from_timestamp_millis(outside)
+                .unwrap()
+                .year(),
+            year
+        );
+        for (state, begun, completed) in [
+            ("begun", outside, None),
+            ("completed", outside, Some(0)),
+            ("completed", 0, Some(outside)),
+        ] {
+            set_facts(&store, &grant, state, Some(begun), completed);
+            assert!(
+                matches!(
+                    own_read(&store, &binding, &grant),
+                    Err(StoreError::InvalidControlProjection(reason))
+                        if reason == "grant timestamp is outside the supported range"
+                ),
+                "{state}: begun_at={begun}, completed_at={completed:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn grant_read_checks_credentials_before_absence_or_foreign_details() {
     let (mut store, binding, grant) = fixture();
     let foreign = bind_control_for(
