@@ -119,8 +119,9 @@ change index is a write-only audit trail. Global SQLite row ids are not
 cursors.
 The shipped host-control alpha adds mutable session and turn-grant projections
 plus canonical checkpoint events. The target extends these with action and
-report-barrier projections. Live grants and high-volume decisions use bounded
-noncanonical operational storage.
+report-barrier projections. Turn grants in every state, turn decisions and
+operation results use noncanonical operational storage; bounding its
+retention is designed, not built, and nothing prunes it today.
 
 Host session binding resolves one shared control anchor by project and external
 reference, without creating a compatibility task. `control_sessions` owns the

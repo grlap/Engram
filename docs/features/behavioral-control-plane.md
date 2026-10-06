@@ -256,8 +256,10 @@ state, read in the same transaction (see
 [5a](#5a-bind-a-named-source-root)); a receipt stored before this field
 existed replays as stored, without it.
 
-Restart invalidates an unbegun grant and returns the session to `ready`; an
-uncertain begun grant remains `turn_open` until the host reports it. Nothing is
+Reopening the session's host-control connection after a restart expires every
+unbegun grant and returns a session with no begun turn to `ready` (see
+[crash, restart, and replay](#crash-restart-and-replay)); an uncertain begun
+grant remains `turn_open` until the host reports it. Nothing is
 redelivered, because replaying a prompt with possible effects would be unsafe.
 A fresh evaluation key likewise atomically supersedes an issued-but-unbegun
 grant. The same transaction records an immutable supersession transition that
@@ -266,14 +268,17 @@ with a typed reason and timestamp. It never replaces a begun grant: that
 session stays `turn_open`, reports `open_grant_state: begun`, and refuses the
 evaluation with `turn_already_open` until checkpoint/reconciliation completes.
 
-A grant is an immutable, fingerprinted operational record while live. It is
-bound to one task, session, turn intent, both control epochs, capability
-envelope, and work-claim fence; it is not a bearer token transferable to another
-session. Restart invalidates issued-but-unbegun authority. A begun grant stays
-durable only until checkpoint/reconciliation, so completed, expired, and
-superseded grants still need not become permanent canonical memory. State-changing grant
-supersession, checkpoint and handoff transitions emit immutable canonical
-events.
+A grant is an operational record whose intent binding is immutable and
+fingerprinted, while its row's state moves from issued to begun and completed,
+or to expired or superseded. It is bound to one task, session, turn intent,
+both control epochs, capability envelope, and work-claim fence; it is not a
+bearer token transferable to another session. Reopening the session's
+host-control connection after a restart expires issued-but-unbegun authority.
+Grants stay stored in every state, since nothing prunes them; completed,
+expired, and superseded grants are operational records, not canonical memory.
+A supersession is recorded immutably in the operational supersession table,
+not as a canonical event. A checkpoint emits a canonical control event, and a
+handoff is a canonical work event.
 
 Evaluation order is fixed so refusals are deterministic and do not leak later
 state through an earlier failure:
@@ -1046,44 +1051,67 @@ obligation are not built.
 Control uses two explicit persistence tiers:
 
 - **canonical state-changing events** — checkpoints, handoffs, policy
-  activation, finalization, and recovery. They follow ordinary work retention.
-  Using them as the source for rebuilding projections is designed, not built:
-  recovery reads the durable session and grant rows, and a turn checkpoint's
-  control event goes to the task's change index, an audit record that no
-  production path consumes;
-- **operational records** — live/expired turn grants plus
-  allow/refusal diagnostics. They are immutable while live, idempotently
-  addressable, and invalidated on restart where specified. Pruning them after
-  a terminal retention window is designed, not built: nothing prunes stored
-  grants or results today. They are not canonical memory or peer context.
+  activation and claim recovery; finalization events are not built. They
+  follow ordinary work retention. Using them as the source for rebuilding
+  projections is designed, not built: recovery reads the durable session and
+  grant rows. A turn checkpoint's control event is stored as an object and
+  indexed only in the task's change index, an audit record that no production
+  path consumes. When the session is bound to a work claim, which host
+  evidence requires, the same checkpoint appends its execution observations
+  and its verification and environment evidence as canonical work records to
+  the project, root and run feeds. While the run is unfinished, obligations and
+  completion read them; on a finished run they are late records kept for audit
+  only. A grant supersession is not a canonical event: it is recorded in the
+  operational supersession table;
+- **operational records** — turn grants in every state, grant supersessions,
+  turn decisions and operation results. A grant's intent binding never
+  changes, while its row's state moves from issued to begun and completed, or
+  to expired or superseded. They are idempotently addressable by session and
+  request key, and invalidated where specified: reopening the session's
+  host-control connection after a restart, or a rebind, expires issued grants
+  that have not begun. Pruning them after a terminal
+  retention window is designed, not built: nothing prunes stored grants or
+  results today. They are not canonical memory or peer context.
 
-The minimum records are:
+The minimum records of the design follow. Those that are not built are
+marked so.
 
-- `ControlPolicy`: version and record id, control mode, mediated effect classes,
-  project epoch, classifier version, synchronization rules, grant TTLs,
-  degraded-envelope rules and portable writer-validation maximum age. Machine
-  policy is never inferred from documentation prose.
+- `ControlPolicy`: version and record id, project epoch, required assurance,
+  supported effect classes, grant TTL, the selected obligation rule set and
+  the acceptance-evaluation policy. A classifier version, synchronization
+  rules, degraded-envelope rules and a portable writer-validation maximum age
+  are designed, not built. Machine policy is never inferred from
+  documentation prose.
 - `ParticipantRecord` and `SessionProgress`: asserted actor and role, expected
   contribution, join/leave state, durable phase, current claims, and last
-  checkpoint. The shipped `control_sessions` table still has
+  checkpoint. Neither ships as a named record: the shipped `control_sessions`
+  row holds the asserted actor, the durable phase, the assurance and mediated
+  effects, and one optional exact work-claim binding rather than a set of
+  claims. The role, expected contribution, join/leave state and last
+  checkpoint are designed, not built. The table still has
   `confirmed_cursor`, `tentative_cursor` and `blocking_watermark` columns. No
   decision reads them; the loader only checks they are non-negative. Only a
   bind writes them, as zero or null, so a row written earlier keeps its last
   values until it is rebound. They are retained only so the schema stays
   unchanged until the next planned migration drops them.
-- `WorkClaim`: work/run holder, assignment reference, expiry, revision,
-  monotonic claim fence, and transfer/recovery lifecycle.
-- `HandoffOffer`: exact work-claim handoff, recipient, expiry, and transfer lifecycle.
-- `ReportAssembly` and `ReportAssemblyClaim`: root completion-seal id,
-  assembly generation/state/revision, designated holder, expiry, revision,
-  monotonic fence, and handoff/recovery lifecycle. This is post-completion
-  authority and is never a substitute for a work claim.
-- `PortableWriterState`: configured mode, lineage/head, local store instance,
-  writer state/epoch, last remote validation time/result, maximum validation
-  age, and released/read-only state. Remote mismatch or validation expiry
-  advances the local admission epoch before another mutation-capable grant.
-- `TurnGrant`: immutable intent binding, expiry and one-use state; terminal
-  grants are operational. Action grants and receipts are not built.
+- `WorkClaim`, shipped as a work record: work/run holder, accepted work
+  revision, expiry, revision, monotonic claim fence, and state. Transfer and
+  recovery are separate work transitions; assignment belongs to the work item.
+- `HandoffOffer`, shipped as a work record: exact work-claim handoff,
+  recipient, expiry, and transfer lifecycle.
+- `ReportAssembly` and `ReportAssemblyClaim` (designed, not built): root
+  completion-seal id, assembly generation/state/revision, designated holder,
+  expiry, revision, monotonic fence, and handoff/recovery lifecycle. This is
+  post-completion authority and is never a substitute for a work claim.
+- `PortableWriterState` (designed, not built): configured mode, lineage/head,
+  local store instance, writer state/epoch, last remote validation
+  time/result, maximum validation age, and released/read-only state. Remote
+  mismatch or validation expiry advances the local admission epoch before
+  another mutation-capable grant.
+- `TurnGrant`, shipped as a `control_turn_grants` row: an immutable intent
+  binding, an expiry and a one-use state that moves from issued to begun and
+  completed, or to expired or superseded; terminal grants are operational.
+  Action grants and receipts are not built.
 - `RequestKeyTombstone` (designed, not built; no such type or table ships):
   compact durable binding of request kind, key, session/work/run, intent
   fingerprint, terminal state, and optional result id. It would outlive a
@@ -1092,8 +1120,9 @@ The minimum records are:
   retry of a turn, begin or checkpoint request instead. A session bind keeps
   only its latest key, so an older bind key, retried after a rebind under a
   new key, runs as a fresh bind.
-- `DegradedEnvelope` and `DegradedActionDebt`: bounded cached degradation
-  authority and typed host-spooled reconciliation evidence.
+- `DegradedEnvelope` and `DegradedActionDebt` (designed, not built): bounded
+  cached degradation authority and typed host-spooled reconciliation
+  evidence.
 - Deferred report/finalization records — `ParticipantContribution`,
   `CompletionBarrier`, and `FrozenReport`: source hashes, validation evidence,
   checkpoint cursor, roster/waivers, immutable report bytes, and publication
@@ -1104,9 +1133,12 @@ designed, not built. Recovery reads the durable session and grant rows; like
 the store's other authority and idempotency tables, they are restored from a
 verified backup, never recreated from canonical objects (see
 [the specification's canonical store section](../spec.md#31-v1-canonical-store-local-sqlite-append-only)).
-A restart expires every grant that was issued
-and not begun, deliberately discarding authority that existed only there; a
-begun turn stays open, checkpoint-required, until the host reports it (see
+Reopening a session's host-control connection after a restart expires every
+grant it was issued and has not begun, deliberately discarding authority that
+existed only there; a process restart alone changes nothing until then. A
+rebind also expires every issued, unbegun grant, and a status read lazily
+expires issued grants already past their expiry. A begun turn stays open,
+checkpoint-required, until the host reports it (see
 [crash, restart, and replay](#crash-restart-and-replay)). High-volume allow
 and refusal diagnostics stay in operational storage
 unless they change peer behavior; they are not echoed into context or any
@@ -1542,8 +1574,9 @@ implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
 `named_root_sighting_read`, `execution_observe`, `acceptance_binding_read`,
 `acceptance_verification_read` and `verification_bind`; none is exposed through
 agent-facing MCP. Exact retry
-evidence survives process restart, while unbegun authority is invalidated and
-the session returns to `ready`. Each open rotates an internal
+evidence survives process restart. When the host reopens a session's
+connection, its unbegun authority is invalidated and a session with no begun
+turn returns to `ready`. Each open rotates an internal
 connection generation so a still-running predecessor is fenced. Begun grants
 stay open until reported and are discoverable through session status; no
 payload is redelivered.

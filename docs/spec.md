@@ -449,14 +449,25 @@ interchangeable. Unknown safety-relevant schema or policy versions block
 admission rather than being ignored.
 
 State-changing control transitions are idempotent. Among session and turn
-transitions, only a turn checkpoint emits an immutable canonical event, to the
-task's change index, an audit record that no production path consumes; binding
-a session, opening a turn and beginning it emit none. The session and grant
-rows are the durable record, and recovery reads them; an event for every
-transition, from which those rows could be rebuilt, is designed, not built.
-Live grants and high-volume allow/refusal diagnostics are immutable
-operational records, not canonical memory. A restart expires every grant that
-was issued and not begun, discarding its authority; a begun turn stays open,
+transitions, only a turn checkpoint emits a canonical control event: its turn
+checkpoint event is stored as an object and indexed only in the task's change
+index, an audit record that no production path consumes. Binding a session,
+opening a turn and beginning it emit none. When the session is bound to a work
+claim, which host evidence requires, the same checkpoint also appends its
+execution observations and its verification and environment evidence as
+canonical work records to the project, root and run feeds (§2.6). While the
+run is unfinished, obligations and completion read them; on a finished run
+they are late records kept for audit only. The session and
+grant rows are the durable record, and recovery reads them; an event for
+every transition, from which those rows could be rebuilt, is designed, not
+built. Live grants and high-volume allow/refusal diagnostics are operational
+records, not canonical memory. A grant's intent binding never changes, while
+its row's state moves from issued to begun and completed, or to expired or
+superseded. Reopening a session's host-control connection after a restart
+expires every grant it was issued and has not begun, discarding that
+authority; a process restart alone changes nothing until then. A rebind also
+expires every issued, unbegun grant, and a status read lazily expires issued
+grants already past their expiry. A begun turn stays open,
 checkpoint-required, until the host reports it (see
 [crash, restart, and replay](features/behavioral-control-plane.md#crash-restart-and-replay)).
 Bounded retention of these records is designed, not built: nothing prunes
@@ -567,9 +578,13 @@ Delivery progress, the root completion barrier and indexes are mutable
 projections; the barrier's transitions append immutable work events (§2.6).
 Control session and grant rows are durable records,
 restored from backup and never rebuilt from events: among their transitions
-only a turn checkpoint emits a canonical event, and auditing every
-safety-relevant control transition through canonical events is designed, not
-built (§2.7). Action records are not built. Live grants and decision diagnostics
+only a turn checkpoint emits a canonical control event, indexed only in the
+task's audit change index, and auditing every safety-relevant control
+transition through canonical events is designed, not built (§2.7). The
+execution observations and evidence a work-bound checkpoint carries are
+canonical work records on the project, root and run feeds, which obligations
+and completion read while the run is unfinished (§2.7). Action records are not
+built. Live grants and decision diagnostics
 occupy a separate operational tier and never become peer context; bounding
 that tier's retention is designed, not built, and nothing prunes it today. The
 cursor orders peer deltas; it is not an object identity and does not cross
