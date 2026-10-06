@@ -255,6 +255,9 @@ fn a_restore_stopped_after_its_pending_record_leaves_no_store_and_a_retry_of_the
     let completed = fixture.record();
     assert_eq!(completed.state, RestoreState::Completed);
     assert_eq!(completed.sha256, pending.sha256);
+    assert_eq!(completed.occurrence_id, pending.occurrence_id);
+    assert_eq!(completed.pending_at, pending.pending_at);
+    assert_eq!(completed.origin_retired, pending.origin_retired);
     assert_eq!(fixture.store_directory_names(), ["engram.db"]);
     assert_eq!(fixture.status_state(), Some("restored"));
 }
@@ -270,6 +273,7 @@ fn a_restore_stopped_after_its_move_is_completed_by_a_retry_only_over_the_record
     );
     assert_eq!(fixture.store_directory_names(), ["engram.db"]);
     assert_eq!(fixture.record().state, RestoreState::Pending);
+    let pending_occurrence = fixture.record().occurrence_id;
     // Reading the status opens the store read-only, which leaves an empty
     // write-ahead log and its index beside it; those hold no rows.
     assert_eq!(fixture.status_state(), Some("pending"));
@@ -292,6 +296,7 @@ fn a_restore_stopped_after_its_move_is_completed_by_a_retry_only_over_the_record
         report_text(&restored)
     );
     assert_eq!(fixture.record().state, RestoreState::Completed);
+    assert_eq!(fixture.record().occurrence_id, pending_occurrence);
     assert_eq!(fixture.status_state(), Some("restored"));
 
     // A store changed after the move is not the restore's own output.
@@ -378,6 +383,57 @@ fn a_completed_restore_whose_store_is_gone_is_kept_aside_by_the_next_one() {
         restore_record_path(fixture.clean.path(), &fixture.project).parent(),
         kept.parent()
     );
+}
+
+#[test]
+fn repeated_restores_of_the_same_copy_have_distinct_occurrences() {
+    let fixture = Fixture::new();
+    let copy = fixture.push_change("same-copy");
+    fixture.restore(&copy, None).unwrap();
+    let first = fixture.record();
+    fs::remove_file(fixture.database()).unwrap();
+    let restored = fixture.restore(&copy, None).unwrap();
+    let second = fixture.record();
+    assert_ne!(first.occurrence_id, second.occurrence_id);
+    assert_eq!(first.copy, second.copy);
+    assert_eq!(first.sha256, second.sha256);
+    let archived: RestoreRecord =
+        serde_json::from_slice(&fs::read(restored.kept_record.unwrap()).unwrap()).unwrap();
+    assert_eq!(archived, first);
+}
+
+#[test]
+fn failed_pending_publication_creates_no_store_and_is_not_completed_evidence() {
+    let fixture = Fixture::new();
+    let copy = fixture.push_change("pending-write");
+    assert_eq!(
+        failure_code(fixture.restore(&copy, Some(Stop::FailPendingWrite))),
+        "test_stop"
+    );
+    assert!(!fixture.database().exists());
+    assert_eq!(fixture.records(), RestoreRecords::None);
+    // No completed occurrence can authorize reopening; the host must retain maintenance.
+    assert_eq!(fixture.status_state(), None);
+    fixture.restore(&copy, None).unwrap();
+    assert_eq!(fixture.record().state, RestoreState::Completed);
+}
+
+#[test]
+fn a_failed_completion_write_keeps_the_occurrence_pending_until_retry() {
+    let fixture = Fixture::new();
+    let copy = fixture.push_change("completion-write");
+    assert_eq!(
+        failure_code(fixture.restore(&copy, Some(Stop::FailCompletionWrite))),
+        "test_stop"
+    );
+    let pending = fixture.record();
+    assert_eq!(pending.state, RestoreState::Pending);
+    assert_eq!(fixture.status_state(), Some("pending"));
+    fixture.restore(&copy, None).unwrap();
+    let completed = fixture.record();
+    assert_eq!(completed.occurrence_id, pending.occurrence_id);
+    assert_eq!(completed.pending_at, pending.pending_at);
+    assert_eq!(completed.state, RestoreState::Completed);
 }
 
 #[test]

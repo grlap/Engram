@@ -42,6 +42,8 @@ pub enum RestoreState {
 #[serde(deny_unknown_fields)]
 pub struct RestoreRecord {
     pub format_version: u32,
+    /// One restore occurrence, preserved through retries; never a copy identity.
+    pub occurrence_id: uuid::Uuid,
     pub project: String,
     pub copy: String,
     /// The SHA-256 of the copy's bytes, which the installed store keeps.
@@ -140,8 +142,17 @@ fn parse(bytes: &[u8], project: &ProjectId) -> Result<RestoreRecord, String> {
         }
         None => return Err("it has no format version".into()),
     }
+    if value.get("occurrence_id").is_none() {
+        return Err(
+            "legacy restore record has no occurrence_id; consumer admission must stay closed"
+                .into(),
+        );
+    }
     let record: RestoreRecord = serde_json::from_value(value)
         .map_err(|error| format!("its fields do not match its format version: {error}"))?;
+    if record.occurrence_id.is_nil() {
+        return Err("its occurrence_id is nil; consumer admission must stay closed".into());
+    }
     if record.project != project.0 {
         return Err("it names another project".into());
     }
@@ -169,6 +180,11 @@ pub fn write_restore_record(
 ) -> Result<(), TargetError> {
     let paths = RecordPaths::new(home, project, CopyKind::Store);
     super::target::held(&paths, lock)?;
+    if record.occurrence_id.is_nil() {
+        return Err(TargetError::Invalid {
+            reason: "a restore occurrence_id must not be nil".into(),
+        });
+    }
     let path = restore_record_path(home, project);
     super::target::write_record(&path, record).map_err(|source| TargetError::Io { path, source })
 }

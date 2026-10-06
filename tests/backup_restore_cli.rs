@@ -25,6 +25,10 @@ const OTHER: &str = "restore-cli-other-project";
 #[path = "backup_restore_cli/windows_paths.rs"]
 mod windows_paths;
 
+#[cfg(windows)]
+#[path = "backup_restore_cli/windows_lock.rs"]
+mod windows_lock;
+
 struct Homes {
     root: test_support::TempHome,
 }
@@ -680,6 +684,7 @@ fn status_and_doctor_show_a_pending_restore_without_contacting_the_target() {
         &lock,
         &RestoreRecord {
             format_version: RECORD_FORMAT_VERSION,
+            occurrence_id: uuid::Uuid::now_v7(),
             project: PROJECT.into(),
             copy: "20261002T000000Z-pending".into(),
             sha256: "ef".repeat(32),
@@ -695,8 +700,16 @@ fn status_and_doctor_show_a_pending_restore_without_contacting_the_target() {
         },
     )
     .unwrap();
-    drop(lock);
-
+    let restore_path = engram::backup::restore::restore_record_path(&home, &project);
+    let before = fs::read(&restore_path).unwrap();
+    let record: RestoreRecord = serde_json::from_slice(&before).unwrap();
+    // Keep the writer lock held: both diagnostic readers remain observational.
+    let status_json = homes.succeeded("pending", &["backup", "status", "--json"]);
+    let status_value: Value = serde_json::from_slice(&status_json.stdout).unwrap();
+    assert_eq!(
+        status_value["restore"]["record"]["occurrence_id"],
+        record.occurrence_id.to_string()
+    );
     let status = text(&homes.succeeded("pending", &["backup", "status"]).stdout);
     assert!(
         status.contains("restore: pending since ") && status.contains("20261002T000000Z-pending"),
@@ -708,12 +721,18 @@ fn status_and_doctor_show_a_pending_restore_without_contacting_the_target() {
     assert_eq!(value["code"], "store_not_initialized");
     assert_eq!(value["backup"]["restore"]["state"], "pending");
     assert_eq!(
+        value["backup"]["restore"]["record"]["occurrence_id"],
+        record.occurrence_id.to_string()
+    );
+    assert_eq!(
         value["backup"]["restore"]["record"]["copy"],
         "20261002T000000Z-pending"
     );
     let doctor = text(&homes.engram("pending", &["doctor"]).stdout);
     assert!(doctor.contains("restore: pending since "), "{doctor}");
     assert!(!homes.database("pending").exists());
+    assert_eq!(fs::read(&restore_path).unwrap(), before);
+    drop(lock);
 }
 
 #[cfg(unix)]
@@ -772,6 +791,16 @@ fn a_restored_store_equals_the_pushed_copy_byte_for_byte_and_row_for_row_and_doc
     let doctor = homes.succeeded("clean", &["doctor", "--json"]);
     let report: Value = serde_json::from_slice(&doctor.stdout).unwrap();
     assert_eq!(report["healthy"], true, "{report}");
+    let restore_path = engram::backup::restore::restore_record_path(
+        &homes.path("clean"),
+        &ProjectId(PROJECT.into()),
+    );
+    let record: engram::backup::restore::RestoreRecord =
+        serde_json::from_slice(&fs::read(restore_path).unwrap()).unwrap();
+    assert_eq!(
+        report["backup"]["restore"]["record"]["occurrence_id"],
+        record.occurrence_id.to_string()
+    );
     // Its rows, everything but the export header's time, are the rows
     // exported before the push, not the changed source's.
     let restored_rows = homes.exported_rows(&database, "equality-restored.jsonl");
@@ -803,6 +832,7 @@ fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
             &lock,
             &RestoreRecord {
                 format_version: RECORD_FORMAT_VERSION,
+                occurrence_id: uuid::Uuid::now_v7(),
                 project: PROJECT.into(),
                 copy: copy.into(),
                 sha256: "ef".repeat(32),

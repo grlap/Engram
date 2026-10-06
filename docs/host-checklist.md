@@ -358,8 +358,35 @@ for the fields named here.
    a failed push.
    Show `restore` when it is not null. Plain `backup status` contacts no
    target; `--check-target` asks the target and is a separate, slower call.
-6. **After a restore, give sessions identities the restored store has not
-   seen.** A restored store keeps the origin's claims, grants, begun turns
+6. **Keep destination admission closed throughout restore.** Block all
+   mutable admission before draining control, MCP, CLI, library, background
+   and recovery consumers, across hosts and aliases of the physical file.
+   Maintain durable exclusion outside the replaced store, even before the
+   pending record is published, and across crashes, retries or abandonment.
+   Read status through a nonmutating lane. Pending, unreadable, invalid or
+   unavailable `restore` means **do not start consumers**. A failed status
+   read or `backup_store_outside_home` is not an absent record, and even
+   `restore: null` is not permission to leave maintenance: restore can stop
+   before pending publication or while archiving its previous record.
+   Engram does not enforce destination exclusion; TermAl's current project
+   flags and the backup push lock do not exclude independent CLI/library
+   writers. This boundary holds only when the operator or host actually
+   excludes every opener. Host enforcement and its evidence remain open.
+7. **After a completed restore, reconcile its occurrence before opening.**
+   Use `restore.record.occurrence_id`, the required opaque UUID retained
+   through pending/retry/completion. Map destination-store identity, this
+   occurrence and a durable host/session identity to a distinct opaque
+   asserted Engram identity, separate from the local UI identity. Persist
+   the mapping and handled-occurrence acknowledgement; move existing local
+   sessions onto it and retire old routing/grant/recovery handles before any
+   control connection, MCP opening or work recovery. Never replay old-session
+   authority. Reboot reuses the same handled occurrence's mapping; a new
+   restore of the same copy rotates it once. A reused `session-N`, per-process
+   UUID, copy hash or completion timestamp is not the mapping key. Hold
+   maintenance until completed status, mapping, acknowledgement and old-handle
+   retirement are durable; serialize reopening with subsequent restores,
+   discarding status read outside that boundary. A restored store keeps the
+   origin's claims, grants, begun turns
    and session rows unchanged, and the only boundary on them is the asserted
    session id. A session that reuses an old id can use and renew its claim,
    reconnect its control session and checkpoint its begun turn. A new

@@ -406,6 +406,7 @@ fn a_recorded_restore_is_shown_pending_restored_or_unreadable_after_the_kinds() 
     use crate::backup::restore::{RestoreRecord, RestoreRecords, RestoreState};
     let record = RestoreRecord {
         format_version: RECORD_FORMAT_VERSION,
+        occurrence_id: uuid::Uuid::now_v7(),
         project: "status-project".into(),
         copy: "20261001T000000Z-copy".into(),
         sha256: "cd".repeat(32),
@@ -440,6 +441,10 @@ fn a_recorded_restore_is_shown_pending_restored_or_unreadable_after_the_kinds() 
     let value = serde_json::to_value(&status).unwrap();
     assert_eq!(value["restore"]["state"], "pending");
     assert_eq!(value["restore"]["record"]["copy"], "20261001T000000Z-copy");
+    assert_eq!(
+        value["restore"]["record"]["occurrence_id"],
+        record.occurrence_id.to_string()
+    );
 
     let mut completed = record;
     completed.state = RestoreState::Completed;

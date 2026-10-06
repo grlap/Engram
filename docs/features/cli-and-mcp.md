@@ -2136,6 +2136,7 @@ the field paths, and every value a listed field takes.
 | `restore.state` | string, one of: `pending`, `restored`, `unreadable` | Where it stands. |
 | `restore.record` | object or null | The record; null when it cannot be read. |
 | `restore.record.format_version` | integer | The record's format. |
+| `restore.record.occurrence_id` | string | Required opaque UUID for this restore occurrence; retries preserve it, a new restore of the same copy gets a new id. |
 | `restore.record.project` | string | The project. |
 | `restore.record.copy` | string | The restored copy. |
 | `restore.record.sha256` | string | The copy's SHA-256. |
@@ -2145,7 +2146,7 @@ the field paths, and every value a listed field takes.
 | `restore.record.origin_retired.at` | string, an RFC 3339 time | When. |
 | `restore.record.staging` | string | The staging file the copy was fetched into. |
 | `restore.record.state` | string, one of: `pending`, `completed` | `completed` once the installed store was checked. |
-| `restore.record.pending_at` | string, an RFC 3339 time | When the pending record was written. |
+| `restore.record.pending_at` | string, an RFC 3339 time | When this occurrence's pending record was first written. |
 | `restore.record.completed_at` | string or null | When it was completed. |
 | `restore.unreadable` | string or null | For a record this build cannot use, its path and why. |
 | `checks` | array, only with `--check-target` | One entry per kind checked; absent otherwise. |
@@ -2247,7 +2248,8 @@ On Windows, SQLite disk opens and copy destinations use native extended paths
 and the locking long-path VFS; 260 characters alone is not a refusal. Logical
 paths in receipts and manifests remain unchanged. Otherwise it records a
 pending restore in `<home>/backup-records/<project digest>/store.restore.json`
-(the copy, its SHA-256, the origin host and the statement), moves the copy
+(its opaque `occurrence_id`, the copy, its SHA-256, the origin host and the
+statement), moves the copy
 into place with a rename that never replaces anything, checks the installed
 store and marks the record completed. A restore stopped before the move is
 finished by a retry of the same copy, and another copy is refused while it is
@@ -2275,7 +2277,18 @@ empty `-wal` and an `-shm`, which a read leaves, are allowed); it then prints
 `completed an interrupted restore`, and any other store is refused as
 `backup_restore_store_exists`, naming what did not match. A completed record
 whose store is gone is kept as `store.restore-<completion time, UTC>Z.json`
-before a new restore records its own. Restore changes no row. It prints,
+before a new restore records its own. Each new restore, even of the same copy,
+gets a fresh UUID; pending retries, refetches and interrupted completion retain
+it and the original pending provenance. A retry still requires
+`--origin-retired-by NAME`, but does not replace the original recorded name or
+statement time; the receipt shows the original statement. Status exposes
+`restore.record.occurrence_id`, and doctor exposes
+`backup.restore.record.occurrence_id`. Missing, invalid or nil ids make a
+record unreadable; readers never mint or repair one. These fields do not fence
+consumer admission. The host/operator must exclude every destination opener
+under the [destination admission contract](off-host-backup.md#restore-occurrences-and-destination-admission);
+Engram supplies no guard, and current TermAl project flags do not close the
+independent-writer gap. Restore changes no row. It prints,
 read from the checked copy with one clock reading, the number of unexpired
 active claims and of unexpired issued grants with when the last of each
 expires, and the number of begun turns; a restored claim serves only its old

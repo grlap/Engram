@@ -17,8 +17,10 @@ fn at(second: i64) -> DateTime<Utc> {
 }
 
 fn pending() -> RestoreRecord {
+    static OCCURRENCE: std::sync::OnceLock<uuid::Uuid> = std::sync::OnceLock::new();
     RestoreRecord {
         format_version: RECORD_FORMAT_VERSION,
+        occurrence_id: *OCCURRENCE.get_or_init(uuid::Uuid::now_v7),
         project: project().0,
         copy: "20261002T120000Z-copy".into(),
         sha256: "ab".repeat(32),
@@ -56,6 +58,24 @@ fn a_written_record_reads_back_and_a_missing_one_is_none() {
         read_restore_record(home.path(), &project()),
         RestoreRecords::Recorded(Box::new(completed))
     );
+}
+
+#[test]
+fn a_nil_occurrence_cannot_replace_the_written_record() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let lock = PushLock::try_acquire(&paths).unwrap();
+    let record = pending();
+    write_restore_record(home.path(), &project(), &lock, &record).unwrap();
+    let path = restore_record_path(home.path(), &project());
+    let bytes = fs::read(&path).unwrap();
+    let mut invalid = record;
+    invalid.occurrence_id = uuid::Uuid::nil();
+    assert!(matches!(
+        write_restore_record(home.path(), &project(), &lock, &invalid),
+        Err(TargetError::Invalid { .. })
+    ));
+    assert_eq!(fs::read(path).unwrap(), bytes);
 }
 
 #[test]
@@ -129,6 +149,41 @@ fn writing_needs_the_push_lock_of_this_project() {
         read_restore_record(home.path(), &project()),
         RestoreRecords::None
     );
+}
+
+#[test]
+fn missing_invalid_or_nil_occurrence_ids_stay_unreadable_without_mutation() {
+    let home = temp_home().unwrap();
+    let path = restore_record_path(home.path(), &project());
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    for occurrence in [
+        None,
+        Some(""),
+        Some("not-a-uuid"),
+        Some("00000000-0000-0000-0000-000000000000"),
+    ] {
+        let mut value = serde_json::to_value(pending()).unwrap();
+        match occurrence {
+            None => {
+                value.as_object_mut().unwrap().remove("occurrence_id");
+            }
+            Some(id) => value["occurrence_id"] = id.into(),
+        }
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let RestoreRecords::Unreadable { reason, .. } =
+            read_restore_record(home.path(), &project())
+        else {
+            panic!("invalid occurrence must refuse");
+        };
+        if occurrence.is_none() {
+            assert!(
+                reason.contains("legacy restore record has no occurrence_id"),
+                "{reason}"
+            );
+        }
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
 }
 
 #[test]

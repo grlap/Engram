@@ -135,6 +135,7 @@ impl Home {
             &lock,
             &RestoreRecord {
                 format_version: RECORD_FORMAT_VERSION,
+                occurrence_id: uuid::Uuid::now_v7(),
                 project: PROJECT.into(),
                 copy: "20261002T000000Z-receipt".into(),
                 sha256: "ab".repeat(32),

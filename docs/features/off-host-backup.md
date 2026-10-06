@@ -589,6 +589,60 @@ never refuses or delays a word.
 
 ## Restore
 
+### Restore occurrences and destination admission
+
+Each new `store` restore mints a required opaque UUID `occurrence_id` before
+its first pending record is written. It is recorded in the host-local
+`backup-records/<project digest>/store.restore.json`, outside SQLite. Retries,
+including a refetch before the move or completion after the move, retain the
+same id and original pending provenance. A retry still requires
+`--origin-retired-by NAME`, but its name does not replace the original recorded
+statement or time; the receipt shows the original statement. A later restore
+of the same copy gets a different id. Completion and abandonment preserve it. `backup status
+--json` exposes `restore.record.occurrence_id`; `doctor --json` exposes
+`backup.restore.record.occurrence_id`. Neither reader mints or repairs an id.
+An old record without the field, or an invalid or nil UUID, is unreadable,
+not an absent restore; consumer admission must remain closed. Historical
+archives are not rewritten. Restored SQLite bytes and authority are unchanged.
+
+**The destination boundary is a host/operator obligation, not an Engram
+guard.** Before starting restore or reading status for admission, block every
+mutable opener and then drain all destination consumers: control, MCP, CLI,
+library, background and recovery work, including other hosts and aliases of
+the same physical file. Keep durable maintenance state outside the store
+being replaced, so a crash before the pending record is published still
+starts closed. A process lock held only by restore does not provide this
+boundary; the push lock serializes cooperating backup writers only.
+
+Read status through a nonmutating lane. Pending, unreadable, invalid or
+unavailable restore evidence means **do not start consumers**; a failed read
+or `backup_store_outside_home` is not `restore: null`. Even a legitimate null
+only describes this home's record: fetch precedes pending publication, and a
+crash while archiving the prior completed record can leave no active record.
+Keep maintenance through retries or abandonment; the absence of a record
+does not release it.
+
+After a completed occurrence, persist a mapping keyed by destination-store
+identity, occurrence id and a durable host/session identity to a distinct
+opaque asserted Engram session id. Keep it separate from local UI identities;
+a reused `session-N`, a process UUID, a copy hash or a timestamp is not this
+mapping. Move existing sessions onto it, acknowledge the handled occurrence
+durably, and retire old routing, grant and recovery handles before any control
+connection, MCP opening or work recovery. Never replay old-session authority.
+The same handled occurrence reuses its mapping after reboot; a new restore
+of the same copy rotates identities once again.
+
+Hold the boundary until that completed record, mapping, acknowledgement and
+handle retirement are durable. Reopening and the next restore must share one
+serialization, with no status-read-to-spawn gap. Discard stale status selected
+outside the boundary. This guarantee holds only when the operator or host
+actually excludes **every** destination opener, including independent CLI and
+library writers. Engram does not enforce it, and TermAl's current project
+flags do not establish it; host exclusion and its integrated crash/admission
+evidence remain outstanding. See the [host checklist](../host-checklist.md#off-host-backup).
+
+### Restore procedure
+
 Both kinds restore onto a clean home and never over a store in use. A clean
 home has no target, so the first step on the new machine is to configure the
 target again. That configuration qualifies nothing until a push from the new
@@ -626,8 +680,11 @@ or retired:
    whose manifest or whose rows name another project.
 5. Run `engram doctor` and `engram readiness`. Both resolve the project
    root's path identity, which restore itself does not: a store restored
-   onto an operating system with different path rules is refused here. Start
-   the host, with new sessions, only after both pass.
+   onto an operating system with different path rules is refused here. Keep
+   the destination admission boundary closed while running these checks.
+   Start consumers only after both pass and the completed occurrence's
+   durable identity mapping, handled acknowledgement and old-handle
+   retirement described above are complete.
 
 **A restore that stops.** The staging file is named
 `.backup-restore-<id>.staging`, which store open, `doctor` and `readiness`
@@ -672,8 +729,9 @@ calls unexpired. Restore does three things about that authority:
 
 - It requires the operator's statement that the origin store will never run
   again (`--origin-retired-by`). Nothing in this mode prevents a second
-  writer, so this is the one precondition Engram cannot check. The
-  statement is asserted context: restore prints it and writes it, with the
+  writer; origin retirement and destination quiescence are preconditions
+  Engram cannot enforce. The statement is asserted context: restore prints
+  it and writes it, with the
   copy's digest and origin host name, to this home's recorded state, and
   `status` and `doctor` show it from then on.
 - It reports, read from the checked copy with one reading of this machine's
@@ -708,7 +766,9 @@ calls unexpired. Restore does three things about that authority:
 
 The preconditions before any consumer starts are therefore: every consumer
 of the origin is stopped for good, the new machine's clock is right, and the
-host gives its sessions identities the restored store has not seen. A reset
+destination admission boundary above stayed closed until the completed
+occurrence's durable mapping gave sessions identities the restored store
+has not seen and retired their old handles. A reset
 of live authority at restore would be a new store operation and is not part
 of this design. Moving a store to a machine with different path rules, and
 refusing a second writer, are `portable`'s.

@@ -84,6 +84,10 @@ pub(crate) enum Stop {
     AfterPending,
     /// After the move, before the record is marked completed.
     AfterMove,
+    /// The completed record cannot be written after checking the installed store.
+    FailCompletionWrite,
+    /// The first pending record cannot be published.
+    FailPendingWrite,
     /// The full check of the fetched copy fails.
     FailCheck,
     /// A retry cannot point the pending record at its newly fetched copy.
@@ -232,7 +236,7 @@ pub(crate) fn restore(
             };
         }
     };
-    if let Some(record) = pending
+    if let Some(record) = pending.as_mut()
         && let Err(failure) = switch_staging(home, project, &lock, record, &staging, settings)
     {
         return RestoreRun::failed(failure);
@@ -246,6 +250,7 @@ pub(crate) fn restore(
         &staging,
         &by,
         earlier.as_ref(),
+        pending,
         settings,
     );
     RestoreRun {
@@ -264,7 +269,7 @@ fn switch_staging(
     home: &Path,
     project: &ProjectId,
     lock: &PushLock,
-    mut record: RestoreRecord,
+    record: &mut RestoreRecord,
     staging: &Path,
     settings: &RestoreSettings,
 ) -> Result<(), ReadFailure> {
@@ -291,7 +296,7 @@ fn switch_staging(
     }
     record.staging = staging.display().to_string();
     let write = || {
-        write_restore_record(home, project, lock, &record)
+        write_restore_record(home, project, lock, record)
             .map_err(|error| ReadFailure::new(error.code(), format!("{error}; {unchanged}")))
     };
     #[cfg(test)]
@@ -330,6 +335,7 @@ fn install(
     staging: &Path,
     by: &str,
     earlier: Option<&RestoreRecord>,
+    pending: Option<RestoreRecord>,
     settings: &RestoreSettings,
 ) -> Result<Restored, ReadFailure> {
     #[cfg(not(test))]
@@ -395,8 +401,9 @@ fn install(
     if let Some(failure) = project_problem(&report, project) {
         return Err(removing_staging(failure, staging));
     }
-    let record = RestoreRecord {
+    let record = pending.unwrap_or_else(|| RestoreRecord {
         format_version: RECORD_FORMAT_VERSION,
+        occurrence_id: uuid::Uuid::now_v7(),
         project: project.0.clone(),
         copy: manifest.copy.clone(),
         sha256: report.manifest.file_sha256.clone(),
@@ -409,7 +416,7 @@ fn install(
         state: RestoreState::Pending,
         pending_at: Utc::now(),
         completed_at: None,
-    };
+    });
     let kept_record =
         match earlier.map(|earlier| keep_completed_record(home, project, lock, earlier)) {
             None => None,
@@ -421,6 +428,13 @@ fn install(
                 ));
             }
         };
+    #[cfg(test)]
+    if settings.stop == Some(Stop::FailPendingWrite) {
+        return Err(removing_staging(
+            ReadFailure::new("test_stop", "the pending record was not written"),
+            staging,
+        ));
+    }
     if let Err(error) = write_restore_record(home, project, lock, &record) {
         return Err(removing_staging(
             ReadFailure::new(error.code(), error.to_string()),
@@ -454,6 +468,13 @@ fn install(
         return Err(ReadFailure::new("test_stop", "stopped after the move"));
     }
     let installed = check_installed(database, project)?;
+    #[cfg(test)]
+    if settings.stop == Some(Stop::FailCompletionWrite) {
+        return Err(ReadFailure::new(
+            "test_stop",
+            "the completed record was not written; the restore stays pending",
+        ));
+    }
     finish(home, project, lock, record, report, installed, false).map(|mut restored| {
         restored.kept_record = kept_record;
         restored
