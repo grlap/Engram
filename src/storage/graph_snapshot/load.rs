@@ -29,11 +29,115 @@ thread_local! {
     /// document through the same path, and tests run concurrently.
     pub(super) static HIERARCHY_PASS_VISITS: std::cell::Cell<usize> =
         const { std::cell::Cell::new(0) };
+    /// Counts the work of building restored relation bases: one per item
+    /// indexed, one per blocker grouped, one per basis built. It excludes
+    /// sorting and payload copies, and a memo hit adds nothing, so for the
+    /// same items and blockers it reads the same whatever the record count.
+    pub(super) static RELATION_BASIS_WORK: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+    /// Counts the records the newest-record lookup of the lifecycle check
+    /// examines: exactly the snapshot's records, never items times records.
+    pub(super) static NEWEST_RECORD_VISITS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
 }
 
 fn count_hierarchy_pass_visit() {
     #[cfg(test)]
     HIERARCHY_PASS_VISITS.with(|visits| visits.set(visits.get() + 1));
+}
+
+fn count_relation_basis_work(units: usize) {
+    #[cfg(not(test))]
+    let _ = units;
+    #[cfg(test)]
+    RELATION_BASIS_WORK.with(|work| work.set(work.get() + units));
+}
+
+fn count_newest_record_visit() {
+    #[cfg(test)]
+    NEWEST_RECORD_VISITS.with(|visits| visits.set(visits.get() + 1));
+}
+
+/// Each item's relation basis (prerequisites sorted by id, blockers in
+/// blocker-id order), built once on first demand from the item and blocker
+/// sections. A native record is minted from it, and the lifecycle check
+/// compares the item's newest record against it; a carried record keeps the
+/// relations it was recorded with.
+///
+/// The item index and the blocker groups are pure constructions over the
+/// validated sections, so building them early moves no refusal; a basis is
+/// built only when a native record or the lifecycle check first asks for it,
+/// so each refusal fires at that call site and in that order, and only a
+/// successful basis is kept. Blockers keep their document order before the
+/// stable sort, so the elements and their order do not depend on which call
+/// site built the basis.
+struct RelationBases<'a> {
+    items: HashMap<WorkId, &'a crate::WorkGraphSnapshotItem>,
+    blockers_by_item: HashMap<WorkId, Vec<&'a crate::WorkGraphSnapshotBlocker>>,
+    computed: HashMap<WorkId, RestoredRelationBasis>,
+}
+
+impl<'a> RelationBases<'a> {
+    fn index(document: &'a WorkGraphSnapshotDocument) -> Self {
+        let items = document
+            .body
+            .items
+            .iter()
+            .map(|item| (item.work_id, item))
+            .collect::<HashMap<_, _>>();
+        count_relation_basis_work(document.body.items.len());
+        let mut blockers_by_item = HashMap::<WorkId, Vec<_>>::new();
+        for blocker in &document.body.blockers {
+            blockers_by_item
+                .entry(blocker.work_id)
+                .or_default()
+                .push(blocker);
+        }
+        count_relation_basis_work(document.body.blockers.len());
+        Self {
+            items,
+            blockers_by_item,
+            computed: HashMap::new(),
+        }
+    }
+
+    fn basis(&mut self, work_id: WorkId) -> Result<&RestoredRelationBasis, StoreError> {
+        if !self.computed.contains_key(&work_id) {
+            let basis = self.build(work_id)?;
+            self.computed.insert(work_id, basis);
+        }
+        Ok(&self.computed[&work_id])
+    }
+
+    fn build(&self, work_id: WorkId) -> Result<RestoredRelationBasis, StoreError> {
+        count_relation_basis_work(1);
+        let item = self
+            .items
+            .get(&work_id)
+            .ok_or_else(|| corrupt("restored record names an unknown work item"))?;
+        let mut prerequisites = item.prerequisites.clone();
+        prerequisites.sort_by_key(|id| id.0);
+        prerequisites.dedup();
+        if prerequisites.len() != item.prerequisites.len() {
+            return Err(corrupt("work item duplicates a prerequisite"));
+        }
+        let mut blockers: Vec<crate::WorkGraphSnapshotBlocker> = self
+            .blockers_by_item
+            .get(&work_id)
+            .map(|group| group.iter().map(|blocker| (*blocker).clone()).collect())
+            .unwrap_or_default();
+        blockers.sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
+        if blockers
+            .windows(2)
+            .any(|pair| pair[0].blocker_id == pair[1].blocker_id)
+        {
+            return Err(corrupt("work item duplicates a blocker"));
+        }
+        Ok(RestoredRelationBasis {
+            prerequisites,
+            blockers,
+        })
+    }
 }
 
 struct PreparedLoad {
@@ -140,9 +244,10 @@ fn prepare_load(
     validate_section_order(&document)?;
 
     validate_items_and_relations(&document)?;
-    let records = validate_and_materialize_records(&document)?;
+    let mut bases = RelationBases::index(&document);
+    let records = validate_and_materialize_records(&document, &mut bases)?;
     validate_sources(&document, &records)?;
-    validate_lifecycle_proofs(&document, &records)?;
+    validate_lifecycle_proofs(&document, &records, &mut bases)?;
     validate_memories(&document)?;
 
     let mut lifecycle_counts = WorkGraphSnapshotLifecycleCounts::default();
@@ -603,6 +708,7 @@ fn validate_sources(
 
 fn validate_and_materialize_records(
     document: &WorkGraphSnapshotDocument,
+    bases: &mut RelationBases<'_>,
 ) -> Result<Vec<(RestoredRecord, CanonicalObject)>, StoreError> {
     let item_ids = document
         .body
@@ -610,12 +716,6 @@ fn validate_and_materialize_records(
         .iter()
         .map(|item| item.work_id)
         .collect::<HashSet<_>>();
-    let items = document
-        .body
-        .items
-        .iter()
-        .map(|item| (item.work_id, item))
-        .collect::<HashMap<_, _>>();
     let mut keys = HashSet::new();
     let mut records = Vec::with_capacity(document.body.records.len());
     for record in &document.body.records {
@@ -642,7 +742,8 @@ fn validate_and_materialize_records(
                 (restored, object)
             }
             WorkGraphSnapshotRecordPayload::Native { history } => {
-                let item = items
+                let item = bases
+                    .items
                     .get(&record.work_id)
                     .ok_or_else(|| corrupt("restored record names an unknown work item"))?;
                 let restored = RestoredRecord {
@@ -651,7 +752,7 @@ fn validate_and_materialize_records(
                     work_id: record.work_id,
                     generation_index: record.generation_index,
                     item: (*item).clone(),
-                    relations: restored_relation_basis(document, record.work_id)?,
+                    relations: bases.basis(record.work_id)?.clone(),
                     history: (**history).clone(),
                 };
                 let object = CanonicalObject::mint(&restored)?;
@@ -670,7 +771,7 @@ fn validate_and_materialize_records(
         }
         validate_history(&restored.history, &item_ids)?;
         validate_restored_relation_basis(&restored.relations, restored.work_id, &item_ids)?;
-        validate_inherited_record(&restored, &item_ids, &items)?;
+        validate_inherited_record(&restored, &item_ids, &bases.items)?;
         records.push((restored, object));
     }
     let mut per_item = HashMap::<WorkId, Vec<usize>>::new();
@@ -952,16 +1053,28 @@ fn validate_event_shape(event: &crate::WorkGraphSnapshotEvent) -> Result<(), Sto
     }
 }
 
+/// Checks every item against its newest restored record. The newest record
+/// per item is found in one pass over the records (a later record of the
+/// same generation replaces an earlier one, as the previous per-item search
+/// chose); the items are then checked in their own order, so each refusal
+/// keeps its place.
 fn validate_lifecycle_proofs(
     document: &WorkGraphSnapshotDocument,
     records: &[(RestoredRecord, CanonicalObject)],
+    bases: &mut RelationBases<'_>,
 ) -> Result<(), StoreError> {
+    let mut newest_by_item = HashMap::<WorkId, &RestoredRecord>::new();
+    for (record, _) in records {
+        count_newest_record_visit();
+        let newest = newest_by_item.entry(record.work_id).or_insert(record);
+        if record.generation_index >= newest.generation_index {
+            *newest = record;
+        }
+    }
     for item in &document.body.items {
-        let newest = records
-            .iter()
-            .filter(|(record, _)| record.work_id == item.work_id)
-            .max_by_key(|(record, _)| record.generation_index)
-            .map(|(record, _)| record)
+        let newest = newest_by_item
+            .get(&item.work_id)
+            .copied()
             .ok_or_else(|| corrupt("work item has no newest restored record"))?;
         let completed = newest.history.completion.is_some();
         if completed != (item.lifecycle == WorkLifecycle::Completed) {
@@ -969,7 +1082,7 @@ fn validate_lifecycle_proofs(
                 "work lifecycle disagrees with restored completion proof",
             ));
         }
-        if newest.relations != restored_relation_basis(document, item.work_id)? {
+        if newest.relations != *bases.basis(item.work_id)? {
             return Err(corrupt(
                 "work relations disagree with the newest restored record",
             ));
@@ -981,42 +1094,6 @@ fn validate_lifecycle_proofs(
         }
     }
     Ok(())
-}
-
-fn restored_relation_basis(
-    document: &WorkGraphSnapshotDocument,
-    work_id: WorkId,
-) -> Result<RestoredRelationBasis, StoreError> {
-    let item = document
-        .body
-        .items
-        .iter()
-        .find(|item| item.work_id == work_id)
-        .ok_or_else(|| corrupt("restored record names an unknown work item"))?;
-    let mut prerequisites = item.prerequisites.clone();
-    prerequisites.sort_by_key(|id| id.0);
-    prerequisites.dedup();
-    if prerequisites.len() != item.prerequisites.len() {
-        return Err(corrupt("work item duplicates a prerequisite"));
-    }
-    let mut blockers = document
-        .body
-        .blockers
-        .iter()
-        .filter(|blocker| blocker.work_id == work_id)
-        .cloned()
-        .collect::<Vec<_>>();
-    blockers.sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
-    if blockers
-        .windows(2)
-        .any(|pair| pair[0].blocker_id == pair[1].blocker_id)
-    {
-        return Err(corrupt("work item duplicates a blocker"));
-    }
-    Ok(RestoredRelationBasis {
-        prerequisites,
-        blockers,
-    })
 }
 
 fn validate_memories(document: &WorkGraphSnapshotDocument) -> Result<(), StoreError> {

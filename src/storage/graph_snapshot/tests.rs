@@ -6,6 +6,7 @@ mod input_validation;
 mod memory_revisions;
 mod persisted_text;
 mod redaction;
+mod relation_bases;
 mod restored_identity;
 mod restored_repair;
 

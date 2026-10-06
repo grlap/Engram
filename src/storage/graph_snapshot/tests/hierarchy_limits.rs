@@ -5,13 +5,6 @@ use crate::WorkGraphSnapshotLoadResult;
 const OPEN_LIMIT: usize = super::super::super::work::MAX_OPEN_WORK_DESCENDANTS as usize;
 const OPEN_LIMIT_REFUSAL: &str = "open descendant count exceeds the work limit";
 
-/// The work the loader's old shape did: every item once per root. Kept only
-/// as the number the counter would read if the pass regressed to it.
-fn per_root_scan_visits(items: &[crate::WorkGraphSnapshotItem]) -> usize {
-    let roots = items.iter().filter(|item| item.parent_id.is_none()).count();
-    roots * items.len()
-}
-
 fn short_ref_of(work_id: WorkId) -> String {
     let simple = work_id.0.simple().to_string();
     format!("w-{}", simple.get(20..).unwrap_or(&simple))
@@ -206,9 +199,7 @@ struct Shape {
 
 // The bound: the open-descendant pass of restore validation visits each
 // snapshot item exactly once, whatever the number of roots and whatever the
-// items' lifecycles. Equal-size shapes make the comparison exact, and the old
-// per-root scan's figure shows what the counter would read if the pass
-// regressed: 64 roots times 256 items, not 256.
+// items' lifecycles, so every shape below reads exactly its item count.
 #[test]
 #[allow(
     clippy::too_many_lines,
@@ -256,7 +247,6 @@ fn restore_validation_visits_each_item_once_whatever_the_root_count() {
             cancelled_per_root: 0,
         },
     ];
-    let mut visits_by_size = std::collections::BTreeMap::<usize, Vec<(&str, usize)>>::new();
     for shape in &shapes {
         let project = ProjectId(format!("snapshot-shape-{}", shape.name));
         for root_index in 0..shape.roots {
@@ -298,32 +288,13 @@ fn restore_validation_visits_each_item_once_whatever_the_root_count() {
             "{}: live rows restored",
             shape.name
         );
+        // A scan per root would read roots times items here: 16384 for the
+        // wide forest and 65536 for the roots-only shape, never 256.
         assert_eq!(
             visits, items,
             "{}: the open-descendant pass visits each snapshot item exactly once",
             shape.name
         );
-        let regressed = per_root_scan_visits(&document.body.items);
-        assert_eq!(regressed, shape.roots * items, "{}: control", shape.name);
-        if shape.roots > 1 {
-            assert!(
-                regressed > visits,
-                "{}: the old per-root scan ({regressed}) would be told from one pass ({visits})",
-                shape.name
-            );
-        }
-        visits_by_size
-            .entry(items)
-            .or_default()
-            .push((shape.name, visits));
-    }
-    for (size, measured) in &visits_by_size {
-        for (name, visits) in measured {
-            assert_eq!(
-                visits, size,
-                "{name}: equal-size shapes cost the same ({size} items)"
-            );
-        }
     }
 }
 
