@@ -13,10 +13,10 @@ fn regular_marker_byte_limit_is_checked_before_decoding() {
     fs::write(&marker, vec![b'x'; limit + 1]).unwrap();
     let error = read_entry(&marker).unwrap_err();
     assert!(error.to_string().contains("too large"));
-    // A large logical file must be refused from metadata, before opening it.
+    // An oversized file must be refused from metadata, before opening it.
     fs::File::create(&marker)
         .unwrap()
-        .set_len(1024 * 1024 * 1024)
+        .set_len(MAX_PROJECT_FILE_BYTES + 1)
         .unwrap();
     let error = read_entry_after_inspection(&marker, || {
         panic!("oversized marker must refuse before open")

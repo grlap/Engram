@@ -685,9 +685,10 @@ mod tests {
         }
     }
 
-    /// Sets up the scratch repository under the test's own configuration: no
-    /// system or global git configuration, no signing and no hooks.
-    fn git(repository: &Path, args: &[&str]) -> String {
+    /// Confines fixture commands to the named directory and the test's own
+    /// configuration: no system or global configuration, signing or hooks.
+    fn fixture_git_command(repository: &Path, args: &[&str], mut command: Command) -> Command {
+        let repository = resolve_repository(repository).expect("resolved fixture directory");
         let global = repository
             .parent()
             .expect("the repository lies in the scratch home")
@@ -695,8 +696,8 @@ mod tests {
         if !global.exists() {
             std::fs::write(&global, b"").expect("empty git configuration");
         }
-        let output = std::process::Command::new("git")
-            .current_dir(repository)
+        command
+            .current_dir(&repository)
             .args([
                 "-c",
                 "user.email=landing@test",
@@ -715,6 +716,21 @@ mod tests {
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", &global)
+            .env_remove("GIT_GRAFT_FILE")
+            .env_remove("GIT_DEFAULT_REF_FORMAT")
+            .env_remove("GIT_DEFAULT_HASH")
+            .env(
+                "GIT_CEILING_DIRECTORIES",
+                repository.parent().expect("fixture parent"),
+            );
+        for name in CLEARED_GIT_ENVIRONMENT {
+            command.env_remove(name);
+        }
+        command
+    }
+
+    fn git(repository: &Path, args: &[&str]) -> String {
+        let output = fixture_git_command(repository, args, Command::new("git"))
             .output()
             .expect("run git");
         assert!(output.status.success(), "git {args:?}: {output:?}");
@@ -722,6 +738,128 @@ mod tests {
             .expect("utf-8")
             .trim()
             .to_owned()
+    }
+
+    #[test]
+    fn fixture_commands_ignore_inherited_repository_routing() {
+        fn snapshot(directory: &Path) -> std::collections::BTreeMap<PathBuf, Option<Vec<u8>>> {
+            fn collect(
+                root: &Path,
+                directory: &Path,
+                files: &mut std::collections::BTreeMap<PathBuf, Option<Vec<u8>>>,
+            ) {
+                for entry in std::fs::read_dir(directory).expect("snapshot directory") {
+                    let path = entry.expect("snapshot entry").path();
+                    let relative = path.strip_prefix(root).expect("snapshot root").to_owned();
+                    if path.is_dir() {
+                        files.insert(relative, None);
+                        collect(root, &path, files);
+                    } else {
+                        files.insert(relative, Some(std::fs::read(path).expect("snapshot bytes")));
+                    }
+                }
+            }
+            let mut files = std::collections::BTreeMap::new();
+            collect(directory, directory, &mut files);
+            files
+        }
+
+        let home = crate::test_support::temp_home().expect("scratch directory");
+        let victim = home.path().join("victim");
+        let fixture = home.path().join("fixture");
+        let linked = home.path().join("linked");
+        std::fs::create_dir_all(&victim).expect("victim directory");
+        std::fs::create_dir_all(&fixture).expect("fixture directory");
+        git(&victim, &["init", "-q", "."]);
+        std::fs::write(victim.join("untouched.txt"), b"victim").expect("victim content");
+        git(&victim, &["add", "untouched.txt"]);
+        git(&victim, &["commit", "-q", "-m", "victim"]);
+        let before = snapshot(&victim);
+        let victim_git = victim.join(".git");
+        let run = |repository: &Path, args: &[&str]| {
+            let mut command = Command::new("git");
+            for name in CLEARED_GIT_ENVIRONMENT {
+                command.env(name, "hostile");
+            }
+            command
+                .env("GIT_DIR", &victim_git)
+                .env("GIT_WORK_TREE", &victim)
+                .env("GIT_COMMON_DIR", &victim_git)
+                .env("GIT_INDEX_FILE", victim_git.join("index"))
+                .env("GIT_OBJECT_DIRECTORY", victim_git.join("objects"))
+                .env(
+                    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                    victim_git.join("objects"),
+                )
+                .env("GIT_SHALLOW_FILE", victim_git.join("shallow"))
+                .env("GIT_GRAFT_FILE", victim_git.join("info/grafts"))
+                .env("GIT_CEILING_DIRECTORIES", &victim)
+                .env("GIT_CONFIG_COUNT", "1")
+                .env("GIT_CONFIG_KEY_0", "core.bare")
+                .env("GIT_CONFIG_VALUE_0", "true")
+                .env("GIT_DEFAULT_REF_FORMAT", "invalid")
+                .env("GIT_DEFAULT_HASH", "invalid");
+            let mut command = fixture_git_command(repository, args, command);
+            let envs: Vec<_> = command.get_envs().collect();
+            for name in [
+                "GIT_DIR",
+                "GIT_WORK_TREE",
+                "GIT_INDEX_FILE",
+                "GIT_CONFIG_COUNT",
+                "GIT_GRAFT_FILE",
+            ] {
+                assert!(envs.contains(&(OsStr::new(name), None)), "{name}");
+            }
+            let resolved = resolve_repository(repository).expect("resolved fixture");
+            assert!(envs.contains(&(
+                OsStr::new("GIT_CEILING_DIRECTORIES"),
+                Some(resolved.parent().expect("fixture parent").as_os_str()),
+            )));
+            command.output().expect("run fixture git")
+        };
+        for (repository, args) in [
+            (&fixture, vec!["init", "-q", "."]),
+            (&fixture, vec!["add", "content.txt"]),
+            (&fixture, vec!["commit", "-q", "-m", "fixture"]),
+            (
+                &fixture,
+                vec!["worktree", "add", "-q", "-b", "linked", "../linked"],
+            ),
+        ] {
+            if args[0] == "add" {
+                std::fs::write(fixture.join("content.txt"), b"fixture").expect("fixture content");
+            }
+            let output = run(repository, &args);
+            assert!(output.status.success(), "git {args:?}: {output:?}");
+        }
+        let top = git(&fixture, &["rev-parse", "--show-toplevel"]);
+        assert_eq!(
+            std::fs::canonicalize(top).unwrap(),
+            std::fs::canonicalize(&fixture).unwrap()
+        );
+        assert_eq!(git(&fixture, &["show", "HEAD:content.txt"]), "fixture");
+        assert_eq!(git(&fixture, &["ls-files"]), "content.txt");
+        assert!(linked.join(".git").is_file());
+        std::fs::write(linked.join("linked.txt"), b"linked").expect("linked content");
+        for args in [
+            vec!["add", "linked.txt"],
+            vec!["commit", "-q", "-m", "linked"],
+        ] {
+            let output = run(&linked, &args);
+            assert!(output.status.success(), "git {args:?}: {output:?}");
+        }
+        assert_eq!(git(&linked, &["show", "HEAD:linked.txt"]), "linked");
+        let plain = fixture.join("plain");
+        std::fs::create_dir(&plain).expect("plain directory");
+        assert_eq!(
+            run(&plain, &["rev-parse", "--show-toplevel"]).status.code(),
+            Some(128)
+        );
+        assert_eq!(
+            snapshot(&victim),
+            before,
+            "victim tree and Git bytes changed"
+        );
     }
 
     fn recorded(commit: &str, remote: &str, branch: &str) -> RecordedLanding {
