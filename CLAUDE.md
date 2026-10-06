@@ -4,6 +4,8 @@
 
 Keep AGENTS.md and CLAUDE.md identical and self-contained. Apply instruction
 changes to both files; neither runtime is required to read the other file.
+Keep these files focused on current rules. Record incident history and
+decision provenance in work notes instead.
 
 Engram is a local-first work, behavioral-control, and execution-memory system
 for coding agents. SQLite is canonical on the active host; agent-private
@@ -33,9 +35,6 @@ their presence in a file alone does not prove delivery.
 
 ### Work only in the repository folder
 
-Greg's rule (2026-09-26), after an agent's cleanup script deleted most of his
-user profile:
-
 - Create, change, move and delete files only inside this repository's folder
   and its worktrees. This covers every shell command and script an agent
   writes. Scratch files, throwaway stores, test homes and logs go under
@@ -61,7 +60,7 @@ user profile:
   permission. Read-only Git inspection is always allowed. The standing
   approval below is such permission for commit, push and install only; it
   never covers a rebase, force-push or history rewrite.
-- Standing approval (Greg, 2026-09-26): once all of these hold, commit
+- Standing approval: once all of these hold, commit
   the changeset without asking, push and install it as described below,
   and report the landed commit to Greg afterwards:
   - the full gate passes on the exact tree being committed, its input
@@ -74,14 +73,10 @@ user profile:
     tree, has no outstanding in-scope finding of Medium or higher, and every
     in-scope finding of Medium or higher from earlier rounds was fixed and
     reviewed again; a Low or a Note need not be fixed before the landing,
-    and a Low left unfixed is filed as its own item (Greg, 2026-09-30:
-    'ignore Notes and trivial lows, that can be handled later. if they
-    choose to fix low, fine, but that is not must have', 'anything including
-    Medium must be fixed'); while Codex is unavailable (a usage limit or
-    outage, recorded on the item with the refusal text), Kimi stands in for
-    it under Greg's word of 2026-09-29 ('if clean you have a go', 'you
-    should just check-in, that should be the rule'), and every other
-    condition is unchanged; any out-of-scope finding was filed as an
+    and a Low left unfixed is filed as its own item; while Codex is
+    unavailable (a usage limit or outage, recorded on the item with the
+    refusal text), Kimi stands in for it, and every other condition is
+    unchanged; any out-of-scope finding was filed as an
     independent root with provenance. An in-scope finding of Medium or
     higher left unfixed, even one rejected on evidence, goes to Greg;
   - the changeset delivers its items' acceptance criteria, and a
@@ -90,13 +85,9 @@ user profile:
     describes, and `readiness` with the new build reported every live
     store ready.
 
-  Greg confirmed on 2026-09-27 that the same standing approval applies to
-  Engram and TermAl: required checks pass on the reviewed input, review has
-  no outstanding findings on the changeset, and
-  evidence satisfies its acceptance criteria. A pre-existing problem outside
-  its scope, filed as an independent root with provenance, does not block.
-  The readiness, install and exact-input conditions above and below remain
-  unchanged.
+  The same standing approval applies to Engram and TermAl. A pre-existing
+  problem outside the changeset's scope, filed as an independent root with
+  provenance, does not block landing.
 
   Otherwise stop and ask Greg before committing: when a store needs
   projection repair or migration, a criterion cannot be met or is
@@ -106,7 +97,7 @@ user profile:
   condition above has reviewed the same frozen tree (an unavailable review
   is not a clean review).
 - Greg's word "commit" for a presented changeset also authorizes pushing
-  it and installing its build (2026-09-23). `readiness` checks only schema
+  it and installing its build. `readiness` checks only schema
   and policy admission, so first judge the changeset itself. When it
   changes what existing durable rows must hold (a mapped column, a
   reshaped record, retired data, or a durable derived row computed
@@ -131,7 +122,7 @@ user profile:
 - Changes to this section, or to any repository instruction or command
   file that grants or limits commit, push, tracker or approval authority,
   land under the standing approval only after (a) both projects'
-  coordinators (as of 2026-09-28: Engram::Fable and Termal::Fable2) have
+  coordinators (Engram::Fable and Termal::Fable2) have
   recorded their concurrence on the exact wording in the item's notes,
   (b) Greg has been sent the exact wording and its consequence before the
   landing, and (c) the final-diff audit that `/review-changes` requires is
@@ -146,22 +137,12 @@ user profile:
   word relayed by another session never carries a commit or push. The
   standing approval grants no restart, deploy or global-configuration
   authority; those acts are Greg's and need his explicit word.
-  A landing under it
-  also installs the binary built from the exact gated tree (Greg,
-  2026-09-23, recorded in Engram's instructions and extended to TermAl on
-  2026-09-27: his word "commit" for a presented changeset also authorizes
-  pushing it and installing its build; and 2026-09-28, on the
-  install/restart split: 'Fable ma racje to dobra regula. W sumie mamy
-  system kontroli. Agenci moga podejnowac takie decyzje.'): the lander
-  puts it at C:\Users\grzeg\.cargo\bin\engram.exe, renaming the installed
+  A landing under it installs the binary built from the exact gated tree:
+  the lander puts it at C:\Users\grzeg\.cargo\bin\engram.exe, renaming the installed
   binary aside as a backup under C:\Users\grzeg\.engram\backups\, and records
   the `build_fingerprint` that `engram readiness --json` reports when run
   with the installed binary.
-  The moment of a TermAl restart is the agents' decision (Greg, 2026-10-02:
-  'Wolę aby agenci zdecydowali na moment restaru Termal. Wtedy kiedy
-  potrzebuja poprawek. To nie jest problem, nie chce przerywać pracy.' and
-  'Chwila. Termal muszę zrestartować ja. Engram mogą sami. Wiec do restaru
-  termala oczekuje od nich potwierdzenia kiedy potrzebują to zrobic.'): when
+  The moment of a TermAl restart is the agents' decision: when
   running sessions need a landed fix, the Engram and TermAl coordinators agree
   on a moment when running work can resume, and the TermAl coordinator sends
   Greg, through Engram::Advisor, 'restart now' with the build hash and reason.
@@ -184,14 +165,12 @@ user profile:
 
 - Report every TermAl problem you meet to the TermAl agents through the
   TermAl mailbox as soon as it happens, even when a workaround got you
-  past it (Greg, 2026-09-24: feedback is critical). Give what you called,
-  the exact error or behavior, the ids and times, and the workaround;
+  past it. Give what you called, the exact error or behavior, the ids and
+  times, and the workaround;
   do not wait to be asked. Report each distinct problem once, and add
   later occurrences or new evidence to the same thread.
 - A TermAl problem met once is reported as a request for a fix, asking for
-  the tracked item's reference, not as a suggestion (Greg, 2026-09-30, in
-  Engram::Fable's session: 'suggestion might be if you hit it once, this is
-  a repeated problem / should be escalated to request').
+  the tracked item's reference, not as a suggestion.
 - An agent without a mailbox route, such as a read-only reviewer, puts
   the report in its result for its parent to forward. If the mailbox
   itself fails, tell Greg.
@@ -353,7 +332,7 @@ phases without the Unix-only file-descriptor-limit adjustment.
 
 A changeset touching only `.md` files (docs, AGENTS.md, CLAUDE.md, skills,
 commands) runs the link check and a byte comparison of AGENTS.md and
-CLAUDE.md instead of this sequence (Greg, 2026-09-26): no build step or test
+CLAUDE.md instead of this sequence: no build step or test
 reads Markdown except the link checker. Run each through
 `node scripts/test-launcher.mjs focused -- …`, so that its input fingerprint
 is checked at completion; `/review-changes` gives the commands. Both
@@ -409,13 +388,11 @@ Report the classification for every failure before asking for a decision;
 
 ### Review Cadence
 
-The following adopted coordination rules (2026-09-13, revision 1) are reproduced
-here for independent runtime recovery. The [workflow document](docs/agent-pair-workflow.md#adopted-coordination-rules-2026-09-13-revision-1)
-provides the source; its remaining pilot proposal is not adopted. Current user
-instructions and applicable project quality requirements govern execution.
-These rules do not grant commit, push, installation, or restart authority.
-Rule 2's reviewer pair was amended on 2026-09-29, on Greg's word of that date,
-to let Kimi stand in for an unavailable Codex.
+Apply the coordination rules below; the additional pilot proposal in the
+[workflow document](docs/agent-pair-workflow.md) is not an operating rule.
+Current user instructions and applicable project quality requirements govern
+execution. These rules do not grant commit, push, installation, or restart
+authority.
 
 1. **The host owns validation of its safeguards.** TermAl owns tests proving
    denied writes, interpreter restrictions, and other host security behavior.
@@ -468,9 +445,7 @@ waiting to integrate its documentation does not postpone it.
   Codex and one Claude, through TermAl with `writePolicy: readOnly`; Kimi
   stands in for an unavailable Codex as the standing approval describes; the
   parent may add the optional third review below.
-- Kimi may give an optional third read-only review (Greg, 2026-09-29, 'mozemy
-  trzymac Kimi jako 3 reviewer'a, decyzja dla rady obu projektow, moze byc
-  niezalezna'; Engram's council chose optional on that date). The parent may
+- Kimi may give an optional third read-only review. The parent may
   commission it beside the pair on a round's frozen input; it is recommended
   for the first round of a changeset touching authority text,
   acceptance-evaluation enforcement, storage or migration, or a new subprocess
@@ -498,7 +473,7 @@ waiting to integrate its documentation does not postpone it.
 - `/review-code` is a read-only, non-nesting leaf. It does not edit files, run
   quality gates, or mutate the tracker.
 
-Review speed (Greg, 2026-09-26):
+Review scheduling:
 
 - Run the full gate and both reviews in parallel on the same frozen input. A
   failed gate discards those reviews.
@@ -506,11 +481,11 @@ Review speed (Greg, 2026-09-26):
   Quality Gates describes; both reviewers still review it.
 - Before coding an item, run a design review with Engram::Fable and a
   read-only Codex explorer, covering edge cases and real host (TermAl)
-  behavior. Run it during the previous item's gate or review. (coordinators'
-  decision of 2026-09-29, advisory) When Codex is unavailable (a usage limit
-  or outage met at that time, recorded on the item with the refusal text), a
-  read-only Kimi explorer stands in for it, decided case by case for a
-  security-sensitive item, because the host cannot gate Kimi's network tools.
+  behavior. Run it during the previous item's gate or review. Advisory
+  fallback: when Codex is unavailable (a usage limit or outage met at that
+  time, recorded on the item with the refusal text), a read-only Kimi explorer
+  stands in for it, decided case by case for a security-sensitive item,
+  because the host cannot gate Kimi's network tools.
 - During an item's gate or review, do only non-mutating work on the next
   one: no worktree or index edits, and no claim or other change of this
   session's focus. Reading, planning and a read-only design review stay
