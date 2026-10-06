@@ -164,18 +164,77 @@ scripts/test-launcher.mjs full` or `focused`) started from the worktree,
 through the worktree's own `scripts/`. The host voids credit for a check
 whenever another writable session's working directory is the checkout the
 check ran in, which is what the shared main checkout is to every other
-session, so a credited run there cannot succeed whatever its timing. A
-linked worktree's launcher runs and freeze manifest live in its Git admin
-directory and are deleted with it. Remove the worktree only once the item
-has closed and each of its runs meets the retention preconditions that
+session, so a credited run there cannot succeed whatever its timing.
+
+A linked worktree's launcher runs and freeze manifest live in its Git admin
+directory, and its own `target/tmp` scratch is Git-ignored; `git worktree
+remove` deletes all of them, ignored files included, even without `--force`.
+Evidence that must outlive the worktree is retained in the main checkout's
+`target/evidence/<full landed commit>/<worktree name>/`: launcher runs under
+`review-runs/<run id>/`, the freeze manifest as `engram-review-freeze.json`,
+scratch under `target-tmp/`, and any other cited path under its
+worktree-relative path, each copied with its relative structure and the
+protocol, harness, seed and configuration files it needs, not only the
+result. The main checkout is resolved explicitly, never taken from the
+current directory. That directory is a retention archive, never a build
+target, a profile output, or a place for new scratch or test runs. Never
+clean or recursively remove the main checkout's `target` directory or any
+ancestor of `target/evidence`. An unqualified `cargo clean` removes whichever
+target directory Cargo selects, the checkout's own `target` or the one named
+by `--target-dir`, `CARGO_TARGET_DIR` or `build.target-dir`, so before any
+clean resolve the directory Cargo will select, and run no unqualified clean
+when it is or contains the main checkout's `target/evidence`; any `git
+clean` that removes ignored files in the main checkout (`-x` or `-X`, with
+`-d` or a pathspec reaching `target/`) is the same hazard. Reclaim space
+only from explicitly selected build-output subdirectories, after resolving
+them and confirming that they exclude `target/evidence`. This is a
+procedural exclusion, not filesystem protection. An item that cites a path
+under another worktree's `target/tmp` (a measurement harness, a seed, a
+results file) has it archived at citation time and cites the archive path,
+because no word searches note bodies, so a lander cannot find such a
+citation later: the citer identifies the evidence, and the worktree item's
+owner or its lander copies and verifies it; a read-only reviewer, or a
+bounded execution worker running a parent's gate batch, never writes an
+archive and hands the references to its parent instead. An unarchived
+pointer is not retained. A citation made before the worktree's item has
+landed goes into
+`target/evidence/provisional/<run id or input provenance>/<worktree name>/`,
+with its mapping recorded; never invent a commit, and if the archive is
+consolidated under the landed commit later, note the relocation on each
+citing item.
+
+The lander removes a worktree only once its item has closed and each of the
+worktree's runs meets the retention preconditions that
 [run evidence retention](../../../docs/development.md#record-for-the-host)
 states, all of them: the run has a terminal result, its outcome has been
 recovered and recorded, and no notification or review use of it is still
-pending. Preserve any run directory that is still cited or otherwise still
-needed, as that paragraph requires, by copying it under the main checkout's
-`target/`, never under the worktree's own `target/`, which its removal
-deletes, ignored files included; then remove the clean worktree without
-`--force`.
+pending. Before removing it, the lander copies, never moves, every path
+under the worktree that the landed item's notes and gate references cite
+(`show --notes --gates`, following continuations), every run directory
+still cited or otherwise still needed, and the freeze manifest, into the
+archive, resolving each path and following no link out of the worktree;
+compares each copied file's size and content bytes with the source before
+anything is deleted (a per-file hash of both sides, for example; `git diff
+--no-index` inside a repository may apply end-of-line conversion and is not
+a byte check), not only the list of names; adds missing files to an archive
+that already exists for the same commit and worktree but never replaces a
+file already there, and a byte mismatch stops the removal: the worktree is
+kept and the mismatch reported to the coordinator; keeps request, results
+and freeze bytes unchanged, because an archived freeze is evidence of the
+original input, not a freeze of the archive; and records on the landing
+item the landed commit and each old path or run id with its archive path,
+or that nothing was cited, stating the scope checked (this item and the
+items it knows to cite the worktree), never a global absence. It then adds
+an attributed note with the archive path to each citing item it knows of.
+Copying waives none of the three preconditions. A worktree that
+predates this rule is removed only after a full sweep of open items' notes
+and gate references (`ls` over every page, then each item's full notes with
+gates), and anything ambiguous is retained. If the worktree contains a
+junction or symbolic link that resolves outside it, the lander neither
+removes the worktree nor tries to unlink the link, because a recursive
+removal can follow the link into its target; the lander reports it to the
+coordinator, who decides with the owner. Then the lander removes the clean
+worktree without `--force`.
 
 Before repeating an uncertain mutation, follow the
 [session and intent retry rule](../../../docs/features/local-work-system.md#agent-native-protocol).
