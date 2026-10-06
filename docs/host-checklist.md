@@ -252,6 +252,91 @@ version actually read before work resumed. A peer reminder or a test that
 starts with the target key does not demonstrate independent discovery. This
 check requires neither a new agent word nor turn-gated control.
 
+#### Choose what to retrieve
+
+Start here: at session start, after compaction or replacement, or when unsure
+what context survived, use the recovery sequence above and retrieve relevant
+current bodies in full. Within unchanged context, reuse is possible only as
+described below. Always apply the project's actual instructions; this
+navigation does not replace them or give saved notes higher authority.
+
+Exhaust the unfiltered listing and its continuations before selecting bodies.
+Use keys, attribution, revisions and previews to identify possible relevance;
+a preview is a discovery aid, not sufficient guidance. Read broadly applicable
+direction and constraints before acting, then entries covering the current
+task and its next action. If relevance is unclear, read the full entry.
+
+| Next action | Guidance to inspect among the discovered entries |
+| --- | --- |
+| Any work | Current scope, stops, actor duties and project-wide constraints |
+| Design or implementation | Task/domain decisions and applicable host workarounds |
+| Checks, review or a dependency wait | Evidence, review, coordination and wake procedures |
+| Landing or cutover | Authority, landing, installation and store-cutover guidance |
+
+This is a navigation index, not a list of permitted keys. New keys, renamed
+topics and entries absent from a project's index still need relevance checks.
+A project-maintained index can point to these topics, without copying bodies or
+pinning their revisions. Check referenced keys independently: an unchanged
+index does not make its references current. If that index is absent, stale,
+retired or unreadable, disclose the limitation and use supplied instructions
+and discovered entries; do not create or repair a store to hide it.
+Unrelated bodies can wait until their subject becomes relevant; do not discard
+a constraint merely because its key or first line names another task.
+
+#### Reuse within unchanged context
+
+Reuse one body only when all of these hold: its complete attributed text and
+revision are visibly present in the current context; no compaction,
+replacement or uncertain loss intervened; current discovery identifies the
+same live key and revision; and no later update or contradictory evidence is
+known. Reuse the body with its attribution, not a summary or a remembered rule.
+A fresh unfiltered listing can establish the current revision at the time of
+that read; it does not guarantee freshness between reads. Listing pages and
+full reads are separate
+snapshots, not one frozen cut. Reusing a body also does not refresh linked
+work status, retirement conditions, approval or obligations; inspect those
+separately when relevant. There is no need to repeat a listing for each tool
+call when no new discovery is needed.
+
+On a new task, a reported update or uncertainty about current guidance, refresh
+discovery through its continuations. Retrieve newly relevant bodies that are
+missing, incomplete or changed with `memories KEY --full`, omitting
+`revision`. A historical revision is comparison evidence, not current
+guidance. If a formerly live key disappears, stop using its saved body as
+current guidance and resolve the changed discovery; absence on an incomplete
+page is not retirement.
+
+A listing receipt or context-generation match records discovery, not body
+reading or application. Neither `changed: false` nor an unchanged revision
+justifies reuse when the full body is missing. Truncated tool output is missing
+content: retrieve the affected bodies again with enough output capacity.
+A failed listing or full read is an explicit recovery gap. Report the failed
+operation and affected guidance, and resolve it before actions that depend on
+it; do not interpret failure as no constraints. A read-only route omits
+`context_generation` entirely; do not send it even as `null`. List without
+the generation when recording is forbidden, as described above.
+
+#### Source-backed recovery examples
+
+These walkthroughs illustrate the procedure, not measurements of production
+token savings or proof that a host delivered instructions after compaction.
+The [memory contract](features/cli-and-mcp.md#using-engram-as-an-agent),
+[current/full and pagination fixtures](../src/storage/project_memory/tests.rs),
+[generation fixtures](../src/verbs/tests/customer_workflow/memory_recovery.rs)
+and [read-only contract](features/cli-and-mcp.md#read-only-mode) provide the
+command semantics. Body presence and task relevance remain context judgments.
+
+| Context and discovery | Required retrieval and its effect |
+| --- | --- |
+| Full attributed `alpha` revision 2 remains present; a fresh listing still shows revision 2 | Reuse that body; avoid one redundant full read. |
+| Listing now shows `alpha` revision 3, or a new relevant key | Read its current full body; the retained revision 2 cannot supply the update. |
+| Listing shows revision 2, but only a preview or summary survived | Read the full body even though the revision did not change. |
+| Real compaction/replacement, even with `changed: false` or a repeated generation | Repeat startup discovery and relevant current full reads; advertisement state cannot restore the body. |
+| First unfiltered page offers a continuation | Follow it through exhaustion before selection. The pagination fixture has 20 rows then 5; a relevant key on the second page must be considered. |
+| A relevant read fails, or output clips its body | Record a recovery gap and retrieve complete content before relying on it. |
+| All discovered broadly applicable constraints are recovered; a body concerns an unrelated future cutover | Defer that body until cutover becomes relevant; preserve the applicable constraints already recovered. |
+| A read-only child cannot record the printed generation | List without it, follow continuations, read relevant full bodies and disclose that the generation direction remains unsettled. |
+
 ## Off-host backup
 
 Engram copies a project's store to an off-host target only when something
