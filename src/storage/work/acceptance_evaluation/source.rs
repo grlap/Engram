@@ -393,6 +393,12 @@ pub(super) struct StaleCitation {
 pub(super) enum StaleCause {
     /// The check ran on another source than the judged one.
     OtherSource(ExecutionSourceBasis),
+    /// The check ran on the judged source, but not under the run's current
+    /// root naming, for the reason given.
+    OtherNaming {
+        checked: ExecutionSourceBasis,
+        mismatch: NamingMismatch,
+    },
     /// The check ran on the judged revision, but by the cut the run had moved
     /// away from it.
     MovedAfter { checked: String, moved: Moved },
@@ -402,6 +408,158 @@ pub(super) enum StaleCause {
     /// a sighting on the run, with a revision, before the check. Only a record
     /// written some other way can.
     Unverifiable,
+}
+
+/// Why a check of the judged source does not count under the run's current
+/// root naming: the first condition it fails, in this order.
+pub(super) enum NamingMismatch {
+    /// It ran in another workspace than the named root's.
+    Workspace { check: String, root: String },
+    /// It ran outside any named root.
+    NotNamed { root: i64 },
+    /// It ran under another naming of the root.
+    Generation { check: Option<i64>, root: i64 },
+    /// Its producer observation carries no source basis.
+    ProducerUnsourced,
+    /// Its producer observation fails the same test.
+    Producer(Box<NamingMismatch>),
+    /// It, or its producer observation, was recorded before the naming on
+    /// the run feed, or is not on the run.
+    BeforeNaming {
+        producer: bool,
+        position: Option<i64>,
+        naming: i64,
+    },
+}
+
+impl NamingMismatch {
+    /// The mismatch as a clause about the cited check, called "it".
+    fn describe(&self) -> String {
+        self.describe_subject("it")
+    }
+
+    /// The mismatch as a clause about `subject`: the check, or its producer
+    /// observation.
+    fn describe_subject(&self, subject: &str) -> String {
+        const PRODUCER: &str = "its producer observation";
+        match self {
+            Self::Workspace { check, root } => format!(
+                "{subject} ran in workspace {check}, not in the named root's workspace {root}"
+            ),
+            Self::NotNamed { root } => format!(
+                "{subject} ran outside a named root, not under the current root naming generation {root}"
+            ),
+            Self::Generation {
+                check: Some(check),
+                root,
+            } => format!(
+                "{subject} ran under root naming generation {check}, not the current naming generation {root}"
+            ),
+            Self::Generation { check: None, root } => format!(
+                "{subject} ran under no root naming generation, not the current naming generation {root}"
+            ),
+            Self::ProducerUnsourced => {
+                format!("{PRODUCER} carries no source basis to place under the current root naming")
+            }
+            Self::Producer(inner) => inner.describe_subject(PRODUCER),
+            Self::BeforeNaming {
+                producer,
+                position,
+                naming,
+            } => {
+                let subject = if *producer { PRODUCER } else { subject };
+                match position {
+                    Some(position) => format!(
+                        "{subject} was recorded at run position {position}, before the current root naming at run position {naming}"
+                    ),
+                    None => format!(
+                        "{subject} is not on this run, so it does not follow the current root naming at run position {naming}"
+                    ),
+                }
+            }
+        }
+    }
+}
+
+/// Whether `basis` is in `root`: its workspace, named state and generation,
+/// or the first of them it fails.
+fn basis_naming_mismatch(
+    basis: &ExecutionSourceBasis,
+    root: &NamedEvaluationRoot,
+) -> Option<NamingMismatch> {
+    if basis.workspace_id != root.event.workspace_id {
+        return Some(NamingMismatch::Workspace {
+            check: basis.workspace_id.clone(),
+            root: root.event.workspace_id.clone(),
+        });
+    }
+    if basis.source_root_state != Some(SourceRootState::Named) {
+        return Some(NamingMismatch::NotNamed {
+            root: root.event.generation,
+        });
+    }
+    (basis.source_root_generation != Some(root.event.generation)).then_some(
+        NamingMismatch::Generation {
+            check: basis.source_root_generation,
+            root: root.event.generation,
+        },
+    )
+}
+
+/// Under a named root, why a passed check `citation` with `basis`, produced
+/// by `producer`, does not count under the root's current naming, or `None`
+/// when it does. Both the check and the observation that produced it must
+/// be in the root's workspace and generation, and both must follow the
+/// naming on the run feed, as the obligation matcher requires.
+fn naming_mismatch(
+    connection: &Connection,
+    run_id: WorkRunId,
+    citation: &ObjectId,
+    producer: &ObjectId,
+    basis: &ExecutionSourceBasis,
+    root: &NamedEvaluationRoot,
+) -> Result<Option<NamingMismatch>, StoreError> {
+    if let Some(mismatch) = basis_naming_mismatch(basis, root) {
+        return Ok(Some(mismatch));
+    }
+    // A bound record's producer ran on the original's run under that run's
+    // root; the bind matched its content to this root, so the record, on
+    // this run, stands for the check here.
+    let bound = is_bound(connection, citation)?;
+    if !bound {
+        let producer_basis = load_typed_work_object::<ExecutionObservation>(
+            connection,
+            producer,
+            "execution_observation",
+        )?
+        .source_basis;
+        let Some(producer_basis) = producer_basis else {
+            return Ok(Some(NamingMismatch::ProducerUnsourced));
+        };
+        if let Some(mismatch) = basis_naming_mismatch(&producer_basis, root) {
+            return Ok(Some(NamingMismatch::Producer(Box::new(mismatch))));
+        }
+    }
+    let before = |position: Option<i64>| position.is_none_or(|position| position <= root.position);
+    let position = citation_position(connection, run_id, citation)?;
+    if before(position) {
+        return Ok(Some(NamingMismatch::BeforeNaming {
+            producer: false,
+            position,
+            naming: root.position,
+        }));
+    }
+    if !bound {
+        let position = citation_position(connection, run_id, producer)?;
+        if before(position) {
+            return Ok(Some(NamingMismatch::BeforeNaming {
+                producer: true,
+                position,
+                naming: root.position,
+            }));
+        }
+    }
+    Ok(None)
 }
 
 /// How the run left the revision a check ran on.
@@ -433,7 +591,17 @@ impl StaleCitation {
             .transpose()?
             .unwrap_or_default();
         let (criterion, citation) = (self.criterion, &self.citation);
+        let declaration = if judged.is_some_and(|judged| judged.declared) {
+            ", or, when the declared fingerprint is not the source revision the host reports, declare that revision"
+        } else {
+            ""
+        };
         Ok(match (&self.cause, judged) {
+            (StaleCause::OtherNaming { checked, mismatch }, _) => format!(
+                "criterion {criterion} is bound to {kind} verification, and {citation} ran on the judged revision {}, but {}; run the check on the current source, then evaluate again citing it{declaration}",
+                checked.source_revision,
+                mismatch.describe(),
+            ),
             (StaleCause::OtherSource(checked), Some(judged)) => {
                 let (ran, evaluated) = if checked.source_revision == judged.revision {
                     (
@@ -448,11 +616,6 @@ impl StaleCitation {
                         format!("on source revision {}", checked.source_revision),
                         format!("revision {}", judged.revision),
                     )
-                };
-                let declaration = if judged.declared {
-                    ", or, when the declared fingerprint is not the source revision the host reports, declare that revision"
-                } else {
-                    ""
                 };
                 format!(
                     "criterion {criterion} is bound to {kind} verification, and {citation} ran {ran}, not the {evaluated} this evaluation judged; run the check on the current source, then evaluate again citing it{declaration}"
@@ -517,58 +680,39 @@ pub(super) fn stale_bound_citation<'a>(
                     producer,
                     ..
                 }) => {
-                    // Under a named root both the check and the observation
-                    // that produced it must be in the root's workspace and
-                    // generation, and both must follow the binding on the run
-                    // feed, as the obligation matcher requires.
                     producer_observation = Some(producer.clone());
-                    let same_named_root = match root {
-                        None => true,
-                        Some(root) => {
-                            let in_root = |basis: &ExecutionSourceBasis| {
-                                basis.workspace_id == root.event.workspace_id
-                                    && basis.source_root_generation == Some(root.event.generation)
-                                    && basis.source_root_state == Some(SourceRootState::Named)
-                            };
-                            // A bound record's producer ran on the original's
-                            // run under that run's root; the bind matched its
-                            // content to this root, so the record, on this
-                            // run, stands for the check here.
-                            let producer_in_root = if is_bound(connection, citation)? {
-                                true
-                            } else {
-                                let producer_basis =
-                                    load_typed_work_object::<ExecutionObservation>(
-                                        connection,
-                                        &producer,
-                                        "execution_observation",
-                                    )?
-                                    .source_basis;
-                                producer_basis.as_ref().is_some_and(in_root)
-                                    && citation_position(connection, run_id, &producer)?
-                                        .is_some_and(|position| position > root.position)
-                            };
-                            in_root(&source_basis)
-                                && producer_in_root
-                                && citation_position(connection, run_id, citation)?
-                                    .is_some_and(|position| position > root.position)
-                        }
-                    };
                     match judged {
-                        Some(judged) if judged.checked_by(&source_basis) && same_named_root => {
-                            match moved_after_check(
-                                connection,
-                                run_id,
-                                citation,
-                                &producer,
-                                &source_basis.source_revision,
-                                through,
-                                root,
-                            )? {
-                                None => continue,
-                                Some(moved) => StaleCause::MovedAfter {
-                                    checked: source_basis.source_revision,
-                                    moved,
+                        Some(judged) if judged.checked_by(&source_basis) => {
+                            let mismatch = match root {
+                                None => None,
+                                Some(root) => naming_mismatch(
+                                    connection,
+                                    run_id,
+                                    citation,
+                                    &producer,
+                                    &source_basis,
+                                    root,
+                                )?,
+                            };
+                            match mismatch {
+                                Some(mismatch) => StaleCause::OtherNaming {
+                                    checked: source_basis,
+                                    mismatch,
+                                },
+                                None => match moved_after_check(
+                                    connection,
+                                    run_id,
+                                    citation,
+                                    &producer,
+                                    &source_basis.source_revision,
+                                    through,
+                                    root,
+                                )? {
+                                    None => continue,
+                                    Some(moved) => StaleCause::MovedAfter {
+                                        checked: source_basis.source_revision,
+                                        moved,
+                                    },
                                 },
                             }
                         }

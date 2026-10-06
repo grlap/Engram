@@ -1261,25 +1261,60 @@ pass.
 
 ## Crash, restart, and replay
 
-- Host or Engram restart invalidates unbegun grants; the durable session
-  resumes at `ready`, and a begun turn stays open until the host reports it.
+- A new host-control connection for a session (`HostControlServer` opening
+  it again after a host or Engram restart) expires every grant the session
+  was issued and has not begun. When that leaves a `turn_open` session with
+  no begun turn, the session returns to `ready`. A begun turn survives: it
+  stays open, checkpoint-required, until the host reports it, so an
+  uncertain prompt outcome is never replayed silently.
+- Rebinding a session is refused while a begun turn is open: the turn must
+  be checkpointed first. Otherwise a rebind expires the session's issued,
+  unbegun grants too and resumes it at `ready`.
+- A status read expires, lazily, any issued grant whose time has passed;
+  when it expires one, a `turn_open` session returns to `ready`. A new turn
+  request supersedes any grant the session was issued and has not begun.
+- Beginning a grant runs its checks in a fixed order, and the first that
+  fails decides the refusal. The checks are the control schema, then the
+  grant's scope (its ids, its session and task, that it is still issued, and
+  that the session is `turn_open`), then the work-claim fence, the task
+  anchor and membership, then the grant's expiry time, then the policy and
+  task-admission epochs, and last its capability map and delivery tokens.
+  Possible codes include:
+  - `stale_fence`, `task_unbound`, `task_access_denied`, `grant_expired`,
+    `policy_epoch_changed` and `task_admission_epoch_changed`. Each is
+    returned only for a grant that was still issued, and the same
+    transaction marks that grant expired, so any of them proves the grant
+    never began. An issued grant past its time whose fence is also stale
+    is refused with `stale_fence`, not `grant_expired`.
+  - `grant_scope_mismatch`, which proves nothing about the grant on its own.
+    It answers a grant that was already begun or completed, one expired by
+    any route (a status read, a new connection, a rebind, or an earlier begin
+    refused with one of the codes above), one superseded by a newer turn
+    request, and a second begin of the same grant. Its last check, a
+    capability map or delivery tokens that no longer match, leaves the grant
+    issued, so a later, well-formed begin under a fresh key can still begin
+    it.
+  - `unknown_control_schema`, which also proves nothing about the grant.
+
+  Expired grants never resurrect. Work-claim transfer or recovery advances
+  its fence; old claims cannot authorize new turns.
 - Turn, begin and checkpoint requests use independent idempotency keys
   bound to canonical intent fingerprints and, for begin and checkpoint, the
   exact grant id.
-- Exact decision retries while the result is retained return that result.
-  A policy change needs a fresh evaluation key; changing intent under an old
-  key is a conflict.
-  After grant/result pruning, the durable request-key tombstone returns
-  `expired_request`; it never treats the old key as fresh. Reuse with a
-  different intent is always a conflict until the task's explicit retention
-  boundary. Stored operation receipts keep their durable retry semantics;
-  per-action and publication receipts are not built.
-- Expired unbegun grants never resurrect. Work-claim transfer or recovery
-  advances its fence; old claims cannot authorize new turns.
-- An issued but unbegun grant expires unused. A begun turn whose outcome is
-  unknown after a restart stays open until the host reports it.
-- Ordered events allow a replacement host process to reconstruct session and
-  task projections before issuing another grant.
+- An exact retry returns the stored result for its key. The same key with a
+  different intent is a conflict. A policy change needs a fresh evaluation
+  key. With no stored result, the request runs as new: a begin or checkpoint
+  naming a grant the session has no record of is refused with
+  `turn_grant_not_found`.
+- Stored results and grants are kept; nothing prunes them, and no request-key
+  tombstone exists. A designed `expired_request` answer for a key whose
+  result was pruned is not built. Stored operation receipts keep their
+  durable retry semantics; per-action and publication receipts are not built.
+- A replacement host process recovers from the durable session and grant
+  rows: opening a new connection reads the stored session and its grants, as
+  above. Binding a session emits no event, and the checkpoint change index is
+  an audit record, so no ordered event history is replayed to reconstruct
+  session or task state.
 
 ## Completion and optional finalization under control
 

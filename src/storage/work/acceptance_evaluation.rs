@@ -375,12 +375,16 @@ impl SqliteStore {
                 position: citation_position(&transaction, run_id, &stale.citation)?,
             };
             let mut cause = context.cause(match &stale.cause {
-                StaleCause::OtherSource(_) => EvaluationCitationMismatch::WrongSource,
+                StaleCause::OtherSource(_) | StaleCause::OtherNaming { .. } => {
+                    EvaluationCitationMismatch::WrongSource
+                }
                 StaleCause::MovedAfter { .. } => EvaluationCitationMismatch::SourceMovedAfterCheck,
                 StaleCause::Unverifiable => EvaluationCitationMismatch::UnverifiableSource,
             });
             cause.checked_revision = match &stale.cause {
-                StaleCause::OtherSource(basis) => Some(basis.source_revision.clone()),
+                StaleCause::OtherSource(basis) | StaleCause::OtherNaming { checked: basis, .. } => {
+                    Some(basis.source_revision.clone())
+                }
                 StaleCause::MovedAfter { checked, .. } => Some(checked.clone()),
                 StaleCause::Unverifiable => None,
             };

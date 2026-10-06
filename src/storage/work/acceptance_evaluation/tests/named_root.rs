@@ -173,13 +173,34 @@ fn a_bound_evaluation_accepts_only_a_check_after_the_current_named_binding() {
         12,
         source("workspace-A", 9),
     );
-    for (check, key) in [
-        (&before, "before-binding"),
-        (&old_generation, "old-generation"),
-        (&foreign, "foreign"),
+    // Each refusal names the difference that makes it: the state, the
+    // generation or the workspace, never one value against itself.
+    for (check, key, names) in [
+        (
+            &before,
+            "before-binding",
+            "it ran outside a named root, not under the current root naming generation 9",
+        ),
+        (
+            &old_generation,
+            "old-generation",
+            "it ran under root naming generation 8, not the current naming generation 9",
+        ),
+        (
+            &foreign,
+            "foreign",
+            "ran in workspace workspace-A, not the workspace workspace-B",
+        ),
     ] {
         let refused = refusal(evaluate_check(&mut fixture.store, &work, check, key, 13));
-        assert!(refused.contains("criterion 1"), "{key}: {refused}");
+        assert!(
+            refused.contains("criterion 1") && refused.contains(names),
+            "{key}: {refused}"
+        );
+        assert!(
+            !refused.contains("workspace workspace-B, not the workspace workspace-B"),
+            "{key}: {refused}"
+        );
     }
     evaluate_check(&mut fixture.store, &work, &current, "current", 14)
         .expect("current B check records");
@@ -1277,10 +1298,205 @@ fn a_citation_whose_producer_ran_outside_the_root_is_refused() {
         "contradicted",
         11,
     ));
-    assert!(refused.contains("criterion 1"), "{refused}");
+    assert!(
+        refused.contains(
+            "its producer observation ran in workspace workspace-A, not in the named root's workspace workspace-B"
+        ),
+        "{refused}"
+    );
     let current = named.current.clone();
     evaluate_check(&mut named.fixture.store, &work, &current, "consistent", 12)
         .expect("the consistent B check records");
+}
+
+/// The claim named B under generation 9 and a check ran there. The claim was
+/// then released, taken again and B named again under generation 10. Citing
+/// the earlier check is refused naming both generations, though its
+/// workspace and revision are those the evaluation judged.
+#[test]
+fn a_check_from_an_earlier_naming_is_refused_naming_both_generations() {
+    let mut named = named_evaluation();
+    let (work, claim) = (named.work.clone(), named.claim.clone());
+    let earlier = named.current.clone();
+    release_runner(&mut named.fixture, &work, &claim, 10);
+    let item = named
+        .fixture
+        .store
+        .get_work_item(work.work_id)
+        .expect("item");
+    let reclaimed = super::claim(
+        &mut named.fixture.store,
+        &item,
+        "runner",
+        "reclaim",
+        11,
+        3_600,
+    );
+    name_root(
+        &mut named.fixture.store,
+        &item,
+        &reclaimed,
+        &named.host,
+        10,
+        12,
+    );
+    // The renamed root's own check is its newest sighting, at the revision
+    // the earlier check carries.
+    host_verification_from_basis(
+        &mut named.fixture.store,
+        &item,
+        &reclaimed,
+        "runner",
+        "test-renamed",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        13,
+        source("workspace-B", 10),
+    );
+    let (refused, cause) = super::admission::typed_refusal(evaluate_check(
+        &mut named.fixture.store,
+        &item,
+        &earlier,
+        "earlier-naming",
+        14,
+    ));
+    assert!(
+        refused.contains(
+            "ran on the judged revision revision-B, but it ran under root naming generation 9, not the current naming generation 10"
+        ),
+        "{refused}"
+    );
+    assert!(!refused.contains("not the workspace"), "{refused}");
+    // A host reads the same typed cause as for any other source mismatch.
+    let AcceptanceEvaluationAdmissionCause::Citation(cause) = cause else {
+        panic!("citation family: {cause:?}");
+    };
+    assert_eq!(cause.mismatch, EvaluationCitationMismatch::WrongSource);
+    assert_eq!(cause.criterion, 1);
+    assert_eq!(cause.citation, earlier.as_str());
+    assert_eq!(cause.checked_revision.as_deref(), Some("revision-B"));
+    assert_eq!(cause.judged_revision.as_deref(), Some("revision-B"));
+    assert_eq!(
+        cause.remedy,
+        crate::domain::EvaluationAdmissionRemedy::RunCurrentCheckAndEvaluate
+    );
+}
+
+/// Under the current naming's generation and workspace, a check, or the
+/// observation that produced it, recorded before the naming does not follow
+/// it: the refusal names both run positions.
+#[test]
+fn a_check_or_producer_recorded_before_the_naming_names_both_positions() {
+    let mut named = named_evaluation();
+    let (work, claim) = (named.work.clone(), named.claim.clone());
+    release_runner(&mut named.fixture, &work, &claim, 10);
+    let item = named
+        .fixture
+        .store
+        .get_work_item(work.work_id)
+        .expect("item");
+    let reclaimed = super::claim(
+        &mut named.fixture.store,
+        &item,
+        "runner",
+        "reclaim",
+        11,
+        3_600,
+    );
+    // Both carry generation 10 before the claim names it.
+    let early_check = host_verification_from_basis(
+        &mut named.fixture.store,
+        &item,
+        &reclaimed,
+        "runner",
+        "test-early",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        12,
+        source("workspace-B", 10),
+    );
+    let transaction = named
+        .fixture
+        .store
+        .connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .expect("producer transaction");
+    let early_producer = host_check_producer(
+        &transaction,
+        &item,
+        &reclaimed,
+        "runner",
+        "early-producer",
+        12,
+        source("workspace-B", 10),
+    );
+    transaction.commit().expect("commit the early producer");
+    name_root(
+        &mut named.fixture.store,
+        &item,
+        &reclaimed,
+        &named.host,
+        10,
+        13,
+    );
+    let transaction = named
+        .fixture
+        .store
+        .connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .expect("verification transaction");
+    let late_check = host_verification_of_producer(
+        &transaction,
+        &item,
+        &reclaimed,
+        "runner",
+        "early-producer",
+        14,
+        14,
+        source("workspace-B", 10),
+        early_producer.clone(),
+    );
+    transaction.commit().expect("commit the late check");
+    // The positions the refusal must name, read from the run feed as the
+    // refusal reads them.
+    let connection = &named.fixture.store.connection;
+    let position = |id: &ObjectId| {
+        super::super::citation_position(connection, reclaimed.run_id, id)
+            .expect("position")
+            .expect("on the run")
+    };
+    let naming = super::super::source::named_root_at_on(connection, reclaimed.run_id, i64::MAX)
+        .expect("root")
+        .expect("named")
+        .position;
+    let (check_at, producer_at) = (position(&early_check), position(&early_producer));
+    assert!(check_at < naming && producer_at < naming);
+    for (check, key, names) in [
+        (
+            &early_check,
+            "early-check",
+            format!(
+                "it was recorded at run position {check_at}, before the current root naming at run position {naming}"
+            ),
+        ),
+        (
+            &late_check,
+            "early-producer",
+            format!(
+                "its producer observation was recorded at run position {producer_at}, before the current root naming at run position {naming}"
+            ),
+        ),
+    ] {
+        let refused = refusal(evaluate_check(
+            &mut named.fixture.store,
+            &item,
+            check,
+            key,
+            20,
+        ));
+        assert!(refused.contains(&names), "{key}: {refused}");
+        assert!(!refused.contains("not the workspace"), "{key}: {refused}");
+    }
 }
 
 /// B68: under a named root, a failing evaluation stands through a report of
@@ -1655,5 +1871,120 @@ fn a_judged_source_mismatch_selects_the_named_root_remedy() {
             EvaluationRootMismatch::JudgedSourceMismatch,
             Remedy::EvaluateNamedRoot,
         ),
+    );
+}
+
+/// Under a named root an evaluation that declares only a revision still
+/// judges the root's workspace, so a check of that revision in another
+/// workspace is refused as another source, naming both workspaces.
+#[test]
+fn a_check_outside_the_root_s_workspace_names_both_workspaces() {
+    let mut named = named_evaluation();
+    let (work, claim) = (named.work.clone(), named.claim.clone());
+    let foreign = host_verification_from_basis(
+        &mut named.fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "test-foreign",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        10,
+        source("workspace-A", 9),
+    );
+    let mut input = request(
+        &work,
+        cut(&named.fixture.store, &work),
+        "runner",
+        Mode::SameSession,
+        vec![verdict(
+            1,
+            AcceptanceVerdict::Pass,
+            AcceptanceBasis::Observed,
+            std::slice::from_ref(&foreign),
+        )],
+        11,
+    );
+    input.source_basis = Some(AcceptanceSourceBasis {
+        workspace_id: None,
+        fingerprint: "revision-B".into(),
+    });
+    input.attempt_key = Some("revision-only".into());
+    let refused = refusal(record(&mut named.fixture.store, &input));
+    assert!(
+        refused.contains("ran in workspace workspace-A, not the workspace workspace-B"),
+        "{refused}"
+    );
+}
+
+/// A check whose producer observation carries no source basis cannot be
+/// placed under the current naming, and the refusal says so.
+#[test]
+fn a_check_whose_producer_has_no_source_basis_says_so() {
+    use crate::domain::{ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome};
+    let mut named = named_evaluation();
+    let (work, claim) = (named.work.clone(), named.claim.clone());
+    let transaction = named
+        .fixture
+        .store
+        .connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .expect("checkpoint transaction");
+    let run = crate::storage::work::load_work_run(&transaction, claim.run_id).expect("run");
+    let mut run_actor = actor("runner");
+    run_actor.run_id = Some(run.run_id.0.to_string());
+    let producer = crate::storage::work::completion::append_control_execution_observation_on(
+        &transaction,
+        &ExecutionObservation {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            binding: ControlWorkBinding {
+                root_execution_id: run.root_execution_id,
+                work_id: work.work_id,
+                run_id: run.run_id,
+                work_revision: claim.accepted_work_revision,
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+            },
+            session_id: crate::domain::SessionId("runner".into()),
+            grant_id: "grant-unsourced".into(),
+            observation_id: "check-unsourced".into(),
+            action_fingerprint: check_fingerprint("unsourced"),
+            effect: EffectClass::Observe,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: false,
+            reported_source_change: None,
+            obligation_rule_set: active_rule_set_id(&transaction),
+            source_basis: None,
+            observed_at: Some(at(10)),
+            actor: run_actor,
+            recorded_at: at(10),
+        },
+    )
+    .expect("an unsourced producer");
+    let check = host_verification_of_producer(
+        &transaction,
+        &work,
+        &claim,
+        "runner",
+        "unsourced",
+        10,
+        10,
+        source("workspace-B", 9),
+        producer,
+    );
+    transaction.commit().expect("commit the check");
+    let refused = refusal(evaluate_check(
+        &mut named.fixture.store,
+        &work,
+        &check,
+        "unsourced",
+        11,
+    ));
+    assert!(
+        refused.contains(
+            "its producer observation carries no source basis to place under the current root naming"
+        ),
+        "{refused}"
     );
 }
