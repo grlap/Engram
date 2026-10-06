@@ -55,6 +55,9 @@ pub struct DecidingObservation {
     pub position: i64,
     /// Whether the observation reported a source change, as stored.
     pub source_changed: bool,
+    /// Whether a turn admitted the observation. An accounted record the host
+    /// observed without admission is a barrier whatever revision it reports.
+    pub admitted: bool,
     pub workspace: Option<String>,
     pub revision: Option<String>,
     pub root_generation: Option<i64>,

@@ -14,6 +14,7 @@ pub(crate) struct ShownDecidingObservation {
     pub observation: String,
     pub position: i64,
     pub source_changed: bool,
+    pub admitted: bool,
     pub workspace: Option<String>,
     pub revision: Option<String>,
     pub root_generation: Option<i64>,
@@ -22,6 +23,8 @@ pub(crate) struct ShownDecidingObservation {
     pub recorded_at: DateTime<Utc>,
     pub evaluated_revision: Option<String>,
     pub evaluated_revision_declared: bool,
+    /// The two revisions compared aloud, as the refusal sentence says it.
+    pub revisions_compared: &'static str,
 }
 
 /// Host-recorded text shown per field, so that the line and the field always
@@ -46,6 +49,7 @@ impl ShownDecidingObservation {
             observation: observation.observation.as_str().to_owned(),
             position: observation.position,
             source_changed: observation.source_changed,
+            admitted: observation.admitted,
             workspace: observation.workspace.as_deref().map(bounded),
             revision: observation.revision.as_deref().map(bounded),
             root_generation: observation.root_generation,
@@ -54,6 +58,7 @@ impl ShownDecidingObservation {
             recorded_at: observation.recorded_at,
             evaluated_revision: observation.evaluated_revision.as_deref().map(bounded),
             evaluated_revision_declared: observation.evaluated_revision_declared,
+            revisions_compared: observation.revisions_compared(),
         }
     }
 
@@ -62,6 +67,32 @@ impl ShownDecidingObservation {
         let field = |value: Option<&String>| {
             value.map_or_else(|| "not recorded".to_owned(), |value| safe(value))
         };
+        if self.source_changed && !self.admitted {
+            return format!(
+                "unadmitted source change at run-feed position {}: workspace {}, revision {}, reported by {}, observed {} (recorded {}); the evaluation {} revision {}{}, {}; a barrier whatever revision it reports, so request a fresh evaluation",
+                self.position,
+                field(self.workspace.as_ref()),
+                field(self.revision.as_ref()),
+                safe(&self.reporting_session),
+                self.observed_at
+                    .map_or_else(|| "at a time not recorded".to_owned(), |at| at.to_rfc3339()),
+                self.recorded_at.to_rfc3339(),
+                if self.evaluated_revision_declared {
+                    "declared"
+                } else {
+                    "judged"
+                },
+                self.evaluated_revision
+                    .as_ref()
+                    .map_or_else(|| "not known".to_owned(), |revision| safe(revision)),
+                if self.evaluated_revision_declared {
+                    ""
+                } else {
+                    " at its cut"
+                },
+                self.revisions_compared,
+            );
+        }
         format!(
             "source moved at run-feed position {}: {} observation, workspace {}, revision {}, reported by {}, observed {} (recorded {}); the evaluation {} revision {}{}",
             self.position,

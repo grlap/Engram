@@ -1054,6 +1054,12 @@ fn completion_recovery_result(
             "{}; evaluator absence never falls back to self-asserted completion",
             missing_evaluation_remedy(modes.mark, &modes.admitted)
         )
+    } else if let WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+        reason: crate::AcceptanceStaleReason::UnadmittedChange,
+    } = &recovery.cause
+    {
+        "a source change the host observed without admission followed the evaluated cut and is a barrier whatever revision it reports, the declared one included; record a fresh acceptance evaluation of every current criterion in a mode the project admits and the task's mark allows, then retry completion; evaluator absence never falls back to self-asserted completion"
+            .into()
     } else if matches!(
         &recovery.cause,
         WorkCompletionRecoveryCause::AcceptanceEvaluationStale { .. }

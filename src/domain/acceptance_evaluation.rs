@@ -442,10 +442,16 @@ pub enum AcceptanceStaleReason {
     Revision,
     /// The evaluated run is not the completing run.
     Run,
-    /// A host-observed mutation followed the evaluated cut: a check, or a
-    /// source change to a revision other than the one the evaluation
-    /// declared it judged.
+    /// A host-observed mutation followed the evaluated cut: a check, an
+    /// admitted source change to a revision other than the one the
+    /// evaluation declared it judged, or a sighting of the source at another
+    /// revision.
     Mutation,
+    /// An accounted source change the host observed without admission
+    /// followed the evaluated cut. Whatever revision it reports, the declared
+    /// one included, the evaluation's checks did not follow it, so the
+    /// evaluation is void; the content need not have changed.
+    UnadmittedChange,
     /// The source fingerprint presented at completion differs or is missing.
     Source,
     /// The policy or task no longer admits the evaluation: its mode is not
@@ -482,6 +488,7 @@ impl AcceptanceStaleReason {
             Self::Revision => "revision",
             Self::Run => "run",
             Self::Mutation => "mutation",
+            Self::UnadmittedChange => "unadmitted_change",
             Self::Source => "source",
             Self::Policy => "policy",
             Self::Evidence => "evidence",

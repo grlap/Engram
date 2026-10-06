@@ -891,9 +891,10 @@ pub enum EvaluationBasisMove {
     /// environment record, or an obligation opened or resolved. Re-read the
     /// item, take the check into account, and submit again.
     CheckRecorded,
-    /// The source changed after the basis, and not to the revision the
-    /// evaluation declared it judged. The evaluation is void; request a new
-    /// one.
+    /// The source moved after the basis: an admitted change or a sighting at
+    /// a revision other than the one the evaluation declared it judged, or an
+    /// accounted change the host observed without admission, whatever
+    /// revision it reports. The evaluation is void; request a new one.
     SourceChanged,
 }
 
@@ -918,6 +919,35 @@ impl DecidingObservation {
     #[must_use]
     pub fn sentence(&self) -> String {
         let field = |value: Option<&str>| value.map_or_else(|| "not recorded".to_owned(), one_line);
+        if self.source_changed && !self.admitted {
+            // Not a content mutation: the change may describe the source
+            // from before the evaluation's checks, so it is a barrier whatever
+            // revision it reports, and the two revisions are compared aloud.
+            return format!(
+                "The deciding source record is a source change the host observed without admission, at run-feed position {}: workspace {}, revision {}, reported by session {}, observed {} (recorded {}); the evaluation {} revision {}{}, {}; whatever revision such a change reports, the evaluation's checks did not follow it, so request a fresh evaluation.",
+                self.position,
+                field(self.workspace.as_deref()),
+                field(self.revision.as_deref()),
+                one_line(&self.reporting_session.0),
+                self.observed_at
+                    .map_or_else(|| "at a time not recorded".to_owned(), |at| at.to_rfc3339()),
+                self.recorded_at.to_rfc3339(),
+                if self.evaluated_revision_declared {
+                    "declared"
+                } else {
+                    "judged"
+                },
+                self.evaluated_revision
+                    .as_deref()
+                    .map_or_else(|| "not known".to_owned(), one_line),
+                if self.evaluated_revision_declared {
+                    ""
+                } else {
+                    " at its cut"
+                },
+                self.revisions_compared(),
+            );
+        }
         format!(
             "The deciding source observation is at run-feed position {}: workspace {}, revision {}, reported by session {}, observed {} (recorded {}); the evaluation {} revision {}{}.",
             self.position,
@@ -941,6 +971,18 @@ impl DecidingObservation {
                 " at its cut"
             },
         )
+    }
+
+    /// How the observation's revision stands to the evaluated one, said
+    /// aloud: the same revision, another revision, or not comparable because
+    /// one of them is not known.
+    #[must_use]
+    pub fn revisions_compared(&self) -> &'static str {
+        match (self.revision.as_deref(), self.evaluated_revision.as_deref()) {
+            (Some(reported), Some(evaluated)) if reported == evaluated => "the same revision",
+            (Some(_), Some(_)) => "another revision",
+            _ => "a revision one of the records does not name",
+        }
     }
 }
 

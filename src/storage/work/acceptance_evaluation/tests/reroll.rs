@@ -619,9 +619,10 @@ fn an_accounted_unadmitted_change_is_new_evidence_whatever_revision_it_reports()
             .expect("status read")
             .expect("newest evaluation");
         assert_eq!(status.evaluation, blocked.evaluation, "{case}");
+        // Named as the barrier it is, not as a content mutation.
         assert_eq!(
             status.stale,
-            Some(AcceptanceStaleReason::Mutation),
+            Some(AcceptanceStaleReason::UnadmittedChange),
             "{case}"
         );
         assert_eq!(

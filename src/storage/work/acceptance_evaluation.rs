@@ -324,6 +324,9 @@ impl SqliteStore {
             request.source_basis.as_ref(),
             named_root.as_ref(),
         )? {
+            let unadmitted_change = observation
+                .as_ref()
+                .is_some_and(|observation| observation.source_changed && !observation.admitted);
             return Err(StoreError::AcceptanceEvaluationBasisMoved {
                 work: item.work_id,
                 moved,
@@ -331,6 +334,10 @@ impl SqliteStore {
                 reason: match moved {
                     EvaluationBasisMove::CheckRecorded => format!(
                         "a host check was recorded after evidence basis {cut}; {}",
+                        moved.remedy()
+                    ),
+                    EvaluationBasisMove::SourceChanged if unadmitted_change => format!(
+                        "a source change the host observed without admission was recorded after evidence basis {cut}, and whatever revision it reports this evaluation's checks did not follow it; {}",
                         moved.remedy()
                     ),
                     EvaluationBasisMove::SourceChanged => format!(
@@ -1357,6 +1364,7 @@ fn basis_moved_after(
         observation: observation.record.clone(),
         position: at,
         source_changed: observation.source_changed,
+        admitted: observation.admitted,
         workspace: observation
             .source_basis
             .as_ref()
@@ -1473,8 +1481,9 @@ struct BasisMoveFinding {
 
 /// Why the record reads stale, if it does, together with the source
 /// observation that decided a source move when it reads stale for one: such a
-/// move reads as `Mutation`, and the observation is named beside it, never as
-/// a cause.
+/// move reads as `Mutation`, or as `UnadmittedChange` when an accounted change
+/// the host observed without admission decided it, and the observation is
+/// named beside it, never as a cause.
 #[allow(
     clippy::too_many_arguments,
     reason = "the record id and freshness inputs belong to one assessment"
@@ -1499,8 +1508,17 @@ fn staleness_named(
         record.source_basis.as_ref(),
         evaluated_root.as_ref(),
     )? {
+        // An accounted change the host observed without admission is named
+        // as such: the content need not have changed for it to void the
+        // evaluation.
+        let reason = match finding.observation.as_ref() {
+            Some(observation) if observation.source_changed && !observation.admitted => {
+                AcceptanceStaleReason::UnadmittedChange
+            }
+            _ => AcceptanceStaleReason::Mutation,
+        };
         return Ok((
-            Some(AcceptanceStaleReason::Mutation),
+            Some(reason),
             StaleRecoveryContext {
                 deciding_observation: finding.observation.map(Box::new),
                 ..StaleRecoveryContext::default()

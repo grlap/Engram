@@ -280,6 +280,7 @@ fn the_sentence_is_one_line_and_says_what_was_not_recorded() {
         observation: ObjectId::from_canonical_bytes(b"observation"),
         position: 7,
         source_changed: false,
+        admitted: true,
         workspace: Some("work\nspace".into()),
         revision: None,
         root_generation: None,
@@ -652,6 +653,7 @@ fn stored_text_never_makes_the_refusal_read_as_a_locked_store() {
         observation: ObjectId::from_canonical_bytes(b"observation"),
         position: 7,
         source_changed: false,
+        admitted: true,
         workspace: Some("C:/work/The Database Is Locked/tree".into()),
         revision: Some("database is locked".into()),
         root_generation: None,
@@ -916,6 +918,7 @@ fn whitespace_variants_never_make_the_refusal_read_as_a_locked_store() {
             observation: ObjectId::from_canonical_bytes(b"observation"),
             position: 7,
             source_changed: false,
+            admitted: true,
             workspace: Some(format!("C:/work/{spelled}/tree")),
             revision: Some(spelled.into()),
             root_generation: None,
@@ -939,40 +942,53 @@ fn whitespace_variants_never_make_the_refusal_read_as_a_locked_store() {
 #[test]
 fn the_guard_never_lengthens_the_refusal_past_its_bound() {
     let phrase = "database is locked";
-    let observation = DecidingObservation {
-        observation: ObjectId::from_canonical_bytes(b"observation"),
-        position: 7,
-        source_changed: false,
-        workspace: Some(format!("{phrase}{}w", " ".repeat(493))),
-        revision: Some(format!("{phrase}{}b", " ".repeat(493))),
-        root_generation: None,
-        reporting_session: crate::SessionId(format!("{phrase}{}s", " ".repeat(45))),
-        observed_at: Some(at(2)),
-        recorded_at: at(3),
-        evaluated_revision: Some(format!("{phrase}{}a", " ".repeat(493))),
-        evaluated_revision_declared: false,
-    };
-    let refusal = StoreError::AcceptanceEvaluationBasisMoved {
-        work: crate::domain::WorkId::new(),
-        moved: EvaluationBasisMove::SourceChanged,
-        reason: format!(
-            "the source changed after evidence basis 46 and this evaluation did not judge that revision; {}",
-            EvaluationBasisMove::SourceChanged.remedy()
+    // A quiet admitted sighting, and the longer words of an accounted change
+    // the host observed without admission.
+    for (source_changed, admitted, reason) in [
+        (
+            false,
+            true,
+            "the source changed after evidence basis 46 and this evaluation did not judge that revision",
         ),
-        observation: Some(Box::new(observation)),
+        (
+            true,
+            false,
+            "a source change the host observed without admission was recorded after evidence basis 46, and whatever revision it reports this evaluation's checks did not follow it",
+        ),
+    ] {
+        let observation = DecidingObservation {
+            observation: ObjectId::from_canonical_bytes(b"observation"),
+            position: 7,
+            source_changed,
+            admitted,
+            workspace: Some(format!("{phrase}{}w", " ".repeat(493))),
+            revision: Some(format!("{phrase}{}b", " ".repeat(493))),
+            root_generation: None,
+            reporting_session: crate::SessionId(format!("{phrase}{}s", " ".repeat(45))),
+            observed_at: Some(at(2)),
+            recorded_at: at(3),
+            evaluated_revision: Some(format!("{phrase}{}a", " ".repeat(493))),
+            evaluated_revision_declared: false,
+        };
+        let refusal = StoreError::AcceptanceEvaluationBasisMoved {
+            work: crate::domain::WorkId::new(),
+            moved: EvaluationBasisMove::SourceChanged,
+            reason: format!("{reason}; {}", EvaluationBasisMove::SourceChanged.remedy()),
+            observation: Some(Box::new(observation)),
+        }
+        .to_string();
+        assert!(!refusal.contains('\n'));
+        assert!(
+            refusal.chars().count() < 2_500,
+            "{} characters: {refusal}",
+            refusal.chars().count()
+        );
+        assert!(
+            !crate::work_service::terminal_error_line(&refusal)
+                .to_lowercase()
+                .contains(phrase)
+        );
     }
-    .to_string();
-    assert!(!refusal.contains('\n'));
-    assert!(
-        refusal.chars().count() < 2_500,
-        "{} characters: {refusal}",
-        refusal.chars().count()
-    );
-    assert!(
-        !crate::work_service::terminal_error_line(&refusal)
-            .to_lowercase()
-            .contains(phrase)
-    );
 }
 
 /// A done refused for a stale evaluation, from the shared fixture: a flagged
@@ -1239,6 +1255,393 @@ fn the_widest_deciding_observation_fits_done_within_the_agent_budget() {
         assert!(
             emitted < crate::work_service::MAX_AGENT_WORK_RESPONSE_BYTES,
             "{emitted} bytes"
+        );
+    }
+}
+
+// Every show surface names an unadmitted change as the barrier it is, with
+// the revisions compared and the fresh-evaluation remedy on the line, and
+// the JSON carries the observation's admission.
+#[test]
+fn every_show_surface_names_an_unadmitted_change_with_its_remedy() {
+    use crate::verbs::{AgentVerbs, ShowInput};
+    for (reported, compared) in [
+        ("content-revision-2", "the same revision"),
+        ("content-revision-9", "another revision"),
+    ] {
+        let (mut fixture, work, note, host) =
+            setup(&format!("project-deciding-unadmitted-show-{reported}"));
+        let database = fixture.directory.path().join("engram.sqlite3");
+        let claim = fixture.claim.clone();
+        let store = &mut fixture.store;
+        let read = cut(store, &work);
+        let recorded = record(
+            store,
+            &judged_again(
+                &work,
+                &note,
+                read,
+                Some(revision("content-revision-2", None)),
+                "declared",
+                25,
+            ),
+        )
+        .expect("the declared evaluation records");
+        let change = super::super::citation_sources::unadmitted_change(
+            store,
+            &host,
+            &claim,
+            reported,
+            "late-report",
+            30,
+        );
+        let named = status_observation(store, &work).expect("the deciding observation");
+        assert_eq!(named.observation, change.observation, "{reported}");
+
+        let viewer = AgentVerbs::new(
+            database.clone(),
+            work.project_id.clone(),
+            "viewer".into(),
+            crate::SessionId("viewer".into()),
+            None,
+        );
+        let show = |input: ShowInput| {
+            viewer
+                .show_records(&work.short_ref, &input, at(100))
+                .expect("show")
+        };
+        let line = format!(
+            "unadmitted source change at run-feed position {}: workspace {}, revision {reported}, reported by",
+            named.position, host.basis.workspace_id
+        );
+        let ending = format!(
+            "; the evaluation declared revision content-revision-2, {compared}; a barrier whatever revision it reports, so request a fresh evaluation"
+        );
+        let plain = show(ShowInput::default());
+        let observation = &plain.value["acceptance_evaluation"]["stale_observation"];
+        assert_eq!(
+            plain.value["acceptance_evaluation"]["stale"], "unadmitted_change",
+            "{}",
+            plain.value
+        );
+        assert_eq!(observation["admitted"], false, "{}", plain.value);
+        assert_eq!(observation["source_changed"], true, "{}", plain.value);
+        assert_eq!(
+            observation["revisions_compared"], compared,
+            "{}",
+            plain.value
+        );
+        assert!(plain.text().contains(&line), "{}", plain.text());
+        assert!(plain.text().contains(&ending), "{}", plain.text());
+        assert!(
+            !plain.text().contains("source moved at"),
+            "{}",
+            plain.text()
+        );
+        let full = show(ShowInput {
+            full: true,
+            ..ShowInput::default()
+        });
+        assert_eq!(
+            full.value["work"]["evaluation"]["stale_observation"]["admitted"], false,
+            "{}",
+            full.value
+        );
+        assert!(full.text().contains(&ending), "{}", full.text());
+        let window = show(ShowInput {
+            evaluations: true,
+            ..ShowInput::default()
+        });
+        assert_eq!(
+            window.value["evaluations"][0]["stale"], "unadmitted_change",
+            "{}",
+            window.value
+        );
+        assert!(window.text().contains(&ending), "{}", window.text());
+        let detail = show(ShowInput {
+            evaluation: Some(recorded.evaluation.as_str().to_owned()),
+            ..ShowInput::default()
+        });
+        assert_eq!(
+            detail.value["evaluation"]["stale_observation"]["revisions_compared"], compared,
+            "{}",
+            detail.value
+        );
+        assert!(detail.text().contains(&ending), "{}", detail.text());
+    }
+}
+
+// The revisions are compared before any display shortening, and a side the
+// records do not name is never called the same.
+#[test]
+fn revisions_are_compared_whole_and_an_unnamed_side_is_not_called_the_same() {
+    let observation = |revision: Option<&str>, evaluated: Option<&str>| DecidingObservation {
+        observation: ObjectId::from_canonical_bytes(b"observation"),
+        position: 7,
+        source_changed: true,
+        admitted: false,
+        workspace: Some("workspace".into()),
+        revision: revision.map(Into::into),
+        root_generation: None,
+        reporting_session: crate::SessionId("host-session".into()),
+        observed_at: None,
+        recorded_at: at(3),
+        evaluated_revision: evaluated.map(Into::into),
+        evaluated_revision_declared: true,
+    };
+    let long = format!("r{}", "x".repeat(600));
+    let cases = [
+        (Some("same"), Some("same"), "the same revision"),
+        (
+            Some(long.as_str()),
+            Some(long.as_str()),
+            "the same revision",
+        ),
+        (Some("one"), Some("two"), "another revision"),
+        (
+            None,
+            Some("two"),
+            "a revision one of the records does not name",
+        ),
+        (
+            Some("one"),
+            None,
+            "a revision one of the records does not name",
+        ),
+        (None, None, "a revision one of the records does not name"),
+    ];
+    for (revision, evaluated, expected) in cases {
+        let named = observation(revision, evaluated);
+        assert_eq!(
+            named.revisions_compared(),
+            expected,
+            "{revision:?} vs {evaluated:?}"
+        );
+        let sentence = named.sentence();
+        assert!(
+            sentence.contains(&format!(", {expected}; whatever revision")),
+            "{sentence}"
+        );
+        assert!(!sentence.contains('\n'), "{sentence}");
+        // The whole revision is compared; the sentence shows it bounded.
+        if revision == Some(long.as_str()) {
+            assert!(!sentence.contains(long.as_str()), "{sentence}");
+        }
+    }
+}
+
+// done's refusal for an evaluation voided by a change the host observed
+// without admission names that barrier, the deciding observation with both
+// revisions compared, and the fresh-evaluation remedy, never a content
+// mutation.
+#[test]
+fn done_names_an_unadmitted_change_as_a_barrier_with_the_revisions_compared() {
+    use crate::verbs::{AgentVerbs, DoneInput};
+    let (fixture, work, note, host) = setup("project-deciding-unadmitted-done");
+    let Fixture {
+        mut store,
+        directory,
+        claim,
+        ..
+    } = fixture;
+    let read = cut(&store, &work);
+    let declared = judged_again(
+        &work,
+        &note,
+        read,
+        Some(revision("content-revision-2", None)),
+        "declared",
+        25,
+    );
+    record(&mut store, &declared).expect("the declared evaluation records");
+    let change = super::super::citation_sources::unadmitted_change(
+        &mut store,
+        &host,
+        &claim,
+        "content-revision-2",
+        "late-report",
+        30,
+    );
+    drop(store);
+    let verbs = AgentVerbs::new(
+        directory.path().join("engram.sqlite3"),
+        work.project_id.clone(),
+        "runner".into(),
+        crate::SessionId("runner".into()),
+        None,
+    );
+    let receipt = verbs
+        .done(
+            DoneInput {
+                work_ref: Some(work.short_ref.clone()),
+                summary: Some("delivered".into()),
+                ..DoneInput::default()
+            },
+            at(100),
+        )
+        .expect("an owed receipt");
+    assert!(receipt.owed);
+    let value = &receipt.value;
+    assert_eq!(value["code"], "acceptance_evaluation_stale", "{value}");
+    assert_eq!(
+        value["recovery"]["cause"]["reason"], "unadmitted_change",
+        "{value}"
+    );
+    let observation = &value["recovery"]["deciding_observation"];
+    assert_eq!(observation["observation"], change.observation.as_str());
+    assert_eq!(observation["admitted"], false);
+    assert_eq!(observation["source_changed"], true);
+    assert_eq!(observation["revision"], "content-revision-2");
+    assert_eq!(observation["evaluated_revision"], "content-revision-2");
+    assert_eq!(observation["evaluated_revision_declared"], true);
+    assert_eq!(observation["revisions_compared"], "the same revision");
+    let text = receipt.text();
+    let words = format!(
+        "{} acceptance evaluation is stale (unadmitted_change)",
+        work.short_ref
+    );
+    let reminder = text
+        .lines()
+        .find(|line| line.contains(&words))
+        .unwrap_or_else(|| panic!("the stale reminder: {text}"));
+    assert!(
+        reminder.contains(
+            "request a fresh acceptance evaluation of the current source, then retry done. The deciding source record is a source change the host observed without admission, at run-feed position"
+        ),
+        "{reminder}"
+    );
+    assert!(
+        reminder
+            .contains("the evaluation declared revision content-revision-2, the same revision;"),
+        "{reminder}"
+    );
+    assert!(!text.contains("(mutation)"), "{text}");
+    let remedy = value["remedy"].as_str().unwrap_or_default();
+    assert!(
+        remedy.starts_with(
+            "a source change the host observed without admission followed the evaluated cut and is a barrier whatever revision it reports"
+        ),
+        "{value}"
+    );
+}
+
+// An accounted change the host observed without admission voids the
+// evaluation whatever revision it reports, and is named as that barrier, not
+// as a content mutation: the status reads stale with reason
+// `unadmitted_change`, the observation carries its admission and both
+// revisions, the sentence says whether they are the same, and a submission
+// kept at the pre-change cut is refused in the same words.
+#[test]
+fn an_unadmitted_change_is_named_as_a_barrier_with_the_revisions_compared() {
+    for (reported, compared) in [
+        ("content-revision-2", "the same revision"),
+        ("content-revision-9", "another revision"),
+    ] {
+        let (mut fixture, work, note, host) =
+            setup(&format!("project-deciding-unadmitted-{reported}"));
+        let claim = fixture.claim.clone();
+        let store = &mut fixture.store;
+        let read = cut(store, &work);
+        let declared = judged_again(
+            &work,
+            &note,
+            read,
+            Some(revision("content-revision-2", None)),
+            "declared",
+            25,
+        );
+        let recorded = record(store, &declared).expect("the declared evaluation records");
+        let change = super::super::citation_sources::unadmitted_change(
+            store,
+            &host,
+            &claim,
+            reported,
+            "late-report",
+            30,
+        );
+        assert!(
+            matches!(
+                change.accounting,
+                crate::domain::ObservationAccounting::SourceChange { .. }
+            ),
+            "{reported}: {:?}",
+            change.accounting
+        );
+
+        let status = store
+            .acceptance_evaluation_status(work.work_id, None)
+            .expect("status read")
+            .expect("an evaluation");
+        assert_eq!(status.evaluation, recorded.evaluation, "{reported}");
+        assert_eq!(
+            status.stale,
+            Some(AcceptanceStaleReason::UnadmittedChange),
+            "{reported}"
+        );
+        let named = status.stale_observation.expect("the deciding observation");
+        assert_eq!(named.observation, change.observation, "{reported}");
+        assert!(named.source_changed, "{reported}");
+        assert!(!named.admitted, "{reported}");
+        assert_eq!(named.revision.as_deref(), Some(reported));
+        assert_eq!(
+            named.evaluated_revision.as_deref(),
+            Some("content-revision-2")
+        );
+        assert!(named.evaluated_revision_declared, "{reported}");
+        assert_eq!(named.revisions_compared(), compared, "{reported}");
+        let sentence = named.sentence();
+        assert!(
+            sentence.starts_with(
+                "The deciding source record is a source change the host observed without admission, at run-feed position"
+            ),
+            "{sentence}"
+        );
+        assert!(
+            sentence.contains(&format!(
+                "revision {reported}, reported by session {}, observed",
+                host.session_id.0
+            )),
+            "{sentence}"
+        );
+        assert!(
+            sentence.contains(&format!(
+                "; the evaluation declared revision content-revision-2, {compared}; whatever revision such a change reports"
+            )),
+            "{sentence}"
+        );
+        assert!(
+            sentence.ends_with("so request a fresh evaluation."),
+            "{sentence}"
+        );
+
+        // A submission that keeps the pre-change cut is refused as a source
+        // move decided by that observation, worded as the barrier it is.
+        let mut resubmitted = declared.clone();
+        resubmitted.attempt_key = Some("resubmitted-at-the-old-cut".into());
+        let (moved, observation, message, value) = refused(record(store, &resubmitted));
+        assert_eq!(moved, EvaluationBasisMove::SourceChanged, "{reported}");
+        let observation = observation.expect("the refusal names the observation");
+        assert_eq!(observation.observation, change.observation, "{reported}");
+        assert!(!observation.admitted, "{reported}");
+        assert!(
+            message.contains(
+                "a source change the host observed without admission was recorded after evidence basis"
+            ),
+            "{message}"
+        );
+        assert!(
+            !message.contains("did not judge that revision"),
+            "{message}"
+        );
+        assert_eq!(
+            value["error"]["details"]["deciding_observation"]["admitted"],
+            serde_json::Value::Bool(false),
+            "{value}"
+        );
+        assert_eq!(
+            value["error"]["details"]["deciding_observation"]["revision"],
+            serde_json::Value::String(reported.into()),
+            "{value}"
         );
     }
 }

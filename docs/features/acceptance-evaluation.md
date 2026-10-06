@@ -612,7 +612,11 @@ recorded, whatever revision the change reports, since the report may
 describe the source from before the check. For the same reason an
 accounted unadmitted change after the cut voids the evaluation even when it
 reports the declared revision: the F3 exception for a change to the declared
-revision covers a turn's own change only. When the run's latest change is
+revision covers a turn's own change only. Such a record reads stale with
+reason `unadmitted_change`, not `mutation`, because the content need not have
+changed: the status and the `done` refusal name the deciding observation,
+say whether its revision is the same as the evaluated one or another, and
+ask for a fresh evaluation. When the run's latest change is
 unadmitted and no root is named, the judged revision and the revision a cited
 check must still match are those of the newest measured sighting in that
 change's workspace, environment evidence included, the selection the
@@ -672,7 +676,7 @@ Refusals extend the typed recovery causes; each carries one recovery command:
 | Cause | Meaning | Recovery |
 | --- | --- | --- |
 | `MissingAcceptanceEvaluation { criterion }` | no evaluation for this run | record one: `engram work evaluate REF …` (or the host's evaluator) |
-| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `source`, `policy`, `evidence`, `identity`, `verification_source`, `record_shape`) | re-evaluate against the current state; `source` uses the sibling source context below to select confirmation, measurement or new-evaluation guidance; `identity` needs a fresh evaluation recorded with every session and execution identity its mode requires, as a missing one would be requested for the task, and from a session that never held the run when the stale record was `independent_session`; `verification_source` needs the cited check run again on the current source; `record_shape` needs a fresh evaluation, since admission records only well-formed ones |
+| `AcceptanceEvaluationStale { reason }` | F1–F8 failed (`revision`, `run`, `mutation`, `unadmitted_change`, `source`, `policy`, `evidence`, `identity`, `verification_source`, `record_shape`) | re-evaluate against the current state; `source` uses the sibling source context below to select confirmation, measurement or new-evaluation guidance; `unadmitted_change` names the accounted change the host observed without admission that decided it, with its revision beside the declared one, and needs a fresh evaluation, since such a change is a barrier whatever revision it reports; `identity` needs a fresh evaluation recorded with every session and execution identity its mode requires, as a missing one would be requested for the task, and from a session that never held the run when the stale record was `independent_session`; `verification_source` needs the cited check run again on the current source; `record_shape` needs a fresh evaluation, since admission records only well-formed ones |
 | `AcceptanceFailed { criterion }` | newest fresh evaluation has a `fail` | corrective work, then evaluate again |
 | `AcceptanceInsufficientEvidence { criterion }` | newest fresh evaluation has `insufficient_evidence` | record the missing evidence, then evaluate again |
 | `AcceptanceNeedsHuman { criterion }` | a criterion needs a human decision | obtain that decision; only a separately authorized revision (`update REF --accept …`) or cancellation changes the requirement, and a new evaluation follows the decision. No agent override exists. |
@@ -846,7 +850,7 @@ tests cite the row identifier in a nearby comment.
 | B17 | citation from another run, another item, or a non-holder observation | refuse at write |
 | B18 | verdict list missing a criterion, duplicate position, or `acceptance_basis` behind the current revision | refuse at write with "re-read show" |
 | B19 | criteria revised after a passing evaluation | `done` refuses `AcceptanceEvaluationStale { revision }` |
-| B20 | host-observed `source_changed` observation after the evaluation, or the newest execution observation after it that carries a revision shows another revision than the judged one, even when it reports no change | `done` refuses `AcceptanceEvaluationStale { mutation }` |
+| B20 | a turn's admitted `source_changed` observation after the evaluation to another revision than the judged one, or the newest execution observation after it that carries a revision shows another revision than the judged one, even when it reports no change / an accounted change the host observed without admission after the evaluation, whatever revision it reports | `done` refuses `AcceptanceEvaluationStale { mutation }` / refuses `AcceptanceEvaluationStale { unadmitted_change }`, naming the observation and both revisions |
 | B21 | `require_source_freshness`; `done` without fingerprint / with a different fingerprint / with the same fingerprint | refuse (missing) / refuse `AcceptanceEvaluationStale { source }` / seal |
 | B22 | holder note, a gate the pass did not cite, and non-holder observation appended after a passing evaluation | still fresh; `done` seals |
 | B23 | new run generation after reopen (a recovery claim keeps the run and its evaluation) | evaluation of the old run is absent for the new run; `done` refuses `MissingAcceptanceEvaluation`; the same payload records a fresh object on the new run rather than replaying |
@@ -1001,7 +1005,9 @@ staleness or sealing changes.
   earlier run is stale for that reason. Like `--full`, it may exceed 12 KiB.
 
 When a record reads stale because a source observation after its cut decided
-that the source moved (stale `mutation`, the word unchanged), plain `show`,
+that the source moved (stale `mutation`, the word unchanged, or
+`unadmitted_change` for an accounted change the host observed without
+admission, whose line also compares the two revisions), plain `show`,
 `show --full`, the evaluations window row and the record's detail name that
 observation the same way, one line and a `stale_observation` field, beside
 the evaluated revision, with each host-recorded field cut at 128 bytes and its

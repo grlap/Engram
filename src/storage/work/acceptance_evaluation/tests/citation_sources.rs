@@ -1158,7 +1158,20 @@ fn an_unadmitted_change_after_the_cut_retires_an_evaluation_that_declared_its_re
         .acceptance_evaluation_status(work.work_id, None)
         .expect("status read")
         .expect("an evaluation");
-    assert!(status.stale.is_some(), "{status:?}");
+    // The barrier decides before the bound citation is judged, and it is
+    // named as the barrier it is, not as a content mutation.
+    assert_eq!(
+        status.stale,
+        Some(AcceptanceStaleReason::UnadmittedChange),
+        "{status:?}"
+    );
+    let named = status
+        .stale_observation
+        .as_ref()
+        .expect("the deciding observation");
+    assert_eq!(named.observation, change.observation);
+    assert!(!named.admitted);
+    assert_eq!(named.revisions_compared(), "the same revision");
     refusal(record(store, &resubmitted));
 }
 

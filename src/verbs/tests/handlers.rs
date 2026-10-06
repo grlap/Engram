@@ -624,6 +624,67 @@ fn completion_recovery_reminder_names_the_verification_source_remedy() {
     );
 }
 
+// A stale evaluation decided by a change the host observed without admission
+// is named as that barrier, never as a content mutation, and the observation
+// follows with the two revisions compared: here the same revision.
+#[test]
+fn completion_recovery_reminder_names_the_unadmitted_change_as_a_barrier() {
+    let work = WorkId(uuid::Uuid::from_u128(5));
+    let observation = crate::storage::DecidingObservation {
+        observation: crate::ObjectId::from_canonical_bytes(b"late report"),
+        position: 95,
+        source_changed: true,
+        admitted: false,
+        workspace: Some("C:/work/tree".into()),
+        revision: Some("content-v1:same".into()),
+        root_generation: Some(563),
+        reporting_session: crate::SessionId("runner".into()),
+        observed_at: None,
+        recorded_at: {
+            use chrono::TimeZone as _;
+            chrono::Utc
+                .with_ymd_and_hms(2026, 10, 6, 9, 52, 18)
+                .single()
+                .expect("fixed time")
+        },
+        evaluated_revision: Some("content-v1:same".into()),
+        evaluated_revision_declared: true,
+    };
+    let recovery = crate::WorkCompletionRecovery {
+        cause: crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale {
+            reason: crate::AcceptanceStaleReason::UnadmittedChange,
+        },
+        item: crate::WorkReferenceCandidate {
+            work_id: work,
+            short_ref: "w-000000000005".into(),
+            title: "Late report item".into(),
+            lifecycle: WorkLifecycle::Open,
+        },
+        command: "engram work show w-000000000005 --notes --gates".into(),
+        deciding_observation: Some(Box::new(observation.clone())),
+        source: None,
+        open_obligation_check: None,
+    };
+    let reminder = completion_recovery_reminder(
+        &recovery,
+        false,
+        &crate::verbs::handlers::EvaluationRemedy::default(),
+        crate::argument_names::ArgumentNames::Cli,
+    );
+    assert!(
+        reminder.starts_with(
+            "w-000000000005 acceptance evaluation is stale (unadmitted_change): a source change the host observed without admission was recorded after the evaluation's cut, and whatever revision it reports, the declared one included, the evaluation's checks did not follow it; request a fresh acceptance evaluation of the current source, then retry done. The deciding source record is a source change the host observed without admission, at run-feed position 95:"
+        ),
+        "{reminder}"
+    );
+    assert!(
+        reminder.contains("the evaluation declared revision content-v1:same, the same revision;"),
+        "{reminder}"
+    );
+    assert!(!reminder.contains("mutation"), "{reminder}");
+    assert_eq!(observation.revisions_compared(), "the same revision");
+}
+
 // A stale identity names both of its causes and gives the remedy a missing
 // evaluation of the task would get: a marked same-session task is evaluated
 // again by its holder, which an independent-only remedy would forbid.

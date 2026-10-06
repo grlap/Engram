@@ -805,6 +805,7 @@ flowchart TD
     HUMAN -->|"cancellation"| CANCELLED["cancelled: the item ends"]
     DONE -->|"acceptance_evaluation_stale (AcceptanceEvaluationStale): verification_source"| WORK
     DONE -->|"acceptance_evaluation_stale: source"| EVAL
+    DONE -->|"acceptance_evaluation_stale: unadmitted_change, a change the host observed without admission, whatever revision it reports"| EVAL
     DONE -->|"acceptance_evaluation_stale: source, fingerprint was missing"| FP["done --source-fingerprint F"] --> DONE
     DONE -->|"acceptance_evaluation_stale: source, named root not yet reported at the declared revision"| REPORT["end the turn; the host reports the root"] --> DONE
     DONE -->|"acceptance_evaluation_stale: other reasons"| EVAL

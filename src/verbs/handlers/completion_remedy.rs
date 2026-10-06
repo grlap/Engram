@@ -75,6 +75,9 @@ pub(in crate::verbs) fn completion_recovery_reminder(
                     &evaluation.admitted
                 )
             ),
+            crate::AcceptanceStaleReason::UnadmittedChange => format!(
+                "{label} acceptance evaluation is stale (unadmitted_change): a source change the host observed without admission was recorded after the evaluation's cut, and whatever revision it reports, the declared one included, the evaluation's checks did not follow it; request a fresh acceptance evaluation of the current source, then retry done"
+            ),
             crate::AcceptanceStaleReason::VerificationSource => format!(
                 "{label} acceptance evaluation is stale (verification_source): a pass on a bound criterion cites a check that ran on another source than the one evaluated, or before a later change to it; run the check on the current source, then evaluate again citing it, declaring the source revision the host reports"
             ),
