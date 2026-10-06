@@ -149,6 +149,27 @@ holder status remains history and is never promoted for an unassigned item.
 Assignment grants no execution authority and needs no periodic renewal. A
 holder's planning edit, including assignment, renews its existing live claim.
 
+An item whose checks must earn host credit, a no-code item included, is
+rooted at its own detached worktree under the repository's `.worktrees`
+folder, never at the shared main checkout. Claim the item, create the
+worktree detached at the current master, and name it as the item's source
+root through the host (TermAl's `termal_name_source_root` with the work ref
+and the worktree's absolute path); the naming takes effect from the next
+turn and ends with the claim, so name the root again after any re-claim.
+Run each credited check from that worktree in a call of its own: a bare
+test as `pushd "C:\...\.worktrees\NAME" && COMMAND` from a Bash tool, or,
+in a Codex session, as a direct command whose working directory is the
+named root; a launcher run (`node scripts/test-launcher.mjs full` or
+`focused`) started from the worktree's own `scripts/`. The host voids credit
+for a check whenever another writable session's working directory is the
+checkout the check ran in, which is what the shared main checkout is to
+every other session, so a credited run there cannot succeed whatever its
+timing. A linked worktree's launcher runs and freeze manifest live in its
+Git admin directory and are deleted with it: once the item closes and those
+runs are no longer cited, archive any still-needed run directory as
+[launcher usage](../../../docs/development.md#test-launcher) describes,
+then remove the clean worktree without `--force`.
+
 Before repeating an uncertain mutation, follow the
 [session and intent retry rule](../../../docs/features/local-work-system.md#agent-native-protocol).
 
@@ -160,6 +181,8 @@ or cap a stored identity at emit time.
 
 ## Verification
 
+A check that must earn host credit runs from the item's own detached
+worktree, as "Repository work constraints" above describes.
 Use `node scripts/test-launcher.mjs focused -- COMMAND ARGS...` for the
 smallest focused test while iterating. For landing, a changeset touching only
 `.md` files runs the link and identity checks with the exact focused-launcher
