@@ -7,9 +7,7 @@ use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
 use super::super::{SqliteStore, StoreError};
-use super::completion::{
-    ancestors_admit_execution, run_uses_active_root_execution, work_is_ancestor_of,
-};
+use super::completion::{ancestors_admit_execution, work_is_ancestor_of};
 use super::execution::ensure_restored_execution_state;
 use super::feeds::{
     append_work_event, expire_handoff_offers, inspect_work_request, load_typed_work_object,
@@ -1991,6 +1989,36 @@ pub(super) fn validate_live_claim_for_item_on(
     now: DateTime<Utc>,
     allow_pending_handoff: bool,
 ) -> Result<(WorkItem, WorkRun, WorkClaim), StoreError> {
+    validate_live_claim_for_item_in_scope(
+        connection,
+        item,
+        run_id,
+        expected_work_revision,
+        holder,
+        claim_id,
+        claim_fence,
+        now,
+        allow_pending_handoff,
+        None,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the live authority checks and optional read scope stay explicit"
+)]
+pub(super) fn validate_live_claim_for_item_in_scope(
+    connection: &Connection,
+    item: WorkItem,
+    run_id: WorkRunId,
+    expected_work_revision: i64,
+    holder: &SessionId,
+    claim_id: WorkClaimId,
+    claim_fence: i64,
+    now: DateTime<Utc>,
+    allow_pending_handoff: bool,
+    scope: Option<&super::RootReadScope<'_>>,
+) -> Result<(WorkItem, WorkRun, WorkClaim), StoreError> {
     let work_id = item.work_id;
     assert_revision(&item, expected_work_revision)?;
     if item.lifecycle != WorkLifecycle::Open || item.active_run_id != Some(run_id) {
@@ -2000,7 +2028,9 @@ pub(super) fn validate_live_claim_for_item_on(
     if run.work_id != work_id
         || !matches!(run.state, WorkRunState::Claimed | WorkRunState::Active)
         || !ancestors_admit_execution(connection, &item)?
-        || !run_uses_active_root_execution(connection, &item, &run)?
+        || !super::completion::run_uses_active_root_execution_in_scope(
+            connection, &item, &run, scope,
+        )?
     {
         return Err(StoreError::WorkClaimMismatch { work: work_id });
     }
@@ -2047,6 +2077,20 @@ pub(in crate::storage) fn validate_control_work_binding_on(
     binding: &ControlWorkBinding,
     now: DateTime<Utc>,
 ) -> Result<(), StoreError> {
+    validate_control_work_binding_in_scope(connection, project_id, session_id, binding, now, None)
+}
+
+pub(in crate::storage) fn validate_control_work_binding_in_scope(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    binding: &ControlWorkBinding,
+    now: DateTime<Utc>,
+    scope: Option<&super::RootReadScope<'_>>,
+) -> Result<(), StoreError> {
+    if let Some(scope) = scope {
+        scope.check_connection(connection)?;
+    }
     let item = match load_work_item(connection, binding.work_id) {
         Ok(item) => item,
         Err(StoreError::WorkNotFound(_)) => {
@@ -2063,9 +2107,9 @@ pub(in crate::storage) fn validate_control_work_binding_on(
             work: binding.work_id,
         });
     }
-    match validate_live_claim_on(
+    match validate_live_claim_for_item_in_scope(
         connection,
-        binding.work_id,
+        load_work_item(connection, binding.work_id)?,
         binding.run_id,
         binding.work_revision,
         session_id,
@@ -2073,6 +2117,7 @@ pub(in crate::storage) fn validate_control_work_binding_on(
         binding.claim_fence,
         now,
         false,
+        scope,
     ) {
         Ok(_) => Ok(()),
         Err(

@@ -526,13 +526,29 @@ pub(in crate::storage::work) fn run_uses_active_root_execution(
     item: &WorkItem,
     run: &WorkRun,
 ) -> Result<bool, StoreError> {
+    run_uses_active_root_execution_in_scope(connection, item, run, None)
+}
+
+pub(in crate::storage::work) fn run_uses_active_root_execution_in_scope(
+    connection: &Connection,
+    item: &WorkItem,
+    run: &WorkRun,
+    scope: Option<&super::super::RootReadScope<'_>>,
+) -> Result<bool, StoreError> {
+    if let Some(scope) = scope {
+        scope.check_connection(connection)?;
+    }
     if run.work_id != item.work_id {
         return Err(StoreError::InvalidWorkProjection(format!(
             "run {:?} does not belong to work {:?}",
             run.run_id, item.work_id
         )));
     }
-    let Some(execution) = active_root_execution_optional(connection, item.root_id)? else {
+    let execution = match scope {
+        Some(scope) => scope.active_optional(item.root_id)?,
+        None => active_root_execution_optional(connection, item.root_id)?.map(std::rc::Rc::new),
+    };
+    let Some(execution) = execution else {
         return Ok(false);
     };
     if execution.project_id != item.project_id || execution.root_id != item.root_id {

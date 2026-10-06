@@ -587,6 +587,18 @@ impl SqliteStore {
         parent: &WorkItem,
         limit: usize,
     ) -> Result<Vec<WorkItem>, StoreError> {
+        self.waivable_required_children_in_scope(parent, limit, None)
+    }
+
+    pub(crate) fn waivable_required_children_in_scope(
+        &self,
+        parent: &WorkItem,
+        limit: usize,
+        scope: Option<&super::RootReadScope<'_>>,
+    ) -> Result<Vec<WorkItem>, StoreError> {
+        if let Some(scope) = scope {
+            scope.check_connection(&self.connection)?;
+        }
         if limit == 0 || parent.lifecycle != WorkLifecycle::Open {
             return Ok(Vec::new());
         }
@@ -602,6 +614,8 @@ impl SqliteStore {
                 row.get::<_, String>(0)
             })?
             .collect::<Result<Vec<_>, _>>()?;
+        #[cfg(test)]
+        super::cost::sql("waivable_children", &statement);
         drop(statement);
         if child_ids.is_empty() {
             return Ok(Vec::new());
@@ -609,7 +623,10 @@ impl SqliteStore {
         if !ancestors_admit_execution(&self.connection, parent)? {
             return Ok(Vec::new());
         }
-        let root_execution = active_root_execution(&self.connection, parent.root_id)?;
+        let root_execution = match scope {
+            Some(scope) => scope.active(parent.root_id)?,
+            None => std::rc::Rc::new(active_root_execution(&self.connection, parent.root_id)?),
+        };
         let waived =
             current_required_child_waivers(&self.connection, parent.work_id, &root_execution)?;
 
@@ -1301,23 +1318,34 @@ impl SqliteStore {
 
     /// Current advisory waiver membership for the parent's execution, including
     /// terminal parents whose execution is no longer active. No proof replay.
-    pub(crate) fn work_child_waivers(
+    pub(crate) fn work_child_waivers_in_scope(
         &self,
         parent: &WorkItem,
         run: Option<&WorkRun>,
+        scope: Option<&super::RootReadScope<'_>>,
     ) -> Result<HashSet<WorkId>, StoreError> {
+        if let Some(scope) = scope {
+            scope.check_connection(&self.connection)?;
+        }
         let execution = if let Some(run) = run {
             if run.work_id != parent.work_id {
                 return Err(StoreError::InvalidWorkProjection(
                     "child summary run does not belong to its parent".into(),
                 ));
             }
-            Some(load_retained_root_execution(
-                &self.connection,
-                run.root_execution_id,
-            )?)
+            Some(match scope {
+                Some(scope) => scope.retained(run.root_execution_id)?,
+                None => std::rc::Rc::new(load_retained_root_execution(
+                    &self.connection,
+                    run.root_execution_id,
+                )?),
+            })
         } else {
-            active_root_execution_optional(&self.connection, parent.root_id)?
+            match scope {
+                Some(scope) => scope.active_optional(parent.root_id)?,
+                None => active_root_execution_optional(&self.connection, parent.root_id)?
+                    .map(std::rc::Rc::new),
+            }
         };
         let Some(execution) = execution else {
             return Ok(HashSet::new());
@@ -1619,6 +1647,19 @@ impl SqliteStore {
         claim: Option<&WorkClaim>,
         claimant: &SessionId,
     ) -> Result<bool, StoreError> {
+        self.work_claim_recovery_required_in_scope(item, claim, claimant, None)
+    }
+
+    pub(crate) fn work_claim_recovery_required_in_scope(
+        &self,
+        item: &WorkItem,
+        claim: Option<&WorkClaim>,
+        claimant: &SessionId,
+        scope: Option<&super::RootReadScope<'_>>,
+    ) -> Result<bool, StoreError> {
+        if let Some(scope) = scope {
+            scope.check_connection(&self.connection)?;
+        }
         if claim.is_none_or(|claim| claim.holder == *claimant) {
             return Ok(false);
         }
@@ -1626,7 +1667,13 @@ impl SqliteStore {
             return Ok(false);
         };
         let run = load_work_run(&self.connection, run_id)?;
-        let execution = load_root_execution(&self.connection, run.root_execution_id)?;
+        let execution = match scope {
+            Some(scope) => scope.current(run.root_execution_id)?,
+            None => std::rc::Rc::new(load_root_execution(
+                &self.connection,
+                run.root_execution_id,
+            )?),
+        };
         Ok(claim.is_some_and(|claim| {
             claim.run_id == run_id
                 && claim.holder != *claimant

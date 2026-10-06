@@ -681,6 +681,8 @@ fn waive_required_child_on(
     )? {
         return Ok(waiver);
     }
+    #[cfg(test)]
+    super::super::cost::phase("waive.before_admission");
     let parent = load_work_item(transaction, request.parent_id)?;
     assert_revision(&parent, request.expected_parent_revision)?;
     if parent.lifecycle != WorkLifecycle::Open {
@@ -704,29 +706,52 @@ fn waive_required_child_on(
             child.short_ref, parent.short_ref, parent.short_ref,
         )));
     }
-    let mut root_execution = active_root_execution(transaction, parent.root_id)?;
-    if root_execution
-        .required_child_waivers
-        .iter()
-        .any(|waiver| waiver.work_id == child.work_id)
-    {
-        return Err(StoreError::InvalidWork(
-            "required child already has a completion waiver in this root execution".into(),
-        ));
-    }
+    let execution_id: Option<String> = transaction.query_row(
+        "SELECT root_execution_id FROM work_root_executions WHERE root_id = ?1 AND state = 'active'",
+        [parent.root_id.0.to_string()], |row| row.get(0),
+    ).optional()?;
+    let execution_id = execution_id.ok_or_else(|| {
+        StoreError::InvalidWorkProjection(format!(
+            "root work {:?} has no active execution",
+            parent.root_id
+        ))
+    })?;
     let waiver = RequiredChildWaiver {
         work_id: child.work_id,
         work_revision: child.revision,
         waived_by: request.actor.actor_id.clone(),
         reason: reason.clone(),
     };
-    root_execution.required_child_waivers.push(waiver.clone());
-    root_execution
-        .required_child_waivers
-        .sort_by(super::super::root_state::compare_child_waivers);
-    root_execution.revision += 1;
-    root_execution.updated_at = request.waived_at;
-    persist_root_execution(transaction, &root_execution)?;
+    let root_execution = super::super::root_state::try_update(
+        transaction,
+        super::super::query::parse_root_execution_id(&execution_id)?,
+        |root| {
+            #[cfg(test)]
+            super::super::cost::phase("waive.after_root_read");
+            if root.root_id != parent.root_id || root.state != RootExecutionState::Active {
+                return Err(StoreError::InvalidWorkProjection(
+                    "active root execution differs from its root binding".into(),
+                ));
+            }
+            if root
+                .required_child_waivers
+                .iter()
+                .any(|waiver| waiver.work_id == child.work_id)
+            {
+                return Err(StoreError::InvalidWork(
+                    "required child already has a completion waiver in this root execution".into(),
+                ));
+            }
+            root.required_child_waivers.push(waiver.clone());
+            root.required_child_waivers
+                .sort_by(super::super::root_state::compare_child_waivers);
+            root.revision += 1;
+            root.updated_at = request.waived_at;
+            Ok(())
+        },
+    )?;
+    #[cfg(test)]
+    super::super::cost::phase("waive.after_persist");
     let parent_run = parent
         .active_run_id
         .map(|run_id| load_work_run(transaction, run_id))
@@ -740,7 +765,7 @@ fn waive_required_child_on(
         revision: parent.revision,
         work: parent,
         run: parent_run,
-        root_execution: Some(root_execution),
+        root_execution: Some(root_execution.value().clone()),
         claim: None,
         handoff_offer: None,
         blocker: None,
@@ -752,7 +777,9 @@ fn waive_required_child_on(
         actor: request.actor.clone(),
         created_at: request.waived_at,
     };
-    append_work_event(transaction, &event)?;
+    super::super::feeds::append_work_event_with_root(transaction, &event, &root_execution)?;
+    #[cfg(test)]
+    super::super::cost::phase("waive.after_event");
     persist_operation_result(
         transaction,
         "waive_required_child",

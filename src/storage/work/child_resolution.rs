@@ -33,6 +33,17 @@ impl SqliteStore {
         &self,
         child: &WorkItem,
     ) -> Result<Option<RequiredChildSuccessor>, StoreError> {
+        self.required_child_successor_in_scope(child, None)
+    }
+
+    pub(crate) fn required_child_successor_in_scope(
+        &self,
+        child: &WorkItem,
+        scope: Option<&super::RootReadScope<'_>>,
+    ) -> Result<Option<RequiredChildSuccessor>, StoreError> {
+        if let Some(scope) = scope {
+            scope.check_connection(&self.connection)?;
+        }
         if !is_candidate(child) {
             return Ok(None);
         }
@@ -41,26 +52,35 @@ impl SqliteStore {
         };
         // The child, its successor, the parent and the parent's run are
         // compared, so they come from one commit.
-        self.work_read_snapshot(|store| store.required_child_successor_in(child, parent))
+        self.work_read_snapshot(|store| store.required_child_successor_in(child, parent, scope))
     }
 
     fn required_child_successor_in(
         &self,
         child: &WorkItem,
         parent: WorkId,
+        scope: Option<&super::RootReadScope<'_>>,
     ) -> Result<Option<RequiredChildSuccessor>, StoreError> {
         let run = self.latest_work_run(parent)?;
         // Retained parents stay bound to their own generation after root reopen.
         // A restored parent can have no run while its children already execute.
         let execution = match &run {
             Some(run) => Some(run.root_execution_id),
-            None => active_root_execution_optional(&self.connection, child.root_id)?
-                .map(|execution| execution.root_execution_id),
+            None => match scope {
+                Some(scope) => scope.active_optional(child.root_id)?,
+                None => active_root_execution_optional(&self.connection, child.root_id)?
+                    .map(std::rc::Rc::new),
+            }
+            .map(|execution| execution.root_execution_id),
         };
         let mut successor = required_child_successor_on(&self.connection, child, execution)?;
         if let Some(state) = &mut successor
             && self
-                .work_child_waivers(&load_work_item(&self.connection, parent)?, run.as_ref())?
+                .work_child_waivers_in_scope(
+                    &load_work_item(&self.connection, parent)?,
+                    run.as_ref(),
+                    scope,
+                )?
                 .contains(&child.work_id)
         {
             state.waived = true;

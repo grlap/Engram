@@ -43,6 +43,7 @@ mod observation;
 mod planning;
 #[cfg(test)]
 pub(crate) use planning::plan_validations;
+pub(in crate::storage) use planning::validate_control_work_binding_in_scope;
 pub(crate) use planning::validate_work_plan;
 mod query;
 pub(in crate::storage) use query::resolve_work_ref_on;
@@ -52,7 +53,11 @@ mod record_windows;
 mod verification_read;
 pub(crate) use verification_read::VerificationReadRequest;
 pub(in crate::storage) use verification_read::read_acceptance_verifications_on;
+#[cfg(test)]
+pub(crate) mod cost;
+mod root_read;
 mod root_state;
+pub(crate) use root_read::RootReadScope;
 mod schema;
 mod session;
 mod status;

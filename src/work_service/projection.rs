@@ -297,14 +297,37 @@ pub(super) fn bindable_control_work_binding(
     claim: Option<&WorkClaim>,
     now: DateTime<Utc>,
 ) -> Result<Option<ControlWorkBinding>, StoreError> {
+    bindable_control_work_binding_in_scope(
+        store, project_id, session_id, work, run, claim, now, None,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "exact binding inputs and its optional read scope stay explicit"
+)]
+pub(super) fn bindable_control_work_binding_in_scope(
+    store: &SqliteStore,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    work: &WorkItem,
+    run: &WorkRun,
+    claim: Option<&WorkClaim>,
+    now: DateTime<Utc>,
+    scope: Option<&crate::storage::RootReadScope<'_>>,
+) -> Result<Option<ControlWorkBinding>, StoreError> {
     let Some(candidate) =
         crate::storage::owned_control_work_binding(work, run, claim, session_id, now)
     else {
         return Ok(None);
     };
-    Ok(store
-        .control_work_binding_bindable(project_id, session_id, &candidate, now)?
-        .then_some(candidate))
+    let bindable = match scope {
+        Some(scope) => store.control_work_binding_bindable_in_scope(
+            project_id, session_id, &candidate, now, scope,
+        )?,
+        None => store.control_work_binding_bindable(project_id, session_id, &candidate, now)?,
+    };
+    Ok(bindable.then_some(candidate))
 }
 
 pub(super) fn work_handoff_summary(offer: &WorkHandoffOffer) -> WorkHandoffSummary {

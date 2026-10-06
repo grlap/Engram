@@ -1,4 +1,29 @@
 use chrono::{DateTime, Utc};
+/// Test builds observe the executed statement, rather than estimating SQL work.
+pub(super) fn query_row_with_cost<T, P, F>(
+    connection: &rusqlite::Connection,
+    label: &'static str,
+    sql: &str,
+    parameters: P,
+    mapper: F,
+) -> rusqlite::Result<T>
+where
+    P: rusqlite::Params,
+    F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+{
+    #[cfg(not(test))]
+    {
+        let _ = label;
+        connection.query_row(sql, parameters, mapper)
+    }
+    #[cfg(test)]
+    {
+        let mut statement = connection.prepare(sql)?;
+        let result = statement.query_row(parameters, mapper);
+        super::cost::sql(label, &statement);
+        result
+    }
+}
 use rusqlite::{Connection, OptionalExtension, params, types::Value};
 
 use super::super::{SqliteStore, StaleRecoveryContext, StoreError};
@@ -34,10 +59,10 @@ use crate::{
 #[cfg(test)]
 use super::feeds::append_work_event;
 #[cfg(test)]
-use super::planning::expect_root_contributor;
-#[cfg(test)]
 use super::{WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT, WorkEventDraft};
 
+#[cfg(test)]
+mod cost_fixture;
 #[cfg(test)]
 mod tests;
 
@@ -113,33 +138,6 @@ impl SqliteStore {
                 .map(|row| load_handoff_offer_projection(connection, row))
                 .collect()
         })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn add_expected_root_contributor_fixture(
-        &mut self,
-        work_id: WorkId,
-        participant: &SessionId,
-        now: DateTime<Utc>,
-    ) -> Result<(), StoreError> {
-        let transaction = self.begin_work_mutation()?;
-        let item = load_work_item(&transaction, work_id)?;
-        let run = active_run_snapshot(&transaction, &item)?.ok_or_else(|| {
-            StoreError::InvalidWorkProjection("fixture work has no active run".into())
-        })?;
-        let root_execution =
-            super::root_state::update(&transaction, run.root_execution_id, |root| {
-                if expect_root_contributor(root, participant) {
-                    root.revision += 1;
-                    root.updated_at = now;
-                }
-            })?;
-        let mut event = latest_canonical_work_event_for_item(&transaction, work_id)?;
-        event.created_at = now;
-        let draft = WorkEventDraft::with_root_state(&event, Some(root_execution.value().clone()));
-        super::feeds::append_work_event_with_root(&transaction, &draft, &root_execution)?;
-        transaction.commit()?;
-        Ok(())
     }
 
     /// Returns canonical evidence ides recorded for one run.
@@ -386,6 +384,20 @@ impl SqliteStore {
         session_id: &SessionId,
         now: DateTime<Utc>,
     ) -> Result<(bool, bool), StoreError> {
+        self.work_completion_readiness_in_scope(item, claim, session_id, now, None)
+    }
+
+    pub(crate) fn work_completion_readiness_in_scope(
+        &self,
+        item: &WorkItem,
+        claim: Option<&WorkClaim>,
+        session_id: &SessionId,
+        now: DateTime<Utc>,
+        scope: Option<&super::RootReadScope<'_>>,
+    ) -> Result<(bool, bool), StoreError> {
+        if let Some(scope) = scope {
+            scope.check_connection(&self.connection)?;
+        }
         let work_id = item.work_id;
         if item.lifecycle != WorkLifecycle::Open {
             return Ok((false, false));
@@ -426,7 +438,9 @@ impl SqliteStore {
         {
             return Ok((false, false));
         }
-        let required_child_count = self.connection.query_row(
+        let required_child_count = query_row_with_cost(
+            &self.connection,
+            "required_child_count",
             "SELECT COUNT(*) FROM work_items child
              WHERE child.parent_id = ?1
                AND child.child_requirement = 'required'",
@@ -434,7 +448,13 @@ impl SqliteStore {
             |row| row.get::<_, i64>(0),
         )?;
         if required_child_count != 0 {
-            let root_execution = load_root_execution(&self.connection, run.root_execution_id)?;
+            let root_execution = match scope {
+                Some(scope) => scope.current(run.root_execution_id)?,
+                None => std::rc::Rc::new(load_root_execution(
+                    &self.connection,
+                    run.root_execution_id,
+                )?),
+            };
             if !readiness::required_children_ready(&self.connection, work_id, &root_execution)? {
                 return Ok((false, false));
             }
@@ -1564,9 +1584,10 @@ fn latest_canonical_work_event_on_feed(
     feed_id: &str,
     required_snapshot: &str,
 ) -> Result<WorkEvent, StoreError> {
-    let stored = connection
-        .query_row(
-            "SELECT object.object_id, object.canonical_json
+    let stored = query_row_with_cost(
+        connection,
+        "canonical_feed_event",
+        "SELECT object.object_id, object.canonical_json
              FROM work_feed_entries entry
              JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = ?1 AND entry.feed_id = ?2
@@ -1575,15 +1596,15 @@ fn latest_canonical_work_event_on_feed(
                AND json_type(object.canonical_json, ?3) IS NOT NULL
                AND json_type(object.canonical_json, ?3) != 'null'
              ORDER BY entry.position DESC LIMIT 1",
-            params![feed_kind, feed_id, required_snapshot],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
-        )
-        .optional()?
-        .ok_or_else(|| {
-            StoreError::InvalidWorkProjection(format!(
-                "work feed {feed_kind}:{feed_id} has no canonical event"
-            ))
-        })?;
+        params![feed_kind, feed_id, required_snapshot],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+    )
+    .optional()?
+    .ok_or_else(|| {
+        StoreError::InvalidWorkProjection(format!(
+            "work feed {feed_kind}:{feed_id} has no canonical event"
+        ))
+    })?;
     decode_canonical_work_event(stored)
 }
 
@@ -1600,8 +1621,7 @@ pub(super) fn load_work_item_projection(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<WorkItem, StoreError> {
-    let row: Option<(Vec<u8>, bool)> = connection
-        .query_row(
+    let row: Option<(Vec<u8>, bool)> = query_row_with_cost(connection, "work_item_projection",
             "SELECT item_json,
                     work_id = json_extract(item_json, '$.work_id') AND
                     project_id = json_extract(item_json, '$.project_id') AND
@@ -2101,6 +2121,16 @@ fn load_retained_root_execution_on_snapshot(
     root_execution_id: RootExecutionId,
 ) -> Result<RootExecution, StoreError> {
     let (execution, address) = super::root_state::projected(connection, root_execution_id)?;
+    verify_retained_root_execution_reference_on(connection, &execution, &address)?;
+    Ok(execution)
+}
+
+pub(super) fn verify_retained_root_execution_reference_on(
+    connection: &Connection,
+    execution: &RootExecution,
+    address: &crate::domain::RootExecutionRef,
+) -> Result<(), StoreError> {
+    let root_execution_id = execution.root_execution_id;
     let stored = connection
         .query_row(
             "SELECT object.object_id, object.canonical_json
@@ -2125,7 +2155,12 @@ fn load_retained_root_execution_on_snapshot(
                 "retained root execution has no generation-bound canonical event".into(),
             )
         })?;
-    bind_root_execution_event(execution, &address, &decode_canonical_work_event(stored)?)
+    if decode_canonical_work_event(stored)?.root_execution.as_ref() != Some(address) {
+        return Err(StoreError::InvalidWorkProjection(
+            "retained root execution differs from its canonical event binding".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn bind_root_execution_event(

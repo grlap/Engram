@@ -30,8 +30,11 @@ mod work;
 pub(crate) use work::BindingReadRequest;
 #[cfg(test)]
 pub(crate) use work::FocusBinding;
+pub(crate) use work::RootReadScope;
 pub(crate) use work::VerificationReadRequest;
 pub(crate) use work::acceptance_attempt_identity;
+#[cfg(test)]
+pub(crate) use work::cost as work_cost;
 #[cfg(test)]
 pub(crate) use work::plan_validations;
 pub(crate) use work::validate_work_plan;

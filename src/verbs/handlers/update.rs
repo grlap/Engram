@@ -53,7 +53,11 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when no action applies or the core refuses it.
     pub fn update(&self, input: UpdateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        #[cfg(test)]
+        crate::storage::work_cost::phase("word.before_target");
         let view = self.target("update", input.work_ref.as_deref(), now)?;
+        #[cfg(test)]
+        crate::storage::work_cost::phase("word.after_target");
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
         let is_waiver = matches!(&input.action, UpdateAction::WaiveRequiredChild { .. });
@@ -82,6 +86,8 @@ impl AgentVerbs {
             !view.status.work.acceptance_bindings.is_empty(),
         )?;
         let target = view.status.work.work_id.0.to_string();
+        #[cfg(test)]
+        crate::storage::work_cost::phase("word.before_service");
         let result = self
             .service
             .work_update_on(Some(&target), core, now)
@@ -102,6 +108,8 @@ impl AgentVerbs {
                     VerbError::at(error, &work_ref)
                 }
             })?;
+        #[cfg(test)]
+        crate::storage::work_cost::phase("word.after_service");
         // What an unblock cleared is read from its committed clear, the one
         // that moved the item to the receipt's revision, so a replayed
         // answer names it as the first did, and a peer's change between this
@@ -157,6 +165,8 @@ impl AgentVerbs {
             format!("{line}{}", held_suffix(self.holder(&after, now), now))
         };
         let guidance = self.guidance(&after, "update", now);
+        #[cfg(test)]
+        crate::storage::work_cost::phase("word.after_refresh_guidance");
         let mut value = serde_json::to_value(&result)?;
         if let Some(blocker) = &cleared_blocker {
             value["cleared_blocker"] = serde_json::Value::String(
@@ -166,6 +176,8 @@ impl AgentVerbs {
                 serde_json::json!(after.blocker_count.max(after.blockers.len()));
         }
         let receipt = self.finish_mutation(Receipt::assemble(vec![line], guidance, value, false));
+        #[cfg(test)]
+        crate::storage::work_cost::phase("word.receipt");
         // Memories naming this item as their retiring target are surfaced
         // when it leaves open work other than by completion: a cancel or a
         // rejection cancels it, a supersede or a detach replaces it.

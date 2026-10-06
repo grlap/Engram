@@ -65,7 +65,9 @@ pub(super) fn required_children_ready(
     waived.sort_unstable_by_key(|work_id| work_id.0);
     let waived_json = serde_json::to_string(&waived)?;
     let seals_json = serde_json::to_string(&execution.required_child_seals)?;
-    Ok(connection.query_row(
+    Ok(super::query_row_with_cost(
+        connection,
+        "required_children_ready",
         "SELECT NOT EXISTS (
              SELECT 1 FROM work_items child
              WHERE child.parent_id = ?1 AND child.child_requirement = 'required'

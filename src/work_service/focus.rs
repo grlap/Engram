@@ -424,11 +424,12 @@ pub(super) fn child_obligations(
     parent: &WorkItem,
     run: Option<&WorkRun>,
     children: &[WorkItem],
+    scope: &crate::storage::RootReadScope<'_>,
 ) -> Result<WorkChildObligations, StoreError> {
-    let waived = store.work_child_waivers(parent, run)?;
+    let waived = store.work_child_waivers_in_scope(parent, run, Some(scope))?;
     let mut groups = WorkChildObligations::default();
     for child in children {
-        let successor = store.required_child_successor(child)?;
+        let successor = store.required_child_successor_in_scope(child, Some(scope))?;
         let page = match child.child_requirement {
             ChildRequirement::Required
                 if child.lifecycle != WorkLifecycle::Completed

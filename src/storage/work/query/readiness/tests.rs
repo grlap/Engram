@@ -34,6 +34,56 @@ fn readiness_fixture_closes_store_before_removing_directory() {
     assert!(!leaked, "fixture directory must outlive its SQLite store");
 }
 
+#[test]
+fn scoped_child_reads_preserve_totals_and_validate_waivers_outside_the_result_prefix() {
+    let fixture = Fixture::new();
+    let run = fixture.store.get_work_run(fixture.claim.run_id).unwrap();
+    let expected = fixture
+        .store
+        .work_child_waivers_in_scope(&fixture.root, Some(&run), None)
+        .unwrap();
+    assert_eq!(expected.len(), 1);
+    fixture
+        .store
+        .work_root_read_snapshot(|scope| {
+            assert_eq!(
+                fixture.store.work_child_waivers_in_scope(
+                    &fixture.root,
+                    Some(&run),
+                    Some(scope),
+                )?,
+                expected
+            );
+            assert_eq!(
+                fixture
+                    .store
+                    .waivable_required_children_in_scope(&fixture.root, 1, Some(scope),)?,
+                fixture.store.waivable_required_children(&fixture.root, 1)?
+            );
+            Ok(())
+        })
+        .unwrap();
+    // The only disposed child is already waived, so it contributes no row to
+    // the requested prefix. Its invalid member must still refuse the read.
+    fixture.store.connection.execute(
+        "UPDATE work_root_members SET member_json = CAST(json_set(member_json, '$.value.work_revision', 999) AS BLOB)
+         WHERE root_execution_id = ?1 AND json_extract(member_json, '$.collection') = 'child_waiver'",
+        [run.root_execution_id.0.to_string()],
+    ).unwrap();
+    let error = fixture
+        .store
+        .work_root_read_snapshot(|scope| {
+            fixture
+                .store
+                .waivable_required_children_in_scope(&fixture.root, 1, Some(scope))
+        })
+        .unwrap_err();
+    assert!(
+        matches!(error, StoreError::InvalidWorkProjection(_)),
+        "{error}"
+    );
+}
+
 impl Fixture {
     fn new() -> Self {
         let directory = crate::test_support::temp_home().expect("fixture directory");

@@ -23,8 +23,8 @@ pub(in crate::storage) const KIND: &str = "work_root_delta";
 mod tests;
 
 #[cfg(test)]
-#[derive(Clone, Copy, Debug, Default)]
-struct Cost {
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub(super) struct Cost {
     member_hashes: usize,
     member_bytes: usize,
     checksums: usize,
@@ -32,6 +32,11 @@ struct Cost {
     assemblies: usize,
     resolves: usize,
     head_loads: usize,
+    projected_read_calls: usize,
+    materialized_rows: usize,
+    materialized_bytes: usize,
+    typed_member_decodes: usize,
+    generic_member_decodes: usize,
 }
 
 #[cfg(test)]
@@ -39,7 +44,19 @@ thread_local! {
     static COST: std::cell::RefCell<Cost> = const { std::cell::RefCell::new(Cost {
         member_hashes: 0, member_bytes: 0, checksums: 0, checksum_bytes: 0,
         assemblies: 0, resolves: 0, head_loads: 0,
+        projected_read_calls: 0, materialized_rows: 0, materialized_bytes: 0,
+        typed_member_decodes: 0, generic_member_decodes: 0,
     }) };
+}
+
+#[cfg(test)]
+pub(super) fn reset_cost() {
+    COST.with_borrow_mut(|cost| *cost = Cost::default());
+}
+
+#[cfg(test)]
+pub(super) fn cost_snapshot() -> Cost {
+    COST.with_borrow(|cost| *cost)
 }
 
 fn invalid(message: &str) -> StoreError {
@@ -359,6 +376,8 @@ fn projected_with_head(
     connection: &Connection,
     id: RootExecutionId,
 ) -> Result<LoadedRoot, StoreError> {
+    #[cfg(test)]
+    COST.with_borrow_mut(|cost| cost.projected_read_calls += 1);
     let (bytes, stored_hash, scalars): (Vec<u8>, String, bool) = connection
         .query_row(
             "SELECT header_json, head_id,
@@ -393,8 +412,18 @@ fn projected_with_head(
         Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
     })? {
         let (stored_hash, bytes) = row?;
+        #[cfg(test)]
+        COST.with_borrow_mut(|cost| {
+            cost.materialized_rows += 1;
+            cost.materialized_bytes += bytes.len();
+        });
         let value: RootExecutionMember = serde_json::from_slice(&bytes)?;
-        if serde_json::to_value(&value)? != serde_json::from_slice::<serde_json::Value>(&bytes)? {
+        #[cfg(test)]
+        COST.with_borrow_mut(|cost| cost.typed_member_decodes += 1);
+        let generic = serde_json::from_slice::<serde_json::Value>(&bytes)?;
+        #[cfg(test)]
+        COST.with_borrow_mut(|cost| cost.generic_member_decodes += 1);
+        if serde_json::to_value(&value)? != generic {
             return Err(invalid("unexpected member fields"));
         }
         let hash = member_hash(&value)?;
@@ -915,10 +944,21 @@ pub(super) fn update<'a>(
     id: RootExecutionId,
     change: impl FnOnce(&mut RootExecution),
 ) -> Result<WrittenRoot<'a>, StoreError> {
+    try_update(transaction, id, |root| {
+        change(root);
+        Ok(())
+    })
+}
+
+pub(super) fn try_update<'a>(
+    transaction: &'a Transaction<'_>,
+    id: RootExecutionId,
+    change: impl FnOnce(&mut RootExecution) -> Result<(), StoreError>,
+) -> Result<WrittenRoot<'a>, StoreError> {
     let prior = projected_with_head(transaction, id)?;
     super::query::verify_root_execution_reference_on(transaction, &prior.address)?;
     let mut value = prior.value.clone();
-    change(&mut value);
+    change(&mut value)?;
     let address = persist_loaded(transaction, &value, prior)?;
     Ok(WrittenRoot {
         connection: transaction,

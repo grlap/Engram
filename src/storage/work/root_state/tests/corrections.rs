@@ -97,7 +97,7 @@ fn root_delta_collection_order_errors_name_each_collection() {
 
 #[test]
 fn root_delta_written_head_refuses_wrong_connection_state_and_stale_head() {
-    let (store, _, id) = fixture();
+    let (store, root, id) = fixture();
     let transaction = store.connection.unchecked_transaction().unwrap();
     let written = update(&transaction, id, |value| value.revision += 1).unwrap();
     let other = Connection::open_in_memory().unwrap();
@@ -139,6 +139,53 @@ fn root_delta_written_head_refuses_wrong_connection_state_and_stale_head() {
             .contains("written head is no longer current")
     );
     assert_eq!(test_database_shape_snapshot(&transaction).unwrap(), before);
+    let event = super::super::super::query::latest_canonical_work_event_for_item_optional(
+        &transaction,
+        root.work_id,
+    )
+    .unwrap()
+    .unwrap();
+    let draft =
+        super::super::super::WorkEventDraft::with_root_state(&event, Some(written.value().clone()));
+    let error =
+        super::super::super::feeds::append_work_event_with_root(&transaction, &draft, &written)
+            .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("written head is no longer current"),
+        "{error}"
+    );
+    assert_eq!(test_database_shape_snapshot(&transaction).unwrap(), before);
+}
+
+#[test]
+fn fallible_root_update_refuses_before_writes_and_rolls_back_a_later_failure() {
+    let (store, _, id) = fixture();
+    let before = test_database_shape_snapshot(&store.connection).unwrap();
+    let transaction = store.connection.unchecked_transaction().unwrap();
+    let error = try_update(&transaction, id, |value| {
+        value.revision += 1;
+        value
+            .expected_contributors
+            .push(SessionId("never-written".into()));
+        Err(StoreError::InvalidWork("refused change".into()))
+    })
+    .err()
+    .unwrap();
+    assert!(error.to_string().contains("refused change"));
+    assert_eq!(test_database_shape_snapshot(&transaction).unwrap(), before);
+    try_update(&transaction, id, |value| {
+        value.revision += 1;
+        Ok(())
+    })
+    .unwrap();
+    assert_ne!(test_database_shape_snapshot(&transaction).unwrap(), before);
+    transaction.rollback().unwrap();
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).unwrap(),
+        before
+    );
 }
 
 #[test]

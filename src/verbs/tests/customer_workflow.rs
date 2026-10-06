@@ -10,6 +10,7 @@ mod claim_lapse;
 mod compact_completion;
 mod continuity;
 mod contract_text;
+mod cost_matrix;
 mod creation;
 mod criterion_links;
 mod detach;

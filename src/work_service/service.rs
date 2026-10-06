@@ -11,13 +11,13 @@ use super::{
     WorkGraphSnapshotExport, WorkGraphSnapshotLoadResult, WorkGuidance, WorkHistoryView, WorkId,
     WorkItem, WorkNextSection, WorkPlanningAuthority, WorkProtocolBasis, WorkProtocolIntent,
     WorkSectionOmission, WorkSectionOmissionReason, agent_work_session, allowed_next,
-    bindable_control_work_binding, bounded_prerequisite_summaries, child_lifecycle_is_unfinished,
-    child_lifecycle_priority, compact_text, count_omission, disclosed_work_obligation_page,
-    ensure_agent_response_budget, fit_focus_response, normalize_actor_context,
-    prioritized_focus_evidence, ready_work_summary, required_child_waiver_candidate,
-    restored_work_evidence_summary, validate_process_default_work_session, work_evidence_kind_word,
-    work_evidence_summary, work_handoff_summary, work_item_summary, work_lifecycle_word,
-    work_memory_index, work_observation_summary, work_run_summary,
+    bounded_prerequisite_summaries, child_lifecycle_is_unfinished, child_lifecycle_priority,
+    compact_text, count_omission, disclosed_work_obligation_page, ensure_agent_response_budget,
+    fit_focus_response, normalize_actor_context, prioritized_focus_evidence, ready_work_summary,
+    required_child_waiver_candidate, restored_work_evidence_summary,
+    validate_process_default_work_session, work_evidence_kind_word, work_evidence_summary,
+    work_handoff_summary, work_item_summary, work_lifecycle_word, work_memory_index,
+    work_observation_summary, work_run_summary,
 };
 
 use std::cell::RefCell;
@@ -892,6 +892,34 @@ impl LocalWorkService {
         text: FocusText,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
+        store.work_root_read_snapshot(|scope| {
+            self.focus_view_in_scope(
+                store,
+                work_id,
+                with_memories,
+                with_latest_evidence,
+                text,
+                now,
+                scope,
+            )
+        })
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        reason = "the bounded focus packet and explicit read scope stay contiguous"
+    )]
+    fn focus_view_in_scope(
+        &self,
+        store: &SqliteStore,
+        work_id: WorkId,
+        with_memories: bool,
+        with_latest_evidence: bool,
+        text: FocusText,
+        now: DateTime<Utc>,
+        scope: &crate::storage::RootReadScope<'_>,
+    ) -> Result<WorkFocusView, StoreError> {
         let session = store.work_session_state(&self.project_id, &self.session_id, now)?;
         let WorkGuidance {
             status,
@@ -899,7 +927,7 @@ impl LocalWorkService {
             waivable_required_children,
             claim,
             handoffs,
-        } = self.work_guidance(store, work_id, now)?;
+        } = self.work_guidance_in_scope(store, work_id, now, scope)?;
         let run = if let Some(run_id) = status.work.active_run_id {
             Some(store.get_work_run(run_id)?)
         } else {
@@ -1083,6 +1111,7 @@ impl LocalWorkService {
                 &status.work,
                 run.as_ref(),
                 &children,
+                scope,
             )?)
         } else {
             None
@@ -1161,7 +1190,7 @@ impl LocalWorkService {
         let control_binding = run
             .as_ref()
             .map(|run| {
-                bindable_control_work_binding(
+                super::projection::bindable_control_work_binding_in_scope(
                     store,
                     &self.project_id,
                     &self.session_id,
@@ -1169,6 +1198,7 @@ impl LocalWorkService {
                     run,
                     claim.as_ref(),
                     now,
+                    Some(scope),
                 )
             })
             .transpose()?
@@ -1198,7 +1228,7 @@ impl LocalWorkService {
                 }
             });
         let successor = if matches!(text, FocusText::Full) {
-            store.required_child_successor(&status.work)?
+            store.required_child_successor_in_scope(&status.work, Some(scope))?
         } else {
             None
         };
@@ -1372,7 +1402,8 @@ impl LocalWorkService {
                 .map(|work| {
                     let mut summary = work_item_summary(&work);
                     if matches!(text, FocusText::Full) {
-                        summary.required_child_successor = store.required_child_successor(&work)?;
+                        summary.required_child_successor =
+                            store.required_child_successor_in_scope(&work, Some(scope))?;
                     }
                     Ok(summary)
                 })
@@ -1427,34 +1458,39 @@ impl LocalWorkService {
         work_id: WorkId,
         now: DateTime<Utc>,
     ) -> Result<WorkGuidance, StoreError> {
-        store.work_read_snapshot(|store| self.work_guidance_on_snapshot(store, work_id, now))
+        store.work_root_read_snapshot(|scope| {
+            self.work_guidance_in_scope(store, work_id, now, scope)
+        })
     }
 
-    fn work_guidance_on_snapshot(
+    fn work_guidance_in_scope(
         &self,
         store: &SqliteStore,
         work_id: WorkId,
         now: DateTime<Utc>,
+        scope: &crate::storage::RootReadScope<'_>,
     ) -> Result<WorkGuidance, StoreError> {
         let status = store.inspect_work(work_id, now)?;
         let claim = store.current_work_claim_for_item(&status.work)?;
         let handoffs = store.work_handoff_offers(work_id)?;
         let waivable_required_children = store
-            .waivable_required_children(&status.work, MAX_FOCUS_RELATIONS)?
+            .waivable_required_children_in_scope(&status.work, MAX_FOCUS_RELATIONS, Some(scope))?
             .into_iter()
             .map(required_child_waiver_candidate)
             .collect::<Vec<_>>();
         let (completion_capture_ready, completion_preflight_ready) = store
-            .work_completion_readiness_for_item(
+            .work_completion_readiness_in_scope(
                 &status.work,
                 claim.as_ref(),
                 &self.session_id,
                 now,
+                Some(scope),
             )?;
-        let claim_recovery_required = store.work_claim_recovery_required_for_item(
+        let claim_recovery_required = store.work_claim_recovery_required_in_scope(
             &status.work,
             claim.as_ref(),
             &self.session_id,
+            Some(scope),
         )?;
         let mut next = allowed_next(
             &status,

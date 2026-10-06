@@ -171,6 +171,46 @@ fn the_focus_view_reads_its_status_and_obligations_from_one_commit() {
 }
 
 #[test]
+fn shared_focus_binding_matches_independent_validation_and_refuses_a_later_handoff() {
+    let (_directory, service, database, work) = claimed_root("snapshot-shared-binding");
+    let reader = SqliteStore::open(&database).unwrap();
+    let binding = read_across_a_concurrent_commit(
+        &reader,
+        |reader| {
+            reader.work_read_snapshot(|reader| {
+                let view = service.focus_view(reader, work.work_id, false, true, at(40))?;
+                let binding = view.control_binding.expect("live binding before handoff");
+                assert!(reader.control_work_binding_bindable(
+                    &service.project_id,
+                    &service.session_id,
+                    &binding,
+                    at(40),
+                )?);
+                Ok(binding)
+            })
+        },
+        &["FROM work_run_obligations"],
+        offer_by_holder(&database, &work),
+    )
+    .unwrap();
+    assert!(
+        !reader
+            .control_work_binding_bindable(
+                &service.project_id,
+                &service.session_id,
+                &binding,
+                at(60),
+            )
+            .unwrap(),
+        "a prior advisory binding cannot authorize after handoff"
+    );
+    let after = service
+        .focus_view(&reader, work.work_id, false, true, at(60))
+        .unwrap();
+    assert!(after.control_binding.is_none());
+}
+
+#[test]
 fn an_update_receipt_reads_its_guidance_and_obligations_from_one_commit() {
     let (_directory, service, database, work) = claimed_root("snapshot-update-receipt");
     let reader = SqliteStore::open(&database).expect("reader store");

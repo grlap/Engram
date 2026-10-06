@@ -755,6 +755,35 @@ impl SqliteStore {
         )
     }
 
+    pub(crate) fn control_work_binding_bindable_in_scope(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        binding: &ControlWorkBinding,
+        now: DateTime<Utc>,
+        scope: &super::RootReadScope<'_>,
+    ) -> Result<bool, StoreError> {
+        match work::validate_control_work_binding_in_scope(
+            &self.connection,
+            project_id,
+            session_id,
+            binding,
+            now,
+            Some(scope),
+        ) {
+            Ok(()) => Ok(true),
+            Err(
+                StoreError::ControlWorkBindingStale { .. }
+                | StoreError::WorkClaimMismatch { .. }
+                | StoreError::WorkClaimLapsed { .. }
+                | StoreError::WorkRevisionConflict { .. }
+                | StoreError::WorkNotFound(_)
+                | StoreError::InvalidWork(_),
+            ) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
     pub(super) fn session_has_begun_turn(
         connection: &Connection,
         session_id: &SessionId,
