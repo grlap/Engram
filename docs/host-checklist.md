@@ -337,6 +337,75 @@ command semantics. Body presence and task relevance remain context judgments.
 | All discovered broadly applicable constraints are recovered; a body concerns an unrelated future cutover | Defer that body until cutover becomes relevant; preserve the applicable constraints already recovered. |
 | A read-only child cannot record the printed generation | List without it, follow continuations, read relevant full bodies and disclose that the generation direction remains unsettled. |
 
+### Start unrelated work with fresh context
+
+Use a fresh conversation for an unrelated task, with a compact durable brief
+instead of the previous task's transcript. Keep useful context for related
+implementation, corrections and review rounds. A turn ending, an idle period
+or claim expiry alone is not a reason to clear context.
+
+Before switching, record the previous task's outcome or pause state, source
+revision and worktree, unresolved dependencies, next action and exact evidence
+locators in its durable work notes. Distinguish planned future work from
+results and notifications still owed. Completion does not cancel a delivery
+duty. Follow the existing [claim and handoff rules](features/local-work-system.md#work-claims)
+and the project's [review boundaries](../AGENTS.md#review-cadence).
+
+Resolve active claims, gates, reviews, evaluation attempts and notifications,
+or explicitly hand them off through a supported route. For each outstanding
+operation, retain its accountable owner, exact result/dependency locator,
+wake sender and route, next action and recovery owner/action if delivery
+fails. A note or new conversation does not redirect a launcher notification,
+delegation result or evaluator attempt. Where redirection is unsupported,
+keep the existing owner and route until the operation settles and record the
+limitation. For a check the host records, command completion may precede its
+final verification or refusal; recover that record before treating the check
+as settled. A detached focused launcher run or custom script is not recorded
+as a host check: recover its terminal result without waiting for nonexistent
+host credit. Do not reset or delete the accountable session to shed its context.
+
+The successor receives only the new objective and acceptance, necessary
+source/evidence locators, unresolved dependencies and the named owners of
+remaining duties. It independently recovers current instructions and follows
+the [startup memory recovery sequence](#recover-saved-guidance-after-compaction)
+before substantive work. Read the current item and relevant full notes from
+their source. A brief transfers information, not a live claim, grant or source
+binding; the successor obtains its own claim and names its worktree under the
+project's existing rules. Fresh context still shares repository files and
+durable project memory, so it must respect outstanding frozen inputs.
+
+Use the host's supported fresh-session route. In TermAl, `POST /api/sessions`
+creates a new root session; use the verified project, workdir and existing
+agent settings rather than changing defaults. Capture the request and creation
+receipt, check the returned new session identity and empty initial history,
+then send the compact brief through the supported prompt or mailbox route.
+Creation alone does not start recovery: the first prompt starts the agent,
+which must perform the reads above. The coordinator names who checks delivery
+and recovers an undelivered brief; a send receipt proves storage, not execution.
+
+A host-supported context reset is an alternative only when its actual contract
+preserves the required duties and supplies current instructions at the new
+context boundary. No TermAl context-reset route is established here. If neither
+safe route is available, record the limitation and the next recovery action;
+do not describe continued context as fresh or invent a reset command.
+
+| Situation | Context and ownership procedure |
+| --- | --- |
+| Related implementation, correction or review round | Retain the useful task context and existing ownership; do not reset per turn. |
+| Completed task, unrelated work next | Record the outcome, source and evidence; settle or explicitly hand off owed notices, then start a fresh session with the new task's compact brief. |
+| Gate, review or evaluation outstanding | Keep the accountable owner and delivery route until terminal and settled, or use an explicit supported handoff with dependency, wake and recovery details. Record unavailable redirection; do not abandon the operation. |
+| Paused task | Save source/worktree, exact resumption locators, dependencies, next action and wake/recovery owners. Handle live claims separately under the existing protocol; the saved context grants no authority. |
+| Fresh-context route unavailable | Disclose the limitation and recovery action; retain duties and describe the context honestly. |
+
+The observed TermAl successor creations returned distinct session identities,
+idle status, empty message arrays and zero message counts; their requests did
+not carry fork, resume or transcript fields. Those receipts demonstrate fresh
+session creation, while the successor's recorded startup reads demonstrate
+recovery separately. The scenarios above illustrate the boundary; they do not
+establish token savings, automatic task switching or context-reset support.
+Keep the exact requests, receipts and recovery-read locators in work evidence
+rather than embedding task references or machine-specific captures here.
+
 ### Render tool results once and retrieve details selectively
 
 Use this procedure when composing tool results for an agent. It changes
