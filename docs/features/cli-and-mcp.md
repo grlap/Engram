@@ -3088,6 +3088,7 @@ principal. The shipped operations are:
 | --- | --- |
 | `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `ready`. Binding creates no task or join event. Its result carries the session status. |
 | `session_status` | Read current phase, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and, for a work-bound session, the claim's `named_root` state |
+| `turn_grant_read` | None. Read one grant from this session's history by exact `grant_id`, using current connection and `routing_token` credentials and one snapshot. Return `found` with persisted state and begin/checkpoint timestamps, or `not_found`; write and expire nothing. Evidence only, with no begin fence or replay authority; see [Exact grant evidence](behavioral-control-plane.md#exact-grant-evidence) |
 | `turn_evaluate` | Derive membership, phase, policy and work binding from SQLite and persist a decision plus optional grant |
 | `turn_begin` | Recheck the grant's basis, then consume the issued grant; for a work-bound session the receipt carries the claim's `named_root` state |
 | `turn_checkpoint` | Atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |

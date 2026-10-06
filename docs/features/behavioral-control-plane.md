@@ -1492,7 +1492,7 @@ fail-mode result; a hung hook is not an acceptable control mechanism.
 ## Planned interfaces
 
 The shipped host channel is `session_bind`, `session_status`,
-`turn_evaluate`, `turn_begin`, `turn_checkpoint`, `named_root_bind`,
+`turn_evaluate`, `turn_begin`, `turn_checkpoint`, `turn_grant_read`, `named_root_bind`,
 `named_root_read`, `named_root_sighting_read`, `execution_observe`,
 `acceptance_binding_read`, `acceptance_verification_read` and
 `verification_bind`. The design named seven
@@ -1538,7 +1538,7 @@ persisted turn decisions and short-lived grants that carry no delivery page,
 begin-time rechecks, canonical execution observations, and canonical checkpoint
 events. A separate `engram control` JSON-lines process
 implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
-`turn_checkpoint`, `named_root_bind`, `named_root_read`,
+`turn_checkpoint`, `turn_grant_read`, `named_root_bind`, `named_root_read`,
 `named_root_sighting_read`, `execution_observe`, `acceptance_binding_read`,
 `acceptance_verification_read` and `verification_bind`; none is exposed through
 agent-facing MCP. Exact retry
@@ -1547,6 +1547,37 @@ the session returns to `ready`. Each open rotates an internal
 connection generation so a still-running predecessor is fenced. Begun grants
 stay open until reported and are discoverable through session status; no
 payload is redelivered.
+
+### Exact grant evidence
+
+The host-only `turn_grant_read` request takes `routing_token` and an exact
+opaque `grant_id`. It checks the current connection, project and routing in
+one deferred read snapshot, then reads that session's grant history, including
+grants from before a project or task rebind. No live claim is required.
+It does not expire grants, reevaluate policy or decode historical grant payloads;
+an unsupported payload schema or stale task/basis does not hide recorded facts.
+An overdue persisted `issued` grant remains `issued`.
+
+The ordinary `ok` response wraps a result with `control_schema_version` (the
+read protocol version), `session_id`, `grant_id` and `status`. A `found`
+result also includes `state`, `begun_at` and `completed_at`, with both timestamp
+fields present as RFC 3339 timestamps or null. The states are `issued`,
+`begun`, `completed`, `expired` and `superseded`. Issued, expired and superseded
+have both times null; begun has only `begun_at`; completed has both. No time
+ordering is assumed. A `not_found` result omits state and timestamps.
+
+Empty or whitespace-only ids refuse with `invalid_turn_grant_id`; other ids
+are preserved byte for byte. Another session's grant refuses with
+`turn_grant_session_mismatch`, without exposing its facts. Invalid state,
+out-of-range timestamps or incoherent state/time combinations refuse with
+`control_projection_invalid`. Current credential and store-open refusals
+remain errors, even for a missing or foreign grant. No read changes a row.
+
+These are snapshot evidence only, without dispatch, replay or admission
+authority. `not_found` never proves that a turn was never begun. A found
+issued row is no fence against a concurrent begin. The host retains its
+serialized recovery and ordinary turn-begin/dispatch rules.
+
 `doctor` verifies canonical intent/result bytes plus their redundant row
 bindings. It audits recorded state and reports the configured assurance
 requirement; it does not verify that every caller is mediated by a host.

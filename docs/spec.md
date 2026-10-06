@@ -1124,7 +1124,7 @@ them.
 A separate host-private transport exposes the §2.7 protocol:
 
 ```text
-session_bind   session_status   turn_evaluate   turn_begin   turn_checkpoint
+session_bind   session_status   turn_grant_read   turn_evaluate   turn_begin   turn_checkpoint
 named_root_bind   named_root_read   named_root_sighting_read
 execution_observe   acceptance_binding_read   acceptance_verification_read
 verification_bind

@@ -2,6 +2,7 @@
 
 mod acceptance_binding_read;
 mod acceptance_verification_read;
+mod control_grant_read;
 mod control_inspection;
 mod control_runtime;
 mod control_support;
@@ -1340,6 +1341,10 @@ pub enum StoreError {
     EnvironmentBasisMismatch(String),
     #[error("turn grant {0:?} does not exist")]
     ControlTurnGrantNotFound(String),
+    #[error("turn grant belongs to another session")]
+    ControlTurnGrantSessionMismatch,
+    #[error("turn grant id must not be empty or whitespace-only")]
+    InvalidTurnGrantId,
     #[error("control projection contains invalid data: {0}")]
     InvalidControlProjection(String),
     #[error("active control policy changed: expected {expected}, current policy is {current}")]

@@ -46,6 +46,10 @@ pub enum HostControlRequest {
     SessionStatus {
         routing_token: String,
     },
+    TurnGrantRead {
+        routing_token: String,
+        grant_id: String,
+    },
     NamedRootBind {
         routing_token: String,
         claim_id: WorkClaimId,
@@ -165,6 +169,7 @@ impl HostControlRequest {
         match self {
             Self::SessionBind { .. } => "session_bind",
             Self::SessionStatus { .. } => "session_status",
+            Self::TurnGrantRead { .. } => "turn_grant_read",
             Self::NamedRootBind { .. } => "named_root_bind",
             Self::NamedRootRead { .. } => "named_root_read",
             Self::NamedRootSightingRead { .. } => "named_root_sighting_read",
@@ -339,6 +344,17 @@ impl HostControlServer {
                 )?)
                 .map_err(StoreError::Json)
             }
+            HostControlRequest::TurnGrantRead {
+                routing_token,
+                grant_id,
+            } => serde_json::to_value(self.store.read_control_turn_grant(
+                &self.project_id,
+                &self.session_id,
+                &self.connection_token,
+                &routing_token,
+                &grant_id,
+            )?)
+            .map_err(StoreError::Json),
             HostControlRequest::NamedRootBind {
                 routing_token,
                 claim_id,
@@ -894,6 +910,8 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::EnvironmentEvidenceNotFound(_) => "environment_evidence_not_found",
         StoreError::EnvironmentBasisMismatch(_) => "environment_basis_mismatch",
         StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
+        StoreError::ControlTurnGrantSessionMismatch => "turn_grant_session_mismatch",
+        StoreError::InvalidTurnGrantId => "invalid_turn_grant_id",
         StoreError::AcceptanceEvaluationRefused { .. }
         | StoreError::AcceptanceEvaluationCarriedFailure { .. } => "acceptance_evaluation_refused",
         // A standing blocking evaluation answers as an evaluation refusal;
@@ -980,6 +998,91 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    #[test]
+    fn turn_grant_read_round_trips_on_the_host_channel() {
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let session_id = SessionId("grant-read-host".into());
+        let connection_token = store
+            .resume_control_connection(&session_id, Utc::now())
+            .unwrap();
+        let mut server = HostControlServer {
+            store,
+            project_id: ProjectId("grant-read-project".into()),
+            actor_id: "host-test".into(),
+            session_id,
+            connection_token,
+            source_skill: None,
+            actor_context: None,
+            actor_context_normalized: false,
+        };
+        let bound = server
+            .handle(HostControlRequest::SessionBind {
+                external_ref: "grant-read-anchor".into(),
+                title: "grant read".into(),
+                assurance: ControlAssurance::TurnGated,
+                mediated_effects: vec![EffectClass::Observe],
+                work_binding: None,
+                capability_map_revision: 1,
+                idempotency_key: "bind".into(),
+            })
+            .unwrap();
+        let routing = bound["routing_token"].as_str().unwrap();
+        let decision = server
+            .handle(HostControlRequest::TurnEvaluate {
+                routing_token: routing.into(),
+                idempotency_key: "evaluate".into(),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"evaluate").as_str().into(),
+                purpose: None,
+                requested_effects: vec![EffectClass::Observe],
+                resource_intents: vec![],
+            })
+            .unwrap();
+        let grant_id = decision["grant"]["grant_id"].as_str().unwrap();
+        let request = |id: &str| serde_json::json!({"operation":"turn_grant_read","routing_token":routing,"grant_id":id});
+        let frames = [
+            request(grant_id),
+            request("missing"),
+            request(" "),
+            serde_json::json!({"operation":"turn_grant_read","routing_token":routing,"grant_id":7}),
+            serde_json::json!({"operation":"turn_grant_read","routing_token":routing,"grant_id":"missing","idempotency_key":"extra"}),
+        ];
+        let mut input = Vec::new();
+        for frame in &frames {
+            serde_json::to_writer(&mut input, frame).unwrap();
+            input.push(b'\n');
+        }
+        let mut output = Vec::new();
+        server.serve(Cursor::new(input), &mut output).unwrap();
+        let replies = output
+            .split(|b| *b == b'\n')
+            .filter(|b| !b.is_empty())
+            .map(|line| serde_json::from_slice::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(replies[0]["status"], "ok");
+        assert_eq!(
+            replies[0]["result"],
+            serde_json::json!({"control_schema_version":crate::CONTROL_SCHEMA_VERSION,"session_id":server.session_id,"grant_id":grant_id,"status":"found","state":"issued","begun_at":null,"completed_at":null})
+        );
+        assert_eq!(
+            replies[1]["result"],
+            serde_json::json!({"control_schema_version":crate::CONTROL_SCHEMA_VERSION,"session_id":server.session_id,"grant_id":"missing","status":"not_found"})
+        );
+        assert_eq!(replies[2]["error"]["code"], "invalid_turn_grant_id");
+        assert_eq!(replies[3]["error"]["code"], "invalid_request");
+        assert_eq!(replies[4]["error"]["code"], "invalid_request");
+        assert_eq!(
+            store_error_code(&StoreError::ControlTurnGrantSessionMismatch),
+            "turn_grant_session_mismatch"
+        );
+        assert!(matches!(
+            serde_json::from_value::<HostControlRequest>(
+                serde_json::json!({"operation":"session_status","routing_token":routing})
+            )
+            .unwrap(),
+            HostControlRequest::SessionStatus { .. }
+        ));
+    }
 
     #[test]
     fn different_build_refusal_preserves_host_wire_code() {

@@ -445,6 +445,8 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::EnvironmentEvidenceNotFound(_)
         | StoreError::EnvironmentBasisMismatch(_)
         | StoreError::ControlTurnGrantNotFound(_)
+        | StoreError::ControlTurnGrantSessionMismatch
+        | StoreError::InvalidTurnGrantId
         | StoreError::DifferentBuildSchema
         | StoreError::InvalidControlProjection(_)
         | StoreError::ControlPolicyConflict { .. }
