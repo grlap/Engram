@@ -1,5 +1,21 @@
 use super::*;
 
+fn recovery_details(reader: &AgentVerbs, compact: &Receipt, second: i64) -> Receipt {
+    let command = compact.value["details"].as_str().expect("detail route");
+    let words = command.split_whitespace().collect::<Vec<_>>();
+    assert_eq!(words, ["engram", "work", "next", "--peek", "--verbose"]);
+    reader
+        .next(
+            &NextInput {
+                peek: words.contains(&"--peek"),
+                verbose: words.contains(&"--verbose"),
+                ..Default::default()
+            },
+            at(second),
+        )
+        .expect("emitted recovery route")
+}
+
 #[test]
 fn attribution_same_actor_different_sessions_are_not_you() {
     let (_directory, reader, path, project) = fixture();
@@ -260,8 +276,7 @@ fn attribution_staged_replay_keeps_labels_and_exact_payload_bytes() {
         SessionId("agent".into()),
         None,
     );
-    // Verbose keeps every change row whole; a compact preview would point
-    // this one at the same note's continuity row in the participated section.
+    // The broader preview keeps this small fixture's change rows whole.
     let preview = replacement
         .next(
             &NextInput {
@@ -283,13 +298,61 @@ fn attribution_staged_replay_keeps_labels_and_exact_payload_bytes() {
             },
             at(3),
         )
+        .unwrap();
+    let retained = compact.value["changes"]
+        .as_array()
         .unwrap()
-        .text();
-    assert!(
-        compact.contains(&format!("{work} noted by peer-"))
-            && compact.contains(&format!("see participated {work}")),
-        "{compact}"
+        .iter()
+        .filter_map(Value::as_str)
+        .find(|line| line.contains("Distinct replay observation"))
+        .expect("relevant peer note retained");
+    let peer_label = replacement
+        .service
+        .display_identity()
+        .session(&SessionId("peer-producer".into()));
+    assert!(retained.contains(&format!("noted by {peer_label}:")));
+    let words = retained
+        .split("; ")
+        .last()
+        .unwrap()
+        .split_whitespace()
+        .collect::<Vec<_>>();
+    assert_eq!(&words[..5], ["engram", "work", "show", &work, "--note"]);
+    let exact = replacement
+        .show_records(
+            words[3],
+            &ShowInput {
+                note: Some(words[5].into()),
+                ..Default::default()
+            },
+            at(3),
+        )
+        .expect("retained immutable note route");
+    assert_eq!(
+        exact.value["note"]["summary"],
+        "Distinct replay observation"
     );
+    assert_eq!(exact.value["note"]["by"], peer_label);
+    assert_eq!(compact.value["peek"]["more_changes_available"], false);
+    assert_eq!(compact.value["peek"]["delivery_advanced"], false);
+    assert_eq!(
+        compact.value["changes"].as_array().unwrap().len(),
+        first_lines.len()
+    );
+    let repeated = replacement
+        .next(
+            &NextInput {
+                peek: true,
+                ..Default::default()
+            },
+            at(3),
+        )
+        .unwrap();
+    assert_eq!(repeated.value["changes"], compact.value["changes"]);
+    let recovered = recovery_details(&replacement, &compact, 3);
+    for line in &first_lines {
+        assert!(recovered.text().contains(line), "{}", recovered.text());
+    }
     assert_eq!(
         before,
         store
@@ -1114,9 +1177,8 @@ fn attribution_another_actor_kind_on_this_session_is_not_you() {
         "{}",
         next.text()
     );
-    // Released, the item is one this session took part in: next's
-    // participated row carries the session's latest note, the operator's,
-    // and does not mark it as yours.
+    // Released, this participation is omitted from compact recovery. Its
+    // emitted record route must retain the operator's distinct attribution.
     reader
         .update(
             UpdateInput {
@@ -1137,19 +1199,78 @@ fn attribution_another_actor_kind_on_this_session_is_not_you() {
             at(6),
         )
         .expect("claimless next");
-    let participated = claimless.value["participated"].to_string();
-    assert!(
-        participated.contains("Operator note"),
-        "{}",
-        claimless.value
+    assert!(claimless.value["participated"].is_null());
+    assert!(claimless.value["participated_omitted"].as_u64().unwrap() > 0);
+    let advancing = reader
+        .next(&NextInput::default(), at(6))
+        .expect("advancing participation");
+    let participated = advancing.value["participated"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["ref"] == work)
+        .expect("participated item");
+    assert_eq!(participated["note"], "Operator note");
+    // note_by marks an agent's own note only. Participation carries no
+    // current status; its emitted note route retains actor attribution.
+    assert!(participated["note_by"].is_null(), "{participated}");
+    assert_eq!(
+        participated["note_detail"],
+        format!("engram work show {work} --notes")
+    );
+    let participation_records = reader
+        .show_records(
+            &work,
+            &ShowInput {
+                notes: true,
+                ..Default::default()
+            },
+            at(6),
+        )
+        .expect("participation note route");
+    assert_eq!(
+        by_summary(&participation_records.value["notes"], "Operator note"),
+        actor_label
     );
     assert!(
-        !participated.contains("\"note_by\":\"you\""),
-        "{participated}"
-    );
-    assert!(
-        !claimless.text().contains("[note session you]"),
+        !advancing.text().contains("[note session you]"),
         "{}",
-        claimless.text()
+        advancing.text()
+    );
+    let command = claimless.value["focus"]["recovery"]["evidence_detail"]
+        .as_str()
+        .expect("record route");
+    let words = command.split_whitespace().collect::<Vec<_>>();
+    assert_eq!(
+        words,
+        ["engram", "work", "show", &work, "--notes", "--gates"]
+    );
+    let recovered = reader
+        .show_records(
+            words[3],
+            &ShowInput {
+                notes: words.contains(&"--notes"),
+                gates: words.contains(&"--gates"),
+                ..Default::default()
+            },
+            at(6),
+        )
+        .expect("emitted record route");
+    let operator = recovered.value["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["summary"] == "Operator note")
+        .expect("operator note");
+    assert_eq!(
+        operator["by"],
+        json!(by_summary(&shown.value["notes"], "Operator note"))
+    );
+    assert_eq!(operator["by"], json!(actor_label));
+    assert_eq!(by_summary(&recovered.value["notes"], "Agent note"), "you");
+    assert!(
+        !recovered.text().contains("[note session you]"),
+        "{}",
+        recovered.text()
     );
 }

@@ -279,7 +279,12 @@ fn orientation_expired_cursor_offers_executable_fresh_ready_listing() {
             at(100),
         )
         .unwrap();
-    assert_eq!(receipt.value["held"][0]["ref"], held);
+    assert_eq!(receipt.value["focus"]["ref"], held);
+    assert_eq!(receipt.value["focus"]["holder"], "you");
+    assert_eq!(
+        receipt.value["held"].as_array().unwrap().as_slice(),
+        &[] as &[serde_json::Value]
+    );
     assert!(receipt.text().find("held by you").unwrap() < receipt.text().find("ready (").unwrap());
     let input = navigation_input(receipt.value["ready_next"].as_str().unwrap());
     let error = verbs.ls(&input, at(111)).unwrap_err();
@@ -467,6 +472,7 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
     // Construct the pre-fit pair from one collected snapshot, not from an
     // already fitted result that could have silently lost candidates.
     let with = CompactNextReceipt {
+        recovery: None,
         backup_reminder: None,
         claim_lapse_reminder: None,
         focus_evaluation: None,

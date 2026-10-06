@@ -9,6 +9,74 @@ fn capture() -> crate::storage::WorkRecordAddress {
 }
 
 #[test]
+fn recovery_selects_structured_subjects_preserves_order_and_counts_overflow() {
+    let mut compact = context_receipt();
+    let reference = compact.held[0].work_ref.clone();
+    compact.peek = Some(crate::work_service::WorkNextPeek {
+        delivery_advanced: false,
+        more_changes_available: false,
+        memory_listing_due: false,
+    });
+    let capture = capture();
+    compact.changes = vec![crate::verbs::next_context::CompactChange {
+        line: format!("{reference} quoted in unrelated prose"),
+        subject: Some("unrelated-subject".into()),
+        attribution: "peer noted".into(),
+        note: None,
+    }];
+    for (index, kind) in [
+        "noted",
+        "claimed",
+        "handoff_offered",
+        "released",
+        "noted",
+        "claimed",
+    ]
+    .iter()
+    .enumerate()
+    {
+        compact
+            .changes
+            .push(crate::verbs::next_context::CompactChange {
+                line: format!("{kind} event {index}"),
+                subject: Some(reference.clone()),
+                attribution: format!("peer {kind}"),
+                note: (index == 0).then(|| (reference.clone(), capture.clone())),
+            });
+    }
+    crate::verbs::next_recovery::prepare(&mut compact);
+    assert_eq!(
+        compact
+            .changes
+            .iter()
+            .map(|row| row.line.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "noted event 0",
+            "claimed event 1",
+            "handoff_offered event 2",
+            "released event 3"
+        ]
+    );
+    assert_eq!(
+        compact
+            .omissions
+            .iter()
+            .filter(|row| row.section == "changes")
+            .map(|row| row.omitted_count)
+            .sum::<usize>(),
+        3
+    );
+    let value = compact_next_value(&compact);
+    assert!(value["changes"][0].as_str().unwrap().contains(&format!(
+        "engram work show {reference} --note {}",
+        capture.locator(usize::MAX)
+    )));
+    assert_eq!(value["peek"]["more_changes_available"], true);
+    assert_eq!(value["details"], "engram work next --peek --verbose");
+}
+
+#[test]
 fn typed_capture_members_and_record_ids_keep_identical_bodies_distinct() {
     let mut compact = context_receipt();
     compact.held.clear();
@@ -171,6 +239,7 @@ fn context_receipt() -> CompactNextReceipt {
         continuity: None,
     };
     CompactNextReceipt {
+        recovery: None,
         backup_reminder: None,
         claim_lapse_reminder: None,
         focus_evaluation: None,
@@ -211,6 +280,7 @@ fn peek_disclosures_survive_even_an_impossible_budget() {
         .changes
         .push(crate::verbs::next_context::CompactChange {
             line: "A change that cannot fit".into(),
+            subject: None,
             attribution: "peer noted".into(),
             note: None,
         });
@@ -285,11 +355,48 @@ fn the_memory_recovery_direction_survives_an_impossible_budget() {
 fn the_memory_recovery_direction_precedes_the_clipped_status_reminder() {
     let compact = recovering_receipt();
     let direction = memory_recovery_direction(&compact);
-    let budget = serde_json::to_vec(&compact_next_value(&context_receipt()))
+    let render = |receipt: &CompactNextReceipt| {
+        Receipt::assemble(
+            compact_next_lines(receipt),
+            receipt.guidance.clone(),
+            compact_next_value(receipt),
+            false,
+        )
+        .with_build_identity(&receipt.read_cut, receipt.context_generation.as_deref())
+    };
+    // Derive the budget from this recovery envelope with shortened status,
+    // including both reminders and navigation. An advancing envelope omits
+    // recovery fields and can force the held row itself out of the packet.
+    let mut clipped = compact.clone();
+    while clipped.discovery.shorten_status_previews() {}
+    let row = &mut clipped.held[0];
+    while crate::work_service::shorten_status_previews(
+        &mut row.current_status,
+        &mut row.status_observation,
+    ) {}
+    crate::verbs::next_context::refresh_guidance(&mut clipped);
+    let candidate = render(&clipped);
+    let budget = crate::verbs::receipts::compact_receipt_json_bytes(&candidate.value)
         .unwrap()
-        .len();
+        .max(agent_receipt_terminal_bytes(&candidate.text()))
+        + 1;
+    assert!(!agent_receipt_fits(&render(&compact), budget).unwrap());
+    let reference = compact.held[0].work_ref.clone();
+    let locator = compact.held[0]
+        .current_status
+        .as_ref()
+        .unwrap()
+        .locator
+        .clone();
     let fitted = fit_compact_next_to(compact, budget).unwrap();
+    assert_eq!(fitted.held.len(), 1);
+    assert_eq!(fitted.held[0].work_ref, reference);
+    assert_eq!(
+        fitted.held[0].current_status.as_ref().unwrap().locator,
+        locator
+    );
     assert!(!fitted.held[0].current_status.as_ref().unwrap().complete);
+    assert!(agent_receipt_fits(&render(&fitted), budget).unwrap());
     assert_eq!(
         fitted.guidance.reminders[..2],
         [
@@ -380,6 +487,7 @@ fn pilot_context_references_follow_retained_rows_and_distinct_change_notes() {
             .changes
             .push(crate::verbs::next_context::CompactChange {
                 line: format!("{reference} noted: A different delivered note"),
+                subject: Some(reference.clone()),
                 attribution: format!("{reference} noted"),
                 note: Some((reference.clone(), delivered.clone())),
             });

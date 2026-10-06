@@ -152,6 +152,7 @@ pub(super) struct CompactSectionOmission {
 
 #[derive(Clone)]
 pub(super) struct CompactNextReceipt {
+    pub(super) recovery: Option<super::next_recovery::Recovery>,
     pub(super) ready_navigation: Option<crate::work_service::WorkReadyNavigation>,
     pub(super) peek: Option<crate::work_service::WorkNextPeek>,
     pub(super) read_cut: crate::work_service::WorkNextReadCut,
@@ -1072,6 +1073,11 @@ pub(super) fn compact_next_receipt(
     ready_navigation: Option<crate::work_service::WorkReadyNavigation>,
 ) -> Result<CompactNextReceipt, VerbError> {
     let mut compact = CompactNextReceipt {
+        recovery: view
+            .peek
+            .as_ref()
+            .and(view.focus.as_ref())
+            .map(super::next_recovery::Recovery::from_focus),
         ready_navigation,
         peek: view.peek.clone(),
         read_cut: view.read_cut.clone(),
@@ -1127,6 +1133,9 @@ pub(super) fn compact_next_receipt(
         backup_reminder: view.backup_reminder.clone(),
         claim_lapse_reminder: view.claim_lapse_reminder.clone(),
     };
+    if compact.peek.is_some() {
+        super::next_recovery::prepare(&mut compact);
+    }
     if compact.guidance.reminders.len() > MAX_COMPACT_REMINDER_ITEMS {
         let omitted = compact.guidance.reminders.len() - MAX_COMPACT_REMINDER_ITEMS;
         compact
@@ -1181,7 +1190,14 @@ pub(super) fn fit_compact_next_to(
         if current_bytes < max_bytes && terminal_bytes < max_bytes {
             return Ok(compact);
         }
-        if compact.discovery.shorten_status_previews()
+        if (compact.peek.is_some()
+            && compact.focus.as_mut().is_some_and(|row| {
+                crate::work_service::shorten_status_previews(
+                    &mut row.current_status,
+                    &mut row.status_observation,
+                )
+            }))
+            || compact.discovery.shorten_status_previews()
             || compact.held.iter_mut().rev().any(|row| {
                 crate::work_service::shorten_status_previews(
                     &mut row.current_status,
@@ -1214,6 +1230,13 @@ pub(super) fn fit_compact_next_to(
             record_compact_omission(&mut compact.omissions, "ready", 1);
             continue;
         }
+        if compact
+            .recovery
+            .as_mut()
+            .is_some_and(super::next_recovery::Recovery::shed_preview)
+        {
+            continue;
+        }
         if compact.held.pop().is_some() {
             record_compact_omission(&mut compact.omissions, "held", 1);
             continue;
@@ -1243,6 +1266,7 @@ pub(super) fn fit_compact_next_to(
         }
         compact.focus_evaluation = None;
         if compact.focus.take().is_some() {
+            compact.recovery = None;
             compact.evaluation_obligations = None;
             record_compact_omission(&mut compact.omissions, "focus", 1);
             continue;
@@ -1331,6 +1355,16 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
     if let Some(advisory) = &compact.evaluation_obligations {
         value["evaluation_obligations"] = json!(advisory);
     }
+    if let Some(recovery) = &compact.recovery {
+        value["focus"]["recovery"] = json!(recovery);
+    }
+    if compact.peek.is_some() {
+        value["details"] = json!(super::next_recovery::DETAILS_COMMAND);
+        value["catalog_detail"] = json!(super::next_recovery::CATALOG_COMMAND);
+        if let Some(offers) = super::next_recovery::incoming_handoffs_value(compact) {
+            value["incoming_handoffs"] = offers;
+        }
+    }
     if let Some(navigation) = &compact.ready_navigation {
         let command = navigation
             .after_prefix(compact.ready.len())
@@ -1406,6 +1440,9 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
     match &compact.focus {
         Some(focus) => {
             lines.push(format!("focus: {}", compact_row_line(focus)));
+            if let Some(recovery) = &compact.recovery {
+                lines.extend(recovery.lines());
+            }
             if let Some(evaluation) = &compact.focus_evaluation {
                 lines.push(format!("  evaluation: {}", evaluation.summary));
             }
@@ -1423,6 +1460,7 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
         lines.extend(held.lines.clone());
     }
     context.append_discovery_lines(&mut lines, &compact.discovery);
+    lines.extend(super::next_recovery::incoming_handoffs_lines(compact));
     lines.push(format!("ready ({} shown):", compact.ready.len()));
     if let Some(navigation) = &compact.ready_navigation
         && navigation.after_prefix(compact.ready.len()).is_some()
@@ -1472,6 +1510,14 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
         ));
     }
     if compact.peek.is_some() {
+        lines.push(format!(
+            "broader bounded preview: {} (a new read)",
+            super::next_recovery::DETAILS_COMMAND
+        ));
+        lines.push(format!(
+            "omitted work: {}; follow catalog continuations, then show REF --notes for its records (new reads)",
+            super::next_recovery::CATALOG_COMMAND
+        ));
         append_peek_disclosure(
             &mut lines,
             compact.peek.as_ref(),
@@ -1480,7 +1526,7 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
     }
     let mut omitted_sections = HashSet::new();
     for omission in compact.omissions.iter().filter(|omission| {
-        omission.section != "changes"
+        (omission.section != "changes" || omission.reason == WorkSectionOmissionReason::CountLimit)
             && omission.section != "focus"
             && omitted_sections.insert(omission.section.as_str())
     }) {

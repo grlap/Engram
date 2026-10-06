@@ -2350,8 +2350,26 @@ test("peek orientation preserves pending context and memory signals on CLI and M
     };
     for (const verbose of [false, true, false]) {
       const flags = ["--peek", ...(verbose ? ["--verbose"] : [])];
-      assertPeek(cliJson(engramHome, session, "next", ...flags), true);
-      assertPeek(receipt(await client.call("next", { peek: true, verbose })), true);
+      const cliPeek = cliJson(engramHome, session, "next", ...flags);
+      const mcpPeek = receipt(await client.call("next", { peek: true, verbose }));
+      assertPeek(cliPeek, true);
+      assertPeek(mcpPeek, true);
+      for (const value of [cliPeek, mcpPeek]) {
+        if (verbose) {
+          assert.equal(value.focus.recovery, undefined);
+          assert.equal(value.details, undefined);
+          assert.equal(value.catalog_detail, undefined);
+        } else {
+          assert.equal(value.focus.ref, held);
+          assert.equal(value.focus.holder, "you");
+          assert.equal(value.focus.recovery.objective, before.status.work.outcome);
+          assert.equal(value.focus.recovery.acceptance_shown, 0);
+          assert.equal(value.focus.recovery.detail, `engram work show ${held} --full`);
+          assert.equal(value.details, "engram work next --peek --verbose");
+          assert.equal(value.catalog_detail, "engram work ls --all --limit 20");
+          assert.deepEqual(value.held, []);
+        }
+      }
       const text = cliWord(engramHome, session, "next", ...flags);
       assert.equal(text.status, 0, text.stderr);
       assert.match(text.stdout, /delivery: not advanced/);
@@ -3721,7 +3739,13 @@ test("stranded descendant remedies and unavailable diagnostics agree on CLI and 
           const text = cliText(engramHome, "participant", "next", ...flags);
           for (const value of [mcp, cli]) {
             assert.ok(value.ready.some(row => (row.ref ?? row.work?.short_ref) === ready));
-            assert.equal(value.held.length, 1);
+            if (peek && !verbose) {
+              assert.equal(value.held.length, 0);
+              assert.equal(value.focus.ref, focus);
+              assert.equal(value.focus.holder, "you");
+            } else {
+              assert.equal(value.held.length, 1);
+            }
             if (unavailable) {
               assert.equal(value.stranded_children_unavailable, true);
               assert.equal(value.stranded_children_error_class, "stored_json_invalid");
@@ -4436,7 +4460,19 @@ test("file intake notifies ordinary CLI and MCP reads without steering local wor
     assert.match(afterSource.detail, /engram import lookup -- 'planner' 'plan\/item-1'/u);
     assert.deepEqual(cliJson(engramHome, session, "show", work_ref), after);
     const peerOrientation = receipt(await client.call("next", { peek: true }));
-    const peerChanges = peerOrientation.changes
+    assert.equal(peerOrientation.peek.delivery_advanced, false);
+    const omittedChanges = peerOrientation.omissions
+      ?.filter(row => row.section === "changes").reduce((sum, row) => sum + row.omitted_count, 0) ?? 0;
+    assert.ok(peerOrientation.changes.length + omittedChanges >= 2);
+    if (omittedChanges > 0) assert.equal(peerOrientation.peek.more_changes_available, true);
+    const detailWords = peerOrientation.details.split(" ");
+    assert.deepEqual(detailWords, ["engram", "work", "next", "--peek", "--verbose"]);
+    const peerDetails = receipt(await client.call(detailWords[2], {
+      peek: detailWords.includes("--peek"), verbose: detailWords.includes("--verbose"),
+    }));
+    const cliDetails = cliJson(engramHome, session, ...detailWords.slice(2));
+    assert.deepEqual(peerDetails.changes_by_others, cliDetails.changes_by_others);
+    const peerChanges = peerDetails.changes_by_others
       .filter((line) => line.includes("external source changed"));
     assert.equal(peerChanges.length, 2, JSON.stringify(peerOrientation));
     for (const line of peerChanges) {

@@ -122,6 +122,11 @@ impl WorkReadyNavigation {
 /// Recent participation is navigation, never a recorded obligation or authority.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct WorkDiscoveryView {
+    /// Compact recovery duties read in the same snapshot; core wire unchanged.
+    #[serde(skip)]
+    pub(crate) incoming_handoffs: Vec<WorkIncomingHandoff>,
+    #[serde(skip)]
+    pub(crate) incoming_handoffs_omitted: usize,
     /// The entire advisory group failed; no partial or unverified rows follow.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub stranded_children_unavailable: bool,
@@ -159,6 +164,10 @@ impl WorkDiscoveryView {
             self.assigned_omitted += 1;
             return true;
         }
+        if self.incoming_handoffs.pop().is_some() {
+            self.incoming_handoffs_omitted += 1;
+            return true;
+        }
         if self.stranded_children.pop().is_some() {
             self.stranded_children_omitted += 1;
             self.stranded_children_next = Some("engram work ls --blocked".into());
@@ -166,6 +175,14 @@ impl WorkDiscoveryView {
         }
         false
     }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct WorkIncomingHandoff {
+    #[serde(rename = "ref")]
+    pub(crate) work_ref: String,
+    pub(crate) title: String,
+    pub(crate) expires_at: DateTime<Utc>,
 }
 
 /// Snapshot advice only: neither a claim nor permission to execute.

@@ -57,6 +57,7 @@ mod memory_recovery;
 mod memory_retirement;
 mod mutation;
 mod next_context;
+mod next_recovery;
 mod obligation_reminders;
 mod observation_windows;
 mod receipts;
@@ -321,6 +322,10 @@ fn collapsed_changes(
         };
         lines.push(next_context::CompactChange {
             line,
+            subject: match &change.delivery {
+                WorkChangeProjection::Visible(summary) => summary.work_ref.clone(),
+                WorkChangeProjection::Omitted(_) => None,
+            },
             attribution: format!("{subject} {verb}{actor}"),
             note: change
                 .capture

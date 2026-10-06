@@ -1062,6 +1062,16 @@ refusals remain visible for operator investigation, not implicit repair.
 It repeats without pagination or advancement until an explicit stateful call
 changes the relevant state. Both text and JSON retain the no-advancement disclosure,
 memory signal and runnable `engram work memories` navigation under fitting.
+Compact peek prioritizes the focus objective, qualified status, dependency
+counts, live-held work and assigned duties. It retains at most four changes
+for those duties from the bounded feed preview, with exact capture read routes,
+and omits broad participation and unrelated or overflow change bodies with
+counts. It names `next --peek --verbose` for a broader bounded preview.
+The `ls --all --limit 20` catalog and its continuations recover omitted work;
+`show REF --notes` reads its records. Full contract
+and evidence commands are new reads; clipped status retains its full-note
+locator. These renderer-only recovery fields are absent from advancing `next`,
+verbose peek and core serialization; delivery discovery and staging stay intact.
 
 Use `note REF --status TEXT` whenever duties, waits, decisions, or the next
 permitted action change, and resume with `next --peek` (MCP `peek: true`);
@@ -1118,7 +1128,7 @@ The hot agent protocol has six operations:
 | `work_complete` | Evaluate acceptance and complete ambient work under current revision/run/claim fences; an optional capture records evidence and its final checkpoint in the same high-level call |
 | `work_handoff` | Couple an outgoing checkpoint to an offered/accepted claim transfer |
 
-**Resume discovery.** Agent `next` places nonempty `assigned` and `participated`
+**Resume discovery.** Advancing agent `next` and verbose peek place nonempty `assigned` and `participated`
 sections between held and ready work. `assigned` contains Open work assigned to
 this actor regardless of readiness. `participated` contains Open work this
 session noted, observed, gated, or received a handoff offer on, excluding its
@@ -1132,6 +1142,15 @@ summary. For the reader's actor, compact previews use `note_by: "you"` and
 text prints `[note session you]` before the body. Rich verbose JSON retains
 `note_session_id`. Other actors' session fields are omitted.
 This is asserted context, not authenticated identity.
+
+Compact peek keeps assignment but omits broad participation with its exact
+row count and verbose inspection route. Current incoming handoff offers are
+read independently from typed live recipient state on the same snapshot,
+earliest expiry first, at most five rows. `incoming_handoffs` reports items
+with ref, bounded title, expiry and `show` detail, an exact omitted count and
+catalog navigation for omitted items. Final fitting can shed rows with the
+count and route retained. A fresh `show` reports current offer state and
+admitted acceptance; cancelled, accepted and expired offers are not pending.
 
 Same-actor continuity follows the session's own `participated` rows within the
 same five-row budget. It lists Open work, not held by this session and without
@@ -1223,7 +1242,8 @@ requested limit), after held and assigned work. Compact `next`,
 verbose `next`, and host-core catalog queries keep catalog id order. Compact
 rows carry a readiness reason only when it distinguishes beyond the plain
 ready case; readiness is not claim permission. `ready_limit` reports the
-effective requested limit even if fewer rows fit; text prints the cap only
+effective cap, reduced to one for compact peek with a live-held focus, even
+if fewer rows fit; text prints the cap only
 when candidates remain. The count-free query fetches one extra candidate to
 determine `ready_more`.
 `ready_next` continues with `ls --ready` after the last row actually rendered,

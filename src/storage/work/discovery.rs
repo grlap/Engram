@@ -21,6 +21,8 @@ const DISCOVERY_LIMIT: i64 = DISCOVERY_ROWS as i64;
 #[cfg(test)]
 mod tests;
 
+mod handoffs;
+
 pub(crate) struct WorkDiscoveryRow {
     pub work: WorkItem,
     pub claim: Option<WorkClaim>,

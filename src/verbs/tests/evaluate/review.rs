@@ -961,7 +961,26 @@ fn evaluation_mode_revisions_are_disclosed_in_history_and_peer_next() {
             at(7),
         )
         .expect("peer next");
-    let changes = delivered.value["changes"]
+    assert_eq!(
+        delivered.value["changes"].as_array().unwrap().as_slice(),
+        &[] as &[serde_json::Value]
+    );
+    assert_eq!(delivered.value["peek"]["more_changes_available"], true);
+    let command = delivered.value["details"].as_str().expect("detail route");
+    let words = command.split_whitespace().collect::<Vec<_>>();
+    assert_eq!(words, ["engram", "work", "next", "--peek", "--verbose"]);
+    let recovered = peer
+        .next(
+            &crate::NextInput {
+                limit: Some(50),
+                peek: words.contains(&"--peek"),
+                verbose: words.contains(&"--verbose"),
+                context_generation: None,
+            },
+            at(7),
+        )
+        .expect("emitted recovery route");
+    let changes = recovered.value["changes_by_others"]
         .as_array()
         .expect("changes")
         .iter()

@@ -13,6 +13,8 @@ pub(super) const CLIPPED_STATUS_REMINDER: &str = super::argument_wording::CLIPPE
 #[derive(Clone)]
 pub(super) struct CompactChange {
     pub(super) line: String,
+    /// Structured subject from the visible change projection; never parsed prose.
+    pub(super) subject: Option<String>,
     /// Rendered kind and actor retained even when the body is a reference.
     pub(super) attribution: String,
     /// Work reference and verified immutable capture identity, never body text.
@@ -23,6 +25,7 @@ impl From<String> for CompactChange {
     fn from(line: String) -> Self {
         Self {
             line,
+            subject: None,
             attribution: String::new(),
             note: None,
         }
@@ -92,6 +95,18 @@ impl Context {
     pub(super) fn new(compact: &CompactNextReceipt) -> Self {
         let mut context = Self::default();
         let mut seen = Seen::default();
+        if compact.peek.is_some()
+            && let Some(focus) = &compact.focus
+        {
+            seen.owners
+                .insert(focus.work_ref.clone(), format!("focus {}", focus.work_ref));
+            seen.remember_status(&focus.work_ref, focus.current_status.as_ref());
+            seen.remember_status(&focus.work_ref, focus.status_observation.as_ref());
+            context.clipped |= clipped(
+                focus.current_status.as_ref(),
+                focus.status_observation.as_ref(),
+            );
+        }
         context.add_held(compact, &mut seen);
         context.add_discovery(compact, &mut seen);
         for (index, change) in compact.changes.iter().enumerate() {
@@ -109,7 +124,16 @@ impl Context {
             } else {
                 change.line.clone()
             };
-            context.changes.push(super::short(&line));
+            let mut line = super::short(&line);
+            if compact.peek.is_some()
+                && let Some((reference, identity)) = &change.note
+            {
+                line.push_str("; engram work show ");
+                line.push_str(reference);
+                line.push_str(" --note ");
+                line.push_str(&identity.locator(usize::MAX));
+            }
+            context.changes.push(line);
         }
         context
     }

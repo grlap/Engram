@@ -26,7 +26,7 @@ impl LocalWorkService {
         let store = SqliteStore::open_existing_read_only(&self.database)?;
         store.work_read_snapshot(|store| {
             let mut omissions = Vec::new();
-            let advisory = self.next_advisory(
+            let mut advisory = self.next_advisory(
                 store,
                 limit,
                 &query,
@@ -37,6 +37,27 @@ impl LocalWorkService {
                 }),
                 &mut omissions,
             )?;
+            // These qualified display fields are skipped by core serialization.
+            // Recovery reads them in the same snapshot as the focus and claims.
+            if !verbose && let Some(focus) = &mut advisory.focus {
+                (
+                    focus.status.work.current_status,
+                    focus.status.work.status_observation,
+                ) = self.status_for_item(store, focus.status.work.work_id, now)?;
+            }
+            if !verbose {
+                let (offers, omitted) =
+                    store.work_incoming_handoffs(&self.project_id, &self.session_id, now)?;
+                advisory.discovery.incoming_handoffs = offers
+                    .into_iter()
+                    .map(|(work, offer)| super::super::views::WorkIncomingHandoff {
+                        work_ref: work.short_ref,
+                        title: super::super::compact_text(&work.title),
+                        expires_at: offer.expires_at,
+                    })
+                    .collect();
+                advisory.discovery.incoming_handoffs_omitted = omitted;
+            }
             #[cfg(test)]
             if let Some(hook) = &self.advisory_read_hook {
                 // The same test barrier as ordinary next, now after the peek

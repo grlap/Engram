@@ -77,7 +77,9 @@ label. The relation compares asserted actor ids, not authenticated identity,
 and grants nothing: the other session's claim, focus and authority stay its own.
 Text follows the parent line
 on `show` and is indented beneath `next` rows. Bodies start with a 768-byte
-UTF-8 cap; larger bodies show a bounded first nonblank line. Final text/JSON
+UTF-8 cap; larger bodies show a bounded first nonblank line.
+Compact peek starts with a 192-byte status preview, preserving whitespace in
+short bodies and carrying the exact note read for clipped bodies. Final text/JSON
 fitting may shorten either preview further before shedding resume rows,
 setting `complete: false` with explicit omission and a note-detail command.
 Compact `next` renders each identified status capture and latest note head
@@ -587,7 +589,8 @@ Rules that matter:
 - Compact `next`, including `--peek`, shows held and assigned work before
   at most five ready candidates. A smaller `--limit` reduces this prefix;
   a larger limit does not raise the compact cap. `ready_limit` states the
-  effective requested limit, clamped to 1..5, even if fewer rows fit. Text
+  effective cap, clamped to 1..5 and reduced to one for compact peek with a
+  live-held focus, even if fewer rows fit. Text
   prints the cap only when candidates remain. A ready row carries an
   optional distinguishing `ready_reason` from the same readiness
   projection that selected it, including prior-claim recovery when present.
@@ -632,6 +635,31 @@ Rules that matter:
   feed entries outside the retained preview, not an exact peer-change count.
   This orientation question is shared with ordinary `next`; the preview does
   not promise the exact page a later advancing `next` will return.
+  Compact peek is a recovery packet: the focus includes its bounded objective,
+  exact acceptance count (criteria omitted), qualified current status and bounded
+  unresolved-dependency facts from this snapshot. The same holder capture is
+  shown once, beside the focus; other live-held and unresolved assigned duties
+  remain visible. With a live-held focus, at most one ready candidate is shown;
+  otherwise the usual five-candidate cap remains. Up to four changes in the
+  retained feed preview whose structured subject is the focus, another held item,
+  or a shown assigned duty remain in feed order. Cited captures keep exact
+  full-note commands; ordinary notes are not promoted to current status.
+  Broad participation and unrelated or overflow change bodies are omitted with
+  counts, non-advancement disclosure and the inspection
+  command `engram work next --peek --verbose` (`details` in JSON), which is
+  itself a bounded preview. `engram work ls --all --limit 20` (`catalog_detail`)
+  traverses omitted work through its continuations; `show REF --notes` reads
+  each item's records. These commands are new reads. Ready
+  continuation still starts after the last shown candidate. Full contract,
+  evidence and note commands are new reads; they do not pin historical contracts.
+  The bounded preview does not guarantee that every undelivered relevant change
+  was scanned. Read each duty's notes window and follow its continuations for
+  complete recorded constraints. Lifecycle commands precede catalog navigation
+  in the bounded `next` list; omitted guidance remains in the verbose read.
+  A clipped status carries its exact full-note locator and must be read in full
+  before acting on approval or STOP conditions. Missing qualified status is not
+  substituted with a former holder's note. Advancing `next`, verbose peek and
+  the core wire retain their existing shapes and delivery behavior.
   It never writes the persistent database or WAL and never retries through a
   writable connection; SQLite may recreate a shared-memory coordination
   sidecar. Missing or schemaless stores refuse with `store_not_initialized`
@@ -698,7 +726,7 @@ Rules that matter:
   inspection, not an unavailable waiver. Other rows offer `show CHILD`.
   A leaf has no block. This is advisory current-state accounting, not
   completion proof or execution authority.
-- Claimless `next` includes nonempty `assigned` and `participated` sections
+- Claimless advancing `next` and verbose peek include nonempty `assigned` and `participated` sections
   between held and ready work, at most five rows each with exact omitted counts.
   Full rows name the work, title, holder word, and first line of this session's
   latest own note when present. For a note the reader's actor made as an
@@ -719,13 +747,22 @@ Rules that matter:
   Handoff offers and `stranded_children` remain session-based.
   Compact repeated rows instead contain only `{ref, context_ref}`; the
   presence of `context_ref` is the discriminator. It names the retained
-  `held REF`, `assigned REF`, or `participated REF` primary row containing
+  `focus REF`, `held REF`, `assigned REF`, or `participated REF` primary row containing
   the full projection. Do not read title, holder, status or note from a
   reference row. Verbose rows retain the full shape.
   Another actor's session field is omitted. This is asserted attribution,
   not authenticated identity. This is recent-work discovery, not a review
   obligation or claim; keep owed decisions on a claimed coordination item.
   See the [resume discovery contract](local-work-system.md#agent-native-protocol).
+  Compact peek keeps assignment but omits broad participation with an exact
+  omitted-row count and `details` inspection route. Current incoming offers
+  are read separately from live, unexpired recipient state in the same snapshot:
+  `incoming_handoffs` contains at most five `items` with `ref`, bounded `title`,
+  `expires_at` and a `detail` command to `show REF`, plus an exact `omitted` count
+  and `catalog_detail` route. Inspect omitted catalog items with `show` for
+  current offer state and the admitted accept command. Final byte fitting may
+  shed offer rows while keeping their count and route. Cancelled, accepted and
+  expired offers do not count as pending; navigation grants no claim.
 - `next` and `next --peek` also show `stranded_children`, at most five Open
   direct children beneath Completed parents in which this session participated,
   even without a prior child read or claim. Rows contain `{ref, parent_ref,

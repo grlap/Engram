@@ -188,6 +188,7 @@ fn next_stranded_children_have_exact_counts_and_current_detach_refusals() {
         .unwrap()
         .discovery;
     let compact = CompactNextReceipt {
+        recovery: None,
         backup_reminder: None,
         claim_lapse_reminder: None,
         ready_navigation: None,

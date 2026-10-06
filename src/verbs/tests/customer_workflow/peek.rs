@@ -1,5 +1,8 @@
 use super::*;
 
+mod handoffs;
+mod recovery;
+
 fn peek_input(verbose: bool) -> NextInput {
     NextInput {
         peek: true,
