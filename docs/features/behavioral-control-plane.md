@@ -1046,12 +1046,16 @@ obligation are not built.
 Control uses two explicit persistence tiers:
 
 - **canonical state-changing events** — checkpoints, handoffs, policy
-  activation, finalization, and recovery. They follow ordinary work retention
-  and are the source for rebuilding projections;
-- **bounded operational records** — live/expired turn grants plus
+  activation, finalization, and recovery. They follow ordinary work retention.
+  Using them as the source for rebuilding projections is designed, not built:
+  recovery reads the durable session and grant rows, and a turn checkpoint's
+  control event goes to the task's change index, an audit record that no
+  production path consumes;
+- **operational records** — live/expired turn grants plus
   allow/refusal diagnostics. They are immutable while live, idempotently
-  addressable, invalidated on restart where specified, and pruned after their
-  terminal retention window. They are not canonical memory or peer context.
+  addressable, and invalidated on restart where specified. Pruning them after
+  a terminal retention window is designed, not built: nothing prunes stored
+  grants or results today. They are not canonical memory or peer context.
 
 The minimum records are:
 
@@ -1080,10 +1084,14 @@ The minimum records are:
   advances the local admission epoch before another mutation-capable grant.
 - `TurnGrant`: immutable intent binding, expiry and one-use state; terminal
   grants are operational. Action grants and receipts are not built.
-- `RequestKeyTombstone`: compact durable binding of request kind, key,
-  session/work/run, intent fingerprint, terminal state, and optional result id. It
-  outlives a pruned grant through the work retention boundary and can never
-  mint authority.
+- `RequestKeyTombstone` (designed, not built; no such type or table ships):
+  compact durable binding of request kind, key, session/work/run, intent
+  fingerprint, terminal state, and optional result id. It would outlive a
+  pruned grant through the work retention boundary and could never mint
+  authority. Since nothing is pruned today, the stored result serves an exact
+  retry of a turn, begin or checkpoint request instead. A session bind keeps
+  only its latest key, so an older bind key, retried after a rebind under a
+  new key, runs as a fresh bind.
 - `DegradedEnvelope` and `DegradedActionDebt`: bounded cached degradation
   authority and typed host-spooled reconciliation evidence.
 - Deferred report/finalization records — `ParticipantContribution`,
@@ -1091,11 +1099,18 @@ The minimum records are:
   checkpoint cursor, roster/waivers, immutable report bytes, and publication
   intent. These are target contracts, not shipped Rust types or tables.
 
-Every safety-relevant projection can be rebuilt from canonical transitions;
-restart deliberately discards any authority that existed only in a live
-grant. High-volume allow and refusal diagnostics stay in bounded operational
-storage unless they change peer behavior; they are not echoed into context or
-any external adapter.
+Rebuilding every safety-relevant projection from canonical transitions is
+designed, not built. Recovery reads the durable session and grant rows; like
+the store's other authority and idempotency tables, they are restored from a
+verified backup, never recreated from canonical objects (see
+[the specification's canonical store section](../spec.md#31-v1-canonical-store-local-sqlite-append-only)).
+A restart expires every grant that was issued
+and not begun, deliberately discarding authority that existed only there; a
+begun turn stays open, checkpoint-required, until the host reports it (see
+[crash, restart, and replay](#crash-restart-and-replay)). High-volume allow
+and refusal diagnostics stay in operational storage
+unless they change peer behavior; they are not echoed into context or any
+external adapter.
 
 ### Policy bootstrap and precedence
 

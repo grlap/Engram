@@ -448,13 +448,26 @@ changes; work-claim fences invalidate old execution ownership. These values are 
 interchangeable. Unknown safety-relevant schema or policy versions block
 admission rather than being ignored.
 
-State-changing control transitions are idempotent and emit immutable canonical
-events; current session and grant records are durable operational
-projections. Live grants and high-volume allow/refusal diagnostics are
-immutable operational records with bounded retention, not canonical memory;
-restart discards their authority. Compact durable request-key tombstones bind
-kind/key/intent/terminal state through work retention so pruning or expiry can
-never reinterpret an old key as fresh authority. Only a transition that can change peer
+State-changing control transitions are idempotent. Among session and turn
+transitions, only a turn checkpoint emits an immutable canonical event, to the
+task's change index, an audit record that no production path consumes; binding
+a session, opening a turn and beginning it emit none. The session and grant
+rows are the durable record, and recovery reads them; an event for every
+transition, from which those rows could be rebuilt, is designed, not built.
+Live grants and high-volume allow/refusal diagnostics are immutable
+operational records, not canonical memory. A restart expires every grant that
+was issued and not begun, discarding its authority; a begun turn stays open,
+checkpoint-required, until the host reports it (see
+[crash, restart, and replay](features/behavioral-control-plane.md#crash-restart-and-replay)).
+Bounded retention of these records is designed, not built: nothing prunes
+stored grants or results today, so an exact retry of a turn, begin or
+checkpoint request finds its stored result. A session bind keeps only its
+latest key: an exact retry replays while that key is still the session's
+latest, and after a rebind under a new key the older key runs as a fresh bind.
+Compact durable request-key tombstones are likewise designed, not built: they
+would bind kind/key/intent/terminal state through work retention, so that
+once pruning exists, pruning or expiry could never reinterpret an old key as
+fresh authority. Only a transition that can change peer
 behavior enters the work/run delta feed, so control does not become a second
 status ledger.
 
@@ -550,10 +563,15 @@ its own dense per-session sequence over emitted pages. "Contiguous" always means
 positions in one named feed; a global SQLite row id may be useful internally
 but is never a cursor. This identity is fixed by the work graph so
 safety CAS never depends on sparse cross-feed numbering.
-Current sessions, delivery progress, actions, finalization barriers,
-and indexes are mutable projections, but their safety-relevant transitions
-are auditable through canonical events. Live grants and decision diagnostics
-occupy a separate bounded operational tier and never become peer context. The
+Delivery progress, the root completion barrier and indexes are mutable
+projections; the barrier's transitions append immutable work events (§2.6).
+Control session and grant rows are durable records,
+restored from backup and never rebuilt from events: among their transitions
+only a turn checkpoint emits a canonical event, and auditing every
+safety-relevant control transition through canonical events is designed, not
+built (§2.7). Action records are not built. Live grants and decision diagnostics
+occupy a separate operational tier and never become peer context; bounding
+that tier's retention is designed, not built, and nothing prunes it today. The
 cursor orders peer deltas; it is not an object identity and does not cross
 stores as a global sequence number.
 
@@ -561,7 +579,7 @@ stores as a global sequence number.
 engram.db
   objects      // rows keyed by minted id: versions, events, edges, evidence — write-once
   projections  // exact-current heads/status/order plus rebuildable indexes and FTS5
-  control.*    // live grants + bounded diagnostics — operational, never memory
+  control.*    // live grants + diagnostics — operational, never memory
   meta         // current-build marker; refuses stores created by another build
 ```
 
