@@ -155,20 +155,27 @@ folder, never at the shared main checkout. Claim the item, create the
 worktree detached at the current master, and name it as the item's source
 root through the host (TermAl's `termal_name_source_root` with the work ref
 and the worktree's absolute path); the naming takes effect from the next
-turn and ends with the claim, so name the root again after any re-claim.
-Run each credited check from that worktree in a call of its own: a bare
-test as `pushd "C:\...\.worktrees\NAME" && COMMAND` from a Bash tool, or,
-in a Codex session, as a direct command whose working directory is the
-named root; a launcher run (`node scripts/test-launcher.mjs full` or
-`focused`) started from the worktree's own `scripts/`. The host voids credit
-for a check whenever another writable session's working directory is the
-checkout the check ran in, which is what the shared main checkout is to
-every other session, so a credited run there cannot succeed whatever its
-timing. A linked worktree's launcher runs and freeze manifest live in its
-Git admin directory and are deleted with it: once the item closes and those
-runs are no longer cited, archive any still-needed run directory as
-[launcher usage](../../../docs/development.md#test-launcher) describes,
-then remove the clean worktree without `--force`.
+turn and ends when the claim is released, so name the root again after a
+release followed by a re-claim. Run each credited check from that worktree
+in a call of its own: a bare test as `pushd "C:\...\.worktrees\NAME" &&
+COMMAND` from a Bash tool, or, in a Codex session, as a direct command whose
+working directory is the named root; a launcher run (`node
+scripts/test-launcher.mjs full` or `focused`) started from the worktree,
+through the worktree's own `scripts/`. The host voids credit for a check
+whenever another writable session's working directory is the checkout the
+check ran in, which is what the shared main checkout is to every other
+session, so a credited run there cannot succeed whatever its timing. A
+linked worktree's launcher runs and freeze manifest live in its Git admin
+directory and are deleted with it. Remove the worktree only once the item
+has closed and each of its runs meets the retention preconditions that
+[run evidence retention](../../../docs/development.md#record-for-the-host)
+states, all of them: the run has a terminal result, its outcome has been
+recovered and recorded, and no notification or review use of it is still
+pending. Preserve any run directory that is still cited or otherwise still
+needed, as that paragraph requires, by copying it under the main checkout's
+`target/`, never under the worktree's own `target/`, which its removal
+deletes, ignored files included; then remove the clean worktree without
+`--force`.
 
 Before repeating an uncertain mutation, follow the
 [session and intent retry rule](../../../docs/features/local-work-system.md#agent-native-protocol).
