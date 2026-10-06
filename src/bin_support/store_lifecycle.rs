@@ -149,7 +149,8 @@ pub(crate) fn restore(database: &Path, from: &Path, replace: bool) -> Result<()>
             // exclusive lock; a stale log must never meet the restored file.
             // A checkpoint that could not complete means another process still
             // holds the store, and replacement stops there.
-            let old = rusqlite::Connection::open(database).with_context(|| {
+            let old = engram::storage::open_sqlite_file(database, rusqlite::OpenFlags::default())
+                .with_context(|| {
                 format!("failed to open {} for replacement", database.display())
             })?;
             old.execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN IMMEDIATE; COMMIT;")

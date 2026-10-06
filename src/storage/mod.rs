@@ -21,6 +21,8 @@ pub use open_schema::{
 mod policy_admin;
 mod project_memory;
 mod schema_diagnostics;
+mod sqlite_path;
+pub use sqlite_path::{open_sqlite_file, validate_sqlite_file_path};
 mod task_memory;
 mod unadmitted_observation;
 mod verification_bind;
@@ -294,7 +296,7 @@ pub(crate) use work::{
 
 use std::{
     collections::{HashMap, HashSet},
-    path::Path,
+    path::{Path, PathBuf},
     time::Duration,
 };
 
@@ -1155,6 +1157,26 @@ pub struct MissingMemorySection {
 /// Errors at the immutable storage boundary.
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("could not read {} ({utf16_length} UTF-16 units): {source}", .path.display())]
+    StoreFileIo {
+        path: PathBuf,
+        utf16_length: usize,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("SQLite filename {} ({utf16_length} UTF-16 units) is unsupported: {reason}", .path.display())]
+    SqlitePath {
+        path: PathBuf,
+        utf16_length: usize,
+        reason: String,
+    },
+    #[error("SQLite could not access {} ({utf16_length} UTF-16 units): {source}", .path.display())]
+    SqliteFile {
+        path: PathBuf,
+        utf16_length: usize,
+        #[source]
+        source: Box<rusqlite::Error>,
+    },
     #[error("failed to parse JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error("SQLite operation failed: {0}")]
@@ -2178,31 +2200,6 @@ fn remove_store_files(path: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
-}
-
-/// A `file:` URI that opens `path` as an immutable database: SQLite then
-/// reads the file bytes alone and never touches or creates log sidecars.
-fn immutable_uri(path: &Path) -> Result<String, StoreError> {
-    let absolute = std::path::absolute(path).map_err(|error| {
-        StoreError::InvalidWork(format!("cannot resolve {}: {error}", path.display()))
-    })?;
-    let mut text = absolute.to_string_lossy().replace('\\', "/");
-    if let Some(stripped) = text.strip_prefix("//?/") {
-        text = stripped.to_owned();
-    }
-    let encoded = text
-        .chars()
-        .map(|character| match character {
-            '%' => "%25".to_owned(),
-            '?' => "%3F".to_owned(),
-            '#' => "%23".to_owned(),
-            other => other.to_string(),
-        })
-        .collect::<String>();
-    Ok(format!(
-        "file:///{}?immutable=1",
-        encoded.trim_start_matches('/')
-    ))
 }
 
 fn enum_name<T: Serialize>(value: T) -> Result<String, StoreError> {

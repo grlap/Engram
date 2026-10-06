@@ -10,6 +10,25 @@ use engram::{
 };
 
 use super::*;
+
+#[test]
+fn path_io_and_verification_failures_offer_their_own_remedies() {
+    let path = Path::new("missing-copy.db");
+    let error = engram::storage::open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .unwrap_err();
+    assert_eq!(verification_code(&error), "backup_restore_path_unopenable");
+    let failure = check_installed(path, &ProjectId("unused".into())).unwrap_err();
+    assert!(failure.message.contains("restore stays pending"));
+    // Missing-copy hashing may fail before SQLite opens it. Neither path
+    // claims that a different build or a migration repairs the missing file.
+    assert!(!failure.message.contains("migration") && !failure.message.contains("capturing build"));
+    let io = io_failure(path, &io::Error::from_raw_os_error(5));
+    assert!(io.message.contains("UTF-16 units") && io.message.contains("filesystem access"));
+    assert_eq!(
+        verification_code(&StoreError::DifferentBuildSchema),
+        "backup_restore_format_unaccepted"
+    );
+}
 use crate::{
     bin_support::backup::push::{Outcome, PushSettings, push},
     test_support::{TempHome, make_dir_link, remove_dir_link, temp_home},

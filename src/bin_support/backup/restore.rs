@@ -159,6 +159,12 @@ pub(crate) fn restore(
             format!("{} names no directory", database.display()),
         ));
     };
+    if let Err(error) = engram::storage::validate_sqlite_file_path(database) {
+        return RestoreRun::failed(ReadFailure::new(
+            "backup_restore_path_unopenable",
+            format!("{error}; no copy was fetched; choose a representable local store path"),
+        ));
+    }
     let occupied = occupied(database);
     let mut earlier = None;
     let mut pending = None;
@@ -188,9 +194,6 @@ pub(crate) fn restore(
     if !occupied.is_empty() {
         return RestoreRun::failed(store_exists(database, &occupied));
     }
-    if let Err(source) = std::fs::create_dir_all(directory) {
-        return RestoreRun::failed(io_failure(directory, &source));
-    }
     let staging = match std::path::absolute(directory.join(format!(
         "{STAGING_PREFIX}{}{STAGING_SUFFIX}",
         uuid::Uuid::now_v7()
@@ -198,6 +201,17 @@ pub(crate) fn restore(
         Ok(staging) => staging,
         Err(source) => return RestoreRun::failed(io_failure(directory, &source)),
     };
+    for path in [database, staging.as_path()] {
+        if let Err(error) = engram::storage::validate_sqlite_file_path(path) {
+            return RestoreRun::failed(ReadFailure::new(
+                "backup_restore_path_unopenable",
+                format!("{error}; no copy was fetched; choose a representable local store path"),
+            ));
+        }
+    }
+    if let Err(source) = std::fs::create_dir_all(directory) {
+        return RestoreRun::failed(io_failure(directory, &source));
+    }
     let run = fetch(
         home,
         project,
@@ -348,7 +362,7 @@ fn install(
         }
         Err(error) => {
             return Err(kept_for_another_way(
-                "backup_restore_format_unaccepted",
+                "backup_restore_check_failed",
                 &format!("this build cannot name the store format it accepts: {error}"),
                 manifest,
                 staging,
@@ -369,11 +383,7 @@ fn install(
     let report = match SqliteStore::verify_restore_copy(staging, now) {
         Ok(report) => report,
         Err(error) => {
-            let code = if matches!(error, StoreError::DifferentBuildSchema) {
-                "backup_restore_format_unaccepted"
-            } else {
-                "backup_restore_check_failed"
-            };
+            let code = verification_code(&error);
             return Err(kept_for_another_way(
                 code,
                 &format!("the full check of the copy failed: {error}"),
@@ -505,10 +515,10 @@ fn complete_interrupted(
 fn check_installed(database: &Path, project: &ProjectId) -> Result<RestoreCopyReport, ReadFailure> {
     let report = SqliteStore::verify_installed_restore(database, Utc::now()).map_err(|error| {
         ReadFailure::new(
-            "backup_restore_check_failed",
+            verification_code(&error),
             format!(
-                "the installed store at {} failed its check: {error}; the restore stays pending",
-                database.display()
+                "the installed store at {} ({} UTF-16 units) failed its check: {error}; the restore stays pending; {}",
+                database.display(), path_length(database), verification_remedy(verification_code(&error))
             ),
         )
     })?;
@@ -622,13 +632,71 @@ fn project_problem(report: &RestoreCopyReport, project: &ProjectId) -> Option<Re
     })
 }
 
-/// A refusal that leaves the fetched copy in place and names the two ways on.
+fn verification_code(error: &StoreError) -> &'static str {
+    match error {
+        StoreError::DifferentBuildSchema => "backup_restore_format_unaccepted",
+        StoreError::SqlitePath { .. }
+        | StoreError::SqliteFile { .. }
+        | StoreError::StoreFileIo { .. } => "backup_restore_path_unopenable",
+        StoreError::Sqlite(error)
+            if matches!(
+                error.sqlite_error_code(),
+                Some(
+                    rusqlite::ErrorCode::CannotOpen
+                        | rusqlite::ErrorCode::SystemIoFailure
+                        | rusqlite::ErrorCode::PermissionDenied
+                        | rusqlite::ErrorCode::ReadOnly
+                )
+            ) =>
+        {
+            "backup_restore_path_unopenable"
+        }
+        _ => "backup_restore_check_failed",
+    }
+}
+
+fn verification_remedy(code: &str) -> &'static str {
+    match code {
+        "backup_restore_format_unaccepted" => {
+            "use the capturing build or an explicit supported migration"
+        }
+        "backup_restore_path_unopenable" => {
+            "check the local path and filesystem access, or choose a shorter local store home; path length alone does not establish the cause"
+        }
+        _ => "inspect the copy's verification failure and restore a healthy, accepted copy",
+    }
+}
+
+fn path_length(path: &Path) -> usize {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str().encode_wide().count()
+    }
+    #[cfg(not(windows))]
+    {
+        path.as_os_str().to_string_lossy().encode_utf16().count()
+    }
+}
+
+/// Leaves the fetched copy in place, with a remedy for the actual refusal.
 fn kept_for_another_way(
     code: &'static str,
     reason: &str,
     manifest: &StoredManifest,
     staging: &Path,
 ) -> ReadFailure {
+    if code != "backup_restore_format_unaccepted" {
+        return ReadFailure::new(
+            code,
+            format!(
+                "{reason} (path length {} UTF-16 units). The fetched copy is left at {}. Ways on: {}",
+                path_length(staging),
+                staging.display(),
+                verification_remedy(code)
+            ),
+        );
+    }
     let revision = manifest
         .capture
         .source_revision
@@ -1098,7 +1166,11 @@ fn pending_other(record: &RestoreRecord) -> ReadFailure {
 fn io_failure(path: &Path, source: &io::Error) -> ReadFailure {
     ReadFailure::new(
         "backup_io",
-        format!("{} could not be read or written: {source}", path.display()),
+        format!(
+            "{} ({} UTF-16 units) could not be read or written: {source}; check the local path and filesystem access",
+            path.display(),
+            path_length(path)
+        ),
     )
 }
 

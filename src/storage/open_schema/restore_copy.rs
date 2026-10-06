@@ -78,12 +78,7 @@ impl SqliteStore {
         if let Some(problem) = installed_sidecar_problem(path) {
             return Err(StoreError::InvalidWork(problem));
         }
-        if !path.is_file() {
-            return Err(StoreError::InvalidWork(format!(
-                "{} is not an existing file",
-                path.display()
-            )));
-        }
+        Self::require_copy_file(path)?;
         let (manifest, store) = Self::verify_copy_bytes(path, None)?;
         let project_ids = store.distinct_project_ids()?;
         let authority = store.live_authority(now)?;

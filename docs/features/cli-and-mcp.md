@@ -2216,12 +2216,19 @@ replaces one. Holding the push lock throughout, it fetches the copy as
 name that store open, `doctor` and `readiness` never take for a store. A copy
 whose manifest names another project, or whose store holds rows of another
 project, is refused as `backup_project_mismatch`. When this build does not
-accept the copy's format identity (`backup_restore_format_unaccepted`), or
-the copy fails the full check a backup gets (`backup_restore_check_failed`),
+accept the copy's format identity (`backup_restore_format_unaccepted`),
 restore refuses, leaves the fetched file in place, prints its path and names
 both ways on: the build at the manifest's source revision, unless that is
 `unavailable`, or `migration export` on that file and `migration import`
-with a build that still names every conversion since. Otherwise it records a
+with a build that still names every conversion since. A failed full check
+(`backup_restore_check_failed`) instead asks for inspection and a healthy,
+accepted copy. SQLite path/access failures (`backup_restore_path_unopenable`)
+name the original path, its UTF-16 length and the available error, with a
+path/access remedy; they do not suggest another build or migration. A
+deterministically unsupported filename or capacity refuses before fetching.
+On Windows, SQLite disk opens and copy destinations use native extended paths
+and the locking long-path VFS; 260 characters alone is not a refusal. Logical
+paths in receipts and manifests remain unchanged. Otherwise it records a
 pending restore in `<home>/backup-records/<project digest>/store.restore.json`
 (the copy, its SHA-256, the origin host and the statement), moves the copy
 into place with a rename that never replaces anything, checks the installed

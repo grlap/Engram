@@ -932,6 +932,9 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkNoteTooLarge { .. } => "work_note_too_large",
         StoreError::Json(_)
         | StoreError::Sqlite(_)
+        | StoreError::SqlitePath { .. }
+        | StoreError::SqliteFile { .. }
+        | StoreError::StoreFileIo { .. }
         | StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }
         | StoreError::InvalidStoredKey(_)

@@ -573,8 +573,7 @@ pub fn export_json(database: &Path, out: &Path) -> Result<ExportReport, Migratio
     if out.try_exists()? {
         return Err(refused("export destination already exists"));
     }
-    let connection =
-        Connection::open_with_flags(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let connection = super::open_sqlite_file(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     connection.busy_timeout(std::time::Duration::from_secs(5))?;
     connection.execute_batch("PRAGMA query_only = ON; PRAGMA trusted_schema = OFF; BEGIN;")?;
     let (tables, rebuilt) = source_tables(&connection)?;
@@ -737,7 +736,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     // SQLite create the replacement at 0644 subject to umask.
     let staged = Staged::reserve(staged_path)?;
     drop(SqliteStore::open_unresolved(&staged.path)?);
-    let mut connection = Connection::open(&staged.path)?;
+    let mut connection = super::open_sqlite_file(&staged.path, rusqlite::OpenFlags::default())?;
     connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;")?;
     let transaction = connection.transaction()?;
     // Rows arrive table by table; references are checked once, at commit.
@@ -892,7 +891,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     // result is an error that names the records.
     let report = SqliteStore::repair_rebuildable_projections(&staged.path)?;
     let pending = admit_pending_deliveries(&staged.path)?;
-    let checkpoint = Connection::open(&staged.path)?;
+    let checkpoint = super::open_sqlite_file(&staged.path, rusqlite::OpenFlags::default())?;
     checkpoint.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
     checkpoint.close().map_err(|(_, error)| error)?;
 

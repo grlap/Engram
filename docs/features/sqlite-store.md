@@ -152,6 +152,16 @@ work safety cursor.
 
 ## Canonical-bytes contract
 
+Windows SQLite disk-file operations use native extended absolute filenames
+and the locking `win32-longpath` VFS, including bound `VACUUM INTO` copy
+destinations. This covers ordinary opens, advisory reads, diagnostics,
+migration and restore copies. The conversion is temporary: logical paths in
+manifests, receipts and hashes remain the caller's paths. Invalid Unicode or
+unsupported filename capacity is refused; conversion never requires an
+existing file. Settled-copy verification percent-encodes the native filename
+in an immutable read-only URI and creates no sidecars. Ordinary store reads
+and writes retain normal locking and WAL behavior.
+
 The runtime [build diagnostics](cli-and-mcp.md#build-identity-and-doctor-refusals)
 hash the same normalized definitions as the admission reference and combine
 that digest with the package version and executable digest. They add no stored

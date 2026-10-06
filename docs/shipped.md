@@ -7,6 +7,14 @@ this page does not inventory whichever binary is on a host's PATH. It excludes
 planned, target, and deferred capabilities; those belong in the
 [roadmap](roadmap.md), not in this table.
 
+Windows SQLite file opens and copy destinations support long native paths
+through the locking long-path VFS, including backup restore staging files.
+Logical paths in manifests and receipts stay unchanged. Restore distinguishes
+format mismatches from path/access and verification failures; only a format
+mismatch suggests a capturing build or supported migration. See
+[SQLite paths](features/sqlite-store.md#canonical-bytes-contract) and
+[restore](features/cli-and-mcp.md).
+
 | Surface | Implemented behavior | Contract |
 | --- | --- | --- |
 | Evaluation admission refusal | Eligibility, named-root source and citation guards expose typed deciding context and shared remedy/navigation through service, native CLI JSON and MCP, beside the unchanged failure message, code and status. Re-roll and structural refusals retain their separate paths. | [Acceptance evaluation](features/acceptance-evaluation.md) |

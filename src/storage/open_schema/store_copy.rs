@@ -224,9 +224,7 @@ impl SqliteStore {
         interrupt.checked()?;
         store.connection.busy_timeout(interrupt.lock_wait())?;
         interrupt.install(&store.connection, CopyProbePoint::Copy)?;
-        store
-            .connection
-            .execute("VACUUM INTO ?1", [target.to_string_lossy().as_ref()])?;
+        super::super::sqlite_path::vacuum_into(&store.connection, target)?;
         drop(store);
         interrupt.checked()
     }
@@ -246,7 +244,7 @@ impl SqliteStore {
         // The copy came from an admitted store, so this ordinary open settles
         // its journal mode and initializes nothing. Closing it folds its log;
         // that last checkpoint is checked only after it returns.
-        let connection = Connection::open(path)?;
+        let connection = super::super::open_sqlite_file(path, rusqlite::OpenFlags::default())?;
         interrupt.install(&connection, CopyProbePoint::Settle)?;
         drop(Self::from_connection_with_busy_timeout(
             connection,

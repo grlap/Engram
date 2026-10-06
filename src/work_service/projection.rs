@@ -22,7 +22,7 @@ pub(crate) fn advisory_error_class(error: &StoreError) -> &'static str {
     match error {
         error if crate::storage::is_different_build_store_error(error) => "store_different_build",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
-        StoreError::Sqlite(_) => "sqlite_error",
+        StoreError::Sqlite(_) | StoreError::SqliteFile { .. } => "sqlite_error",
         StoreError::Json(_) => "stored_json_invalid",
         StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }

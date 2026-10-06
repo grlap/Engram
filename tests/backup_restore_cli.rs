@@ -21,6 +21,10 @@ use sha2::{Digest, Sha256};
 const PROJECT: &str = "restore-cli-fixture";
 const OTHER: &str = "restore-cli-other-project";
 
+#[cfg(windows)]
+#[path = "backup_restore_cli/windows_paths.rs"]
+mod windows_paths;
+
 struct Homes {
     root: test_support::TempHome,
 }
@@ -607,7 +611,14 @@ fn a_copy_that_fails_the_full_check_is_refused_and_left_in_place() {
         message.contains("the full check of the copy failed"),
         "{message}"
     );
-    assert!(message.contains("`engram migration export`"), "{message}");
+    assert!(
+        message.contains("restore a healthy, accepted copy"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("migration") && !message.contains("install the build"),
+        "{message}"
+    );
     let staging = left_staging(&homes, message);
     assert_eq!(fs::read(&staging).unwrap(), bytes);
     assert!(!homes.database("clean").exists());

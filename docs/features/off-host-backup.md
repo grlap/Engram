@@ -713,8 +713,8 @@ of live authority at restore would be a new store operation and is not part
 of this design. Moving a store to a machine with different path rules, and
 refusing a second writer, are `portable`'s.
 
-When the running build does not accept the copy's format, or its full check
-of the copy fails, `backup restore` refuses and leaves the fetched file in
+When the running build does not accept the copy's format,
+`backup restore` refuses and leaves the fetched file in
 place, naming its path. The refusal names the ways on: install the build at
 the manifest's source revision and restore with it, which it names only
 when that revision is not `unavailable`, or run `engram migration export`
@@ -725,6 +725,14 @@ the source revision; it does not keep the executable at the target and does
 not claim that a revision rebuilds to the same binary. When neither a
 compatible executable nor a supported conversion can be obtained, recovery
 is unavailable, and the bytes remain at the target.
+
+A failed verification instead asks for inspection and a healthy accepted
+copy. Path/access failures name the original path, its UTF-16 length and the
+available error, with a filesystem remedy; neither failure implies that
+migration repairs it. On Windows, SQLite opens and copy destinations use
+native extended filenames and the locking long-path VFS. Long staging paths
+are supported; a deterministic filename/conversion/capacity refusal happens
+before fetching. Logical paths in manifests and restore records are unchanged.
 
 **From a `graph` copy** (planned: the `graph` kind is not shipped):
 

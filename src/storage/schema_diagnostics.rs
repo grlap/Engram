@@ -2,7 +2,7 @@
 //! These diagnostics do not introduce another store-admission scheme.
 
 use super::{
-    CanonicalObject, Connection, ObjectId, Path, StoreError, current_schema_reference,
+    CanonicalObject, ObjectId, Path, StoreError, current_schema_reference,
     stored_schema_definitions,
 };
 
@@ -51,25 +51,36 @@ pub fn store_open_refusal_kind(error: &StoreError) -> StoreOpenRefusalKind {
         {
             StoreOpenRefusalKind::Io
         }
-        StoreError::Sqlite(error) => match error.sqlite_error_code() {
-            Some(
-                rusqlite::ErrorCode::DatabaseBusy
-                | rusqlite::ErrorCode::DatabaseLocked
-                | rusqlite::ErrorCode::FileLockingProtocolFailed,
-            ) => StoreOpenRefusalKind::Busy,
-            Some(
-                rusqlite::ErrorCode::PermissionDenied
-                | rusqlite::ErrorCode::ReadOnly
-                | rusqlite::ErrorCode::AuthorizationForStatementDenied,
-            ) => StoreOpenRefusalKind::Permission,
-            Some(
-                rusqlite::ErrorCode::SystemIoFailure
-                | rusqlite::ErrorCode::CannotOpen
-                | rusqlite::ErrorCode::DiskFull
-                | rusqlite::ErrorCode::NoLargeFileSupport,
-            ) => StoreOpenRefusalKind::Io,
-            _ => StoreOpenRefusalKind::CorruptStore,
-        },
+        StoreError::StoreFileIo { source, .. }
+            if source.kind() == std::io::ErrorKind::PermissionDenied =>
+        {
+            StoreOpenRefusalKind::Permission
+        }
+        StoreError::SqlitePath { .. } | StoreError::StoreFileIo { .. } => StoreOpenRefusalKind::Io,
+        StoreError::Sqlite(error) => sqlite_refusal_kind(error),
+        StoreError::SqliteFile { source, .. } => sqlite_refusal_kind(source),
+        _ => StoreOpenRefusalKind::CorruptStore,
+    }
+}
+
+fn sqlite_refusal_kind(error: &rusqlite::Error) -> StoreOpenRefusalKind {
+    match error.sqlite_error_code() {
+        Some(
+            rusqlite::ErrorCode::DatabaseBusy
+            | rusqlite::ErrorCode::DatabaseLocked
+            | rusqlite::ErrorCode::FileLockingProtocolFailed,
+        ) => StoreOpenRefusalKind::Busy,
+        Some(
+            rusqlite::ErrorCode::PermissionDenied
+            | rusqlite::ErrorCode::ReadOnly
+            | rusqlite::ErrorCode::AuthorizationForStatementDenied,
+        ) => StoreOpenRefusalKind::Permission,
+        Some(
+            rusqlite::ErrorCode::SystemIoFailure
+            | rusqlite::ErrorCode::CannotOpen
+            | rusqlite::ErrorCode::DiskFull
+            | rusqlite::ErrorCode::NoLargeFileSupport,
+        ) => StoreOpenRefusalKind::Io,
         _ => StoreOpenRefusalKind::CorruptStore,
     }
 }
@@ -100,7 +111,7 @@ pub fn running_schema_reference() -> Result<ObjectId, StoreError> {
 /// # Errors
 /// Returns an error when the existing file or schema cannot be read.
 pub fn store_schema_reference(path: &Path) -> Result<ObjectId, StoreError> {
-    let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let connection = super::open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     connection.busy_timeout(super::Duration::from_secs(5))?;
     Ok(
         CanonicalObject::freeze(&stored_schema_definitions(&connection)?)?
@@ -111,6 +122,7 @@ pub fn store_schema_reference(path: &Path) -> Result<ObjectId, StoreError> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::Connection;
     use super::*;
 
     #[test]

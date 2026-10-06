@@ -11,7 +11,7 @@ use super::{
     ProjectPolicyOperation, Redactor, SCHEMA_VERSION, SchemaDurability, SchemaOwner, Scope,
     SqliteStore, StoreError, TransactionBehavior, Utc, current_schema_definition_issue,
     derived_project_memory_state_rows_on, describe_host_path_policy, different_build_store_error,
-    drop_schema_object, enum_name, immutable_uri, normalize_control_policy_actor, params,
+    drop_schema_object, enum_name, normalize_control_policy_actor, open_sqlite_file, params,
     parse_enum, publish_without_replacing, remove_store_files, require_current_schema_marker,
     store_sidecars, unique_sibling_path, validate_keyed_project_memory_shape, work,
 };
@@ -135,14 +135,14 @@ impl SqliteStore {
     /// A read-only SQLite connection to an existing store file, not yet
     /// admitted. A missing file is an uninitialized store.
     fn open_existing_read_only_connection(path: &Path) -> Result<Connection, StoreError> {
-        Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(
+        open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(
             |error| {
                 // Only a proved absent path is initialization, not permissions,
                 // recovery, or another CANTOPEN cause. Never create a directory.
                 if matches!(std::fs::metadata(path), Err(ref io) if io.kind() == std::io::ErrorKind::NotFound) {
                     StoreError::StoreNotInitialized
                 } else {
-                    StoreError::Sqlite(error)
+                    error
                 }
             },
         )
@@ -296,8 +296,7 @@ impl SqliteStore {
                 path.display()
             )));
         }
-        let connection =
-            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let connection = open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.pragma_update(None, "query_only", true)?;
         Self::diagnose_control_policy_records_on(&connection)
@@ -322,8 +321,7 @@ impl SqliteStore {
                 path.display()
             )));
         }
-        let connection =
-            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let connection = open_sqlite_file(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.execute_batch(
             "PRAGMA foreign_keys = ON;
@@ -442,10 +440,9 @@ impl SqliteStore {
         // and hashed there, and then published under the requested name
         // without ever replacing an existing file.
         let staged = unique_sibling_path(path, "backup");
-        let target = staged.to_string_lossy().into_owned();
-        if let Err(error) = self.connection.execute("VACUUM INTO ?1", [&target]) {
+        if let Err(error) = super::sqlite_path::vacuum_into(&self.connection, &staged) {
             let _ = std::fs::remove_file(&staged);
-            return Err(error.into());
+            return Err(error);
         }
         // The staged copy is ours: one ordinary open settles its journal mode
         // so the copy verifies and restores through read-only opens later.
@@ -513,12 +510,7 @@ impl SqliteStore {
         interrupt: Option<&CopyInterrupt>,
         hashed: Option<(String, u64)>,
     ) -> Result<(BackupManifest, Self), StoreError> {
-        if !path.is_file() {
-            return Err(StoreError::InvalidWork(format!(
-                "backup {} is not an existing file",
-                path.display()
-            )));
-        }
+        Self::require_copy_file(path)?;
         // A backup is one self-contained file. Log sidecars beside it mean it
         // was opened read-write after it was written, so its main file may
         // not hold everything; refuse rather than verify a stale picture.
@@ -540,9 +532,7 @@ impl SqliteStore {
         path: &Path,
         interrupt: Option<&CopyInterrupt>,
     ) -> Result<(String, u64), StoreError> {
-        let unreadable = |error: std::io::Error| {
-            StoreError::InvalidWork(format!("cannot read backup {}: {error}", path.display()))
-        };
+        let unreadable = |source: std::io::Error| super::sqlite_path::file_io_error(path, source);
         let mut file = std::fs::File::open(path).map_err(unreadable)?;
         let mut digest = <sha2::Sha256 as sha2::Digest>::new();
         let mut buffer = vec![0_u8; 1 << 20];
@@ -569,6 +559,26 @@ impl SqliteStore {
         Ok((format!("{:x}", sha2::Digest::finalize(digest)), file_bytes))
     }
 
+    fn require_copy_file(path: &Path) -> Result<(), StoreError> {
+        let metadata = std::fs::metadata(path).map_err(|source| {
+            if source.kind() == std::io::ErrorKind::NotFound {
+                StoreError::InvalidWork(format!(
+                    "backup {} is not an existing file",
+                    path.display()
+                ))
+            } else {
+                super::sqlite_path::file_io_error(path, source)
+            }
+        })?;
+        if !metadata.is_file() {
+            return Err(StoreError::InvalidWork(format!(
+                "backup {} is not a regular file",
+                path.display()
+            )));
+        }
+        Ok(())
+    }
+
     /// Hashes the file at `path` and checks the store its bytes hold, opened
     /// immutable, so only the main file is read.
     fn verify_copy_bytes(
@@ -589,10 +599,7 @@ impl SqliteStore {
         };
         // `immutable=1` reads exactly the hashed bytes: no shared-memory or log
         // file is consulted or created, so a read-only directory works too.
-        let connection = Connection::open_with_flags(
-            immutable_uri(path)?,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-        )?;
+        let connection = super::sqlite_path::open_immutable(path)?;
         if let Some(interrupt) = interrupt {
             interrupt.install(&connection, CopyProbePoint::Admit)?;
         }
@@ -639,7 +646,7 @@ impl SqliteStore {
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionOpen,
         );
-        let connection = Connection::open(path)?;
+        let connection = open_sqlite_file(path.as_ref(), rusqlite::OpenFlags::default())?;
         // A traced control process notes when each BEGIN IMMEDIATE and
         // COMMIT starts and how long it ran, from its first statement on.
         if crate::phase_trace::control::active() {
@@ -734,7 +741,7 @@ impl SqliteStore {
             ));
         }
         let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
-        let connection = Connection::open(path)?;
+        let connection = open_sqlite_file(path.as_ref(), rusqlite::OpenFlags::default())?;
         Self::from_connection(
             connection,
             identity,
