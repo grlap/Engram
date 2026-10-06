@@ -515,8 +515,22 @@ impl SqliteStore {
             &mut invalid,
         )?;
         verify_anchored_memory_feeds(connection, &mut checked, &mut invalid)?;
+        report_each_seal_representation_loss_once(&mut invalid);
         Ok((checked, invalid))
     }
+}
+
+// Two checks can name a canonical seal that does not survive its own type:
+// the run-binding check, which reads it through its completion event, and the
+// comparison of the projection with the object it names. Each stays a
+// detector, because either can see a case the other cannot, but one cause is
+// reported once per seal. Every other finding keeps its place and count.
+fn report_each_seal_representation_loss_once(invalid: &mut Vec<String>) {
+    let mut reported = HashSet::new();
+    invalid.retain(|label| {
+        !(label.starts_with("completion_seal:") && label.ends_with(":canonical_representation"))
+            || reported.insert(label.clone())
+    });
 }
 
 #[allow(

@@ -980,9 +980,10 @@ fn canonical_representation_failures_are_labelled_apart_from_projection_drift() 
             .expect("canonical savepoint");
         respell_timestamp(&store, table, column, key, &id, path);
         let report = store.verify_all().expect("diagnose canonical respelling");
-        assert!(
-            report.invalid_work_records.contains(&canonical_label),
-            "{path}: {report:?}"
+        assert_eq!(
+            label_count(&report, &canonical_label),
+            1,
+            "{path}: reported once: {report:?}"
         );
         assert!(
             !report.invalid_work_records.contains(&projection_label),
@@ -1025,6 +1026,11 @@ fn canonical_representation_failures_are_labelled_apart_from_projection_drift() 
                     "{path} with {member}: {label} must be reported: {report:?}"
                 );
             }
+            assert_eq!(
+                label_count(&report, &canonical_label),
+                1,
+                "{path} with {member}: the canonical label is reported once: {report:?}"
+            );
             restore_savepoint(&store);
         }
     }
@@ -1185,13 +1191,11 @@ fn explicit_empty_skipped_seal_members_are_refused_by_integrity_verification() {
                 });
             // Two checks read each seal: its run binding, and the comparison of
             // the projection with the object it names. A projection-side
-            // finding is named by each in its own words. A canonical-side
-            // finding is currently named once by each check; that duplicate is
-            // pinned as today's behaviour, not as a requirement, so removing
-            // it only changes the expected count here.
+            // finding is named by each in its own words; a canonical-side one
+            // is detected by both and reported once.
             let mut expected = std::collections::BTreeMap::new();
             if in_canonical {
-                expected.insert(canonical_label.as_str(), 2);
+                expected.insert(canonical_label.as_str(), 1);
             }
             if in_projection {
                 expected.insert(projection_label.as_str(), 1);
@@ -1217,4 +1221,217 @@ fn explicit_empty_skipped_seal_members_are_refused_by_integrity_verification() {
     );
     assert_eq!(canonical_inventory(&store), before);
     assert_eq!(seal_rows(&store, &seal), (canonical, projection));
+}
+
+fn label_count(report: &crate::storage::IntegrityReport, label: &str) -> usize {
+    report
+        .invalid_work_records
+        .iter()
+        .filter(|found| found.as_str() == label)
+        .count()
+}
+
+fn seal_labels(
+    report: &crate::storage::IntegrityReport,
+    seal: &str,
+) -> std::collections::BTreeMap<String, usize> {
+    report
+        .invalid_work_records
+        .iter()
+        .filter(|label| label.contains(seal))
+        .fold(std::collections::BTreeMap::new(), |mut counts, label| {
+            *counts.entry(label.clone()).or_default() += 1;
+            counts
+        })
+}
+
+fn native_seal_id(store: &SqliteStore, work: WorkId) -> String {
+    store
+        .connection
+        .query_row(
+            "SELECT seal_id FROM work_completion_seals WHERE work_id = ?1",
+            [work.0.to_string()],
+            |row| row.get(0),
+        )
+        .expect("native seal")
+}
+
+fn store_explicit_empty_canonical_obligations(store: &SqliteStore, seal: &str) {
+    let changed = store
+        .connection
+        .execute(
+            "UPDATE objects SET canonical_json = \
+             CAST(json_set(canonical_json, '$.obligations', json('[]')) AS BLOB) \
+             WHERE object_id = ?1",
+            [seal],
+        )
+        .expect("store an explicit empty member");
+    assert_eq!(changed, 1);
+}
+
+// Only the run-binding check reads a canonical seal through a JSON value, so
+// only it can still see a lost member when the stored bytes also repeat a
+// known member, which the typed comparison refuses before looking further.
+// Keeping both detectors keeps that finding.
+#[test]
+fn a_seal_representation_loss_only_one_check_can_see_is_still_reported() {
+    let mut store = SqliteStore::open_in_memory().expect("native store");
+    let completed = native_history(&mut store);
+    let seal = native_seal_id(&store, completed);
+    let (canonical, _) = seal_rows(&store, &seal);
+    let value: serde_json::Value = serde_json::from_slice(&canonical).expect("canonical seal");
+    let fence = format!(
+        "\"claim_fence\":{}",
+        serde_json::to_string(&value["claim_fence"]).expect("fence")
+    );
+    let original = String::from_utf8(canonical.clone()).expect("UTF-8 seal");
+    assert_eq!(original.matches(&fence).count(), 1, "unambiguous member");
+    let damaged = original
+        .replacen(&fence, &format!("{fence},{fence}"), 1)
+        .replacen('{', "{\"obligations\":[],", 1);
+    let reparsed: serde_json::Value = serde_json::from_str(&damaged).expect("still JSON");
+    assert_eq!(reparsed["obligations"], serde_json::json!([]));
+    assert!(
+        serde_json::from_str::<CompletionSeal>(&damaged).is_err(),
+        "the typed decode refuses the repeated member"
+    );
+    store
+        .connection
+        .execute(
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+            params![damaged.as_bytes(), seal],
+        )
+        .expect("store the damaged canonical seal");
+    let report = store.verify_all().expect("diagnose the damaged seal");
+    let expected: std::collections::BTreeMap<String, usize> = [
+        (
+            format!("completion_seal:{seal}:canonical_representation"),
+            1,
+        ),
+        (format!("completion_seal:{seal}"), 1),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(seal_labels(&report, &seal), expected, "{report:?}");
+}
+
+#[test]
+fn each_seal_reports_its_own_representation_loss_once() {
+    let mut store = SqliteStore::open_in_memory().expect("native store");
+    let first = native_history(&mut store);
+    let project = "native-projection-repair";
+    let second = store
+        .create_work(
+            &root_request(project, "second", 30),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("second root");
+    let held = claim(&mut store, &second, "second-executor", "claim-2", 31, 300);
+    let proof = evidence(
+        &mut store,
+        &second,
+        &held,
+        "second-executor",
+        "evidence-2",
+        32,
+    );
+    checkpoint(
+        &mut store,
+        &second,
+        &held,
+        "second-executor",
+        "checkpoint-2",
+        33,
+        std::slice::from_ref(&proof),
+    );
+    complete(
+        &mut store,
+        &second,
+        &held,
+        "second-executor",
+        &proof,
+        "complete-2",
+        34,
+    )
+    .expect("second seal");
+    let seals = [
+        native_seal_id(&store, first),
+        native_seal_id(&store, second.work_id),
+    ];
+    assert_ne!(seals[0], seals[1]);
+    assert!(store.verify_all().expect("baseline").is_healthy());
+    for seal in &seals {
+        store_explicit_empty_canonical_obligations(&store, seal);
+    }
+    let report = store.verify_all().expect("diagnose both seals");
+    for seal in &seals {
+        let expected: std::collections::BTreeMap<String, usize> = [(
+            format!("completion_seal:{seal}:canonical_representation"),
+            1,
+        )]
+        .into_iter()
+        .collect();
+        assert_eq!(seal_labels(&report, seal), expected, "{report:?}");
+    }
+}
+
+// Losing the canonical seal, or finding another kind of object under its id,
+// is not a representation loss and keeps its own findings.
+#[test]
+fn a_missing_or_mistyped_canonical_seal_is_not_reported_as_representation_loss() {
+    let mut store = SqliteStore::open_in_memory().expect("native store");
+    let completed = native_history(&mut store);
+    let seal = native_seal_id(&store, completed);
+    // The mistyped object also carries an explicit empty member, so a
+    // representation finding would appear if another kind of object were read
+    // as this seal. An object stored as an event that no feed names is that
+    // object's own finding.
+    let seal_findings = [
+        format!("completion_seal:{seal}"),
+        format!("completion_seal:{seal}:projection_binding"),
+    ];
+    for (case, explicit_empty, statement, extra) in [
+        (
+            "missing",
+            false,
+            "DELETE FROM objects WHERE object_id = ?1",
+            None,
+        ),
+        (
+            "mistyped",
+            true,
+            "UPDATE objects SET object_kind = 'work_event' WHERE object_id = ?1",
+            Some(format!("work_event:{seal}:missing_work_feeds")),
+        ),
+    ] {
+        let expected: std::collections::BTreeMap<String, usize> = seal_findings
+            .iter()
+            .cloned()
+            .chain(extra)
+            .map(|label| (label, 1))
+            .collect();
+        // Simulated damage: a store guards these links itself, so the check
+        // that reports their loss is reached only with that guard off.
+        store
+            .connection
+            .execute_batch("PRAGMA foreign_keys = OFF; SAVEPOINT corrupt")
+            .expect("canonical savepoint");
+        if explicit_empty {
+            store_explicit_empty_canonical_obligations(&store, &seal);
+        }
+        let changed = store
+            .connection
+            .execute(statement, [&seal])
+            .expect("damage the canonical seal");
+        assert_eq!(changed, 1);
+        let report = store.verify_all().expect("diagnose the canonical seal");
+        assert!(!report.is_healthy(), "{case}: {report:?}");
+        assert_eq!(seal_labels(&report, &seal), expected, "{case}: {report:?}");
+        restore_savepoint(&store);
+        store
+            .connection
+            .execute_batch("PRAGMA foreign_keys = ON")
+            .expect("restore the link guard");
+    }
+    assert!(store.verify_all().expect("restored").is_healthy());
 }

@@ -285,11 +285,14 @@ to publish it:
 | Where the explicit `[]` is stored | Findings for that seal |
 | --- | --- |
 | The `seal_json` projection in `work_completion_seals` only | `completion_seal:<id>:projection_binding` and `completion_seal:<id>` |
-| The canonical seal in `objects` only | `completion_seal:<id>:canonical_representation`, reported by both seal checks |
+| The canonical seal in `objects` only | `completion_seal:<id>:canonical_representation` |
 | Both | All of the above |
 
-An ordinary load decodes such a seal without this check, and verification
-rewrites neither side.
+Two checks read each seal, its run binding and the comparison of its
+projection with the object it names, and either can detect a canonical seal
+that does not survive being written back; that finding is reported once per
+seal. An ordinary load decodes such a seal without this check, and
+verification rewrites neither side.
 
 ## Rebuildable and durable projections
 
