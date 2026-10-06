@@ -4,12 +4,27 @@
 use super::super::WorkRelationBlockerBasis;
 use super::super::query::{load_active_blocker_projections, load_prerequisite_projection_ids};
 use super::{
-    CanonicalObject, ChangeWorkPrerequisiteRequest, Connection, ObjectId, OptionalExtension,
-    PlanRelationBasis, PlanningValidation, SCHEMA_VERSION, StoreError, Transaction, WorkBlocker,
-    WorkEventDraft, WorkId, WorkItem, WorkLifecycle, WorkRelationBasis, WorkTransition,
-    active_run_snapshot, assert_revision, load_work_item, params, persist_work_item,
-    rebase_planning_claim, validate_planning_authority, work_is_ancestor_of,
+    CanonicalObject, ChangeWorkPrerequisiteRequest, Connection, MAX_WORK_PREREQUISITES_PER_ITEM,
+    ObjectId, OptionalExtension, PlanRelationBasis, PlanningValidation, SCHEMA_VERSION, StoreError,
+    Transaction, WorkBlocker, WorkEventDraft, WorkId, WorkItem, WorkLifecycle, WorkRelationBasis,
+    WorkTransition, active_run_snapshot, assert_revision, load_work_item, params,
+    persist_work_item, rebase_planning_claim, validate_planning_authority, work_is_ancestor_of,
 };
+
+/// Refuses a prerequisite set larger than one item may hold. The count is
+/// the item's retained edges, a completed prerequisite's included, plus the
+/// one being added: a waiver grants no capacity, and only an add that would
+/// leave the item over the bound is refused. Removal is never refused, a
+/// duplicate add is a no-op before this check runs, and rows an older build
+/// admitted above the bound are read as stored.
+pub(super) fn validate_prerequisite_in_degree(resulting: usize) -> Result<(), StoreError> {
+    if resulting > MAX_WORK_PREREQUISITES_PER_ITEM {
+        return Err(StoreError::InvalidWork(format!(
+            "prerequisite in-degree exceeds the per-item bound: at most {MAX_WORK_PREREQUISITES_PER_ITEM} prerequisites per item"
+        )));
+    }
+    Ok(())
+}
 
 /// Changes one edge using the ordinary checks within a caller-owned transaction.
 #[allow(
@@ -95,6 +110,20 @@ pub(super) fn change_work_prerequisite_with_validation_on(
         .optional()?;
     if add == exists.is_some() {
         return Ok(item);
+    }
+    if add {
+        // The validated basis holds every retained edge; the plan's
+        // transaction-local basis has every edge the plan admitted so far.
+        let retained = match (planned_relations.as_deref(), checked.as_ref()) {
+            (Some(relations), _) => relations.basis.prerequisite_ids.len(),
+            (None, Some(checked)) => checked.basis.prerequisite_ids.len(),
+            (None, None) => {
+                return Err(StoreError::InvalidWorkProjection(
+                    "a prerequisite change has no validated relation basis".into(),
+                ));
+            }
+        };
+        validate_prerequisite_in_degree(retained + 1)?;
     }
     item.revision += 1;
     item.updated_at = request.changed_at;

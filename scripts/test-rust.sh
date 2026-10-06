@@ -64,4 +64,7 @@ if [ "$#" -eq 0 ]; then
     echo "Rust scale gate: root delta write bounds and historical cost measurements"
     # Intentionally include future ignored tests in the root_delta_scale_ family (substring filter).
     node scripts/test-temp.mjs -- cargo test root_delta_scale_ -- --ignored --nocapture
+    echo "Rust scale gate: planning bounds reached one mutation at a time"
+    # Intentionally include future ignored tests in the planning_scale_ family (substring filter).
+    node scripts/test-temp.mjs -- cargo test planning_scale_ -- --ignored --nocapture
 fi

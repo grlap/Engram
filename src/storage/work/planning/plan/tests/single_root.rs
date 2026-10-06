@@ -110,7 +110,12 @@ fn atomic_plan_single_root_round_trip_and_restore_limit_refusal() {
         .expect("restore at boundary");
     assert!(restored.verify_all().expect("restored doctor").is_healthy());
     assert_eq!(
-        root_open_descendant_count(&restored.connection, receipt.tasks[0].work_id).expect("count"),
+        super::super::super::root_open_descendant_count(
+            &restored.connection,
+            &input.project_id.0,
+            receipt.tasks[0].work_id
+        )
+        .expect("count"),
         255
     );
 

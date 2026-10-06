@@ -46,6 +46,12 @@ try {
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }
+        Write-Output "Rust scale gate: planning bounds reached one mutation at a time"
+        # Intentionally include future ignored tests in the planning_scale_ family (substring filter).
+        & node scripts/test-temp.mjs -- cargo test planning_scale_ -- --ignored --nocapture
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
     }
 } finally {
     $env:RUST_TEST_THREADS = $previousTestThreads

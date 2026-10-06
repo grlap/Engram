@@ -125,6 +125,16 @@ const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
 pub(in crate::storage) const MAX_WORK_DEPTH: u32 = 4;
 pub(in crate::storage) const MAX_OPEN_WORK_DESCENDANTS: u32 = 255;
 pub(in crate::storage) const MAX_CHILDREN_PER_DECOMPOSITION: usize = 16;
+/// The most prerequisites one item may take through a planning route: as many
+/// as one plan may declare edges, so every legal plan's fan-in fits and the
+/// two bounds cannot drift. Every retained edge counts, a completed
+/// prerequisite's included. The bound caps the prerequisite-id part of an
+/// item's relation basis and fingerprint at this many ids, nothing more: the
+/// basis also carries the item's active blockers, which it does not bound,
+/// and rows an older build or a graph restore admitted above it are read as
+/// stored and only stop growing.
+pub(in crate::storage) const MAX_WORK_PREREQUISITES_PER_ITEM: usize =
+    crate::domain::MAX_WORK_PLAN_EDGES;
 /// Provenance source a detach puts on the successor it creates.
 pub(in crate::storage) const DETACH_PROVENANCE_SOURCE: &str = "work_detach";
 

@@ -7,8 +7,8 @@ use super::{
     WorkItem, WorkLifecycle, WorkOrigin, WorkPlanningAuthority,
     change_work_prerequisite_with_validation_on, combined_graph_is_acyclic,
     create_root_with_validation_on, decompose_work_with_validation_on, inspect_work_request,
-    normalize_optional, normalize_strings, normalize_text, persist_operation_result,
-    replay_operation, require_work_item_relation_integrity, root_open_descendant_count,
+    new_root_open_descendant_count, normalize_optional, normalize_strings, normalize_text,
+    persist_operation_result, replay_operation, require_work_item_relation_integrity,
     validated_current_work_relation_basis,
 };
 use crate::domain::{
@@ -115,7 +115,7 @@ impl SqliteStore {
                 let root = receipt.tasks.get(index).ok_or_else(|| {
                     StoreError::InvalidWorkProjection("validated plan lost a created task".into())
                 })?;
-                validate_plan_root_budget(&transaction, root)?;
+                validate_plan_root_budget(&transaction, &request.project_id.0, root)?;
             }
         }
         // Shared transitions deferred their full-project scan. Verify the
@@ -139,9 +139,14 @@ impl SqliteStore {
 
 fn validate_plan_root_budget(
     connection: &super::Connection,
+    project_id: &str,
     root: &WorkPlanMapping,
 ) -> Result<(), StoreError> {
-    let descendants = root_open_descendant_count(connection, root.work_id)?;
+    // The plan created this root in the same transaction, so its whole
+    // subtree is new and the root index range is exactly that subtree; the
+    // project-wide live count would cost every plan root the project's live
+    // rows.
+    let descendants = new_root_open_descendant_count(connection, project_id, root.work_id)?;
     if descendants > i64::from(MAX_OPEN_WORK_DESCENDANTS) {
         return Err(StoreError::InvalidWork(format!(
             "plan: root '{}' has {descendants} open descendants; at most {MAX_OPEN_WORK_DESCENDANTS} are allowed ({} tasks including the root)",

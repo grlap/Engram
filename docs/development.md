@@ -74,8 +74,11 @@ semantics are preserved.
 
 On Windows, run `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
 `scripts/test-rust.sh`. Both entry points run the ordinary Rust suite with
-bounded test concurrency, then separate ignored claim-mutation and
-`root_delta_scale_` phases. The shell entry point also raises the Unix
+bounded test concurrency, then separate ignored claim-mutation,
+`root_delta_scale_` and `planning_scale_` phases, each selected by name so
+that a long fixture (a thousand-checkpoint history, a thousand sequential
+prerequisite adds) stays out of the ordinary run and still runs in every full
+gate. The shell entry point also raises the Unix
 file-descriptor soft limit when the host permits it; that step is not
 applicable on Windows.
 
@@ -523,7 +526,7 @@ tests.
   stage says it too. A selection made through the environment, such as
   `NODE_OPTIONS`, is not visible. Every test stage of a full run is
   `filtered=yes`, and the stage list says so itself, whether or not the stage
-  ran: `rust` because its two scale phases select tests by name, the four
+  ran: `rust` because its three scale phases select tests by name, the four
   Node stages because each names its test files. `scope=full` says the
   prescribed stage list ran, not that no runner filtered.
 - `overall` covers validation only: the stages and the input fingerprint check.

@@ -25,7 +25,7 @@ use super::query::{
 };
 use super::{
     MAX_CHILDREN_PER_DECOMPOSITION, MAX_OPEN_WORK_DESCENDANTS, MAX_WORK_DEPTH,
-    MAX_WORK_TTL_SECONDS, WorkEventDraft, WorkRelationBasis,
+    MAX_WORK_PREREQUISITES_PER_ITEM, MAX_WORK_TTL_SECONDS, WorkEventDraft, WorkRelationBasis,
 };
 use crate::{
     CanonicalObject, ObjectId,
@@ -57,7 +57,10 @@ pub(super) use relations::{
     require_work_item_relation_integrity, validated_current_work_relation_basis,
     work_relation_fingerprint,
 };
-use relations::{change_work_prerequisite_on, change_work_prerequisite_with_validation_on};
+use relations::{
+    change_work_prerequisite_on, change_work_prerequisite_with_validation_on,
+    validate_prerequisite_in_degree,
+};
 
 /// Atomic plans defer whole-project cycle and root-size scans to their final
 /// commit checks and use their own child-count bound. Every other check stays
@@ -1089,6 +1092,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
     for values in prerequisites.values_mut() {
         values.sort_by_key(|value| value.0);
         values.dedup();
+        validate_prerequisite_in_degree(values.len())?;
     }
 
     let mut children = Vec::with_capacity(request.children.len());
@@ -1632,19 +1636,25 @@ fn validate_decomposition_budget(
         ));
     }
     if matches!(validation, PlanningValidation::Immediate) {
-        validate_root_descendant_budget(connection, parent.root_id, proposed_children)?;
+        validate_root_descendant_budget(
+            connection,
+            &parent.project_id.0,
+            parent.root_id,
+            proposed_children,
+        )?;
     }
     Ok(())
 }
 
 fn validate_root_descendant_budget(
     connection: &Connection,
+    project_id: &str,
     root_id: WorkId,
     proposed_children: usize,
 ) -> Result<(), StoreError> {
     let proposed = i64::try_from(proposed_children)
         .map_err(|_| StoreError::InvalidWork("decomposition size overflow".into()))?;
-    let open_descendants = root_open_descendant_count(connection, root_id)?;
+    let open_descendants = root_open_descendant_count(connection, project_id, root_id)?;
     if open_descendants + proposed > i64::from(MAX_OPEN_WORK_DESCENDANTS) {
         return Err(StoreError::InvalidWork(format!(
             "decomposition exceeds the root open-descendant budget: at most {MAX_OPEN_WORK_DESCENDANTS} open descendants per root ({} tasks including the root)",
@@ -1654,21 +1664,66 @@ fn validate_root_descendant_budget(
     Ok(())
 }
 
-fn root_open_descendant_count(connection: &Connection, root_id: WorkId) -> Result<i64, StoreError> {
+/// The root's proposed and open descendants, counted by their `root_id`
+/// through the project's lifecycle index rather than by walking `parent_id`.
+///
+/// Every descendant carries its root's id from creation and no supported
+/// path moves it under another root, so for a valid stored tree this counts
+/// the same rows the walk did, open work below a terminal ancestor included.
+/// The work is bounded by the project's proposed and open rows: the index
+/// range visits only those, and one row read each tests the root. Completed,
+/// cancelled and superseded descendants are never visited, so the cost stays
+/// flat as a root's closed history grows. `INDEXED BY` pins that access path;
+/// the planner would otherwise be free to range over the root's whole history
+/// through the root index instead.
+fn root_open_descendant_count(
+    connection: &Connection,
+    project_id: &str,
+    root_id: WorkId,
+) -> Result<i64, StoreError> {
     #[cfg(test)]
     DESCENDANT_SCAN_COUNT.with(|count| count.set(count.get() + 1));
     let mut statement = connection.prepare(
-        "WITH RECURSIVE descendants(work_id) AS (
-             SELECT work_id FROM work_items WHERE parent_id = ?1
-             UNION
-             SELECT child.work_id FROM work_items child
-             JOIN descendants parent ON child.parent_id = parent.work_id
-         )
-         SELECT COUNT(*) FROM descendants
-         JOIN work_items item USING(work_id)
-         WHERE item.lifecycle IN ('proposed', 'open')",
+        "SELECT COUNT(*) FROM work_items INDEXED BY work_items_ready
+         WHERE project_id = ?1
+           AND lifecycle IN ('proposed', 'open')
+           AND root_id = ?2
+           AND work_id <> ?2",
     )?;
-    let count = statement.query_row([root_id.0.to_string()], |row| row.get::<_, i64>(0))?;
+    let count = statement.query_row(params![project_id, root_id.0.to_string()], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    #[cfg(test)]
+    DESCENDANT_SCAN_VM_STEPS.with(|steps| {
+        steps.set(steps.get() + statement.get_status(rusqlite::StatementStatus::VmStep));
+    });
+    Ok(count)
+}
+
+/// The open descendants of a root created in the current transaction, counted
+/// through the root index rather than the project's lifecycle range. Such a
+/// root has no history yet: every row under its `root_id` was written by the
+/// same plan, so the index range is exactly its new subtree, at most a plan's
+/// worth of rows, and the count does not grow with the project's live rows
+/// the way [`root_open_descendant_count`] does. Never use it for an existing
+/// root, whose range would include its closed history.
+fn new_root_open_descendant_count(
+    connection: &Connection,
+    project_id: &str,
+    root_id: WorkId,
+) -> Result<i64, StoreError> {
+    #[cfg(test)]
+    DESCENDANT_SCAN_COUNT.with(|count| count.set(count.get() + 1));
+    let mut statement = connection.prepare(
+        "SELECT COUNT(*) FROM work_items INDEXED BY work_items_root
+         WHERE project_id = ?1
+           AND root_id = ?2
+           AND work_id <> ?2
+           AND lifecycle IN ('proposed', 'open')",
+    )?;
+    let count = statement.query_row(params![project_id, root_id.0.to_string()], |row| {
+        row.get::<_, i64>(0)
+    })?;
     #[cfg(test)]
     DESCENDANT_SCAN_VM_STEPS.with(|steps| {
         steps.set(steps.get() + statement.get_status(rusqlite::StatementStatus::VmStep));

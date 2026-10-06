@@ -392,13 +392,14 @@ fn atomic_plan_descendant_refusal_names_a_later_payload_root() {
         let root = &roots.tasks[index];
         let tx = store.begin_work_mutation().expect("transaction");
         tx.execute("UPDATE work_items SET parent_id = ?1, root_id = ?1 WHERE work_id != ?1 AND work_id != ?2", rusqlite::params![root.work_id.0.to_string(), extra.work_id.0.to_string()]).expect("boundary projection");
-        validate_plan_root_budget(&tx, root).expect("255 descendants");
+        validate_plan_root_budget(&tx, "atomic-plan", root).expect("255 descendants");
         tx.execute(
             "UPDATE work_items SET parent_id = ?1, root_id = ?1 WHERE work_id = ?2",
             rusqlite::params![root.work_id.0.to_string(), extra.work_id.0.to_string()],
         )
         .expect("one beyond boundary");
-        let error = validate_plan_root_budget(&tx, root).expect_err("oversized root");
+        let error =
+            validate_plan_root_budget(&tx, "atomic-plan", root).expect_err("oversized root");
         assert!(matches!(error, StoreError::InvalidWork(reason)
             if reason == format!("plan: root '{}' has 256 open descendants; at most 255 are allowed (256 tasks including the root)", root.key)));
         drop(tx);

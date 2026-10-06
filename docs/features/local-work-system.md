@@ -1016,8 +1016,9 @@ revision and idempotency key.
   parent/outcome fingerprint surfaces likely semantic duplicates before
   admission; it warns or creates a proposal rather than silently merging.
 - Decomposition is bounded in code: maximum depth, children per atomic plan,
-  and open descendants per root. Hitting a bound returns a typed directive to
-  consolidate the plan; there is no grant or override token.
+  open descendants per root, and prerequisites per item. Hitting a bound
+  returns a typed directive to consolidate the plan; there is no grant or
+  override token.
 - Cross-project hierarchy and prerequisites are out of V1. An external or
   cross-project dependency is represented as a typed blocker with provenance,
   not a fake local edge.
@@ -2306,7 +2307,23 @@ claim/handoff state determine whether a word can run. Actor text remains
 asserted context unless a stronger host mechanism verifies it.
 
 The default local planning envelope is bounded in code: depth 4, 255 open
-descendants per root, and 16 children per decomposition. Agents may create and
+descendants per root, 16 children per decomposition, and 1024 prerequisites
+per item through any planning route (an ordinary add, a decomposition edge or
+an atomic plan), as many as one plan may declare edges, so an item takes at
+most what one plan could give it. The in-degree bound counts every retained
+edge, a completed prerequisite's included; it refuses only an add that would
+leave the item over the bound, never a removal or a repeated add; and it caps
+the prerequisite-id part of an item's relation basis and fingerprint at 1024
+ids (the active-blocker part is not bounded by it, and the project-wide cycle
+scan is a separate cost). An item an older build or a graph restore admitted
+above the bound is read as stored and only stops growing. The open-descendant
+check counts a root's proposed and open descendants through the project's
+lifecycle index, so its work is bounded by the project's live rows (every
+open root's included) and never by a root's completed, cancelled or
+superseded history; a project with many small open roots pays for its live
+rows, a root with a long closed history pays nothing for it. A root an atomic
+plan creates is counted through its own new subtree instead, since it has no
+history yet. Agents may create and
 revise work, claim/recover, cancel/reopen, complete, and record explicit
 waivers within those lifecycle rules. Recovery, cancellation, reopen, and
 waiver paths require attributed reasons where their audit contracts call for
