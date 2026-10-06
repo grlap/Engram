@@ -592,9 +592,6 @@ fn must_show_rows_over_the_budget_page_before_any_closed_row() {
     );
 }
 
-/// `--after` continues only the assessment of the record it was issued for:
-/// a real continuation of a verification record is refused on a plain note,
-/// and the refusal points at that note's detail.
 /// A bound record says where its check ran in both views: the summary and
 /// the first history page each carry the `bound` branch naming the original
 /// check, the item and run it ran on and the criteria it was bound to, and
@@ -630,7 +627,7 @@ fn a_bound_record_shows_where_its_check_ran_in_both_views() {
     assert_eq!(page["bound"], *branch, "the same branch in both views");
     assert!(first.text().contains(&line), "{}", first.text());
 
-    // The original itself is native: neither view carries the branch.
+    // The original itself is native: its summary carries no branch.
     let native = note_detail(
         &verbs,
         branch["work_ref"].as_str().expect("ref"),
@@ -647,6 +644,9 @@ fn a_bound_record_shows_where_its_check_ran_in_both_views() {
     assert!(!native.text().contains("bound from verification"));
 }
 
+/// `--after` continues only the assessment of the record it was issued for:
+/// a real continuation of a verification record is refused on a plain note,
+/// and the refusal points at that note's detail.
 #[test]
 fn after_refuses_on_a_note_without_an_assessment() {
     let directory = crate::test_support::temp_home().expect("temp home");
