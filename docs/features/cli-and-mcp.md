@@ -3086,7 +3086,7 @@ principal. The shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
-| `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `ready`. Binding creates no task or join event. Its result carries the session status. |
+| `session_bind` | Resolve a shared control anchor by project and external reference, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `ready`; an exact retry of the latest bind key returns the current status instead. Binding creates no task or join event. Its result carries the session status. |
 | `session_status` | Read current phase, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and, for a work-bound session, the claim's `named_root` state |
 | `turn_grant_read` | None. Read one grant from this session's history by exact `grant_id`, using current connection and `routing_token` credentials and one snapshot. Return `found` with persisted state and begin/checkpoint timestamps, or `not_found`; write and expire nothing. Evidence only, with no begin fence or replay authority; see [Exact grant evidence](behavioral-control-plane.md#exact-grant-evidence) |
 | `turn_evaluate` | Derive membership, phase, policy and work binding from SQLite and persist a decision plus optional grant |
@@ -3106,23 +3106,30 @@ authoritative read a host uses to decide when to name a root again; see
 
 The bind response supplies the `routing_token` used on later calls. A grant
 carries no delivery page, and there are no recovery turns: the work context an
-agent sees comes from `next`, which keeps its own staged delivery. A freshly
-bound session is `ready`, and its first turn is granted at once. While hosts
-move off the old fields, `turn_evaluate.purpose` may be `ordinary` or absent
-(any other value is an `invalid_request`), and `turn_begin.delivery_tokens` may
+agent sees comes from `next`, which keeps its own staged delivery. A new
+bind that succeeds leaves the session `ready`, so it may request a turn at once;
+`turn_evaluate` still admits or refuses that turn by its usual checks. An
+exact retry of the session's latest bind key instead returns its current
+status, phase unchanged. While
+hosts move off the old fields, `turn_evaluate.purpose` may be `ordinary` or
+absent (any other value is an `invalid_request`), and `turn_begin.delivery_tokens` may
 be `[]` or absent; a non-empty list is refused with `grant_scope_mismatch`.
 The checkpoint receipt's `confirmed_cursor` repeats its `cursor`, the position
 of the checkpoint event in the task's write-only audit index. Exact retry
-evidence remains canonical across process restart, but a newly opened control
-connection invalidates unbegun grants and returns the session to `ready`; old
-results never resurrect authority. The new connection also fences a still-live predecessor, whose next
-operation fails with `control_connection_superseded`. A begun grant is not
+results are stored as operational records and survive a process restart, but a
+newly opened control connection invalidates unbegun grants and, when it
+invalidates one, returns a `turn_open` session with no begun turn to `ready`
+(an exited session stays exited); old results never resurrect authority. The
+new connection also fences a still-live predecessor, whose next operation
+fails with `control_connection_superseded`. A begun grant is not
 silently replayed or discarded: `session_status.open_grant_id` identifies the
 required checkpoint and `open_grant_state` distinguishes `issued` from
 `begun`. A fresh `turn_evaluate` key atomically supersedes an
 issued-but-unbegun grant and records an immutable transition bound to the
-replacement decision; an already-begun grant instead refuses with
-`turn_already_open`. A begun turn exposes no replayable prompt because its
+replacement decision. An already-begun grant is never superseded: its
+session stays `turn_open`, so the evaluation is refused, with
+`turn_already_open` once the checks that come earlier in the fixed evaluation
+order have passed. A begun turn exposes no replayable prompt because its
 outcome may be uncertain; the host closes it with a report. Reusing a key for a
 different intent fails.
 

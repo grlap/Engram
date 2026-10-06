@@ -257,21 +257,26 @@ state, read in the same transaction (see
 existed replays as stored, without it.
 
 Reopening the session's host-control connection after a restart expires every
-unbegun grant and returns a session with no begun turn to `ready` (see
-[crash, restart, and replay](#crash-restart-and-replay)); an uncertain begun
-grant remains `turn_open` until the host reports it. Nothing is
-redelivered, because replaying a prompt with possible effects would be unsafe.
+unbegun grant and, when that expires one, returns a `turn_open` session with
+no begun turn to `ready` (see
+[crash, restart, and replay](#crash-restart-and-replay)); an exited session
+stays exited, and a session with an uncertain begun grant remains `turn_open`
+until the host reports it. Nothing is redelivered, because replaying a
+prompt with possible effects would be unsafe.
 A fresh evaluation key likewise atomically supersedes an issued-but-unbegun
 grant. The same transaction records an immutable supersession transition that
 binds the old grant and request key to the replacement request and decision,
 with a typed reason and timestamp. It never replaces a begun grant: that
-session stays `turn_open`, reports `open_grant_state: begun`, and refuses the
-evaluation with `turn_already_open` until checkpoint/reconciliation completes.
+session stays `turn_open` and reports `open_grant_state: begun`, and until
+the host checkpoints the turn the evaluation is refused, with
+`turn_already_open` once the checks that come earlier in the
+[fixed evaluation order](#2-evaluate-a-turn) have passed.
 
 A grant is an operational record whose intent binding is immutable and
 fingerprinted, while its row's state moves from issued to begun and completed,
 or to expired or superseded. It is bound to one task, session, turn intent,
-both control epochs, capability envelope, and work-claim fence; it is not a
+both control epochs and capability envelope, and, when the session is bound
+to a work claim, to that claim's fence; it is not a
 bearer token transferable to another session. Reopening the session's
 host-control connection after a restart expires issued-but-unbegun authority.
 Grants stay stored in every state, since nothing prunes them; completed,
@@ -1097,8 +1102,8 @@ marked so.
 - `WorkClaim`, shipped as a work record: work/run holder, accepted work
   revision, expiry, revision, monotonic claim fence, and state. Transfer and
   recovery are separate work transitions; assignment belongs to the work item.
-- `HandoffOffer`, shipped as a work record: exact work-claim handoff,
-  recipient, expiry, and transfer lifecycle.
+- `HandoffOffer`, shipped as the `WorkHandoffOffer` work record: exact
+  work-claim handoff, recipient, expiry, and transfer lifecycle.
 - `ReportAssembly` and `ReportAssemblyClaim` (designed, not built): root
   completion-seal id, assembly generation/state/revision, designated holder,
   expiry, revision, monotonic fence, and handoff/recovery lifecycle. This is
@@ -1575,8 +1580,9 @@ implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
 `acceptance_verification_read` and `verification_bind`; none is exposed through
 agent-facing MCP. Exact retry
 evidence survives process restart. When the host reopens a session's
-connection, its unbegun authority is invalidated and a session with no begun
-turn returns to `ready`. Each open rotates an internal
+connection, its unbegun authority is invalidated, and a `turn_open` session
+whose unbegun grant this expired, with no begun turn, returns to `ready`; an
+exited session stays exited. Each open rotates an internal
 connection generation so a still-running predecessor is fenced. Begun grants
 stay open until reported and are discoverable through session status; no
 payload is redelivered.

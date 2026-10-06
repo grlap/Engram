@@ -460,10 +460,11 @@ run is unfinished, obligations and completion read them; on a finished run
 they are late records kept for audit only. The session and
 grant rows are the durable record, and recovery reads them; an event for
 every transition, from which those rows could be rebuilt, is designed, not
-built. Live grants and high-volume allow/refusal diagnostics are operational
-records, not canonical memory. A grant's intent binding never changes, while
-its row's state moves from issued to begun and completed, or to expired or
-superseded. Reopening a session's host-control connection after a restart
+built. Turn grants in every state and high-volume allow/refusal diagnostics
+are operational records, not canonical memory. A grant's intent binding
+never changes, while its row's state moves from issued to begun and
+completed, or to expired or superseded. Reopening a session's host-control
+connection after a restart
 expires every grant it was issued and has not begun, discarding that
 authority; a process restart alone changes nothing until then. A rebind also
 expires every issued, unbegun grant, and a status read lazily expires issued
@@ -584,7 +585,7 @@ transition through canonical events is designed, not built (§2.7). The
 execution observations and evidence a work-bound checkpoint carries are
 canonical work records on the project, root and run feeds, which obligations
 and completion read while the run is unfinished (§2.7). Action records are not
-built. Live grants and decision diagnostics
+built. Turn grants in every state and decision diagnostics
 occupy a separate operational tier and never become peer context; bounding
 that tier's retention is designed, not built, and nothing prunes it today. The
 cursor orders peer deltas; it is not an object identity and does not cross
@@ -594,7 +595,7 @@ stores as a global sequence number.
 engram.db
   objects      // rows keyed by minted id: versions, events, edges, evidence — write-once
   projections  // exact-current heads/status/order plus rebuildable indexes and FTS5
-  control.*    // live grants + diagnostics — operational, never memory
+  control.*    // turn grants in every state + diagnostics — operational, never memory
   meta         // current-build marker; refuses stores created by another build
 ```
 

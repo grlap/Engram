@@ -601,8 +601,9 @@ A grant carries no delivery page and there are no recovery turns: the work
 context an agent sees comes from `next`. While hosts move off the old fields,
 `turn_evaluate.purpose` may be `ordinary` or absent, and
 `turn_begin.delivery_tokens` may be `[]` or absent; a non-empty token list is
-refused with `grant_scope_mismatch`. A freshly bound session is `ready`, and
-its first turn is granted at once.
+refused with `grant_scope_mismatch`. A new bind leaves the session `ready`, so
+it may request a turn at once; `turn_evaluate` still admits or refuses that
+turn by its usual checks.
 An empty resource_intents list remains valid. Control sessions bind directly
 by project and external reference, without starting a compatibility task.
 Action gating and action-outcome reconciliation are designed and deferred
