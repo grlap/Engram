@@ -617,9 +617,11 @@ fn show_emits_every_page_row_in_dense_feed_order() {
             at(130),
         )
         .expect("record note");
+    // The owner still holds the open item, so the completion names its target.
     assert!(matches!(
         owner
-            .work_complete(
+            .work_complete_on(
+                Some(&late.short_ref),
                 WorkCompleteInput {
                     source_fingerprint: None,
                     landing: None,

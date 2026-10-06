@@ -436,8 +436,10 @@ fn a_replayed_child_claim_reads_the_childs_run_as_history() {
     service
         .work_focus(&child.work_id.0.to_string(), at(8))
         .expect("focus the child");
+    // The session holds the parent too, so the completion names the child.
     match service
-        .work_complete(
+        .work_complete_on(
+            Some(&child.short_ref),
             completion_input("child delivered", "historical-child-done"),
             at(9),
         )

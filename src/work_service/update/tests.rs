@@ -1930,8 +1930,11 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
                 at(1_700 + i64::try_from(sample_index * 2).expect("select timestamp")),
             )
             .expect("select completion target");
+        // The writer holds every sampled item, so each completion names its
+        // target.
         let completed = measure_scale_operation(&mut complete_samples, || {
-            writer.work_complete(
+            writer.work_complete_on(
+                Some(&work.short_ref),
                 WorkCompleteInput {
                     source_fingerprint: None,
                     landing: None,

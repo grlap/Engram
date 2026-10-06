@@ -1,7 +1,8 @@
-//! Through the CLI, a bare `done` or `evaluate` from a session holding more
-//! than one live claim is refused and records nothing; the bare `note`,
-//! `gate` and `handoff`, the words given an explicit ref, and a bare word
-//! with one live claim act as before.
+//! Through the CLI, a bare `done` or `evaluate`, or the host's `work core
+//! complete` without a ref, from a session holding more than one live claim
+//! is refused and records nothing; the bare `note`, `gate` and `handoff`, the
+//! words given an explicit ref, and a bare word with one live claim act as
+//! before.
 
 #[path = "../src/test_support.rs"]
 mod test_support;
@@ -194,6 +195,84 @@ fn bare_done_and_evaluate_refuse_through_the_cli_while_several_claims_are_live()
         "bare done",
     );
     assert_eq!(completed["work"]["short_ref"], json!(first), "{completed}");
+}
+
+/// One host core operation from the same session, whose answer is JSON.
+fn core(root: &Path, args: &[&str]) -> Output {
+    let mut full = vec![
+        "work",
+        "--actor-id",
+        "cli-agent",
+        "--session-id",
+        "bare-target-cli",
+        "core",
+    ];
+    full.extend_from_slice(args);
+    engram(root, &full)
+}
+
+/// The host's `work core complete` that names no item follows the bare
+/// `done` rule: refused while another claim is live beside the held focus,
+/// and while the focus is not held but other work is, recording nothing.
+#[test]
+fn a_bare_core_complete_through_the_cli_refuses_while_other_work_is_held() {
+    let directory = test_support::temp_home().expect("temporary directory");
+    let root = directory.path();
+    fs::write(root.join(".engram-project"), format!("{PROJECT}\n")).expect("project file");
+    let init = engram(root, &["init"]);
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    let first = add(root, "First held work");
+    let second = add(root, "Second held work");
+    for work_ref in [&first, &second] {
+        acted(&work(root, &["claim", work_ref]), "claim");
+    }
+    let mut held = vec![first.clone(), second.clone()];
+    held.sort();
+    let input = r#"{"capture":{"summary":"Delivered"},"idempotency_key":"core-complete"}"#;
+    let before = recorded(root);
+
+    let error = refused(
+        &core(root, &["complete", "--input", input]),
+        "core complete",
+    );
+    assert_eq!(error["code"], "work_bare_target_ambiguous", "{error}");
+    assert_eq!(error["details"]["operation"], "work_complete", "{error}");
+    assert_eq!(error["details"]["focused_ref"], json!(second), "{error}");
+    assert_eq!(error["details"]["held_refs"], json!(held), "{error}");
+    assert_eq!(
+        recorded(root),
+        before,
+        "a refused bare completion recorded something"
+    );
+
+    // Named, it completes while the other claim stays live.
+    let named = acted(
+        &core(root, &["complete", "--work-ref", &second, "--input", input]),
+        "named core complete",
+    );
+    assert!(named.to_string().contains("\"seal\""), "{named}");
+
+    // The completed focus is not held while the first claim is: refused.
+    let before = recorded(root);
+    let other = r#"{"capture":{"summary":"Delivered again"},"idempotency_key":"core-again"}"#;
+    let error = refused(
+        &core(root, &["complete", "--input", other]),
+        "core complete",
+    );
+    assert_eq!(error["code"], "work_implicit_target_conflict", "{error}");
+    assert_eq!(error["details"]["operation"], "work_complete", "{error}");
+    assert_eq!(error["details"]["focused_ref"], json!(second), "{error}");
+    assert_eq!(error["details"]["focus_state"], "not_open", "{error}");
+    assert_eq!(error["details"]["held_refs"], json!([first]), "{error}");
+    assert_eq!(
+        recorded(root),
+        before,
+        "a refused bare completion recorded something"
+    );
 }
 
 /// Five live claims with the focus last in ref order: the CLI refusal names

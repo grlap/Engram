@@ -300,6 +300,23 @@ this session began an attempt of the same intent that finished, or whose
 core write committed before the attempt could finish. The same key with
 another payload, or an attempt that wrote nothing, is checked like a new act.
 
+`work core complete` without `--work-ref` follows the bare `done` rule, both
+parts of it. It is refused while the focus is not an item this session holds
+and the session holds other work (`work_implicit_target_conflict`), and while
+another live claim of this session stands beside its held focus
+(`work_bare_target_ambiguous`, with `operation` `work_complete`). Only this
+session's active, unexpired claims in this project count. The check runs
+before the completion attempt is written, so the completion records nothing
+(opening the store can still register a process-default session). A
+completion keeps its own replay rule: a repeat of a completion this session
+already admitted on the focus is answered from its receipt, whether that
+attempt finished or was cut short after its run was sealed, but only while
+that item is the focus again or is named. On another focus the same key is
+refused: by the bare rule above when it applies there, otherwise, as when
+the item is named, as an idempotency conflict. The same key with another
+payload, or an attempt whose run is not sealed, is checked like a new
+completion.
+
 These are the reads that record nothing:
 
 - `next --peek` (MCP `next` with `peek: true`);

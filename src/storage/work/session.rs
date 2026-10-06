@@ -181,30 +181,76 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
             request.now.timestamp_millis()
         ],
     )?;
-    let stored = connection.query_row(
-        "SELECT request_hash, basis_hash, basis_json, result_id, result_json
-         FROM work_protocol_attempts
-         WHERE project_id = ?1 AND session_id = ?2
-           AND operation = ?3 AND idempotency_key = ?4",
-        params![project_id.0, session_id.0, operation, idempotency_key],
-        |row| {
-            Ok(WorkProtocolAttemptRow {
-                request_hash: row.get(0)?,
-                basis_hash: row.get(1)?,
-                basis_json: row.get(2)?,
-                result_id: row.get(3)?,
-                result_json: row.get(4)?,
-            })
-        },
-    )?;
+    let stored = work_protocol_attempt_row_on(
+        connection,
+        project_id,
+        session_id,
+        operation,
+        &idempotency_key,
+    )?
+    .ok_or_else(|| {
+        StoreError::InvalidWorkProjection("work-protocol attempt was not recorded".into())
+    })?;
     if stored.request_hash != request_object.key().as_str() {
         return Err(StoreError::WorkOperationIdempotencyConflict {
             operation: operation.to_owned(),
             key: idempotency_key,
         });
     }
-    let basis_matches = stored.basis_hash.as_deref() == Some(basis_object.key().as_str())
-        && stored.basis_json.as_deref() == Some(basis_object.bytes());
+    stored_work_protocol_attempt_on(
+        connection,
+        project_id,
+        operation,
+        idempotency_key,
+        stored,
+        Some(&basis_object),
+    )
+}
+
+/// This session's attempt row of `operation` under `idempotency_key`, as
+/// stored.
+fn work_protocol_attempt_row_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    operation: &str,
+    idempotency_key: &str,
+) -> Result<Option<WorkProtocolAttemptRow>, StoreError> {
+    Ok(connection
+        .query_row(
+            "SELECT request_hash, basis_hash, basis_json, result_id, result_json
+             FROM work_protocol_attempts
+             WHERE project_id = ?1 AND session_id = ?2
+               AND operation = ?3 AND idempotency_key = ?4",
+            params![project_id.0, session_id.0, operation, idempotency_key],
+            |row| {
+                Ok(WorkProtocolAttemptRow {
+                    request_hash: row.get(0)?,
+                    basis_hash: row.get(1)?,
+                    basis_json: row.get(2)?,
+                    result_id: row.get(3)?,
+                    result_json: row.get(4)?,
+                })
+            },
+        )
+        .optional()?)
+}
+
+/// A stored attempt decoded and verified the way a replay reads it: its
+/// durable basis, compared with `basis` when one is given, and its result
+/// record, checked against the row's exact bytes and its project binding.
+fn stored_work_protocol_attempt_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    operation: &str,
+    idempotency_key: String,
+    stored: WorkProtocolAttemptRow,
+    basis_object: Option<&CanonicalObject>,
+) -> Result<WorkProtocolAttempt, StoreError> {
+    let basis_matches = basis_object.is_some_and(|basis_object| {
+        stored.basis_hash.as_deref() == Some(basis_object.key().as_str())
+            && stored.basis_json.as_deref() == Some(basis_object.bytes())
+    });
     let stored_basis = match (&stored.basis_hash, &stored.basis_json) {
         (Some(stored_hash), Some(bytes)) => {
             let hash = ObjectId::from_stored(stored_hash.clone())
@@ -623,6 +669,44 @@ impl SqliteStore {
                 |row| row.get::<_, bool>(0),
             )
             .optional()?)
+    }
+
+    /// This session's attempt of `operation` under `idempotency_key` for the
+    /// intent fingerprint `request_hash`, decoded and verified as
+    /// [`Self::begin_work_protocol_attempt`] replays it, or `None` when there
+    /// is none for that intent. Its `basis_matches` is always false: no basis
+    /// is compared. Reads only.
+    pub(crate) fn stored_work_protocol_attempt(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        operation: &str,
+        idempotency_key: &str,
+        request_hash: &ObjectId,
+    ) -> Result<Option<WorkProtocolAttempt>, StoreError> {
+        let idempotency_key = normalize_text(idempotency_key, "work idempotency key")?;
+        let Some(stored) = work_protocol_attempt_row_on(
+            &self.connection,
+            project_id,
+            session_id,
+            operation,
+            &idempotency_key,
+        )?
+        else {
+            return Ok(None);
+        };
+        if stored.request_hash != request_hash.as_str() {
+            return Ok(None);
+        }
+        stored_work_protocol_attempt_on(
+            &self.connection,
+            project_id,
+            operation,
+            idempotency_key,
+            stored,
+            None,
+        )
+        .map(Some)
     }
 
     /// Starts or replays one caller-visible ambient protocol intent before any

@@ -6,6 +6,7 @@ use chrono::Duration;
 
 mod historical;
 mod identity;
+mod implicit_target;
 mod late_note_parity;
 mod replay_decode;
 mod restored;
@@ -736,9 +737,14 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
             at(14),
         )
         .expect("claim remaining required child");
+    // The session holds the parent too, so the completion names the child.
     assert!(matches!(
         service
-            .work_complete(completion_input("required child delivered", ""), at(15))
+            .work_complete_on(
+                Some(&sealed.short_ref),
+                completion_input("required child delivered", ""),
+                at(15)
+            )
             .expect("seal required child"),
         WorkCompleteResult::Completed(_)
     ));
@@ -879,8 +885,14 @@ fn refused_explicit_completion_stays_target_bound_and_rotates_with_holder_claim_
             .work_propose(root_input("Other focus", "refusal-other-root"), at(5))
             .expect("other root"),
     );
+    // Bare, the new focus is not held while the parent is: refused before
+    // the key is read. Named, the key stays bound to its original target.
     assert!(matches!(
         service.work_complete(input.clone(), at(6)),
+        Err(StoreError::WorkImplicitTargetConflict(_))
+    ));
+    assert!(matches!(
+        service.work_complete_on(Some(&other.short_ref), input.clone(), at(6)),
         Err(StoreError::WorkOperationIdempotencyConflict { operation, key })
             if operation == "work_complete" && key == "refusal-target-completion"
     ));

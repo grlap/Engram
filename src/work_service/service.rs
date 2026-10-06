@@ -399,54 +399,85 @@ impl LocalWorkService {
             let work = self.focused_item(store, None, now)?;
             let claim = store.current_work_claim(work.work_id)?;
             let held = store.work_held_refs_in_project(&self.project_id, &self.session_id, now)?;
-            if held.iter().any(|(work_id, _)| *work_id == work.work_id) {
-                return Ok(WorkProtocolBasis {
+            match self.implicit_target_refusal(
+                operation,
+                ImplicitTargetRule::FocusHeld,
+                &work,
+                claim.as_ref(),
+                held,
+                now,
+            ) {
+                Some(refusal) => Err(refusal),
+                None => Ok(WorkProtocolBasis {
                     focused_work: Some(work),
                     claim,
                     handoffs: Vec::new(),
-                });
+                }),
             }
-            let others: Vec<String> = held
-                .into_iter()
-                .filter(|(work_id, _)| *work_id != work.work_id)
-                .map(|(_, short_ref)| short_ref)
-                .collect();
-            if others.is_empty() {
-                return Ok(WorkProtocolBasis {
-                    focused_work: Some(work),
-                    claim,
-                    handoffs: Vec::new(),
-                });
-            }
-            let held_elsewhere = claim.as_ref().is_some_and(|claim| {
-                claim.state == crate::domain::WorkClaimState::Active
-                    && claim.expires_at > now
-                    && claim.holder != self.session_id
-            });
-            let focus_state = if held_elsewhere {
-                crate::storage::ImplicitFocusState::HeldElsewhere
-            } else if work.lifecycle != crate::domain::WorkLifecycle::Open {
-                crate::storage::ImplicitFocusState::NotOpen
-            } else {
-                crate::storage::ImplicitFocusState::Unclaimed
-            };
-            let more = others
-                .len()
-                .saturating_sub(crate::storage::IMPLICIT_TARGET_HELD_SHOWN);
-            Err(StoreError::WorkImplicitTargetConflict(Box::new(
-                crate::storage::ImplicitTargetConflict {
-                    operation: operation.to_owned(),
-                    focus: work.short_ref.clone(),
-                    focus_state,
-                    focus_lifecycle: work.lifecycle,
-                    held: others
-                        .into_iter()
-                        .take(crate::storage::IMPLICIT_TARGET_HELD_SHOWN)
-                        .collect(),
-                    more,
-                },
-            )))
         })
+    }
+
+    /// The refusal a core `operation` that named no item meets on the focus
+    /// `work`, read with its `claim` and this session's live claims `held`
+    /// (in ref order) in one snapshot, or `None` when it acts on the focus.
+    /// A focus the session does not hold is refused while it holds other
+    /// work, as the agent words refuse it; a held focus is refused only under
+    /// [`ImplicitTargetRule::SoleClaim`] while another claim is live beside
+    /// it, as a bare `done` or `evaluate` is.
+    pub(super) fn implicit_target_refusal(
+        &self,
+        operation: &str,
+        rule: ImplicitTargetRule,
+        work: &WorkItem,
+        claim: Option<&WorkClaim>,
+        held: Vec<(WorkId, String)>,
+        now: DateTime<Utc>,
+    ) -> Option<StoreError> {
+        if held.iter().any(|(work_id, _)| *work_id == work.work_id) {
+            if rule == ImplicitTargetRule::SoleClaim && held.len() > 1 {
+                let held: Vec<String> = held.into_iter().map(|(_, short_ref)| short_ref).collect();
+                return Some(StoreError::WorkBareTargetAmbiguous(Box::new(
+                    crate::storage::BareTargetAmbiguity::new(operation, &work.short_ref, &held),
+                )));
+            }
+            return None;
+        }
+        let others: Vec<String> = held
+            .into_iter()
+            .filter(|(work_id, _)| *work_id != work.work_id)
+            .map(|(_, short_ref)| short_ref)
+            .collect();
+        if others.is_empty() {
+            return None;
+        }
+        let held_elsewhere = claim.is_some_and(|claim| {
+            claim.state == crate::domain::WorkClaimState::Active
+                && claim.expires_at > now
+                && claim.holder != self.session_id
+        });
+        let focus_state = if held_elsewhere {
+            crate::storage::ImplicitFocusState::HeldElsewhere
+        } else if work.lifecycle != crate::domain::WorkLifecycle::Open {
+            crate::storage::ImplicitFocusState::NotOpen
+        } else {
+            crate::storage::ImplicitFocusState::Unclaimed
+        };
+        let more = others
+            .len()
+            .saturating_sub(crate::storage::IMPLICIT_TARGET_HELD_SHOWN);
+        Some(StoreError::WorkImplicitTargetConflict(Box::new(
+            crate::storage::ImplicitTargetConflict {
+                operation: operation.to_owned(),
+                focus: work.short_ref.clone(),
+                focus_state,
+                focus_lifecycle: work.lifecycle,
+                held: others
+                    .into_iter()
+                    .take(crate::storage::IMPLICIT_TARGET_HELD_SHOWN)
+                    .collect(),
+                more,
+            },
+        )))
     }
 
     /// Whether a keyed request repeats an act this session already admitted:
@@ -1567,6 +1598,18 @@ pub(super) fn acceptance_placeholder(
     Ok(store
         .work_creation_placeholder(work.work_id)?
         .filter(|placeholder| placeholder == criterion))
+}
+
+/// What a core operation that named no item may do on a focus this session
+/// holds, under the agent words' implicit-target rule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ImplicitTargetRule {
+    /// It acts on a held focus whatever else the session holds: decomposition
+    /// and every update form.
+    FocusHeld,
+    /// It acts on a held focus only while no other claim is live beside it:
+    /// completion records a verdict on one item, so the item must be certain.
+    SoleClaim,
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use super::service::ImplicitTargetRule;
 use super::*;
 
 mod links;
@@ -36,7 +37,95 @@ fn replayed_completion_result(result: serde_json::Value) -> Result<WorkCompleteR
     decoded.map_err(|error| refused(&crate::storage::undecodable_json_reason(&error)))
 }
 
+/// The seal an interrupted completion attempt already committed: the run its
+/// stored basis binds, through its claim or else the work's active run, when
+/// that run is sealed. Every binding is checked against the stored focus.
+fn pending_completion_seal(
+    store: &SqliteStore,
+    stored_basis: &WorkProtocolBasis,
+    stored_work: &WorkItem,
+) -> Result<Option<CompletionSeal>, StoreError> {
+    let stored_run_id = if let Some(claim) = stored_basis.claim.as_ref() {
+        if claim.work_id != stored_work.work_id {
+            return Err(StoreError::InvalidWorkProjection(
+                "pending completion claim crosses its focused work binding".into(),
+            ));
+        }
+        Some(claim.run_id)
+    } else {
+        stored_work.active_run_id
+    };
+    let Some(run_id) = stored_run_id else {
+        return Ok(None);
+    };
+    let run = store.get_work_run(run_id)?;
+    if run.work_id != stored_work.work_id {
+        return Err(StoreError::InvalidWorkProjection(
+            "pending completion run crosses its focused work binding".into(),
+        ));
+    }
+    let Some(seal_id) = run.completion_seal else {
+        return Ok(None);
+    };
+    let seal: CompletionSeal = store.get(&seal_id)?.ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "completed pending run has no canonical completion seal".into(),
+        )
+    })?;
+    if seal.work_id != stored_work.work_id || seal.run_id != run_id {
+        return Err(StoreError::InvalidWorkProjection(
+            "pending completion seal crosses its original work or run binding".into(),
+        ));
+    }
+    Ok(Some(seal))
+}
+
 impl LocalWorkService {
+    /// Whether a completion that named no item repeats one this session
+    /// already admitted on its focus `work`, which the implicit-target rule
+    /// for new acts leaves to the replay: its attempt under `raw_key` for
+    /// this exact intent finished with a receipt for `work`, or is pending
+    /// with `work` as its bound focus and the run its stored basis binds
+    /// already sealed. Another intent under the key, an attempt that sealed
+    /// nothing, and a receipt for other work are not admitted. Reads only;
+    /// the replay still checks the receipt, seal, landing and links.
+    fn admitted_completion_replay<T: Serialize>(
+        &self,
+        store: &SqliteStore,
+        raw_key: &str,
+        intent: &WorkProtocolIntent<'_, T>,
+        work: WorkId,
+    ) -> Result<bool, StoreError> {
+        let Some(attempt) = store.stored_work_protocol_attempt(
+            &self.project_id,
+            &self.session_id,
+            "work_complete",
+            raw_key,
+            CanonicalObject::freeze(intent)?.key(),
+        )?
+        else {
+            return Ok(false);
+        };
+        if let Some(result) = attempt.result {
+            return Ok(matches!(
+                replayed_completion_result(result)?,
+                WorkCompleteResult::Completed(receipt) if receipt.work_id == work
+            ));
+        }
+        let Some(stored_basis) = attempt
+            .basis
+            .map(serde_json::from_value::<WorkProtocolBasis>)
+            .transpose()?
+        else {
+            return Ok(false);
+        };
+        let Some(stored_work) = stored_basis.focused_work.as_ref() else {
+            return Ok(false);
+        };
+        Ok(stored_work.work_id == work
+            && pending_completion_seal(store, &stored_basis, stored_work)?.is_some())
+    }
+
     /// Completes ambient focused work under inferred run/claim/fence state.
     ///
     /// # Errors
@@ -78,8 +167,20 @@ impl LocalWorkService {
         let target = self.bind_target(&mut store, work_ref, now)?;
         // The work and retained claim jointly identify the run, including
         // after sealing. Do not combine two cuts across a concurrent reopen.
-        let basis = store
-            .work_read_snapshot(|store| self.protocol_basis(store, true, false, target, now))?;
+        // A completion that named no item also reads this session's live
+        // claims in the same snapshot, for the implicit-target rule below.
+        let (basis, held) = store.work_read_snapshot(|store| {
+            let basis = self.protocol_basis(store, true, false, target, now)?;
+            let held = match (target, basis.focused_work.as_ref()) {
+                (None, Some(_)) => Some(store.work_held_refs_in_project(
+                    &self.project_id,
+                    &self.session_id,
+                    now,
+                )?),
+                _ => None,
+            };
+            Ok((basis, held))
+        })?;
         let intent = self.protocol_intent(&input);
         let raw_key = if !input.links.is_empty() && input.idempotency_key.trim().is_empty() {
             // A positional link already carries an explicit read basis. Its
@@ -100,6 +201,24 @@ impl LocalWorkService {
                 now,
             )?
         };
+        // A completion that named no item follows the agent words' rule for
+        // a bare `done`, checked before the attempt is written: refused while
+        // the session holds a claim on other work, unless it repeats a
+        // completion this session already admitted on the focus, which the
+        // replay below answers.
+        if let (Some(held), Some(work)) = (held, basis.focused_work.as_ref())
+            && let Some(refusal) = self.implicit_target_refusal(
+                "work_complete",
+                ImplicitTargetRule::SoleClaim,
+                work,
+                basis.claim.as_ref(),
+                held,
+                now,
+            )
+            && !self.admitted_completion_replay(&store, &raw_key, &intent, work.work_id)?
+        {
+            return Err(refusal);
+        }
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -185,98 +304,65 @@ impl LocalWorkService {
                 links::frozen(&input)?;
             }
             ensure_completion_replay_target(&basis, stored_work.work_id, &raw_key)?;
-            let stored_run_id = if let Some(claim) = stored_basis.claim.as_ref() {
-                if claim.work_id != stored_work.work_id {
-                    return Err(StoreError::InvalidWorkProjection(
-                        "pending completion claim crosses its focused work binding".into(),
-                    ));
-                }
-                Some(claim.run_id)
-            } else {
-                stored_work.active_run_id
-            };
-            if let Some(run_id) = stored_run_id {
-                let run = store.get_work_run(run_id)?;
-                if run.work_id != stored_work.work_id {
-                    return Err(StoreError::InvalidWorkProjection(
-                        "pending completion run crosses its focused work binding".into(),
-                    ));
-                }
-                if let Some(seal_id) = run.completion_seal {
-                    let seal: CompletionSeal = store.get(&seal_id)?.ok_or_else(|| {
-                        StoreError::InvalidWorkProjection(
-                            "completed pending run has no canonical completion seal".into(),
-                        )
-                    })?;
-                    if seal.work_id != stored_work.work_id || seal.run_id != run_id {
-                        return Err(StoreError::InvalidWorkProjection(
-                            "pending completion seal crosses its original work or run binding"
-                                .into(),
-                        ));
-                    }
-                    landing_frozen(&input, &seal)?;
-                    if !input.links.is_empty() {
-                        // Mirror prepare_completion_evidence: capture keys its
-                        // pre-checkpoint cut; no capture keys the head it read,
-                        // which completion requires to be where the checkpoint
-                        // ends. The seal's cut can lie past it: completion
-                        // appends its untested-change waivers first.
-                        let checkpoint = seal
-                            .checkpoint
-                            .as_ref()
-                            .map(|checkpoint_id| {
-                                store
-                                    .get::<crate::domain::WorkCheckpoint>(checkpoint_id)?
-                                    .ok_or_else(|| {
-                                        StoreError::InvalidWorkProjection(
-                                            "completed pending run has no canonical checkpoint"
-                                                .into(),
-                                        )
-                                    })
-                            })
-                            .transpose()?;
-                        let attempt_cut = match (input.capture.is_some(), checkpoint) {
-                            (true, Some(checkpoint)) => checkpoint.acknowledged_run_position,
-                            (true, None) => {
-                                return Err(StoreError::InvalidWorkProjection(
-                                    "captured completion has no checkpoint binding".into(),
-                                ));
-                            }
-                            (false, Some(checkpoint)) => {
-                                crate::storage::checkpoint_run_feed_end(&checkpoint)?
-                            }
-                            (false, None) => seal.completion_cut.clone(),
-                        };
-                        let attempt_key = completion_attempt_key(&raw_key, &attempt_cut)?;
-                        let core_key = self.core_operation_key(
-                            "work_complete",
-                            &attempt_key,
-                            "complete_work",
-                        )?;
-                        let committed = store
-                            .work_operation_result_value("complete_work", &core_key)?
-                            .map(serde_json::from_value::<CompletionSeal>)
-                            .transpose()?;
-                        if committed.as_ref() != Some(&seal) {
-                            links::frozen(&input)?;
+            if let Some(seal) = pending_completion_seal(&store, stored_basis, stored_work)? {
+                landing_frozen(&input, &seal)?;
+                if !input.links.is_empty() {
+                    // Mirror prepare_completion_evidence: capture keys its
+                    // pre-checkpoint cut; no capture keys the head it read,
+                    // which completion requires to be where the checkpoint
+                    // ends. The seal's cut can lie past it: completion
+                    // appends its untested-change waivers first.
+                    let checkpoint = seal
+                        .checkpoint
+                        .as_ref()
+                        .map(|checkpoint_id| {
+                            store
+                                .get::<crate::domain::WorkCheckpoint>(checkpoint_id)?
+                                .ok_or_else(|| {
+                                    StoreError::InvalidWorkProjection(
+                                        "completed pending run has no canonical checkpoint".into(),
+                                    )
+                                })
+                        })
+                        .transpose()?;
+                    let attempt_cut = match (input.capture.is_some(), checkpoint) {
+                        (true, Some(checkpoint)) => checkpoint.acknowledged_run_position,
+                        (true, None) => {
+                            return Err(StoreError::InvalidWorkProjection(
+                                "captured completion has no checkpoint binding".into(),
+                            ));
                         }
+                        (false, Some(checkpoint)) => {
+                            crate::storage::checkpoint_run_feed_end(&checkpoint)?
+                        }
+                        (false, None) => seal.completion_cut.clone(),
+                    };
+                    let attempt_key = completion_attempt_key(&raw_key, &attempt_cut)?;
+                    let core_key =
+                        self.core_operation_key("work_complete", &attempt_key, "complete_work")?;
+                    let committed = store
+                        .work_operation_result_value("complete_work", &core_key)?
+                        .map(serde_json::from_value::<CompletionSeal>)
+                        .transpose()?;
+                    if committed.as_ref() != Some(&seal) {
+                        links::frozen(&input)?;
                     }
-                    links::validate_recovered_seal(
-                        stored_basis,
-                        &input,
-                        &seal,
-                        &self.actor("work_complete", "complete ambient local work"),
-                    )?;
-                    let result = completion_result(&store, &seal)?;
-                    store.finish_work_protocol_attempt(
-                        &self.project_id,
-                        &self.session_id,
-                        "work_complete",
-                        &raw_key,
-                        &result,
-                    )?;
-                    return Ok(result);
                 }
+                links::validate_recovered_seal(
+                    stored_basis,
+                    &input,
+                    &seal,
+                    &self.actor("work_complete", "complete ambient local work"),
+                )?;
+                let result = completion_result(&store, &seal)?;
+                store.finish_work_protocol_attempt(
+                    &self.project_id,
+                    &self.session_id,
+                    "work_complete",
+                    &raw_key,
+                    &result,
+                )?;
+                return Ok(result);
             }
         }
         let mut basis_matches =
