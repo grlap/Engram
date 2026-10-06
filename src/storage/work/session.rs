@@ -331,6 +331,19 @@ impl SqliteStore {
         load_work_run(&self.connection, run_id)
     }
 
+    /// Distinguishes an absent navigation target from a corrupt existing run.
+    /// An existing row still passes the canonical run-feed binding check.
+    pub(crate) fn find_work_run(&self, run_id: WorkRunId) -> Result<Option<WorkRun>, StoreError> {
+        self.work_read_snapshot(|store| {
+            let exists: bool = store.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM work_runs WHERE run_id = ?1)",
+                [run_id.0.to_string()],
+                |row| row.get(0),
+            )?;
+            exists.then(|| store.get_work_run(run_id)).transpose()
+        })
+    }
+
     /// Returns the newest run generation for work, including a terminal run.
     ///
     /// # Errors

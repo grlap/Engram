@@ -38,6 +38,7 @@ fn show_pages_a_verification_records_assessment_over_mcp() {
         evaluations: None,
         evaluation: None,
         observations: None,
+        criterion_links: None,
     };
     let detail = server
         .show(Parameters(args(None)))

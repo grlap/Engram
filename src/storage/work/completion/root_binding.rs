@@ -81,6 +81,19 @@ pub(in crate::storage::work) fn validate_stored_seal_root(
 }
 
 impl SqliteStore {
+    /// A native seal with its canonical completion event and exact pre-seal
+    /// root binding checked. No later root projection substitutes for that cut.
+    pub(crate) fn completion_seal_at(
+        &self,
+        seal_id: &ObjectId,
+    ) -> Result<CompletionSeal, StoreError> {
+        self.work_read_snapshot(|store| {
+            let seal = load_typed_work_object(&store.connection, seal_id, "completion_seal")?;
+            validate_stored_seal_root(&store.connection, &seal, seal_id)?;
+            Ok(seal)
+        })
+    }
+
     /// Reads the full root accounting frozen by a native completion seal.
     /// This historical read checks the exact completion binding and replays
     /// every state checksum up to it. It never substitutes the later current root.

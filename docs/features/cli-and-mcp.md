@@ -323,7 +323,7 @@ These are the reads that record nothing:
 - `ls` in every form, and MCP `search` (CLI `ls --search`);
 - `show` in every form: plain, `--full`, `--notes` and `--notes --gates`,
   `--history`, `--note LOCATOR`, `--evaluations`, `--evaluation RECORD_ID`,
-  `--observations`, and their continuations;
+  `--observations`, `--criterion-links`, and their continuations;
 - `memories` in every form but one: the listing, a search, a continuation
   page, `KEY --full` and `KEY --full --revision N`;
 - the host's `work core held` and `work core inspect`.
@@ -351,6 +351,7 @@ engram work show REF --note ID[:INDEX | :event-INDEX | :completion]  # complete 
 engram work show REF --evaluations [--after CURSOR]  # the run's evaluation records, oldest to newest
 engram work show REF --evaluation RECORD_ID  # one evaluation record complete
 engram work show REF --observations [--after CURSOR]  # the run's source observations, oldest to newest
+engram work show REF --criterion-links [--after CURSOR]  # every association in one frozen native seal, in recorded order
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work claim --under PARENT [--ttl SECONDS] [--recover "why"]   # hold the parent's next ready child, chosen in ls --ready order and claimed in one transaction
@@ -1155,9 +1156,9 @@ Rules that matter:
   An unavailable preview does not erase a frozen link; failed advisory reads
   disclose a bounded `preview_error_class`, never the underlying error text.
   Input is limited to 64 links. Readback retains at most 16, and byte fitting
-  can retain fewer. `show` has the same cap: no complete frozen-mapping
-  continuation exists on this surface yet, so another `show` is not promised
-  to reveal omitted links. Original note detail is not a mapping continuation.
+  can retain fewer. `show` has the same summary cap; use the separate
+  `show REF --criterion-links` read to traverse the complete frozen mapping.
+  Original note detail is not a mapping continuation.
   Exact same-session linked intent replays its committed receipt. An identical
   request from a different session is not that author's retry; it refuses,
   as do new or late links attempting to amend the frozen seal.
@@ -1166,6 +1167,35 @@ Rules that matter:
   Core explicit acceptance cannot be combined with these positional links.
   Neither a link nor a passing gate verifies that
   the criterion is satisfied: satisfaction remains the author's assertion.
+- `show REF --criterion-links` (MCP `criterion_links: true`) reads recorded
+  associations from the canonical native completion seal, never the summary's
+  prefix. It is exclusive of other show modes; only `after` may accompany it.
+  Each `criterion_links` row has one-based sealed `criterion` and
+  `evidence_member` positions, its `locator`, a complete-note `detail` command,
+  and an optional bounded `preview` or diagnostic `preview_error_class`.
+  Order and repeats are preserved as stored. Empty criteria contribute no
+  rows. Links are evidence associations, not verification or eligibility.
+  `criterion_links_window` gives the explicit frozen `basis` (`project_id`,
+  `work_id`, `run_id`, `seal_id`), `order: "recorded"`, exact `total`, `earlier`,
+  `shown`, `remaining`, `after`, and `byte_budget`. Total counts associations,
+  including repeats, and equals earlier + shown + remaining.
+  Each complete terminal representation and compact application-receipt JSON,
+  including guidance, cursor and any lapsed-claim reminder, stays strictly
+  below 12288 bytes. Previews are shed before tail rows. Continuation advances
+  from the last emitted association, never an inspected but omitted row.
+  A true empty mapping has zero counts and no cursor; unavailable or corrupt
+  native evidence refuses rather than appearing empty. Restored-record-only
+  completion has no native mapping. An evaluated seal can have more than the
+  explicit input's 64-link limit; traversal has no such total limit.
+  The readable unsigned `cl1-` cursor binds project, item, historical run,
+  seal and the last member's positions and locator. It provides navigation,
+  not authority. A valid edited seek is allowed; foreign, malformed or
+  mismatched cursors refuse with `work_show_cursor_invalid`. No mutable
+  revision, policy, expiry or current head enters the cursor. A continuation
+  keeps its historical seal after reopen and later completion; fresh reads
+  of open work report no current frozen mapping. Historical numbering never
+  attaches the current criteria text or status. Reads create no store or
+  default session and change no focus, claim, delivery, record or seal.
 - Unlinked criteria are named before the seal, while linking is still
   possible. Under a self-asserted policy, the holder's `show` of an open item
   reports `unlinked_criteria: {count, positions}` in JSON: the criteria that

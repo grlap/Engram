@@ -1488,6 +1488,17 @@ revision, never from an earlier read. History resolves a cleared blocker from it
 against the event that raised it, and names it by the same selector, kind and
 detail; no stored event is rewritten. Authorized memory bodies
 remain available on demand through their version id on host-only reads.
+The separate `show REF --criterion-links` / MCP `criterion_links: true` read
+traverses the complete association list in one canonical native completion
+seal. Its bounded windows retain recorded criterion/member order, repetitions
+and exact counts. The readable continuation keeps the historical run and seal
+after reopen or later completion, without attaching current criteria text.
+Both complete application representations stay strictly below 12 KiB, including
+guidance and reminders; previews are shed before rows. It changes no store,
+session, focus, claims, delivery or seal. Restored-only or corrupt native
+mapping is unavailable, distinct from a valid empty mapping. See the exact
+[criterion window contract](cli-and-mcp.md#using-engram-as-an-agent).
+
 An explicit `show REF --notes` / MCP `notes: true` substitutes complete note
 bodies and references in a newest-selected window, rendered oldest to newest
 within the window. Structured gate evidence is excluded by default so later
@@ -2438,8 +2449,9 @@ Pending recovery requires this intent's committed core result and its original
 accepted basis and criterion mapping, not a different completion of the run.
 An identical request from another session is not a retry of the author's
 completion. Inputs admit at most 64 links; readback retains at most 16 before
-byte fitting. A further `show` has the same cap, not complete mapping
-continuation. Preview failures retain the frozen link and disclose only a
+byte fitting. A further `show` has the same summary cap;
+`show REF --criterion-links` traverses the complete frozen mapping.
+Preview failures retain the frozen link and disclose only a
 bounded diagnostic class.
 Links assert relevance, not verification or satisfaction. Only explicitly
 selected criteria gain citations, while all omitted links remain visible.

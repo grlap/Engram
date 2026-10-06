@@ -542,6 +542,47 @@ fn work_cli_show_takes_the_observations_window_alone() {
     }
 }
 
+#[test]
+fn work_cli_show_takes_criterion_links_with_only_its_continuation() {
+    let parsed = Cli::try_parse_from([
+        "engram",
+        "work",
+        "show",
+        "w-000000000001",
+        "--criterion-links",
+        "--after",
+        "cl1-00",
+    ])
+    .unwrap();
+    assert!(
+        matches!(parsed.command, Command::Work { operation, .. } if matches!(*operation,
+        WorkCommand::Show { criterion_links:true, ref after, .. } if after.as_deref() == Some("cl1-00")))
+    );
+    for other in [
+        "--notes",
+        "--gates",
+        "--history",
+        "--full",
+        "--evaluations",
+        "--observations",
+        "--note=record",
+        "--evaluation=record",
+    ] {
+        assert!(
+            Cli::try_parse_from([
+                "engram",
+                "work",
+                "show",
+                "w-000000000001",
+                "--criterion-links",
+                other
+            ])
+            .is_err(),
+            "{other}"
+        );
+    }
+}
+
 // A receipt, such as done's refusal naming the source observation that decided
 // a stale evaluation, can carry host-recorded text. Written as the CLI writes
 // it, it never spells the locked-store phrase, and every string still decodes

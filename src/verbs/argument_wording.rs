@@ -85,6 +85,12 @@ pub(super) const OBSERVATIONS_ALONE_REFUSAL: Twin = Twin {
     mcp: "choose observations with optional after, alone",
 };
 
+/// The frozen criterion mapping is its own bounded window.
+pub(super) const CRITERION_LINKS_ALONE_REFUSAL: Twin = Twin {
+    cli: "choose --criterion-links with optional --after, alone",
+    mcp: "choose criterion_links with optional after, alone",
+};
+
 /// `show` asked for the evaluation window beside another window.
 pub(super) const EVALUATIONS_ALONE_REFUSAL: Twin = Twin {
     cli: "choose --evaluations with optional --after, or --evaluation RECORD_ID alone",
@@ -143,6 +149,7 @@ static REGISTERED: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
         PAGE_LIMIT_HINT,
         UPDATE_NEEDS_ACTION_REFUSAL,
         OBSERVATIONS_ALONE_REFUSAL,
+        CRITERION_LINKS_ALONE_REFUSAL,
         EVALUATIONS_ALONE_REFUSAL,
         SHOW_WINDOWS_REFUSAL,
         APPEND_WITH_SECTION_REFUSAL,

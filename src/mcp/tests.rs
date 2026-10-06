@@ -18,6 +18,7 @@ use chrono::Utc;
 use serde_json::{Value, json};
 
 mod agent_error_refs;
+mod criterion_links;
 
 /// The MCP `show` tool gives a native verification record's typed facts,
 /// in the notes window and in the record's detail, beside its summary.
@@ -57,6 +58,7 @@ fn show_gives_a_verification_records_typed_facts_over_mcp() {
         evaluations: None,
         evaluation: None,
         observations: None,
+        criterion_links: None,
     };
     let window = server
         .show(Parameters(args(Some(true), None)))

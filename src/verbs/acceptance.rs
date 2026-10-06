@@ -209,8 +209,9 @@ impl AcceptanceEvidence {
             }
             if self.links_omitted > 0 {
                 lines.push(format!(
-                    "  ({} more links not shown; full frozen mapping continuation is not available on this surface)",
-                    self.links_omitted
+                    "  ({} more links not shown; read the complete frozen mapping with engram work show {} --criterion-links)",
+                    self.links_omitted,
+                    self.work_id.map_or_else(|| "REF".into(), super::short_ref_for_work_id)
                 ));
             }
         }

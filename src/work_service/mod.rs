@@ -69,6 +69,8 @@ mod catalog;
 mod change_context;
 mod completion;
 mod continuation;
+mod criterion_links;
+pub(crate) use criterion_links::{WorkCriterionLinkRow, WorkCriterionLinksWindow};
 mod deciding;
 mod source_recovery;
 pub(crate) use source_recovery::{

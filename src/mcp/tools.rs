@@ -67,7 +67,7 @@ impl McpServer {
     /// Inspect one item without changing focus or claims.
     #[tool(
         name = "show",
-        description = "One item with display-only peer labels: outcome, acceptance, holder, blockers, reminders; reading changes neither focus nor claims. Rich verbose next/ls may expose raw identity and integrity metadata."
+        description = "One item with display-only peer labels: outcome, acceptance, holder, blockers, reminders; criterion_links traverses one frozen seal in recorded order, with after retaining that historical seal; reading changes neither focus nor claims. Rich verbose next/ls may expose raw identity and integrity metadata."
     )]
     pub(super) fn show(&self, Parameters(args): Parameters<ShowArgs>) -> CallToolResult {
         self.verb(self.verbs().show_records(
@@ -82,6 +82,7 @@ impl McpServer {
                 evaluations: args.evaluations.unwrap_or(false),
                 evaluation: args.evaluation,
                 observations: args.observations.unwrap_or(false),
+                criterion_links: args.criterion_links.unwrap_or(false),
             },
             Utc::now(),
         ))

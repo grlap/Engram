@@ -37,6 +37,10 @@ pub struct ShowInput {
     /// oldest to newest within it; `after` continues it.
     #[serde(default)]
     pub observations: bool,
+    /// Recorded associations from one native seal; after retains that seal
+    /// even after reopen. Exclusive of other windows and complete reads.
+    #[serde(default)]
+    pub criterion_links: bool,
 }
 
 impl AgentVerbs {
@@ -70,6 +74,20 @@ impl AgentVerbs {
     ) -> Result<Receipt, VerbError> {
         let other_modes =
             input.notes || input.history || input.gates || input.note.is_some() || input.full;
+        if input.criterion_links {
+            if other_modes || input.evaluations || input.evaluation.is_some() || input.observations
+            {
+                return Err(VerbError::at(
+                    StoreError::InvalidWork(
+                        super::argument_wording::CRITERION_LINKS_ALONE_REFUSAL
+                            .cli
+                            .into(),
+                    ),
+                    work_ref,
+                ));
+            }
+            return self.show_criterion_links(work_ref, input.after.as_deref(), now, budget);
+        }
         if input.observations {
             if other_modes || input.evaluations || input.evaluation.is_some() {
                 return Err(VerbError::at(

@@ -576,7 +576,7 @@ enum WorkCommand {
         /// Newest history window, rendered chronologically.
         #[arg(long, conflicts_with = "note")]
         history: bool,
-        /// Item-bound continuation from the same note, history, evaluations or observations window, or of a verification record's assessment with --note.
+        /// Item-bound continuation from the same note, history, evaluations, observations or criterion-links window, or of a verification record's assessment with --note.
         #[arg(long)]
         after: Option<String>,
         /// Complete note body: record-id prefix (8+ hex), or `RECORD_ID:INDEX`; an inherited event or completion: `RECORD_ID:event-INDEX` or `RECORD_ID:completion`.
@@ -594,6 +594,10 @@ enum WorkCommand {
         /// The source observations of the item's run in a bounded window, oldest to newest.
         #[arg(long, conflicts_with_all = ["notes", "gates", "history", "note", "full", "evaluations", "evaluation"])]
         observations: bool,
+        /// Recorded criterion links of one frozen seal; after retains that
+        /// historical seal even after reopen.
+        #[arg(long, conflicts_with_all = ["notes", "gates", "history", "note", "full", "evaluations", "evaluation", "observations"])]
+        criterion_links: bool,
     },
     /// Create work from a title; outcome and acceptance criteria are welcome.
     Add {
@@ -1677,6 +1681,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             evaluations,
             evaluation,
             observations,
+            criterion_links,
         } => verbs.show_records(
             &work_ref,
             &engram::verbs::ShowInput {
@@ -1689,6 +1694,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 evaluations,
                 evaluation,
                 observations,
+                criterion_links,
             },
             now,
         ),

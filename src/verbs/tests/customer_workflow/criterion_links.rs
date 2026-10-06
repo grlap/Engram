@@ -2,12 +2,17 @@ use super::*;
 use crate::work_service::{WorkCriterionLinkInput, WorkUpdateInput};
 
 mod corrections;
+mod window;
 
 fn setup(verbs: &AgentVerbs) -> String {
+    setup_named(verbs, "Explicit evidence links")
+}
+
+fn setup_named(verbs: &AgentVerbs, title: &str) -> String {
     let added = verbs
         .add(
             AddInput {
-                title: "Explicit evidence links".into(),
+                title: title.into(),
                 acceptance: vec![
                     "First outcome".into(),
                     "Second outcome".into(),
@@ -278,11 +283,7 @@ fn criterion_links_many_bindings_keep_exact_omissions_in_both_twins() {
             assert_eq!(row["locator"], locator);
         }
         assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            receipt
-                .text()
-                .contains("full frozen mapping continuation is not available on this surface")
-        );
+        assert!(receipt.text().contains("--criterion-links"));
         assert!(!receipt.text().contains("more links not shown; inspect"));
         assert!(
             receipt

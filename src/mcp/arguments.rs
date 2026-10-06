@@ -77,6 +77,9 @@ pub(super) struct ShowArgs {
     pub(super) evaluation: Option<String>,
     /// The source observations of the item's run in a bounded window, oldest to newest; after continues it. Exclusive of the other windows.
     pub(super) observations: Option<bool>,
+    /// Recorded criterion links of one native seal. Exclusive of other modes;
+    /// after retains that historical seal even after reopen. Writes nothing.
+    pub(super) criterion_links: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
