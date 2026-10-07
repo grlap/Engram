@@ -395,6 +395,14 @@ node scripts/test-launcher.mjs notify RUN_DIRECTORY
 
 `notify` is only for a recorded notification target, using the original root
 identity. It resends the same saved body and idempotency key, not the tests.
+New automatic messages group clean zero-exit successes and list unrun stages
+separately. Warnings, exceptional states, failure diagnostics, truncation,
+toolchain notices and freeze limitations stay visible, with results and log
+locators. The input line reports the saved boundary comparison; it cannot
+detect transient edits or establish host test credit. Unknown test counts
+remain explicit. `summary` keeps the detailed stage and preflight listing
+on demand. Previously frozen detailed messages retain their original bytes
+on retry; changing presentation never changes notification timing.
 Sender equality checks asserted session context, not authenticated identity.
 Diagnostic excerpts are not redacted: anything a gate prints within the bounded
 excerpt can be sent to the coordinator. Do not put secrets in gate output.

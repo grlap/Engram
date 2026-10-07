@@ -762,7 +762,7 @@ export function runLiveness(result, now = Date.now()) {
   return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
 }
 
-export async function summarize(runDir, { now = Date.now() } = {}) {
+export async function summarize(runDir, { now = Date.now(), compact = false } = {}) {
   const result = readJson(join(runDir, "results.json"));
   const liveness = runLiveness(result, now);
   const terminal = liveness === "passed" || liveness === "failed";
@@ -779,23 +779,56 @@ export async function summarize(runDir, { now = Date.now() } = {}) {
   const lines = [`${status} ${result.runId} exit=${terminal ? result.exitCode : "unknown"}`,
     `results: ${join(runDir, "results.json")}`];
   if (result.error) lines.push(`runner: ${result.error.slice(0, diagnosticLimit)}`);
+  if (compact && result.error?.length > diagnosticLimit) lines.push("[runner error truncated; full error in results.json]");
   if (result.clearedToolchainOverrides?.length) lines.push("toolchain: inherited Rustup override cleared for repository selection; original value in results.json");
+  if (compact) {
+    const fingerprints = [result.expectedFingerprint, result.before, result.after];
+    const known = fingerprints.filter((value) => typeof value === "string" && value.length > 0);
+    const input = new Set(known).size > 1 ? "MISMATCH" : known.length === 3 ? "matched" : "unknown";
+    lines.push(`input: ${input}; expectedFingerprint/before/after in results.json (boundary comparison only; not host check credit)`);
+    const unknownCounts = result.stages.filter((stage) => stage.tests?.executed === "unknown");
+    if (unknownCounts.length) lines.push(`test counts unknown: ${unknownCounts.map((stage) => `${stage.name} (${stage.tests.why})`).join(", ")}; stages[].tests in results.json`);
+  }
   let remaining = 6000;
   // Failure excerpts get first use of the shared budget; earlier successful
   // commands may emit warnings but must not crowd out the actual failure.
   const entries = [
     ...(result.preflight ?? []).map((probe) => ({
       ...probe, failed: probe.code !== 0 || Boolean(probe.error),
+      label: `preflight ${probe.name}`, positive: probe.code === 0,
       header: `preflight ${probe.name}: exit=${probe.code} log=${probe.log}`,
     })),
     ...result.stages.map((stage) => ({ ...stage, failed: stage.state === "failed",
+      label: stage.name, positive: stage.state === "passed" && stage.code === 0,
       header: `${stage.name}: ${stage.state}${stage.outcome ? ` outcome=${stage.outcome}` : ""} exit=${stage.code ?? "unrun/unknown"}${stage.log ? ` log=${stage.log}` : ""}`,
-      ...(stage.reported ? { error: stage.reported } : {}),
     })),
   ].sort((a, b) => Number(b.failed) - Number(a.failed));
+  const exceptional = (entry) => entry.error || entry.reported || entry.signal || entry.outcome
+    || entry.diagnostics?.text || entry.diagnostics?.truncated || entry.diagnostics?.fallback
+    || entry.tests?.failures > 0 || entry.tests?.executed === "unknown";
+  const grouped = new Set();
+  if (compact) {
+    for (const [label, matches] of [
+      ["passed (exit=0)", (entry) => entry.positive && !exceptional(entry)],
+      ...["unrun", "skipped"].map((state) => [`${state} (exit=unrun/unknown)`,
+        (entry) => entry.state === state && entry.code == null && !entry.log && !exceptional(entry)]),
+    ]) {
+      const group = entries.filter(matches);
+      if (group.length) lines.push(`${label}: ${group.map((entry) => entry.label).join(", ")}`);
+      for (const entry of group) grouped.add(entry);
+    }
+  }
   for (const stage of entries) {
+    if (grouped.has(stage)) continue;
     lines.push(stage.header);
-    if (stage.error && stage.error !== result.error) lines.push(stage.error.slice(0, diagnosticLimit));
+    if (compact && stage.signal) lines.push(`signal: ${stage.signal}`);
+    for (const error of new Set([stage.error, stage.reported].filter(Boolean))) {
+      if (error !== result.error) {
+        lines.push(error.slice(0, diagnosticLimit));
+        if (compact && error.length > diagnosticLimit) lines.push("[stage error truncated; full error in results.json]");
+      }
+    }
+    if (compact && stage.diagnostics?.fallback) lines.push(`diagnostics: ${stage.diagnostics.fallback}`);
     if (stage.diagnostics?.text) {
       const text = stage.diagnostics.text.trimEnd();
       if (remaining > 0) lines.push(text.slice(0, remaining));
@@ -933,7 +966,7 @@ export async function notifyRun(runDir, env = process.env, send = runCommand) {
   if (!existsSync(messageFile)) {
     const temporary = `${messageFile}.${randomUUID()}.tmp`;
     try {
-      writeFileSync(temporary, await summarize(runDir), { flag: "wx", mode: 0o600 });
+      writeFileSync(temporary, await summarize(runDir, { compact: true }), { flag: "wx", mode: 0o600 });
       // Publish complete bytes without replacing a body another sender froze.
       // An interrupted write leaves only a temporary file, never a retry body.
       try { linkSync(temporary, messageFile); }

@@ -994,7 +994,7 @@ test("notification publication ignores interrupted temporary bytes and freezes o
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("clean")], notifyTo: "fixture-parent" }, env);
     await executeRun(runDir, env);
-    const expected = await summarize(runDir);
+    const expected = await summarize(runDir, { compact: true });
     const abandoned = `notification.message.txt.${randomUUID()}.tmp`;
     writeFileSync(join(runDir, abandoned), "partial interrupted body", { mode: 0o600 });
     const bodies = [];
@@ -1022,6 +1022,186 @@ test("summary renders a shared runner and stage error only once", async () => {
     const summary = await summarize(runDir);
     assert.equal(summary.split(error).length - 1, 1);
     assert.match(summary, /broken: failed exit=1/u);
+  });
+});
+
+test("compact summaries shorten clean full-stage listings and preserve boundary evidence", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: requiredStages(), notifyTo: "fixture-parent" }, env);
+    const result = json(join(runDir, "results.json"));
+    const fingerprint = json(join(runDir, "input.json")).fingerprint;
+    Object.assign(result, { state: "passed", ended: new Date().toISOString(), exitCode: 0,
+      expectedFingerprint: fingerprint, before: fingerprint, after: fingerprint,
+      preflight: ["cargo-version", "cargo-fmt", "cargo-clippy"].map((name) => ({ name, code: 0,
+        log: join(runDir, `preflight-${name}.log`) })) });
+    for (const entry of result.stages) Object.assign(entry, { state: "passed", code: 0,
+      log: join(runDir, `${entry.name}.log`), diagnostics: { text: "", truncated: false } });
+    writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+    const detailed = await summarize(runDir);
+    const compact = await summarize(runDir, { compact: true });
+    assert.ok(Buffer.byteLength(compact) < Buffer.byteLength(detailed));
+    assert.match(compact, /^PASS .* exit=0/mu);
+    assert.match(compact, /input: matched.*boundary comparison only; not host check credit/u);
+    assert.match(compact, /passed \(exit=0\): preflight cargo-version, preflight cargo-fmt, preflight cargo-clippy, fmt, check, clippy/u);
+    for (const limitation of result.limitations) assert.ok(compact.includes(limitation));
+    assert.ok(compact.includes(join(runDir, "results.json")));
+    assert.doesNotMatch(compact, /preflight-cargo-version\.log/u);
+    assert.match(detailed, /preflight cargo-version: exit=0 log=/u);
+    assert.match(detailed, /rust: passed exit=0 log=/u);
+  });
+});
+
+test("compact failure keeps warnings, failure-first budget, unrun states and both truncations", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("warning"), stage("failure"), stage("later")] }, env);
+    const result = json(join(runDir, "results.json"));
+    Object.assign(result, { state: "failed", ended: new Date().toISOString(), exitCode: 23,
+      clearedToolchainOverrides: ["RUSTUP_TOOLCHAIN"] });
+    Object.assign(result.stages[0], { state: "passed", code: 0, log: join(runDir, "warning.log"),
+      diagnostics: { text: `warning: preceding stage\n${"w".repeat(6100)}`, truncated: true } });
+    Object.assign(result.stages[1], { state: "failed", code: 23, log: join(runDir, "failure.log"),
+      diagnostics: { text: "error: essential failure detail", truncated: false } });
+    writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+    const compact = await summarize(runDir, { compact: true });
+    assert.match(compact, /^FAIL .*exit=23/mu);
+    assert.match(compact, /unrun \(exit=unrun\/unknown\): later/u);
+    assert.doesNotMatch(compact, /passed \(exit=0\)/u);
+    assert.match(compact, /warning: passed exit=0 log=/u);
+    assert.match(compact, /warning: preceding stage/u);
+    assert.ok(compact.indexOf("essential failure detail") < compact.indexOf("preceding stage"));
+    assert.match(compact, /\[summary diagnostics truncated; full output in log\]/u);
+    assert.match(compact, /\[diagnostics truncated; full output in log\]/u);
+    assert.match(compact, /toolchain: inherited Rustup override cleared/u);
+    assert.match(compact, /input: unknown/u);
+    for (const entry of result.stages.slice(0, 2)) assert.ok(compact.includes(entry.log));
+  });
+});
+
+test("compact summaries keep exceptional successes, silent preflight failures and original errors", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("exception"), stage("fallback"), stage("count")] }, env);
+    const result = json(join(runDir, "results.json"));
+    const shared = "shared runner and stage error";
+    Object.assign(result, { state: "failed", ended: new Date().toISOString(), exitCode: 1, error: shared,
+      preflight: [{ name: "silent", code: 9, log: join(runDir, "preflight-silent.log") }] });
+    Object.assign(result.stages[0], { state: "passed", code: 0, signal: "SIGTERM", outcome: "unknown",
+      error: shared, reported: "separate reported failure", log: join(runDir, "exception.log") });
+    Object.assign(result.stages[1], { state: "passed", code: 0, log: join(runDir, "fallback.log"),
+      diagnostics: { text: "", fallback: "no recognized diagnostic; bounded failure tail", truncated: true } });
+    Object.assign(result.stages[2], { state: "passed", code: 0, log: join(runDir, "count.log"),
+      tests: { executed: "unknown", why: "incomplete-summary", failures: 1 } });
+    writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+    const compact = await summarize(runDir, { compact: true });
+    assert.match(compact, /preflight silent: exit=9 log=/u);
+    assert.match(compact, /exception: passed outcome=unknown exit=0 log=/u);
+    assert.match(compact, /signal: SIGTERM/u);
+    assert.equal(compact.split(shared).length - 1, 1);
+    assert.match(compact, /separate reported failure/u);
+    assert.match(compact, /fallback: passed exit=0 log=/u);
+    assert.match(compact, /diagnostics: no recognized diagnostic; bounded failure tail/u);
+    assert.match(compact, /test counts unknown: count \(incomplete-summary\)/u);
+    assert.match(compact, /count: passed exit=0 log=/u);
+    assert.doesNotMatch(compact, /passed \(exit=0\)/u);
+    result.stages[0].error = "e".repeat(2500);
+    result.error = "r".repeat(2500);
+    writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+    const truncated = await summarize(runDir, { compact: true });
+    assert.match(truncated, /\[runner error truncated; full error in results.json\]/u);
+    assert.match(truncated, /\[stage error truncated; full error in results.json\]/u);
+    assert.match(truncated, /separate reported failure/u);
+  });
+});
+
+test("compact summaries preserve running, interrupted, recovered and unknown outcomes and input mismatches", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("unfinished"), stage("later")] }, env);
+    const result = json(join(runDir, "results.json"));
+    const at = Date.now();
+    Object.assign(result, { heartbeat: { at: new Date(at).toISOString(), everyMs: 1000 } });
+    Object.assign(result.stages[0], { state: "running", log: join(runDir, "unfinished.log") });
+    const saveResult = () => writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+    saveResult();
+    assert.match(await summarize(runDir, { compact: true, now: at }), /^RUNNING .* exit=unknown/mu);
+    assert.match(await summarize(runDir, { compact: true, now: at + 4000 }), /^INTERRUPTED .* exit=unknown/mu);
+    delete result.heartbeat;
+    saveResult();
+    assert.match(await summarize(runDir, { compact: true }), /^UNKNOWN .* exit=unknown/mu);
+    const fingerprint = json(join(runDir, "input.json")).fingerprint;
+    Object.assign(result, { state: "failed", ended: new Date(at).toISOString(), exitCode: 1, interrupted: true,
+      recovered: { phase: "stage", stage: "unfinished", at: new Date(at).toISOString() },
+      expectedFingerprint: fingerprint, before: fingerprint, after: `${fingerprint}-changed` });
+    Object.assign(result.stages[0], { state: "failed", outcome: "unknown", error: "interrupted: outcome unknown" });
+    saveResult();
+    const recovered = await summarize(runDir, { compact: true });
+    assert.match(recovered, /^INTERRUPTED \(stopped in stage unfinished;.*no stage was rerun\).*exit=1/mu);
+    assert.match(recovered, /unfinished: failed outcome=unknown exit=unrun\/unknown log=/u);
+    assert.match(recovered, /interrupted: outcome unknown/u);
+    assert.match(recovered, /unrun \(exit=unrun\/unknown\): later/u);
+    assert.match(recovered, /input: MISMATCH/u);
+    delete result.after;
+    saveResult();
+    assert.match(await summarize(runDir, { compact: true }), /input: unknown/u);
+    let sent = false;
+    result.state = "running";
+    saveResult();
+    await assert.rejects(notifyRun(runDir, env, async () => { sent = true; }), /terminal/u);
+    assert.equal(sent, false);
+  });
+});
+
+test("compact retained-failure fixture preserves the full diagnostic and reduces routine output", async () => {
+  await repository(async (root) => {
+    // Sanitized from a real durable repair-gate notification; identities and
+    // fingerprints come from this fixture, not from the historical run.
+    const diagnostic = "test doctor_cli_refusals_are_json_and_leave_the_store_unchanged ... FAILED\n\nfailures:\n\n---- doctor_cli_refusals_are_json_and_leave_the_store_unchanged stdout ----\n\nthread 'doctor_cli_refusals_are_json_and_leave_the_store_unchanged' (79612) panicked at tests\\diagnostics_cli.rs:673:17:\nassertion `left == right` failed\n  left: Array [String(\"indexes\"), String(\"triggers\"), String(\"fts\"), String(\"derived_tables\")]\n right: Array [String(\"indexes\"), String(\"triggers\"), String(\"fts\")]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nfailures:\n    doctor_cli_refusals_are_json_and_leave_the_store_unchanged\n\ntest result: FAILED. 25 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.46s\n\nerror: test failed, to rerun pass `--test diagnostics_cli`\nTemp audit: run=<fixture scratch>; before=0 after=0; new=0; remaining=0";
+    const runDir = createRun({ root, stages: requiredStages() }, env);
+    const result = json(join(runDir, "results.json"));
+    const fingerprint = json(join(runDir, "input.json")).fingerprint;
+    Object.assign(result, { state: "failed", ended: new Date().toISOString(), exitCode: 101,
+      expectedFingerprint: fingerprint, before: fingerprint, after: fingerprint,
+      clearedToolchainOverrides: ["RUSTUP_TOOLCHAIN"],
+      preflight: ["cargo-version", "cargo-fmt", "cargo-clippy"].map((name) => ({ name, code: 0,
+        log: join(runDir, `preflight-${name}.log`), diagnostics: { text: "", truncated: false } })) });
+    for (const entry of result.stages.slice(0, 3)) Object.assign(entry, { state: "passed", code: 0,
+      log: join(runDir, `${entry.name}.log`), diagnostics: { text: "", truncated: false } });
+    Object.assign(result.stages[3], { state: "failed", code: 101, log: join(runDir, "rust.log"),
+      tests: { executed: "unknown", why: "incomplete-summary", failures: 1 },
+      diagnostics: { text: diagnostic, truncated: false } });
+    writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+    const detailed = await summarize(runDir);
+    const compact = await summarize(runDir, { compact: true });
+    assert.ok(Buffer.byteLength(compact) < Buffer.byteLength(detailed));
+    assert.ok(compact.includes(diagnostic.trimEnd()));
+    assert.match(compact, /^FAIL .* exit=101/mu);
+    assert.match(compact, /unrun \(exit=unrun\/unknown\): freeze, mcp, control, parity, docs/u);
+    assert.match(compact, /test counts unknown: rust \(incomplete-summary\)/u);
+    assert.ok(compact.includes(result.stages[3].log));
+    for (const limitation of result.limitations) assert.ok(compact.includes(limitation));
+  });
+});
+
+test("pre-existing detailed notification retries keep frozen bytes, identity and results", async () => {
+  await repository(async (root) => {
+    const counter = join(root, ".git", "execution-count");
+    const runDir = createRun({ root, stages: [stage("clean",
+      `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'ran')`)], notifyTo: "fixture-parent" }, env);
+    await executeRun(runDir, env);
+    const saved = readFileSync(join(runDir, "results.json"));
+    const detailed = await summarize(runDir);
+    assert.notEqual(detailed, await summarize(runDir, { compact: true }));
+    writeFileSync(join(runDir, "notification.message.txt"), detailed);
+    const calls = [];
+    const send = async (_command, args) => {
+      calls.push(args);
+      assert.equal(readFileSync(args[args.indexOf("--message-file") + 1], "utf8"), detailed);
+      return { code: calls.length === 1 ? 7 : 0 };
+    };
+    await assert.rejects(notifyRun(runDir, env, send), /notification failed/u);
+    await notifyRun(runDir, env, send);
+    assert.deepEqual(calls[0], calls[1]);
+    assert.equal(calls[0][calls[0].indexOf("--idempotency-key") + 1], `engram-tests:${basename(runDir)}`);
+    assert.deepEqual(readFileSync(join(runDir, "results.json")), saved);
+    assert.equal(readFileSync(counter, "utf8"), "ran");
   });
 });
 
