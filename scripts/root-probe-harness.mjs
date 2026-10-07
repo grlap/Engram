@@ -448,9 +448,15 @@ async function withJournal(projectDir, body) {
 // later window with no probe events is evidence rather than a deaf watcher.
 async function calibrateJournal(journal, projectDir) {
   journal.assertHealthy("before calibration");
+  await journal.barrier("calibration-ready");
   const started = journal.cursor();
   const marker = join(projectDir, `.${PROBE_MARK}-calibration.Probe`);
   writeFileSync(marker, "calibration");
+  await journal.waitFor(
+    () => journal.probeEvents(started, journal.cursor()).length > 0,
+    5000,
+    "calibration marker",
+  );
   rmSync(marker);
   const until = await journal.barrier("calibration");
   assert.ok(
