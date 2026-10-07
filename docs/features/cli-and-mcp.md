@@ -1679,7 +1679,11 @@ The codes are:
   intend to initialize that empty store.
 - `projection_repair_required`: exact remedy
   `engram doctor --repair-projections` and safe scope
-  `["indexes", "triggers", "fts"]`; reporting performs no DDL.
+  `["indexes", "triggers", "fts", "derived_tables"]`; reporting performs no DDL.
+  During repair, derived tables include reconstructed project-memory state and
+  work projections; disposable project-memory advertisement bookkeeping is
+  recreated empty.
+  See the [projection inventory](sqlite-store.md#rebuildable-and-durable-projections).
 - `different_build_schema`: `store_schema_reference`, read from the existing
   file using the same normalization, plus `running` build components. Use the
   build that created the store. There is no in-place store upgrade, and
@@ -1731,7 +1735,7 @@ engram control-session-inspect --target-session-id session-id \
 # and never selects or rewrites a policy head.
 engram doctor --recover-policy [--json]
 
-# Explicitly rebuild only declared indexes, triggers, and FTS projections.
+# Explicitly rebuild declared projections and reset memory advertisements.
 # Ordinary open never performs this repair implicitly.
 engram doctor --repair-projections [--json]
 
@@ -2587,12 +2591,14 @@ SQLite crash recovery for an uncheckpointed WAL. If SQLite itself requires
 recovery, stop writers and diagnose a byte-consistent verified copy of the
 database together with its sidecars; the command fails without changing them.
 
-Missing or malformed declared indexes, triggers, or FTS tables also make
-ordinary open fail without DDL. `engram doctor --repair-projections` is the
+Missing or malformed declared indexes, triggers, FTS tables, or derived tables
+also make ordinary open fail without DDL. `engram doctor --repair-projections` is the
 separate mutating operator path: it first fingerprints the complete exact-current
 durable definitions and validates control-policy bindings, recreates every
-declared rebuildable object, repopulates FTS from verified durable rows in one
-transaction, and then runs full integrity verification. It never recreates
+declared rebuildable object, reconstructs project-memory state and work projection
+tables, recreates disposable project-memory advertisements empty, repopulates FTS
+from verified durable rows in one transaction, and then runs full integrity
+verification. It never recreates
 missing durable state or rewrites canonical objects.
 
 On a fresh store, plain `engram init` defaults to `turn_gated`;

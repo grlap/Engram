@@ -302,7 +302,10 @@ impl SqliteStore {
         Self::diagnose_control_policy_records_on(&connection)
     }
 
-    /// Rebuilds only declared indexes, triggers, and full-text projections.
+    /// Rebuilds declared indexes, triggers, full-text projections, and derived tables.
+    /// Project-memory state and restored-work projections are reconstructed from
+    /// verified retained state; disposable project-memory advertisement bookkeeping
+    /// is recreated empty.
     ///
     /// Ordinary open never invokes this path. The existing store must already
     /// have the exact current durable schema and policy bindings before the

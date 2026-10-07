@@ -670,7 +670,10 @@ fn doctor_cli_refusals_are_json_and_leave_the_store_unchanged() {
         match code {
             "projection_repair_required" => {
                 assert_eq!(report["remedy"], "engram doctor --repair-projections");
-                assert_eq!(report["scope"], json!(["indexes", "triggers", "fts"]));
+                assert_eq!(
+                    report["scope"],
+                    json!(["indexes", "triggers", "fts", "derived_tables"])
+                );
             }
             "different_build_schema" => {
                 assert_eq!(

@@ -160,7 +160,7 @@ fn readiness_preserves_schema_policy_and_projection_refusals() {
         if code == "projection_repair_required" {
             assert_eq!(
                 value["detail"]["scope"],
-                json!(["indexes", "triggers", "fts"])
+                json!(["indexes", "triggers", "fts", "derived_tables"])
             );
         }
         assert_eq!(fs::read(&database).unwrap(), before);

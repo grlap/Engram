@@ -1,7 +1,7 @@
 # Storage and Integrity Review
 
 Focus on canonical objects, exact-current SQLite definitions, transactions,
-and explicitly rebuildable indexes.
+and explicitly rebuildable projections.
 
 ## Check
 
@@ -28,8 +28,13 @@ and explicitly rebuildable indexes.
 - Safety-relevant mutable transitions remain auditable through immutable events;
   exact-current operational tables are restored from a verified backup.
 - SQLite foreign keys and required uniqueness constraints are enabled.
-- Only declared indexes, triggers, and FTS content are repaired in place;
-  heads, status, ordering, authority, and idempotency state are never rebuilt.
+- Only declared indexes, triggers, FTS content, and derived projection tables
+  are repaired in place: `project_memory_state`, `work_restored_records`,
+  `work_observations`, and `work_restored_evidence` are reconstructed from
+  verified retained state; disposable `project_memory_advertisements`
+  bookkeeping is recreated empty. Durable heads, live execution status and
+  delivery state, claims, ordering, authority, and idempotency state are never
+  rebuilt.
 - Schema changes are made in place, guarded by the generic different-build
   refusal, and every marker stays 1 until release. A pre-change store is
   refused rather than interpreted, and moves over by a whole-store JSON export

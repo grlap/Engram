@@ -1244,7 +1244,23 @@ test("projection repair is explicit and ordinary doctor never mutates", (t) => {
     assert.equal(refusal.healthy, false);
     assert.equal(refusal.code, "projection_repair_required");
     assert.equal(refusal.remedy, "engram doctor --repair-projections");
-    assert.deepEqual(refusal.scope, ["indexes", "triggers", "fts"]);
+    assert.deepEqual(refusal.scope, [
+      "indexes", "triggers", "fts", "derived_tables",
+    ]);
+    assert.deepEqual(readFileSync(database), before);
+
+    const readiness = spawnSync(
+      binary,
+      ["--home", engramHome, "readiness", "--json"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.notEqual(readiness.status, 0);
+    const readinessRefusal = JSON.parse(readiness.stdout);
+    assert.equal(readinessRefusal.code, "projection_repair_required");
+    assert.equal(readinessRefusal.scope, "readiness");
+    assert.deepEqual(readinessRefusal.detail.scope, [
+      "indexes", "triggers", "fts", "derived_tables",
+    ]);
     assert.deepEqual(readFileSync(database), before);
 
     const repaired = spawnSync(

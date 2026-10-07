@@ -37,7 +37,8 @@ engram.db
   control_operation_results # begin/checkpoint retry receipts; historical receipts retained
   control_policy_operation_results # store-scoped operator-policy receipts
   report_assemblies / report_assembly_claims # target post-completion authority
-  projections  # exact-current heads/status plus rebuildable indexes and FTS5
+  projections  # exact-current heads/status plus rebuildable indexes, FTS5 and derived tables
+  project_memory_advertisements # disposable memory advertisement bookkeeping
   meta         # current-build marker; refuses stores created by another build
 ```
 
@@ -223,16 +224,18 @@ path: it verifies required durable objects, columns, policy rows, and host
 path identity without starting a write transaction when every rebuildable
 projection is also present. A current store can be
 opened through a SQLite read-only connection; only explicit repair needs the
-schema write lock. If a current-version state table is missing or
+schema write lock. If a current-version durable state table is missing or
 has the wrong SQLite object type, open refuses before any DDL rather than
-recreating erased claims, feeds, authority, idempotency, or delivery state.
-Missing or malformed declared indexes, triggers, or FTS tables also refuse
-ordinary open without mutation. `engram doctor --repair-projections` is the
+recreating erased claims, feeds, authority, idempotency, or staged delivery state.
+Missing or malformed declared indexes, triggers, FTS tables, or derived tables
+also refuse ordinary open without mutation. `engram doctor --repair-projections` is the
 explicit operator path: it compares the live schema with a fresh in-memory
 schema created by the same running code, verifies control-policy bindings,
-recreates every declared rebuildable object, repopulates FTS from verified
-durable rows in one transaction, and runs full integrity verification
-afterward. Missing or malformed durable tables are never recreated. A
+recreates every declared rebuildable object, reconstructs project-memory state
+and work projection tables, recreates disposable project-memory advertisements
+empty, repopulates FTS from verified durable rows in one transaction, and runs
+full integrity verification afterward. Missing or malformed durable tables are
+never recreated. A
 restored record, restored evidence object or observation that cannot be
 projected (it does not decode, its generation is out of range, its work item
 is missing, its planning basis does not hold, or its row breaks a
@@ -296,13 +299,15 @@ verification rewrites neither side.
 
 ## Rebuildable and durable projections
 
-Declared indexes, triggers, full-text search (FTS5) content, the observation
-index `work_observations`, and the restored-history projections
-`work_restored_records` and `work_restored_evidence` are disposable and
-rebuilt explicitly from verified durable rows and canonical objects; a row
-that cannot be rebuilt is named and refused as described above, never
-silently dropped. `engram doctor` checks each
-full-text table (the memory index and the work catalog) read-only and in time
+Declared indexes, triggers, full-text search (FTS5) content, project-memory
+state (`project_memory_state`), the observation index `work_observations`, and
+the restored-history projections `work_restored_records` and `work_restored_evidence` are disposable and
+rebuilt explicitly from verified durable rows and canonical objects.
+Disposable project-memory advertisement bookkeeping (`project_memory_advertisements`)
+is instead recreated empty, causing a harmless memory reannouncement and renewed
+memory-list guidance. A row that cannot be rebuilt is named and refused as
+described above, never silently dropped. `engram doctor` checks each full-text
+table (the memory index and the work catalog) read-only and in time
 bounded by the table's size: one pass over its stored text binds every row to
 its memory head or work item, naming a changed, repeated or missing row and
 any orphan, and SQLite's own `integrity_check` of the table compares every

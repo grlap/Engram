@@ -151,7 +151,7 @@ enum Command {
         /// Inspect a refused control-policy store without opening or mutating it.
         #[arg(long, conflicts_with = "repair_projections")]
         recover_policy: bool,
-        /// Explicitly rebuild indexes, triggers, and full-text projections.
+        /// Explicitly rebuild declared projections and reset disposable memory advertisements.
         #[arg(long, conflicts_with = "recover_policy")]
         repair_projections: bool,
         /// Check every landing the seals record against a local git repository; never fetches.

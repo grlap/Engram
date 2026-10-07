@@ -122,10 +122,12 @@ policy-designated reversible local work with durably spooled reconciliation
 debt; shared, external, and lifecycle effects remain closed.
 
 Ordinary open also refuses missing or malformed rebuildable indexes, triggers,
-or FTS tables without DDL. Only the explicit
+FTS tables, or derived projection tables without DDL. Only the explicit
 `engram doctor --repair-projections` operator path may recreate those declared
-objects and repopulate FTS, after full durable-definition and policy preflight;
-it never repairs canonical, authority, ordering, or idempotency state.
+objects, reconstruct project-memory state and work projections, recreate
+disposable project-memory advertisements empty, and repopulate FTS, after full
+durable-definition and policy preflight; it never repairs canonical, authority,
+ordering, or idempotency state.
 
 The active immutable policy also selects a canonical obligation-rule-set id.
 Checkpointing resolves that selection from the begun grant's frozen policy

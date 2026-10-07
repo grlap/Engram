@@ -146,7 +146,7 @@ mod tests {
             "project_id": "fixture", "database": "diagnostic.db",
             "code": "projection_repair_required", "phase": "open",
             "reason": "fixture", "remedy": "explicit repair",
-            "scope": ["indexes", "triggers", "fts"],
+            "scope": ["indexes", "triggers", "fts", "derived_tables"],
             "schema_version": 99, "ready": true, "full_audit": "run",
             "mutation_enabled": true, "healthy": true,
             "build": "foreign", "build_fingerprint": "foreign"

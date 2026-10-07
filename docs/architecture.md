@@ -94,8 +94,10 @@ minted id, written transactionally, append-only by core-enforced contract.
 Exact-current durable tables include the active heads, status, authority,
 ordering, and idempotency projections consumed by runtime writes. Damage to
 those tables requires restoring a verified current backup. Declared indexes,
-triggers, and FTS5 content are separately rebuildable from verified durable rows
-with `engram doctor --repair-projections`; ordinary open never repairs them.
+triggers, FTS5 content, and derived project-memory and work tables are separately
+rebuildable from verified durable rows with `engram doctor --repair-projections`;
+ordinary open never repairs them. Disposable project-memory advertisements are
+recreated empty. See the [projection inventory](features/sqlite-store.md#rebuildable-and-durable-projections).
 `engram doctor` checks that every stored record decodes and agrees with the
 projections built from it, along with graph references, projection bindings, and
 configured durability freshness. It does not re-derive a record's id from its

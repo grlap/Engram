@@ -50,7 +50,7 @@ pub(crate) fn refusal(
         StoreOpenRefusalKind::ProjectionRepairRequired => {
             value["code"] = json!("projection_repair_required");
             value["remedy"] = json!("engram doctor --repair-projections");
-            value["scope"] = json!(["indexes", "triggers", "fts"]);
+            value["scope"] = json!(["indexes", "triggers", "fts", "derived_tables"]);
         }
         StoreOpenRefusalKind::DifferentBuildSchema => {
             value["code"] = json!("different_build_schema");
@@ -414,7 +414,10 @@ mod tests {
             match code {
                 "projection_repair_required" => {
                     assert_eq!(value["remedy"], "engram doctor --repair-projections");
-                    assert_eq!(value["scope"], json!(["indexes", "triggers", "fts"]));
+                    assert_eq!(
+                        value["scope"],
+                        json!(["indexes", "triggers", "fts", "derived_tables"])
+                    );
                 }
                 "different_build_schema" => {
                     assert_eq!(

@@ -594,17 +594,21 @@ stores as a global sequence number.
 ```
 engram.db
   objects      // rows keyed by minted id: versions, events, edges, evidence — write-once
-  projections  // exact-current heads/status/order plus rebuildable indexes and FTS5
+  projections  // exact-current heads/status/order plus rebuildable indexes, FTS5 and derived tables
   control.*    // turn grants in every state + diagnostics — operational, never memory
   meta         // current-build marker; refuses stores created by another build
 ```
 
 Runtime heads, status, ordering, authority, and idempotency tables are durable
 parts of the exact-current store and are recovered from a verified current
-backup. `engram doctor --repair-projections` rebuilds only declared indexes,
-triggers, and FTS5 content from those verified durable rows; it never recreates
-durable tables from `objects`. `engram doctor` checks that stored records decode
-and agree, along with graph references, projection bindings, and index freshness
+backup. `engram doctor --repair-projections` rebuilds declared indexes, triggers,
+FTS5 content, project-memory state (`project_memory_state`), and the work
+projection tables (`work_restored_records`, `work_observations`, and
+`work_restored_evidence`) from verified retained state. It recreates disposable
+project-memory advertisement bookkeeping (`project_memory_advertisements`)
+empty; it never recreates durable tables from `objects`.
+`engram doctor` checks that stored records decode and agree, along with graph
+references, projection bindings, and index freshness
 (§3.1.1). `local` mode relies on SQLite
 transactions. An optional verified restore-only copy at a configured target
 provides `local_backed_up`: a full-store copy, or the deterministic
