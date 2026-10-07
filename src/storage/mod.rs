@@ -194,6 +194,18 @@ impl std::fmt::Display for BareTargetAmbiguity {
 pub(crate) const PENDING_HANDOFF_REFUSAL: &str =
     "a live handoff offer blocks this operation; cancel the offer, or let it be accepted or expire";
 
+pub(crate) fn refuse_disposed_handoff(work: &crate::WorkItem) -> Result<(), StoreError> {
+    let lifecycle = match work.lifecycle {
+        crate::WorkLifecycle::Cancelled => "cancelled",
+        crate::WorkLifecycle::Superseded => "superseded",
+        _ => return Ok(()),
+    };
+    Err(StoreError::InvalidWork(format!(
+        "handoff cannot proceed: {} is {lifecycle}; inspect it with engram work show {}",
+        work.short_ref, work.short_ref
+    )))
+}
+
 pub(crate) fn parent_not_open_remedy(lifecycle: crate::domain::WorkLifecycle) -> &'static str {
     match lifecycle {
         crate::domain::WorkLifecycle::Proposed => {

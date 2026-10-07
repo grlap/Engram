@@ -566,6 +566,18 @@ fn dispose_work_on(
     {
         assert_actor_session(&request.actor, &current.holder)?;
     }
+    if let Some(run) = run.as_ref() {
+        let pending: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_handoff_offers WHERE run_id = ?1 AND state = 'offered')",
+            [run.run_id.0.to_string()],
+            |row| row.get(0),
+        )?;
+        if pending {
+            return Err(StoreError::InvalidWork(
+                crate::storage::PENDING_HANDOFF_REFUSAL.into(),
+            ));
+        }
+    }
     let claim_fence = if let Some(current) = claim.as_mut() {
         if current.state == WorkClaimState::Active {
             current.state = WorkClaimState::Released;

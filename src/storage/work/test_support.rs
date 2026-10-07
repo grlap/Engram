@@ -20,6 +20,34 @@ pub(super) use crate::work_service::{
 pub(super) use crate::{ProjectId, VerificationEvidenceMatchInput, match_verification_evidence};
 pub(super) use chrono::{Duration, TimeZone};
 
+impl SqliteStore {
+    /// Reproduces disposal by the older implementation, which did not guard
+    /// pending offers. Only hide the projection during disposal; the restored
+    /// row and its canonical offer/event bytes remain exactly as written.
+    pub(crate) fn test_dispose_with_historical_offer(
+        &mut self,
+        request: &DisposeWorkRequest,
+    ) -> WorkItem {
+        self.connection
+            .execute_batch(
+                "CREATE TEMP TABLE historical_offers AS SELECT * FROM work_handoff_offers;
+             DELETE FROM work_handoff_offers;",
+            )
+            .unwrap();
+        let item = self
+            .dispose_work(request, &DevelopmentNoopRedactor)
+            .unwrap();
+        self.connection
+            .execute_batch(
+                "INSERT INTO work_handoff_offers SELECT * FROM historical_offers;
+             DROP TABLE historical_offers;",
+            )
+            .unwrap();
+        assert!(self.verify_all().unwrap().is_healthy());
+        item
+    }
+}
+
 pub(super) fn at(second: i64) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 27, 1, 0, 0)
         .single()

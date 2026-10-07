@@ -5,10 +5,10 @@ use super::{
     WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkLifecycle, WorkRunState,
     WorkTransition, add_root_contribution, append_to_work_feeds, append_work_event,
     assert_actor_session, claim_expiry, expect_root_contributor, expire_handoff_offers, feed_head,
-    inspect_work_request, load_handoff_offer_projection, load_root_execution, normalize_text,
-    params, persist_claim, persist_operation_result, persist_root_execution, persist_work_run,
-    renew_holder_claim, replay_operation, request_object, validate_evidence_phase_marker,
-    validate_live_claim_on,
+    inspect_work_request, load_handoff_offer_projection, load_root_execution, load_work_item,
+    normalize_text, params, persist_claim, persist_operation_result, persist_root_execution,
+    persist_work_run, renew_holder_claim, replay_operation, request_object,
+    validate_evidence_phase_marker, validate_live_claim_on,
 };
 
 #[cfg(test)]
@@ -266,6 +266,7 @@ impl SqliteStore {
                 "handoff offer does not match this work or destination".into(),
             ));
         }
+        crate::storage::refuse_disposed_handoff(&load_work_item(&transaction, offer.work_id)?)?;
         if offer.expires_at <= request.accepted_at {
             expire_handoff_offers(
                 &transaction,
@@ -401,6 +402,7 @@ impl SqliteStore {
                 "handoff offer does not match the live outgoing authority basis".into(),
             ));
         }
+        crate::storage::refuse_disposed_handoff(&load_work_item(&transaction, offer.work_id)?)?;
         if offer.expires_at <= request.cancelled_at {
             expire_handoff_offers(
                 &transaction,

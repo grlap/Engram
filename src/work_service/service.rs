@@ -928,6 +928,15 @@ impl LocalWorkService {
             claim,
             handoffs,
         } = self.work_guidance_in_scope(store, work_id, now, scope)?;
+        // These summaries describe the current run; raw offer history remains
+        // available to protocol validation and canonical inspection.
+        let handoffs = handoffs
+            .into_iter()
+            .filter(|offer| {
+                status.work.lifecycle == crate::WorkLifecycle::Open
+                    && status.work.active_run_id == Some(offer.run_id)
+            })
+            .collect::<Vec<_>>();
         let run = if let Some(run_id) = status.work.active_run_id {
             Some(store.get_work_run(run_id)?)
         } else {

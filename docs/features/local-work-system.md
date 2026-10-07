@@ -655,7 +655,8 @@ matching readiness reasons (`WorkReadinessReason`). A held item that gains a
 blocker reports `blocked` and returns to `claimed` or `active` when the blocker
 clears; an item created with an open prerequisite starts `blocked`; `done`
 closes a `claimed` item as well as an `active` one, because completion
-checkpoints before it seals; cancel and supersede close from any availability.
+checkpoints before it seals; cancel and supersede close from any availability
+only after any live handoff offer has been cancelled, accepted, or expired.
 `waiting` is a declared word that no shipped derivation reports. Agents see
 `claimed` as the word `held`.
 
@@ -681,9 +682,13 @@ checkpoint-coupled handoff offer (`WorkRunState`, `WorkClaimState`,
 `active` with its `expires_at` in the past and availability derives
 `prior_claim_recoverable`; the next claim reuses the same claim id with the
 fence advanced, whether the prior claim expired or was released. Cancel and
-supersede cancel the run from any state and release an active claim, live or
-expired. Detach is admitted only without a live claim or handoff offer; it
-cancels the run and leaves the claim as it stands.
+supersede refuse while a live handoff offer exists; otherwise they cancel the
+run from any state and release an active claim, live or expired. Historical
+offers on disposed work remain stored, but are not current handoffs; fresh
+acceptance and cancellation are refused by the item's name and lifecycle.
+Committed handoff receipts still replay unchanged. Detach is admitted only
+without a live claim or handoff offer; it cancels the run and leaves the claim
+as it stands.
 
 ```mermaid
 stateDiagram-v2

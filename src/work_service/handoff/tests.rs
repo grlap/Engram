@@ -1,5 +1,6 @@
 use super::super::test_support::*;
 use super::super::*;
+mod disposal;
 
 #[test]
 fn core_committed_handoff_recovery_uses_the_durable_focus_basis() {
