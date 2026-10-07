@@ -57,7 +57,7 @@ pub(super) use relations::{
 };
 use relations::{
     change_work_prerequisite_on, change_work_prerequisite_with_validation_on,
-    validate_prerequisite_in_degree,
+    validate_prerequisite_in_degree, validate_prerequisite_input,
 };
 
 /// Atomic plans defer whole-project cycle and root-size scans to their final
@@ -109,7 +109,7 @@ impl PlanningValidation {
     }
 }
 
-/// Creates a root within the caller's write transaction after request validation.
+/// Creates a root within the caller's write transaction, enforcing root input guards.
 /// The caller owns operation replay and commit, including coupled graph changes.
 pub(super) fn create_root_on<R: Redactor>(
     transaction: &Transaction<'_>,
@@ -133,6 +133,7 @@ fn create_root_with_validation_on<R: Redactor>(
     redactor: &R,
     validation: PlanningValidation,
 ) -> Result<WorkItem, StoreError> {
+    validate_root_input(request)?;
     if let Some(snapshot) = request.source_snapshot_id.as_ref() {
         let source = load_typed_work_object::<WorkSourceSnapshot>(
             transaction,
@@ -321,30 +322,7 @@ impl SqliteStore {
         let initial_notes = crate::domain::normalize_initial_work_notes(&request.notes)
             .map_err(StoreError::InvalidWork)?;
         inspect_work_request(redactor, request, &request.actor)?;
-        if request.parent_id.is_some() {
-            return Err(StoreError::InvalidWork(
-                "direct child creation is not allowed; use decompose_work with the parent revision"
-                    .into(),
-            ));
-        }
-        if !(0..=4).contains(&request.priority) {
-            return Err(StoreError::InvalidWork(
-                "priority must be an integer from 0 through 4".into(),
-            ));
-        }
-        match (request.origin, request.source_snapshot_id.as_ref()) {
-            (WorkOrigin::Local, None) | (WorkOrigin::Imported, Some(_)) => {}
-            (WorkOrigin::Local, Some(_)) => {
-                return Err(StoreError::InvalidWork(
-                    "local work cannot carry an imported source snapshot".into(),
-                ));
-            }
-            (WorkOrigin::Imported, None) => {
-                return Err(StoreError::InvalidWork(
-                    "imported work requires a source snapshot".into(),
-                ));
-            }
-        }
+        validate_root_input(request)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
@@ -379,11 +357,7 @@ impl SqliteStore {
         request: &DecomposeWorkRequest,
         redactor: &R,
     ) -> Result<WorkDecomposition, StoreError> {
-        if request.children.is_empty() || request.children.len() > MAX_CHILDREN_PER_DECOMPOSITION {
-            return Err(StoreError::InvalidWork(format!(
-                "decomposition must contain from 1 through {MAX_CHILDREN_PER_DECOMPOSITION} children"
-            )));
-        }
+        validate_child_count(request.children.len(), PlanningValidation::Immediate)?;
         let count = request.children.iter().fold(0_usize, |count, child| {
             count.saturating_add(child.notes.len())
         });
@@ -399,20 +373,7 @@ impl SqliteStore {
             })
             .collect::<Result<Vec<_>, _>>()?;
         inspect_work_request(redactor, request, &request.actor)?;
-        let mut keys = HashSet::new();
-        for child in &request.children {
-            let key = normalize_text(&child.local_key, "child local key")?;
-            if !keys.insert(key) {
-                return Err(StoreError::InvalidWork(
-                    "child local keys must be unique".into(),
-                ));
-            }
-            if !(0..=4).contains(&child.priority) {
-                return Err(StoreError::InvalidWork(
-                    "child priority must be an integer from 0 through 4".into(),
-                ));
-            }
-        }
+        validate_child_inputs(&request.children)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(decomposition) = replay_operation::<WorkDecomposition>(
@@ -752,9 +713,7 @@ impl SqliteStore {
         add: bool,
     ) -> Result<WorkItem, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        if request.work_id == request.prerequisite_id {
-            return Err(StoreError::WorkDependencyCycle);
-        }
+        validate_prerequisite_input(request)?;
         let operation = if add {
             "add_work_prerequisite"
         } else {
@@ -1000,6 +959,8 @@ fn decompose_work_with_validation_on<R: Redactor>(
     redactor: &R,
     validation: PlanningValidation,
 ) -> Result<WorkDecomposition, StoreError> {
+    validate_child_count(request.children.len(), validation)?;
+    validate_child_inputs(&request.children)?;
     let mut parent = load_work_item(transaction, request.parent_id)?;
     assert_revision(&parent, request.expected_parent_revision)?;
     if parent.lifecycle != WorkLifecycle::Open {
@@ -1297,6 +1258,58 @@ fn decompose_work_with_validation_on<R: Redactor>(
         append_work_event(transaction, &event)?;
     }
     Ok(WorkDecomposition { parent, children })
+}
+
+fn validate_root_input(request: &CreateWorkRequest) -> Result<(), StoreError> {
+    if request.parent_id.is_some() {
+        return Err(StoreError::InvalidWork(
+            "direct child creation is not allowed; use decompose_work with the parent revision"
+                .into(),
+        ));
+    }
+    validate_priority(request.priority, "priority")?;
+    match (request.origin, request.source_snapshot_id.as_ref()) {
+        (WorkOrigin::Local, None) | (WorkOrigin::Imported, Some(_)) => Ok(()),
+        (WorkOrigin::Local, Some(_)) => Err(StoreError::InvalidWork(
+            "local work cannot carry an imported source snapshot".into(),
+        )),
+        (WorkOrigin::Imported, None) => Err(StoreError::InvalidWork(
+            "imported work requires a source snapshot".into(),
+        )),
+    }
+}
+
+fn validate_priority(priority: i32, label: &str) -> Result<(), StoreError> {
+    if !(0..=4).contains(&priority) {
+        return Err(StoreError::InvalidWork(format!(
+            "{label} must be an integer from 0 through 4"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_child_count(count: usize, validation: PlanningValidation) -> Result<(), StoreError> {
+    let limit = validation.child_budget();
+    if count == 0 || count > limit {
+        return Err(StoreError::InvalidWork(format!(
+            "decomposition must contain from 1 through {limit} children"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_child_inputs(children: &[crate::domain::ChildWorkDraft]) -> Result<(), StoreError> {
+    let mut keys = HashSet::new();
+    for child in children {
+        let key = normalize_text(&child.local_key, "child local key")?;
+        if !keys.insert(key) {
+            return Err(StoreError::InvalidWork(
+                "child local keys must be unique".into(),
+            ));
+        }
+        validate_priority(child.priority, "child priority")?;
+    }
+    Ok(())
 }
 
 pub(super) fn persist_operation_result<T: Serialize>(
@@ -1622,16 +1635,11 @@ fn validate_decomposition_budget(
     proposed_children: usize,
     validation: PlanningValidation,
 ) -> Result<(), StoreError> {
-    if proposed_children > validation.child_budget() {
-        return Err(StoreError::InvalidWork(
-            "decomposition exceeds the project per-operation child budget".into(),
-        ));
-    }
     let depth = work_depth(connection, parent.work_id)? + 1;
     if depth > i64::from(MAX_WORK_DEPTH) {
-        return Err(StoreError::InvalidWork(
-            "decomposition exceeds the project hierarchy depth".into(),
-        ));
+        return Err(StoreError::InvalidWork(format!(
+            "decomposition exceeds the project hierarchy depth: at most {MAX_WORK_DEPTH} (root depth is zero)"
+        )));
     }
     if matches!(validation, PlanningValidation::Immediate) {
         validate_root_descendant_budget(

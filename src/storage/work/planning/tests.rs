@@ -3,6 +3,7 @@ use super::super::*;
 use super::*;
 
 mod creation;
+mod shared_guards;
 
 #[test]
 fn revision_kind_and_label_deltas_preserve_unmentioned_labels() {

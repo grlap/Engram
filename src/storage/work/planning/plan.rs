@@ -249,7 +249,9 @@ fn validate_plan(input: &WorkPlanInput) -> Result<PlanParts, StoreError> {
         )));
     }
     if !valid_key(&input.idempotency_key) {
-        return Err(invalid("idempotency key must be a 1..64 byte ASCII token"));
+        return Err(invalid(&format!(
+            "idempotency key must be a 1..{MAX_WORK_PLAN_KEY_BYTES} byte ASCII token"
+        )));
     }
     if serde_json::to_vec(input)?.len() > MAX_WORK_PLAN_BYTES {
         return Err(invalid(&format!(
@@ -262,7 +264,9 @@ fn validate_plan(input: &WorkPlanInput) -> Result<PlanParts, StoreError> {
     let mut note_count = 0_usize;
     for (index, task) in input.tasks.iter().enumerate() {
         if !valid_key(&task.key) || keys.insert(task.key.as_str(), index).is_some() {
-            return Err(invalid("task keys must be unique 1..64 byte ASCII tokens"));
+            return Err(invalid(&format!(
+                "task keys must be unique 1..{MAX_WORK_PLAN_KEY_BYTES} byte ASCII tokens"
+            )));
         }
         if task.acceptance.len() > 64 || task.labels.len() > 64 {
             return Err(invalid(
@@ -400,6 +404,8 @@ fn validate_plan(input: &WorkPlanInput) -> Result<PlanParts, StoreError> {
             continue;
         };
         let prerequisite = resolve(key)?;
+        // The depth walk above already proved this immutable parent forest
+        // acyclic, so this ancestor walk terminates without another visited set.
         let mut parent = parents[work];
         while let Some(ancestor) = parent {
             if ancestor == prerequisite {
@@ -479,7 +485,7 @@ fn admit_plan_on<R: Redactor>(
                     evaluation_mode: draft.evaluation_mode,
                     project_id: request.project_id.clone(),
                     parent_id: None,
-                    child_requirement: ChildRequirement::Required,
+                    child_requirement: draft.child_requirement,
                     title: draft.title.clone(),
                     outcome: draft.outcome.clone(),
                     acceptance: draft.acceptance.clone(),

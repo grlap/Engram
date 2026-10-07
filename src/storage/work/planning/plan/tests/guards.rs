@@ -100,3 +100,23 @@ fn atomic_plan_published_limits_allow_one_complete_tree() {
         usize::try_from(MAX_OPEN_WORK_DESCENDANTS).expect("descendant limit") + 1
     );
 }
+
+#[test]
+fn atomic_plan_key_refusals_name_the_current_limit_and_accept_its_boundary() {
+    let mut input = request().plan;
+    input.idempotency_key = "i".repeat(MAX_WORK_PLAN_KEY_BYTES);
+    input.tasks = vec![task(&"t".repeat(MAX_WORK_PLAN_KEY_BYTES), None)];
+    input.prerequisites.clear();
+    validate_work_plan(&input).expect("maximum-length keys");
+    input.idempotency_key.push('i');
+    assert!(
+        matches!(validate_work_plan(&input), Err(StoreError::InvalidWork(reason))
+        if reason == format!("plan: idempotency key must be a 1..{MAX_WORK_PLAN_KEY_BYTES} byte ASCII token"))
+    );
+    input.idempotency_key.pop();
+    input.tasks[0].key.push('t');
+    assert!(
+        matches!(validate_work_plan(&input), Err(StoreError::InvalidWork(reason))
+        if reason == format!("plan: task keys must be unique 1..{MAX_WORK_PLAN_KEY_BYTES} byte ASCII tokens"))
+    );
+}

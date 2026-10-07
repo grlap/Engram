@@ -26,6 +26,15 @@ pub(super) fn validate_prerequisite_in_degree(resulting: usize) -> Result<(), St
     Ok(())
 }
 
+pub(super) fn validate_prerequisite_input(
+    request: &ChangeWorkPrerequisiteRequest,
+) -> Result<(), StoreError> {
+    if request.work_id == request.prerequisite_id {
+        return Err(StoreError::WorkDependencyCycle);
+    }
+    Ok(())
+}
+
 /// Changes one edge using the ordinary checks within a caller-owned transaction.
 #[allow(
     clippy::too_many_lines,
@@ -52,6 +61,7 @@ pub(super) fn change_work_prerequisite_with_validation_on(
     validation: PlanningValidation,
     planned_relations: Option<&mut PlanRelationBasis>,
 ) -> Result<WorkItem, StoreError> {
+    validate_prerequisite_input(request)?;
     let mut item = load_work_item(transaction, request.work_id)?;
     let prerequisite = load_work_item(transaction, request.prerequisite_id)?;
     // The ordinary path validates the item's relations once here and hands
