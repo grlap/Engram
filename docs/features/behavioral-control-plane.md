@@ -174,9 +174,11 @@ level, declared mediated capabilities, and an optional exact work binding:
 `claim_fence`. Storage verifies that tuple against the session's live claim and
 copies it into each grant. The six-operation work protocol supplies this tuple
 directly as `work_update:claim.receipt.control_binding` and
-`work_focus.control_binding`, and `work core inspect` returns it without
-selecting focus, or an explicit `null` when there is none, including while the
-caller still holds the claim but bind would refuse it. Each shows the tuple
+`work_focus.control_binding`. Core focus, the focus nested in core next, and
+`work core inspect` always carry the binding key: the tuple or an explicit
+`null` when there is none, including while the caller still holds the claim
+but bind would refuse it. Null and an absent key never mean different things.
+Inspect reads it without selecting focus. Each shows the tuple
 only when `session_bind` would accept it, because it runs the same
 validation, so a claim with a pending handoff offer shows none. That
 holds when the answer is built; a replayed claim receipt returns its stored

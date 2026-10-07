@@ -593,22 +593,15 @@ pub(crate) struct WorkParentSummary {
 pub struct WorkInspectView {
     #[serde(flatten)]
     view: WorkFocusView,
-    /// Moved out of `view`, whose own copy stays empty, so the key appears
-    /// once and is never omitted. Only [`Self::from_focus`] builds the view.
-    control_binding: Option<ControlWorkBinding>,
 }
 
 impl WorkInspectView {
-    /// Moves `view`'s binding to the outer key, so it appears exactly once.
-    pub(crate) fn from_focus(mut view: WorkFocusView) -> Self {
-        let control_binding = view.control_binding.take();
-        Self {
-            view,
-            control_binding,
-        }
+    /// Retains the complete focus, including its one explicit binding key.
+    pub(crate) fn from_focus(view: WorkFocusView) -> Self {
+        Self { view }
     }
 
-    /// The bounded focus view, without its binding.
+    /// The complete bounded focus view, including its binding.
     #[must_use]
     pub fn view(&self) -> &WorkFocusView {
         &self.view
@@ -619,13 +612,7 @@ impl WorkInspectView {
     /// pending handoff offer.
     #[must_use]
     pub fn control_binding(&self) -> Option<&ControlWorkBinding> {
-        self.control_binding.as_ref()
-    }
-
-    /// Bytes the outer key adds beside the flattened view: the separator,
-    /// the key, and the binding or null.
-    pub(crate) fn binding_bytes(&self) -> Result<usize, serde_json::Error> {
-        Ok(r#","control_binding":"#.len() + serde_json::to_vec(&self.control_binding)?.len())
+        self.view.control_binding.as_ref()
     }
 
     /// Fits the focus view so the whole answer, binding included, stays
@@ -637,8 +624,7 @@ impl WorkInspectView {
     /// Fits the focus view so the whole answer, binding included, stays
     /// within `budget` bytes, no larger than the agent response budget.
     pub(crate) fn fit_within(&mut self, budget: usize) -> Result<(), crate::StoreError> {
-        let reserved =
-            self.binding_bytes()? + super::MAX_AGENT_WORK_RESPONSE_BYTES.saturating_sub(budget);
+        let reserved = super::MAX_AGENT_WORK_RESPONSE_BYTES.saturating_sub(budget);
         super::projection::fit_focus_response_reserving(&mut self.view, reserved)
     }
 }
@@ -796,8 +782,9 @@ pub struct WorkFocusView {
     pub(crate) outcome_omitted_bytes: Option<usize>,
     pub run: Option<WorkRunSummary>,
     pub claim: Option<WorkClaim>,
-    /// Paste-ready native control binding for this session's live claim.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Paste-ready native control binding for this session's bindable live
+    /// claim, or explicit null. A held claim may be temporarily unbindable.
+    #[serde(default)]
     pub control_binding: Option<ControlWorkBinding>,
     pub children: Vec<WorkItemSummary>,
     /// Exact number of direct children before relation-count or byte-budget

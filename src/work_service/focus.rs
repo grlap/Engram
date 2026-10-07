@@ -202,7 +202,7 @@ impl LocalWorkService {
                 now,
             )
         })?;
-        // The binding moves to the outer key, and fitting reserves its bytes.
+        // Fit the complete focus, including its explicit binding key.
         let mut inspected = super::WorkInspectView::from_focus(view);
         inspected.fit()?;
         super::projection::ensure_agent_response_budget(&inspected, "work_inspect")?;

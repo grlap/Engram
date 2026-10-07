@@ -671,6 +671,20 @@ fn a_replayed_root_at_the_budget_sheds_context_and_stays_history() {
     work.title.push_str(&"t".repeat(padding));
     assert_eq!(size(&replay), limit - 4);
 
+    // Historical stored proposals omitted an unbound focus's key. Reading
+    // those bytes keeps the binding absent in memory, then emits explicit null.
+    let mut stored = serde_json::to_value(&replay).expect("stored proposal");
+    stored["focus"]
+        .as_object_mut()
+        .unwrap()
+        .remove("control_binding");
+    replay = serde_json::from_value(stored).expect("read historical proposal");
+    assert_eq!(size(&replay), limit - 4);
+    assert_eq!(
+        serde_json::to_value(&replay).unwrap()["focus"].get("control_binding"),
+        Some(&serde_json::Value::Null)
+    );
+
     let store = SqliteStore::open(&finished.database).expect("store");
     let WorkProposeResult::Root { focus, .. } = &mut replay else {
         unreachable!()
