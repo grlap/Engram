@@ -740,30 +740,170 @@ mod tests {
             .to_owned()
     }
 
-    #[test]
-    fn fixture_commands_ignore_inherited_repository_routing() {
-        fn snapshot(directory: &Path) -> std::collections::BTreeMap<PathBuf, Option<Vec<u8>>> {
-            fn collect(
-                root: &Path,
-                directory: &Path,
-                files: &mut std::collections::BTreeMap<PathBuf, Option<Vec<u8>>>,
-            ) {
-                for entry in std::fs::read_dir(directory).expect("snapshot directory") {
-                    let path = entry.expect("snapshot entry").path();
-                    let relative = path.strip_prefix(root).expect("snapshot root").to_owned();
-                    if path.is_dir() {
-                        files.insert(relative, None);
-                        collect(root, &path, files);
-                    } else {
-                        files.insert(relative, Some(std::fs::read(path).expect("snapshot bytes")));
-                    }
+    #[derive(Debug, Eq, PartialEq)]
+    enum SnapshotEntry {
+        Directory,
+        File(Vec<u8>),
+        Symlink(std::ffi::OsString),
+    }
+
+    fn snapshot(directory: &Path) -> std::collections::BTreeMap<PathBuf, SnapshotEntry> {
+        fn collect(
+            root: &Path,
+            directory: &Path,
+            files: &mut std::collections::BTreeMap<PathBuf, SnapshotEntry>,
+        ) {
+            for entry in std::fs::read_dir(directory).unwrap_or_else(|error| {
+                panic!("snapshot directory {}: {error}", directory.display())
+            }) {
+                let path = entry.expect("snapshot entry").path();
+                let relative = path.strip_prefix(root).expect("snapshot root").to_owned();
+                let kind = std::fs::symlink_metadata(&path)
+                    .unwrap_or_else(|error| panic!("snapshot metadata {}: {error}", path.display()))
+                    .file_type();
+                if kind.is_symlink() {
+                    let target = std::fs::read_link(&path).unwrap_or_else(|error| {
+                        panic!("snapshot link {}: {error}", path.display())
+                    });
+                    files.insert(relative, SnapshotEntry::Symlink(target.into_os_string()));
+                } else if kind.is_dir() {
+                    files.insert(relative, SnapshotEntry::Directory);
+                    collect(root, &path, files);
+                } else if kind.is_file() {
+                    let bytes = std::fs::read(&path).unwrap_or_else(|error| {
+                        panic!("snapshot bytes {}: {error}", path.display())
+                    });
+                    files.insert(relative, SnapshotEntry::File(bytes));
+                } else {
+                    panic!("unsupported snapshot entry {}: {kind:?}", path.display());
                 }
             }
-            let mut files = std::collections::BTreeMap::new();
-            collect(directory, directory, &mut files);
-            files
         }
+        let mut files = std::collections::BTreeMap::new();
+        collect(directory, directory, &mut files);
+        files
+    }
 
+    #[test]
+    fn fixture_snapshot_preserves_bytes_and_links_without_following_targets() {
+        let home = crate::test_support::temp_home().expect("scratch directory");
+        let tree = home.path().join("snapshot");
+        let first = home.path().join("first");
+        let second = home.path().join("second");
+        let missing = home.path().join("missing");
+        for directory in [&tree, &first, &second, &missing] {
+            std::fs::create_dir(directory).unwrap();
+        }
+        std::fs::create_dir(tree.join("empty")).unwrap();
+        std::fs::write(tree.join("bytes"), [0, 255, 10]).unwrap();
+        for target in [&first, &second] {
+            std::fs::write(target.join("same"), b"equal target bytes").unwrap();
+        }
+        let link = tree.join("link");
+        let dangling = tree.join("dangling");
+        let cycle = tree.join("cycle");
+        crate::test_support::make_dir_link(&first, &link);
+        crate::test_support::make_dir_link(&missing, &dangling);
+        crate::test_support::make_dir_link(&tree, &cycle);
+        std::fs::remove_dir(&missing).unwrap();
+        assert_eq!(
+            std::fs::metadata(&dangling).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        // Windows refuses a directory handle before reading its missing target.
+        assert_eq!(
+            std::fs::read(&dangling).unwrap_err().kind(),
+            if cfg!(windows) {
+                std::io::ErrorKind::PermissionDenied
+            } else {
+                std::io::ErrorKind::NotFound
+            }
+        );
+        let before = snapshot(&tree);
+        assert_eq!(before.len(), 5);
+        assert_eq!(before[Path::new("empty")], SnapshotEntry::Directory);
+        assert_eq!(
+            before[Path::new("bytes")],
+            SnapshotEntry::File(vec![0, 255, 10])
+        );
+        for name in ["link", "dangling", "cycle"] {
+            assert_eq!(
+                before[Path::new(name)],
+                SnapshotEntry::Symlink(
+                    std::fs::read_link(tree.join(name))
+                        .unwrap()
+                        .into_os_string()
+                )
+            );
+        }
+        std::fs::write(first.join("same"), b"changed outside snapshot").unwrap();
+        assert_eq!(snapshot(&tree), before);
+        std::fs::write(first.join("same"), b"equal target bytes").unwrap();
+        crate::test_support::remove_dir_link(&link);
+        crate::test_support::make_dir_link(&second, &link);
+        assert_ne!(snapshot(&tree), before);
+        for entry in [&link, &dangling, &cycle] {
+            crate::test_support::remove_dir_link(entry);
+        }
+        let ordinary = snapshot(&tree);
+        std::fs::write(tree.join("bytes"), [0, 254, 10]).unwrap();
+        assert_ne!(snapshot(&tree), ordinary);
+    }
+
+    #[test]
+    fn fixture_snapshot_link_equality_preserves_target_spelling() {
+        let original = PathBuf::from("../first");
+        for spelling in [".././first", "../first/"] {
+            let changed = PathBuf::from(spelling);
+            assert_eq!(original, changed);
+            assert_ne!(
+                SnapshotEntry::Symlink(original.clone().into_os_string()),
+                SnapshotEntry::Symlink(changed.into_os_string())
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fixture_snapshot_preserves_raw_file_link_targets() {
+        let home = crate::test_support::temp_home().expect("scratch directory");
+        let tree = home.path().join("snapshot");
+        std::fs::create_dir(&tree).unwrap();
+        for name in ["first", "second"] {
+            std::fs::write(home.path().join(name), b"equal target bytes").unwrap();
+        }
+        let link = tree.join("link");
+        std::os::unix::fs::symlink("../first", &link).unwrap();
+        let dangling = tree.join("dangling");
+        std::os::unix::fs::symlink("../missing", &dangling).unwrap();
+        let before = snapshot(&tree);
+        assert_eq!(before.len(), 2);
+        assert_eq!(
+            before[Path::new("link")],
+            SnapshotEntry::Symlink("../first".into())
+        );
+        assert_eq!(
+            before[Path::new("dangling")],
+            SnapshotEntry::Symlink("../missing".into())
+        );
+        for spelling in [".././first", "../first/"] {
+            std::fs::remove_file(&link).unwrap();
+            std::os::unix::fs::symlink(spelling, &link).unwrap();
+            assert_ne!(snapshot(&tree), before);
+            assert_eq!(
+                snapshot(&tree)[Path::new("link")],
+                SnapshotEntry::Symlink(spelling.into())
+            );
+        }
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink("../second", &link).unwrap();
+        assert_ne!(snapshot(&tree), before);
+        std::fs::remove_file(&link).unwrap();
+        std::fs::remove_file(&dangling).unwrap();
+    }
+
+    #[test]
+    fn fixture_commands_ignore_inherited_repository_routing() {
         let home = crate::test_support::temp_home().expect("scratch directory");
         let victim = home.path().join("victim");
         let fixture = home.path().join("fixture");
