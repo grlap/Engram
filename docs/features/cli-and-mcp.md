@@ -7,8 +7,8 @@
 > [local tasks & reports](local-tasks-and-reports.md), and
 > [behavioral control plane](behavioral-control-plane.md).
 
-One core library owns classification, object storage, scope authorization,
-task binding, deltas, and context-packet construction. The CLI and MCP server
+One core library owns object storage, scope authorization, work binding,
+ordered deltas, and keyed project-memory operations. The CLI and MCP server
 are thin faces over it; transport code does not redefine memory policy. The
 agent sees fourteen words; every host and operator control lives under
 [Host integration](#host-integration).

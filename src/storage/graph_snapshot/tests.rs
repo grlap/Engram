@@ -611,7 +611,7 @@ fn unkeyed_project_scope_memory_does_not_enter_the_keyed_snapshot_section() {
     let project = ProjectId("snapshot-unkeyed-project-memory".into());
     create_root(&mut store, &project, "Snapshot root", "snapshot-root");
     store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &NoteRequest {
                 project_id: project.clone(),
                 task_id: None,

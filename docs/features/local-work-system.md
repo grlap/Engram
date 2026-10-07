@@ -1333,7 +1333,7 @@ the caller must omit `--session-id` to receive a fresh process default. Live
 caller, planning-actor, handoff-recipient, and control session-bind
 participant and actor session ids are at most 64 UTF-8 bytes; longer values
 refuse before store effects. The same live length-only admit applies to
-generic note capture, graph-snapshot save or load operator actors,
+graph-snapshot save or load operator actors,
 control-policy administrator actor sessions, and project-memory remember,
 forget, full, or list callers. A caller-supplied catalog `held_by` filter is
 length-admitted the same way: that is live filter admission, not validation

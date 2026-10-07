@@ -767,7 +767,7 @@ fn load_refuses_incompatible_and_corrupt_documents_without_partial_state() {
     let mut memory_nonempty =
         SqliteStore::open(directory.path().join("memory-nonempty.db")).expect("memory store");
     memory_nonempty
-        .capture_note(
+        .insert_historical_memory_fixture(
             &NoteRequest {
                 project_id: project.clone(),
                 task_id: None,

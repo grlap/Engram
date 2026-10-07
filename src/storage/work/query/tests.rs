@@ -584,7 +584,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         .focus_work_session(&root.project_id, &owner_session, root.work_id, at(1))
         .expect("focus work before capture");
     let shared = store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &NoteRequest {
                 project_id: root.project_id.clone(),
                 task_id: None,
@@ -616,7 +616,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
     assert_eq!(shared.work_positions.len(), 9);
 
     let private = store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &NoteRequest {
                 project_id: root.project_id.clone(),
                 task_id: None,
@@ -645,7 +645,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
     );
 
     store
-        .show_memory(
+        .inspect_historical_memory_record(
             &private.version,
             &root.project_id,
             Some(crate::TaskId::new()),
@@ -656,7 +656,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         .expect("unrelated task binding does not hide owned work scratch");
 
     let restricted = store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &NoteRequest {
                 project_id: root.project_id.clone(),
                 task_id: None,
@@ -706,7 +706,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
     assert_eq!(peer.len(), 1);
     assert_eq!(peer[0].version, shared.version);
     store
-        .show_memory(
+        .inspect_historical_memory_record(
             &shared.version,
             &root.project_id,
             None,
@@ -716,7 +716,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         )
         .expect("peer can inspect shared work memory");
     assert!(matches!(
-        store.show_memory(
+        store.inspect_historical_memory_record(
             &private.version,
             &root.project_id,
             None,
@@ -727,7 +727,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         Err(StoreError::MemoryAccessDenied(_))
     ));
     assert!(matches!(
-        store.show_memory(
+        store.inspect_historical_memory_record(
             &restricted.version,
             &root.project_id,
             None,
@@ -807,7 +807,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
             .any(|memory| memory.version == shared.version)
     );
     store
-        .show_memory(
+        .inspect_historical_memory_record(
             &shared.version,
             &root.project_id,
             None,
@@ -817,7 +817,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
         )
         .expect("child focus can inspect root-shared memory");
     assert!(matches!(
-        store.show_memory(
+        store.inspect_historical_memory_record(
             &private.version,
             &root.project_id,
             None,
@@ -857,7 +857,7 @@ fn a_work_memory_search_with_nothing_to_search_for_finds_nothing() {
         .expect("focus work before capture");
     // A query with nothing to search for once matched this phrase instead.
     store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &NoteRequest {
                 project_id: root.project_id.clone(),
                 task_id: None,

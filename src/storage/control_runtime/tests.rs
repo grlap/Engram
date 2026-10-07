@@ -579,7 +579,7 @@ fn bind_and_a_rebind_after_restart_are_ready_for_an_ordinary_turn_at_once() {
         )
         .expect("a peer joins the same task");
     store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &note_request(
                 first.status.task_id,
                 "peer-session",

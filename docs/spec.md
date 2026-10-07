@@ -110,7 +110,7 @@ knowledge graph or process scheduler.**
   coexist visibly as *contested* until a human-attributable resolution
   supersedes them — never last-writer-wins (§6.3).
 - **One core, many faces.** CLI, MCP server, and future service front the
-  same core API, including packet construction, so delivery semantics cannot
+  same core API for work and project memory, so delivery semantics cannot
   drift (§8).
 - **Control requires a reference monitor.** An agent-visible tool is
   advisory. Engram controls behavior only to the extent that a host mediates
@@ -130,17 +130,17 @@ head versions is *contested* (§6.3).
 
 ### 2.2 Classification axes
 
-Classification is three orthogonal axes, not one enum. Delivery *defaults*
-are derived from kind and authority, and can be overridden per memory — but
-the default mapping is what tools and UI present, so the simple mental model
-("constraints are always in context") holds unless someone deliberately
-departs from it.
+Classification is three orthogonal axes, not one enum. Historical capture
+derived stored delivery defaults from kind and authority, with per-memory
+overrides. Those labels remain readable, but do not guarantee that a memory
+is in an agent's context: current delivery is bounded, and project memories
+require explicit reads (§4).
 
 | Axis | Values | Meaning |
 | --- | --- | --- |
 | `kind` | `constraint` · `decision` · `convention` · `fact` · `preference` · `episode` | What species of claim this is. `decision` is first-class: valid until superseded, provenance-heavy. |
 | `authority` | `hard` · `firm` · `soft` | How binding the claim is. Drives write policy (§5) and delivery defaults. |
-| `delivery` | `pinned` · `index` · `on_demand` · `suppressed` | How it reaches an agent's context (§4). Derived by default, overridable with reason. |
+| `delivery` | `pinned` · `index` · `on_demand` · `suppressed` | Stored delivery classification; it does not cause automatic injection (§4). |
 
 Default delivery by kind × authority:
 
@@ -155,19 +155,18 @@ Default delivery by kind × authority:
 
 The two lifecycle layers contain three visibility rings. **Agent scope** is
 private scratch: hypotheses, incomplete reasoning, and preferences that never
-enter peer packets. **Task scope** is the default working scope: decisions,
+enter peer context. **Task scope** is the default working scope: decisions,
 constraints, findings, evidence, status, and handoffs visible to every task
 participant. **Project scope** holds reviewed knowledge that should outlive
 a single task, plus explicitly attributed active Episodes/notes admitted by
 the existing episode exception. The published ring is the frozen report,
 not another memory scope.
 
-A caller working on a task receives applicable project + task + its own agent
-records. Scopes never shadow silently: pinned constraints from every
-applicable scope are delivered, and cross-scope conflicts surface as
-`contradicts` edges, not as overrides. Resolution is always explicit — scope
-proximity never silently outranks authority, and an unresolved contradiction
-between applicable pinned records blocks packet construction (§4.1).
+The shipped agent surface recovers work context through `next` and reads
+project memory explicitly through `memories`. Historical task and private
+records retain their stored scope boundaries; there is no generic task-memory
+capture or search surface. Delivery classifications in stored records do not
+promise automatic pinned injection (§4).
 
 V1 execution authority operates on one active host with a stable project id
 shared across sessions and worktrees. Sequential `portable` handoff may move
@@ -186,7 +185,7 @@ Version {
   kind, authority, delivery      // §2.2 (delivery may be "derived")
   scope                          // §2.3
 
-  title           // one line; powers the index tier (§4.2)
+  title           // one-line summary for memory discovery (§4)
   body            // full prose; loaded on demand
   structured_value?              // optional machine-readable payload
   tags[]
@@ -216,9 +215,9 @@ a version. Status is *derived* from the object graph:
 
 | Derived status | Condition |
 | --- | --- |
-| `proposed` | Asserted but awaiting required approval (§5) — excluded from packets. |
+| `proposed` | Asserted but awaiting required approval (§5) — retained for attributed inspection. |
 | `active` | Approved (or auto-activated) head version. |
-| `contested` | Multiple unsuperseded heads, or an unresolved `contradicts` edge. For applicable pinned records, blocks packet construction (§4.1). |
+| `contested` | Multiple unsuperseded heads, or an unresolved `contradicts` edge. |
 | `stale` | `review_by` passed — delivered with a warning; needs re-affirmation. |
 | `expired` | `valid_until` passed — excluded unless explicitly requested. |
 | `retracted` | Withdrawn by an attributed retraction event. |
@@ -792,79 +791,26 @@ activates a later shared multi-writer backend. `engram doctor` reports mode,
 remote head, recovery point, lag/degradation, and writer assumption rather
 than implying durability or concurrency that is not present.
 
-## 4. Context packets & retrieval
+## 4. Memory retrieval
 
-> **Not built.** No interface builds or delivers a context packet. Turn
-> grants carried one until grants stopped carrying a delivery page, and no
-> host showed it to an agent. The `next` word's work context is the only
-> delivery today. This section records the design.
+The work protocol's `next` operation delivers bounded work context and ordered
+peer changes. Project memory has a separate explicit surface: `remember`,
+`memories`, and `forget`. An unfiltered `memories` listing discovers keys;
+an exact-key full read returns the current body, with attributed revisions
+available on request. Listing or advertising a note does not prove its body
+was read. Work search and live work-memory retrieval use the persisted focus
+and scope boundaries. See [CLI & MCP](features/cli-and-mcp.md).
 
-A **context packet** is the unit of delivery: the block of memory an agent
-receives at session start or on request. Packet construction is a first-class
-core API used identically by every interface (§8), and every packet is
-reproducible: it is stored immutably with a content fingerprint, and it lists
-what was included, omitted, and why.
+Generic task-scoped prose capture and task-memory search have been retired;
+they never had a production CLI or MCP surface. Historical task, work, private,
+and unkeyed project memories remain readable by storage, doctor, projection
+repair, and graph restore. They share object kinds with live project memory;
+scope and keyed project identity distinguish them, never object kind alone.
 
-Every packet also carries the observed positions of its named dense project,
-root-work, and run-execution feeds. The hash answers “what exact content did I
-receive?”; feed positions answer “what changed after that?” `engram context
-delta --feed <id> --since <position>` returns the ordered peer-visible changes
-without rebuilding the whole packet. A runtime
-may use its own mailbox or notification mechanism as a doorbell, but Engram's
-durable change feed is authoritative. Engram is not a chat bus.
-
-### 4.1 Rung 1 — pinned, complete or error
-
-All *active* pinned memories in the caller's applicable scopes, verbatim, under a
-hard budget.
-
-> **Fail closed.** The pinned tier is never silently truncated *and never
-> self-contradictory*. Packet construction fails *before the agent acts* in
-> two cases: the pinned tier cannot fit its budget, or an unresolved
-> contradiction stands between two applicable hard/firm pinned records —
-> delivering both would ask the model to improvise policy precedence. The
-> error names the records needing merge, demotion, or resolution (§6.3).
-> Soft-authority conflicts are delivered, flagged contested. A dropped
-> convention is a nuisance; a dropped or ambiguous "never do X" is an
-> incident.
-
-### 4.2 Rung 2 — the index tier
-
-Titles only — `id · kind · title`, one line each — for every active
-index-delivered memory in scope. This is what fixes "agents don't know what
-they don't know": fifty memories cost fifty lines, and the agent knows what
-it can pull. Capped by budget with ranked eviction (§4.4) and an **omission
-manifest**: counts and reasons for anything excluded, so absence is visible.
-
-### 4.3 Rung 3 — on demand
-
-`show <id>`, `history <id>`, and `search <query>` over FTS5. Exact identifier
-matches always outrank fuzzy matches. Embeddings are a later, optional
-addition — good titles give most of semantic retrieval's value for none of
-its machinery.
-
-### 4.4 Budgets and ranking
-
-| Tier | Default budget | On overflow |
-| --- | --- | --- |
-| Pinned (rung 1) | 4 KiB | Fail closed (§4.1) |
-| Index (rung 2) | 8 KiB | Ranked eviction + omission manifest |
-| Whole packet | 12 KiB (≈3k tokens) | Hard cap |
-
-Defaults are per-deployment configuration, to be tuned against the evaluation
-harness (§10). Non-pinned ranking, in order: scope proximity → exact
-identifier match → FTS relevance → authority → confidence →
-`last_verified`/validity → prior usefulness → byte cost. Deliberately **no
-recency boost** for constraints and decisions: an old, recently-verified
-decision outranks a new, unverified one.
-
-Every packet item carries *why it was retrieved* and its evidence pointers,
-so an agent can cite — and a human can audit — the chain from context back to
-source.
-
-Every packet includes a one-line count of proposed and stale items. Review
-pressure is visible in the normal workflow rather than hidden behind a
-command nobody remembers to run.
+Context-packet construction and delivery are removed. Stored `ContextPacket`
+and `ControlDelivery` formats remain decodable and auditable, with ids and
+links unchanged. No new packet is constructed, and turn grants carry no
+delivery page. See [historical context packet format](features/context-packets.md).
 
 ## 5. Write path
 
@@ -875,12 +821,10 @@ promotion is its own attributed audit event. Writes pass through the
 
 The shipped agent capture path is `engram work note` / MCP `note`. The core
 derives a stable idempotency key so a lost response can be retried without
-duplicating the finding; changed prose is a new intent. A future generic memory
-capture surface may infer kind, authority, delivery, and scope from the active
-task plus asserted host context, return the inference in its receipt, and ask
-only when genuinely ambiguous. The explicit `assert` surface remains for
-callers that need exact
-control. Inference never bypasses the activation matrix below.
+duplicating the finding; changed prose is a new intent. Project notes use the
+separate `remember` / `memories` / `forget` surface. Generic task-memory
+capture is retired. The general promotion matrix below remains target design;
+it does not describe a shipped generic `assert` command.
 
 | Origin | soft | firm | hard |
 | --- | --- | --- | --- |
@@ -927,7 +871,7 @@ whose word.
 Conflicts are first-class, never resolved by timestamp:
 
 - Concurrent heads after a sync merge → the memory is **contested**; both
-  heads visible, both flagged in packets.
+  heads visible for explicit inspection.
 - Cross-memory conflicts get an explicit `contradicts` edge; both sides show
   as contested until resolved.
 - Resolution is a new version citing *all* conflicting parents, with
@@ -1025,7 +969,7 @@ add-ons:
 
 ## 8. Interfaces
 
-One core library owns the object model, derived state, packet construction,
+One core library owns the object model, derived state, work delivery,
 and control decisions. The CLI, MCP server, and host control transport are
 thin faces over it; a future service is another. No interface reimplements
 delivery or admission logic.
@@ -1034,20 +978,24 @@ delivery or admission logic.
 
 ```
 # write path
-engram note "..." [--task <id>]  # infer defaults; return classification receipt
+engram work note "..."       # attributed work finding
+engram work remember "..." --key KEY
+# generic assertions (target only; not built)
 engram assert   --kind decision --authority firm --scope project:x \
                 --title "..." [--body-file ...] [--ref jira:ABC-123]
 engram approve <id>         engram retract <id>        engram forget <id>
 
 # read path
-engram show <id>            engram history <id>        engram search <query>
-engram context build [--scope ... --budget ...]
-engram context delta --task <id> --since <cursor>
+engram work show <ref>      engram work search <query>
+engram work memories        engram work memories KEY --full
 
-# curation & ops
+# generic curation and sync (target only; not built)
 engram review               engram conflicts           engram compact --dry-run
-engram sync                 engram doctor              engram doctor --repair-projections
-engram export --jsonl       # purge: exceptional runbook, not a CLI verb (§6.5)
+engram sync
+engram export --jsonl       # target export; purge is a runbook, not a verb (§6.5)
+
+# shipped store diagnostics
+engram doctor              engram doctor --repair-projections
 
 # local work and reports (§2.6, §9.5)
 engram work next              engram work show <ref>       engram work search <query>
@@ -1438,26 +1386,27 @@ external adapter exists.
 
 ## 10. Evaluation & telemetry
 
-Retrieval quality is part of the product, not later polish. V1 ships with an
-evaluation harness:
+Retrieval quality is part of the product. Tests cover bounded work delivery,
+scope isolation, Unicode FTS queries, and project-memory revision reads.
+No context-packet evaluation harness or packet-ranking telemetry is shipped.
+Further retrieval measurement may use:
 
 - **Golden query set** maintained alongside the memory corpus: task
   descriptions → the memories that should surface.
-- **Metrics:** constraint coverage (must be 100% — this one is an invariant,
-  not a target), precision@k and recall@k for the index tier, wrong/stale
-  memory rate, cited-in-answer rate, packet bytes. **Precision before
+- **Metrics:** precision@k and recall@k for explicit search, wrong/stale
+  memory rate, cited-in-answer rate, and receipt bytes. **Precision before
   recall:** a plausible wrong memory silently corrupts work; a visible miss
   just prompts a search.
-- **Retrieval decision logs** without sensitive bodies: packet fingerprint,
-  candidate ids considered and included, scores and reasons, budget
-  exclusions, and whether the agent used or cited each item. This is the data
-  that turns budget defaults (§4.4) from guesses into tuned values.
+- **Retrieval decision logs** without sensitive bodies: candidate ids
+  considered and included, scope and query basis, bounded omissions, and
+  whether the agent used or cited each item. This is a measurement proposal,
+  not a packet-construction API.
 
 ## 11. Delivery plan
 
 | Phase | Contents |
 | --- | --- |
-| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts (designed and deferred, not part of v1: [action gates](features/action-gates.md)); deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
+| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; attributed work notes and keyed project memories; bounded work context, dense ordered peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts (designed and deferred, not part of v1: [action gates](features/action-gates.md)); deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
 | **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction; completed-work retention compaction; budget and ready-ranking tuning; optional configured external backup automation. |
 | **v2+** | Optional live cross-host `Sync`/team backend; real GitHub/Jira/proprietary source and publication adapters; optional embeddings; comments/link-backs; real Redactor/DLP; Postgres/service `Store`; Signer-based attestation; envelope encryption for crypto-shredding. |
 
@@ -1551,7 +1500,7 @@ collision-resistant ids for concurrent writers; task state kept separate from
 persistent note memory; typed graph edges with behavior
 (supersedes / duplicates / derived-from); immutable audit/change history;
 assignment distinct from live claim, priority/labels/deferral, ready and
-blocked indexes, acceptance criteria, round-trip migration, dry-run preview before anything destructive; a session-start context packet
+blocked indexes, acceptance criteria, round-trip migration, dry-run preview before anything destructive; bounded work context
 with explicit caps and visible omission; human and machine interfaces over
 one core.
 

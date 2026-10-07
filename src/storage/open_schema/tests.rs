@@ -104,7 +104,7 @@ fn centralized_schema_versions_match_fresh_store_projections_and_policy_objects(
     let task_id = TaskId::new();
     install_memory_task(&mut store, task_id, &["schema-agent"]);
     let receipt = store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &note_request(
                 task_id,
                 "schema-agent",
@@ -1126,7 +1126,7 @@ fn explicit_projection_repair_rebuilds_existing_object_fts_content() {
     let task_id = TaskId::new();
     install_memory_task(&mut store, task_id, &["fts-agent"]);
     let receipt = store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &note_request(
                 task_id,
                 "fts-agent",

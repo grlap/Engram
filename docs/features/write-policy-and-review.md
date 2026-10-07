@@ -69,8 +69,9 @@ Two separate clocks:
 purpose. Individual hard constraints may be configured to fail closed on
 overdue review.
 
-Every context packet shows proposed and stale counts, preventing useful agent
-findings from disappearing into an invisible review queue.
+Context-packet construction is removed. Stored review metadata remains
+available for explicit inspection; it does not create an automatic packet or
+review-queue delivery.
 
 ## Conflicts
 

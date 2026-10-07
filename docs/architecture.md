@@ -171,9 +171,9 @@ values never enter any shared history—vault references only.
    lands as `proposed` per the write-policy matrix. See
    [write policy & review](features/write-policy-and-review.md).
 5. **Read**: `next --peek` gives the agent its work context, and `next`
-   stages and confirms peer changes. The designed **context packet** — pinned
-   constraints (complete or fail-closed), a titles-only index and an omission
-   manifest — is not built; see [context packets](features/context-packets.md).
+   stages and confirms peer changes. Project notes are discovered and read
+   explicitly through `memories`. Context-packet construction is removed;
+   [serialized history](features/context-packets.md) remains readable.
 6. **Coordinate and complete**: each session claims its own child `WorkRun`,
    appends decisions/evidence
    to root-shared memory, checkpoints, and explicitly hands off. A

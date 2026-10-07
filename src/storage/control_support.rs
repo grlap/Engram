@@ -1099,6 +1099,7 @@ impl SqliteStore {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(super) fn ensure_active_task_on(
         connection: &Connection,
         project_id: &crate::domain::ProjectId,

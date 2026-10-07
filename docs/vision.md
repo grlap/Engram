@@ -75,10 +75,10 @@ cross-host team sync remains later (see
   that. See [typed memory model](features/typed-memory-model.md).
 - **Append-only truth.** Records are immutable and named by a minted id; state
   is derived. Nothing is edited in place, so history and audit come for free.
-- **Budgeted delivery.** Injection operates under hard byte budgets with
-  visible omission; the constraint tier fails closed rather than truncating
-  silently. See [context packets](features/context-packets.md), a design
-  that is not built.
+- **Bounded recovery.** Work context reports visible omissions and directs
+  agents to further reads. Project-memory listings discover keys; full reads
+  recover their bodies. Stored delivery labels do not inject constraints.
+  See [agent usage](features/cli-and-mcp.md#using-engram-as-an-agent).
 - **Trust follows origin and authority.** Who asserted something, and how
   binding it claims to be, determine whether it activates immediately or
   awaits approval. See [write policy](features/write-policy-and-review.md).
@@ -95,7 +95,7 @@ cross-host team sync remains later (see
   task record drives peer deltas, handoffs, report assembly, and publication.
   Engram must replace duplicate bookkeeping, never add another ledger.
 - **One core, many faces.** CLI, MCP server, and any future service front the
-  same core — including packet construction — so delivery semantics cannot
+  same core for work and project memory, so delivery semantics cannot
   drift.
 - **Control requires mediation.** Engram decides; the host enforces. Turn
   grants are bounded, checkpointed, and invalidated by relevant policy or

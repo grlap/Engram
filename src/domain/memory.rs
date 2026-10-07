@@ -403,7 +403,8 @@ pub struct ProjectMemoryFull {
     pub workaround: Option<bool>,
 }
 
-/// Visibility override for low-friction prose capture.
+/// Visibility of a historical capture fixture.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NoteVisibility {
@@ -412,7 +413,8 @@ pub enum NoteVisibility {
     Private,
 }
 
-/// Common capture request used by the CLI and MCP surface.
+/// Input for constructing historical capture fixtures.
+#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct NoteRequest {
     pub project_id: ProjectId,
@@ -437,7 +439,7 @@ pub struct NoteRequest {
     pub created_at: DateTime<Utc>,
 }
 
-/// Explainable receipt returned after prose capture.
+/// Stored receipt from the retired prose-capture operation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NoteReceipt {
     pub idempotency_key: String,

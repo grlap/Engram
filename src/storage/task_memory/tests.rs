@@ -79,7 +79,7 @@ fn sessions_rendezvous_using_only_the_external_reference() {
 }
 
 #[test]
-fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
+fn historical_memory_fixture_actor_validation_and_redaction_are_non_mutating() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let task_id = TaskId::new();
     install_memory_task(&mut store, task_id, &["context-agent"]);
@@ -98,7 +98,7 @@ fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
     });
 
     assert!(matches!(
-        store.capture_note(&request, &SentinelRedactor),
+        store.insert_historical_memory_fixture(&request, &SentinelRedactor),
         Err(StoreError::RedactionRefused(message)) if message == "test sentinel was rejected"
     ));
 
@@ -112,7 +112,7 @@ fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
             reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
         });
     assert!(matches!(
-        store.capture_note(&duplicate_context, &DevelopmentNoopRedactor),
+        store.insert_historical_memory_fixture(&duplicate_context, &DevelopmentNoopRedactor),
         Err(StoreError::InvalidMemoryProjection(detail)) if detail.contains("at most one value")
     ));
 
@@ -133,7 +133,7 @@ fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
         .provenance_chain
         .extend([normalized_marker(), normalized_marker()]);
     assert!(matches!(
-        store.capture_note(&duplicate_marker, &DevelopmentNoopRedactor),
+        store.insert_historical_memory_fixture(&duplicate_marker, &DevelopmentNoopRedactor),
         Err(StoreError::InvalidMemoryProjection(detail)) if detail.contains("must be unique")
     ));
 
@@ -150,7 +150,7 @@ fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
         reference: Some(crate::domain::ACTOR_CONTEXT_NORMALIZED_REFERENCE.into()),
     });
     assert!(matches!(
-        store.capture_note(&forged_marker, &DevelopmentNoopRedactor),
+        store.insert_historical_memory_fixture(&forged_marker, &DevelopmentNoopRedactor),
         Err(StoreError::InvalidMemoryProjection(detail)) if detail.contains("is invalid")
     ));
 
@@ -167,7 +167,7 @@ fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
         reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
     });
     assert!(matches!(
-        store.capture_note(&unsafe_context, &DevelopmentNoopRedactor),
+        store.insert_historical_memory_fixture(&unsafe_context, &DevelopmentNoopRedactor),
         Err(StoreError::InvalidMemoryProjection(detail))
             if detail.contains("not normalized and bounded")
     ));
@@ -179,7 +179,7 @@ fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
 }
 
 #[test]
-fn note_capture_is_idempotent_searchable_and_explainable() {
+fn historical_memory_fixture_retains_idempotency_and_classification() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let task_id = TaskId::new();
     install_memory_task(&mut store, task_id, &["session-a", "session-b"]);
@@ -192,22 +192,22 @@ fn note_capture_is_idempotent_searchable_and_explainable() {
     );
 
     let first = store
-        .capture_note(&request, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&request, &DevelopmentNoopRedactor)
         .unwrap();
     let mut retry_request = request.clone();
     retry_request.created_at += TimeDelta::seconds(1);
     let replay = store
-        .capture_note(&retry_request, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&retry_request, &DevelopmentNoopRedactor)
         .unwrap();
     let mut restricted_request = request.clone();
     restricted_request.prose = "restricted: never return this task memory body".into();
     restricted_request.sensitivity = Some(Sensitivity::Restricted);
     restricted_request.idempotency_key = "note-restricted".into();
     let restricted = store
-        .capture_note(&restricted_request, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&restricted_request, &DevelopmentNoopRedactor)
         .expect("capture restricted task memory");
     let visible = store
-        .search_memories(
+        .inspect_historical_memory_projections(
             &request.project_id,
             Some(task_id),
             None,
@@ -231,13 +231,13 @@ fn note_capture_is_idempotent_searchable_and_explainable() {
     let mut conflict = request.clone();
     conflict.prose = "Decision: reuse the key for something else".into();
     assert!(matches!(
-        store.capture_note(&conflict, &DevelopmentNoopRedactor),
+        store.insert_historical_memory_fixture(&conflict, &DevelopmentNoopRedactor),
         Err(StoreError::NoteIdempotencyConflict(_))
     ));
 }
 
 #[test]
-fn note_idempotency_keys_are_scoped_to_the_calling_session() {
+fn historical_memory_fixture_intents_are_scoped_to_the_calling_session() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let task_id = TaskId::new();
     install_memory_task(&mut store, task_id, &["session-a", "session-b"]);
@@ -257,10 +257,10 @@ fn note_idempotency_keys_are_scoped_to_the_calling_session() {
     );
 
     let first = store
-        .capture_note(&first, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&first, &DevelopmentNoopRedactor)
         .expect("first caller-local key");
     let second = store
-        .capture_note(&second, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&second, &DevelopmentNoopRedactor)
         .expect("same raw key is independent in another session");
 
     assert_ne!(first.memory_id, second.memory_id);
@@ -280,13 +280,13 @@ fn private_task_scratch_never_enters_the_peer_feed() {
         NoteVisibility::Private,
     );
     let receipt = store
-        .capture_note(&request, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&request, &DevelopmentNoopRedactor)
         .unwrap();
 
     assert!(receipt.cursor.is_none());
     assert_eq!(
         store
-            .search_memories(
+            .inspect_historical_memory_projections(
                 &request.project_id,
                 Some(task_id),
                 None,
@@ -300,7 +300,7 @@ fn private_task_scratch_never_enters_the_peer_feed() {
         1
     );
     let observed = store
-        .search_memories(
+        .inspect_historical_memory_projections(
             &request.project_id,
             Some(task_id),
             None,
@@ -322,7 +322,7 @@ fn private_task_scratch_never_enters_the_peer_feed() {
     clippy::too_many_lines,
     reason = "one scenario must preserve the exact pre/post-restart cursor and hashes"
 )]
-fn task_delta_show_and_private_scope_survive_restart() {
+fn inspect_historical_task_delta_show_and_private_scope_survive_restart() {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("engram.db");
     let project = ProjectId("project-a".into());
@@ -360,7 +360,7 @@ fn task_delta_show_and_private_scope_survive_restart() {
             NoteVisibility::Shared,
         );
         let first_receipt = store
-            .capture_note(&first_request, &DevelopmentNoopRedactor)
+            .insert_historical_memory_fixture(&first_request, &DevelopmentNoopRedactor)
             .unwrap();
         let first_cursor = first_receipt
             .cursor
@@ -374,10 +374,17 @@ fn task_delta_show_and_private_scope_survive_restart() {
             NoteVisibility::Shared,
         );
         store
-            .capture_note(&second_request, &DevelopmentNoopRedactor)
+            .insert_historical_memory_fixture(&second_request, &DevelopmentNoopRedactor)
             .unwrap();
         let expected_delta = store
-            .task_delta(&project, task_id, &session_b, "eval-b", first_cursor, 20)
+            .inspect_historical_task_delta(
+                &project,
+                task_id,
+                &session_b,
+                "eval-b",
+                first_cursor,
+                20,
+            )
             .unwrap();
         assert_eq!(expected_delta.changes.len(), 1);
 
@@ -389,10 +396,10 @@ fn task_delta_show_and_private_scope_survive_restart() {
             NoteVisibility::Private,
         );
         let private_receipt = store
-            .capture_note(&private_request, &DevelopmentNoopRedactor)
+            .insert_historical_memory_fixture(&private_request, &DevelopmentNoopRedactor)
             .unwrap();
         assert!(matches!(
-            store.show_memory(
+            store.inspect_historical_memory_record(
                 &private_receipt.version,
                 &project,
                 Some(task_id),
@@ -403,7 +410,7 @@ fn task_delta_show_and_private_scope_survive_restart() {
             Err(StoreError::MemoryAccessDenied(_))
         ));
         let observed = store
-            .search_memories(
+            .inspect_historical_memory_projections(
                 &project,
                 Some(task_id),
                 None,
@@ -425,14 +432,14 @@ fn task_delta_show_and_private_scope_survive_restart() {
 
     let reopened = SqliteStore::open(&database).unwrap();
     let after_restart = reopened
-        .task_delta(&project, task_id, &session_b, "eval-b", first_cursor, 20)
+        .inspect_historical_task_delta(&project, task_id, &session_b, "eval-b", first_cursor, 20)
         .unwrap();
     assert_eq!(
         serde_json::to_vec(&after_restart).unwrap(),
         serde_json::to_vec(&expected_delta).unwrap()
     );
     let shown = reopened
-        .show_memory(
+        .inspect_historical_memory_record(
             &first_receipt.version,
             &project,
             Some(task_id),
@@ -448,7 +455,7 @@ fn task_delta_show_and_private_scope_survive_restart() {
         shown.version.classification_reason
     );
     assert!(matches!(
-        reopened.show_memory(
+        reopened.inspect_historical_memory_record(
             &private_hash,
             &project,
             Some(task_id),
@@ -473,12 +480,12 @@ fn memory_projection_rebuilds_from_canonical_objects() {
         NoteVisibility::Shared,
     );
     store
-        .capture_note(&request, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&request, &DevelopmentNoopRedactor)
         .unwrap();
 
     assert_eq!(store.rebuild_memory_index().unwrap(), 1);
     let rebuilt = store
-        .search_memories(
+        .inspect_historical_memory_projections(
             &request.project_id,
             Some(task_id),
             None,
@@ -507,7 +514,7 @@ fn generic_memory_search_excludes_terminal_head_statuses() {
             NoteVisibility::Shared,
         );
         let receipt = store
-            .capture_note(&request, &DevelopmentNoopRedactor)
+            .insert_historical_memory_fixture(&request, &DevelopmentNoopRedactor)
             .expect("capture active note");
         let version: MemoryVersion = store
             .get_typed_object(&receipt.version, "memory_version")
@@ -555,7 +562,7 @@ fn generic_memory_search_excludes_terminal_head_statuses() {
             status_name
         );
         let observed = store
-            .search_memories(
+            .inspect_historical_memory_projections(
                 &request.project_id,
                 Some(task_id),
                 None,
@@ -589,11 +596,11 @@ fn standalone_note(session: &str, key: &str) -> NoteRequest {
     }
 }
 
-fn refuse_capture_note_before_effects(live: &SessionId) {
+fn refuse_insert_historical_memory_fixture_before_effects(live: &SessionId) {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let before = test_database_shape_snapshot(&store.connection).expect("before");
     let error = store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &standalone_note(&live.0, "should-not-write"),
             &DevelopmentNoopRedactor,
         )
@@ -606,21 +613,21 @@ fn refuse_capture_note_before_effects(live: &SessionId) {
 }
 
 #[test]
-fn capture_note_refuses_an_ascii65_actor_session_before_effects() {
-    refuse_capture_note_before_effects(&ascii65_session());
+fn insert_historical_memory_fixture_refuses_an_ascii65_actor_session_before_effects() {
+    refuse_insert_historical_memory_fixture_before_effects(&ascii65_session());
 }
 
 #[test]
-fn capture_note_refuses_a_utf8_oversized_actor_session_before_effects() {
-    refuse_capture_note_before_effects(&utf8_oversized_session());
+fn insert_historical_memory_fixture_refuses_a_utf8_oversized_actor_session_before_effects() {
+    refuse_insert_historical_memory_fixture_before_effects(&utf8_oversized_session());
 }
 
 #[test]
-fn capture_note_preserves_an_exact_64_byte_actor_session() {
+fn insert_historical_memory_fixture_preserves_an_exact_64_byte_actor_session() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let session = exact_64_ascii_session();
     store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &standalone_note(&session, "exact-session-note"),
             &DevelopmentNoopRedactor,
         )
@@ -641,11 +648,11 @@ fn capture_note_preserves_an_exact_64_byte_actor_session() {
 }
 
 #[test]
-fn capture_note_preserves_an_exact_64_byte_utf8_actor_session() {
+fn insert_historical_memory_fixture_preserves_an_exact_64_byte_utf8_actor_session() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let session = exact_64_utf8_session();
     store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &standalone_note(&session, "exact-utf8-session-note"),
             &DevelopmentNoopRedactor,
         )

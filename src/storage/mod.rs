@@ -411,7 +411,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 #[cfg(test)]
-use crate::domain::{DeltaItem, MemoryRecord, TaskDelta};
+use crate::domain::{DeltaItem, TaskDelta};
 use crate::{
     CanonicalObject, ObjectId,
     control::effective_mediated_effects,
@@ -426,9 +426,9 @@ use crate::{
         MAX_PROJECT_MEMORY_BODY_BYTES, MAX_PROJECT_MEMORY_KEY_BYTES,
         MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
         MemoryId, MemoryKind, MemoryStatus, MemorySummary, MemoryVersion, NamedRootBindingEvent,
-        NamedRootBindingKind, NamedRootBindingReceipt, NamedRootEndReason, NoteReceipt,
-        NoteRequest, NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet,
-        OpenWorkObligation, ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
+        NamedRootBindingKind, NamedRootBindingReceipt, NamedRootEndReason,
+        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, OpenWorkObligation,
+        ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList,
         ProjectMemoryListRow, ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision,
         ProjectPolicyEpoch, ProjectPolicyOperation, RememberProjectMemoryRequest, SCHEMA_VERSION,
         Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskId, TurnBeginDecision,
@@ -438,7 +438,7 @@ use crate::{
         TurnNextIntent, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
         VerificationResult, WorkCompletionRecoveryCause, WorkReferenceCandidate,
     },
-    memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
+    memory::{DevelopmentNoopRedactor, Redactor},
     schema::{
         CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
         CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION, CONTROL_POLICY_SCHEMA_VERSION,
@@ -735,31 +735,6 @@ pub(super) fn drop_schema_object(connection: &Connection, name: &str) -> Result<
     let quoted = name.replace('"', "\"\"");
     connection.execute_batch(&format!("DROP {drop_kind} \"{quoted}\";"))?;
     Ok(true)
-}
-
-#[derive(Serialize)]
-struct NoteIntentFingerprint<'a> {
-    project_id: &'a crate::domain::ProjectId,
-    task_id: Option<TaskId>,
-    work_id: Option<crate::domain::WorkId>,
-    prose: &'a str,
-    visibility: NoteVisibility,
-    kind: Option<crate::domain::MemoryKind>,
-    authority: Option<crate::domain::Authority>,
-    sensitivity: Option<Sensitivity>,
-    title: Option<&'a str>,
-    tags: &'a [String],
-    evidence: &'a [ObjectId],
-    refs: &'a [String],
-    actor: &'a ActorContext,
-}
-
-#[derive(Serialize)]
-struct NoteIntentKey<'a> {
-    project_id: &'a crate::domain::ProjectId,
-    actor_id: &'a str,
-    session_id: Option<&'a SessionId>,
-    caller_key: &'a str,
 }
 
 pub(crate) struct BeginWorkProtocolAttempt<'a, T, B> {
@@ -1749,13 +1724,6 @@ struct MemoryHeadProjectionRow {
     title: String,
     body: String,
     created_at_ms: i64,
-}
-
-struct PreparedNote {
-    version: MemoryVersion,
-    assertion: MemoryAssertionEvent,
-    version_object: CanonicalObject,
-    assertion_object: CanonicalObject,
 }
 
 struct StoredProjectMemory {

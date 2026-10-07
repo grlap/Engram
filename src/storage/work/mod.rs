@@ -461,11 +461,13 @@ pub(super) use completion::{
     append_control_environment_evidence_on, append_control_execution_observation_on,
     append_control_verification_evidence_on, source_revision_repeats_on,
 };
+#[cfg(test)]
+pub(super) use feeds::append_fixture_memory_to_work_feeds;
 pub(crate) use feeds::checkpoint_run_feed_end;
 pub(super) use feeds::{
-    append_memory_capture_to_work_feeds, current_run_feed_cut_on, latest_named_root_event_on,
-    latest_named_root_event_record_on, load_control_environment_evidence_on,
-    load_control_execution_observation_on, load_typed_work_object, named_root_state_on,
+    current_run_feed_cut_on, latest_named_root_event_on, latest_named_root_event_record_on,
+    load_control_environment_evidence_on, load_control_execution_observation_on,
+    load_typed_work_object, named_root_state_on,
 };
 #[cfg(test)]
 use planning::persist_work_item;

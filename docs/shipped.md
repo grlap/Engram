@@ -127,3 +127,9 @@ acceptance-binding revision still resolves obsolete bound obligations. Turn
 grants no longer carry a delivery page, recovery turns are removed, and the
 context-packet assembly that only the grant's page used is removed with it.
 Stored grants that carried a page still decode and audit clean.
+The unused generic task-memory capture writer and task-memory search/show
+helpers are retired; historical construction and inspection exist only in
+test fixtures. Project `remember`/`memories`/`forget`, live work-memory
+retrieval, and scope-aware historical decoding, doctor, projection repair,
+and graph restore remain. No durable rows, ids, links, or schema are changed.
+See [historical context packet format](features/context-packets.md).

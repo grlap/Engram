@@ -139,8 +139,8 @@ identity.
 ## Sensitivity labels
 
 `public` / `internal` / `restricted` / `secret-ref`, enforced at retrieval:
-scope and sensitivity authorization run before anything enters a context
-packet, an agent-facing local-work delta, or an off-host projection. Dense
+scope and sensitivity authorization run before anything enters an
+agent-facing local-work delta or an off-host projection. Dense
 local-work delivery retains unauthorized positions as typed omission markers
 rather than returning the protected canonical payload. The planned generic
 JSONL and portable exporters, and the shipped work-graph snapshot, exclude

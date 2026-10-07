@@ -51,11 +51,10 @@ Optional report assembly remains deferred.
 - Same-host multi-session roots: one executor/claim per child `WorkRun` under a
   `RootExecution`, fenced work claims, explicit handoff, root-shared memory,
   contribution/child-seal barrier, and a separate fenced report-assembly claim
-- Context packets: budgets, fail-closed pinned tier, omission manifest,
-  packet fingerprint, typed source-feed vectors plus independent
-  per-session delivery positions, peer deltas, and review counts —
-  [context packets](features/context-packets.md) (not built; the `next`
-  word's work context is the only delivery today)
+- Bounded work context and ordered peer deltas through `next`, with explicit
+  keyed project-memory reads through `memories`. Generic task-memory capture
+  and context-packet construction are removed; their
+  [historical formats](features/context-packets.md) remain readable.
 - `engram work note` / MCP `note`: one work finding feeds peer, handoff,
   evidence, and report views
 - Agent-surface Cuts A and B: gate results are auditable evidence,

@@ -33,14 +33,14 @@ impl SqliteStore {
         Ok(object)
     }
 
-    /// Returns the authorized ordered task feed after a cursor.
+    /// Inspects a historical task-feed fixture under its visibility boundaries.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when task membership fails or a referenced
     /// canonical object is corrupt.
     #[cfg(test)]
-    pub fn task_delta(
+    pub(crate) fn inspect_historical_task_delta(
         &self,
         project_id: &crate::domain::ProjectId,
         task_id: TaskId,
@@ -50,7 +50,7 @@ impl SqliteStore {
         limit: u32,
     ) -> Result<TaskDelta, StoreError> {
         Self::ensure_active_task_on(&self.connection, project_id, task_id, session_id)?;
-        let visible = self.search_memories(
+        let visible = self.inspect_historical_memory_projections(
             project_id,
             Some(task_id),
             None,

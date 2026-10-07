@@ -294,7 +294,7 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
     assert_eq!(list.memories.len(), 1);
     assert_eq!(list.memories[0].first_line, "Alpha beta");
     let observed = store
-        .search_memories(
+        .inspect_historical_memory_projections(
             &project,
             None,
             None,
@@ -366,7 +366,7 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
         Err(StoreError::ProjectMemoryRetired(_))
     ));
     let observed = store
-        .search_memories(
+        .inspect_historical_memory_projections(
             &project,
             None,
             None,
@@ -803,7 +803,7 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
         Err(StoreError::ProjectMemoryRetired(retired)) if retired == key
     ));
     let observed = store
-        .search_memories(
+        .inspect_historical_memory_projections(
             &project,
             None,
             None,

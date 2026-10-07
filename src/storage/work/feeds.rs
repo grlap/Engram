@@ -1,3 +1,8 @@
+#[cfg(test)]
+use super::planning::{assert_actor_session, renew_holder_claim, validate_live_claim_on};
+#[cfg(test)]
+use crate::domain::{MemoryAssertionEvent, MemoryVersion, SessionId};
+
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
@@ -8,9 +13,8 @@ use super::super::{SqliteStore, StoreError};
 use super::execution::latest_canonical_handoff_offer;
 use super::integrity::expected_environment_projection;
 use super::planning::{
-    apply_work_relation_transition, assert_actor_session, projected_work_relation_basis,
-    renew_holder_claim, validate_live_claim_on, validated_current_work_relation_basis,
-    work_relation_fingerprint,
+    apply_work_relation_transition, projected_work_relation_basis,
+    validated_current_work_relation_basis, work_relation_fingerprint,
 };
 use super::query::{
     feed_parts, latest_canonical_work_event_for_item_optional, load_root_execution,
@@ -21,9 +25,8 @@ use crate::{
     CanonicalObject, ObjectId,
     domain::{
         ActorContext, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
-        MemoryAssertionEvent, MemoryVersion, NamedRootBindingEvent, SCHEMA_VERSION, SessionId,
-        SourceObservation, WorkClaimId, WorkHandoffOffer, WorkHandoffState, WorkId, WorkRunId,
-        WorkSourceSnapshot, WorkTransition,
+        NamedRootBindingEvent, SCHEMA_VERSION, SourceObservation, WorkClaimId, WorkHandoffOffer,
+        WorkHandoffState, WorkId, WorkRunId, WorkSourceSnapshot, WorkTransition,
     },
     memory::Redactor,
 };
@@ -176,11 +179,12 @@ pub(super) fn append_to_work_feeds(
         .collect()
 }
 
+#[cfg(test)]
 #[allow(
     clippy::too_many_arguments,
     reason = "the exact work, holder, time, actor, typed memory, and canonical objects form one audited capture binding"
 )]
-pub(in crate::storage) fn append_memory_capture_to_work_feeds(
+pub(in crate::storage) fn append_fixture_memory_to_work_feeds(
     transaction: &Transaction<'_>,
     work_id: WorkId,
     holder: &SessionId,

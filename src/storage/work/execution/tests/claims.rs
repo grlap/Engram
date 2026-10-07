@@ -901,7 +901,7 @@ fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
         created_at: at(2),
     };
     let receipt = store
-        .capture_note(&request, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&request, &DevelopmentNoopRedactor)
         .expect("live holder capture");
     assert_eq!(receipt.work_positions.len(), 9);
     let renewed = store
@@ -925,7 +925,7 @@ fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
     ));
 
     let replay = store
-        .capture_note(&request, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&request, &DevelopmentNoopRedactor)
         .expect("exact replay");
     assert!(replay.duplicate);
     assert_eq!(
@@ -941,7 +941,7 @@ fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
     foreign.idempotency_key = "work-note-peer".into();
     foreign.created_at = at(3);
     assert!(matches!(
-        store.capture_note(&foreign, &DevelopmentNoopRedactor),
+        store.insert_historical_memory_fixture(&foreign, &DevelopmentNoopRedactor),
         Err(StoreError::WorkClaimMismatch { work }) if work == root.work_id
     ));
     assert_eq!(
@@ -956,7 +956,7 @@ fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
     lapsed.idempotency_key = "work-note-lapsed".into();
     lapsed.created_at = renewed.expires_at;
     assert!(matches!(
-        store.capture_note(&lapsed, &DevelopmentNoopRedactor),
+        store.insert_historical_memory_fixture(&lapsed, &DevelopmentNoopRedactor),
         Err(StoreError::WorkClaimLapsed { work, .. }) if work == root.work_id
     ));
     let retaken_claim = store
@@ -980,7 +980,7 @@ fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
         )
         .expect("own lapsed claim retake");
     let lapsed_receipt = store
-        .capture_note(&lapsed, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&lapsed, &DevelopmentNoopRedactor)
         .expect("note capture uses the retaken claim");
     let retaken = store
         .current_work_claim(root.work_id)
@@ -1006,7 +1006,7 @@ fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
         })
     ));
     let replay = store
-        .capture_note(&lapsed, &DevelopmentNoopRedactor)
+        .insert_historical_memory_fixture(&lapsed, &DevelopmentNoopRedactor)
         .expect("exact post-retake note replay");
     assert!(replay.duplicate);
     assert_eq!(replay.version, lapsed_receipt.version);

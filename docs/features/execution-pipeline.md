@@ -73,12 +73,12 @@ frozen artifact back.
 | --- | --- | --- | --- |
 | **Intake / enrich** (external) | fetching the ticket; gathering evidence — bug reports, linked tickets, production logs; redaction; tiering into pinned / index / on-demand | an immutable `WorkSourceSnapshot` plus an evidence bundle | no — a refreshed ticket is a new snapshot and a visible delta |
 | **Planning** (external) | goal, acceptance criteria, approach, sufficiency check (“can repro and acceptance be derived at all?”) | the root `WorkItem` with acceptance; the plan as a *proposal* | yes, under optimistic revision control and bounded planning authority; while a live claim exists, planning is claim-bound |
-| **Capability & context assignment** (external, coarse pass) | which capabilities the whole item requires; which context tier is pinned | capability requirements on the item (**planned**); the context packet to deliver | yes |
+| **Capability & context assignment** (external, coarse pass) | which capabilities and evidence the whole item requires | capability requirements on the item (**planned**); evidence references for explicit reads | yes |
 | **Engram** | work graph, turn admission, exact bounded delivery, work claims, typed evidence, policy-selected typed obligations, obligation-gated seals, report freeze (**planned**) | — | — |
 | **Hosting environment** (TermAl under integration) | agent runtime, workspace (worktree or sandbox), tools and skills, credentials, resource limits; enforcing Engram's decisions | `session_bind` with assurance, mediated effects, capability-map revision, and an exact live `WorkRun` binding; evidence from execution | — |
 | **Decomposition** (admitted by Engram) | splitting the root once the code is visible, under the holder's claim or the ordinary project-bound planning path | child `WorkItem`s and their `WorkRun`s, registered in the existing `RootExecution`; each run is separately claimable, owns a dense run feed, and receives a seal on completion | under Engram admission |
 | **Obligations** (Engram; typed canonical rule sets shipped) | selecting a bounded immutable rule set through project policy and turning matching host observations into concrete duties on their runs | a canonical `ObligationRuleSet` id frozen into each observation and immutable `WorkObligation` definition (run, rule-set id, rule version, triggering observation, required evidence kind), immutable resolution events (`satisfied` by matching verification evidence, `waived` by an attributed operator waiver or acceptance-binding revision), and exact definition/resolution bindings in `CompletionSeal`; a rebuildable projection holds current state | no — a policy successor affects only later observations and obligation state advances only by appending a resolution through an Engram transaction |
-| **Capability & context assignment** (fine pass, under a claim; **planned**) | what each run needs delivered | per-run context packets (packets carry `work_id` and feed heads today, not `run_id`) | yes, per run |
+| **Capability & context assignment** (fine pass, under a claim; **planned**) | what each run needs delivered | per-run evidence references; no context-packet construction | yes, per run |
 | **Publication** (adapter) | returning the report to the ticket source | a frozen report, a publication intent with an idempotency key, a receipt (**planned**) | no |
 
 ## The flow
@@ -99,7 +99,7 @@ flowchart TD
     subgraph UP["Intake system (external, separately named)"]
         I["Intake / enrich<br/>gather · redact · tier"]
         P["Planning<br/>goal · acceptance · sufficiency"]
-        A1["Assignment, coarse<br/>pinned context"]
+        A1["Assignment, coarse<br/>evidence references"]
         CR["Capability requirements"]
         H["needs human"]
     end
@@ -107,7 +107,7 @@ flowchart TD
     subgraph EN["Engram (admits, decides, remembers)"]
         S["WorkSourceSnapshot<br/>(immutable)"]
         W["Root WorkItem<br/>acceptance"]
-        C["Context packet<br/>pinned / index / on-demand"]
+        C["Bounded next delivery<br/>explicit evidence / project-memory reads"]
         RE["Child WorkItems + WorkRuns<br/>in the existing RootExecution"]
         CT["Per turn: turn_evaluate → turn_begin → turn_checkpoint<br/>(task- or WorkRun-bound)"]
         WB["Native WorkRun binding"]
@@ -122,7 +122,7 @@ flowchart TD
     subgraph HO["Hosting environment (executes; TermAl under integration)"]
         B["session_bind<br/>assurance · effects · capability-map revision"]
         D["Decomposition admitted under planning authority"]
-        A2["Assignment, fine<br/>per-run context"]
+        A2["Assignment, fine<br/>per-run evidence references"]
         X["Agent turns in a workspace"]
     end
 
@@ -132,7 +132,7 @@ flowchart TD
     A1 -.-> CR
     I --> S
     A1 --> W
-    A1 --> C
+    W --> C
     S --> W
     W --> B
     CR -.-> B
@@ -140,7 +140,7 @@ flowchart TD
     B --> D --> RE
     RE -.-> A2 -.-> X
     RE --> X
-    C --> X
+    C <--> X
     X <--> CT
     X --> EV
     EV --> OB --> SE
@@ -174,9 +174,10 @@ soon as the agent starts.
    never mutates canonical work directly. A dry split done without seeing the
    code is rewritten by the executing agent, and then two task lists exist.
 3. **The evidence bundle is tiered, never dumped.** Delivery is exact and
-   bounded ([context packets](context-packets.md)), so intake must decide what
-   is pinned (acceptance, repro, the decisive stack trace), what is indexed
-   (the list of available evidence), and what is on demand (full logs).
+   bounded ([work delivery](local-work-system.md#agent-native-protocol)), so
+   intake must identify the acceptance, repro, and decisive stack trace,
+   index available evidence, and keep full logs available for explicit reads.
+   This does not require a context-packet builder.
 4. **Redaction must happen at intake.** The canonical store is immutable;
    what enters it cannot be unwritten. Production logs
    must be redacted before they become a snapshot, not after. Until a real
@@ -228,12 +229,12 @@ soon as the agent starts.
    wrong kind is not a seal, and today's generic `WorkEvidence` may remain
    narrative or acceptance support but never discharges a verification
    obligation.
-10. **Intake proposes classification; Engram decides delivery.** The intake
-    system may propose that a snapshot is pinned, indexed, or on demand, and
-    may propose a context tier for the root; only Engram assigns the final
-    kind, authority, and delivery, and only Engram can make something pinned
-    behavioral policy. An external system never sets policy by labelling, and
-    never creates or closes an obligation.
+10. **Intake supplies evidence; Engram governs admitted state and delivery.**
+    Intake may identify decisive evidence and cite its full source. Agents
+    receive bounded `next` delivery and explicitly read evidence and project
+    memories; no context packet or automatic pinned-memory injection is
+    constructed. An external system never sets behavioral policy by labelling
+    evidence, and never creates or closes an obligation.
 11. **Advisory is for integration; `turn_gated` is for acceptance.** The
     per-project required assurance exists so a host adapter can be integrated
     in shadow mode against a real store. It does not lower the default
@@ -245,12 +246,13 @@ soon as the agent starts.
 
 In the target pipeline, assignment is done twice, not once. The coarse pass happens before
 decomposition, on the root: which capabilities the whole item requires and
-which context is pinned. That is what decides which hosting environment may
+which evidence the executor must read. That is what decides which hosting environment may
 take the item at all. The fine pass happens after decomposition, per run,
-under the claim: what each child run needs delivered. Doing it once before
+under the claim: which evidence references each child run needs. Doing it once before
 decomposition can only produce the coarse pass, because the runs do not exist
 yet. Native run binding ships; the fine pass remains planned because per-run
-capability requirements and packet assignment do not.
+capability requirements and per-run evidence assignment do not. Evidence
+assignment does not imply context-packet construction or automatic injection.
 
 ## Target acceptance sequence
 

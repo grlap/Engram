@@ -1,4 +1,4 @@
-//! Context packets and shared control-scope deltas.
+//! Historical context-packet formats and shared control-scope deltas.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -11,8 +11,7 @@ use super::{
     MemoryStatus, MemorySummary, MemoryVersion, ProjectId, TaskId, WorkId,
 };
 
-/// Header returned with a context packet. The hash reproduces content; the
-/// cursor orders later peer changes.
+/// Stored historical packet header; retained for decoding and audit.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ContextPacketHeader {
     pub project_id: ProjectId,
@@ -63,7 +62,7 @@ pub struct ContextOmissionSummary {
     pub count: u32,
 }
 
-/// Canonical packet content stored under the hash returned in the header.
+/// Historical packet payload; its stored record id and fields remain unchanged.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ContextPacketPayload {
     pub schema_version: u16,
@@ -89,7 +88,8 @@ pub struct ContextPacketPayload {
     pub created_at: DateTime<Utc>,
 }
 
-/// Context result returned by CLI and MCP.
+/// Historical packet embedded in stored control deliveries. No interface
+/// constructs or delivers new packets.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ContextPacket {
     pub header: ContextPacketHeader,

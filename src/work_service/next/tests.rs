@@ -718,7 +718,7 @@ fn focus_winning_before_delivery_stage_forces_reprojection() {
         ),
     ] {
         memories
-            .capture_note(
+            .insert_historical_memory_fixture(
                 &crate::NoteRequest {
                     project_id: project.clone(),
                     task_id: None,
@@ -878,7 +878,7 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
                            actor: ActorContext,
                            captured_at: DateTime<Utc>| {
             store
-                .capture_note(
+                .insert_historical_memory_fixture(
                     &crate::NoteRequest {
                         project_id: project.clone(),
                         task_id: None,

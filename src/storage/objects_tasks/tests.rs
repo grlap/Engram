@@ -173,7 +173,7 @@ fn task_local_cursors_stay_dense_across_interleaved_tasks() {
         .status
         .task_id;
     store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &note_request(
                 task_b,
                 "other-session",
@@ -185,7 +185,7 @@ fn task_local_cursors_stay_dense_across_interleaved_tasks() {
         )
         .expect("task B note");
     store
-        .capture_note(
+        .insert_historical_memory_fixture(
             &note_request(
                 task_a,
                 "control-session",
