@@ -775,7 +775,16 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(event);
         }
-        let record = load_work_obligation_by_id_on(&transaction, request.obligation_id)?;
+        let run_id = work_obligation_run_id_on(&transaction, request.obligation_id)?;
+        let record = load_complete_work_obligation_records_on(&transaction, run_id)?
+            .into_iter()
+            .find(|record| record.obligation.obligation_id == request.obligation_id)
+            .ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "obligation {} disappeared during its verified load",
+                    request.obligation_id.0
+                ))
+            })?;
         if record.definition_id != request.expected_definition {
             return Err(StoreError::InvalidWork(format!(
                 "obligation {} definition changed: expected {}, current {}",
@@ -1068,9 +1077,9 @@ pub(super) fn load_work_obligation_records_on(
 }
 
 /// The run's obligations in every state, for the reads that decide
-/// completion: refused as a damaged store when the run's feed records an
-/// obligation definition or resolution whose projection row is lost, so a
-/// lost row never lets a criterion seal without its obligation, or on an
+/// completion or append a resolution: refused as a damaged store when the
+/// run's feed records an obligation definition or resolution whose projection
+/// row is lost, so a lost row never lets a criterion seal without its obligation, or on an
 /// older one. Reads that only show the run keep the plain load, so a damaged
 /// item stays readable and doctor names the damage.
 pub(super) fn load_complete_work_obligation_records_on(
@@ -1086,6 +1095,22 @@ pub(super) fn load_work_obligation_by_id_on(
     connection: &Connection,
     obligation_id: WorkObligationId,
 ) -> Result<WorkObligationRecord, StoreError> {
+    let run_id = work_obligation_run_id_on(connection, obligation_id)?;
+    load_work_obligation_records_on(connection, run_id, None)?
+        .into_iter()
+        .find(|record| record.obligation.obligation_id == obligation_id)
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(format!(
+                "obligation {} disappeared during its verified load",
+                obligation_id.0
+            ))
+        })
+}
+
+fn work_obligation_run_id_on(
+    connection: &Connection,
+    obligation_id: WorkObligationId,
+) -> Result<WorkRunId, StoreError> {
     let run_id = connection
         .query_row(
             "SELECT run_id FROM work_run_obligations WHERE obligation_id = ?1",
@@ -1099,16 +1124,7 @@ pub(super) fn load_work_obligation_by_id_on(
                 obligation_id.0
             ))
         })?;
-    let run_id = parse_work_run_id(&run_id)?;
-    load_work_obligation_records_on(connection, run_id, None)?
-        .into_iter()
-        .find(|record| record.obligation.obligation_id == obligation_id)
-        .ok_or_else(|| {
-            StoreError::InvalidWorkProjection(format!(
-                "obligation {} disappeared during its verified load",
-                obligation_id.0
-            ))
-        })
+    parse_work_run_id(&run_id)
 }
 
 fn load_work_obligation_record_on(
@@ -2148,8 +2164,9 @@ pub(super) fn waive_unbound_obligations_on(
     now: DateTime<Utc>,
 ) -> Result<Vec<ObjectId>, StoreError> {
     let mut resolutions = Vec::new();
-    for record in
-        load_work_obligation_records_on(transaction, run_id, Some(WorkObligationState::Open))?
+    for record in load_complete_work_obligation_records_on(transaction, run_id)?
+        .into_iter()
+        .filter(|record| record.state == WorkObligationState::Open)
     {
         let Some(criterion) = binding_rule_criterion(&record.obligation.rule) else {
             continue;
@@ -2238,7 +2255,7 @@ fn satisfy_open_obligations_on(
         evidence_id,
         evaluated_cut.clone(),
     )?;
-    let records = load_work_obligation_records_on(transaction, evidence.binding.run_id, None)?
+    let records = load_complete_work_obligation_records_on(transaction, evidence.binding.run_id)?
         .into_iter()
         .filter(|record| record.state == WorkObligationState::Open)
         .collect::<Vec<_>>();

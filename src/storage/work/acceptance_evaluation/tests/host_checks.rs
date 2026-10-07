@@ -623,3 +623,260 @@ fn doctor_reads_a_finished_runs_cut_once_however_many_changes_it_holds() {
         "one cut read per run with source changes: {changes_per_run:?}"
     );
 }
+
+mod resolution_writers {
+    use super::*;
+    use crate::domain::{WaiveWorkObligationRequest, WorkObligationState};
+    use crate::storage::TestDatabaseShapeSnapshot;
+
+    fn bound_run(kind: VerificationKind) -> (SqliteStore, WorkItem, WorkClaim) {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let mut request = root_request("resolution-writers", "bound-root", 1);
+        request.acceptance = vec!["verify the source".into()];
+        request.acceptance_bindings = vec![crate::domain::AcceptanceBinding {
+            criterion: 1,
+            requirement: crate::domain::VerificationRequirement {
+                check_kind: kind,
+                check_fingerprint: None,
+            },
+        }];
+        let work = store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect("bound work");
+        let claim = claim(&mut store, &work, "runner", "claim", 2, 3_600);
+        (store, work, claim)
+    }
+
+    // Lose only the terminal projection; its canonical resolution and feed
+    // membership remain. A plain diagnostic reader sees an open obligation.
+    fn lose_resolution(store: &SqliteStore, run_id: WorkRunId) {
+        let records = store.work_run_obligations(run_id).expect("obligations");
+        assert_eq!(records.len(), 1);
+        assert!(records[0].resolution_id.is_some());
+        assert_eq!(
+            store
+                .connection
+                .execute(
+                    "UPDATE work_run_obligations SET state = 'open', resolution_id = NULL,
+                         resolution_kind = NULL, evidence_id = NULL, resolved_at_ms = NULL
+                     WHERE obligation_id = ?1",
+                    [records[0].obligation.obligation_id.0.to_string()],
+                )
+                .expect("lose terminal projection"),
+            1
+        );
+    }
+
+    fn assert_damaged_refusal<T: std::fmt::Debug>(
+        store: &SqliteStore,
+        run_id: WorkRunId,
+        before: &TestDatabaseShapeSnapshot,
+        result: &Result<T, StoreError>,
+    ) {
+        assert!(
+            matches!(result, Err(StoreError::InvalidWorkProjection(reason))
+                if reason.contains("has no obligation projection")),
+            "{result:?}"
+        );
+        assert_eq!(
+            &test_database_shape_snapshot(&store.connection).expect("after refusal"),
+            before,
+            "every database row, including feed, evidence, grant and idempotency rows, rolls back"
+        );
+        let records = store.work_run_obligations(run_id).expect("diagnostic read");
+        assert_eq!(records[0].state, WorkObligationState::Open);
+        let report = store.verify_all().expect("doctor still diagnoses damage");
+        assert!(!report.is_healthy(), "{report:?}");
+        assert!(
+            format!("{report:?}").contains("missing_projection"),
+            "{report:?}"
+        );
+    }
+
+    fn checkpoint_check(
+        host: &HostSession,
+        store: &mut SqliteStore,
+        grant: &IssuedTurnGrant,
+        kind: VerificationKind,
+        key: &str,
+        second: i64,
+    ) -> Result<ControlTurnCheckpointDecision, StoreError> {
+        let components = EnvironmentComponents {
+            toolchain: "rustc-test".into(),
+            sandbox: Some("test-host-sandbox".into()),
+            workspace_id: host.basis.workspace_id.clone(),
+            capability_map_revision: 1,
+        };
+        store.checkpoint_control_turn_with_evidence(
+            &host.project_id,
+            &host.session_id,
+            &host.connection_token,
+            &host.routing_token,
+            &grant.grant_id,
+            TurnNextIntent::Continue,
+            &[ExecutionObservationInput {
+                observation_id: key.into(),
+                action_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
+                effect: EffectClass::MutateLocal,
+                outcome: ExecutionOutcome::Succeeded,
+                source_changed: false,
+                reported_source_change: None,
+                source_basis: Some(host.basis.clone()),
+                observed_at: Some(at(second)),
+            }],
+            &[VerificationEvidenceInput {
+                producer_observation: ExecutionObservationReference::ObservationId {
+                    observation_id: key.into(),
+                },
+                check_kind: kind,
+                environment: Some(EnvironmentEvidenceReference::Index { index: 0 }),
+                summary: Some("host observed a successful check".into()),
+                refs: vec![format!("command:{key}")],
+            }],
+            &[EnvironmentEvidenceInput {
+                source_basis: host.basis.clone(),
+                environment_fingerprint: CanonicalObject::freeze(&components)
+                    .expect("environment")
+                    .key()
+                    .clone(),
+                components: Some(components),
+                observed_at: at(second),
+            }],
+            key,
+            at(second),
+        )
+    }
+
+    #[test]
+    fn checkpoint_resolution_writer_refuses_lost_terminal_projection_for_test_and_build() {
+        for kind in [VerificationKind::Test, VerificationKind::Build] {
+            let (mut store, work, claim) = bound_run(kind);
+            let mut host = HostSession::bind(&mut store, &work, &claim, 3);
+            let first = host.grant(&mut store, &[EffectClass::MutateLocal], true, 7);
+            host.begin(&mut store, &first, 8);
+            let admitted = checkpoint_check(&host, &mut store, &first, kind, "first-check", 9)
+                .expect("intact checkpoint");
+            let ControlTurnCheckpointDecision::Checkpointed { receipt } = &admitted else {
+                panic!("{admitted:?}");
+            };
+            assert_eq!(receipt.verification_evidence.len(), 1);
+            assert_eq!(
+                store.work_run_obligations(claim.run_id).expect("satisfied")[0].state,
+                WorkObligationState::Satisfied
+            );
+            let second = host.grant(&mut store, &[EffectClass::MutateLocal], true, 10);
+            host.begin(&mut store, &second, 11);
+            lose_resolution(&store, claim.run_id);
+            let before = test_database_shape_snapshot(&store.connection).expect("after damage");
+            // An exact committed retry is still replayable, even after damage.
+            assert_eq!(
+                checkpoint_check(&host, &mut store, &first, kind, "first-check", 9)
+                    .expect("committed replay"),
+                admitted
+            );
+            assert_eq!(
+                test_database_shape_snapshot(&store.connection).unwrap(),
+                before
+            );
+            let refused = checkpoint_check(&host, &mut store, &second, kind, "second-check", 12);
+            assert_damaged_refusal(&store, claim.run_id, &before, &refused);
+
+            // A host may later close this same grant without the rejected check.
+            // That fallback never credits the successful command it could not record.
+            let fallback = store
+                .checkpoint_control_turn(
+                    &host.project_id,
+                    &host.session_id,
+                    &host.connection_token,
+                    &host.routing_token,
+                    &second.grant_id,
+                    TurnNextIntent::Continue,
+                    "empty-fallback",
+                    at(13),
+                )
+                .expect("empty recovery checkpoint");
+            let ControlTurnCheckpointDecision::Checkpointed { receipt: fallback } = fallback else {
+                panic!("empty recovery must checkpoint");
+            };
+            assert_eq!(fallback.verification_evidence, Vec::<ObjectId>::new());
+            let verification_count: i64 = store
+                .connection
+                .query_row(
+                    "SELECT count(*) FROM work_run_evidence WHERE evidence_kind = 'verification'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("verification count");
+            assert_eq!(verification_count, 1);
+        }
+    }
+
+    #[test]
+    fn explicit_waiver_resolution_writer_refuses_lost_terminal_projection_but_replays() {
+        let (mut store, work, claim) = bound_run(VerificationKind::Test);
+        let obligation = store
+            .work_run_obligations(claim.run_id)
+            .expect("open")
+            .remove(0);
+        let request = WaiveWorkObligationRequest {
+            obligation_id: obligation.obligation.obligation_id,
+            expected_definition: obligation.definition_id,
+            waived_by: "runner".into(),
+            reason: "explicit bounded waiver".into(),
+            actor: actor("runner"),
+            idempotency_key: "original-waiver".into(),
+            waived_at: at(3),
+        };
+        let admitted = store
+            .waive_work_obligation(&request, &DevelopmentNoopRedactor)
+            .expect("intact waiver");
+        lose_resolution(&store, claim.run_id);
+        let before = test_database_shape_snapshot(&store.connection).expect("after damage");
+        assert_eq!(
+            store
+                .waive_work_obligation(&request, &DevelopmentNoopRedactor)
+                .expect("committed replay"),
+            admitted
+        );
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).unwrap(),
+            before
+        );
+        let fresh = WaiveWorkObligationRequest {
+            idempotency_key: "fresh-waiver".into(),
+            waived_at: at(4),
+            ..request
+        };
+        let refused = store.waive_work_obligation(&fresh, &DevelopmentNoopRedactor);
+        assert_damaged_refusal(&store, work.active_run_id.unwrap(), &before, &refused);
+    }
+
+    #[test]
+    fn revision_resolution_writer_refuses_lost_terminal_projection_on_removal_and_rewrite() {
+        for rewrite in [false, true] {
+            let (mut store, work, claim) = bound_run(VerificationKind::Test);
+            let mut host = HostSession::bind(&mut store, &work, &claim, 3);
+            host.checkpoint(
+                &mut store,
+                false,
+                Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+                7,
+            );
+            lose_resolution(&store, claim.run_id);
+            let before = test_database_shape_snapshot(&store.connection).expect("after damage");
+            let patch = if rewrite {
+                WorkRevisionPatch {
+                    acceptance: Some(vec!["verify the revised source".into()]),
+                    ..empty_patch()
+                }
+            } else {
+                WorkRevisionPatch {
+                    acceptance_bindings: Some(Vec::new()),
+                    ..empty_patch()
+                }
+            };
+            let refused = revise(&mut store, &work, &claim, patch, "revise-damaged", 10);
+            assert_damaged_refusal(&store, claim.run_id, &before, &refused);
+        }
+    }
+}
