@@ -86,7 +86,7 @@ fn show_full_show_and_next_disclose_the_standing_cause_a_refusal_carries() {
             at(4),
         )
         .expect("record a failing evaluation");
-    let failed = failing.value["evaluation"]["hash"]
+    let failed = failing.value["evaluation"]["evaluation"]
         .as_str()
         .expect("record id")
         .to_owned();

@@ -3057,7 +3057,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
     await sight("R1");
     const recorded = evaluate(ref, "R2");
     const pending = refused(ref, "unconfirmed_declaration", "end_turn_read_and_retry");
-    assert.equal(pending.value.recovery.source.evaluation, recorded.evaluation.hash);
+    assert.equal(pending.value.recovery.source.evaluation, recorded.evaluation.evaluation);
     assert.equal(pending.value.recovery.source.workspace_id, workspace);
     assert.equal(pending.value.recovery.source.declared_revision, "R2");
     assert.equal(pending.value.recovery.source.reported_revision, "R1");
@@ -3071,7 +3071,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
     await sight("R2");
     const sealed = jsonWord("done", ref, "Delivered");
     assert.equal(sealed.work.lifecycle, "completed");
-    assert.equal(sealed.acceptance.evaluation, recorded.evaluation.hash);
+    assert.equal(sealed.acceptance.evaluation, recorded.evaluation.evaluation);
     // The host reads the finished claim's named root: none, with the real
     // bound event still named, in the closed shape it consumes.
     const rootRead = ok(await client.request({ operation: "named_root_read", routing_token: control.routing_token,
@@ -3132,7 +3132,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
     const measuredRef = create("Fresh measurement required");
     const measured = evaluate(measuredRef, "measured-A");
     const missing = refused(measuredRef, "completion_measurement_missing", "measure_source_and_retry");
-    assert.equal(missing.value.recovery.source.evaluation, measured.evaluation.hash);
+    assert.equal(missing.value.recovery.source.evaluation, measured.evaluation.evaluation);
     assert.match(missing.value.remedy, /fresh source measurement/u);
     const mismatch = refused(measuredRef, "completion_fingerprint_mismatch", "evaluate_current_source", "measured-B");
     assert.match(mismatch.value.remedy, /new acceptance evaluation/u);

@@ -381,6 +381,8 @@ pub(super) struct ShowDetachedFrom {
 /// Newest acceptance evaluation on an open item, as `show` discloses it.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowEvaluation {
+    pub(super) evaluation: String,
+    /// Temporary equal-valued alias for `TermAl`'s live reader.
     pub(super) hash: String,
     pub(super) mode: &'static str,
     /// The evaluator as recorded: an asserted label, not verified identity.
@@ -671,6 +673,7 @@ pub(super) fn show_evaluation(
     let record = &status.record;
     let visible = visible.min(record.verdicts.len());
     ShowEvaluation {
+        evaluation: status.evaluation.as_str().to_owned(),
         hash: status.evaluation.as_str().to_owned(),
         mode: record.mode.word(),
         evaluator: evaluator_label(&record.evaluator, identity),
@@ -730,7 +733,7 @@ fn evaluation_lines(
     let mut lines = vec![format!(
         "evaluation: {} {} by {} — {}/{} pass, {freshness}; evaluated revision {}",
         projected.mode,
-        &projected.hash[..12],
+        &projected.evaluation[..12],
         super::terminal_safe_line(&projected.evaluator),
         projected.passed,
         projected.criteria,

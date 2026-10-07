@@ -910,7 +910,7 @@ fn explicit_and_single_claim_done_and_evaluate_act_as_before() {
     assert_eq!(evaluated.value["evaluation"]["replayed"], false);
     assert_eq!(replayed.value["evaluation"]["replayed"], true);
     assert_eq!(
-        replayed.value["evaluation"]["hash"], evaluated.value["evaluation"]["hash"],
+        replayed.value["evaluation"]["evaluation"], evaluated.value["evaluation"]["evaluation"],
         "{}",
         replayed.value
     );

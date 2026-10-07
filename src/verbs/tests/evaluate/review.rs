@@ -534,7 +534,7 @@ fn done_show_and_next_disclose_completion_provenance() {
             at(9),
         )
         .expect("passing evaluation");
-    let evaluation = passing.value["evaluation"]["hash"].clone();
+    let evaluation = passing.value["evaluation"]["evaluation"].clone();
     let oriented = verbs
         .next(
             &NextInput {
@@ -620,7 +620,7 @@ fn done_show_and_next_disclose_completion_provenance() {
     assert_eq!(completed.value["acceptance"]["mode"], "independent_session");
     assert_eq!(
         completed.value["acceptance"]["evaluation"],
-        passing.value["evaluation"]["hash"]
+        passing.value["evaluation"]["evaluation"]
     );
     // The label is the holder's display identity for the peer: opaque, never
     // the peer's session id.
@@ -644,7 +644,7 @@ fn done_show_and_next_disclose_completion_provenance() {
     assert_eq!(shown.value["acceptance"]["mode"], "independent_session");
     assert_eq!(
         shown.value["acceptance"]["evaluation"],
-        passing.value["evaluation"]["hash"]
+        passing.value["evaluation"]["evaluation"]
     );
     assert_eq!(completed.value["acceptance"]["assurance"], "asserted");
     assert_eq!(shown.value["acceptance"]["assurance"], "asserted");
@@ -671,6 +671,17 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
     // A replay or a refusal changes neither the run feed head nor the
     // newest evaluation; the snapshot is taken before each group.
     let snapshot = || {
+        let connection = rusqlite::Connection::open(&database).expect("raw store read");
+        let objects = connection
+            .prepare("SELECT object_id, canonical_json FROM objects ORDER BY object_id")
+            .expect("objects query")
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .expect("objects")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("object bytes");
+        let receipts = connection.prepare("SELECT operation, idempotency_key, result_json FROM work_operation_results ORDER BY operation, idempotency_key").expect("receipts query").query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Vec<u8>>(2)?))).expect("receipts").collect::<Result<Vec<_>, _>>().expect("receipt bytes");
         (
             basis_of(&database, &item),
             SqliteStore::open(&database)
@@ -678,6 +689,8 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
                 .acceptance_evaluation_status(item.work_id, None)
                 .expect("status")
                 .map(|status| status.evaluation),
+            objects,
+            receipts,
         )
     };
     let submission = |basis: i64, attempt: Option<&str>| EvaluateInput {
@@ -701,12 +714,56 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
     };
     let explicit = submission(1, Some("attempt-1"));
     let keyless = submission(1, None);
+    // Seed the unchanged core receipt shape, without constructing a word
+    // receipt. The word must add its aliases when replaying that record.
+    let seeded = verbs
+        .service
+        .work_evaluate_on(
+            &crate::WorkEvaluateInput {
+                work_ref: explicit.work_ref.clone(),
+                mode: explicit.mode.clone(),
+                acceptance_basis: explicit.acceptance_basis,
+                evidence_basis: explicit.evidence_basis,
+                verdicts: explicit.verdicts.clone(),
+                attempt: explicit.attempt.clone(),
+                source_fingerprint: None,
+                model: None,
+                execution_identity: None,
+                parent_session: None,
+                supersedes: None,
+            },
+            at(4),
+        )
+        .expect("seed core evaluation receipt");
+    let before_first_replay = snapshot();
     let explicit_first = verbs
         .evaluate(explicit.clone(), at(4))
         .expect("explicit record");
+    assert_eq!(explicit_first.value["evaluation"]["replayed"], true);
+    assert_eq!(
+        evaluation_id_with_alias(&explicit_first.value["evaluation"]),
+        seeded.evaluation.as_str()
+    );
+    assert_eq!(
+        snapshot(),
+        before_first_replay,
+        "core receipt replay preserves stored bytes"
+    );
     let keyless_first = verbs
         .evaluate(keyless.clone(), at(5))
         .expect("keyless record");
+    // The persisted operation result is the historical core receipt, not
+    // the word's additive aliases. Replays below must preserve its bytes.
+    let stored_receipts = snapshot().3;
+    for (_, _, bytes) in stored_receipts
+        .iter()
+        .filter(|(operation, _, _)| operation == "record_acceptance_evaluation")
+    {
+        let stored: Value = serde_json::from_slice(bytes).expect("stored receipt");
+        assert!(stored["evaluation"].is_string());
+        assert!(stored.get("hash").is_none());
+        assert!(stored.get("record").is_some());
+    }
     verbs
         .update(
             UpdateInput {
@@ -741,7 +798,11 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
             });
         assert_eq!(replayed.value["evaluation"]["replayed"], true, "{label}");
         assert_eq!(
-            replayed.value["evaluation"]["hash"], first.value["evaluation"]["hash"],
+            evaluation_id_with_alias(&replayed.value["evaluation"]),
+            evaluation_id_with_alias(&first.value["evaluation"])
+        );
+        assert_eq!(
+            replayed.value["evaluation"]["evaluation"], first.value["evaluation"]["evaluation"],
             "{label}"
         );
     }
@@ -791,7 +852,11 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
             .unwrap_or_else(|error| panic!("{label} resend after done must replay: {error}"));
         assert_eq!(replayed.value["evaluation"]["replayed"], true, "{label}");
         assert_eq!(
-            replayed.value["evaluation"]["hash"], first.value["evaluation"]["hash"],
+            evaluation_id_with_alias(&replayed.value["evaluation"]),
+            evaluation_id_with_alias(&first.value["evaluation"])
+        );
+        assert_eq!(
+            replayed.value["evaluation"]["evaluation"], first.value["evaluation"]["evaluation"],
             "{label}"
         );
         assert!(
@@ -1136,6 +1201,7 @@ fn the_minimal_evaluate_receipt_is_bounded() {
             .expect("fit")
     );
     assert_eq!(receipt.value["evaluation"]["replayed"], true);
+    evaluation_id_with_alias(&receipt.value["evaluation"]);
     assert_eq!(receipt.value["evaluation"]["mode"], "independent_session");
 
     let advisory = crate::verbs::evaluation_guidance::EvaluationObligations {
@@ -1155,6 +1221,8 @@ fn the_minimal_evaluate_receipt_is_bounded() {
         Some(&advisory),
     );
     assert_eq!(warned.value["evaluation_obligations"]["open_total"], 3);
+    evaluation_id_with_alias(&warned.value["evaluation"]);
+    assert_eq!(warned.value["evaluation"]["replayed"], false);
     assert_eq!(warned.value["evaluation_obligations"]["omitted_open"], 3);
     assert!(warned.text().contains("3 open obligation(s)"));
     assert!(
@@ -1304,7 +1372,7 @@ fn the_reserve_covers_the_derived_word_envelope() {
     envelope["effective_session_id"] = serde_json::json!(control(crate::MAX_SESSION_ID_BYTES));
     // Only the word's extras on the evaluation block count: the projection
     // itself is inside the service envelope.
-    envelope["evaluation"] = serde_json::json!({ "hash": "0".repeat(64), "replayed": true });
+    envelope["evaluation"] = serde_json::json!({ "evaluation": "0".repeat(64), "hash": "0".repeat(64), "replayed": true });
     let derived =
         crate::verbs::receipts::compact_receipt_json_bytes(&envelope).expect("compact bytes");
     assert!(

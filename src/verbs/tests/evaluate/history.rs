@@ -135,7 +135,7 @@ impl Fixture {
         );
         input.acceptance_basis = acceptance_basis;
         let receipt = self.verbs.evaluate(input, at(second)).expect("evaluate");
-        receipt.value["evaluation"]["hash"]
+        receipt.value["evaluation"]["evaluation"]
             .as_str()
             .expect("record id")
             .to_owned()

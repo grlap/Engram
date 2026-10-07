@@ -35,7 +35,8 @@ use crate::{DevelopmentNoopRedactor, ObjectId, SqliteStore, StoreError};
 /// `work` (`short_ref` 14, `title` at most `MAX_SUMMARY_BYTES` = 192 →
 /// 1152 escaped, `lifecycle`, `revision`; ~1250), `claim` (`holder` label
 /// "you" or a 29-byte pseudonym, allowed 64, plus an RFC 3339 instant;
-/// ~150), the `hash` and `replayed` extras on the evaluation block (~90),
+/// ~150), the `evaluation`, temporary `hash` alias and `replayed` extras on
+/// the evaluation block (at most ~170 for supported 64-character ids),
 /// `obligations` counts (~45), `omissions` (at most one entry per `next`
 /// section, seven; ~490), `full_detail` (~50), an empty `reminders` list and
 /// one retained `next` command (~70), and `effective_session_id` at the

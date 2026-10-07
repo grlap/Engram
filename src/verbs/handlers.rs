@@ -2139,7 +2139,7 @@ impl AgentVerbs {
 }
 
 /// The smallest receipt the `evaluate` word can answer with: the
-/// verdict-independent provenance (evaluation hash, replay flag, mode, exact
+/// verdict-independent provenance (evaluation record id, replay flag, mode, exact
 /// counts, work ref and revision, full-detail read) and nothing variable
 /// beyond bounded identifiers and numbers. Its size is pinned by a test.
 pub(super) fn minimal_evaluate_receipt(
@@ -2155,6 +2155,7 @@ pub(super) fn minimal_evaluate_receipt(
         "operation": "evaluate",
         "work": { "short_ref": work_ref, "revision": revision },
         "evaluation": {
+            "evaluation": evaluation.as_str(),
             "hash": evaluation.as_str(),
             "replayed": replayed,
             "mode": projection.mode.word(),

@@ -447,7 +447,7 @@ fn a_record_without_its_evaluator_is_stale_identity_with_the_tasks_remedy() {
         .evaluate(&project.agent, &work, "same_session", "pass", 4)
         .expect("the holder evaluates under the peer's mark");
     let id = crate::canonical::ObjectId::from_stored(
-        recorded.value["evaluation"]["hash"]
+        recorded.value["evaluation"]["evaluation"]
             .as_str()
             .expect("record id")
             .to_owned(),

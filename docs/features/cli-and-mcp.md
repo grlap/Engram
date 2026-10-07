@@ -441,8 +441,16 @@ control-binding, obligation-page, and memory-version fields. It retains
 note/detail locators, sealed evidence links, and an open item's
 `acceptance_basis` when it has criteria to link; the basis is a
 read-concurrency token, not execution authority. Acceptance evaluation
-exposes its full record id in JSON; the text evaluation summary uses a
-12-character prefix. The evaluated work revision and any source fingerprint
+exposes its full minted record id as `evaluation` in JSON; the text evaluation
+summary uses a 12-character prefix. Current `show` uses
+`acceptance_evaluation.evaluation`, `show --full` uses
+`work.evaluation.evaluation`, and `evaluate` uses `evaluation.evaluation`.
+These three projections also retain an equal-valued `hash` alias temporarily,
+solely for TermAl's live reader. Complete evaluation detail/windows and compact
+`next` already use `evaluation`. TermAl's reader moves to the preferred key
+first; Engram removes the alias only after that reader is landed and running,
+then TermAl removes its fallback separately. The id is not a content hash.
+The evaluated work revision and any source fingerprint
 also remain visible. Humans and hosts that need the rich projection use
 host-only `work core focus`. Core Summary focus, including core `next` and
 `work_propose`, bounds `outcome` to 192 UTF-8 bytes like other summary

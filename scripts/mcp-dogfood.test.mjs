@@ -4783,13 +4783,21 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     assert.match(refused.details.remedy, /^read this run.s show with notes and gates and cite/u);
     const evaluated = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
     assert.equal(evaluated.evaluation.passed, 1);
+    assert.equal(evaluated.evaluation.evaluation, evaluated.evaluation.hash);
+    const replayedEvaluation = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
+    assert.equal(replayedEvaluation.evaluation.replayed, true);
+    assert.equal(replayedEvaluation.evaluation.evaluation, evaluated.evaluation.evaluation);
+    assert.equal(replayedEvaluation.evaluation.hash, replayedEvaluation.evaluation.evaluation);
+    const fullEvaluation = receipt(await client.call("show", { work_ref: ref, full: true }));
+    assert.equal(fullEvaluation.work.evaluation.evaluation, evaluated.evaluation.evaluation);
+    assert.equal(fullEvaluation.work.evaluation.hash, evaluated.evaluation.evaluation);
     assert.equal(evaluated.evaluation.verdicts_total, 1);
     const unmeasured = receipt(await client.call("done", { work_ref: ref, summary: "Delivered" }));
     assert.equal(unmeasured.code, "acceptance_evaluation_stale");
     assert.deepEqual(unmeasured.recovery.cause, { kind: "acceptance_evaluation_stale", reason: "source" });
     assert.equal(unmeasured.recovery.source.mismatch, "completion_measurement_missing");
     assert.equal(unmeasured.recovery.source.remedy, "measure_source_and_retry");
-    assert.equal(unmeasured.recovery.source.evaluation, evaluated.evaluation.hash);
+    assert.equal(unmeasured.recovery.source.evaluation, evaluated.evaluation.evaluation);
     assert.match(unmeasured.remedy, /fresh source measurement/u);
     const unmeasuredShow = receipt(await client.call("show", { work_ref: ref }));
     assert.equal(unmeasuredShow.acceptance_evaluation.source_recovery, undefined);
@@ -4808,13 +4816,13 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     assert.equal(sealed.work.lifecycle, "completed");
     assert.equal(sealed.acceptance.provenance, "evaluated");
     assert.equal(sealed.acceptance.mode, "same_session");
-    assert.equal(sealed.acceptance.evaluation, evaluated.evaluation.hash);
+    assert.equal(sealed.acceptance.evaluation, evaluated.evaluation.evaluation);
     // The evaluator label is the display identity: the caller's own session
     // is "you"; any other session is an opaque peer label, never its id.
     assert.equal(sealed.acceptance.evaluator, "you");
     const completedShow = receipt(await client.call("show", { work_ref: ref }));
     assert.equal(completedShow.acceptance.provenance, "evaluated");
-    assert.equal(completedShow.acceptance.evaluation, evaluated.evaluation.hash);
+    assert.equal(completedShow.acceptance.evaluation, evaluated.evaluation.evaluation);
 
     // CLI: an independent peer evaluates over the CLI; the holder's done
     // refuses without a fingerprint and seals with --source-fingerprint.
@@ -5075,7 +5083,7 @@ test("a carried failure over the real transports: shown, refused until another e
     // A session that never held the run records the failure.
     const failed = cliJson(engramHome, "carried-judge", "evaluate", ref, "--mode", "independent-session", ...bases(shown),
       "--verdict", "1=fail:judgment", "--rationale", "1=it lists one store");
-    const failedId = failed.evaluation.hash;
+    const failedId = failed.evaluation.evaluation;
     // The executor rewords the criterion the evaluation failed.
     cliJson(engramHome, holder, "update", ref, "--accept", "the report lists some stores");
     const carried = cliJson(engramHome, holder, "show", ref);
@@ -6154,7 +6162,7 @@ test("evaluation history over MCP: a failing record then a passing one from one 
         evidence_basis: shown.evidence_basis,
         verdicts: [{ criterion: 1, verdict, basis: "asserted", rationale: `the gate says ${verdict}`, evidence: [gate.locator] }],
       }));
-      return evaluated.evaluation.hash;
+      return evaluated.evaluation.evaluation;
     };
     const failed = await evaluate("fail");
     // The failure stands until new evidence: a correction precedes the pass.

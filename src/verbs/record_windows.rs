@@ -447,6 +447,7 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
             }
         }
         let mut value = json!({
+            "evaluation": evaluation.hash,
             "hash": evaluation.hash,
             "mode": evaluation.mode,
             "work_revision": evaluation.work_revision,

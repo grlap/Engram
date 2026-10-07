@@ -121,7 +121,7 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
     let failed = agent_child
         .evaluate(submission("fail", None), at(5))
         .expect("failing evaluation");
-    let failed_id = failed.value["evaluation"]["hash"]
+    let failed_id = failed.value["evaluation"]["evaluation"]
         .as_str()
         .expect("record id")
         .to_owned();
@@ -506,7 +506,7 @@ fn full_readback_keeps_the_original_failure_beside_a_failing_review() {
     let failed = agent_child
         .evaluate(submission("fail", "sub_agent", None), at(4))
         .expect("failing evaluation");
-    let failed_id = failed.value["evaluation"]["hash"]
+    let failed_id = failed.value["evaluation"]["evaluation"]
         .as_str()
         .expect("record id")
         .to_owned();
@@ -545,7 +545,7 @@ fn full_readback_keeps_the_original_failure_beside_a_failing_review() {
             at(6),
         )
         .expect("the reviewer names the failure and fails the revision");
-    let review_id = review.value["evaluation"]["hash"]
+    let review_id = review.value["evaluation"]["evaluation"]
         .as_str()
         .expect("record id")
         .to_owned();
@@ -561,8 +561,9 @@ fn full_readback_keeps_the_original_failure_beside_a_failing_review() {
         )
         .expect("show --full");
     let evaluation = &full.value["work"]["evaluation"];
+    assert_eq!(evaluation_id_with_alias(evaluation), review_id.as_str());
     // The newest evaluation is the review, on the reworded criterion.
-    assert_eq!(evaluation["hash"], review_id.as_str());
+    assert_eq!(evaluation["evaluation"], review_id.as_str());
     assert_eq!(
         evaluation["verdicts"][0]["criterion"],
         "the report lists some stores"
