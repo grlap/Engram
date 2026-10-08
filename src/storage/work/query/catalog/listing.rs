@@ -83,9 +83,22 @@ impl SqliteStore {
         now: DateTime<Utc>,
         query: &WorkCatalogQuery,
         expected: Option<ListingExpectation<'_>>,
-    ) -> Result<(WorkCatalogPage, usize, usize, Vec<WorkClaim>, String), StoreError> {
+    ) -> Result<
+        (
+            WorkCatalogPage,
+            usize,
+            usize,
+            Vec<WorkClaim>,
+            String,
+            std::collections::BTreeMap<uuid::Uuid, super::WorkNoteSearchMatch>,
+        ),
+        StoreError,
+    > {
         self.work_read_snapshot(|store| {
-            let membership = catalog_membership(&store.connection, project, now, query)?;
+            let matches = store.catalog_note_matches(project, now, query)?;
+            let ids = super::note_search::matching_ids(&matches)?;
+            let membership =
+                catalog_membership(&store.connection, project, now, query, ids.as_deref())?;
             if let Some(expected) = expected {
                 let changed = match expected {
                     ListingExpectation::Membership {
@@ -125,7 +138,8 @@ impl SqliteStore {
             }
             #[cfg(test)]
             super::tests::after_catalog_count();
-            let page = work_catalog_page_on(&store.connection, project, now, query)?;
+            let page =
+                work_catalog_page_on(&store.connection, project, now, query, ids.as_deref())?;
             let mut claims = Vec::new();
             for item in &page.items {
                 if let Some(run_id) = item.work.active_run_id
@@ -136,7 +150,7 @@ impl SqliteStore {
                     claims.push(claim);
                 }
             }
-            Ok((page, total, preceding, claims, fingerprint))
+            Ok((page, total, preceding, claims, fingerprint, matches))
         })
     }
 }
@@ -153,8 +167,9 @@ fn catalog_membership(
     project: &ProjectId,
     now: DateTime<Utc>,
     query: &WorkCatalogQuery,
+    note_matches: Option<&str>,
 ) -> Result<Membership, StoreError> {
-    let (sql, parameters) = work_catalog_sql(project, now, query, false)?;
+    let (sql, parameters) = work_catalog_sql(project, now, query, false, note_matches)?;
     let ready = ready_listing_order(query);
     let order = if ready {
         "priority, work_id"

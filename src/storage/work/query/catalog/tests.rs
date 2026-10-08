@@ -15,6 +15,202 @@ pub(super) fn after_catalog_count() {
 }
 
 #[test]
+fn note_search_uses_one_snapshot_for_matches_count_and_page() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("note-snapshot.db");
+    let mut store = SqliteStore::open(&database).unwrap();
+    let mut items = Vec::new();
+    for index in 0..2 {
+        let item = store
+            .create_work(
+                &root_request("note-snapshot", &format!("item-{index}"), index),
+                &DevelopmentNoopRedactor,
+            )
+            .unwrap();
+        let held = claim(
+            &mut store,
+            &item,
+            "holder",
+            &format!("claim-{index}"),
+            2,
+            600,
+        );
+        let item = store.get_work_item(item.work_id).unwrap();
+        items.push((item, held));
+    }
+    let request = |item: &WorkItem, held: &WorkClaim, key: &str| RecordWorkEvidenceRequest {
+        work_id: item.work_id,
+        run_id: held.run_id,
+        expected_work_revision: item.revision,
+        holder: held.holder.clone(),
+        claim_id: held.claim_id,
+        claim_fence: held.fence,
+        summary: "snapshot-only-needle".into(),
+        refs: Vec::new(),
+        actor: actor("holder"),
+        idempotency_key: key.into(),
+        recorded_at: at(4),
+    };
+    store
+        .record_work_evidence(
+            &request(&items[0].0, &items[0].1, "first-note"),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let late_note = request(&items[1].0, &items[1].1, "late-note");
+    let mut writer = SqliteStore::open(&database).unwrap();
+    AFTER_CATALOG_COUNT.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || {
+            writer
+                .record_work_evidence(&late_note, &DevelopmentNoopRedactor)
+                .unwrap();
+        }));
+    });
+    let query = WorkCatalogQuery {
+        search: Some("snapshot-only-needle".into()),
+        limit: 1,
+        ..WorkCatalogQuery::default()
+    };
+    let (page, total, _) = store
+        .query_work_catalog_listing(&items[0].0.project_id, at(5), &query)
+        .unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(page.items[0].work.work_id, items[0].0.work_id);
+    assert!(page.next_after.is_none());
+    let (page, total, _) = store
+        .query_work_catalog_listing(&items[0].0.project_id, at(5), &query)
+        .unwrap();
+    assert_eq!(total, 2);
+    assert!(page.next_after.is_some());
+}
+
+#[test]
+fn note_search_finds_verification_text_and_excludes_identity_and_environment() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let work = store
+        .create_work(
+            &root_request("note-verification", "Unrelated", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let held = claim(&mut store, &work, "private-actor-token", "claim", 1, 600);
+    host_verification(
+        &mut store,
+        &work,
+        &held,
+        "private-actor-token",
+        "verification-note-token",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        2,
+    );
+    for (text, total) in [
+        ("host observed verification-note-token", 1),
+        ("private-actor-token", 0),
+        ("workspace-verification-note-token", 0),
+        ("revision-as-it-stands", 0),
+    ] {
+        let page = store
+            .query_work_catalog(
+                &work.project_id,
+                at(3),
+                &WorkCatalogQuery {
+                    search: Some(text.into()),
+                    limit: 10,
+                    ..WorkCatalogQuery::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(page.items.len(), total, "{text}");
+    }
+}
+
+#[test]
+fn note_search_cost_and_scope_use_eligible_canonical_notes_only() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let project = ProjectId("note-cost".into());
+    let mut payload_bytes = 0;
+    for index in 0..32 {
+        let mut request = root_request(&project.0, &format!("item-{index}"), index);
+        request.labels = vec![
+            if index % 2 == 0 {
+                "selected"
+            } else {
+                "excluded"
+            }
+            .into(),
+        ];
+        let item = store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .unwrap();
+        let held = claim(
+            &mut store,
+            &item,
+            "holder",
+            &format!("claim-{index}"),
+            33,
+            600,
+        );
+        let item = store.get_work_item(item.work_id).unwrap();
+        for number in 0..2 {
+            let summary = format!("{} /citation/{index}/{number}", "note text ".repeat(256));
+            if index % 2 == 0 {
+                payload_bytes += summary.len();
+            }
+            store
+                .record_work_evidence(
+                    &RecordWorkEvidenceRequest {
+                        work_id: item.work_id,
+                        run_id: held.run_id,
+                        expected_work_revision: item.revision,
+                        holder: held.holder.clone(),
+                        claim_id: held.claim_id,
+                        claim_fence: held.fence,
+                        summary,
+                        refs: Vec::new(),
+                        actor: actor("holder"),
+                        idempotency_key: format!("note-{index}-{number}"),
+                        recorded_at: at(34),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap();
+        }
+    }
+    let query = WorkCatalogQuery {
+        search: Some("/citation/".into()),
+        label: Some("selected".into()),
+        limit: 100,
+        ..WorkCatalogQuery::default()
+    };
+    crate::storage::work::cost::start();
+    let (page, total, _) = store
+        .query_work_catalog_listing(&project, at(35), &query)
+        .unwrap();
+    let cost = crate::storage::work::cost::finish();
+    assert_eq!(total, 16);
+    assert_eq!(page.items.len(), 16);
+    assert!(page.items.iter().all(|row| row.work.labels == ["selected"]));
+    println!(
+        "note-search representative fixture: 32 items, 64 notes, 16 eligible items, 32 eligible notes, {payload_bytes} eligible summary bytes; cost={cost}"
+    );
+    let excluded = store
+        .query_work_catalog(
+            &project,
+            at(35),
+            &WorkCatalogQuery {
+                search: Some("/citation/1/".into()),
+                ..query
+            },
+        )
+        .unwrap();
+    assert!(
+        excluded.items.is_empty(),
+        "other-label notes do not enter the match set"
+    );
+}
+
+#[test]
 fn phoenix_catalog_count_uses_the_same_filters_and_deduplicated_mine_union() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let project = ProjectId("catalog-count-union".into());
@@ -126,7 +322,8 @@ fn phoenix_catalog_cursor_plan_seeks_without_sorting_with_availability_filters()
         ..WorkCatalogQuery::default()
     };
     let project = ProjectId("catalog-plan".into());
-    let (sql, parameters) = work_catalog_sql(&project, at(0), &query, true).expect("page SQL");
+    let (sql, parameters) =
+        work_catalog_sql(&project, at(0), &query, true, None).expect("page SQL");
     assert!(!sql.contains("COUNT(*)"));
     let mut statement = store
         .connection
@@ -147,7 +344,7 @@ fn phoenix_catalog_cursor_plan_seeks_without_sorting_with_availability_filters()
         "{plan}"
     );
     assert!(!plan.contains("USE TEMP B-TREE"), "{plan}");
-    let (count, _) = work_catalog_sql(&project, at(0), &query, false).expect("count SQL");
+    let (count, _) = work_catalog_sql(&project, at(0), &query, false, None).expect("count SQL");
     assert!(count.contains("COUNT(*)"));
     assert!(!count.contains("candidate.work_id >"));
 }

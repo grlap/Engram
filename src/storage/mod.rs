@@ -251,7 +251,6 @@ pub(crate) use project_memory::{
     CLEAR_TARGET_NEEDS_REVISE_REFUSAL, FILTERED_SEARCH_AFTER_REFUSAL,
     PARTIAL_EDIT_NEEDS_REVISE_REFUSAL, REVISE_NEEDS_KEY_REFUSAL, UNSAFE_KEY_REFUSAL,
 };
-pub(crate) use work::ListingExpectation;
 pub(crate) use work::RequiredChildSuccessor;
 #[cfg(test)]
 pub(crate) use work::RestoredMember;
@@ -265,6 +264,7 @@ pub(crate) use work::{
     VerificationObligationAssessment,
 };
 pub(crate) use work::{DISCOVERY_ROWS, WorkDiscoveryRow};
+pub(crate) use work::{ListingExpectation, WorkNoteSearchMatch};
 pub(crate) use work::{VerificationFacts, WorkNoteRecord};
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
 pub(crate) use work::{

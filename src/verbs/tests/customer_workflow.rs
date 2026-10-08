@@ -22,6 +22,7 @@ mod listing;
 mod memory_recovery;
 mod memory_retirement;
 mod mutation_titles;
+mod note_search;
 mod orientation;
 mod output_economy;
 mod parent_context;

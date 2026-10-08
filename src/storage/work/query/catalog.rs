@@ -11,7 +11,9 @@ use rusqlite::OptionalExtension;
 mod tests;
 
 mod listing;
+mod note_search;
 pub(crate) use listing::ListingExpectation;
+pub(crate) use note_search::WorkNoteSearchMatch;
 
 /// A child-requirement filter without its parent; the listing words refuse
 /// the same combination first.
@@ -268,7 +270,9 @@ impl SqliteStore {
         query: &WorkCatalogQuery,
     ) -> Result<WorkCatalogPage, StoreError> {
         self.work_read_snapshot(|store| {
-            work_catalog_page_on(&store.connection, project_id, now, query)
+            let matches = store.catalog_note_matches(project_id, now, query)?;
+            let ids = note_search::matching_ids(&matches)?;
+            work_catalog_page_on(&store.connection, project_id, now, query, ids.as_deref())
         })
     }
 
@@ -281,7 +285,7 @@ impl SqliteStore {
         query: &WorkCatalogQuery,
     ) -> Result<(WorkCatalogPage, usize, Vec<WorkClaim>), StoreError> {
         self.query_work_catalog_continuation(project_id, now, query, None)
-            .map(|(page, total, _, claims, _)| (page, total, claims))
+            .map(|(page, total, _, claims, _, _)| (page, total, claims))
     }
 }
 
@@ -339,8 +343,9 @@ fn work_catalog_page_on(
     project_id: &crate::domain::ProjectId,
     now: DateTime<Utc>,
     query: &WorkCatalogQuery,
+    note_matches: Option<&str>,
 ) -> Result<WorkCatalogPage, StoreError> {
-    let (sql, parameters) = work_catalog_sql(project_id, now, query, true)?;
+    let (sql, parameters) = work_catalog_sql(project_id, now, query, true, note_matches)?;
     #[cfg(test)]
     crate::storage::work::WORK_CATALOG_CLASSIFIED_QUERIES.with(|count| count.set(count.get() + 1));
     let mut statement = connection.prepare(&sql)?;
@@ -365,6 +370,7 @@ fn work_catalog_sql(
     now: DateTime<Utc>,
     query: &WorkCatalogQuery,
     page: bool,
+    note_matches: Option<&str>,
 ) -> Result<(String, Vec<Value>), StoreError> {
     if let Some(session) = &query.held_by {
         crate::storage::admit_session_id(session)?;
@@ -463,16 +469,22 @@ fn work_catalog_sql(
                 search
             }),
         );
-        if search_characters >= 3 {
-            candidate_filters.push(format!(
+        let metadata_match = if search_characters >= 3 {
+            format!(
                 "candidate.work_id IN (
                      SELECT work_id FROM work_catalog_fts
                      WHERE work_catalog_fts MATCH {parameter}
                  )"
-            ));
+            )
         } else {
-            candidate_filters.push(format!("instr(candidate.search_text_key, {parameter}) > 0"));
-        }
+            format!("instr(candidate.search_text_key, {parameter}) > 0")
+        };
+        candidate_filters.push(if let Some(ids) = note_matches {
+            let parameter = push_catalog_parameter(&mut parameters, Value::Text(ids.into()));
+            format!("({metadata_match} OR candidate.work_id IN (SELECT value FROM json_each({parameter})))")
+        } else {
+            metadata_match
+        });
     }
 
     let mut classified_filters = Vec::new();

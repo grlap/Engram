@@ -214,6 +214,24 @@ pub(super) fn fit_list_receipt(
             "total": page.total, "omitted": omitted, "more": omitted > 0,
             "shown_before": page.preceding, "limit": limit, "byte_budget": budget,
         });
+        for (row, item) in value["items"]
+            .as_array_mut()
+            .expect("listing rows")
+            .iter_mut()
+            .zip(items)
+        {
+            if let Some(matched) = page.note_matches.get(&item.work.work_id.0) {
+                row["note_match"] = serde_json::to_value(matched)?;
+                lines.push(format!(
+                    "  {}: matching {} note {}",
+                    item.work.short_ref,
+                    serde_json::to_value(matched.family)?
+                        .as_str()
+                        .unwrap_or("notes"),
+                    matched.locator
+                ));
+            }
+        }
         if let Some(after) = after {
             value["after"] = json!(after);
         }

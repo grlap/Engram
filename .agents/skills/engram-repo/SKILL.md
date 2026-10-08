@@ -190,9 +190,8 @@ only from explicitly selected build-output subdirectories, after resolving
 them and confirming that they exclude `target/evidence`. This is a
 procedural exclusion, not filesystem protection. An item that cites a path
 under another worktree's `target/tmp` (a measurement harness, a seed, a
-results file) has it archived at citation time and cites the archive path,
-because no word searches note bodies, so a lander cannot find such a
-citation later: the citer identifies the evidence, and the worktree item's
+results file) has it archived at citation time and cites the archive path.
+The citer identifies the evidence, and the worktree item's
 owner or its lander copies and verifies it; a read-only reviewer, or a
 bounded execution worker running a parent's gate batch, never writes an
 archive and hands the references to its parent instead. An unarchived

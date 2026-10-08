@@ -42,7 +42,7 @@ impl McpServer {
     /// List open work with flat filters.
     #[tool(
         name = "ls",
-        description = "List open work; search, ready, blocked, mine, all, label, and under with optional/required narrow it; after continues the same listing"
+        description = "List open work; search matches metadata and complete note/gate text and refs; ready, blocked, mine, all, label, and under with optional/required narrow it; after continues the same listing"
     )]
     pub(super) fn ls(&self, Parameters(args): Parameters<LsArgs>) -> CallToolResult {
         self.verb(self.verbs().ls(
@@ -380,7 +380,7 @@ impl McpServer {
     /// Search every item by text.
     #[tool(
         name = "search",
-        description = "Search every item, including closed ones, by text"
+        description = "Search every item, including closed ones, by literal case-insensitive metadata and complete note/gate text and refs"
     )]
     pub(super) fn search(&self, Parameters(args): Parameters<WorkSearchArgs>) -> CallToolResult {
         self.verb(self.verbs().search(&args.query, args.limit, Utc::now()))

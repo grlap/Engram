@@ -24,6 +24,7 @@ where
         result
     }
 }
+pub(crate) use catalog::WorkNoteSearchMatch;
 use rusqlite::{Connection, OptionalExtension, params, types::Value};
 
 use super::super::{SqliteStore, StaleRecoveryContext, StoreError};

@@ -1070,6 +1070,18 @@ Rules that matter:
   `under`. Both together are refused. Other filters and `--all` still apply.
   MCP `search { query: TEXT }` is shell `ls --search TEXT --all`; both search
   every lifecycle, while plain `ls --search TEXT` defaults to open work.
+  Search matches refs, titles, outcomes and labels, plus complete canonical
+  note summaries, note refs, and structured gate names and failures. This
+  includes peer observations, inherited notes and restored late evidence;
+  history-only events, private scratch, identities and raw environment payloads
+  are excluded. Matching uses NFC and full Unicode case folding with literal
+  substring semantics, including short queries, punctuation and paths.
+  An item matching a note carries one deterministic `note_match` with its
+  full `locator` and `family`; use `show REF --note LOCATOR` to read it.
+  Counts, membership and pages share one snapshot and one transient note
+  match set. A new matching item invalidates the continuation; another match
+  within an existing member does not. Search scans eligible canonical notes
+  on demand for each requested page and creates no durable search index.
 - Shell notes take the target positionally: `engram work note REF "text"`.
   MCP uses `note { work_ref: REF, text: TEXT }`; the shell has no `note
   --work-ref` flag (that flag belongs to `gate`).
@@ -2903,7 +2915,8 @@ Ready and catalog candidates are filtered and limited by maintained SQLite
 projections before their compact item rows are decoded. Assignment and label
 filters use NFC plus full Unicode case folding, and catalog text search uses a
 trigram index over the short reference, title, outcome, labels, and active
-blocker detail. These views remain advisory; lifecycle mutations revalidate
+blocker detail, augmented on demand by complete canonical note/gate text and
+refs in the same read snapshot. These views remain advisory; lifecycle mutations revalidate
 their canonical work-event basis under the write lock.
 The `--blocked`/`blocked_only` filter is independent of derived availability:
 it returns work with an active blocker or incomplete prerequisite even when

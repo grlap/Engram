@@ -47,7 +47,9 @@ pub(in crate::storage) use planning::validate_control_work_binding_in_scope;
 pub(crate) use planning::validate_work_plan;
 mod query;
 pub(in crate::storage) use query::resolve_work_ref_on;
-pub(crate) use query::{CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL, ListingExpectation};
+pub(crate) use query::{
+    CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL, ListingExpectation, WorkNoteSearchMatch,
+};
 mod receipts;
 mod record_windows;
 mod verification_read;

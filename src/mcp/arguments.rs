@@ -23,7 +23,7 @@ pub(super) struct NextArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct LsArgs {
-    /// Case-insensitive text over refs, titles, outcomes, and labels.
+    /// Case-insensitive literal text over refs, titles, outcomes, labels, and complete note/gate text and refs.
     pub(super) search: Option<String>,
     /// Only items with an active blocker or incomplete prerequisite.
     pub(super) blocked: Option<bool>,
@@ -340,7 +340,7 @@ pub(super) struct DoneArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct WorkSearchArgs {
-    /// Case-insensitive text over refs, titles, outcomes, and labels.
+    /// Case-insensitive literal text over refs, titles, outcomes, labels, and complete note/gate text and refs.
     pub(super) query: String,
     /// Maximum items to return (default 20).
     pub(super) limit: Option<u32>,

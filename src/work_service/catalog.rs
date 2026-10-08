@@ -124,6 +124,7 @@ pub(crate) struct WorkListingPage {
     pub total: usize,
     pub preceding: usize,
     pub claims: Vec<WorkClaim>,
+    pub note_matches: std::collections::BTreeMap<uuid::Uuid, crate::storage::WorkNoteSearchMatch>,
     project: ProjectId,
     filters: WorkCatalogQuery,
     observed_at: DateTime<Utc>,
@@ -208,7 +209,7 @@ impl LocalWorkService {
                 query.after = Some(cursor.after);
                 query.after_priority = cursor.after_priority;
             }
-            let (page, total, preceding, claims, membership) = store
+            let (page, total, preceding, claims, membership, note_matches) = store
                 .query_work_catalog_continuation(
                     &self.project_id,
                     now,
@@ -229,6 +230,7 @@ impl LocalWorkService {
                 total,
                 preceding,
                 claims,
+                note_matches,
                 project: self.project_id.clone(),
                 filters,
                 observed_at: now,
