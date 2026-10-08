@@ -175,6 +175,8 @@ fn a_carried_failure_is_shown_refused_until_named_and_named_in_the_receipt() {
         )
         .expect("show --full");
     let complete = &full.value["work"]["evaluation"];
+    assert_eq!(evaluation_record_id(complete), failed_id.as_str());
+    evaluation_record_id(&complete["carried_failure"]);
     assert_eq!(
         complete["carried_failure"]["evaluation"],
         failed_id.as_str()
@@ -561,7 +563,7 @@ fn full_readback_keeps_the_original_failure_beside_a_failing_review() {
         )
         .expect("show --full");
     let evaluation = &full.value["work"]["evaluation"];
-    assert_eq!(evaluation_id_with_alias(evaluation), review_id.as_str());
+    assert_eq!(evaluation_record_id(evaluation), review_id.as_str());
     // The newest evaluation is the review, on the reworded criterion.
     assert_eq!(evaluation["evaluation"], review_id.as_str());
     assert_eq!(

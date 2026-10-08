@@ -715,7 +715,7 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
     let explicit = submission(1, Some("attempt-1"));
     let keyless = submission(1, None);
     // Seed the unchanged core receipt shape, without constructing a word
-    // receipt. The word must add its aliases when replaying that record.
+    // receipt. The word must project its evaluation id when replaying that record.
     let seeded = verbs
         .service
         .work_evaluate_on(
@@ -741,7 +741,7 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
         .expect("explicit record");
     assert_eq!(explicit_first.value["evaluation"]["replayed"], true);
     assert_eq!(
-        evaluation_id_with_alias(&explicit_first.value["evaluation"]),
+        evaluation_record_id(&explicit_first.value["evaluation"]),
         seeded.evaluation.as_str()
     );
     assert_eq!(
@@ -753,7 +753,7 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
         .evaluate(keyless.clone(), at(5))
         .expect("keyless record");
     // The persisted operation result is the historical core receipt, not
-    // the word's additive aliases. Replays below must preserve its bytes.
+    // the word's presentation. Replays below must preserve its bytes.
     let stored_receipts = snapshot().3;
     for (_, _, bytes) in stored_receipts
         .iter()
@@ -798,8 +798,8 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
             });
         assert_eq!(replayed.value["evaluation"]["replayed"], true, "{label}");
         assert_eq!(
-            evaluation_id_with_alias(&replayed.value["evaluation"]),
-            evaluation_id_with_alias(&first.value["evaluation"])
+            evaluation_record_id(&replayed.value["evaluation"]),
+            evaluation_record_id(&first.value["evaluation"])
         );
         assert_eq!(
             replayed.value["evaluation"]["evaluation"], first.value["evaluation"]["evaluation"],
@@ -852,8 +852,8 @@ fn the_word_replays_exact_resends_after_a_revision_and_after_done() {
             .unwrap_or_else(|error| panic!("{label} resend after done must replay: {error}"));
         assert_eq!(replayed.value["evaluation"]["replayed"], true, "{label}");
         assert_eq!(
-            evaluation_id_with_alias(&replayed.value["evaluation"]),
-            evaluation_id_with_alias(&first.value["evaluation"])
+            evaluation_record_id(&replayed.value["evaluation"]),
+            evaluation_record_id(&first.value["evaluation"])
         );
         assert_eq!(
             replayed.value["evaluation"]["evaluation"], first.value["evaluation"]["evaluation"],
@@ -1201,7 +1201,7 @@ fn the_minimal_evaluate_receipt_is_bounded() {
             .expect("fit")
     );
     assert_eq!(receipt.value["evaluation"]["replayed"], true);
-    evaluation_id_with_alias(&receipt.value["evaluation"]);
+    evaluation_record_id(&receipt.value["evaluation"]);
     assert_eq!(receipt.value["evaluation"]["mode"], "independent_session");
 
     let advisory = crate::verbs::evaluation_guidance::EvaluationObligations {
@@ -1221,7 +1221,7 @@ fn the_minimal_evaluate_receipt_is_bounded() {
         Some(&advisory),
     );
     assert_eq!(warned.value["evaluation_obligations"]["open_total"], 3);
-    evaluation_id_with_alias(&warned.value["evaluation"]);
+    evaluation_record_id(&warned.value["evaluation"]);
     assert_eq!(warned.value["evaluation"]["replayed"], false);
     assert_eq!(warned.value["evaluation_obligations"]["omitted_open"], 3);
     assert!(warned.text().contains("3 open obligation(s)"));
@@ -1372,7 +1372,7 @@ fn the_reserve_covers_the_derived_word_envelope() {
     envelope["effective_session_id"] = serde_json::json!(control(crate::MAX_SESSION_ID_BYTES));
     // Only the word's extras on the evaluation block count: the projection
     // itself is inside the service envelope.
-    envelope["evaluation"] = serde_json::json!({ "evaluation": "0".repeat(64), "hash": "0".repeat(64), "replayed": true });
+    envelope["evaluation"] = serde_json::json!({ "evaluation": "0".repeat(64), "replayed": true });
     let derived =
         crate::verbs::receipts::compact_receipt_json_bytes(&envelope).expect("compact bytes");
     assert!(

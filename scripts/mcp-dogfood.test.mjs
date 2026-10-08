@@ -4783,14 +4783,39 @@ test("evaluated acceptance policy over the real transports: locators, source fre
     assert.match(refused.details.remedy, /^read this run.s show with notes and gates and cite/u);
     const evaluated = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
     assert.equal(evaluated.evaluation.passed, 1);
-    assert.equal(evaluated.evaluation.evaluation, evaluated.evaluation.hash);
+    assert.match(evaluated.evaluation.evaluation, /^[0-9a-f]{32}(?:[0-9a-f]{32})?$/u);
+    assert.equal(evaluated.evaluation.hash, undefined);
+    assert.equal(evaluated.evaluation.source_fingerprint, "sha256:tree-a");
     const replayedEvaluation = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
     assert.equal(replayedEvaluation.evaluation.replayed, true);
     assert.equal(replayedEvaluation.evaluation.evaluation, evaluated.evaluation.evaluation);
-    assert.equal(replayedEvaluation.evaluation.hash, replayedEvaluation.evaluation.evaluation);
+    assert.equal(replayedEvaluation.evaluation.hash, undefined);
     const fullEvaluation = receipt(await client.call("show", { work_ref: ref, full: true }));
     assert.equal(fullEvaluation.work.evaluation.evaluation, evaluated.evaluation.evaluation);
-    assert.equal(fullEvaluation.work.evaluation.hash, evaluated.evaluation.evaluation);
+    assert.equal(fullEvaluation.work.evaluation.hash, undefined);
+    assert.deepEqual(fullEvaluation.work.acceptance, ["the build passes"]);
+    assert.equal(fullEvaluation.work.evaluation.verdicts[0].rationale, "the gate passed");
+    assert.deepEqual(fullEvaluation.work.evaluation.verdicts[0].citations, [gate.locator]);
+    const currentEvaluation = receipt(await client.call("show", { work_ref: ref }));
+    assert.equal(currentEvaluation.acceptance_evaluation.evaluation, evaluated.evaluation.evaluation);
+    assert.equal(currentEvaluation.acceptance_evaluation.hash, undefined);
+    assert.equal(currentEvaluation.acceptance_evaluation.source_fingerprint, "sha256:tree-a");
+    for (const full of [false, true]) {
+      const cliShown = cliJson(engramHome, holder, "show", ref, ...(full ? ["--full"] : []));
+      const projected = full ? cliShown.work.evaluation : cliShown.acceptance_evaluation;
+      assert.equal(projected.evaluation, evaluated.evaluation.evaluation);
+      assert.equal(projected.hash, undefined);
+    }
+    const cliReplayed = cliJson(engramHome, holder, "evaluate", ref,
+      "--mode", "same-session", "--acceptance-basis", String(base.acceptance_basis),
+      "--evidence-basis", String(base.evidence_basis), "--verdict", "1=pass:asserted",
+      "--rationale", "1=the gate passed", "--evidence", `1=${gate.locator}`,
+      "--source-fingerprint", "sha256:tree-a");
+    assert.equal(cliReplayed.evaluation.replayed, true);
+    assert.equal(cliReplayed.evaluation.evaluation, evaluated.evaluation.evaluation);
+    assert.equal(cliReplayed.evaluation.hash, undefined);
+    assert.equal(cliReplayed.evaluation.source_fingerprint, "sha256:tree-a");
+    assert.match(cliWord(engramHome, holder, "show", ref).stdout, /evaluation: same_session [0-9a-f]{12}/u);
     assert.equal(evaluated.evaluation.verdicts_total, 1);
     const unmeasured = receipt(await client.call("done", { work_ref: ref, summary: "Delivered" }));
     assert.equal(unmeasured.code, "acceptance_evaluation_stale");

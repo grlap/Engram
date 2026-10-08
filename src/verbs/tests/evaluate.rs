@@ -91,10 +91,13 @@ fn evaluate_input(
     }
 }
 
-fn evaluation_id_with_alias(value: &Value) -> &str {
+fn evaluation_record_id(value: &Value) -> &str {
     let id = value["evaluation"].as_str().expect("evaluation record id");
     assert_ne!(id, "");
-    assert_eq!(value["hash"], id, "temporary live-reader alias");
+    assert!(
+        value.get("hash").is_none(),
+        "evaluation id has no hash alias: {value}"
+    );
     id
 }
 
@@ -322,7 +325,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
     assert_eq!(failing.value["evaluation"]["verdicts_omitted"], 0);
     assert_eq!(failing.value["evaluation"]["blocking"]["position"], 2);
     assert_eq!(failing.value["evaluation"]["replayed"], false);
-    let failed_id = evaluation_id_with_alias(&failing.value["evaluation"]);
+    let failed_id = evaluation_record_id(&failing.value["evaluation"]);
     let shown = verbs.show(&work_ref, at(8)).expect("show");
     let text = shown.text();
     assert!(
@@ -339,7 +342,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
     assert!(text.contains("  2. fail (judgment)"), "{text}");
     assert_eq!(shown.value["acceptance_evaluation"]["passed"], 1);
     assert_eq!(
-        evaluation_id_with_alias(&shown.value["acceptance_evaluation"]),
+        evaluation_record_id(&shown.value["acceptance_evaluation"]),
         failed_id
     );
     let full = verbs
@@ -353,7 +356,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         )
         .expect("full show");
     assert_eq!(
-        evaluation_id_with_alias(&full.value["work"]["evaluation"]),
+        evaluation_record_id(&full.value["work"]["evaluation"]),
         failed_id
     );
     let window = verbs
@@ -366,7 +369,10 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
             at(8),
         )
         .expect("evaluation window");
-    assert_eq!(window.value["evaluations"][0]["evaluation"], failed_id);
+    assert_eq!(
+        evaluation_record_id(&window.value["evaluations"][0]),
+        failed_id
+    );
     let detail = verbs
         .show_records(
             &work_ref,
@@ -377,7 +383,7 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
             at(8),
         )
         .expect("evaluation detail");
-    assert_eq!(detail.value["evaluation"]["evaluation"], failed_id);
+    assert_eq!(evaluation_record_id(&detail.value["evaluation"]), failed_id);
     let next = verbs
         .next(
             &NextInput {
@@ -387,7 +393,10 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
             at(8),
         )
         .expect("next");
-    assert_eq!(next.value["focus"]["evaluation"]["evaluation"], failed_id);
+    assert_eq!(
+        evaluation_record_id(&next.value["focus"]["evaluation"]),
+        failed_id
+    );
     let store = SqliteStore::open(&database).expect("store");
     let work = store.resolve_work_ref(&project, &work_ref).expect("work");
     assert_eq!(
@@ -485,8 +494,8 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         .expect("identical resend replays");
     assert_eq!(replayed.value["evaluation"]["replayed"], true);
     assert_eq!(
-        evaluation_id_with_alias(&replayed.value["evaluation"]),
-        evaluation_id_with_alias(&passing.value["evaluation"])
+        evaluation_record_id(&replayed.value["evaluation"]),
+        evaluation_record_id(&passing.value["evaluation"])
     );
     assert_eq!(
         replayed.value["evaluation"]["evaluation"],
@@ -616,7 +625,7 @@ fn many_criteria_fit_receipts_by_explicit_omission_and_full_show_is_complete() {
         "{value_bytes} value bytes, {text_bytes} text bytes"
     );
     let evaluation = &receipt.value["evaluation"];
-    let evaluation_id = evaluation_id_with_alias(evaluation);
+    let evaluation_id = evaluation_record_id(evaluation);
     assert_eq!(evaluation["verdicts_total"], 300);
     assert_eq!(evaluation["passed"], 300);
     let omitted = evaluation["verdicts_omitted"].as_u64().expect("omitted");
@@ -641,7 +650,7 @@ fn many_criteria_fit_receipts_by_explicit_omission_and_full_show_is_complete() {
         "{text}"
     );
     let block = &shown.value["acceptance_evaluation"];
-    assert_eq!(evaluation_id_with_alias(block), evaluation_id);
+    assert_eq!(evaluation_record_id(block), evaluation_id);
     assert_eq!(block["criteria"], 300);
     let omitted = block["verdicts_omitted"].as_u64().expect("omitted");
     let visible = block["verdicts"].as_array().expect("rows").len() as u64;
@@ -664,7 +673,7 @@ fn many_criteria_fit_receipts_by_explicit_omission_and_full_show_is_complete() {
         )
         .expect("show --full");
     let complete = &full.value["work"]["evaluation"];
-    assert_eq!(evaluation_id_with_alias(complete), evaluation_id);
+    assert_eq!(evaluation_record_id(complete), evaluation_id);
     assert_eq!(complete["verdicts"].as_array().expect("rows").len(), 300);
     assert_eq!(complete["passed"], 300);
     assert_eq!(complete["verdicts"][299]["position"], 300);

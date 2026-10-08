@@ -445,11 +445,13 @@ exposes its full minted record id as `evaluation` in JSON; the text evaluation
 summary uses a 12-character prefix. Current `show` uses
 `acceptance_evaluation.evaluation`, `show --full` uses
 `work.evaluation.evaluation`, and `evaluate` uses `evaluation.evaluation`.
-These three projections also retain an equal-valued `hash` alias temporarily,
-solely for TermAl's live reader. Complete evaluation detail/windows and compact
-`next` already use `evaluation`. TermAl's reader moves to the preferred key
-first; Engram removes the alias only after that reader is landed and running,
-then TermAl removes its fallback separately. The id is not a content hash.
+Current and full `show`, normal/minimal `evaluate` receipts (including replay),
+complete evaluation detail/windows, and compact `next` use `evaluation` only
+for this record id; they emit no `hash` alias. The rollout first added the
+preferred key, then landed and ran TermAl's evaluation-preferring reader before
+Engram removed the alias. TermAl's separately tracked fallback removal follows
+the final Engram producer landing. The id is not a content hash, and canonical
+historical records, receipts and links are unchanged.
 The evaluated work revision and any source fingerprint
 also remain visible. Humans and hosts that need the rich projection use
 host-only `work core focus`. Core Summary focus, including core `next` and

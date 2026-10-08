@@ -2156,7 +2156,6 @@ pub(super) fn minimal_evaluate_receipt(
         "work": { "short_ref": work_ref, "revision": revision },
         "evaluation": {
             "evaluation": evaluation.as_str(),
-            "hash": evaluation.as_str(),
             "replayed": replayed,
             "mode": projection.mode.word(),
             "verdicts_total": projection.verdicts_total,

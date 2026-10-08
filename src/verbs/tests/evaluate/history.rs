@@ -166,10 +166,13 @@ impl Fixture {
 }
 
 fn rows(receipt: &Receipt) -> Vec<Value> {
-    receipt.value["evaluations"]
+    let rows = receipt.value["evaluations"]
         .as_array()
-        .expect("evaluation rows")
-        .clone()
+        .expect("evaluation rows");
+    for row in rows {
+        evaluation_record_id(row);
+    }
+    rows.clone()
 }
 
 /// A failing record and then a passing one from the same evaluator session:

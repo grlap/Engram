@@ -184,7 +184,6 @@ impl AgentVerbs {
             let mut evaluation = serde_json::to_value(&projection).map_err(StoreError::from)?;
             if let Some(object) = evaluation.as_object_mut() {
                 object.insert("evaluation".into(), json!(result.evaluation.as_str()));
-                object.insert("hash".into(), json!(result.evaluation.as_str()));
                 object.insert("replayed".into(), json!(result.replayed));
             }
             let mut payload = json!({ "evaluation": evaluation });

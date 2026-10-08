@@ -1362,9 +1362,17 @@ fn explicit_and_single_claim_done_and_evaluate_act_over_mcp() {
     assert_eq!(evaluated["evaluation"]["replayed"], false, "{evaluated}");
     assert_eq!(replayed["evaluation"]["replayed"], true, "{replayed}");
     assert_eq!(
-        replayed["evaluation"]["hash"], evaluated["evaluation"]["hash"],
+        replayed["evaluation"]["evaluation"], evaluated["evaluation"]["evaluation"],
         "{replayed}"
     );
+    for receipt in [&evaluated, &replayed] {
+        assert!(
+            receipt["evaluation"]["evaluation"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty())
+        );
+        assert!(receipt["evaluation"].get("hash").is_none(), "{receipt}");
+    }
     let done = acted(server.done(Parameters(done_args(Some(&focus)))), "done");
     assert_eq!(done["work"]["short_ref"], json!(focus), "{done}");
 
