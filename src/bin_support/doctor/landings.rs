@@ -687,7 +687,9 @@ mod tests {
     }
 
     /// Confines fixture commands to the named directory and the test's own
-    /// configuration: no system or global configuration, signing or hooks.
+    /// configuration: no system or global configuration, signing or hooks,
+    /// and no automatic maintenance, which a commit would otherwise start as
+    /// a detached process still writing the repository after it returns.
     fn fixture_git_command(repository: &Path, args: &[&str], mut command: Command) -> Command {
         let repository = resolve_repository(repository).expect("resolved fixture directory");
         let global = repository
@@ -712,6 +714,8 @@ mod tests {
                 "core.hooksPath=",
                 "-c",
                 "init.defaultBranch=master",
+                "-c",
+                "maintenance.auto=false",
             ])
             .args(args)
             .env("GIT_TERMINAL_PROMPT", "0")
@@ -1000,6 +1004,23 @@ mod tests {
             snapshot(&victim),
             before,
             "victim tree and Git bytes changed"
+        );
+    }
+
+    // A commit would otherwise start a detached maintenance process that can
+    // still be writing a fixture repository when the test inspects it; the
+    // race is intermittent, so the option is pinned here structurally.
+    #[test]
+    fn fixture_commands_disable_automatic_maintenance() {
+        let home = crate::test_support::temp_home().expect("scratch directory");
+        let repository = home.path().join("fixture");
+        std::fs::create_dir_all(&repository).expect("fixture directory");
+        let command = fixture_git_command(&repository, &["commit"], Command::new("git"));
+        let args: Vec<&OsStr> = command.get_args().collect();
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == [OsStr::new("-c"), OsStr::new("maintenance.auto=false")]),
+            "{args:?}"
         );
     }
 
