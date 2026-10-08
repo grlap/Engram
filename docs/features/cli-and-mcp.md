@@ -167,9 +167,9 @@ handoff-recipient, or control session-bind participant and actor session id is
 admitted only when it is at most 64 UTF-8 bytes; longer values refuse before
 store, session, focus, attempt, offer, planning-write, or task-bind effects,
 with a bounded error that does not echo the rejected id. The same live
-length-only admit applies to a generic note-capture actor session, a
-graph-snapshot save or load operator actor, a control-policy administrator
-actor session, and project-memory remember, forget, full, or list caller
+length-only admit applies to a graph-snapshot save or load operator actor, a
+control-policy administrator actor session, and project-memory remember,
+forget, full, or list caller
 sessions. A caller-supplied catalog `held_by` filter is length-admitted the
 same way: that is live filter admission, not validation of a persisted claim
 holder. A persisted claim
