@@ -7,6 +7,26 @@ set -eu
 repo_root=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 cd "$repo_root"
 
+phases="ordinary scale-claims scale-roots scale-planning"
+if [ "$#" -gt 0 ]; then
+    if [ "$1" = "--phase" ]; then
+        if [ "$#" -ne 2 ]; then
+            echo "Usage: test-rust.sh --phase ordinary|scale-claims|scale-roots|scale-planning" >&2
+            exit 2
+        fi
+        case "$2" in
+            ordinary|scale-claims|scale-roots|scale-planning) phases=$2 ;;
+            *)
+                echo "Usage: test-rust.sh --phase ordinary|scale-claims|scale-roots|scale-planning" >&2
+                exit 2
+                ;;
+        esac
+        shift 2
+    else
+        phases=ordinary
+    fi
+fi
+
 . "$repo_root/scripts/test-rust-host.sh"
 
 target_fd_limit=${ENGRAM_TEST_FD_LIMIT:-16384}
@@ -55,16 +75,23 @@ echo "Rust test gate: fd soft limit=$effective_soft_limit, test threads=$test_th
 
 RUST_TEST_THREADS=$test_threads
 export RUST_TEST_THREADS
-node scripts/test-temp.mjs -- cargo test "$@"
-
-if [ "$#" -eq 0 ]; then
-    echo "Rust scale gate: claim-validated mutation decode budgets"
-    node scripts/test-temp.mjs -- cargo test claim_validated_mutations_are_bounded_at_project_scale -- \
-        --ignored --nocapture
-    echo "Rust scale gate: root delta write bounds and historical cost measurements"
-    # Intentionally include future ignored tests in the root_delta_scale_ family (substring filter).
-    node scripts/test-temp.mjs -- cargo test root_delta_scale_ -- --ignored --nocapture
-    echo "Rust scale gate: planning bounds reached one mutation at a time"
-    # Intentionally include future ignored tests in the planning_scale_ family (substring filter).
-    node scripts/test-temp.mjs -- cargo test planning_scale_ -- --ignored --nocapture
-fi
+for phase in $phases; do
+    case "$phase" in
+        ordinary) node scripts/test-temp.mjs -- cargo test "$@" ;;
+        scale-claims)
+            echo "Rust scale gate: claim-validated mutation decode budgets"
+            node scripts/test-temp.mjs -- cargo test claim_validated_mutations_are_bounded_at_project_scale -- \
+                --ignored --nocapture
+            ;;
+        scale-roots)
+            echo "Rust scale gate: root delta write bounds and historical cost measurements"
+            # Intentionally include future ignored tests in the root_delta_scale_ family (substring filter).
+            node scripts/test-temp.mjs -- cargo test root_delta_scale_ -- --ignored --nocapture
+            ;;
+        scale-planning)
+            echo "Rust scale gate: planning bounds reached one mutation at a time"
+            # Intentionally include future ignored tests in the planning_scale_ family (substring filter).
+            node scripts/test-temp.mjs -- cargo test planning_scale_ -- --ignored --nocapture
+            ;;
+    esac
+done

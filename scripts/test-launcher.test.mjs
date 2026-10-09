@@ -88,11 +88,11 @@ describe("documentation link checker", () => {
   }
 });
 
-test("required stages preserve all nine gates and platform-specific Rust runners", () => {
+test("required stages preserve all gates with four independent Rust phases", () => {
   for (const platform of ["win32", "linux"]) {
     const stages = requiredStages(platform);
-    assert.equal(stages.length, 9);
-    assert.equal(new Set(stages.map(({ name }) => name)).size, 9);
+    assert.equal(stages.length, 12);
+    assert.equal(new Set(stages.map(({ name }) => name)).size, 12);
     assert.deepEqual(stages.slice(0, 3).map(({ command, args }) => [command, ...args]), [
       ["cargo", "fmt", "--check"],
       ["cargo", "check"],
@@ -101,8 +101,14 @@ test("required stages preserve all nine gates and platform-specific Rust runners
     assert.match([stages[3].command, ...stages[3].args].join(" "), platform === "win32"
       ? /pwsh.*-NoProfile.*-File scripts\/test-rust\.ps1/u
       : /scripts\/test-rust\.sh/u);
-    assert.deepEqual(stages[4].args, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs"]);
-    assert.deepEqual(stages.slice(5).map(({ args }) => args), [
+    assert.deepEqual(stages.slice(3, 7).map(({ name, args, selects }) => [name, args.slice(-2), selects]), [
+      ["rust", ["--phase", "ordinary"], false],
+      ["rust-scale-claims", ["--phase", "scale-claims"], true],
+      ["rust-scale-roots", ["--phase", "scale-roots"], true],
+      ["rust-scale-planning", ["--phase", "scale-planning"], true],
+    ]);
+    assert.deepEqual(stages[7].args, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs"]);
+    assert.deepEqual(stages.slice(8).map(({ args }) => args), [
       ["--test", "scripts/mcp-dogfood.test.mjs"],
       ["--test", "scripts/control-dogfood.test.mjs"],
       ["--test", "scripts/parity.test.mjs"],
@@ -110,6 +116,105 @@ test("required stages preserve all nine gates and platform-specific Rust runners
     ]);
   }
 });
+
+const rustPhaseArgs = [
+  ["--", "cargo", "test"],
+  ["--", "cargo", "test", "claim_validated_mutations_are_bounded_at_project_scale", "--", "--ignored", "--nocapture"],
+  ["--", "cargo", "test", "root_delta_scale_", "--", "--ignored", "--nocapture"],
+  ["--", "cargo", "test", "planning_scale_", "--", "--ignored", "--nocapture"],
+];
+function rustWrapperFixture(root, platform) {
+  mkdirSync(join(root, "scripts"));
+  for (const file of ["test-rust.ps1", "test-rust.sh", "test-rust-host.sh"]) {
+    copyFileSync(join(dirname(launcher), file), join(root, "scripts", file));
+  }
+  const callsPath = join(root, ".git", "phase-calls.json");
+  writeFileSync(join(root, "scripts", "test-temp.mjs"), `
+    import assert from 'node:assert/strict';
+    import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+    const args = process.argv.slice(2);
+    const calls = existsSync(process.env.PHASE_CALLS) ? JSON.parse(readFileSync(process.env.PHASE_CALLS, 'utf8')) : [];
+    calls.push({ args, cwd: process.cwd(), threads: process.env.RUST_TEST_THREADS });
+    writeFileSync(process.env.PHASE_CALLS, JSON.stringify(calls));
+    if (process.env.PHASE_RESULTS && args.includes('claim_validated_mutations_are_bounded_at_project_scale')) {
+      const saved = JSON.parse(readFileSync(process.env.PHASE_RESULTS, 'utf8'));
+      assert.deepEqual(saved.stages.map(({ state }) => state), ['passed', 'running', 'unrun', 'unrun']);
+      const prior = saved.stages[0];
+      assert.equal(prior.code, 0);
+      assert.ok(prior.started && prior.ended);
+      assert.equal(prior.tests.passed, 1);
+      writeFileSync(process.env.PHASE_SNAPSHOT, JSON.stringify(prior));
+      console.log('running 1 test');
+      console.log('test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s');
+      process.exit(101);
+    }
+    console.log('running 1 test');
+    console.log('test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s');
+  `);
+  const runner = requiredStages(platform)[3];
+  return { callsPath, command: runner.command, args: runner.args.slice(0, -2),
+    env: { ...env, ENGRAM_TEST_THREADS: "2", PHASE_CALLS: callsPath } };
+}
+
+for (const platform of ["win32", "linux"]) {
+  const supported = platform === "win32" ? process.platform === "win32" : process.platform !== "win32";
+  test(`Rust phase wrapper (${platform}) preserves default, selected and Cargo passthrough execution`,
+    { skip: !supported, timeout: 60_000 }, async () => {
+      await repository(async (root) => {
+        const fixture = rustWrapperFixture(root, platform);
+        const invoke = (args) => {
+          if (existsSync(fixture.callsPath)) unlinkSync(fixture.callsPath);
+          const result = spawnSync(fixture.command, [...fixture.args, ...args],
+            { cwd: root, env: fixture.env, encoding: "utf8", windowsHide: true });
+          const calls = existsSync(fixture.callsPath) ? json(fixture.callsPath) : [];
+          return { result, calls };
+        };
+        const assertCalls = (args, expected) => {
+          const { result, calls } = invoke(args);
+          assert.equal(result.status, 0, result.stderr);
+          assert.deepEqual(calls, expected.map((args) => ({ args, cwd: root, threads: "2" })));
+        };
+        assertCalls([], rustPhaseArgs);
+        for (const [index, phase] of ["ordinary", "scale-claims", "scale-roots", "scale-planning"].entries()) {
+          assertCalls(["--phase", phase], [rustPhaseArgs[index]]);
+        }
+        assertCalls(["--lib", "contract", "--", "--exact"], [["--", "cargo", "test", "--lib", "contract", "--", "--exact"]]);
+        assertCalls(["--PHASE", "ordinary"], [["--", "cargo", "test", "--PHASE", "ordinary"]]);
+        for (const args of [["--phase"], ["--phase", "unknown"], ["--phase", "Ordinary"], ["--phase", "ordinary", "extra"]]) {
+          const { result, calls } = invoke(args);
+          assert.equal(result.status, 2, result.stderr);
+          assert.match(result.stderr, /Usage: test-rust\.(?:ps1|sh) --phase/u);
+          assert.deepEqual(calls, [], "invalid selectors never reach the harness");
+        }
+      });
+    });
+
+  test(`Rust phase launcher (${platform}) saves the ordinary result before a scale failure`,
+    { skip: !supported, timeout: 60_000 }, async () => {
+      await repository(async (root) => {
+        const fixture = rustWrapperFixture(root, platform);
+        const stages = requiredStages(platform).slice(3, 7);
+        const runDir = createRun({ root, full: true, stages }, fixture.env);
+        const snapshot = join(root, ".git", "phase-snapshot.json");
+        const result = await executeRun(runDir, { ...fixture.env,
+          PHASE_RESULTS: join(runDir, "results.json"), PHASE_SNAPSHOT: snapshot });
+        assert.equal(result.state, "failed");
+        assert.equal(result.exitCode, 101, JSON.stringify({ error: result.error,
+          stages: result.stages.map(({ name, state, code, diagnostics }) => ({ name, state, code, diagnostics })) }));
+        const saved = json(join(runDir, "results.json"));
+        assert.deepEqual(saved.stages.map(({ state }) => state), ["passed", "failed", "unrun", "unrun"]);
+        assert.deepEqual(saved.stages[0], json(snapshot), "the already durable ordinary result remains unchanged");
+        assert.equal(saved.stages[1].code, 101);
+        assert.equal(saved.stages[1].tests.failed, 1);
+        assert.deepEqual(json(fixture.callsPath).map(({ args }) => args), rustPhaseArgs.slice(0, 2));
+        const record = parseRecord(machineRecord(result.plan, result));
+        assert.deepEqual(record.stages.map(({ name, state, exit, why }) => [name, state, exit, why]), [
+          ["rust", "passed", "0", undefined], ["rust-scale-claims", "failed", "101", undefined],
+          ["rust-scale-roots", "skipped", "none", "not-run"], ["rust-scale-planning", "skipped", "none", "not-run"],
+        ]);
+      });
+    });
+}
 
 test("clean pass retains logs and summarizes without passing-test lists", async () => {
   await repository(async (root) => {
@@ -1223,7 +1328,7 @@ test("compact retained-failure fixture preserves the full diagnostic and reduces
     assert.ok(Buffer.byteLength(compact) < Buffer.byteLength(detailed));
     assert.ok(compact.includes(diagnostic.trimEnd()));
     assert.match(compact, /^FAIL .* exit=101/mu);
-    assert.match(compact, /unrun \(exit=unrun\/unknown\): freeze, mcp, control, parity, docs/u);
+    assert.match(compact, /unrun \(exit=unrun\/unknown\): rust-scale-claims, rust-scale-roots, rust-scale-planning, freeze, mcp, control, parity, docs/u);
     assert.match(compact, /test counts unknown: rust \(incomplete-summary\)/u);
     assert.ok(compact.includes(result.stages[3].log));
     for (const limitation of result.limitations) assert.ok(compact.includes(limitation));
@@ -1685,7 +1790,8 @@ const complete = (executed, passed, failed, ignored, runners, filteredOut) =>
 test("every required stage has a kind, and only runner stages are tests", () => {
   for (const platform of ["win32", "linux"]) {
     assert.deepEqual(requiredStages(platform).map(({ name, kind }) => [name, kind]), [
-      ["fmt", "lint"], ["check", "build"], ["clippy", "lint"], ["rust", "test"], ["freeze", "test"],
+      ["fmt", "lint"], ["check", "build"], ["clippy", "lint"], ["rust", "test"],
+      ["rust-scale-claims", "test"], ["rust-scale-roots", "test"], ["rust-scale-planning", "test"], ["freeze", "test"],
       ["mcp", "test"], ["control", "test"], ["parity", "test"], ["docs", "other"],
     ]);
   }
@@ -2053,7 +2159,9 @@ test("filtered says whether the command line or a runner selected a part of the 
     const record = parseRecord(machineRecord({ full: true, stages },
       { runId: "test-0a1b", state: "failed", reason: "preflight-failed", stages: stages.map(({ name }) => ({ name, state: "unrun" })) }));
     assert.deepEqual(record.stages.filter(({ kind }) => kind === "test").map(({ name, why, filtered }) => [name, why, filtered]),
-      [["rust", "not-run", "yes"], ["freeze", "not-run", "yes"], ["mcp", "not-run", "yes"], ["control", "not-run", "yes"], ["parity", "not-run", "yes"]]);
+      [["rust", "not-run", "no"], ["rust-scale-claims", "not-run", "yes"], ["rust-scale-roots", "not-run", "yes"],
+        ["rust-scale-planning", "not-run", "yes"], ["freeze", "not-run", "yes"], ["mcp", "not-run", "yes"],
+        ["control", "not-run", "yes"], ["parity", "not-run", "yes"]]);
   }
 });
 
@@ -2716,27 +2824,29 @@ function parkingBroker(t, root) {
   return { address, next, parked, close, release: () => broker.connected && broker.send("release") };
 }
 
-test("a launcher stopped during its second stage is recovered with the first stage unchanged", { timeout: 60_000 }, async (t) => {
+test("a launcher stopped during a Rust scale phase preserves the prior result without rerunning phases", { timeout: 60_000 }, async (t) => {
   await repository(async (root) => {
     const broker = parkingBroker(t, root);
     let child, completion;
     try {
       assert.equal((await broker.next())[0], "listening");
-      const runDir = createRun({ root, stages: [stage("first", "console.log('first stage output')"),
-        { name: "second", command: process.execPath, args: ["-e", broker.parked] }] }, env);
+      const stages = requiredStages().slice(3, 7).map((entry, index) => ({ ...entry, command: process.execPath,
+        args: ["-e", index === 1 ? broker.parked : "console.log('running 1 test'); console.log('test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s')"] }));
+      const runDir = createRun({ root, full: true, stages }, env);
       child = spawn(process.execPath, [launcher, "_run", runDir], { cwd: root, env, windowsHide: true, stdio: ["ignore", "ignore", "ignore"] });
       completion = once(child, "close");
       const parked = await Promise.race([broker.next(), completion.then(([code]) => [`launcher ended (${code})`])]);
       assert.equal(parked[0], "connected");
       const before = json(join(runDir, "results.json"));
-      assert.deepEqual(before.stages.map(({ state }) => state), ["passed", "running"]);
+      assert.deepEqual(before.stages.map(({ state }) => state), ["passed", "running", "unrun", "unrun"]);
+      assert.equal(before.stages[0].tests.passed, 1);
       const firstLog = readFileSync(logPath(runDir, before.stages[0]));
       child.kill("SIGKILL");
       await completion;
 
       const recovered = spawnSync(process.execPath, [launcher, "recover", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
       assert.equal(recovered.status, 0, recovered.stderr);
-      assert.match(recovered.stdout, /^INTERRUPTED \(stopped in stage second;/u);
+      assert.match(recovered.stdout, /^INTERRUPTED \(stopped in stage rust-scale-claims;/u);
       assert.match(recovered.stdout, /^Settled as interrupted; tests not rerun\.$/mu);
       assert.doesNotMatch(recovered.stdout, /^(?:PASS|FAIL)\b|test-launcher\/v1/mu);
       const after = json(join(runDir, "results.json"));
@@ -2746,6 +2856,7 @@ test("a launcher stopped during its second stage is recovered with the first sta
       assert.deepEqual(readFileSync(logPath(runDir, after.stages[0])), firstLog, "the first stage's log bytes are unchanged");
       assert.equal(after.stages[1].state, "failed");
       assert.equal(after.stages[1].outcome, "unknown");
+      assert.deepEqual(after.stages.slice(2), before.stages.slice(2), "later phases remain unrun");
       assert.match(after.stages[1].error, /^interrupted: .*this stage's outcome is unknown$/u);
       // The system may already have given the killed launcher's id to another
       // process; either answer settles the run.

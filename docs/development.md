@@ -250,7 +250,15 @@ link check and the AGENTS/CLAUDE byte comparison (see
 
 Commands are argument arrays, not shell strings. Name `pwsh -NoProfile -File`
 or `sh` explicitly for shell scripts. Full mode chooses the correct Rust runner,
-including its ordinary and scale phases, then the Node integration gates.
+as four test stages: `rust`, `rust-scale-claims`, `rust-scale-roots` and
+`rust-scale-planning`, then the Node integration gates. Each Rust phase saves
+its own terminal exit, timestamps, counts and log before the next phase starts.
+A later failure or interruption preserves earlier results and leaves later
+phases unrun; recovery settles the existing run without executing phases again.
+The Rust wrappers accept a leading `--phase NAME` selector (`ordinary`,
+`scale-claims`, `scale-roots` or `scale-planning`). Missing, unknown or extra
+selector arguments exit 2 before the harness runs. With no arguments they
+still run all four phases in order; other Cargo arguments still run once.
 Both full and focused modes clear inherited `RUSTUP_TOOLCHAIN` overrides,
 leaving selection to Rustup. A directory override at the repository root still
 takes precedence over `rust-toolchain.toml`; `rustup show active-toolchain`
@@ -480,7 +488,8 @@ tests.
 
 - `kind` is `test`, `build`, `lint`, `typecheck` or `other`. Full mode assigns
   it per stage: `fmt` and `clippy` are `lint`, `check` is `build`, `rust`,
-  `freeze`, `mcp`, `control` and `parity` are `test`, `docs` is `other`.
+  `rust-scale-claims`, `rust-scale-roots`, `rust-scale-planning`, `freeze`,
+  `mcp`, `control` and `parity` are `test`, `docs` is `other`.
   Focused mode takes it from the command: `cargo test` and `node --test` are
   `test`; `cargo clippy` and `cargo fmt` are `lint`; `cargo check` and
   `cargo build` are `build`; anything else is `other`. A `node` command
@@ -542,10 +551,11 @@ tests.
   `--test-shard`. Other options, with their values, change how tests run and
   not which. The command line is known before a stage runs, so a skipped
   stage says it too. A selection made through the environment, such as
-  `NODE_OPTIONS`, is not visible. Every test stage of a full run is
-  `filtered=yes`, and the stage list says so itself, whether or not the stage
-  ran: `rust` because its three scale phases select tests by name, the four
-  Node stages because each names its test files. `scope=full` says the
+  `NODE_OPTIONS`, is not visible. The ordinary `rust` stage of a full run
+  selects no tests by name or target; each of the three `rust-scale-*` stages
+  selects by name, and the four Node stages each name their test files. The
+  stage list records those selections whether or not the stages ran; a
+  runner's reported filtered-out count also makes `filtered=yes`. `scope=full` says the
   prescribed stage list ran, not that no runner filtered.
 - `overall` covers validation only: the stages and the input fingerprint check.
   A failed completion notification changes the process's exit status, not the

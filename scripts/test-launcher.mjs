@@ -57,21 +57,25 @@ function save(path, value) {
 const because = (reason, error) => Object.assign(error, { reason });
 
 export function requiredStages(platform = process.platform) {
+  const rustCommand = platform === "win32" ? "pwsh" : "sh";
+  const rustArgs = platform === "win32" ? ["-NoProfile", "-File", "scripts/test-rust.ps1"] : ["scripts/test-rust.sh"];
   return [
     ["fmt", "lint", "cargo", ["fmt", "--check"]],
     ["check", "build", "cargo", ["check"]],
     ["clippy", "lint", "cargo", ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]],
-    ["rust", "test", platform === "win32" ? "pwsh" : "sh", platform === "win32"
-      ? ["-NoProfile", "-File", "scripts/test-rust.ps1"] : ["scripts/test-rust.sh"]],
+    ["rust", "test", rustCommand, [...rustArgs, "--phase", "ordinary"]],
+    ["rust-scale-claims", "test", rustCommand, [...rustArgs, "--phase", "scale-claims"]],
+    ["rust-scale-roots", "test", rustCommand, [...rustArgs, "--phase", "scale-roots"]],
+    ["rust-scale-planning", "test", rustCommand, [...rustArgs, "--phase", "scale-planning"]],
     ["freeze", "test", process.execPath, ["--test", "scripts/review-freeze-fingerprint.test.mjs", "scripts/test-launcher.test.mjs"]],
     ["mcp", "test", process.execPath, ["--test", "scripts/mcp-dogfood.test.mjs"]],
     ["control", "test", process.execPath, ["--test", "scripts/control-dogfood.test.mjs"]],
     ["parity", "test", process.execPath, ["--test", "scripts/parity.test.mjs"]],
     ["docs", "other", process.execPath, ["scripts/check-doc-links.mjs"]],
-    // Every test stage of the gate selects: the Rust script's scale phases
-    // name their tests and each Node stage names its files. Said here, so
-    // that a stage says it whether or not it ran and whatever ran it.
-  ].map(([name, kind, command, args]) => ({ name, kind, command, args, ...(kind === "test" ? { selects: true } : {}) }));
+    // Scale phases name their tests and Node stages name their files. The
+    // ordinary Rust phase selects nothing. Keep this true even if unrun.
+  ].map(([name, kind, command, args]) => ({ name, kind, command, args,
+    ...(kind === "test" ? { selects: name !== "rust" } : {}) }));
 }
 
 // The record a host reads: what each stage was and what its runner reported.
