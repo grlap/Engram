@@ -2317,6 +2317,35 @@ test("a stage whose log cannot be read keeps its exit, gives no count and does n
   });
 });
 
+test("full Node provenance keeps the stage-kind contract", async () => {
+  await repository(async (root) => {
+    writeFileSync(join(root, "provenance.test.mjs"), `import test from "node:test";
+test("passes", () => {});
+test("skipped", { skip: true }, () => {});
+`);
+    git(["add", "provenance.test.mjs"], root);
+    const runnerEnv = { ...env };
+    delete runnerEnv.NODE_TEST_CONTEXT;
+    for (const full of [false, true]) {
+      const stages = [{ name: "node-tests", kind: "test", command: process.execPath,
+        args: ["--test", "--test-reporter=tap", "provenance.test.mjs"] }];
+      const runDir = createRun({ root, full, stages }, runnerEnv);
+      const result = await executeRun(runDir, runnerEnv);
+      assert.equal(result.state, "passed", JSON.stringify(result));
+      assert.equal(json(join(runDir, "request.json")).full, full);
+      const saved = json(join(runDir, "results.json"));
+      const entry = saved.stages[0];
+      assert.equal(saved.state, "passed");
+      assert.equal(saved.exitCode, 0);
+      assert.equal(entry.state, "passed");
+      assert.equal(entry.code, 0);
+      assert.equal(entry.signal, null);
+      assert.equal(Object.hasOwn(entry.tests, "runner"), !full, "full-mode counts omit the runner label");
+      assert.deepEqual(entry.tests, { ...complete(1, 1, 0, 1, 1, 0), ...(!full ? { runner: "node-test" } : {}) });
+    }
+  });
+});
+
 test("focused Node provenance preserves mode, counts and native outcomes", async () => {
   await repository(async (root) => {
     mkdirSync(join(root, "scripts"));

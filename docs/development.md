@@ -274,12 +274,22 @@ before `--`; the variable must contain an absolute executable path that passes
 
 Each invocation creates a unique directory below Git's `review-runs` metadata
 directory (also works with linked worktrees). `request.json` identifies commands,
-owner and expected source fingerprint; `input.json` uses the existing review
-freeze format. Before yielding, retain the exact expected fingerprint in the
+owner, absolute root, the `full` and `detached` flags, and expected source
+fingerprint. `detached` defaults to `false`; `--detach` records `true`, while
+`--notify` alone leaves it `false`. The module's `startDetached` requires a request
+created with `detached: true` and refuses a foreground request before starting a
+worker or changing its files. `input.json` uses the existing review freeze format.
+Before yielding, retain the exact expected fingerprint in the
 parent's work status, independently of these run files. Use that parent-held
 literal when checking recovered results. Source and index must stay unchanged.
-`results.json` records
-stage exits, timestamps, full log paths and bounded diagnostics. Stdout/stderr
+`results.json` records stage exits, timestamps, full log paths and bounded
+diagnostics. Every stage records `cwd`, the absolute request root, from its initial
+`unrun` state through running and completed states; stages left unrun retain it.
+A completed test stage records its parsed counts under `tests`. Known counts for
+a focused direct `node --test` command also carry `tests.runner: "node-test"`.
+Unknown counts omit that runner field and the `passed`, `failed`, and `ignored`
+fields. Full-mode stages omit `tests.runner`, including direct Node stages with
+known counts, and retain their stage-kind contract. Stdout/stderr
 go directly to logs, never through a terminal stream. Only the final summary,
 warnings, bounded failures and the closing record for the host reach context;
 truncation points to the full log.
