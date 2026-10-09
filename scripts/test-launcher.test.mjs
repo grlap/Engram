@@ -175,6 +175,7 @@ test("nonzero exit is preserved and later stages remain unrun", async () => {
     assert.equal(result.state, "failed");
     assert.equal(result.exitCode, 23);
     assert.deepEqual(result.stages.map(({ state }) => state), ["failed", "unrun"]);
+    assert.deepEqual(result.stages.map(({ cwd }) => cwd), [root, root]);
     assert.equal(result.stages[0].code, 23);
     assert.equal(existsSync(marker), false);
     assert.match(await summarize(runDir), /deliberate fixture failure/u);
@@ -234,8 +235,9 @@ test("detached parent emits exact recovery receipt and child completes once", as
       if (!fs.readFileSync(file, 'utf8').startsWith('PASS ')) process.exitCode = 9;
     `);
     const counter = join(root, ".git", "count");
-    const runDir = createRun({ root, notifyTo: "fixture-parent", stages: [stage("once",
-      `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'run\\n')`)] }, env);
+    const runDir = createRun({ root, detached: true, notifyTo: "fixture-parent", stages: [stage("once",
+      `require('node:assert/strict').equal(process.cwd(), ${JSON.stringify(root)}); require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'run\\n')`)] }, env);
+    assert.equal(json(join(runDir, "results.json")).stages[0].cwd, root);
     let receipt = "";
     const { child, completion } = await startDetached(runDir, env, (text) => { receipt += text; });
     child.ref(); // Test owns cleanup and waits for the actual child, no polling.
@@ -252,6 +254,8 @@ test("detached parent emits exact recovery receipt and child completes once", as
     assert.equal(printed, json(join(runDir, "input.json")).fingerprint);
     assert.equal(printed, json(join(runDir, "results.json")).before);
     assert.equal(json(join(runDir, "results.json")).state, "passed");
+    assert.equal(json(join(runDir, "request.json")).detached, true, "the worker preserves the parent's mode");
+    assert.equal(json(join(runDir, "results.json")).stages[0].cwd, root);
     assert.equal(json(join(runDir, "notification.json")).code, 0);
     assert.equal(readFileSync(counter, "utf8"), "run\n");
     // The detached parent prints no record, because its run has not
@@ -487,7 +491,7 @@ test("invalid foreground and detached notification setup refuses before creating
 // Exercise the real child entrypoint and IPC admission, never the live mailbox.
 test("detached parent rejects failed admission after child closure without a receipt", async () => {
   await repository(async (root) => {
-    const runDir = createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
+    const runDir = createRun({ root, detached: true, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
     writeFileSync(join(runDir, "results.json"), "{");
     let receipt = "";
     await assert.rejects(startDetached(runDir, env, (text) => { receipt += text; }),
@@ -701,6 +705,7 @@ test("input capture failure reports once before detached admission or notificati
     const runs = readdirSync(runBase);
     assert.equal(runs.length, 1);
     const runDir = join(runBase, runs[0]);
+    assert.equal(json(join(runDir, "request.json")).detached, true, "the CLI records --detach at creation");
     assert.equal(json(join(runDir, "results.json")).state, "failed");
     assert.equal(existsSync(join(runDir, "execution.lock")), false);
     assert.equal(existsSync(join(runDir, "notification.message.txt")), false);
@@ -2201,6 +2206,80 @@ test("a stage whose log cannot be read keeps its exit, gives no count and does n
     for (const unreadable of [join(root, "no-such.log"), root]) {
       assert.match((await diagnostics(unreadable, true)).text, /^\[the log could not be read: [A-Z]+\]\n$/u, unreadable);
     }
+  });
+});
+
+test("focused Node provenance preserves mode, counts and native outcomes", async () => {
+  await repository(async (root) => {
+    mkdirSync(join(root, "scripts"));
+    for (const name of ["test-launcher.mjs", "review-freeze-fingerprint.mjs"]) {
+      copyFileSync(fileURLToPath(new URL(name, import.meta.url)), join(root, "scripts", name));
+    }
+    const cases = [
+      ["passing", `test("passes", () => assert.equal(process.cwd(), ${JSON.stringify(root)})); test("skipped", { skip: true }, () => {});`, "tap", 0, [1, 0, 1]],
+      ["failing", `test("breaks", () => { throw new Error("fixture failure"); });`, "spec", 1, [0, 1, 0]],
+      ["skipped", `test("skipped", { skip: true }, () => {});`, "tap", 0, [0, 0, 1]],
+      ["unknown", `test("passes", () => {});`, "dot", 0, null],
+    ];
+    for (const [name, source] of cases) {
+      writeFileSync(join(root, `${name}.test.mjs`), `import test from "node:test";\nimport assert from "node:assert/strict";\n${source}\n`);
+    }
+    git(["add", "scripts", "*.test.mjs"], root);
+    const runnerEnv = { ...env };
+    delete runnerEnv.NODE_TEST_CONTEXT;
+    const run = (...args) => spawnSync(process.execPath, [join(root, "scripts", "test-launcher.mjs"), ...args],
+      { cwd: root, env: runnerEnv, encoding: "utf8", windowsHide: true });
+    for (const [name, , reporter, code, counts] of cases) {
+      const launched = run("focused", "--", process.execPath, "--test", `--test-reporter=${reporter}`, `${name}.test.mjs`);
+      assert.equal(launched.status, code, `${name}: ${launched.stderr}`);
+      const runDir = /^STARTED (.+)$/mu.exec(launched.stdout)?.[1];
+      assert.ok(runDir, launched.stdout);
+      assert.equal(json(join(runDir, "request.json")).detached, false, name);
+      const result = json(join(runDir, "results.json"));
+      const entry = result.stages[0];
+      assert.equal(entry.cwd, root, name);
+      assert.equal(isAbsolute(entry.cwd), true, name);
+      assert.equal(entry.code, code, name);
+      assert.equal(entry.signal, null, name);
+      assert.equal(result.exitCode, code, name);
+      if (counts) {
+        assert.equal(entry.tests.runner, "node-test", name);
+        assert.deepEqual([entry.tests.passed, entry.tests.failed, entry.tests.ignored], counts, name);
+        assert.equal(entry.tests.executed, counts[0] + counts[1], name);
+        assert.equal(code === 0, entry.tests.failed === 0, name);
+      } else {
+        assert.equal(entry.tests.executed, "unknown", name);
+        assert.equal(Object.hasOwn(entry.tests, "runner"), false, name);
+        for (const field of ["passed", "failed", "ignored"]) assert.equal(Object.hasOwn(entry.tests, field), false, field);
+      }
+      const record = parseRecord(launched.stdout.slice(launched.stdout.indexOf("\ntest-launcher/v1") + 1));
+      assert.equal(record.stages[0].exit, String(code), name);
+      assert.equal(countsAsPassedTests(record), name === "passing", name);
+    }
+    const opaque = run("focused", "--", process.execPath, "-e",
+      `process.stdout.write(${JSON.stringify(nodeSummary("#", { tests: 1, pass: 1 }))})`);
+    assert.equal(opaque.status, 0, opaque.stderr);
+    const opaqueDir = /^STARTED (.+)$/mu.exec(opaque.stdout)?.[1];
+    assert.equal(Object.hasOwn(json(join(opaqueDir, "results.json")).stages[0], "tests"), false);
+    // Notification does not make a foreground run detached. The fixture CLI
+    // refuses the mailbox arguments; validation still finished successfully.
+    const notified = run("focused", "--notify", "fixture-parent", "--", process.execPath, "--test", "passing.test.mjs");
+    assert.equal(notified.status, 1);
+    assert.match(notified.stderr, /notification failed; tests were NOT rerun/u);
+    const notifiedDir = /^STARTED (.+)$/mu.exec(notified.stdout)?.[1];
+    assert.equal(json(join(notifiedDir, "request.json")).detached, false);
+    assert.equal(json(join(notifiedDir, "results.json")).stages[0].tests.runner, "node-test");
+  });
+});
+
+test("detached launch refuses a foreground request without changing it", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, notifyTo: "fixture-parent", stages: [stage("unused")] }, env);
+    assert.equal(json(join(runDir, "request.json")).detached, false);
+    const before = directoryBytes(runDir);
+    await assert.rejects(startDetached(runDir, env), /requires a run created with detached: true/u);
+    assert.deepEqual(directoryBytes(runDir), before);
+    assert.equal(existsSync(join(runDir, "execution.lock")), false);
   });
 });
 

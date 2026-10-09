@@ -490,7 +490,7 @@ catch {
   return started ? { state: "alive", created: `ps:${started}` } : unknown("unreadable process start time");
 }
 
-export function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false }, env = process.env) {
+export function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false }, env = process.env) {
   const everyMs = heartbeatEveryMs(env);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
     { cwd: root, encoding: "utf8", windowsHide: true });
@@ -498,13 +498,13 @@ export function createRun({ root = repository, stages, notifyTo, requiredBinaryE
   const runId = `test-${randomUUID()}`;
   const runDir = join(git.stdout.trim(), runId);
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
-  const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full,
+  const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
     owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString() };
   save(join(runDir, "request.json"), request);
   // A worker that never starts leaves this first heartbeat to go stale.
   save(join(runDir, "results.json"), { runId, state: "running", started: request.started,
     heartbeat: { at: request.started, everyMs }, limitations: fingerprintLimitations(),
-    stages: (stages ?? []).map(({ name }) => ({ name, state: "unrun" })) });
+    stages: (stages ?? []).map(({ name }) => ({ name, state: "unrun", cwd: request.root })) });
   try {
     const input = captureFingerprint(root);
     save(join(runDir, "input.json"), input);
@@ -649,7 +649,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     const plan = { full: request.full === true, stages: (request.stages ?? []).map(({ kind, selects, command, args }) =>
       ({ kind, selects, command, args: Array.isArray(args) ? [...args] : args })) };
     result.started = request.started;
-    result.stages = (request.stages ?? []).map(({ name }) => ({ name, state: "unrun" }));
+    result.stages = (request.stages ?? []).map(({ name }) => ({ name, state: "unrun", cwd: request.root }));
     const saved = readJson(resultPath);
     if (!saved || !Array.isArray(saved.stages)) throw new Error("invalid initial results: stages missing");
     result = saved;
@@ -715,12 +715,18 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     for (let index = 0; index < request.stages.length; index += 1) {
       const stage = request.stages[index];
       const entry = result.stages[index];
-      Object.assign(entry, { state: "running", started: new Date().toISOString(), command: [stage.command, ...stage.args], log: join(runDir, `${stage.name}.log`) });
+      Object.assign(entry, { state: "running", cwd: request.root, started: new Date().toISOString(), command: [stage.command, ...stage.args], log: join(runDir, `${stage.name}.log`) });
       save(resultPath, result);
       const outcome = await runCommand(stage.command, stage.args, { cwd: request.root, env: childEnv, log: entry.log });
       Object.assign(entry, outcome, { ended: new Date().toISOString(), state: outcome.code === 0 && !outcome.error ? "passed" : "failed" });
       if (stage.kind === "test") {
         entry.tests = await countTests(entry.log);
+        // Attribute known focused counts to the runner we started, never to
+        // the shape of its output. Full gates keep their stage-kind contract.
+        if (!request.full && entry.tests.executed !== "unknown"
+          && runnerName(stage.command) === "node" && commandKind(stage.command, stage.args) === "test") {
+          entry.tests.runner = "node-test";
+        }
         // The one thing besides its exit that fails a stage: its runners'
         // own complete summaries counting failed tests.
         if (entry.state === "passed" && entry.tests.failures > 0) {
@@ -1016,6 +1022,7 @@ async function finish(runDir, { foregroundReceipt = false, workerHandshake = fal
 
 export async function startDetached(runDir, env = process.env, write = (text) => process.stdout.write(text)) {
   const request = readJson(join(runDir, "request.json"));
+  if (request.detached !== true) throw new Error("detached launch requires a run created with detached: true");
   validateNotification(request, env);
   // No inherited terminal handles: process lifetime is independent of the turn.
   const fd = openSync(join(runDir, "launcher.log"), "wx", 0o600);
@@ -1098,7 +1105,7 @@ async function main(args) {
   if (notifyTo) validateNotification({ notifyTo, owner: process.env.TERMAL_SESSION_ID, root: repository }, process.env);
   const stages = mode === "full" ? requiredStages()
     : [{ name: "focused", kind: commandKind(args[0], args.slice(1)), command: args[0], args: args.slice(1) }];
-  const runDir = createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full" });
+  const runDir = createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach });
   if (!detach) { await finish(runDir, { foregroundReceipt: true }); return; }
   await startDetached(runDir);
 }
