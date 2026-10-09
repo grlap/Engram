@@ -216,10 +216,41 @@ fn captured_trace() -> (PhaseTrace, Captured) {
     )
 }
 
+#[test]
+fn line_writer_submits_each_record_with_its_newline() {
+    #[derive(Clone, Default)]
+    struct Writes(Arc<Mutex<Vec<Vec<u8>>>>);
+
+    impl std::io::Write for Writes {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().expect("writes").push(bytes.to_vec());
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let writes = Writes::default();
+    let record_sink = LineWriter::new(Box::new(writes.clone()), 4, "trace-record-write-test");
+    let record = serde_json::json!({ "stage": "trace_flush_finished" }).to_string();
+    record_sink.emit(record.clone());
+    record_sink.flush(Duration::from_secs(5));
+    assert_eq!(
+        *writes.0.lock().expect("writes"),
+        vec![format!("{record}\n").into_bytes()]
+    );
+}
+
 /// The lines written so far, once the writer has caught up.
 fn written(trace: &PhaseTrace, captured: &Captured) -> Vec<serde_json::Value> {
     trace.flush(Duration::from_secs(5));
-    captured.lines()
+    captured
+        .lines()
+        .into_iter()
+        .filter(|line| line["engram_mcp_phase_trace"] == 1)
+        .collect()
 }
 
 fn numeric(id: i64) -> NumberOrString {
@@ -566,6 +597,82 @@ fn response(id: i64) -> TxJsonRpcMessage<RoleServer> {
         id: numeric(id),
         result: rmcp::model::ServerResult::EmptyResult(rmcp::model::EmptyObject {}),
     })
+}
+
+// A pending close must expose the entered stage before it can complete.
+#[test]
+fn shutdown_milestones_distinguish_input_end_and_a_pending_transport_close() {
+    struct HeldClose(Arc<std::sync::atomic::AtomicBool>);
+    impl Transport<RoleServer> for HeldClose {
+        type Error = std::io::Error;
+        fn send(
+            &mut self,
+            _: TxJsonRpcMessage<RoleServer>,
+        ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
+            std::future::ready(Ok(()))
+        }
+        fn receive(&mut self) -> impl Future<Output = Option<RxJsonRpcMessage<RoleServer>>> + Send {
+            std::future::ready(None)
+        }
+        fn close(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send {
+            let released = Arc::clone(&self.0);
+            std::future::poll_fn(move |_| {
+                if released.load(std::sync::atomic::Ordering::Relaxed) {
+                    Poll::Ready(Ok(()))
+                } else {
+                    Poll::Pending
+                }
+            })
+        }
+    }
+    let (trace, captured) = captured_trace();
+    let trace = Arc::new(trace);
+    let released = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut transport = TracingTransport::new(HeldClose(Arc::clone(&released)), Arc::clone(&trace));
+    assert!(block_on(transport.receive()).is_none());
+    let mut closing = std::pin::pin!(transport.close());
+    assert!(
+        closing
+            .as_mut()
+            .poll(&mut Context::from_waker(std::task::Waker::noop()))
+            .is_pending()
+    );
+    trace.flush(Duration::from_secs(5));
+    let before = captured.lines();
+    assert_eq!(before.len(), 2);
+    assert_eq!(before[0]["stage"], "input_ended");
+    assert_eq!(before[1]["stage"], "transport_close_started");
+    released.store(true, std::sync::atomic::Ordering::Relaxed);
+    block_on(closing).expect("released close");
+    trace.shutdown_stage(ShutdownStage::ServiceWaitingReturned);
+    trace.flush(Duration::from_secs(5));
+    let lines = captured.lines();
+    let stages: Vec<_> = lines
+        .iter()
+        .map(|line| line["stage"].as_str().expect("stage"))
+        .collect();
+    assert_eq!(
+        stages,
+        vec![
+            "input_ended",
+            "transport_close_started",
+            "transport_close_finished",
+            "trace_flush_started",
+            "trace_flush_finished",
+            "service_waiting_returned"
+        ]
+    );
+    let times: Vec<_> = lines
+        .iter()
+        .map(|line| line["server_elapsed_ms"].as_f64().expect("elapsed"))
+        .collect();
+    assert!(times.windows(2).all(|pair| pair[0] <= pair[1]));
+    assert!(
+        lines
+            .iter()
+            .all(|line| line["engram_mcp_shutdown_trace"] == 1
+                && line.as_object().expect("object").len() == 4)
+    );
 }
 
 // The transport passes messages through and completes the record of the call

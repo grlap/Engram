@@ -65,6 +65,16 @@ node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
+The MCP dogfood close check keeps an absolute 10,000 ms deadline from stdin
+end. A later clean exit is still a failure. Failure diagnostics distinguish
+exit from stdio close using monotonic callback observation times, and report
+interval host CPU activity sampled before EOF; these samples do not establish
+the cause of a shutdown delay. Missing load evidence is reported as unknown.
+With the opt-in MCP phase trace enabled, the diagnostic also retains fixed
+shutdown milestones, their server monotonic times and their client receipt
+times; missing milestones remain unknown. See the
+[trace contract](features/cli-and-mcp.md#host-and-operator-cli).
+
 On Windows the full clap command graph exceeds the default main-thread stack.
 The CLI therefore parses and drives `run_cli` on a named 8 MiB thread; Tokio
 worker stacks remain unchanged because only parsing and the top-level

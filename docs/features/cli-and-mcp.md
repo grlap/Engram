@@ -2509,6 +2509,19 @@ stderr while the trace is on. Close waits up to a second for queued lines;
 lines queued at or after close are best effort, since the process may exit
 before they are written.
 
+The same opt-in trace also writes a separate `engram_mcp_shutdown_trace: 1`
+record at each observed shutdown boundary: `input_ended` (the transport
+returned no next message), `transport_close_started`,
+`transport_close_finished`, `trace_flush_started`, `trace_flush_finished`,
+and `service_waiting_returned`. These contain only the fixed `stage`,
+`server_elapsed_ms` from trace creation, and `dropped_lines`. A reached stage
+does not assert success. The records use the existing bounded queue and add
+no flush wait; the final two are best effort after the existing close flush.
+The dogfood close diagnostic retains server times and client receipt times
+relative to stdin EOF separately. Missing records, and cleanup after the
+service returns, remain unknown. With tracing off, the original unwrapped
+transport and shutdown path are unchanged.
+
 Durations are elapsed wall time and overlap where one phase contains another.
 They are not summed, and a fast server record does not prove a fast client.
 `begin_immediate` and `commit` come from SQLite's statement profile, which

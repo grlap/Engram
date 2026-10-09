@@ -2366,13 +2366,15 @@ async fn serve_mcp(server: McpServer) -> Result<()> {
     >::into_transport(stdio());
     let server = server
         .with_phase_trace(Some(std::sync::Arc::clone(&trace)))
-        .serve(engram::phase_trace::TracingTransport::new(transport, trace))
+        .serve(engram::phase_trace::TracingTransport::new(
+            transport,
+            std::sync::Arc::clone(&trace),
+        ))
         .await
         .context("failed to start Engram MCP stdio server")?;
-    server
-        .waiting()
-        .await
-        .context("Engram MCP stdio server stopped with an error")?;
+    let stopped = server.waiting().await;
+    trace.shutdown_stage(engram::phase_trace::ShutdownStage::ServiceWaitingReturned);
+    stopped.context("Engram MCP stdio server stopped with an error")?;
     Ok(())
 }
 

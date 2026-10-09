@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import nodeTest, { after } from "node:test";
+import { HostLoadSamples, McpCloseObservation } from "./mcp-close.mjs";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
@@ -170,10 +171,14 @@ class McpClient {
       env: environment,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    this.closeObservation = new McpCloseObservation();
+    this.hostLoad = new HostLoadSamples();
     this.child.stderr.on("data", (chunk) => this.receiveStderr(chunk));
     this.child.stdout.on("data", (chunk) => this.#receive(chunk));
     this.closed = new Promise((resolvePromise) => {
       this.child.once("close", (code, signal) => {
+        this.closeObservation.didClose(code, signal);
+        this.hostLoad.stop();
         this.flushStderr();
         resolvePromise({ code, signal });
       });
@@ -200,6 +205,7 @@ class McpClient {
   // until close; the message only shows it. Called through the prototype by
   // the stderr test, as the methods below are.
   serverExited(code, signal) {
+    this.closeObservation?.exited(code, signal);
     const error = new Error(
       `MCP server exited code=${code} signal=${signal}: ${this.stderr}${this.stderrBuffer}`,
     );
@@ -226,6 +232,14 @@ class McpClient {
       const line = this.stderrBuffer.slice(0, newline + 1);
       this.stderrBuffer = this.stderrBuffer.slice(newline + 1);
       let record;
+      if (line.startsWith('{"') && line.includes('"engram_mcp_shutdown_trace"')) {
+        try { record = JSON.parse(line); } catch { record = undefined; }
+        if (record && this.closeObservation?.shutdownMilestone(record)) {
+          console.error(`MCP shutdown record: ${line.trimEnd()}`);
+          continue;
+        }
+        record = undefined;
+      }
       if (line.startsWith('{"') && line.includes('"engram_mcp_phase_trace"')) {
         try { record = JSON.parse(line); } catch { record = undefined; }
       }
@@ -336,23 +350,22 @@ class McpClient {
     // Closing the last SQLite owner may checkpoint/remove the WAL. Capture
     // it before EOF as well as on slow calls and before fixture cleanup.
     recordWalSample(this.engramHome);
-    const started = performance.now();
+    this.hostLoad?.sample();
+    // Plain stand-ins in the phase-rendering tests have only a close promise.
+    const observation = this.closeObservation ?? new McpCloseObservation();
+    if (!this.closeObservation) this.closed.then(({ code, signal }) => observation.didClose(code, signal));
+    const started = observation.now();
     if (!this.child.stdin.destroyed) this.child.stdin.end();
-    const waitForClose = async (milliseconds) => {
-      let timer;
-      try {
-        return await Promise.race([
-          this.closed,
-          new Promise(resolvePromise => { timer = setTimeout(resolvePromise, milliseconds); }),
-        ]);
-      } finally {
-        clearTimeout(timer);
-      }
-    };
     try {
-      // Called through the prototype so the close tests' plain stand-ins work.
-      await McpClient.prototype.closeChecked.call(this, started, waitForClose);
+      await observation.check({
+        started,
+        child: this.child,
+        pending: () => this.pending.size,
+        stderr: () => this.stderr,
+        collect: async () => this.hostLoad?.report(started) ?? { state: "unknown" },
+      });
     } finally {
+      this.hostLoad?.stop();
       // Slow calls whose record never came read as unavailable, on a failed
       // close as much as on a clean one.
       for (const id of this.awaitingPhase) {
@@ -362,33 +375,6 @@ class McpClient {
     }
   }
 
-  async closeChecked(started, waitForClose) {
-    // Locked rmcp 3.1.4 may spend 5 s draining responses after stdin EOF.
-    // A watchdog at that bound races legitimate drain completion; leave headroom for
-    // store close and runtime shutdown under host I/O contention.
-    const closed = await waitForClose(10000);
-    if (!closed) {
-      // The watchdog remains a failure, even if diagnostic observation
-      // later sees a clean exit. Never convert this window into a passing retry.
-      const exceededAt = performance.now();
-      const diagnostic = `pid=${this.child.pid} exitCode=${this.child.exitCode} signalCode=${this.child.signalCode} elapsed=${(exceededAt - started).toFixed(1)}ms stdinFinished=${this.child.stdin.writableFinished} stdinDestroyed=${this.child.stdin.destroyed} pending=${this.pending.size}`;
-      const sampledAt = performance.now();
-      const host = process.platform === "win32"
-        ? spawnSync("pwsh", ["-NoProfile", "-Command", "Get-Process -Name engram,cargo,rustc,MsMpEng -ErrorAction SilentlyContinue | Select-Object ProcessName,Id,CPU,WorkingSet64 | ConvertTo-Json -Compress"], { encoding: "utf8", timeout: 2000, maxBuffer: 16384, windowsHide: true })
-        : spawnSync("ps", ["-eo", "pid,comm,time,rss"], { encoding: "utf8", timeout: 2000, maxBuffer: 16384 });
-      const hostText = process.platform === "win32" ? host.stdout : host.stdout?.split("\n").filter(line => /engram|cargo|rustc/u.test(line)).join("\n");
-      const sample = `sampleMs=${(performance.now() - sampledAt).toFixed(1)} status=${host.status} processes=${hostText?.trim()} error=${host.error?.message ?? host.stderr?.trim() ?? ""}`;
-      const eventual = await waitForClose(Math.max(0, 15000 - (performance.now() - exceededAt)));
-      const observed = `observedElapsed=${(performance.now() - started).toFixed(1)}ms eventual=${JSON.stringify(eventual ?? null)}`;
-      if (!eventual) {
-        this.child.kill();
-        await waitForClose(1000);
-      }
-      throw new Error(`MCP server did not close (${diagnostic}); ${observed}; ${sample}; stderr=${this.stderr}`);
-    }
-    assert.equal(closed.signal, null, `MCP server terminated by ${closed.signal}`);
-    assert.equal(closed.code, 0, this.stderr);
-  }
 }
 
 test("MCP close watchdog leaves room beyond the rmcp drain bound", async (t) => {
@@ -411,6 +397,276 @@ test("MCP close watchdog leaves room beyond the rmcp drain bound", async (t) => 
   t.mock.timers.tick(999);
   await checked;
   assert.equal(ended, 1);
+});
+
+test("MCP close deadline and diagnostic classifications", async (t) => {
+  async function fixture(context) {
+    context.mock.timers.enable({ apis: ["setTimeout"] });
+    let milliseconds = 0;
+    let kills = 0;
+    const observation = new McpCloseObservation({ now: () => milliseconds });
+    const child = {
+      pid: 123,
+      stdin: { writableFinished: true, destroyed: true },
+      kill() { kills++; observation.exited(null, "SIGTERM"); observation.didClose(null, "SIGTERM"); },
+    };
+    return {
+      observation, child,
+      kills: () => kills,
+      async advance(amount, clockAmount = amount) {
+        milliseconds += clockAmount;
+        context.mock.timers.tick(amount);
+        for (let i = 0; i < 12; i++) await Promise.resolve();
+      },
+      check(collect, options = {}) {
+        return observation.check({ started: 0, child, collect, ...options }).then(() => ({ passed: true }), error => ({ error }));
+      },
+    };
+  }
+
+  await t.test("six-second clean close passes", async (context) => {
+    const run = await fixture(context);
+    const result = run.check();
+    await run.advance(6000);
+    run.observation.exited(0, null);
+    run.observation.didClose(0, null);
+    assert.deepEqual(await result, { passed: true });
+    assert.equal(run.kills(), 0);
+  });
+  await t.test("late clean close fails and reports measured host load", async (context) => {
+    const run = await fixture(context);
+    const load = { state: "measured", before_eof: true, intervals: [{ from_eof_ms: -1000, to_eof_ms: 0, host_cpu_busy_fraction: 0.97 }] };
+    const result = run.check(async () => load);
+    await run.advance(10000);
+    await run.advance(1000);
+    run.observation.exited(0, null);
+    run.observation.didClose(0, null);
+    const { error } = await result;
+    assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
+    assert.equal(error.closeDiagnostic.close_observed_ms, 11000);
+    assert.deepEqual(error.closeDiagnostic.host_load, load);
+    assert.equal(run.kills(), 0);
+  });
+  await t.test("an early timer cannot reject a close before the monotonic deadline", async (context) => {
+    const run = await fixture(context);
+    const result = run.check();
+    // The timer clock reaches its deadline while performance.now trails it.
+    await run.advance(10000, 9998);
+    await run.advance(1);
+    run.observation.exited(0, null);
+    run.observation.didClose(0, null);
+    assert.deepEqual(await result, { passed: true });
+    assert.equal(run.kills(), 0);
+  });
+  await t.test("overdue resolved close cannot win against a delayed timer", async (context) => {
+    const run = await fixture(context);
+    // Observe before check starts: both its close promise and overdue timer
+    // are ready. The timestamp, rather than race ordering, decides the pass.
+    await run.advance(10001);
+    run.observation.exited(0, null);
+    run.observation.didClose(0, null);
+    const { error } = await run.check();
+    assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
+    assert.equal(error.closeDiagnostic.budget_ms, 10000);
+  });
+  await t.test("timely exit with delayed stdio close fails separately", async (context) => {
+    const run = await fixture(context);
+    const result = run.check();
+    await run.advance(6000);
+    run.observation.exited(0, null);
+    await run.advance(4000);
+    await run.advance(1000);
+    run.observation.didClose(0, null);
+    const { error } = await result;
+    assert.equal(error.closeDiagnostic.classification, "stdio_close_delayed");
+    assert.equal(error.closeDiagnostic.exit_observed_ms, 6000);
+    assert.equal(error.closeDiagnostic.close_observed_ms, 11000);
+  });
+  for (const exitAt of [6000, 11000]) {
+    await t.test(`clean exit at ${exitAt}ms with stalled stdio stays bounded`, async (context) => {
+      const run = await fixture(context);
+      const result = run.check();
+      await run.advance(Math.min(exitAt, 10000));
+      if (exitAt > 10000) await run.advance(exitAt - 10000);
+      run.observation.exited(0, null);
+      if (exitAt < 10000) await run.advance(10000 - exitAt);
+      await run.advance(25000 - Math.max(exitAt, 10000));
+      const { error } = await result;
+      assert.equal(error.closeDiagnostic.classification, "clean_exit_stdio_open");
+      assert.equal(error.closeDiagnostic.exit_observed_ms, exitAt);
+      assert.equal(error.closeDiagnostic.close_observed_ms, null);
+      assert.equal(error.closeDiagnostic.eventual, null);
+      assert.equal(error.closeDiagnostic.budget_ms, 10000);
+      assert.equal(run.kills(), 1);
+    });
+  }
+  for (const [code, signal] of [[7, null], [null, "SIGTERM"]]) {
+    for (const closes of [true, false]) {
+      await t.test(`late failed exit code=${code} signal=${signal} closes=${closes}`, async (context) => {
+        const run = await fixture(context);
+        const result = run.check();
+        await run.advance(10000);
+        await run.advance(1000);
+        run.observation.exited(code, signal);
+        if (closes) run.observation.didClose(code, signal);
+        else await run.advance(14000);
+        const { error } = await result;
+        assert.equal(error.closeDiagnostic.classification, "failed_exit");
+        assert.equal(error.closeDiagnostic.exit_observed_ms, 11000);
+        assert.equal(error.closeDiagnostic.close_observed_ms, closes ? 11000 : null);
+        assert.deepEqual(error.closeDiagnostic.eventual, closes ? { code, signal } : null);
+        assert.equal(run.kills(), closes ? 0 : 1);
+      });
+    }
+  }
+  await t.test("never closed retains the absolute diagnostic bound", async (context) => {
+    const run = await fixture(context);
+    const result = run.check(() => new Promise(() => {}));
+    await run.advance(10000);
+    await run.advance(2000);
+    await run.advance(13000);
+    const { error } = await result;
+    assert.equal(error.closeDiagnostic.classification, "never_closed");
+    assert.equal(error.closeDiagnostic.exit_observed_ms, null);
+    assert.equal(error.closeDiagnostic.close_observed_ms, null);
+    assert.deepEqual(error.closeDiagnostic.host_load, { state: "unknown", reason: "collector deadline exceeded" });
+    assert.equal(run.kills(), 1);
+  });
+  await t.test("a stuck collector cannot obscure a late clean close", async (context) => {
+    const run = await fixture(context);
+    const result = run.check(() => new Promise(() => {}));
+    await run.advance(10000);
+    await run.advance(1000);
+    run.observation.exited(0, null);
+    run.observation.didClose(0, null);
+    await run.advance(1000);
+    const { error } = await result;
+    assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
+    assert.equal(error.closeDiagnostic.close_observed_ms, 11000);
+    assert.equal(error.closeDiagnostic.host_load.state, "unknown");
+    assert.equal(run.kills(), 0);
+  });
+  for (const [code, signal] of [[7, null], [null, "SIGTERM"]]) {
+    await t.test(`non-clean close code=${code} signal=${signal} fails`, async (context) => {
+      const run = await fixture(context);
+      const result = run.check();
+      run.observation.exited(code, signal);
+      run.observation.didClose(code, signal);
+      assert.ok((await result).error);
+    });
+  }
+  await t.test("a missing load measurement remains unknown", async (context) => {
+    const run = await fixture(context);
+    const result = run.check();
+    await run.advance(10000);
+    await run.advance(1000);
+    run.observation.exited(0, null);
+    run.observation.didClose(0, null);
+    assert.deepEqual((await result).error.closeDiagnostic.host_load, { state: "unknown" });
+  });
+  await t.test("pending-at-deadline evidence survives eventual exit cleanup", async (context) => {
+    const run = await fixture(context);
+    let pending = 2;
+    let stderr = "";
+    run.child.stdin.writableFinished = false;
+    run.child.stdin.destroyed = false;
+    const result = run.check(undefined, { pending: () => pending, stderr: () => stderr });
+    await run.advance(10000);
+    pending = 0;
+    run.child.stdin.writableFinished = true;
+    run.child.stdin.destroyed = true;
+    stderr = "late shutdown diagnostic";
+    await run.advance(1000);
+    run.observation.exited(0, null);
+    run.observation.didClose(0, null);
+    const { error } = await result;
+    assert.equal(error.closeDiagnostic.pending_at_deadline, 2);
+    assert.equal(error.closeDiagnostic.stdin_finished_at_deadline, false);
+    assert.equal(error.closeDiagnostic.stdin_destroyed_at_deadline, false);
+    assert.match(error.message, /late shutdown diagnostic/u);
+  });
+});
+
+test("MCP close shutdown milestones retain stage times and leave gaps unknown", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let now = 0;
+  const observation = new McpCloseObservation({ now: () => now });
+  assert.equal(observation.shutdownReport(0).state, "unknown");
+  assert.equal(observation.shutdownMilestone({ engram_mcp_shutdown_trace: 1, stage: "caller private body", server_elapsed_ms: 0 }), false);
+  now = 10;
+  const client = { stderrBuffer: "", stderr: "", closeObservation: observation };
+  const record = { engram_mcp_shutdown_trace: 1, stage: "input_ended", server_elapsed_ms: 25, private: "never retained" };
+  const line = `${JSON.stringify(record)}\n`;
+  McpClient.prototype.receiveStderr.call(client, Buffer.from(line.slice(0, 20)));
+  McpClient.prototype.receiveStderr.call(client, Buffer.from(line.slice(20)));
+  assert.equal(client.stderr, "");
+  let report = observation.shutdownReport(0);
+  assert.equal(report.state, "observed");
+  assert.deepEqual(report.milestones, [{ stage: "input_ended", server_elapsed_ms: 25, received_from_eof_ms: 10 }]);
+  assert.ok(report.missing.includes("transport_close_finished"));
+  const child = { kill() {}, stdin: {} };
+  const checked = observation.check({ started: 0, child }).catch(error => error);
+  now = 10000; t.mock.timers.tick(10000); await Promise.resolve(); await Promise.resolve();
+  now = 11000;
+  observation.shutdownMilestone({ engram_mcp_shutdown_trace: 1, stage: "transport_close_started", server_elapsed_ms: 100 });
+  observation.exited(0, null); observation.didClose(0, null);
+  const error = await checked;
+  assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
+  report = error.closeDiagnostic.shutdown_trace;
+  assert.equal(report.milestones[1].stage, "transport_close_started");
+  assert.ok(report.missing.includes("transport_close_finished"));
+});
+
+test("MCP close host samples report interval load and missing evidence", () => {
+  let milliseconds = -1000;
+  let idle = 10;
+  let user = 90;
+  const samples = new HostLoadSamples({
+    now: () => milliseconds,
+    automatic: false,
+    read: () => [{ times: { idle, user, sys: 0, nice: 0, irq: 0 } }],
+  });
+  assert.equal(samples.report(0).state, "unknown");
+  milliseconds = 0; idle += 3; user += 97; samples.sample();
+  assert.deepEqual(samples.report(0).intervals, [{ from_eof_ms: -1000, to_eof_ms: 0, host_cpu_busy_fraction: 0.97, processors: 1 }]);
+  assert.equal(samples.report(0).before_eof, true);
+  assert.equal(samples.report(0).sample_failed, false);
+  samples.read = () => { throw new Error("unavailable"); };
+  samples.sample();
+  assert.equal(samples.report(0).sample_failed, true);
+  samples.stop();
+});
+
+test("MCP shutdown tracing emits milestones only when enabled", async (t) => {
+  const engramHome = fixtureHome("engram-shutdown-trace-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    for (const phaseTrace of [true, false]) {
+      client = new McpClient(engramHome, "shutdown-observer", undefined, "shutdown-observer", [], { phaseTrace });
+      await client.initialize();
+      const value = receipt(await client.call("next", { peek: true }));
+      assert.ok(Array.isArray(value.next));
+      assert.equal(client.pending.size, 0);
+      await client.close();
+      assert.deepEqual([client.closeObservation.close.code, client.closeObservation.close.signal], [0, null]);
+      const report = client.closeObservation.shutdownReport(0);
+      if (phaseTrace) {
+        assert.equal(report.state, "observed");
+        for (const stage of ["input_ended", "transport_close_started", "transport_close_finished", "trace_flush_started"]) {
+          assert.ok(report.milestones.some(record => record.stage === stage), JSON.stringify(report));
+        }
+      } else {
+        assert.equal(report.state, "unknown");
+        assert.deepEqual(report.milestones, []);
+        assert.doesNotMatch(client.stderr, /engram_mcp_shutdown_trace/u);
+      }
+      client = undefined;
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
 });
 
 function structured(result) {

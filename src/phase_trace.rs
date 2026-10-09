@@ -13,6 +13,9 @@
 //! and overlap where a phase contains another; they are not summed. Tracing
 //! never changes an operation's result: a failure to write a record is
 //! dropped.
+//! Shutdown milestones use the same best-effort queue and a separate record
+//! kind. Their monotonic times measure when stages were reached, not when the
+//! stderr reader received them; a missing line never proves a stalled stage.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -29,6 +32,30 @@ use rmcp::transport::Transport;
 
 /// The environment variable that enables the trace at server start.
 pub const PHASE_TRACE_ENV: &str = "ENGRAM_MCP_PHASE_TRACE";
+
+/// Fixed shutdown boundaries observed only when the MCP trace is enabled.
+#[derive(Clone, Copy, Debug)]
+pub enum ShutdownStage {
+    InputEnded,
+    TransportCloseStarted,
+    TransportCloseFinished,
+    TraceFlushStarted,
+    TraceFlushFinished,
+    ServiceWaitingReturned,
+}
+
+impl ShutdownStage {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::InputEnded => "input_ended",
+            Self::TransportCloseStarted => "transport_close_started",
+            Self::TransportCloseFinished => "transport_close_finished",
+            Self::TraceFlushStarted => "trace_flush_started",
+            Self::TraceFlushFinished => "trace_flush_finished",
+            Self::ServiceWaitingReturned => "service_waiting_returned",
+        }
+    }
+}
 
 /// The most handler records kept while their responses are being sent.
 const MAX_PENDING: usize = 256;
@@ -310,8 +337,11 @@ impl LineWriter {
                 let mut sink = sink;
                 for message in queue {
                     match message {
-                        Message::Line(line) => {
-                            let _ = writeln!(sink, "{line}");
+                        Message::Line(mut line) => {
+                            // Submit the record and LF together, avoiding a separate
+                            // newline write racing process exit. Delivery stays best-effort.
+                            line.push('\n');
+                            let _ = sink.write_all(line.as_bytes());
                             let _ = sink.flush();
                         }
                         Message::Flush(written) => {
@@ -363,6 +393,7 @@ impl LineWriter {
 pub struct PhaseTrace {
     pending: Mutex<Pending>,
     lines: LineWriter,
+    started: Instant,
 }
 
 impl std::fmt::Debug for PhaseTrace {
@@ -379,6 +410,7 @@ impl PhaseTrace {
         Self {
             pending: Mutex::new(Pending::default()),
             lines: LineWriter::new(sink, capacity, "engram-phase-trace"),
+            started: Instant::now(),
         }
     }
 
@@ -387,6 +419,21 @@ impl PhaseTrace {
     pub fn from_env() -> Option<Arc<Self>> {
         (std::env::var(PHASE_TRACE_ENV).as_deref() == Ok("1"))
             .then(|| Arc::new(Self::new(Box::new(std::io::stderr()), WRITER_CAPACITY)))
+    }
+
+    /// Queues a fixed, content-free stage record without waiting for its sink.
+    /// Records after the existing close flush are best effort too; this adds
+    /// no flush wait, and an observer must treat missing stages as unknown.
+    pub fn shutdown_stage(&self, stage: ShutdownStage) {
+        self.emit(
+            serde_json::json!({
+                "engram_mcp_shutdown_trace": 1,
+                "stage": stage.label(),
+                "server_elapsed_ms": millis(self.started.elapsed()),
+                "dropped_lines": self.lines.dropped(),
+            })
+            .to_string(),
+        );
     }
 
     fn counters(&self, pending: &Pending) -> Counters {
@@ -577,7 +624,9 @@ impl PhaseTrace {
         for line in lines {
             self.emit(line);
         }
+        self.shutdown_stage(ShutdownStage::TraceFlushStarted);
         self.flush(CLOSE_FLUSH);
+        self.shutdown_stage(ShutdownStage::TraceFlushFinished);
     }
 
     #[cfg(test)]
@@ -713,6 +762,7 @@ where
         async move {
             let message = receiving.await;
             match &message {
+                None => trace.shutdown_stage(ShutdownStage::InputEnded),
                 Some(JsonRpcMessage::Request(request)) => trace.requested(&request.id),
                 Some(JsonRpcMessage::Notification(notification)) => {
                     if let ClientNotification::CancelledNotification(cancelled) =
@@ -732,7 +782,9 @@ where
         let trace = Arc::clone(&self.trace);
         let closing = self.inner.close();
         async move {
+            trace.shutdown_stage(ShutdownStage::TransportCloseStarted);
             let result = closing.await;
+            trace.shutdown_stage(ShutdownStage::TransportCloseFinished);
             trace.closed();
             result
         }
