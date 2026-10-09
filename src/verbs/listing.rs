@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::receipts::{compact_row_for_display, compact_row_line};
 use super::{DEFAULT_LIMIT, Guidance, LsInput, Receipt, StoreError, VerbError, json};
+use crate::storage::WorkRecordFamily;
 use crate::work_service::WorkListingPage;
 
 /// Verbose agent rows retain the core fields while adding a typed, safe overlay.
@@ -192,11 +193,21 @@ pub(super) fn fit_list_receipt(
             Some(super::argument_wording::PAGE_LIMIT_HINT.cli.to_owned())
         };
         let mut lines = vec![format!("showing {visible} of {} item(s):", page.total)];
-        lines.extend(
-            compact
-                .iter()
-                .map(|row| format!("  {}", compact_row_line(row))),
-        );
+        for (row, item) in compact.iter().zip(items) {
+            lines.push(format!("  {}", compact_row_line(row)));
+            if let Some(matched) = page.note_matches.get(&item.work.work_id.0) {
+                let family = match matched.family {
+                    WorkRecordFamily::Notes => "note",
+                    WorkRecordFamily::Observations => "observation",
+                    WorkRecordFamily::Gates => "gate",
+                    WorkRecordFamily::History => "history",
+                };
+                lines.push(format!(
+                    "  {}: matching {family} {}",
+                    item.work.short_ref, matched.locator
+                ));
+            }
+        }
         let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 1000);
         lines.push(format!("page: {visible} shown, {} previously shown, {omitted} remaining; --limit {limit}; byte budget {budget}{}",
             page.preceding, if byte_limited { " (byte-bounded)" } else { "" }));
@@ -214,6 +225,8 @@ pub(super) fn fit_list_receipt(
             "total": page.total, "omitted": omitted, "more": omitted > 0,
             "shown_before": page.preceding, "limit": limit, "byte_budget": budget,
         });
+        // Both branches above serialize a Vec with one row per visible item,
+        // so items is an array and this zip preserves its source-row identity.
         for (row, item) in value["items"]
             .as_array_mut()
             .expect("listing rows")
@@ -222,14 +235,6 @@ pub(super) fn fit_list_receipt(
         {
             if let Some(matched) = page.note_matches.get(&item.work.work_id.0) {
                 row["note_match"] = serde_json::to_value(matched)?;
-                lines.push(format!(
-                    "  {}: matching {} note {}",
-                    item.work.short_ref,
-                    serde_json::to_value(matched.family)?
-                        .as_str()
-                        .unwrap_or("notes"),
-                    matched.locator
-                ));
             }
         }
         if let Some(after) = after {

@@ -2923,6 +2923,12 @@ trigram index over the short reference, title, outcome, labels, and active
 blocker detail, augmented on demand by complete canonical note/gate text and
 refs in the same read snapshot. These views remain advisory; lifecycle mutations revalidate
 their canonical work-event basis under the write lock.
+Core `next --search` includes canonical note and gate matches, but its catalog
+rows omit the match details. To find why an item matched, run
+`engram work ls --all --search QUERY`, follow its continuations to the returned
+work ref, and read its `note_match` locator with `engram work show REF --note LOCATOR`.
+This listing is a new read and may observe newer state. `--all` broadens lifecycle
+coverage; it does not recreate every core catalog filter.
 The `--blocked`/`blocked_only` filter is independent of derived availability:
 it returns work with an active blocker or incomplete prerequisite even when
 the item is deferred, but excludes completed, cancelled and superseded work.

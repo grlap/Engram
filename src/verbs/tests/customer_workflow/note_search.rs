@@ -26,6 +26,46 @@ fn detail(verbs: &AgentVerbs, row: &serde_json::Value, work: &str) -> Receipt {
         .unwrap()
 }
 
+fn assert_match_lines_beside_rows(receipt: &Receipt) {
+    let text = receipt.text();
+    let lines = text.lines().collect::<Vec<_>>();
+    let footer = lines
+        .iter()
+        .position(|line| line.starts_with("page:"))
+        .unwrap();
+    let mut annotated = 0;
+    for row in receipt.value["items"].as_array().unwrap() {
+        let Some(matched) = row.get("note_match") else {
+            continue;
+        };
+        let work = row["ref"]
+            .as_str()
+            .or_else(|| row["work"]["short_ref"].as_str())
+            .unwrap();
+        let family = match matched["family"].as_str().unwrap() {
+            "notes" => "note",
+            "observations" => "observation",
+            "gates" => "gate",
+            unexpected => panic!("unexpected searchable family: {unexpected}"),
+        };
+        let annotation = format!(
+            "  {work}: matching {family} {}",
+            matched["locator"].as_str().unwrap()
+        );
+        let position = lines.iter().position(|line| *line == annotation).unwrap();
+        assert!(position < footer);
+        assert!(lines[position - 1].starts_with(&format!("  {work} [")));
+        annotated += 1;
+    }
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.contains(": matching "))
+            .count(),
+        annotated
+    );
+}
+
 #[test]
 fn note_search_matches_complete_literal_unicode_text_refs_and_gate_fields_read_only() {
     let (_directory, verbs, path, _project) = fixture();
@@ -76,6 +116,19 @@ fn note_search_matches_complete_literal_unicode_text_refs_and_gate_fields_read_o
         let row = &receipt.value["items"][0];
         assert_eq!(row["ref"], work);
         assert_eq!(row["note_match"]["family"], family);
+        assert_match_lines_beside_rows(&receipt);
+        let verbose = verbs
+            .ls(
+                &LsInput {
+                    search: Some(query.into()),
+                    verbose: true,
+                    ..LsInput::default()
+                },
+                at(200),
+            )
+            .unwrap();
+        assert_eq!(verbose.value["items"][0]["note_match"], row["note_match"]);
+        assert_match_lines_beside_rows(&verbose);
         let full = detail(&verbs, row, &work);
         assert_eq!(full.value["note"]["locator"], row["note_match"]["locator"]);
         assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
@@ -95,6 +148,119 @@ fn note_search_matches_complete_literal_unicode_text_refs_and_gate_fields_read_o
     // Ordinary search-free reads do not acquire a diagnostic overlay.
     let plain = verbs.ls(&LsInput::default(), at(200)).unwrap();
     assert!(plain.value["items"][0].get("note_match").is_none());
+    assert_match_lines_beside_rows(&plain);
+}
+
+#[test]
+fn core_next_note_only_matches_resolve_through_listing_and_show_without_changing_focus_or_delivery()
+{
+    let (_directory, verbs, path, project) = fixture();
+    let note_work = add(&verbs, "Unrelated note subject", None, false, 0);
+    note(&verbs, &note_work, "core-only-note-token", 1);
+    let gate_work = add(&verbs, "Unrelated gate subject", None, false, 2);
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: gate_work.clone(),
+                ttl_seconds: Some(600),
+                recover: None,
+            },
+            at(3),
+        )
+        .unwrap();
+    verbs
+        .gate(
+            GateInput {
+                work_ref: Some(gate_work.clone()),
+                name: "core-only-gate-token".into(),
+                failed: Vec::new(),
+                evidence_ref: None,
+            },
+            at(4),
+        )
+        .unwrap();
+    let foreign = AgentVerbs::new(
+        path,
+        ProjectId(format!("{}-foreign", project.0)),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let other = add(&foreign, "Foreign item", None, false, 5);
+    note(
+        &foreign,
+        &other,
+        "core-only-note-token core-only-gate-token",
+        6,
+    );
+    let before = verbs
+        .service
+        .work_next(
+            20,
+            WorkNextQuery {
+                sections: vec![WorkNextSection::Focus],
+                ..WorkNextQuery::default()
+            },
+            at(200),
+        )
+        .unwrap();
+    for (query, expected) in [
+        ("core-only-note-token", &note_work),
+        ("core-only-gate-token", &gate_work),
+    ] {
+        let view = verbs
+            .service
+            .work_next(
+                20,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Catalog],
+                    search: Some(query.into()),
+                    ..WorkNextQuery::default()
+                },
+                at(200),
+            )
+            .unwrap();
+        let rows = &view.catalog.as_ref().unwrap().items;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(&rows[0].work.short_ref, expected);
+        assert!(view.changes.is_none());
+        assert!(view.delivered_through.is_none());
+        assert!(serde_json::to_vec(&view).unwrap().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
+        let receipt = search(&verbs, query, true);
+        assert_eq!(receipt.value["total"], 1);
+        assert_eq!(
+            receipt.value["items"][0]["ref"].as_str(),
+            Some(expected.as_str())
+        );
+        let full = detail(&verbs, &receipt.value["items"][0], expected);
+        assert_eq!(
+            full.value["note"]["locator"],
+            receipt.value["items"][0]["note_match"]["locator"]
+        );
+    }
+    let after = verbs
+        .service
+        .work_next(
+            20,
+            WorkNextQuery {
+                sections: vec![WorkNextSection::Focus],
+                ..WorkNextQuery::default()
+            },
+            at(200),
+        )
+        .unwrap();
+    assert_eq!(
+        after.session.focused_work_id,
+        before.session.focused_work_id
+    );
+    assert_eq!(
+        after.session.confirmed_project_cursor,
+        before.session.confirmed_project_cursor
+    );
+    assert_eq!(
+        after.session.pending_delivery,
+        before.session.pending_delivery
+    );
 }
 
 #[test]
@@ -173,6 +339,7 @@ fn note_search_inherited_and_restored_late_evidence_follow_lifecycle_and_project
         assert_eq!(search(&restored, query, false).value["total"], 0);
         let receipt = search(&restored, query, true);
         assert_eq!(receipt.value["total"], 1, "{query}");
+        assert_match_lines_beside_rows(&receipt);
         let full = detail(&restored, &receipt.value["items"][0], &work);
         assert_eq!(
             full.value["note"]["locator"],
@@ -239,6 +406,7 @@ fn note_search_deduplicates_and_traverses_bounded_pages_with_membership_continua
         let receipt = verbs.ls_with_budget(&input, at(200), 2200).unwrap();
         assert_eq!(receipt.value["total"], 12);
         assert!(emitted_receipt_bytes(&receipt) <= 2200);
+        assert_match_lines_beside_rows(&receipt);
         let rows = receipt.value["items"].as_array().unwrap();
         assert_ne!(rows.len(), 0);
         found.extend(
@@ -273,6 +441,7 @@ fn note_search_deduplicates_and_traverses_bounded_pages_with_membership_continua
             .iter()
             .all(|row| row["note_match"]["locator"].is_string())
     );
+    assert_match_lines_beside_rows(&verbose);
     let new = add(&verbs, "Unmatched item", None, false, 70);
     note(&verbs, &new, "needle newly matching item", 71);
     assert!(verbs.ls(&input, at(200)).is_err());
