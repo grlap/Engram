@@ -230,10 +230,16 @@ fn a_selection_that_names_no_active_blocker_of_the_item_changes_nothing() {
 
     let refuse = |verbs: &AgentVerbs, selector: &str, words: &str, now: i64| {
         let before = state(verbs, &work, now);
-        let error = unblock(verbs, &work, Some(selector), now)
-            .expect_err(selector)
-            .to_string();
-        assert!(error.contains(words), "{selector:?}: {error}");
+        let error = unblock(verbs, &work, Some(selector), now).expect_err(selector);
+        let message = verbs.error_message(&error);
+        assert!(message.contains(words), "{selector:?}: {message}");
+        if words == "unknown blocker" {
+            assert!(message.contains("selector"), "{message}");
+            assert_eq!(
+                verbs.error_guidance(&error).next,
+                [format!("engram work show {work}")]
+            );
+        }
         assert_eq!(state(verbs, &work, now), before, "{selector:?}");
     };
     refuse(&verbs, "   ", "empty", 6);

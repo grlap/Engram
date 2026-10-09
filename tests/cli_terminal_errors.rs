@@ -21,6 +21,41 @@ fn engram() -> Command {
     Command::new(env!("CARGO_BIN_EXE_engram"))
 }
 
+#[test]
+fn several_blockers_refusal_names_the_cli_selector_and_a_runnable_next_command() {
+    let directory = test_support::temp_home().expect("temp");
+    let home = directory.path();
+    init(home);
+    let added = work(home, &["add", "Two blockers", "--json"]);
+    assert!(added.status.success(), "{}", stderr_text(&added));
+    let added: Value = serde_json::from_slice(&added.stdout).expect("add JSON");
+    let work_ref = added["work"]["short_ref"].as_str().expect("ref");
+    for reason in ["first", "second"] {
+        let blocked = work(home, &["update", work_ref, "--blocked", reason]);
+        assert!(blocked.status.success(), "{}", stderr_text(&blocked));
+    }
+    let text = work(home, &["update", work_ref, "--unblock"]);
+    assert!(!text.status.success());
+    let message = stderr_text(&text);
+    assert!(message.contains("--blocker SELECTOR"), "{message}");
+    let command = format!("engram work show {work_ref}");
+    assert!(message.contains(&command), "{message}");
+    let json = work(home, &["update", work_ref, "--unblock", "--json"]);
+    assert!(!json.status.success());
+    let value: Value = serde_json::from_slice(&json.stderr).expect("refusal JSON");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("--blocker SELECTOR")
+    );
+    assert_eq!(value["error"]["next"], json!([command]));
+    let shown = work(home, &["show", work_ref, "--json"]);
+    assert!(shown.status.success(), "{}", stderr_text(&shown));
+    let shown: Value = serde_json::from_slice(&shown.stdout).expect("show JSON");
+    assert_eq!(shown["blockers_total"], 2);
+}
+
 fn run(home: &Path, args: &[&str]) -> Output {
     engram()
         .arg("--home")

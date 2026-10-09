@@ -851,6 +851,17 @@ impl SqliteStore {
         request: &ClearWorkBlockerRequest,
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
+        self.clear_work_blocker_with_attempt(request, redactor, None)
+    }
+
+    /// The selected, keyless wrapper checks its admitted attempt under the
+    /// same write lock as a new clear. Committed core replay precedes the guard.
+    pub(crate) fn clear_work_blocker_with_attempt<R: Redactor>(
+        &mut self,
+        request: &ClearWorkBlockerRequest,
+        redactor: &R,
+        attempt: Option<&super::PendingWorkProtocolAttempt>,
+    ) -> Result<WorkItem, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -862,6 +873,9 @@ impl SqliteStore {
         )? {
             transaction.commit()?;
             return Ok(item);
+        }
+        if let Some(attempt) = attempt {
+            attempt.require_pending_on(&transaction)?;
         }
         let mut item = load_work_item(&transaction, request.work_id)?;
         require_work_item_relation_integrity(&transaction, item.work_id)?;
@@ -886,7 +900,7 @@ impl SqliteStore {
             .optional()?;
         if blocker_work.as_deref() != Some(&item.work_id.0.to_string()) {
             return Err(StoreError::InvalidWork(
-                "unknown blocker id for this work item".into(),
+                crate::storage::UNKNOWN_BLOCKER_REFUSAL.into(),
             ));
         }
         item.revision += 1;

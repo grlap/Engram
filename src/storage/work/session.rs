@@ -33,6 +33,80 @@ use crate::{
     },
 };
 
+/// Comparison guard for one admitted, pending protocol attempt. It carries the
+/// recorded basis, never a refreshed live basis, and grants no mutation authority.
+pub(crate) struct PendingWorkProtocolAttempt {
+    project_id: crate::domain::ProjectId,
+    session_id: SessionId,
+    operation: String,
+    idempotency_key: String,
+    request: CanonicalObject,
+    basis: CanonicalObject,
+}
+
+#[cfg(test)]
+thread_local! {
+    static BEFORE_REFUSED_RETIREMENT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn before_refused_retirement(hook: impl FnOnce() + 'static) {
+    BEFORE_REFUSED_RETIREMENT.with(|slot| {
+        assert!(slot.borrow_mut().replace(Box::new(hook)).is_none());
+    });
+}
+
+impl PendingWorkProtocolAttempt {
+    pub(crate) fn new<I: Serialize>(
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        operation: &str,
+        idempotency_key: &str,
+        intent: &I,
+        basis: &serde_json::Value,
+    ) -> Result<Self, StoreError> {
+        Ok(Self {
+            project_id: project_id.clone(),
+            session_id: session_id.clone(),
+            operation: operation.to_owned(),
+            idempotency_key: idempotency_key.to_owned(),
+            request: CanonicalObject::freeze(intent)?,
+            basis: CanonicalObject::freeze(basis)?,
+        })
+    }
+
+    pub(super) fn require_pending_on(
+        &self,
+        transaction: &Transaction<'_>,
+    ) -> Result<(), StoreError> {
+        let present: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_protocol_attempts
+             WHERE project_id = ?1 AND session_id = ?2
+               AND operation = ?3 AND idempotency_key = ?4
+               AND request_hash = ?5 AND basis_hash = ?6 AND basis_json = ?7
+               AND result_id IS NULL AND result_json IS NULL)",
+            params![
+                self.project_id.0,
+                self.session_id.0,
+                self.operation,
+                self.idempotency_key,
+                self.request.key().as_str(),
+                self.basis.key().as_str(),
+                self.basis.bytes()
+            ],
+            |row| row.get(0),
+        )?;
+        if !present {
+            return Err(StoreError::WorkOperationIdempotencyConflict {
+                operation: self.operation.clone(),
+                key: self.idempotency_key.clone(),
+            });
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -829,21 +903,41 @@ impl SqliteStore {
     /// Retires one pending protocol attempt whose core operation was refused,
     /// so that repeating the same call begins a fresh attempt on the state
     /// the item has then. An attempt that recorded a result is never retired:
-    /// it stays for exact replay.
+    /// it stays for exact replay. The core-result check and deletion share the
+    /// write transaction; a replacement attempt on another basis is preserved.
     pub(crate) fn retire_refused_work_protocol_attempt(
         &mut self,
-        project_id: &crate::domain::ProjectId,
-        session_id: &SessionId,
-        operation: &str,
-        idempotency_key: &str,
+        attempt: &PendingWorkProtocolAttempt,
+        core_operation: &str,
+        core_key: &str,
     ) -> Result<(), StoreError> {
+        #[cfg(test)]
+        BEFORE_REFUSED_RETIREMENT.with(|slot| {
+            let hook = slot.borrow_mut().take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        });
         let transaction = self.begin_work_mutation()?;
         transaction.execute(
             "DELETE FROM work_protocol_attempts
              WHERE project_id = ?1 AND session_id = ?2
                AND operation = ?3 AND idempotency_key = ?4
-               AND result_id IS NULL AND result_json IS NULL",
-            params![project_id.0, session_id.0, operation, idempotency_key],
+               AND request_hash = ?5 AND basis_hash = ?6 AND basis_json = ?7
+               AND result_id IS NULL AND result_json IS NULL
+               AND NOT EXISTS (SELECT 1 FROM work_operation_results
+                 WHERE operation = ?8 AND idempotency_key = ?9)",
+            params![
+                attempt.project_id.0,
+                attempt.session_id.0,
+                attempt.operation,
+                attempt.idempotency_key,
+                attempt.request.key().as_str(),
+                attempt.basis.key().as_str(),
+                attempt.basis.bytes(),
+                core_operation,
+                core_key
+            ],
         )?;
         transaction.commit()?;
         Ok(())

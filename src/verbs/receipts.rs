@@ -782,6 +782,13 @@ impl VerbError {
                     vec![format!("engram work note {target} \"…\"")],
                 )
             }
+            StoreError::InvalidWork(reason)
+                if reason == crate::work_service::MULTIPLE_BLOCKERS_REFUSAL.cli
+                    || reason == crate::storage::UNKNOWN_BLOCKER_REFUSAL
+                    || reason.starts_with(crate::work_service::INTERRUPTED_SELECTED_UNBLOCK_PREFIX) =>
+            {
+                (vec![reason.clone()], vec![format!("engram work show {target}")])
+            }
             StoreError::InvalidWork(_)
                 if self.context.as_ref().is_some_and(|context| context.invalid_waiver) =>
             {

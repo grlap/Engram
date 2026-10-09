@@ -1,6 +1,58 @@
 use super::*;
 
 #[test]
+fn multiple_blocker_refusal_names_the_mcp_field_and_offers_a_show_command() {
+    let directory = crate::test_support::temp_home().expect("temp");
+    let database = directory.path().join("blockers.db");
+    let project = ProjectId("mcp-blocker-refusal".into());
+    let session = SessionId("reader".into());
+    let words = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "reader".into(),
+        session.clone(),
+        None,
+    );
+    let added = words
+        .add(
+            crate::AddInput {
+                title: "Two blockers".into(),
+                ..crate::AddInput::default()
+            },
+            Utc::now(),
+        )
+        .expect("add");
+    let work = added.value["work"]["short_ref"].as_str().expect("ref");
+    for text in ["first", "second"] {
+        words
+            .update(
+                crate::UpdateInput {
+                    work_ref: Some(work.into()),
+                    action: crate::UpdateAction::Blocked {
+                        detail: text.into(),
+                    },
+                },
+                Utc::now(),
+            )
+            .expect("block");
+    }
+    let server =
+        McpServer::new_with_actor_context(database, project, "reader".into(), session, None, None);
+    let args =
+        serde_json::from_value(json!({"work_ref": work, "action": "unblock"})).expect("args");
+    let response = server.update(Parameters(args));
+    assert_eq!(response.is_error, Some(true));
+    let value = response.structured_content.expect("structured refusal");
+    let message = value["error"]["message"].as_str().expect("message");
+    assert!(message.contains("pass blocker with a selector"), "{value}");
+    assert!(!message.contains("--blocker"), "{value}");
+    assert_eq!(
+        value["error"]["next"],
+        json!([format!("engram work show {work}")])
+    );
+}
+
+#[test]
 fn ancestor_and_required_child_errors_use_agent_refs_and_keep_raw_ids() {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.sqlite3");

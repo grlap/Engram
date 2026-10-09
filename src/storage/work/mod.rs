@@ -62,6 +62,9 @@ mod root_state;
 pub(crate) use root_read::RootReadScope;
 mod schema;
 mod session;
+pub(crate) use session::PendingWorkProtocolAttempt;
+#[cfg(test)]
+pub(crate) use session::before_refused_retirement;
 mod status;
 pub(crate) use status::SelectedStatusNote;
 mod unadmitted;

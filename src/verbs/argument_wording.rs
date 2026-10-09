@@ -157,6 +157,7 @@ static REGISTERED: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
         HANDOFF_LABEL_TARGET,
         GATE_NEEDS_TARGET,
         EVALUATE_NEEDS_TARGET,
+        crate::work_service::MULTIPLE_BLOCKERS_REFUSAL,
         crate::storage::REVISE_NEEDS_KEY_REFUSAL,
         crate::storage::PARTIAL_EDIT_NEEDS_REVISE_REFUSAL,
         crate::storage::CLEAR_TARGET_NEEDS_REVISE_REFUSAL,

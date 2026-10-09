@@ -5,6 +5,8 @@
 
 use super::*;
 
+mod retirement;
+
 /// Fields drop in declaration order, so the service releases the store
 /// before its directory is removed.
 struct Fixture {
@@ -308,6 +310,30 @@ fn an_unfinished_selected_clear_refuses_once_the_item_changed() {
         matches!(&refused, StoreError::InvalidWork(words)
             if words.contains("never answered") && words.contains("engram work show")),
         "{refused:?}"
+    );
+    let verbs = crate::verbs::AgentVerbs::new(
+        fixture.database.clone(),
+        fixture.project.clone(),
+        "agent".into(),
+        fixture.session.clone(),
+        Some("protocol-test".into()),
+    );
+    let selector = crate::work_service::blocker_selector::encode(&first);
+    let error = verbs
+        .update(
+            crate::verbs::UpdateInput {
+                work_ref: Some(fixture.target()),
+                action: crate::verbs::UpdateAction::Unblock {
+                    blocker: Some(selector),
+                },
+            },
+            at(5),
+        )
+        .expect_err("interrupted word refusal");
+    assert!(verbs.error_message(&error).contains("selector"));
+    assert_eq!(
+        verbs.error_guidance(&error).next,
+        [format!("engram work show {}", fixture.work.short_ref)]
     );
     assert_eq!(fixture.active(), before);
     assert_eq!(fixture.revision(), revision);

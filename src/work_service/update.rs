@@ -777,11 +777,27 @@ impl LocalWorkService {
                     .as_ref()
                     .map_or("the item", |work| work.short_ref.as_str());
                 return Err(StoreError::InvalidWork(format!(
-                    "this selected unblock began earlier and was never answered, and {work_ref} has changed since, so it is not carried onto the changed item; run engram work show {work_ref}: a blocker still active there can be cleared by another session, or by a bare unblock once it is the only one"
+                    "{INTERRUPTED_SELECTED_UNBLOCK_PREFIX}, and {work_ref} has changed since, so its selector is not carried onto the changed item; run engram work show {work_ref}: a blocker still active there can be cleared by another session, or by a bare unblock once it is the only one"
                 )));
             }
             return Err(error);
         }
+        let selected_attempt = if selected_unblock_key.is_some() {
+            Some(crate::storage::PendingWorkProtocolAttempt::new(
+                &self.project_id,
+                &self.session_id,
+                &protocol_operation,
+                &raw_key,
+                &intent,
+                attempt.basis.as_ref().ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "selected unblock has no durable attempt basis".into(),
+                    )
+                })?,
+            )?)
+        } else {
+            None
+        };
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("update attempt has no bound focused work".into())
         })?;
@@ -973,7 +989,7 @@ impl LocalWorkService {
                     None => unique_blocker_id(&store.inspect_work(work.work_id, now)?.blockers)?,
                 };
                 let core_key = scoped_key.clone();
-                let cleared = store.clear_work_blocker(
+                let cleared = store.clear_work_blocker_with_attempt(
                     &ClearWorkBlockerRequest {
                         work_id: work.work_id,
                         expected_work_revision: work.revision,
@@ -984,6 +1000,7 @@ impl LocalWorkService {
                         cleared_at: now,
                     },
                     &DevelopmentNoopRedactor,
+                    selected_attempt.as_ref(),
                 );
                 let item = match cleared {
                     Ok(item) => item,
@@ -997,25 +1014,18 @@ impl LocalWorkService {
                     // whose clear another call of the same key committed: a
                     // replay conflict, or any committed core result, means
                     // the clear happened and that call will finish it.
-                    Err(error)
-                        if selected_unblock_key.is_some()
-                            && !matches!(
-                                error,
-                                StoreError::WorkOperationIdempotencyConflict { .. }
-                            )
-                            && store
-                                .work_operation_result_value("clear_work_blocker", &core_key)?
-                                .is_none() =>
-                    {
-                        store.retire_refused_work_protocol_attempt(
-                            &self.project_id,
-                            &self.session_id,
-                            &protocol_operation,
-                            &raw_key,
-                        )?;
+                    Err(error) => {
+                        if let Some(attempt) = selected_attempt.as_ref()
+                            && !matches!(error, StoreError::WorkOperationIdempotencyConflict { .. })
+                        {
+                            store.retire_refused_work_protocol_attempt(
+                                attempt,
+                                core_operation,
+                                &core_key,
+                            )?;
+                        }
                         return Err(error);
                     }
-                    Err(error) => return Err(error),
                 };
                 ("unblock", serde_json::to_value(item)?)
             }

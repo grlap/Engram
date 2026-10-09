@@ -28,6 +28,11 @@ mod task_memory;
 mod unadmitted_observation;
 mod verification_bind;
 mod work;
+pub(crate) use work::PendingWorkProtocolAttempt;
+#[cfg(test)]
+pub(crate) use work::before_refused_retirement;
+
+pub(crate) const UNKNOWN_BLOCKER_REFUSAL: &str = "unknown blocker selector for this work item";
 pub(crate) use work::BindingReadRequest;
 #[cfg(test)]
 pub(crate) use work::FocusBinding;
