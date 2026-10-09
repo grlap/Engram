@@ -53,6 +53,63 @@ fn fixture() -> (
 }
 
 #[test]
+fn disposal_handoff_guidance_ignores_noncurrent_or_resolved_offers() {
+    let (_directory, owner, _, work) = fixture();
+    let store = owner.store().unwrap();
+    let guidance = owner.work_guidance(&store, work.work_id, at(3)).unwrap();
+    let offer = guidance.handoffs[0].clone();
+    let claim = guidance.claim.as_ref();
+    let actions = |status: &ReadyWork, offers: &[WorkHandoffOffer], now| {
+        allowed_next(
+            status,
+            AllowedNextContext {
+                claim,
+                handoffs: offers,
+                session: &owner.session_id,
+                now,
+                can_waive_required_child: false,
+                claim_recovery_required: false,
+                completion_capture_ready: false,
+                completion_preflight_ready: false,
+            },
+        )
+    };
+    let admitted = |next: Vec<String>| {
+        for action in ["work_update:cancel", "work_update:supersede"] {
+            assert!(next.contains(&action.to_owned()));
+        }
+    };
+    let mut historic = offer.clone();
+    historic.run_id = WorkRunId::new();
+    admitted(actions(&guidance.status, &[historic], at(3)));
+    let mut without_run = guidance.status.clone();
+    without_run.work.active_run_id = None;
+    admitted(actions(&without_run, std::slice::from_ref(&offer), at(3)));
+    for state in [
+        WorkHandoffState::Accepted,
+        WorkHandoffState::Cancelled,
+        WorkHandoffState::Expired,
+    ] {
+        let mut resolved = offer.clone();
+        resolved.state = state;
+        admitted(actions(&guidance.status, &[resolved], at(3)));
+    }
+    for now in [
+        offer.expires_at,
+        offer.expires_at + chrono::Duration::seconds(1),
+    ] {
+        admitted(actions(&guidance.status, std::slice::from_ref(&offer), now));
+    }
+    // Disposal is blocked by the current run's offer regardless of its sender.
+    let mut other_sender = offer;
+    other_sender.from = SessionId("earlier-holder".into());
+    let next = actions(&guidance.status, &[other_sender], at(3));
+    for action in ["work_update:cancel", "work_update:supersede"] {
+        assert!(!next.contains(&action.to_owned()));
+    }
+}
+
+#[test]
 fn disposal_handoff_service_retry_after_authorized_cancel_is_admitted() {
     let (_directory, owner, _, work) = fixture();
     let cancel = WorkUpdateInput::Cancel {

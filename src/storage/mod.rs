@@ -196,9 +196,10 @@ pub(crate) const PENDING_HANDOFF_REFUSAL: &str =
 
 pub(crate) fn refuse_disposed_handoff(work: &crate::WorkItem) -> Result<(), StoreError> {
     let lifecycle = match work.lifecycle {
-        crate::WorkLifecycle::Cancelled => "cancelled",
-        crate::WorkLifecycle::Superseded => "superseded",
-        _ => return Ok(()),
+        crate::WorkLifecycle::Cancelled | crate::WorkLifecycle::Superseded => work.lifecycle.word(),
+        crate::WorkLifecycle::Proposed
+        | crate::WorkLifecycle::Open
+        | crate::WorkLifecycle::Completed => return Ok(()),
     };
     Err(StoreError::InvalidWork(format!(
         "handoff cannot proceed: {} is {lifecycle}; inspect it with engram work show {}",

@@ -2428,9 +2428,15 @@ fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<Stri
             "work_update:add_prerequisite".into(),
             "work_update:remove_prerequisite".into(),
             crate::storage::DECOMPOSE_PROTOCOL_OPERATION.into(),
-            "work_update:cancel".into(),
-            "work_update:supersede".into(),
         ]);
+        let live_handoff = context.handoffs.iter().any(|offer| {
+            offer.state == WorkHandoffState::Offered
+                && status.work.active_run_id == Some(offer.run_id)
+                && offer.expires_at > context.now
+        });
+        if !live_handoff {
+            allowed.extend(["work_update:cancel".into(), "work_update:supersede".into()]);
+        }
     }
     if context.can_waive_required_child {
         allowed.push("work_update:waive_required_child".into());
