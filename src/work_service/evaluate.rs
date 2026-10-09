@@ -73,15 +73,103 @@ impl LocalWorkService {
         input: &WorkEvaluateInput,
         now: DateTime<Utc>,
     ) -> Result<WorkEvaluateResult, StoreError> {
+        let ParsedEvaluation {
+            mode,
+            verdicts,
+            evaluator_model,
+            supersedes,
+            rationale_bytes,
+        } = parse_evaluation_words(input)?;
         let mut store = self.store_at(now)?;
         let target = self.resolve_target(&store, input.work_ref.as_deref())?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
-        // An independent evaluator does not hold the item; its evaluation
-        // leaves its focus where it was.
-        self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("evaluation attempt has no bound focused work".into())
         })?;
+        let mut request = RecordAcceptanceEvaluationRequest {
+            project_id: self.project_id.clone(),
+            work_id: work.work_id,
+            // The submitted basis, not the current revision: an exact resend
+            // must produce the identity it produced when it was recorded.
+            expected_work_revision: input.acceptance_basis,
+            evaluated_through: input.evidence_basis,
+            mode,
+            execution_identity: input.execution_identity.clone(),
+            parent_session: input.parent_session.clone().map(SessionId),
+            evaluator_model,
+            source_basis: input.source_fingerprint.clone().map(|fingerprint| {
+                AcceptanceSourceBasis {
+                    workspace_id: None,
+                    fingerprint,
+                }
+            }),
+            verdicts,
+            evaluator: self.actor("work_evaluate", "record an acceptance evaluation"),
+            attempt_key: input.attempt.clone(),
+            recorded_at: now,
+            supersedes,
+        };
+        crate::storage::validate_evaluation_verdicts(
+            work.work_id,
+            request
+                .verdicts
+                .iter()
+                .zip(&input.verdicts)
+                .map(|(v, submitted)| {
+                    (
+                        v.criterion,
+                        v.verdict,
+                        v.basis,
+                        v.rationale.as_str(),
+                        submitted.evidence.len(),
+                    )
+                }),
+        )?;
+        crate::storage::validate_evaluation_metadata(&request)?;
+        for verdict in &input.verdicts {
+            for value in &verdict.evidence {
+                crate::storage::validate_criterion_evidence_locator(value).map_err(|reason| {
+                    StoreError::AcceptanceEvaluationRefused {
+                        work: work.work_id,
+                        reason: format!("criterion {} cites {value}: {reason}", verdict.criterion),
+                    }
+                })?;
+            }
+        }
+        // The record holds every rationale as stored, each as a canonical
+        // string under its own key, so it is larger than the canonical list of
+        // those strings alone: a list at the cap proves the record over it.
+        // Storage checks the record's exact bytes. The bases name a revision
+        // (from 1) and a feed position (from 0). Each is refused before a
+        // holder's focus moves, with the refusal the record would get.
+        if rationale_bytes >= crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES {
+            return Err(StoreError::AcceptanceEvaluationRefused {
+                work: work.work_id,
+                reason: format!(
+                    "the evaluation's rationales alone take {rationale_bytes} canonical bytes, so the record would pass the {} byte cap; shorten the rationales",
+                    crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES
+                ),
+            });
+        }
+        if input.evidence_basis < 0 {
+            return Err(StoreError::AcceptanceEvaluationRefused {
+                work: work.work_id,
+                reason: format!(
+                    "evidence basis {} is not a position on this run's feed; re-read show",
+                    input.evidence_basis
+                ),
+            });
+        }
+        if input.acceptance_basis < 1 {
+            return Err(StoreError::WorkRevisionConflict {
+                work: work.work_id,
+                expected: input.acceptance_basis,
+                current: work.revision,
+            });
+        }
+        // An independent evaluator does not hold the item; its evaluation
+        // leaves its focus where it was.
+        self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
         // The run an attempt binds: the active run, or the latest run when
         // the item has since completed, so an exact resend can still find
         // the committed attempt. Fresh writes are admitted only further down.
@@ -95,12 +183,6 @@ impl LocalWorkService {
                     reason: "the item has no active run to evaluate".into(),
                 })?,
         };
-        let mode = AcceptanceEvaluationMode::parse(&input.mode).ok_or_else(|| {
-            StoreError::InvalidWork(format!(
-                "unknown evaluation mode {:?}; use same_session, sub_agent, or independent_session",
-                input.mode
-            ))
-        })?;
         // A citation is what the agent saw: a note/gate locator from `show
         // --notes --gates`, resolved exactly as `done --link` resolves it
         // (observations, inherited members, and other runs refuse), or the
@@ -164,72 +246,13 @@ impl LocalWorkService {
                 }
             }
         };
-        let verdicts = input
-            .verdicts
-            .iter()
-            .map(|verdict| {
-                Ok(CriterionVerdictInput {
-                    criterion: verdict.criterion,
-                    verdict: AcceptanceVerdict::parse(&verdict.verdict).ok_or_else(|| {
-                        StoreError::InvalidWork(format!(
-                            "unknown verdict {:?} for criterion {}; use pass, fail, insufficient_evidence, or needs_human",
-                            verdict.verdict, verdict.criterion
-                        ))
-                    })?,
-                    basis: AcceptanceBasis::parse(&verdict.basis).ok_or_else(|| {
-                        StoreError::InvalidWork(format!(
-                            "unknown basis {:?} for criterion {}; use observed, asserted, judgment, or human_required",
-                            verdict.basis, verdict.criterion
-                        ))
-                    })?,
-                    rationale: verdict.rationale.clone(),
-                    evidence: verdict
-                        .evidence
-                        .iter()
-                        .map(|value| resolve_citation(verdict.criterion, value))
-                        .collect::<Result<Vec<_>, StoreError>>()?,
-                })
-            })
-            .collect::<Result<Vec<_>, StoreError>>()?;
-        let evaluator_model = input
-            .model
-            .as_deref()
-            .map(parse_evaluator_model)
-            .transpose()?;
-        let supersedes = input
-            .supersedes
-            .as_deref()
-            .map(|value| {
-                value.trim().parse::<ObjectId>().map_err(|_| {
-                    StoreError::InvalidWork(format!(
-                        "supersedes {value:?} is not a record id; name the carried failing evaluation by the id show prints"
-                    ))
-                })
-            })
-            .transpose()?;
-        let request = RecordAcceptanceEvaluationRequest {
-            project_id: self.project_id.clone(),
-            work_id: work.work_id,
-            // The submitted basis, not the current revision: an exact resend
-            // must produce the identity it produced when it was recorded.
-            expected_work_revision: input.acceptance_basis,
-            evaluated_through: input.evidence_basis,
-            mode,
-            execution_identity: input.execution_identity.clone(),
-            parent_session: input.parent_session.clone().map(SessionId),
-            evaluator_model,
-            source_basis: input.source_fingerprint.clone().map(|fingerprint| {
-                AcceptanceSourceBasis {
-                    workspace_id: None,
-                    fingerprint,
-                }
-            }),
-            verdicts,
-            evaluator: self.actor("work_evaluate", "record an acceptance evaluation"),
-            attempt_key: input.attempt.clone(),
-            recorded_at: now,
-            supersedes,
-        };
+        for (verdict, submitted) in request.verdicts.iter_mut().zip(&input.verdicts) {
+            verdict.evidence = submitted
+                .evidence
+                .iter()
+                .map(|value| resolve_citation(verdict.criterion, value))
+                .collect::<Result<Vec<_>, StoreError>>()?;
+        }
         let full_detail = format!("engram work show {} --full", work.short_ref);
 
         // Preflight the actual representation before the commit. The item
@@ -508,6 +531,100 @@ fn projection_from_rows(
 
 /// `PROVIDER/MODEL[@VERSION]` as structured, asserted metadata. The segment
 /// bounds are the domain's; the core checks them again at its write boundary.
+/// An evaluation request's words, parsed before its target is resolved.
+struct ParsedEvaluation {
+    mode: AcceptanceEvaluationMode,
+    verdicts: Vec<CriterionVerdictInput>,
+    evaluator_model: Option<EvaluatorModel>,
+    supersedes: Option<ObjectId>,
+    /// The canonical size of the list of normalized rationales.
+    rationale_bytes: usize,
+}
+
+/// The checks an evaluation request passes without its item: its words, its
+/// model and superseded record syntax, and each rationale's size. Refused
+/// before the target is resolved, so no refusal about the target can stand
+/// in front of them; every request storage could admit passes.
+///
+/// # Errors
+///
+/// Returns [`StoreError::InvalidWork`] naming the malformed field.
+pub(crate) fn validate_evaluation_words(input: &WorkEvaluateInput) -> Result<(), StoreError> {
+    parse_evaluation_words(input).map(|_| ())
+}
+
+fn parse_evaluation_words(input: &WorkEvaluateInput) -> Result<ParsedEvaluation, StoreError> {
+    let mode = AcceptanceEvaluationMode::parse(&input.mode).ok_or_else(|| {
+        StoreError::InvalidWork(format!(
+            "unknown evaluation mode {:?}; use same_session, sub_agent, or independent_session",
+            input.mode
+        ))
+    })?;
+    let verdicts = input
+        .verdicts
+        .iter()
+        .map(|verdict| {
+            Ok(CriterionVerdictInput {
+                criterion: verdict.criterion,
+                verdict: AcceptanceVerdict::parse(&verdict.verdict).ok_or_else(|| {
+                    StoreError::InvalidWork(format!(
+                        "unknown verdict {:?} for criterion {}; use pass, fail, insufficient_evidence, or needs_human",
+                        verdict.verdict, verdict.criterion
+                    ))
+                })?,
+                basis: AcceptanceBasis::parse(&verdict.basis).ok_or_else(|| {
+                    StoreError::InvalidWork(format!(
+                        "unknown basis {:?} for criterion {}; use observed, asserted, judgment, or human_required",
+                        verdict.basis, verdict.criterion
+                    ))
+                })?,
+                rationale: verdict.rationale.clone(),
+                evidence: Vec::new(),
+            })
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    let evaluator_model = input
+        .model
+        .as_deref()
+        .map(parse_evaluator_model)
+        .transpose()?;
+    let supersedes = input
+        .supersedes
+        .as_deref()
+        .map(|value| {
+            value.trim().parse::<ObjectId>().map_err(|_| {
+                StoreError::InvalidWork(format!(
+                    "supersedes {value:?} is not a record id; name the carried failing evaluation by the id show prints"
+                ))
+            })
+        })
+        .transpose()?;
+    // A blank rationale is left to the verdict checks after the item is
+    // resolved, which refuse it naming its criterion and the item; only the
+    // size bound applies here.
+    let rationales = input
+        .verdicts
+        .iter()
+        .map(|verdict| {
+            if verdict.rationale.trim().is_empty() {
+                Ok(String::new())
+            } else {
+                crate::storage::normalize_note_text(&verdict.rationale, "rationale")
+            }
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    let rationale_bytes = crate::canonical::CanonicalObject::freeze(&rationales)?
+        .bytes()
+        .len();
+    Ok(ParsedEvaluation {
+        mode,
+        verdicts,
+        evaluator_model,
+        supersedes,
+        rationale_bytes,
+    })
+}
+
 fn parse_evaluator_model(value: &str) -> Result<EvaluatorModel, StoreError> {
     let invalid = || {
         StoreError::InvalidWork(format!(

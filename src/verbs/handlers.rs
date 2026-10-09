@@ -1114,6 +1114,11 @@ impl AgentVerbs {
     pub fn add(&self, mut input: AddInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         input.notes = crate::domain::normalize_initial_work_notes(&input.notes)
             .map_err(StoreError::InvalidWork)?;
+        // `add --under` focuses the parent before proposing, so a note over
+        // the size bound is refused here, with the text the append uses.
+        for note in &input.notes {
+            crate::storage::normalize_note_text(note, "note summary")?;
+        }
         if input
             .acceptance
             .iter()
@@ -1176,6 +1181,9 @@ impl AgentVerbs {
         }
         let evaluation_mode = parse_supplied_evaluation_mode(input.evaluation_mode.as_deref())?;
         let acceptance_bindings = parse_bindings(&input.bindings)?;
+        crate::storage::normalize_acceptance(&acceptance, &acceptance_bindings)?;
+        crate::domain::normalize_external_reference(input.external.as_deref())
+            .map_err(StoreError::InvalidWork)?;
         if let Some(under) = input.under.as_deref() {
             let requirement = if input.optional {
                 ChildRequirement::Optional
@@ -1252,6 +1260,10 @@ impl AgentVerbs {
         child: WorkChildInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
+        // Focusing the parent comes first, so a pin the proposal would refuse
+        // is refused before it.
+        self.service
+            .refuse_record_id_pins(&child.acceptance_bindings, now)?;
         let parent = self
             .service
             .work_focus(under, now)
@@ -1574,30 +1586,30 @@ impl AgentVerbs {
     }
 
     fn done_word(&self, input: DoneInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let view = self.target("done", input.work_ref.as_deref(), now)?;
+        let completion = WorkCompleteInput {
+            source_fingerprint: nonempty(input.source_fingerprint),
+            landing: input.landing,
+            links: input.links,
+            link_basis: input.link_basis,
+            capture: nonempty(input.summary).map(|summary| WorkCompletionCaptureInput {
+                summary,
+                refs: Vec::new(),
+            }),
+            evidence: Vec::new(),
+            acceptance: None,
+            note: nonempty(input.note),
+            idempotency_key: String::new(),
+        };
+        // A malformed request is refused before its target is resolved, so
+        // no refusal about the target can stand in front of it.
+        crate::work_service::validate_completion_request(&completion)?;
+        let view = self.target_unfocused("done", input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
         let target = view.status.work.work_id.0.to_string();
         let result = self
             .service
-            .work_complete_on(
-                Some(&target),
-                WorkCompleteInput {
-                    source_fingerprint: nonempty(input.source_fingerprint),
-                    landing: input.landing,
-                    links: input.links,
-                    link_basis: input.link_basis,
-                    capture: nonempty(input.summary).map(|summary| WorkCompletionCaptureInput {
-                        summary,
-                        refs: Vec::new(),
-                    }),
-                    evidence: Vec::new(),
-                    acceptance: None,
-                    note: nonempty(input.note),
-                    idempotency_key: String::new(),
-                },
-                now,
-            )
+            .work_complete_on(Some(&target), completion, now)
             .map_err(|error| VerbError::at(error, &work_ref))?;
         let retirement_candidates = matches!(result, WorkCompleteResult::Completed(_)).then(|| {
             self.service
@@ -1883,7 +1895,7 @@ impl AgentVerbs {
         // offer or a cancel already needs the claim, so it cannot act on an
         // item the caller did not mean.
         let view = match input.work_ref.as_deref() {
-            Some(work_ref) => self.target("handoff", Some(work_ref), now)?,
+            Some(work_ref) => self.target_unfocused("handoff", Some(work_ref), now)?,
             None => self.ambient_focus(now)?,
         };
         let work_ref = view.status.work.short_ref.clone();

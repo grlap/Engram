@@ -165,6 +165,16 @@ impl LocalWorkService {
         self
     }
 
+    /// Refuses bindings that pin a stored record's id, by a read alone, so a
+    /// word that navigates before it proposes can refuse them first.
+    pub(crate) fn refuse_record_id_pins(
+        &self,
+        bindings: &[crate::domain::AcceptanceBinding],
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        self.store_at(now)?.refuse_record_id_pins(bindings)
+    }
+
     pub(super) fn store_at(
         &self,
         now: DateTime<Utc>,
@@ -648,6 +658,55 @@ impl LocalWorkService {
         let work = store.resolve_work_ref(&self.project_id, work_ref)?;
         store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
         Ok(Some(work.work_id))
+    }
+
+    /// The item a request acts on, read without navigating: the named item,
+    /// or the session's current focus when none is named. A request can then
+    /// be refused for a relation it has with its own target before focus
+    /// moves or an attempt is written.
+    pub(super) fn preview_target(
+        &self,
+        store: &SqliteStore,
+        work_ref: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<Option<WorkItem>, StoreError> {
+        if let Some(reference) = work_ref {
+            return store
+                .resolve_work_ref(&self.project_id, reference)
+                .map(Some);
+        }
+        store
+            .work_session_state(&self.project_id, &self.session_id, now)?
+            .focused_work_id
+            .map(|work| store.resolve_work_ref(&self.project_id, &work.0.to_string()))
+            .transpose()
+    }
+
+    /// The item a request's own refs are compared with before focus moves or
+    /// an attempt is written: the item it names, or else the current focus.
+    /// A request naming no item that repeats an act this session already
+    /// admitted gets none, since the focus may have moved since then and the
+    /// comparison must not stand in front of its replay.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the retry exemption needs the operation, its key, its intent and its core write"
+    )]
+    pub(super) fn preflight_target<T: Serialize>(
+        &self,
+        store: &SqliteStore,
+        work_ref: Option<&str>,
+        operation: &str,
+        core_operation: &str,
+        caller_key: &str,
+        intent: &WorkProtocolIntent<'_, T>,
+        now: DateTime<Utc>,
+    ) -> Result<Option<WorkItem>, StoreError> {
+        if work_ref.is_none()
+            && self.admitted_retry(store, operation, core_operation, caller_key, intent)?
+        {
+            return Ok(None);
+        }
+        self.preview_target(store, work_ref, now)
     }
 
     /// Resolves an optional caller-supplied target without moving focus.

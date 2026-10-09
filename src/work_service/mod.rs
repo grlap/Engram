@@ -76,6 +76,7 @@ pub(crate) use evaluation_admission::{READ_RUN_EVIDENCE_REMEDY, evaluation_admis
 mod catalog;
 mod change_context;
 mod completion;
+pub(crate) use completion::validate_completion_request;
 mod continuation;
 mod criterion_links;
 pub(crate) use criterion_links::{WorkCriterionLinkRow, WorkCriterionLinksWindow};
@@ -85,6 +86,7 @@ pub(crate) use source_recovery::{
     MEASURE_SOURCE_REMEDY, shown_source_recovery, source_recovery_remedy,
 };
 mod evaluate;
+pub(crate) use evaluate::validate_evaluation_words;
 mod evaluation_windows;
 pub(crate) use evaluation_windows::UNKNOWN_EVALUATION_REFUSAL;
 mod focus;

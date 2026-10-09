@@ -12,6 +12,9 @@ pub use acceptance_evaluation::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
 };
 pub(crate) use acceptance_evaluation::{AssessedAcceptanceEvaluation, SourceObservationRecord};
+pub(crate) use acceptance_evaluation::{
+    validate_evaluation_metadata, validate_evaluation_verdicts,
+};
 mod binding_read;
 pub(crate) use binding_read::BindingReadRequest;
 pub(in crate::storage) use binding_read::read_acceptance_bindings_on;
@@ -39,12 +42,17 @@ pub(in crate::storage) use import::{
     native_source_notices_on, validate_restored_source_notices_on,
 };
 mod notes;
+pub(crate) use notes::validate_criterion_evidence_locator;
 mod observation;
 mod planning;
 #[cfg(test)]
 pub(crate) use planning::plan_validations;
 pub(in crate::storage) use planning::validate_control_work_binding_in_scope;
 pub(crate) use planning::validate_work_plan;
+pub(crate) use planning::{
+    DraftPrerequisiteEdge, RootDraftShape, claim_expiry, normalize_acceptance, normalize_note_text,
+    normalize_text, validate_decomposition_drafts, validate_revision_patch, validate_root_draft,
+};
 mod query;
 pub(in crate::storage) use query::resolve_work_ref_on;
 pub(crate) use query::{

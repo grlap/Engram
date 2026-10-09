@@ -63,6 +63,8 @@ impl LocalWorkService {
         evidence_ref: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
+        crate::domain::normalize_gate_evidence_input(name, failed, evidence_ref)
+            .map_err(StoreError::InvalidWork)?;
         let mut store = self.store_at(now)?;
         let target = self.resolve_target(&store, work_ref)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
@@ -207,6 +209,7 @@ impl LocalWorkService {
         status: bool,
         now: DateTime<Utc>,
     ) -> Result<WorkNoteResult, StoreError> {
+        crate::storage::normalize_note_text(summary, "note summary")?;
         let mut store = self.store_at(now)?;
         let target = self.resolve_target(&store, work_ref)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
@@ -544,7 +547,67 @@ impl LocalWorkService {
         input: WorkUpdateInput,
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
+        validate_update_shape(&input, now)?;
         let mut store = self.store_at(now)?;
+        // The target (named, or the current focus unless this repeats an
+        // admitted act), read alone, so a ref the request names can be
+        // compared with it before focus moves or an attempt is written.
+        let named_target = match &input {
+            WorkUpdateInput::AddPrerequisite { .. }
+            | WorkUpdateInput::RemovePrerequisite { .. }
+            | WorkUpdateInput::Supersede { .. }
+            | WorkUpdateInput::WaiveRequiredChild { .. } => {
+                let (operation, core_operation, raw_key) = update_metadata(&input);
+                self.preflight_target(
+                    &store,
+                    work_ref,
+                    &format!("work_update:{operation}"),
+                    core_operation,
+                    raw_key,
+                    &self.protocol_intent(&input),
+                    now,
+                )?
+                .map(|item| item.work_id)
+            }
+            _ => None,
+        };
+        match &input {
+            WorkUpdateInput::AddPrerequisite { prerequisite, .. }
+            | WorkUpdateInput::RemovePrerequisite { prerequisite, .. } => {
+                let prerequisite = store.resolve_work_ref(&self.project_id, prerequisite)?;
+                // An item cannot be its own prerequisite, whatever the store holds.
+                if named_target == Some(prerequisite.work_id) {
+                    return Err(StoreError::WorkDependencyCycle);
+                }
+            }
+            WorkUpdateInput::Supersede { replacement, .. } => {
+                let replacement = store.resolve_work_ref(&self.project_id, replacement)?;
+                if named_target == Some(replacement.work_id) {
+                    return Err(StoreError::InvalidWork(
+                        "work cannot supersede itself".into(),
+                    ));
+                }
+            }
+            WorkUpdateInput::WaiveRequiredChild { child, .. } => {
+                let child = store.resolve_work_ref(&self.project_id, child)?;
+                // An item is never its own child, so it cannot waive itself;
+                // storage's refusal, given before focus moves.
+                if named_target == Some(child.work_id) {
+                    return Err(StoreError::InvalidWork(
+                        "completion waiver requires a directly required cancelled or superseded child"
+                            .into(),
+                    ));
+                }
+            }
+            // A pin naming a stored record is refused by a read alone, so it
+            // is refused before the update moves focus.
+            WorkUpdateInput::Revise { patch, .. } => {
+                if let Some(bindings) = &patch.acceptance_bindings {
+                    store.refuse_record_id_pins(bindings)?;
+                }
+            }
+            _ => {}
+        }
         let target = self.bind_target(&mut store, work_ref, now)?;
         let (operation, core_operation, raw_key) = update_metadata(&input);
         let protocol_operation = if matches!(&input, WorkUpdateInput::Reject { .. }) {
@@ -910,12 +973,6 @@ impl LocalWorkService {
             } => {
                 let claim = self.live_protocol_claim(&basis, &work, now)?;
                 if let Some(attach) = attach {
-                    if !summary.trim().is_empty() || !refs.is_empty() {
-                        return Err(StoreError::InvalidWork(
-                            "typed evidence attach cannot also supply generic summary or refs"
-                                .into(),
-                        ));
-                    }
                     let evidence = parse_record_id(&attach.evidence)?;
                     let evidence_kind = store.work_evidence_kind(claim.run_id, &evidence)?;
                     if evidence_kind == WorkEvidenceKind::Generic {
@@ -979,13 +1036,7 @@ impl LocalWorkService {
             } => {
                 let authority = self.planning_authority(basis.claim.as_ref(), &work, now);
                 let blocker_id = match blocker_id {
-                    Some(blocker_id) if !blocker_id.trim().is_empty() => blocker_id,
-                    Some(_) => {
-                        return Err(StoreError::InvalidWork(
-                            "blocker_id must not be empty; omit it to infer one active blocker"
-                                .into(),
-                        ));
-                    }
+                    Some(blocker_id) => blocker_id,
                     None => unique_blocker_id(&store.inspect_work(work.work_id, now)?.blockers)?,
                 };
                 let core_key = scoped_key.clone();
@@ -1329,4 +1380,79 @@ fn replayed_run_id(
             .filter(|claim| claim.work_id == receipt.work_id)
             .map(|claim| claim.run_id)
     })
+}
+
+/// Request syntax is admitted before navigation; execution admission stays in storage.
+fn validate_update_shape(input: &WorkUpdateInput, now: DateTime<Utc>) -> Result<(), StoreError> {
+    use crate::storage::{claim_expiry, normalize_note_text, normalize_text};
+    match input {
+        // A supplied recovery or waiver reason is read only when a recovery
+        // or waiver applies, which depends on stored state, so its checks
+        // stay in storage.
+        WorkUpdateInput::Claim { ttl_seconds, .. }
+        | WorkUpdateInput::ClaimNextReady { ttl_seconds, .. } => {
+            claim_expiry(now, ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS))?;
+        }
+        WorkUpdateInput::Revise { patch, .. } => {
+            crate::storage::validate_revision_patch(patch)?;
+        }
+        WorkUpdateInput::Checkpoint {
+            summary, evidence, ..
+        } => {
+            normalize_text(summary, "checkpoint summary")?;
+            if let Some(evidence) = evidence {
+                parse_record_ids(evidence)?;
+            }
+        }
+        WorkUpdateInput::Evidence {
+            summary,
+            refs,
+            attach,
+            ..
+        } => {
+            if let Some(attach) = attach {
+                if !summary.trim().is_empty() || !refs.is_empty() {
+                    return Err(StoreError::InvalidWork(
+                        "typed evidence attach cannot also supply generic summary or refs".into(),
+                    ));
+                }
+                parse_record_id(&attach.evidence)?;
+            } else {
+                normalize_note_text(summary, "evidence summary")?;
+            }
+        }
+        WorkUpdateInput::Block { detail, .. } => {
+            normalize_text(detail, "blocker detail")?;
+        }
+        WorkUpdateInput::Unblock {
+            blocker_id: Some(blocker_id),
+            ..
+        } if blocker_id.trim().is_empty() => {
+            return Err(StoreError::InvalidWork(
+                "blocker_id must not be empty; omit it to infer one active blocker".into(),
+            ));
+        }
+        WorkUpdateInput::Release { reason, .. } => {
+            normalize_text(reason, "release reason")?;
+        }
+        WorkUpdateInput::Reopen { reason, .. } => {
+            normalize_text(reason, "reopen reason")?;
+        }
+        WorkUpdateInput::Cancel { reason, .. } | WorkUpdateInput::Supersede { reason, .. } => {
+            normalize_text(reason, "work disposal reason")?;
+        }
+        WorkUpdateInput::Reject { reason, .. } => {
+            normalize_text(reason, "required-child rejection reason")?;
+        }
+        WorkUpdateInput::Detach { reason, .. } => {
+            normalize_text(reason, "detach reason")?;
+        }
+        WorkUpdateInput::WaiveRequiredChild { reason, .. } => {
+            normalize_text(reason, "required-child waiver reason")?;
+        }
+        WorkUpdateInput::Unblock { .. }
+        | WorkUpdateInput::AddPrerequisite { .. }
+        | WorkUpdateInput::RemovePrerequisite { .. } => {}
+    }
+    Ok(())
 }

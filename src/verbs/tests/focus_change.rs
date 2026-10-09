@@ -9,6 +9,8 @@ use super::*;
 use crate::storage::{FOCUS_CHANGE_RESERVE, FocusBinding, FocusChange};
 use crate::verbs::focus_change::FocusDisclosure;
 
+mod invalid_input;
+
 struct Session {
     verbs: AgentVerbs,
     _directory: Option<crate::test_support::TempHome>,

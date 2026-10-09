@@ -94,6 +94,22 @@ impl AgentVerbs {
         input: EvaluateInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
+        let mut evaluation = crate::WorkEvaluateInput {
+            work_ref: None,
+            mode: input.mode,
+            acceptance_basis: input.acceptance_basis,
+            evidence_basis: input.evidence_basis,
+            verdicts: input.verdicts,
+            attempt: input.attempt,
+            source_fingerprint: input.source_fingerprint,
+            model: input.model,
+            execution_identity: input.execution_identity,
+            parent_session: input.parent_session,
+            supersedes: input.supersedes,
+        };
+        // A malformed request is refused before its target is resolved, so
+        // no refusal about the target can stand in front of it.
+        crate::work_service::validate_evaluation_words(&evaluation)?;
         let view = self.target_unfocused("evaluate", input.work_ref.as_deref(), now).map_err(|error| {
             if matches!(&error.error, StoreError::InvalidWork(reason) if reason.contains("no focused work")) {
                 VerbError::from(StoreError::InvalidWork(
@@ -104,24 +120,10 @@ impl AgentVerbs {
             }
         })?;
         let work_ref = view.status.work.short_ref.clone();
+        evaluation.work_ref = Some(view.status.work.work_id.0.to_string());
         let result = self
             .service
-            .work_evaluate_on(
-                &crate::WorkEvaluateInput {
-                    work_ref: Some(view.status.work.work_id.0.to_string()),
-                    mode: input.mode,
-                    acceptance_basis: input.acceptance_basis,
-                    evidence_basis: input.evidence_basis,
-                    verdicts: input.verdicts,
-                    attempt: input.attempt,
-                    source_fingerprint: input.source_fingerprint,
-                    model: input.model,
-                    execution_identity: input.execution_identity,
-                    parent_session: input.parent_session,
-                    supersedes: input.supersedes,
-                },
-                now,
-            )
+            .work_evaluate_on(&evaluation, now)
             .map_err(|error| VerbError::at(error, &work_ref))?;
         let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "evaluate", now);

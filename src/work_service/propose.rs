@@ -52,7 +52,56 @@ impl LocalWorkService {
                 idempotency_key.as_str(),
             ),
         };
+        validate_proposal_shape(&input)?;
         let mut store = self.store_at(now)?;
+        // A pin naming a stored record is refused by a read alone, before the
+        // proposal moves focus.
+        match &input {
+            WorkProposeInput::Root {
+                acceptance_bindings,
+                ..
+            } => store.refuse_record_id_pins(acceptance_bindings)?,
+            WorkProposeInput::Decompose {
+                children,
+                prerequisites,
+                ..
+            } => {
+                for child in children {
+                    store.refuse_record_id_pins(&child.acceptance_bindings)?;
+                }
+                // Edges onto existing items, read alone before the proposal
+                // moves focus: each ref resolves, none is the parent itself
+                // (named, or the current focus unless this repeats an
+                // admitted act), and no child's distinct prerequisites exceed
+                // the per-item bound.
+                if !prerequisites.is_empty() {
+                    let parent = self
+                        .preflight_target(
+                            &store,
+                            work_ref,
+                            protocol_operation,
+                            core_operation,
+                            raw_key,
+                            &self.protocol_intent(&input),
+                            now,
+                        )?
+                        .map(|item| item.work_id);
+                    let keys = children
+                        .iter()
+                        .map(|child| child.key.as_str())
+                        .collect::<Vec<_>>();
+                    let edges = prerequisites
+                        .iter()
+                        .map(|edge| crate::storage::DraftPrerequisiteEdge {
+                            work_key: &edge.work_key,
+                            prerequisite: &edge.prerequisite,
+                        })
+                        .collect::<Vec<_>>();
+                    store.refuse_draft_edges(&self.project_id, &keys, &edges, parent)?;
+                }
+            }
+            WorkProposeInput::Plan { .. } => {}
+        }
         let target = self.bind_target(&mut store, work_ref, now)?;
         let intent = self.protocol_intent(&input);
         // A decomposition acts on the focus when it names no parent, under
@@ -332,6 +381,69 @@ impl LocalWorkService {
 
 #[cfg(test)]
 mod tests;
+
+/// A root or decomposition whose own fields are malformed is refused here,
+/// before the proposal binds a target, moves focus or records an attempt.
+/// An inherited priority comes from the parent, which is read later; until
+/// then the default stands in, so only an explicit priority is checked.
+fn validate_proposal_shape(input: &WorkProposeInput) -> Result<(), StoreError> {
+    match input {
+        WorkProposeInput::Plan { .. } => Ok(()),
+        WorkProposeInput::Root {
+            external_ref,
+            notes,
+            title,
+            outcome,
+            acceptance,
+            acceptance_bindings,
+            priority,
+            ..
+        } => crate::storage::validate_root_draft(&crate::storage::RootDraftShape {
+            title,
+            outcome,
+            acceptance,
+            acceptance_bindings,
+            external_ref: external_ref.as_deref(),
+            notes,
+            priority: priority.unwrap_or(crate::domain::DEFAULT_WORK_PRIORITY),
+        }),
+        WorkProposeInput::Decompose {
+            children,
+            prerequisites,
+            ..
+        } => {
+            let drafts = children
+                .iter()
+                .map(|child| ChildWorkDraft {
+                    acceptance_bindings: child.acceptance_bindings.clone(),
+                    external_ref: child.external_ref.clone(),
+                    notes: child.notes.clone(),
+                    local_key: child.key.clone(),
+                    child_requirement: child.requirement.unwrap_or(ChildRequirement::Required),
+                    title: child.title.clone(),
+                    outcome: child.outcome.clone(),
+                    acceptance: child.acceptance.clone(),
+                    kind: child.kind.unwrap_or(WorkItemKind::Task),
+                    priority: child
+                        .priority
+                        .unwrap_or(crate::domain::DEFAULT_WORK_PRIORITY),
+                    labels: child.labels.clone(),
+                    assigned_to: child.assigned_to.clone(),
+                    deferred_until: child.deferred_until,
+                    evaluation_mode: child.evaluation_mode,
+                })
+                .collect::<Vec<_>>();
+            let edges = prerequisites
+                .iter()
+                .map(|edge| crate::storage::DraftPrerequisiteEdge {
+                    work_key: &edge.work_key,
+                    prerequisite: &edge.prerequisite,
+                })
+                .collect::<Vec<_>>();
+            crate::storage::validate_decomposition_drafts(&drafts, &edges)
+        }
+    }
+}
 
 /// Fits a replayed root's response within the agent budget after its page
 /// was marked as history, which adds a few bytes. Recoverable focus context

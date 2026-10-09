@@ -18,7 +18,7 @@ impl AgentVerbs {
     }
 
     fn claim_word(&self, input: ClaimInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let view = self.target("claim", Some(&input.work_ref), now)?;
+        let view = self.target_unfocused("claim", Some(&input.work_ref), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let target = view.status.work.work_id.0.to_string();
         let _result = self
@@ -76,7 +76,7 @@ impl AgentVerbs {
         input: ClaimUnderInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
-        let parent = self.target("claim", Some(&input.under), now)?;
+        let parent = self.target_unfocused("claim", Some(&input.under), now)?;
         let parent_ref = parent.status.work.short_ref.clone();
         let target = parent.status.work.work_id.0.to_string();
         let result = self

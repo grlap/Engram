@@ -5,7 +5,11 @@ fn criterion_links_pending_basis_refusal_never_discloses_derived_key() {
     let (_home, verbs, path, _) = fixture();
     let reference = setup(&verbs);
     note(&verbs, &reference, "Original evidence", 2);
-    let request = input(&reference, basis(&verbs, &reference), 1, "not-a-note");
+    // A well-formed locator that names no note: it is refused only once the
+    // run's notes are read, after the attempt is recorded. A malformed one
+    // would be refused before any attempt exists.
+    let unmatched = "deadbeefdeadbeef";
+    let request = input(&reference, basis(&verbs, &reference), 1, unmatched);
     assert!(verbs.done(request.clone(), at(5)).is_err());
     let connection = rusqlite::Connection::open(path).unwrap();
     let key: String = connection
@@ -54,7 +58,7 @@ fn criterion_links_pending_basis_refusal_never_discloses_derived_key() {
         landing: None,
         links: vec![WorkCriterionLinkInput {
             criterion: 1,
-            locator: "not-a-note".into(),
+            locator: unmatched.into(),
         }],
         link_basis: Some(basis(&verbs, &reference)),
         capture: None,

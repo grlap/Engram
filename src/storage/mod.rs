@@ -270,6 +270,12 @@ pub(crate) use work::{
     VerificationObligationAssessment,
 };
 pub(crate) use work::{DISCOVERY_ROWS, WorkDiscoveryRow};
+pub(crate) use work::{
+    DraftPrerequisiteEdge, RootDraftShape, claim_expiry, normalize_acceptance, normalize_note_text,
+    normalize_text, validate_criterion_evidence_locator, validate_decomposition_drafts,
+    validate_evaluation_metadata, validate_evaluation_verdicts, validate_revision_patch,
+    validate_root_draft,
+};
 pub(crate) use work::{ListingExpectation, WorkNoteSearchMatch};
 pub(crate) use work::{VerificationFacts, WorkNoteRecord};
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};

@@ -19,13 +19,46 @@ pub(super) fn validate_shape(input: &WorkCompleteInput) -> Result<(), StoreError
     } else {
         None
     };
-    reason.map_or(Ok(()), |reason| {
-        Err(StoreError::WorkCriterionLinkInvalid {
+    if let Some(reason) = reason {
+        return Err(StoreError::WorkCriterionLinkInvalid {
             criterion: None,
             reason,
-        })
-    })
+        });
+    }
+    // A basis below 1 names no revision any item has, so it cannot match the
+    // item read later; refuse it first, as the later basis check would.
+    if let (Some(basis), Some(first)) = (input.link_basis, input.links.first())
+        && basis < 1
+    {
+        return Err(StoreError::WorkCriterionLinkInvalid {
+            criterion: (first.criterion > 0).then_some(first.criterion),
+            reason: BASIS_CHANGED,
+        });
+    }
+    // Each link's own shape, which needs neither the item nor its run, is
+    // refused here too, before the completion moves focus or writes an attempt.
+    for link in &input.links {
+        if link.criterion == 0 {
+            return Err(StoreError::WorkCriterionLinkInvalid {
+                criterion: None,
+                reason: CRITERION_OUTSIDE_LIST,
+            });
+        }
+        crate::storage::validate_criterion_evidence_locator(&link.locator).map_err(|reason| {
+            StoreError::WorkCriterionLinkInvalid {
+                criterion: Some(link.criterion),
+                reason,
+            }
+        })?;
+    }
+    Ok(())
 }
+
+const CRITERION_OUTSIDE_LIST: &str =
+    "criterion position is outside the acceptance list; read show for its one-based positions";
+
+const BASIS_CHANGED: &str =
+    "the work/acceptance basis changed since you read it; re-read show and re-link";
 
 pub(super) fn acceptance(
     store: &SqliteStore,
@@ -44,7 +77,7 @@ pub(super) fn acceptance(
     if input.link_basis != Some(work.revision) {
         return Err(StoreError::WorkCriterionLinkInvalid {
             criterion: (first > 0).then_some(first),
-            reason: "the work/acceptance basis changed since you read it; re-read show and re-link",
+            reason: BASIS_CHANGED,
         });
     }
     let mut results = LocalWorkService::prevalidate_completion_acceptance(
@@ -68,7 +101,7 @@ pub(super) fn acceptance(
         else {
             return Err(StoreError::WorkCriterionLinkInvalid {
                 criterion: (link.criterion > 0).then_some(link.criterion),
-                reason: "criterion position is outside the acceptance list; read show for its one-based positions",
+                reason: CRITERION_OUTSIDE_LIST,
             });
         };
         let evidence_id = store.resolve_criterion_evidence(

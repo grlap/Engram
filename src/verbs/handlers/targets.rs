@@ -92,10 +92,9 @@ impl AgentVerbs {
         .into())
     }
 
-    /// Resolves a named item without focusing it, for a word a non-holder may
-    /// use (note, gate, evaluate): the service moves focus only for the
-    /// item's live holder, so a peer's word leaves focus, and the claim the
-    /// next host turn binds, where it was.
+    /// Resolves without navigation so request translation and validation can
+    /// refuse before focus moves. The service binds a valid mutation itself;
+    /// note, gate and evaluate bind only when the caller is the live holder.
     pub(super) fn target_unfocused(
         &self,
         word: &str,

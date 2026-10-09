@@ -29,8 +29,31 @@ impl LocalWorkService {
         input: WorkHandoffInput,
         now: DateTime<Utc>,
     ) -> Result<WorkHandoffResult, StoreError> {
-        if let WorkHandoffInput::Offer { to, .. } = &input {
-            crate::storage::admit_session_id_text(to)?;
+        match &input {
+            WorkHandoffInput::Offer {
+                to,
+                ttl_seconds,
+                checkpoint_summary,
+                ..
+            } => {
+                // Storage's order: the destination, then source != destination,
+                // then the summary and the expiry.
+                crate::storage::admit_session_id_text(to)?;
+                if *to == self.session_id.0 {
+                    return Err(StoreError::InvalidWork(
+                        "handoff source and destination must differ".into(),
+                    ));
+                }
+                crate::storage::normalize_text(checkpoint_summary, "checkpoint summary")?;
+                crate::storage::claim_expiry(
+                    now,
+                    ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
+                )?;
+            }
+            WorkHandoffInput::Cancel { reason, .. } => {
+                crate::storage::normalize_text(reason, "handoff cancellation reason")?;
+            }
+            WorkHandoffInput::Accept { .. } => {}
         }
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;

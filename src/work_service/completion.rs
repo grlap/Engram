@@ -3,6 +3,119 @@ use super::*;
 
 mod links;
 
+const COMPLETION_NOTE_WITH_ACCEPTANCE: &str =
+    "completion note may be supplied only when acceptance is omitted";
+
+/// The explicit acceptance's relations with the request itself, refused with
+/// storage's text before focus moves or an attempt is written, and ahead of
+/// storage's count and coverage recovery: two results naming one criterion
+/// and, when the request names its evidence, a citation outside that set.
+/// Each depends on the request alone, never on the item's current criteria,
+/// so an exact resend of a completion already admitted passes them whatever
+/// the item became since and reaches its replay. Reading an unnamed result
+/// against the item's criteria, whether the results cover them, and citations
+/// against the implicit all-run basis stay with storage.
+fn refuse_misaddressed_acceptance(
+    item: &WorkItem,
+    acceptance: &[WorkAcceptanceInput],
+    evidence: &[String],
+) -> Result<(), StoreError> {
+    let mut named = std::collections::HashSet::new();
+    for result in acceptance {
+        if let Some(criterion) = result.criterion.as_deref()
+            && !named.insert(criterion.trim())
+        {
+            return Err(StoreError::WorkCompletionRefused {
+                work: item.work_id,
+                reason: "acceptance results contain a duplicate criterion".into(),
+            });
+        }
+    }
+    if evidence.is_empty() {
+        return Ok(());
+    }
+    let requested = parse_record_ids(evidence)?
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    for result in acceptance {
+        if let Some(evidence_id) = parse_record_ids(&result.evidence)?
+            .into_iter()
+            .find(|evidence_id| !requested.contains(evidence_id))
+        {
+            // The refusal names the criterion as storage would; an unnamed
+            // result is the item's sole criterion, or names none.
+            let criterion = match result.criterion.as_deref() {
+                Some(criterion) => format!("acceptance criterion {:?}", criterion.trim()),
+                None if item.acceptance.len() == 1 => {
+                    format!("acceptance criterion {:?}", item.acceptance[0])
+                }
+                None => "an unnamed acceptance result".to_owned(),
+            };
+            return Err(StoreError::WorkCompletionRefused {
+                work: item.work_id,
+                reason: format!(
+                    "{criterion} cites evidence {evidence_id} outside the requested completion basis"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The completion request's own shape and the relations among its fields,
+/// which need neither the store nor the item: refused before the target is
+/// resolved, focus moves or an attempt is written. Every request storage
+/// could admit passes, so an exact replay still reaches its replay.
+pub(crate) fn validate_completion_request(input: &WorkCompleteInput) -> Result<(), StoreError> {
+    links::validate_shape(input)?;
+    // A note beside an empty result list is admitted under an evaluated
+    // policy, which reads no explicit results; beside results it never is.
+    if input
+        .acceptance
+        .as_ref()
+        .is_some_and(|acceptance| !acceptance.is_empty())
+        && input.note.is_some()
+    {
+        return Err(StoreError::InvalidWork(
+            COMPLETION_NOTE_WITH_ACCEPTANCE.into(),
+        ));
+    }
+    // A supplied criterion that is blank can name no criterion of any
+    // item, so it is refused here, with the text storage uses once it
+    // reaches it. Storage reaches it only after its typed recovery for a
+    // result count that differs from the item's, which needs the item;
+    // that recovery stays there.
+    for result in input.acceptance.iter().flatten() {
+        if let Some(criterion) = result.criterion.as_deref() {
+            crate::storage::normalize_text(criterion, "acceptance criterion")?;
+        }
+    }
+    // A result without a criterion stands for an item's sole criterion,
+    // so beside another result it can name none any item admits.
+    if let Some(acceptance) = &input.acceptance
+        && acceptance.len() > 1
+        && acceptance.iter().any(|result| result.criterion.is_none())
+    {
+        return Err(StoreError::InvalidWork(
+            "each acceptance result needs its criterion when more than one is given".into(),
+        ));
+    }
+    // A malformed landing is refused before anything is recorded.
+    if let Some(landing) = &input.landing {
+        landing.validate().map_err(StoreError::InvalidWork)?;
+    }
+    if let Some(capture) = &input.capture {
+        crate::storage::normalize_note_text(&capture.summary, "evidence summary")?;
+    }
+    parse_record_ids(&input.evidence)?;
+    if let Some(acceptance) = &input.acceptance {
+        for result in acceptance {
+            parse_record_ids(&result.evidence)?;
+        }
+    }
+    Ok(())
+}
+
 /// A sealed completion's landing is frozen with it: naming a landing its seal
 /// does not already record is a late finding, refused like any other change
 /// to completed work, so a later push is recorded in a note.
@@ -158,12 +271,13 @@ impl LocalWorkService {
         input: WorkCompleteInput,
         now: DateTime<Utc>,
     ) -> Result<WorkCompleteResult, StoreError> {
-        links::validate_shape(&input)?;
-        // A malformed landing is refused before anything is recorded.
-        if let Some(landing) = &input.landing {
-            landing.validate().map_err(StoreError::InvalidWork)?;
-        }
+        validate_completion_request(&input)?;
         let mut store = self.store_at(now)?;
+        if let Some(acceptance) = &input.acceptance
+            && let Some(item) = self.preview_target(&store, work_ref, now)?
+        {
+            refuse_misaddressed_acceptance(&item, acceptance, &input.evidence)?;
+        }
         let target = self.bind_target(&mut store, work_ref, now)?;
         // The work and retained claim jointly identify the run, including
         // after sealing. Do not combine two cuts across a concurrent reopen.
@@ -679,7 +793,7 @@ impl LocalWorkService {
         let translated = if let Some(supplied) = supplied {
             if note.is_some() {
                 return Err(StoreError::InvalidWork(
-                    "completion note may be supplied only when acceptance is omitted".into(),
+                    COMPLETION_NOTE_WITH_ACCEPTANCE.into(),
                 ));
             }
             supplied

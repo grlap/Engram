@@ -341,6 +341,87 @@ fn keyless_completion_reopen_means_a_new_attempt_under_new_run_authority() {
     assert_eq!(attempts(&service).len(), 2, "one attempt per run");
 }
 
+/// A keyed completion whose one result names no criterion, which the item's
+/// sole criterion admits.
+fn unnamed_result_completion() -> WorkCompleteInput {
+    let mut input = completion_input("delivered", "unnamed-result-completion");
+    input.acceptance = Some(
+        serde_json::from_value(serde_json::json!([{"satisfied": true, "note": "met"}]))
+            .expect("acceptance"),
+    );
+    input
+}
+
+/// Reopens the completed item and gives it a second criterion, so an unnamed
+/// result no longer reads as its sole criterion.
+fn reopen_with_two_criteria(service: &LocalWorkService, now: i64) {
+    service
+        .work_update(
+            WorkUpdateInput::Reopen {
+                reason: "new execution".into(),
+                idempotency_key: "reopen-for-two-criteria".into(),
+            },
+            at(now),
+        )
+        .expect("reopen");
+    service
+        .work_update(
+            WorkUpdateInput::Revise {
+                patch: WorkRevisionPatch {
+                    acceptance: Some(vec!["It works".into(), "It is reviewed".into()]),
+                    ..WorkRevisionPatch::default()
+                },
+                idempotency_key: "revise-to-two-criteria".into(),
+            },
+            at(now + 1),
+        )
+        .expect("revise");
+}
+
+#[test]
+fn exact_completion_replay_survives_a_later_acceptance_revision() {
+    let directory = crate::test_support::temp_home().expect("temp");
+    let service = claimed_service(directory.path().join("store.db"));
+    let input = unnamed_result_completion();
+    let WorkCompleteResult::Completed(first) = service
+        .work_complete(input.clone(), at(2))
+        .expect("complete")
+    else {
+        panic!("completed")
+    };
+    reopen_with_two_criteria(&service, 3);
+    let WorkCompleteResult::Completed(replay) =
+        service.work_complete(input, at(5)).expect("exact replay")
+    else {
+        panic!("replayed")
+    };
+    assert_eq!(
+        serde_json::to_value(first).unwrap(),
+        serde_json::to_value(replay).unwrap()
+    );
+}
+
+#[test]
+fn interrupted_completion_recovers_after_a_later_acceptance_revision() {
+    let directory = crate::test_support::temp_home().expect("temp");
+    let service = claimed_service(directory.path().join("store.db"));
+    let input = unnamed_result_completion();
+    let seal = commit_completion_core_without_finishing(&service, &input, at(2));
+    reopen_with_two_criteria(&service, 3);
+    let WorkCompleteResult::Completed(replay) = service
+        .clone()
+        .work_complete(input, at(5))
+        .expect("recover core commit")
+    else {
+        panic!("completed")
+    };
+    assert_eq!(replay.run_id, seal.run_id);
+    assert_eq!(
+        replay.seal,
+        service.store().expect("store").stored_seal_id(&seal)
+    );
+}
+
 #[test]
 fn keyless_completion_without_a_native_run_refuses_until_claim_bootstraps_one() {
     let directory = crate::test_support::temp_home().expect("temp");

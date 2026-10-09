@@ -285,6 +285,20 @@ an exact retry reports only a move the retry itself made. A word that moved
 focus and then refused (a claim held elsewhere, a refused `done`, a note
 whose later check fails) carries the same `focus_change` beside `error` in
 CLI JSON and MCP, and its line after the message on the CLI text surface.
+A request whose input is malformed on its face (its shape, sizes, counts,
+duplicates, or its fields' relations with each other) refuses before moving
+focus. So do some refusals that read stored state: a work reference inside
+the request that does not resolve, a binding pinned to a stored record, and a
+proposed child's edge onto its parent or past the prerequisite bound. Other
+refusals that need the named item's stored state may keep the move: evidence
+or a locator that is not on its run, a criterion position or name it lacks,
+an unnamed result when it has several criteria, a criterion reported unmet, a
+result count other than its criteria's, a read basis it has moved past, a
+bound against its stored edges, and claim, lifecycle, execution or authority
+admission. A fresh `done` with malformed input on already completed work is
+refused too, while an exact resend of an admitted completion still returns
+its seal. The words that disclose a move disclose it with the refusal.
+`update` and `handoff` do not yet disclose their move.
 
 The claiming turn keeps the binding the host admitted it with. The new
 target is only a candidate for the host's next admission, and the receipt

@@ -55,7 +55,7 @@ impl AgentVerbs {
     pub fn update(&self, input: UpdateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         #[cfg(test)]
         crate::storage::work_cost::phase("word.before_target");
-        let view = self.target("update", input.work_ref.as_deref(), now)?;
+        let view = self.target_unfocused("update", input.work_ref.as_deref(), now)?;
         #[cfg(test)]
         crate::storage::work_cost::phase("word.after_target");
         let work_ref = view.status.work.short_ref.clone();

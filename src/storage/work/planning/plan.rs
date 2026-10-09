@@ -29,6 +29,41 @@ pub(crate) struct ValidatedPlan {
     parts: PlanParts,
 }
 
+impl ValidatedPlan {
+    /// The refusals that need the store but no write, in admission's order:
+    /// each existing prerequisite ref resolves, no task names one existing
+    /// item twice (by two spellings of its ref), and no binding pins a stored
+    /// record. Run before the plan records an attempt, so a plan refused for
+    /// any of these leaves nothing behind; lifecycle and integrity checks of
+    /// the resolved items stay with admission.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] for an unresolvable ref, a duplicate resolved
+    /// edge, a pin naming a stored record, or a read failure.
+    pub(crate) fn refuse_unresolvable_on(
+        &self,
+        store: &SqliteStore,
+        project: &ProjectId,
+    ) -> Result<(), StoreError> {
+        let mut distinct = HashSet::new();
+        for (work, dependency) in &self.parts.edges {
+            if let WorkPlanDependency::Existing(reference) = dependency {
+                let item = store.resolve_work_ref(project, reference)?;
+                if !distinct.insert((*work, item.work_id)) {
+                    return Err(StoreError::InvalidWork(
+                        "plan has duplicate resolved prerequisite edges".into(),
+                    ));
+                }
+            }
+        }
+        for draft in &self.parts.drafts {
+            store.refuse_record_id_pins(&draft.acceptance_bindings)?;
+        }
+        Ok(())
+    }
+}
+
 /// What whole-plan validation computes. Admission works from these; only a
 /// plan validated ahead of admission also keeps the input it came from, for
 /// the exact-input comparison that decides its reuse.
@@ -288,10 +323,14 @@ fn validate_plan(input: &WorkPlanInput) -> Result<PlanParts, StoreError> {
         note_count = note_count.saturating_add(task.notes.len());
         crate::domain::validate_initial_work_note_count(note_count)
             .map_err(StoreError::InvalidWork)?;
-        notes.push(
-            crate::domain::normalize_initial_work_notes(&task.notes)
-                .map_err(StoreError::InvalidWork)?,
-        );
+        let task_notes = crate::domain::normalize_initial_work_notes(&task.notes)
+            .map_err(StoreError::InvalidWork)?;
+        // Each note is appended under the note size bound; refuse an oversized
+        // one here, before the plan records an attempt, with the same text.
+        for note in &task_notes {
+            super::normalize_note_text(note, "note summary")?;
+        }
+        notes.push(task_notes);
         let acceptance_bindings = task
             .bindings
             .iter()

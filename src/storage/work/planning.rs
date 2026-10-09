@@ -45,6 +45,7 @@ mod tests;
 mod detach;
 mod plan;
 mod relations;
+mod shape;
 #[cfg(test)]
 pub(crate) use plan::plan_validations;
 pub(crate) use plan::validate_work_plan;
@@ -58,6 +59,10 @@ pub(super) use relations::{
 use relations::{
     change_work_prerequisite_on, change_work_prerequisite_with_validation_on,
     validate_prerequisite_in_degree, validate_prerequisite_input,
+};
+pub(crate) use shape::{
+    DraftPrerequisiteEdge, RootDraftShape, validate_decomposition_drafts, validate_revision_patch,
+    validate_root_draft,
 };
 
 /// Atomic plans defer whole-project cycle and root-size scans to their final
@@ -409,84 +414,7 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        if request.patch.clear_assignment && request.patch.assigned_to.is_some() {
-            return Err(StoreError::InvalidWork(
-                "assignment cannot be set and cleared in one revision".into(),
-            ));
-        }
-        if request.patch.clear_evaluation_mode && request.patch.evaluation_mode.is_some() {
-            return Err(StoreError::InvalidWork(
-                "evaluation mode cannot be set and cleared in one revision".into(),
-            ));
-        }
-        if request.patch.clear_deferral && request.patch.deferred_until.is_some() {
-            return Err(StoreError::InvalidWork(
-                "deferral cannot be set and cleared in one revision".into(),
-            ));
-        }
-        if let Some(acceptance) = &request.patch.acceptance
-            && (acceptance.is_empty() || acceptance.iter().any(|value| value.trim().is_empty()))
-        {
-            return Err(StoreError::InvalidWork(
-                "acceptance replacement needs at least one nonblank criterion; omit acceptance to leave it unchanged".into(),
-            ));
-        }
-        if request.patch.labels.is_some()
-            && (!request.patch.add_labels.is_empty() || !request.patch.remove_labels.is_empty())
-        {
-            return Err(StoreError::InvalidWork(
-                "labels cannot be replaced and incrementally changed in one revision".into(),
-            ));
-        }
-        let add_labels = normalize_strings(&request.patch.add_labels);
-        let remove_labels = normalize_strings(&request.patch.remove_labels);
-        let add_label_keys = add_labels
-            .iter()
-            .map(|label| normalize_work_catalog_key(label))
-            .collect::<HashSet<_>>();
-        let remove_label_keys = remove_labels
-            .iter()
-            .map(|label| normalize_work_catalog_key(label))
-            .collect::<HashSet<_>>();
-        if !add_label_keys.is_disjoint(&remove_label_keys) {
-            return Err(StoreError::InvalidWork(
-                "the same label cannot be added and removed in one revision".into(),
-            ));
-        }
-        if request
-            .patch
-            .priority
-            .is_some_and(|priority| !(0..=4).contains(&priority))
-        {
-            return Err(StoreError::InvalidWork(
-                "priority must be an integer from 0 through 4".into(),
-            ));
-        }
-        if request.patch.clear_external && request.patch.external_ref.is_some() {
-            return Err(StoreError::InvalidWork(
-                "cannot set and clear the external reference together".into(),
-            ));
-        }
-        let changed = request.patch.external_ref.is_some()
-            || request.patch.clear_external
-            || request.patch.title.is_some()
-            || request.patch.outcome.is_some()
-            || request.patch.acceptance.is_some()
-            || request.patch.acceptance_bindings.is_some()
-            || request.patch.kind.is_some()
-            || request.patch.priority.is_some()
-            || request.patch.labels.is_some()
-            || !add_labels.is_empty()
-            || !remove_labels.is_empty()
-            || request.patch.assigned_to.is_some()
-            || request.patch.clear_assignment
-            || request.patch.deferred_until.is_some()
-            || request.patch.clear_deferral
-            || request.patch.evaluation_mode.is_some()
-            || request.patch.clear_evaluation_mode;
-        if !changed {
-            return Err(StoreError::InvalidWork("revision patch is empty".into()));
-        }
+        let (add_labels, remove_labels) = validate_revision_patch(&request.patch)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
@@ -582,6 +510,10 @@ impl SqliteStore {
         if let Some(labels) = request.patch.labels.as_ref() {
             item.labels = normalize_strings(labels);
         } else if !add_labels.is_empty() || !remove_labels.is_empty() {
+            let remove_label_keys = remove_labels
+                .iter()
+                .map(|label| normalize_work_catalog_key(label))
+                .collect::<HashSet<_>>();
             item.labels.retain(|current| {
                 !remove_label_keys.contains(&normalize_work_catalog_key(current))
             });
@@ -1346,7 +1278,7 @@ pub(super) fn persist_operation_result<T: Serialize>(
     Ok(())
 }
 
-pub(super) fn normalize_text(value: &str, label: &str) -> Result<String, StoreError> {
+pub(crate) fn normalize_text(value: &str, label: &str) -> Result<String, StoreError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Err(StoreError::InvalidWork(format!(
@@ -1357,7 +1289,7 @@ pub(super) fn normalize_text(value: &str, label: &str) -> Result<String, StoreEr
 }
 
 /// Write-boundary limit only. Retained canonical notes remain readable at any size.
-pub(super) fn normalize_note_text(value: &str, label: &str) -> Result<String, StoreError> {
+pub(crate) fn normalize_note_text(value: &str, label: &str) -> Result<String, StoreError> {
     const LIMIT: usize = 64 * 1024;
     let text = normalize_text(value, label)?;
     if text.len() > LIMIT {
@@ -1412,7 +1344,7 @@ pub(in crate::storage) fn normalize_acceptance_criteria(values: &[String]) -> Ve
 ///
 /// Returns [`StoreError::InvalidWork`] when a binding names no criterion of
 /// the list as typed, names a blank one, or binds a criterion twice.
-pub(in crate::storage) fn normalize_acceptance(
+pub(crate) fn normalize_acceptance(
     values: &[String],
     bindings: &[crate::domain::AcceptanceBinding],
 ) -> Result<(Vec<String>, Vec<crate::domain::AcceptanceBinding>), StoreError> {
@@ -1453,6 +1385,63 @@ pub(in crate::storage) fn normalize_acceptance(
     Ok((stored, bindings))
 }
 
+impl SqliteStore {
+    /// Read-only admission of a decomposition's prerequisite edges, refused as
+    /// decomposition refuses them but before a proposal binds or records an
+    /// attempt: each edge onto an existing item resolves, none is the parent
+    /// itself, and no child's distinct prerequisites (sibling keys and
+    /// resolved items) exceed the per-item bound. Lifecycle, project and
+    /// ancestry of the resolved items stay with decomposition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] for an unresolvable ref, an edge onto the
+    /// parent, an over-bound child, or a read failure.
+    pub(crate) fn refuse_draft_edges(
+        &self,
+        project: &crate::domain::ProjectId,
+        child_keys: &[&str],
+        edges: &[DraftPrerequisiteEdge<'_>],
+        parent: Option<WorkId>,
+    ) -> Result<(), StoreError> {
+        let keys = child_keys
+            .iter()
+            .map(|key| key.trim())
+            .collect::<HashSet<_>>();
+        let mut per_child: HashMap<&str, (HashSet<&str>, HashSet<WorkId>)> = HashMap::new();
+        for edge in edges {
+            let prerequisite = edge.prerequisite.trim();
+            let entry = per_child.entry(edge.work_key.trim()).or_default();
+            if keys.contains(prerequisite) {
+                entry.0.insert(prerequisite);
+                continue;
+            }
+            let existing = self.resolve_work_ref(project, edge.prerequisite)?;
+            if parent == Some(existing.work_id) {
+                return Err(StoreError::WorkDependencyCycle);
+            }
+            entry.1.insert(existing.work_id);
+        }
+        for (siblings, existing) in per_child.values() {
+            validate_prerequisite_in_degree(siblings.len() + existing.len())?;
+        }
+        Ok(())
+    }
+
+    /// Refuses a binding whose pinned check fingerprint names a stored record,
+    /// by a read alone, so a caller can refuse it before navigation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError::InvalidWork`] for such a pin, or a read failure.
+    pub(crate) fn refuse_record_id_pins(
+        &self,
+        bindings: &[crate::domain::AcceptanceBinding],
+    ) -> Result<(), StoreError> {
+        refuse_record_id_pins_on(&self.connection, bindings)
+    }
+}
+
 /// A pinned check is the fingerprint of a check's command, which the host
 /// records as `check_fingerprint` on its verification evidence. A value that
 /// names a stored record (a minted id, or the fingerprint a frozen record is
@@ -1489,7 +1478,7 @@ pub(in crate::storage) fn short_ref(work_id: WorkId) -> String {
     format!("w-{}", simple.get(20..).unwrap_or(&simple))
 }
 
-pub(super) fn claim_expiry(
+pub(crate) fn claim_expiry(
     now: DateTime<Utc>,
     ttl_seconds: i64,
 ) -> Result<DateTime<Utc>, StoreError> {

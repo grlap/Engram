@@ -245,11 +245,8 @@ impl super::super::SqliteStore {
         let (prefix, member) = locator
             .split_once(':')
             .map_or((locator, None), |(p, m)| (p, Some(m)));
-        if !(8..=64).contains(&prefix.len()) || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Ok(Err(refuse(
-                "use a note/gate locator of at least eight hex digits; an artifact path or URL is not the recorded evidence identity",
-                false,
-            )));
+        if let Err(reason) = validate_criterion_evidence_locator(locator) {
+            return Ok(Err(refuse(reason, false)));
         }
         let prefix = prefix.to_ascii_lowercase();
         let matches: Vec<_> = index
@@ -357,4 +354,17 @@ impl super::super::SqliteStore {
 pub(crate) struct CriterionEvidenceRefusal {
     pub reason: &'static str,
     pub not_on_run: bool,
+}
+
+/// Checks locator syntax without resolving it against a run or changing focus.
+pub(crate) fn validate_criterion_evidence_locator(locator: &str) -> Result<(), &'static str> {
+    let prefix = locator
+        .split_once(':')
+        .map_or(locator, |(prefix, _)| prefix);
+    if !(8..=64).contains(&prefix.len()) || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(
+            "use a note/gate locator of at least eight hex digits; an artifact path or URL is not the recorded evidence identity",
+        );
+    }
+    Ok(())
 }

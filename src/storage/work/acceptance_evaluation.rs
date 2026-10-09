@@ -662,15 +662,8 @@ pub(crate) fn attempt_identity(
         verdicts: &request.verdicts,
         supersedes: request.supersedes.as_ref(),
     })?;
+    validate_attempt_key(request)?;
     let key = match request.attempt_key.as_deref().map(str::trim) {
-        Some(key) if key.is_empty() || key.len() > MAX_ATTEMPT_KEY_BYTES => {
-            return Err(refused(
-                request.work_id,
-                format!(
-                    "an explicit attempt key must contain from 1 through {MAX_ATTEMPT_KEY_BYTES} bytes"
-                ),
-            ));
-        }
         Some(key) => format!("explicit:{}:{}:{key}", request.work_id.0, run_id.0),
         None => format!("content:{}", fingerprint.key()),
     };
@@ -832,34 +825,44 @@ pub(crate) fn validate_completion_seal_acceptance_evaluation_on(
     Ok(Some(evaluation))
 }
 
-fn validate_request_shape(request: &RecordAcceptanceEvaluationRequest) -> Result<(), StoreError> {
-    let work = request.work_id;
-    if let Some(model) = &request.evaluator_model
-        && let Err(reason) = model.validate()
-    {
-        return Err(refused(work, format!("evaluator model: {reason}")));
-    }
-    if request.verdicts.is_empty() {
+pub(crate) fn validate_request_shape(
+    request: &RecordAcceptanceEvaluationRequest,
+) -> Result<(), StoreError> {
+    validate_evaluation_verdicts(
+        request.work_id,
+        request.verdicts.iter().map(|v| {
+            (
+                v.criterion,
+                v.verdict,
+                v.basis,
+                v.rationale.as_str(),
+                v.evidence.len(),
+            )
+        }),
+    )?;
+    validate_evaluation_metadata(request)
+}
+
+/// Admits submitted verdict syntax before citations need a run binding.
+pub(crate) fn validate_evaluation_verdicts<'a>(
+    work: WorkId,
+    verdicts: impl ExactSizeIterator<Item = (usize, AcceptanceVerdict, AcceptanceBasis, &'a str, usize)>,
+) -> Result<(), StoreError> {
+    if verdicts.len() == 0 {
         return Err(refused(
             work,
             "an evaluation needs one verdict per criterion",
         ));
     }
     let mut seen = std::collections::HashSet::new();
-    for verdict in &request.verdicts {
-        if verdict.criterion == 0 || !seen.insert(verdict.criterion) {
+    for (criterion, verdict, basis, rationale, citations) in verdicts {
+        if criterion == 0 || !seen.insert(criterion) {
             return Err(refused(
                 work,
                 "verdict positions are one-based and each criterion appears exactly once",
             ));
         }
-        let criterion = verdict.criterion;
-        if let Some(fault) = verdict_fault(
-            verdict.verdict,
-            verdict.basis,
-            &verdict.rationale,
-            verdict.evidence.len(),
-        ) {
+        if let Some(fault) = verdict_fault(verdict, basis, rationale, citations) {
             return Err(refused(
                 work,
                 match fault {
@@ -878,6 +881,33 @@ fn validate_request_shape(request: &RecordAcceptanceEvaluationRequest) -> Result
                 },
             ));
         }
+    }
+    Ok(())
+}
+
+/// An explicit attempt key, after trimming, holds from 1 through
+/// `MAX_ATTEMPT_KEY_BYTES` bytes; it needs no run to check.
+fn validate_attempt_key(request: &RecordAcceptanceEvaluationRequest) -> Result<(), StoreError> {
+    match request.attempt_key.as_deref().map(str::trim) {
+        Some(key) if key.is_empty() || key.len() > MAX_ATTEMPT_KEY_BYTES => Err(refused(
+            request.work_id,
+            format!(
+                "an explicit attempt key must contain from 1 through {MAX_ATTEMPT_KEY_BYTES} bytes"
+            ),
+        )),
+        _ => Ok(()),
+    }
+}
+
+pub(crate) fn validate_evaluation_metadata(
+    request: &RecordAcceptanceEvaluationRequest,
+) -> Result<(), StoreError> {
+    let work = request.work_id;
+    validate_attempt_key(request)?;
+    if let Some(model) = &request.evaluator_model
+        && let Err(reason) = model.validate()
+    {
+        return Err(refused(work, format!("evaluator model: {reason}")));
     }
     let shape = IdentityShape::of_request(request);
     if shape.stray_child_metadata() {

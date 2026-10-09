@@ -1616,6 +1616,53 @@ fn planning_scale_prerequisite_adds_one_at_a_time_reach_the_bound() {
     assert!(store.verify_all().expect("doctor").is_healthy());
 }
 
+/// One edge from child `a` onto each ref.
+fn draft_edges_from_a(refs: &[String]) -> Vec<super::DraftPrerequisiteEdge<'_>> {
+    refs.iter()
+        .map(|prerequisite| super::DraftPrerequisiteEdge {
+            work_key: "a",
+            prerequisite,
+        })
+        .collect()
+}
+
+// The read-only preflight a proposal runs before it binds or records an
+// attempt applies decomposition's own bound to a child's deduplicated
+// prerequisites: exactly the bound passes, one more is refused by name, and
+// two spellings of one item count once.
+#[test]
+fn draft_edge_preflight_applies_the_prerequisite_bound() {
+    let project = "project-in-degree-preflight";
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let mut seconds = 0;
+    let cap = MAX_WORK_PREREQUISITES_PER_ITEM;
+    let existing = existing_roots(&mut store, project, cap + 1, &mut seconds);
+    let project = crate::domain::ProjectId(project.into());
+    let ids = existing
+        .iter()
+        .map(|(work_id, _)| work_id.0.to_string())
+        .collect::<Vec<_>>();
+    let edges = draft_edges_from_a;
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("rows");
+    store
+        .refuse_draft_edges(&project, &["a"], &edges(&ids[..cap]), None)
+        .expect("exactly the bound");
+    let mut aliased = ids[..cap].to_vec();
+    aliased.push(existing[0].1.clone());
+    store
+        .refuse_draft_edges(&project, &["a"], &edges(&aliased), None)
+        .expect("a second spelling of one item counts once");
+    assert!(matches!(
+        store.refuse_draft_edges(&project, &["a"], &edges(&ids), None),
+        Err(StoreError::InvalidWork(reason)) if reason == in_degree_refusal()
+    ));
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("rows"),
+        before,
+        "the preflight only reads"
+    );
+}
+
 // Decomposition counts a proposed child's deduplicated prerequisites before
 // any child is written: exactly the bound is admitted, one more is refused
 // without writes. The full child then refuses an ordinary add by name and

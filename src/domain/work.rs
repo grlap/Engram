@@ -448,14 +448,7 @@ pub fn normalize_acceptance_bindings(
     acceptance_len: usize,
     bindings: &[AcceptanceBinding],
 ) -> Result<Vec<AcceptanceBinding>, String> {
-    let mut normalized = bindings.to_vec();
-    normalized.sort_by_key(|binding| binding.criterion);
-    if let Some(pair) = normalized
-        .windows(2)
-        .find(|pair| pair[0].criterion == pair[1].criterion)
-    {
-        return Err(format!("criterion {} is bound twice", pair[0].criterion));
-    }
+    let normalized = sorted_acceptance_bindings(bindings)?;
     if let Some(outside) = normalized
         .iter()
         .find(|binding| binding.criterion == 0 || binding.criterion > acceptance_len)
@@ -464,6 +457,27 @@ pub fn normalize_acceptance_bindings(
             "a binding names criterion {}, but the acceptance list has {acceptance_len} criteria numbered from 1",
             outside.criterion
         ));
+    }
+    Ok(normalized)
+}
+
+/// Bindings in position order, refusing a criterion bound twice: the part of
+/// [`normalize_acceptance_bindings`] that needs no acceptance list, so a
+/// request can be refused for it before anything reads the item.
+///
+/// # Errors
+///
+/// Returns the reason when a criterion is bound twice.
+pub fn sorted_acceptance_bindings(
+    bindings: &[AcceptanceBinding],
+) -> Result<Vec<AcceptanceBinding>, String> {
+    let mut normalized = bindings.to_vec();
+    normalized.sort_by_key(|binding| binding.criterion);
+    if let Some(pair) = normalized
+        .windows(2)
+        .find(|pair| pair[0].criterion == pair[1].criterion)
+    {
+        return Err(format!("criterion {} is bound twice", pair[0].criterion));
     }
     Ok(normalized)
 }
