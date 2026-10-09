@@ -62,6 +62,15 @@ must retain each phase's inputs and reason for refusing.
 | Completion fingerprint | Optional declaration stored with the evaluation; admission does not enforce `require_source_freshness` | `staleness` with `SourceCheck::AtCompletion`; absence of a source basis is also stale on reads when that policy is enabled | **Justified: recording a judgment and certifying completion are separate decisions.** Only completion has its fresh measurement; `Unmeasured` cannot call a declared fingerprint mismatched. A record without a source basis can be admitted but can never satisfy a policy requiring one. Preserve this admission/consumption difference; adding admission-time readiness checks would change behavior. |
 | A newer gate supersedes one cited by a pass | `admit_pass_citation` checks the cited gate's kind and result; `bind_verdicts` checks its position at or before the cut; the movement scan excludes gates | `gate_superseded_after` checks same-name records after that cut | **Justified: the judgment's cut and completion's head differ.** A newer gate outside the evaluated cut may already exist at submission, so admission can append an immediately stale record. A newer same-name gate inside the cut is left to the evaluator's judgment by both phases: neither enforces newest-name selection within that cut. Preserve this existing F6 boundary when consolidating. |
 
+Requirement recognition compares the check kind and any optional pinned
+check fingerprint. This predicate is currently spelled separately in
+`bind_verdicts`, `newest_verification_of_kind_on`, and
+`match_verification_evidence` (through `explain_verification_evidence`), among
+others.
+The three agree today on those comparisons; they do not share a single
+predicate. Their result, producer, source and cut checks retain the
+phase-specific guarantees described above.
+
 `binding_freshness_mismatch` has a narrower completion-only fallback: with
 no named root, when the latest mutation lacks a source basis or observation
 time, it requires the verification's run-feed position to be after the
