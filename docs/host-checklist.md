@@ -944,8 +944,9 @@ A grant carries no delivery page and there are no recovery turns: the work
 context an agent sees comes from `next`. While hosts move off the old fields,
 `turn_evaluate.purpose` may be `ordinary` or absent, and
 `turn_begin.delivery_tokens` may be `[]` or absent; a non-empty token list is
-refused with `grant_scope_mismatch`. A new bind that succeeds leaves the
-session `ready`, so it may request a turn at once; `turn_evaluate` still admits
+refused with `grant_scope_mismatch` once the earlier `turn_begin` checks pass.
+A new bind that succeeds leaves the session `ready`, so it may request a turn
+at once; `turn_evaluate` still admits
 or refuses that turn by its usual checks. A new bind is refused while a begun
 turn awaits its checkpoint, and an exact retry of the session's latest bind
 key returns its current status, phase unchanged.

@@ -1068,10 +1068,13 @@ It repeats without pagination or advancement until an explicit stateful call
 changes the relevant state. Both text and JSON retain the no-advancement disclosure,
 memory signal and runnable `engram work memories` navigation under fitting.
 Compact peek prioritizes the focus objective, qualified status, dependency
-counts, live-held work and assigned duties. It retains at most four changes
-for those duties from the bounded feed preview, with exact capture read routes,
-and omits broad participation and unrelated or overflow change bodies with
-counts. It names `next --peek --verbose` for a broader bounded preview.
+counts, live-held work and assigned duties. Before byte fitting, it selects
+at most four changes for the focus, live-held work, shown assigned duties and
+shown incoming handoffs from the bounded feed preview, with exact capture read
+routes. Later fitting may omit a duty or handoff row while retaining a change
+for its subject. Broad participation and unrelated or overflow change bodies
+are omitted with counts. It names `next --peek --verbose` for a broader bounded
+preview.
 The `ls --all --limit 20` catalog and its continuations recover omitted work;
 `show REF --notes` reads its records. Full contract
 and evidence commands are new reads; clipped status retains its full-note

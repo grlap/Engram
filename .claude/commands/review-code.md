@@ -46,8 +46,10 @@ commands run, not a Codex reviewer's shell:
 - Do not retarget Git with `git -C`, `--git-dir`, `--work-tree` or
   `--namespace`. These are refused by design, because a repository chosen
   that way can carry configuration that runs programs.
-- Do not use `git hash-object`; it can run configured clean filters. Compare
-  two files with `git diff --no-index FILE_A FILE_B`.
+- Do not use `git hash-object`; it can run configured clean filters. Use
+  `git diff --no-index FILE_A FILE_B` to inspect content differences. Inside
+  a repository it may apply end-of-line conversion and is not a byte-identity
+  check. When byte identity matters, compare a per-file hash of both sides.
 
 Untracked files do not appear in `git diff`; inspect their contents directly
 when relevant. If nothing changed, report that and stop.

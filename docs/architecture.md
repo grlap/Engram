@@ -194,11 +194,10 @@ values never enter any shared history—vault references only.
 ## Interfaces
 
 The CLI (`engram …`) and agent-facing MCP expose the six-operation ambient
-work protocol, memory, diagnostics, and coordination requests. A separate
-host-private API handles five operations: `session_bind`, `session_status`,
-`turn_evaluate`, `turn_begin` and `turn_checkpoint`. Delivery
-acknowledgement, action checks, heartbeat and exit are not built (see
-[planned interfaces](features/behavioral-control-plane.md#planned-interfaces)).
+work protocol, memory, diagnostics, and coordination requests. The host-private
+control channel is defined in [spec §8.3](spec.md#83-host-control-channel);
+its shipped operation inventory is in
+[CLI & MCP](features/cli-and-mcp.md#shipped-host-private-turn-channel).
 The host owns prompt/tool mediation and notifications; Engram owns durable
 protocol state and decisions. See
 [CLI & MCP](features/cli-and-mcp.md).

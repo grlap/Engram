@@ -650,10 +650,13 @@ Rules that matter:
   unresolved-dependency facts from this snapshot. The same holder capture is
   shown once, beside the focus; other live-held and unresolved assigned duties
   remain visible. With a live-held focus, at most one ready candidate is shown;
-  otherwise the usual five-candidate cap remains. Up to four changes in the
-  retained feed preview whose structured subject is the focus, another held item,
-  or a shown assigned duty remain in feed order. Cited captures keep exact
-  full-note commands; ordinary notes are not promoted to current status.
+  otherwise the usual five-candidate cap remains. Before byte fitting, up to
+  four changes are selected from the retained feed preview whose structured
+  subject is the focus, another held item, a shown assigned duty, or a shown
+  incoming handoff, keeping feed order. Later fitting may omit a duty or handoff
+  row while retaining a change for its subject.
+  Cited captures keep exact full-note commands; ordinary notes are not promoted
+  to current status.
   Broad participation and unrelated or overflow change bodies are omitted with
   counts, non-advancement disclosure and the inspection
   command `engram work next --peek --verbose` (`details` in JSON), which is
@@ -1242,8 +1245,10 @@ Rules that matter:
   including guidance, cursor and any lapsed-claim reminder, stays strictly
   below 12288 bytes. Previews are shed before tail rows. Continuation advances
   from the last emitted association, never an inspected but omitted row.
-  A true empty mapping has zero counts and no cursor; unavailable or corrupt
-  native evidence refuses rather than appearing empty. Restored-record-only
+  A true empty mapping has zero counts and no cursor; an unavailable or corrupt
+  native seal, run, or completion binding refuses rather than appearing empty.
+  Unreadable cited evidence retains its association and locator, with
+  `preview_error_class` instead of a preview. Restored-record-only
   completion has no native mapping. An evaluated seal can have more than the
   explicit input's 64-link limit; traversal has no such total limit.
   The readable unsigned `cl1-` cursor binds project, item, historical run,
@@ -3224,7 +3229,8 @@ exact retry of the session's latest bind key instead returns its current
 status, phase unchanged. While
 hosts move off the old fields, `turn_evaluate.purpose` may be `ordinary` or
 absent (any other value is an `invalid_request`), and `turn_begin.delivery_tokens` may
-be `[]` or absent; a non-empty list is refused with `grant_scope_mismatch`.
+be `[]` or absent; a non-empty list is refused with `grant_scope_mismatch`
+once the earlier `turn_begin` checks pass.
 The checkpoint receipt's `confirmed_cursor` repeats its `cursor`, the position
 of the checkpoint event in the task's write-only audit index. Exact retry
 results are stored as operational records and survive a process restart, but a
