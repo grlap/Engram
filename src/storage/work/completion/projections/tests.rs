@@ -1160,12 +1160,26 @@ fn explicit_empty_skipped_seal_members_are_refused_by_integrity_verification() {
                 }
             }
             let stored = seal_rows(&store, &seal);
-            for (injected, bytes) in [(in_canonical, &stored.0), (in_projection, &stored.1)] {
+            for (injected, bytes, original) in [
+                (in_canonical, &stored.0, &canonical),
+                (in_projection, &stored.1, &projection),
+            ] {
                 let value: serde_json::Value = serde_json::from_slice(bytes).expect("stored JSON");
                 assert_eq!(
                     value.get(member) == Some(&serde_json::json!([])),
                     injected,
                     "{member}: the explicit [] is stored only where injected"
+                );
+                // The injection adds that member and changes nothing else; a
+                // side it did not touch is unchanged as a whole.
+                let mut rest = value.clone();
+                if injected {
+                    rest.as_object_mut().expect("seal object").remove(member);
+                }
+                assert_eq!(
+                    rest,
+                    serde_json::from_slice::<serde_json::Value>(original).expect("original JSON"),
+                    "{member}: the rest of the stored value is unchanged"
                 );
                 assert_eq!(
                     serde_json::from_slice::<CompletionSeal>(bytes).expect("decodes"),
@@ -1181,10 +1195,16 @@ fn explicit_empty_skipped_seal_members_are_refused_by_integrity_verification() {
             .expect("an ordinary load decodes the seal");
             assert_eq!(loaded, typed);
             let report = store.verify_all().expect("diagnose the explicit member");
+            // The whole report: no other finding of any kind.
+            assert!(
+                report.invalid_objects.is_empty()
+                    && report.invalid_control_records.is_empty()
+                    && report.invalid_graph_snapshot_audits.is_empty(),
+                "{member}: {report:?}"
+            );
             let labels: std::collections::BTreeMap<&str, usize> = report
                 .invalid_work_records
                 .iter()
-                .filter(|label| label.contains(&seal))
                 .fold(std::collections::BTreeMap::new(), |mut counts, label| {
                     *counts.entry(label.as_str()).or_default() += 1;
                     counts

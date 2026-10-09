@@ -2039,7 +2039,9 @@ struct StoredControlPolicyOperation {
 }
 
 impl IntegrityReport {
-    /// Whether every stored object passed canonicalization and digest checks.
+    /// Whether verification found nothing invalid: every finding list in this
+    /// report is empty. Verification parses stored record ids but never
+    /// re-derives one from stored bytes.
     #[must_use]
     pub fn is_healthy(&self) -> bool {
         self.invalid_objects.is_empty()

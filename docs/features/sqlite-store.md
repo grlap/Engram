@@ -275,15 +275,19 @@ changing its verifier at the same time.
 
 Decoded meaning is not the whole comparison: integrity verification also
 requires every member a stored value carries to survive being written back by
-its type. A member the type fills in when it is absent is accepted whether it
-is stored or omitted, but a stored member the type drops on writing is not.
-A completion seal shows the case: its `obligations` and `environment` lists
-are omitted when empty, so a seal stored with an explicit `"obligations": []`
+its type. A member the type fills in when it is absent, and always writes
+back, is accepted whether it is stored or omitted; a stored member the type
+drops on writing is not: an unknown member, an empty value of a member the
+type skips when empty, or a `null` for one it skips when absent. A
+completion seal shows the case: among the members it skips when empty are
+its `obligations` and `environment` lists (with `foreign_workspace_changes`
+and `required_child_resolutions`; `acceptance_evaluation` and `landing` are
+skipped when absent), so a seal stored with an explicit `"obligations": []`
 or `"environment": []` decodes to the same seal yet does not survive being
-written back. Integrity verification reports it as invalid, naming the side
-that carries it; `engram doctor` reports these findings, and
-`migration import` runs the same verification on its staged store and refuses
-to publish it:
+written back. A non-empty list survives. Integrity verification reports the
+explicit `[]` as invalid, naming the side that carries it; `engram doctor`
+reports these findings, and `migration import` runs the same verification on
+its staged store and refuses to publish it:
 
 | Where the explicit `[]` is stored | Findings for that seal |
 | --- | --- |
