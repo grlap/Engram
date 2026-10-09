@@ -1147,7 +1147,10 @@ pub(in crate::storage) fn load_typed_work_object<T: DeserializeOwned>(
             requested: object_kind.into(),
         });
     }
-    CanonicalObject::stored(hash, bytes)?.decode()
+    let decoded = CanonicalObject::stored(hash, bytes)?.decode()?;
+    #[cfg(test)]
+    super::cost::typed_work_object_decoded(object_kind);
+    Ok(decoded)
 }
 
 pub(super) fn load_handoff_offer_projection(

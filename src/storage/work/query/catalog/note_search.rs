@@ -25,6 +25,16 @@ pub(super) fn matching_ids(
     )?))
 }
 
+fn select_eligible_ids(sql: &str) -> Result<String, StoreError> {
+    const COUNT_SELECTION: &str = "SELECT COUNT(*) FROM classified";
+    if !sql.contains(COUNT_SELECTION) {
+        return Err(StoreError::InvalidWorkProjection(
+            "note search query lost its classified count selection".into(),
+        ));
+    }
+    Ok(sql.replace(COUNT_SELECTION, "SELECT work_id FROM classified"))
+}
+
 impl SqliteStore {
     /// Caller holds the same read snapshot used by membership and page reads.
     pub(super) fn catalog_note_matches(
@@ -49,10 +59,7 @@ impl SqliteStore {
         eligible.after_priority = None;
         eligible.limit = 0;
         let (sql, parameters) = work_catalog_sql(project, now, &eligible, false, None)?;
-        let selected = sql.replace(
-            "SELECT COUNT(*) FROM classified",
-            "SELECT work_id FROM classified",
-        );
+        let selected = select_eligible_ids(&sql)?;
         // A metadata-only item has no note bytes to search. Avoid loading its
         // canonical item/events merely to establish an empty record window.
         let sql = format!("SELECT work_id FROM ({selected}) eligible WHERE
@@ -68,10 +75,12 @@ impl SqliteStore {
             })?
             .map(|row| parse_work_id(&row?))
             .collect::<Result<Vec<_>, StoreError>>()?;
+        #[cfg(test)]
+        crate::storage::work::cost::sql("note_search_eligible", &statement);
         for id in ids {
             for entry in self.work_record_index(project, id, WorkRecordKind::NotesWithGates)? {
                 let WorkRecordContent::Note(note) =
-                    self.work_record_content(project, id, &entry)?
+                    self.work_record_content_for_search(project, id, &entry)?
                 else {
                     continue;
                 };
@@ -96,5 +105,24 @@ impl SqliteStore {
             }
         }
         Ok(matches)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn note_search_selection_preserves_filters_and_refuses_a_lost_shape() {
+        let sql = "WITH classified AS (SELECT work_id FROM work_items WHERE project_id = ?1) SELECT COUNT(*) FROM classified WHERE priority = ?2";
+        assert_eq!(
+            select_eligible_ids(sql).unwrap(),
+            "WITH classified AS (SELECT work_id FROM work_items WHERE project_id = ?1) SELECT work_id FROM classified WHERE priority = ?2"
+        );
+        assert!(matches!(
+            select_eligible_ids("SELECT total FROM classified"),
+            Err(StoreError::InvalidWorkProjection(message))
+                if message == "note search query lost its classified count selection"
+        ));
     }
 }

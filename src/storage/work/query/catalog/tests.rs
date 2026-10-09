@@ -3,6 +3,9 @@ use crate::WorkLifecycle;
 use crate::storage::work::test_support::*;
 use crate::storage::work::*;
 
+mod note_search_followups;
+mod note_search_measurement;
+
 thread_local! {
     static AFTER_CATALOG_COUNT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
 }
@@ -127,11 +130,15 @@ fn note_search_finds_verification_text_and_excludes_identity_and_environment() {
 
 #[test]
 fn note_search_cost_and_scope_use_eligible_canonical_notes_only() {
+    const ITEM_COUNT: usize = 32;
+    const NOTES_PER_ITEM: usize = 2;
+    let eligible_items = ITEM_COUNT / 2;
     let mut store = SqliteStore::open_in_memory().unwrap();
     let project = ProjectId("note-cost".into());
     let mut payload_bytes = 0;
-    for index in 0..32 {
-        let mut request = root_request(&project.0, &format!("item-{index}"), index);
+    for index in 0..ITEM_COUNT {
+        let second = i64::try_from(index).unwrap();
+        let mut request = root_request(&project.0, &format!("item-{index}"), second);
         request.labels = vec![
             if index % 2 == 0 {
                 "selected"
@@ -152,7 +159,7 @@ fn note_search_cost_and_scope_use_eligible_canonical_notes_only() {
             600,
         );
         let item = store.get_work_item(item.work_id).unwrap();
-        for number in 0..2 {
+        for number in 0..NOTES_PER_ITEM {
             let summary = format!("{} /citation/{index}/{number}", "note text ".repeat(256));
             if index % 2 == 0 {
                 payload_bytes += summary.len();
@@ -184,18 +191,25 @@ fn note_search_cost_and_scope_use_eligible_canonical_notes_only() {
         ..WorkCatalogQuery::default()
     };
     crate::storage::work::cost::start();
+    reset_work_catalog_count_queries();
     let (page, total, _) = store
         .query_work_catalog_listing(&project, at(35), &query)
         .unwrap();
     let cost = crate::storage::work::cost::finish();
-    assert_eq!(total, 16);
-    assert_eq!(page.items.len(), 16);
+    assert_eq!(total, eligible_items);
+    assert_eq!(page.items.len(), eligible_items);
     assert!(page.items.iter().all(|row| row.work.labels == ["selected"]));
+    // Each eligible item is decoded once for its record index. The first
+    // generic note matches: its content and projection validation decode it
+    // twice. Each returned live claim contributes one canonical event read.
+    assert_note_scan_cost(&cost, eligible_items, eligible_items, page.items.len());
     println!(
         "note-search representative fixture: 32 items, 64 notes, 16 eligible items, 32 eligible notes, {payload_bytes} eligible summary bytes; cost={cost}"
     );
-    let excluded = store
-        .query_work_catalog(
+    crate::storage::work::cost::start();
+    reset_work_catalog_count_queries();
+    let (excluded, total, _) = store
+        .query_work_catalog_listing(
             &project,
             at(35),
             &WorkCatalogQuery {
@@ -204,10 +218,37 @@ fn note_search_cost_and_scope_use_eligible_canonical_notes_only() {
             },
         )
         .unwrap();
+    let negative_cost = crate::storage::work::cost::finish();
+    assert_eq!(total, 0);
     assert!(
         excluded.items.is_empty(),
         "other-label notes do not enter the match set"
     );
+    // This negative control must visit both notes of every eligible item;
+    // excluded-label notes must never be decoded, even though one matches.
+    assert_note_scan_cost(
+        &negative_cost,
+        eligible_items,
+        eligible_items * NOTES_PER_ITEM,
+        0,
+    );
+    println!("note-search excluded-label negative control: cost={negative_cost}");
+}
+
+fn assert_note_scan_cost(cost: &serde_json::Value, items: usize, notes: usize, rows: usize) {
+    let total = &cost["total"];
+    assert_eq!(total["canonical_decodes"], items + 2 * notes + rows);
+    assert_eq!(total["work_item_decodes"], items + rows);
+    assert_eq!(
+        total["typed_work_object_decodes"]["work_evidence"],
+        2 * notes
+    );
+    // SQL attribution names only the eligible-set query; it is not a count
+    // of every statement. Existing classified-query counters cover the
+    // separate membership and page passes.
+    assert_eq!(total["sql"]["note_search_eligible"]["calls"], 1);
+    assert_eq!(work_catalog_count_queries(), 1);
+    assert_eq!(work_catalog_classified_queries(), 2);
 }
 
 #[test]

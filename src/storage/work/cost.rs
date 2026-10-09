@@ -17,12 +17,14 @@ pub(crate) struct Snapshot {
     canonical_decodes: usize,
     work_event_decodes: usize,
     work_item_decodes: usize,
+    typed_work_object_decodes: BTreeMap<String, usize>,
     sql: BTreeMap<&'static str, SqlCost>,
 }
 
 #[derive(Default)]
 struct Capture {
     active: bool,
+    typed_work_object_decodes: BTreeMap<String, usize>,
     sql: BTreeMap<&'static str, SqlCost>,
     phases: Vec<(&'static str, Snapshot)>,
 }
@@ -50,6 +52,8 @@ pub(crate) fn snapshot() -> Snapshot {
         canonical_decodes: crate::canonical::canonical_decode_count(),
         work_event_decodes: super::work_event_decode_count(),
         work_item_decodes: super::work_item_projection_decode_count(),
+        typed_work_object_decodes: CAPTURE
+            .with_borrow(|capture| capture.typed_work_object_decodes.clone()),
         sql: CAPTURE.with_borrow(|capture| capture.sql.clone()),
     }
 }
@@ -76,6 +80,19 @@ pub(super) fn sql(label: &'static str, statement: &Statement<'_>) {
             cost.calls += 1;
             cost.vm_steps += u64::try_from(statement.get_status(StatementStatus::VmStep))
                 .expect("nonnegative SQLite VM steps");
+        }
+    });
+}
+
+/// Counts successful decodes through the typed work-object reader, including
+/// projection validation. Other canonical readers remain in the total only.
+pub(super) fn typed_work_object_decoded(kind: &str) {
+    CAPTURE.with_borrow_mut(|capture| {
+        if capture.active {
+            *capture
+                .typed_work_object_decodes
+                .entry(kind.into())
+                .or_default() += 1;
         }
     });
 }

@@ -269,6 +269,27 @@ impl SqliteStore {
         work_id: WorkId,
         index: &WorkRecordIndex,
     ) -> Result<WorkRecordContent, StoreError> {
+        self.work_record_content_with_verification_facts(project, work_id, index, true)
+    }
+
+    /// Search needs public text only. Canonical projection/binding validation
+    /// still reads the producer; suppress only its second, display-facts read.
+    pub(crate) fn work_record_content_for_search(
+        &self,
+        project: &ProjectId,
+        work_id: WorkId,
+        index: &WorkRecordIndex,
+    ) -> Result<WorkRecordContent, StoreError> {
+        self.work_record_content_with_verification_facts(project, work_id, index, false)
+    }
+
+    fn work_record_content_with_verification_facts(
+        &self,
+        project: &ProjectId,
+        work_id: WorkId,
+        index: &WorkRecordIndex,
+        verification_facts: bool,
+    ) -> Result<WorkRecordContent, StoreError> {
         if let Some(member) = &index.address.member {
             let record = index
                 .restored
@@ -299,7 +320,7 @@ impl SqliteStore {
             &index.address.hash,
             &index.family,
             &index.object_kind,
-            true,
+            verification_facts,
         )?))
     }
 }
