@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { devNull } from "node:os";
 import { once } from "node:events";
 import { basename, delimiter, dirname, isAbsolute, join, relative } from "node:path";
-import test, { after } from "node:test";
+import test, { after, describe } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import {
@@ -42,6 +42,45 @@ async function repository(callback) {
     removeFixtureHomes(root);
   }
 }
+
+describe("documentation link checker", () => {
+  function checkFixture(context, sourceParts) {
+    const root = fixtureHome("doc-links-", context);
+    const scripts = join(root, "scripts");
+    mkdirSync(scripts);
+    copyFileSync(fileURLToPath(new URL("check-doc-links.mjs", import.meta.url)), join(scripts, "check-doc-links.mjs"));
+    writeFileSync(join(root, "README.md"), "[Kept](kept.md)\n");
+    writeFileSync(join(root, "kept.md"), "# Kept\n");
+    const source = join(root, ...sourceParts);
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(source, "[Dead link](missing.md)\n");
+    const result = spawnSync(process.execPath, [join(scripts, "check-doc-links.mjs")], {
+      cwd: root, encoding: "utf8", windowsHide: true,
+    });
+    assert.ifError(result.error);
+    return result;
+  }
+
+  test("skips the repository's .claude/worktrees subtree", (t) => {
+    const result = checkFixture(t, [".claude", "worktrees", "child", "docs", "stale.md"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "Documentation links are valid.\n");
+    assert.equal(result.stderr, "");
+  });
+
+  for (const sourceParts of [
+    [".claude", "commands", "command.md"],
+    ["worktrees", "document.md"],
+    ["other", ".claude", "worktrees", "document.md"],
+  ]) {
+    test(`checks dead links under ${sourceParts.slice(0, -1).join("/")}`, (t) => {
+      const result = checkFixture(t, sourceParts);
+      assert.equal(result.status, 1, result.stderr);
+      assert.equal(result.stderr, `${join(...sourceParts)}:1: missing missing.md\n`);
+      assert.equal(result.stdout, "");
+    });
+  }
+});
 
 test("required stages preserve all nine gates and platform-specific Rust runners", () => {
   for (const platform of ["win32", "linux"]) {
