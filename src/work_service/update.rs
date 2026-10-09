@@ -3,6 +3,19 @@ use crate::domain::AppendRestoredWorkGateRequest;
 
 mod reject_retry;
 
+#[cfg(test)]
+thread_local! {
+    static BEFORE_SELECTED_CLEAR: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn before_selected_clear(hook: impl FnOnce() + 'static) {
+    BEFORE_SELECTED_CLEAR.with(|slot| {
+        assert!(slot.borrow_mut().replace(Box::new(hook)).is_none());
+    });
+}
+
 impl LocalWorkService {
     /// The blocker whose committed clear moved `work_id` to `revision`, as it
     /// was recorded when it was raised: what an unblock receipt names, read
@@ -1053,6 +1066,13 @@ impl LocalWorkService {
                     None => unique_blocker_id(&store.inspect_work(work.work_id, now)?.blockers)?,
                 };
                 let core_key = scoped_key.clone();
+                #[cfg(test)]
+                if selected_attempt.is_some() {
+                    let hook = BEFORE_SELECTED_CLEAR.with(|slot| slot.borrow_mut().take());
+                    if let Some(hook) = hook {
+                        hook();
+                    }
+                }
                 let cleared = store.clear_work_blocker_with_attempt(
                     &ClearWorkBlockerRequest {
                         work_id: work.work_id,
@@ -1075,10 +1095,20 @@ impl LocalWorkService {
                     // repeat begins afresh and is admitted like any clear.
                     // An attempt interrupted before the core answered stays,
                     // and still refuses once the item changed. So does one
-                    // whose clear another call of the same key committed: a
-                    // replay conflict, or any committed core result, means
-                    // the clear happened and that call will finish it.
+                    // whose core result committed. Conflicts may instead
+                    // name a different intent; a stale guard may name a
+                    // retired, replaced or completed attempt. Neither may
+                    // be retired by this caller.
                     Err(error) => {
+                        if matches!(&error, StoreError::InvalidWork(reason)
+                            if reason == crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL)
+                        {
+                            return Err(StoreError::InvalidWork(format!(
+                                "{}; run engram work show {} before repeating the command",
+                                crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL,
+                                work.short_ref,
+                            )));
+                        }
                         if let Some(attempt) = selected_attempt.as_ref()
                             && !matches!(error, StoreError::WorkOperationIdempotencyConflict { .. })
                         {

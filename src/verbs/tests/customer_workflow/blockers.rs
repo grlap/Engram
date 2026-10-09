@@ -473,3 +473,81 @@ fn a_reader_who_cannot_unblock_still_sees_each_exact_command() {
     assert_eq!(state(&reader, &work, 7), before);
     unblock(&holder, &work, Some(&first), 8).expect("the holder clears it");
 }
+
+#[test]
+fn a_retired_identical_unblock_explains_this_call_and_offers_a_runnable_show() {
+    for mcp in [false, true] {
+        let (_directory, verbs, path, project) = fixture();
+        let verbs = if mcp {
+            verbs.with_mcp_argument_names()
+        } else {
+            verbs
+        };
+        let peer = AgentVerbs::new(
+            path.clone(),
+            project.clone(),
+            "peer".into(),
+            SessionId("peer".into()),
+            None,
+        );
+        let work = add(&verbs, "Retired duplicate", None, false, 0);
+        peer.claim(
+            ClaimInput {
+                work_ref: work.clone(),
+                ttl_seconds: Some(300),
+                recover: None,
+            },
+            at(1),
+        )
+        .expect("peer claim");
+        block(&peer, &work, "Await release", 2);
+        let selector = selectors(&verbs.show(&work, at(3)).expect("show"))[0].clone();
+        let competing = AgentVerbs::new(
+            path,
+            project,
+            "agent".into(),
+            SessionId("agent".into()),
+            None,
+        );
+        let target = work.clone();
+        let selection = selector.clone();
+        crate::work_service::before_selected_clear(move || {
+            unblock(&competing, &target, Some(&selection), 3).expect_err("peer claim");
+        });
+        let before = state(&verbs, &work, 3);
+        let error = unblock(&verbs, &work, Some(&selector), 3).expect_err("stale call");
+        let message = verbs.error_message(&error);
+        assert!(
+            message.contains("this call cleared no blocker"),
+            "{message}"
+        );
+        assert!(!message.contains("different intent"), "{message}");
+        let guidance = verbs.error_guidance(&error);
+        assert_eq!(guidance.next, [format!("engram work show {work}")]);
+        assert!(
+            guidance
+                .reminders
+                .iter()
+                .any(|text| text.contains("this call cleared no blocker"))
+        );
+        let command = guidance.next[0].split_whitespace().collect::<Vec<_>>();
+        assert_eq!(command[..3], ["engram", "work", "show"]);
+        verbs.show(command[3], at(4)).expect("run guidance read");
+        assert_eq!(state(&verbs, &work, 4), before);
+        peer.update(
+            UpdateInput {
+                work_ref: Some(work.clone()),
+                action: UpdateAction::Release {
+                    reason: Some("Return execution".into()),
+                },
+            },
+            at(5),
+        )
+        .expect("release");
+        unblock(&verbs, &work, Some(&selector), 6).expect("fresh admitted call clears");
+        assert_eq!(
+            selectors(&verbs.show(&work, at(7)).expect("show")),
+            [] as [String; 0]
+        );
+    }
+}

@@ -558,6 +558,44 @@ fn core_texts(core: &Value) -> String {
         .join("\n")
 }
 
+#[test]
+fn blocker_ids_stay_in_core_and_selectors_are_projected_on_every_agent_text() {
+    let surfaces = surfaces();
+    for (reason, twin) in [
+        (
+            crate::work_service::MULTIPLE_BLOCKERS_REFUSAL,
+            wording::MULTIPLE_BLOCKERS_REFUSAL,
+        ),
+        (
+            crate::storage::UNKNOWN_BLOCKER_REFUSAL,
+            wording::UNKNOWN_BLOCKER_REFUSAL,
+        ),
+    ] {
+        let error = VerbError::at(StoreError::InvalidWork(reason.into()), "w-test-blockers");
+        let core = core_texts(&crate::store_error_value(&error.error));
+        assert!(core.contains("blocker_id"), "{core}");
+        assert!(
+            !core.contains("selector") && !core.contains("--blocker"),
+            "{core}"
+        );
+        for (verbs, expected) in [(&surfaces.cli, twin.cli), (&surfaces.mcp, twin.mcp)] {
+            let texts = refusal_texts(verbs, &error);
+            assert!(
+                texts.iter().filter(|text| text.contains(expected)).count() >= 3,
+                "message, reason and reminder: {texts:?}"
+            );
+            assert!(
+                texts.iter().all(|text| !text.contains("blocker_id")),
+                "{texts:?}"
+            );
+            assert_eq!(
+                verbs.error_guidance(&error).next,
+                ["engram work show w-test-blockers"]
+            );
+        }
+    }
+}
+
 /// Core refusals and remedies whose sentence names an argument, as the core
 /// raises them: the agent projection names the field over MCP, the CLI
 /// keeps the flag, and the core envelope keeps the CLI spelling.

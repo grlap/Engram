@@ -37,7 +37,10 @@ pub(crate) use work::last_writer_admission_allowance;
 #[cfg(test)]
 pub(crate) use work::with_writer_admission_test_policy;
 
-pub(crate) const UNKNOWN_BLOCKER_REFUSAL: &str = "unknown blocker selector for this work item";
+pub(crate) const UNKNOWN_BLOCKER_REFUSAL: &str =
+    "blocker_id does not name an active blocker of this work item";
+pub(crate) const STALE_SELECTED_UNBLOCK_REFUSAL: &str =
+    "the admitted selected unblock attempt is no longer current; this call cleared no blocker";
 pub(crate) use work::BindingReadRequest;
 #[cfg(test)]
 pub(crate) use work::FocusBinding;

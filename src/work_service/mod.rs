@@ -2,11 +2,11 @@
 
 const REJECT_PROTOCOL_OPERATION: &str = "work_update:reject";
 
-pub(crate) const MULTIPLE_BLOCKERS_REFUSAL: crate::argument_names::Twin =
-    crate::argument_names::Twin {
-        cli: "focused work has multiple active blockers; pass --blocker SELECTOR",
-        mcp: "focused work has multiple active blockers; pass blocker with a selector",
-    };
+#[cfg(test)]
+pub(crate) use update::before_selected_clear;
+
+pub(crate) const MULTIPLE_BLOCKERS_REFUSAL: &str =
+    "focused work has multiple active blockers; supply blocker_id";
 pub(crate) const INTERRUPTED_SELECTED_UNBLOCK_PREFIX: &str =
     "this selected unblock began earlier and was never answered";
 
@@ -2304,9 +2304,7 @@ fn unique_blocker_id(blockers: &[crate::WorkBlocker]) -> Result<String, StoreErr
         [] => Err(StoreError::InvalidWork(
             "focused work has no active blocker to infer".into(),
         )),
-        _ => Err(StoreError::InvalidWork(
-            MULTIPLE_BLOCKERS_REFUSAL.cli.into(),
-        )),
+        _ => Err(StoreError::InvalidWork(MULTIPLE_BLOCKERS_REFUSAL.into())),
     }
 }
 

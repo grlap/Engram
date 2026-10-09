@@ -282,3 +282,52 @@ fn core_update_accepts_exact_raw_input_limit() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn core_json_blocker_refusals_name_the_raw_id_field_and_agent_cli_names_selectors() {
+    let temp = test_support::temp_home().unwrap();
+    let home = temp.path();
+    assert!(run(home, &["init"]).status.success());
+    let reference = fixture_open_work(home);
+    for detail in ["first", "second"] {
+        success(&work(
+            home,
+            &["update", &reference, "--blocked", detail, "--json"],
+        ));
+    }
+    let before = success(&work(home, &["show", &reference, "--json"]));
+    for input in [
+        json!({"kind":"unblock"}),
+        json!({"kind":"unblock","blocker_id":"unknown"}),
+    ] {
+        let input = input.to_string();
+        let args = core_args("update", &reference, &input);
+        let output = run(home, &args.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(!output.status.success());
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(text.contains("blocker_id"), "{text}");
+        assert!(
+            !text.contains("selector") && !text.contains("--blocker"),
+            "{text}"
+        );
+    }
+    let output = work(home, &["update", &reference, "--unblock", "--json"]);
+    assert!(!output.status.success());
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(text.contains("--blocker SELECTOR"), "{text}");
+    assert!(
+        text.contains(&format!("engram work show {reference}")),
+        "{text}"
+    );
+    let after = success(&work(home, &["show", &reference, "--json"]));
+    assert_eq!(after["blockers"], before["blockers"]);
+    assert_eq!(after["history"]["total"], before["history"]["total"]);
+}

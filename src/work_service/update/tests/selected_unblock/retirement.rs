@@ -171,7 +171,8 @@ fn retirement_before_a_stale_clear_prevents_mutation_and_a_fresh_attempt_can_cle
     assert!(pending_basis(&fixture, &key).is_none());
     assert!(matches!(
         store.clear_work_blocker_with_attempt(&request, &DevelopmentNoopRedactor, Some(&guard),),
-        Err(StoreError::WorkOperationIdempotencyConflict { .. })
+        Err(StoreError::InvalidWork(reason))
+            if reason == crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL
     ));
     assert_eq!(fixture.revision(), revision);
     assert_eq!(fixture.clear_events(), 0);
@@ -204,6 +205,12 @@ fn late_retirement_preserves_a_replacement_attempt_on_a_new_basis() {
     store
         .retire_refused_work_protocol_attempt(&old, CORE_OPERATION, &request.idempotency_key)
         .expect("late retirement is a no-op");
+    assert_eq!(pending_basis(&fixture, &key), Some(replacement.clone()));
+    assert!(matches!(
+        store.clear_work_blocker_with_attempt(&request, &DevelopmentNoopRedactor, Some(&old)),
+        Err(StoreError::InvalidWork(reason))
+            if reason == crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL
+    ));
     assert_eq!(pending_basis(&fixture, &key), Some(replacement));
     assert_eq!(fixture.clear_events(), 0);
     fixture
@@ -241,4 +248,196 @@ fn a_mismatched_request_cannot_retire_or_use_an_existing_pending_attempt() {
     ));
     assert_eq!(fixture.revision(), revision);
     assert_eq!(fixture.clear_events(), 0);
+}
+
+#[test]
+fn a_concurrent_identical_service_refusal_retires_the_stale_call_without_a_clear() {
+    let fixture = fixture("service-retired");
+    let peer = LocalWorkService::new(
+        fixture.database.clone(),
+        fixture.project.clone(),
+        "peer".into(),
+        SessionId("live-peer".into()),
+        None,
+    );
+    peer.work_update_on(
+        Some(&fixture.target()),
+        WorkUpdateInput::Claim {
+            ttl_seconds: Some(300),
+            recovery_reason: None,
+            idempotency_key: String::new(),
+        },
+        at(1),
+    )
+    .expect("peer claim");
+    peer.work_update_on(
+        Some(&fixture.target()),
+        WorkUpdateInput::Block {
+            blocker_kind: WorkBlockerKind::Manual,
+            detail: "waiting".into(),
+            idempotency_key: String::new(),
+        },
+        at(2),
+    )
+    .expect("block");
+    let blocker = fixture.active()[0].clone();
+    let competing = LocalWorkService::new(
+        fixture.database.clone(),
+        fixture.project.clone(),
+        "agent".into(),
+        fixture.session.clone(),
+        Some("protocol-test".into()),
+    );
+    let target = fixture.target();
+    let selected = blocker.clone();
+    before_selected_clear(move || {
+        let error = competing
+            .work_update_on(Some(&target), Fixture::unblock(&selected), at(3))
+            .expect_err("identical call refused under peer claim");
+        assert!(!matches!(
+            error,
+            StoreError::WorkOperationIdempotencyConflict { .. }
+        ));
+    });
+    let revision = fixture.revision();
+    let error = fixture.selected(&blocker, 3).expect_err("retired attempt");
+    assert!(matches!(error, StoreError::InvalidWork(reason)
+        if reason.starts_with(crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL)
+        && reason.contains(&format!("engram work show {}", fixture.work.short_ref))));
+    assert_eq!(fixture.revision(), revision);
+    assert_eq!(fixture.active(), std::slice::from_ref(&blocker));
+    assert_eq!(fixture.clear_events(), 0);
+    peer.work_update_on(
+        Some(&fixture.target()),
+        WorkUpdateInput::Release {
+            reason: "returning work".into(),
+            waiver_reason: Some("returning work".into()),
+            idempotency_key: String::new(),
+        },
+        at(4),
+    )
+    .expect("release");
+    fixture.selected(&blocker, 5).expect("fresh attempt");
+    assert_eq!(fixture.clear_events(), 1);
+}
+
+#[test]
+fn a_completed_wrapper_without_a_core_replay_cannot_admit_a_new_clear() {
+    let fixture = fixture("completed-guard");
+    fixture.block(WorkBlockerKind::Manual, "first", 1);
+    let blocker = fixture.active()[0].clone();
+    let (guard, mut request, _key) = admit(&fixture, &blocker, 2);
+    fixture.selected(&blocker, 3).expect("complete wrapper");
+    // An unused core key reaches the guard rather than the preceding replay.
+    request.idempotency_key.push_str(":unused");
+    let mut store = SqliteStore::open(&fixture.database).expect("store");
+    let revision = fixture.revision();
+    assert!(matches!(store.clear_work_blocker_with_attempt(
+        &request, &DevelopmentNoopRedactor, Some(&guard)),
+        Err(StoreError::InvalidWork(reason)) if reason == crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL));
+    assert_eq!(fixture.revision(), revision);
+    assert_eq!(fixture.active(), [] as [String; 0]);
+    assert_eq!(fixture.clear_events(), 1);
+}
+
+#[test]
+fn committed_core_replay_mismatches_remain_conflicts_before_the_stale_guard() {
+    let fixture = fixture("core-conflict");
+    fixture.block(WorkBlockerKind::Manual, "first", 1);
+    let blocker = fixture.active()[0].clone();
+    let (guard, mut request, key) = admit(&fixture, &blocker, 2);
+    let mut store = SqliteStore::open(&fixture.database).expect("store");
+    store
+        .retire_refused_work_protocol_attempt(&guard, CORE_OPERATION, &request.idempotency_key)
+        .expect("retire guard");
+    store
+        .clear_work_blocker(&request, &DevelopmentNoopRedactor)
+        .expect("commit core");
+    let core = store
+        .work_operation_result_value(CORE_OPERATION, &request.idempotency_key)
+        .expect("result");
+    request.blocker_id = "different intent".into();
+    assert!(matches!(
+        store.clear_work_blocker_with_attempt(&request, &DevelopmentNoopRedactor, Some(&guard)),
+        Err(StoreError::WorkOperationIdempotencyConflict { .. })
+    ));
+    assert_eq!(
+        store
+            .work_operation_result_value(CORE_OPERATION, &request.idempotency_key)
+            .expect("result"),
+        core
+    );
+    assert!(pending_basis(&fixture, &key).is_none());
+    assert_eq!(fixture.clear_events(), 1);
+}
+
+#[test]
+fn public_clear_refusals_name_raw_ids_and_leave_blockers_unchanged() {
+    let fixture = fixture("raw-id");
+    fixture.block(WorkBlockerKind::Manual, "first", 1);
+    fixture.block(WorkBlockerKind::Manual, "second", 2);
+    let blocker = fixture.active()[0].clone();
+    let (_guard, mut request, _key) = admit(&fixture, &blocker, 3);
+    let mut store = SqliteStore::open(&fixture.database).expect("store");
+    let before = fixture.active();
+    let revision = fixture.revision();
+    for invalid in ["unknown".to_owned(), blocker_selector::encode(&blocker)] {
+        request.blocker_id = invalid;
+        let error = store
+            .clear_work_blocker(&request, &DevelopmentNoopRedactor)
+            .expect_err("raw id required");
+        assert!(matches!(error, StoreError::InvalidWork(reason)
+            if reason == crate::storage::UNKNOWN_BLOCKER_REFUSAL
+            && reason.contains("blocker_id") && !reason.contains("selector")));
+        assert_eq!(fixture.active(), before);
+        assert_eq!(fixture.revision(), revision);
+        assert_eq!(fixture.clear_events(), 0);
+    }
+    let error = fixture
+        .service
+        .work_update_on(
+            Some(&fixture.target()),
+            WorkUpdateInput::Unblock {
+                blocker_id: None,
+                idempotency_key: String::new(),
+            },
+            at(4),
+        )
+        .expect_err("multiple blockers");
+    assert!(matches!(error, StoreError::InvalidWork(reason)
+        if reason == MULTIPLE_BLOCKERS_REFUSAL && reason.contains("blocker_id")));
+    assert_eq!(fixture.active(), before);
+}
+
+#[test]
+fn an_explicit_unblock_key_still_refuses_a_changed_selector_intent() {
+    let fixture = fixture("explicit-conflict");
+    fixture.block(WorkBlockerKind::Manual, "first", 1);
+    fixture.block(WorkBlockerKind::Manual, "second", 2);
+    let [first, second] = fixture.active().try_into().expect("two blockers");
+    let input = |blocker| WorkUpdateInput::Unblock {
+        blocker_id: Some(blocker),
+        idempotency_key: "explicit-clear".into(),
+    };
+    fixture
+        .service
+        .work_update_on(Some(&fixture.target()), input(first.clone()), at(3))
+        .expect("first explicit clear");
+    let revision = fixture.revision();
+    let error = fixture
+        .service
+        .work_update_on(Some(&fixture.target()), input(second.clone()), at(4))
+        .expect_err("changed intent");
+    assert!(matches!(
+        error,
+        StoreError::WorkOperationIdempotencyConflict { .. }
+    ));
+    assert_eq!(fixture.revision(), revision);
+    assert_eq!(fixture.active(), [second]);
+    assert_eq!(fixture.clear_events(), 1);
+    fixture
+        .service
+        .work_update_on(Some(&fixture.target()), input(first), at(5))
+        .expect("original intent replays");
+    assert_eq!(fixture.clear_events(), 1);
 }

@@ -783,8 +783,9 @@ impl VerbError {
                 )
             }
             StoreError::InvalidWork(reason)
-                if reason == crate::work_service::MULTIPLE_BLOCKERS_REFUSAL.cli
+                if reason == crate::work_service::MULTIPLE_BLOCKERS_REFUSAL
                     || reason == crate::storage::UNKNOWN_BLOCKER_REFUSAL
+                    || reason.starts_with(crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL)
                     || reason.starts_with(crate::work_service::INTERRUPTED_SELECTED_UNBLOCK_PREFIX) =>
             {
                 (vec![reason.clone()], vec![format!("engram work show {target}")])

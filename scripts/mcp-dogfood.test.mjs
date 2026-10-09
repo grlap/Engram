@@ -2273,7 +2273,30 @@ test("show names each of several blockers, and its printed command clears only t
     // A bare unblock cannot choose among several and changes nothing.
     const bare = cliWord(engramHome, session, "update", ref, "--unblock", "--json");
     assert.notEqual(bare.status, 0);
+    const bareError = JSON.parse(bare.stderr).error;
+    assert.match(bareError.message, /--blocker SELECTOR/u);
+    assert.match(bareError.details.reason, /--blocker SELECTOR/u);
+    assert.ok(bareError.next.includes(`engram work show ${ref}`));
+    const mcpBare = await client.call("update", { work_ref: ref, action: "unblock" });
+    assert.equal(mcpBare.isError, true);
+    const mcpBareError = mcpBare.structuredContent.error;
+    assert.match(mcpBareError.message, /pass blocker with a selector/u);
+    assert.match(mcpBareError.details.reason, /pass blocker with a selector/u);
+    assert.ok(mcpBareError.reminders.some((text) => text.includes("pass blocker with a selector")));
+    assert.ok(mcpBareError.next.includes(`engram work show ${ref}`));
     assert.equal(cliJson(engramHome, session, "show", ref).blockers_total, 3);
+    const other = cliJson(engramHome, session, "add", "Blocked elsewhere").work.short_ref;
+    cliJson(engramHome, session, "update", other, "--blocked", "Elsewhere");
+    const foreign = cliJson(engramHome, session, "show", other).blockers[0].blocker;
+    const unknown = await client.call("update", { work_ref: ref, action: "unblock", blocker: foreign });
+    assert.equal(unknown.isError, true);
+    const unknownError = unknown.structuredContent.error;
+    for (const text of [unknownError.message, unknownError.details.reason, ...unknownError.reminders]) {
+      assert.match(text, /selector printed by show with blocker/u);
+      assert.doesNotMatch(text, /blocker_id|--blocker/u);
+    }
+    assert.ok(unknownError.next.includes(`engram work show ${ref}`));
+    assert.equal(cliJson(engramHome, session, "show", other).blockers_total, 1);
     // A selector that names no blocker is refused on both surfaces.
     const malformed = cliWord(engramHome, session, "update", ref, "--unblock", "--blocker", "b1-!!", "--json");
     assert.notEqual(malformed.status, 0);

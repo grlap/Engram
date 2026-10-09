@@ -13,6 +13,25 @@ use std::sync::LazyLock;
 
 pub(crate) use crate::argument_names::{ArgumentNames, Twin};
 
+/// Agent-only guidance: core callers supply raw blocker ids.
+pub(super) const MULTIPLE_BLOCKERS_REFUSAL: Twin = Twin {
+    cli: "focused work has multiple active blockers; pass --blocker SELECTOR",
+    mcp: "focused work has multiple active blockers; pass blocker with a selector",
+};
+pub(super) const UNKNOWN_BLOCKER_REFUSAL: Twin = Twin {
+    cli: "unknown blocker selector for this work item; use a selector printed by show with --blocker SELECTOR",
+    mcp: "unknown blocker selector for this work item; use a selector printed by show with blocker",
+};
+
+/// Translate only known core diagnostics, never caller-supplied text.
+pub(super) fn blocker_reason(reason: &str) -> Option<&'static str> {
+    match reason {
+        crate::work_service::MULTIPLE_BLOCKERS_REFUSAL => Some(MULTIPLE_BLOCKERS_REFUSAL.cli),
+        crate::storage::UNKNOWN_BLOCKER_REFUSAL => Some(UNKNOWN_BLOCKER_REFUSAL.cli),
+        _ => None,
+    }
+}
+
 /// The reminder `add` gives when the caller supplied no criterion.
 pub(super) const DEFAULTED_ACCEPTANCE_REMINDER: Twin = Twin {
     cli: "acceptance defaulted to the title being done; set --accept",
@@ -157,7 +176,8 @@ static REGISTERED: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
         HANDOFF_LABEL_TARGET,
         GATE_NEEDS_TARGET,
         EVALUATE_NEEDS_TARGET,
-        crate::work_service::MULTIPLE_BLOCKERS_REFUSAL,
+        MULTIPLE_BLOCKERS_REFUSAL,
+        UNKNOWN_BLOCKER_REFUSAL,
         crate::storage::REVISE_NEEDS_KEY_REFUSAL,
         crate::storage::PARTIAL_EDIT_NEEDS_REVISE_REFUSAL,
         crate::storage::CLEAR_TARGET_NEEDS_REVISE_REFUSAL,

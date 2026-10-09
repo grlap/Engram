@@ -79,28 +79,32 @@ impl PendingWorkProtocolAttempt {
         &self,
         transaction: &Transaction<'_>,
     ) -> Result<(), StoreError> {
-        let present: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM work_protocol_attempts
-             WHERE project_id = ?1 AND session_id = ?2
-               AND operation = ?3 AND idempotency_key = ?4
-               AND request_hash = ?5 AND basis_hash = ?6 AND basis_json = ?7
-               AND result_id IS NULL AND result_json IS NULL)",
-            params![
-                self.project_id.0,
-                self.session_id.0,
-                self.operation,
-                self.idempotency_key,
-                self.request.key().as_str(),
-                self.basis.key().as_str(),
-                self.basis.bytes()
-            ],
-            |row| row.get(0),
-        )?;
-        if !present {
+        let Some(stored) = work_protocol_attempt_row_on(
+            transaction,
+            &self.project_id,
+            &self.session_id,
+            &self.operation,
+            &self.idempotency_key,
+        )?
+        else {
+            return Err(StoreError::InvalidWork(
+                crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL.into(),
+            ));
+        };
+        if stored.request_hash != self.request.key().as_str() {
             return Err(StoreError::WorkOperationIdempotencyConflict {
                 operation: self.operation.clone(),
                 key: self.idempotency_key.clone(),
             });
+        }
+        if stored.basis_hash.as_deref() != Some(self.basis.key().as_str())
+            || stored.basis_json.as_deref() != Some(self.basis.bytes())
+            || stored.result_id.is_some()
+            || stored.result_json.is_some()
+        {
+            return Err(StoreError::InvalidWork(
+                crate::storage::STALE_SELECTED_UNBLOCK_REFUSAL.into(),
+            ));
         }
         Ok(())
     }

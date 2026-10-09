@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use super::argument_wording::{ArgumentNames, respell, respell_receipt_text};
+use super::argument_wording::{ArgumentNames, blocker_reason, respell, respell_receipt_text};
 use super::{AgentVerbs, Guidance, SessionId, StoreError, Value, VerbError, json};
 
 pub(super) const HANDOFF_DISPLAY_TARGET_REFUSAL: &str =
@@ -69,6 +69,10 @@ impl AgentVerbs {
         // ends it is respelled for an MCP caller.
         let raw_message = error.error.to_string();
         for reminder in &mut guidance.reminders {
+            if let Some(projected) = blocker_reason(reminder) {
+                *reminder = respell(self.argument_names, projected).into_owned();
+                continue;
+            }
             if *reminder == raw_message {
                 *reminder = self.error_message(error);
             } else if let Cow::Owned(spelled) = respell(self.argument_names, reminder) {
@@ -93,6 +97,10 @@ impl AgentVerbs {
 
     fn error_message_with_short_refs(&self, error: &VerbError) -> String {
         match &error.error {
+            StoreError::InvalidWork(reason) if blocker_reason(reason).is_some() => format!(
+                "local work input is invalid: {}",
+                blocker_reason(reason).expect("known blocker reason"),
+            ),
             StoreError::WorkAncestorNotOpen { work, ancestor } => format!(
                 "execution for work {} blocked by ancestor {} ({:?})",
                 super::short_ref_for_work_id(*work),
@@ -193,6 +201,15 @@ impl AgentVerbs {
             && let Some(Value::Object(cause)) = value.pointer_mut("/error/details/cause")
         {
             cause.insert("child".into(), json!(super::short_ref_for_work_id(*child)));
+        }
+        if let StoreError::InvalidWork(reason) = &error.error
+            && let Some(projected) = blocker_reason(reason)
+            && let Some(Value::Object(details)) = value.pointer_mut("/error/details")
+        {
+            details.insert(
+                "reason".into(),
+                json!(respell(self.argument_names, projected)),
+            );
         }
         // An MCP caller reads the arguments a reason or remedy names as the
         // fields it passes.
