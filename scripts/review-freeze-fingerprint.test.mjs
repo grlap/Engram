@@ -21,11 +21,14 @@ import { fileURLToPath } from "node:url";
 import { captureFingerprint, runCli } from "./review-freeze-fingerprint.mjs";
 
 function run(program, args, cwd) {
-  return execFileSync(program, args, { cwd, encoding: "utf8" });
+  // Fixture Git writes must not start maintenance that outlives cleanup.
+  const commandArgs = program === "git" ? ["-c", "maintenance.auto=false", ...args] : args;
+  return execFileSync(program, commandArgs, { cwd, encoding: "utf8" });
 }
 
 function repository(root) {
   run("git", ["init", "--quiet"], root);
+  assert.equal(run("git", ["config", "--bool", "--get", "maintenance.auto"], root).trim(), "false");
   run("git", ["config", "user.name", "Engram Test"], root);
   run("git", ["config", "user.email", "engram-test@example.invalid"], root);
   run("git", ["config", "core.autocrlf", "false"], root);

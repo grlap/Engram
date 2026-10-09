@@ -2071,9 +2071,11 @@ test("doctor checks recorded landings against a local repository only on request
     const emptyConfig = join(engramHome, "empty.gitconfig");
     writeFileSync(emptyConfig, "");
     // The scratch repository ignores the developer's git configuration.
+    // Disable automatic maintenance so Git cannot outlive fixture cleanup.
     const git = (...args) => {
       const run = spawnSync("git", ["-c", "user.email=landing@test", "-c", "user.name=landing",
-        "-c", "commit.gpgsign=false", "-c", "core.hooksPath=", "-c", "init.defaultBranch=master", ...args], {
+        "-c", "commit.gpgsign=false", "-c", "core.hooksPath=", "-c", "init.defaultBranch=master",
+        "-c", "maintenance.auto=false", ...args], {
         cwd: repository,
         encoding: "utf8",
         env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: emptyConfig },
@@ -2082,6 +2084,7 @@ test("doctor checks recorded landings against a local repository only on request
       return run.stdout.trim();
     };
     git("init", "-q", ".");
+    assert.equal(git("config", "--bool", "--get", "maintenance.auto"), "false");
     git("commit", "-q", "--allow-empty", "-m", "landed");
     const landed = git("rev-parse", "HEAD");
     git("update-ref", "refs/remotes/origin/master", landed);

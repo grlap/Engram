@@ -471,6 +471,9 @@ fn linked_worktree_selection_crosses_git_boundary_only_without_its_marker() {
                 "commit.gpgsign=false",
                 "-c",
                 "core.hooksPath=",
+                // Keep automatic maintenance from outliving the fixture.
+                "-c",
+                "maintenance.auto=false",
             ])
             .args(args)
             .output()
@@ -480,8 +483,13 @@ fn linked_worktree_selection_crosses_git_boundary_only_without_its_marker() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
     };
     git(&["init", "-q"]);
+    assert_eq!(
+        git(&["config", "--bool", "--get", "maintenance.auto"]),
+        "false"
+    );
     git(&["add", ".engram-project"]);
     git(&["commit", "-q", "-m", "fixture"]);
     git(&["worktree", "add", "-q", "-b", "linked-fixture", "linked"]);

@@ -30,13 +30,19 @@ const stage = (name, source = "") => ({ name, command: process.execPath, args: [
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 const logPath = (runDir, entry) => isAbsolute(entry.log) ? entry.log : join(runDir, entry.log);
 
+function git(args, cwd) {
+  // Fixture Git writes must not start maintenance that outlives cleanup.
+  return execFileSync("git", ["-c", "maintenance.auto=false", ...args], { cwd, encoding: "utf8" });
+}
+
 async function repository(callback) {
   const root = fixtureHome("engram-launcher-");
   try {
-    execFileSync("git", ["init", "--quiet", "--template="], { cwd: root });
-    execFileSync("git", ["config", "core.autocrlf", "false"], { cwd: root });
+    git(["init", "--quiet", "--template="], root);
+    assert.equal(git(["config", "--bool", "--get", "maintenance.auto"], root).trim(), "false");
+    git(["config", "core.autocrlf", "false"], root);
     writeFileSync(join(root, "tracked.txt"), "baseline\n");
-    execFileSync("git", ["add", "tracked.txt"], { cwd: root });
+    git(["add", "tracked.txt"], root);
     await callback(root);
   } finally {
     removeFixtureHomes(root);
@@ -683,8 +689,8 @@ test("input capture failure reports once before detached admission or notificati
     // A real failing Git clean filter makes captureFingerprint refuse.
     writeFileSync(join(root, ".gitattributes"), "tracked.txt filter=refuse\n");
     writeFileSync(join(root, "tracked.txt"), "modified\n");
-    execFileSync("git", ["config", "filter.refuse.clean", `"${process.execPath.replaceAll("\\", "/")}" -e "process.exit(7)"`], { cwd: root });
-    execFileSync("git", ["config", "filter.refuse.required", "true"], { cwd: root });
+    git(["config", "filter.refuse.clean", `"${process.execPath.replaceAll("\\", "/")}" -e "process.exit(7)"`], root);
+    git(["config", "filter.refuse.required", "true"], root);
     const result = spawnSync(process.execPath, [join(root, "scripts", "test-launcher.mjs"), "focused",
       "--detach", "--notify", "fixture-parent", "--", process.execPath, "-e", ""],
       { cwd: root, env, encoding: "utf8", windowsHide: true });
@@ -2160,10 +2166,9 @@ test("a stage ended by a signal is interrupted, and nothing about such a run is 
 
 test("a run in a linked worktree lives under that worktree's Git directory and prints the same record", async () => {
   await repository(async (root) => {
-    execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "baseline"],
-      { cwd: root });
+    git(["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "baseline"], root);
     const linked = join(root, "linked");
-    execFileSync("git", ["worktree", "add", "--quiet", linked], { cwd: root });
+    git(["worktree", "add", "--quiet", linked], root);
     const runDir = createRun({ root: linked, stages: [printing("unit", "test", libtest(2, 0, 1, 0))] }, env);
     assert.match(runDir.replaceAll("\\", "/"), /\/\.git\/worktrees\/linked\/review-runs\/test-[0-9a-f-]+$/u, runDir);
     const result = await executeRun(runDir, env);
@@ -2206,7 +2211,7 @@ test("the record ends the executing process's stdout, and summary and notify nev
       copyFileSync(fileURLToPath(new URL(name, import.meta.url)), join(root, "scripts", name));
     }
     const copied = join(root, "scripts", "test-launcher.mjs");
-    execFileSync("git", ["add", "scripts"], { cwd: root });
+    git(["add", "scripts"], root);
     const run = (...args) => spawnSync(process.execPath, [copied, ...args], { cwd: root, env, encoding: "utf8", windowsHide: true });
     // A warning on stderr and a bounded diagnostic excerpt on stdout precede it.
     const source = `console.error('warning: noise on stderr'); process.stdout.write(${JSON.stringify(libtest(3, 0, 0, 0))})`;
