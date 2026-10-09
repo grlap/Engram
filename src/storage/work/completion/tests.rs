@@ -235,15 +235,27 @@ fn completion_checkpoint_holds_the_writer_slot_across_cut_selection_and_append()
             &request,
             |cut| {
                 probed = true;
-                let Err(StoreError::Sqlite(error)) =
-                    contender.record_work_evidence(&contender_request, &DevelopmentNoopRedactor)
-                else {
-                    panic!("a second writer must not enter after completion cut selection");
-                };
+                let error = contender
+                    .record_work_evidence(&contender_request, &DevelopmentNoopRedactor)
+                    .expect_err("a second writer must not enter after completion cut selection");
                 assert!(matches!(
-                    error.sqlite_error_code(),
-                    Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+                    &error,
+                    StoreError::WorkWriterAdmissionRefused {
+                        reason: crate::storage::WorkWriterAdmissionReason::BusyBudgetExhausted,
+                        budget_ms: 0,
+                        sqlite_primary_code: Some(rusqlite::ffi::SQLITE_BUSY),
+                        sqlite_extended_code: Some(rusqlite::ffi::SQLITE_BUSY),
+                        ..
+                    }
                 ));
+                let wire = crate::store_error_value(&error);
+                assert_eq!(wire["error"]["code"], "engram_store_error");
+                assert!(wire["error"]["message"].is_string());
+                assert_eq!(
+                    wire["error"]["details"]["certainty"],
+                    "acquisition_not_started"
+                );
+                assert_eq!(crate::host::store_error_code(&error), "storage_error");
                 Ok(format!("completion-cut-{}", cut.position))
             },
             &DevelopmentNoopRedactor,

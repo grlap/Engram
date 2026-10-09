@@ -29,8 +29,13 @@ mod unadmitted_observation;
 mod verification_bind;
 mod work;
 pub(crate) use work::PendingWorkProtocolAttempt;
+pub(crate) use work::WriterAdmissionWindow;
 #[cfg(test)]
 pub(crate) use work::before_refused_retirement;
+#[cfg(test)]
+pub(crate) use work::last_writer_admission_allowance;
+#[cfg(test)]
+pub(crate) use work::with_writer_admission_test_policy;
 
 pub(crate) const UNKNOWN_BLOCKER_REFUSAL: &str = "unknown blocker selector for this work item";
 pub(crate) use work::BindingReadRequest;
@@ -46,7 +51,7 @@ pub(crate) use work::plan_validations;
 pub(crate) use work::validate_work_plan;
 pub use work::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
-    RecordedLanding, WorkObligationCompletionAction,
+    RecordedLanding, WorkObligationCompletionAction, WorkWriterAdmissionReason,
 };
 pub(crate) use work::{AssessedAcceptanceEvaluation, SourceObservationRecord};
 pub(crate) use work::{
@@ -1226,6 +1231,16 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("SQLite writer admission refused ({reason}): {source}")]
+    WorkWriterAdmissionRefused {
+        reason: WorkWriterAdmissionReason,
+        elapsed_ms: u64,
+        budget_ms: u64,
+        sqlite_primary_code: Option<i32>,
+        sqlite_extended_code: Option<i32>,
+        #[source]
+        source: Box<rusqlite::Error>,
+    },
     #[error("project store is not initialized; run `engram init` explicitly before reading it")]
     StoreNotInitialized,
     #[error("{DIFFERENT_BUILD_STORE_MESSAGE}")]
@@ -2260,6 +2275,8 @@ fn parse_enum<T: DeserializeOwned>(value: &str) -> Result<T, StoreError> {
 /// V1's canonical local persistence backend.
 pub struct SqliteStore {
     connection: Connection,
+    /// Transient note-scoped admission window; never durable execution state.
+    writer_admission: Option<work::WriterAdmissionWindow>,
     /// Local-work schema generation this connection opened and understands.
     /// Every work mutation compares it with durable metadata inside the write
     /// transaction so a process with a non-current view cannot write.

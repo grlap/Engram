@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::super::{
@@ -21,7 +21,6 @@ use super::query::{
     load_work_items_query, load_work_run, on_one_snapshot, parse_work_id, parse_work_run_id,
     resolve_work_ref_on,
 };
-use super::schema::require_work_schema_version;
 use super::{
     CompletionRecoverySnapshot, StageWorkSessionDelivery, WorkPrerequisitePage, WorkProtocolAttempt,
 };
@@ -378,15 +377,6 @@ fn stored_work_protocol_attempt_on(
 }
 
 impl SqliteStore {
-    pub(super) fn begin_work_mutation(&mut self) -> Result<Transaction<'_>, StoreError> {
-        let expected_version = self.work_schema_version;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        require_work_schema_version(&transaction, expected_version)?;
-        Ok(transaction)
-    }
-
     /// Returns one current work projection.
     ///
     /// # Errors

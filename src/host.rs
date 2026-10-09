@@ -950,6 +950,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkNoteTooLarge { .. } => "work_note_too_large",
         StoreError::Json(_)
         | StoreError::Sqlite(_)
+        | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::SqlitePath { .. }
         | StoreError::SqliteFile { .. }
         | StoreError::StoreFileIo { .. }

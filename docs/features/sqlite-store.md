@@ -219,6 +219,31 @@ all find it new: each checks again under the write lock, and one that finds
 the store initialized meanwhile starts its open again once, against that
 store. The switch to write-ahead logging, which SQLite refuses at once while
 another opener holds a lock, is retried within the busy timeout.
+
+Work-note writer admission uses one monotonic 10-second contention window
+across session registration, focus, attempt recording, note capture and result
+recording. Each `BEGIN IMMEDIATE` from autocommit uses SQLite's native busy
+handler for the remaining window, then restores the connection's prior
+timeout before running the transaction body (five seconds for ordinary store
+opening). There is no manual retry loop;
+transaction bodies, commits, words and transport calls are never replayed by
+this wait. Other work words retain their ordinary admission timeout.
+The window starts after store opening and does not guarantee response latency.
+The injected MCP deadline belongs to the agent runtime; Claude's runtime
+deadline is unknown. A timeout after sending can leave a server operation
+running, so its outcome must be inspected before retrying.
+
+Every busy, locked or not-autocommit work-mutation acquisition refusal carries
+its SQLite primary and extended codes, reason,
+elapsed acquisition time and available wait budget. Its certainty says only
+that this transaction did not start: earlier transactions of the word may
+already have committed, including the note itself. The available budget is the
+remaining note window or the connection's ordinary timeout. Genuine SQLite
+lock text remains visible to relaying hosts. Replaying the same explicit note
+intent uses existing idempotency; a new call is not necessarily that intent.
+Inspect existing notes and state before a fresh retry. Waiting changes neither the caller's time nor its
+revision, claim or fence basis. No durable record or projection changes.
+
 Once both core and work schemas are current, open takes the read-only fast
 path: it verifies required durable objects, columns, policy rows, and host
 path identity without starting a write transaction when every rebuildable

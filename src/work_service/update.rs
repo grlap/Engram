@@ -194,13 +194,6 @@ impl LocalWorkService {
         self.work_note_with_status_on(work_ref, summary, refs, false, now)
     }
 
-    /// Captures one note under one explicit work target and one atomic storage
-    /// operation. A live holder also checkpoints; a non-holder's observation
-    /// never changes execution. Completed evidence stays after the frozen cut.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one protocol operation preserves native and restored note authority paths"
-    )]
     pub(crate) fn work_note_with_status_on(
         &self,
         work_ref: Option<&str>,
@@ -210,12 +203,32 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkNoteResult, StoreError> {
         crate::storage::normalize_note_text(summary, "note summary")?;
-        let mut store = self.store_at(now)?;
-        let target = self.resolve_target(&store, work_ref)?;
-        let basis = self.protocol_basis(&store, true, false, target, now)?;
+        self.with_note_store_at(now, |store| {
+            self.capture_note_on(store, work_ref, summary, refs, status, now)
+        })
+    }
+
+    /// Captures one note under one explicit work target. A live holder also
+    /// checkpoints; a non-holder's observation never changes execution.
+    /// Completed evidence stays after the frozen cut.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the note's existing transactions share one admission window"
+    )]
+    fn capture_note_on(
+        &self,
+        store: &mut SqliteStore,
+        work_ref: Option<&str>,
+        summary: &str,
+        refs: &[String],
+        status: bool,
+        now: DateTime<Utc>,
+    ) -> Result<WorkNoteResult, StoreError> {
+        let target = self.resolve_target(store, work_ref)?;
+        let basis = self.protocol_basis(store, true, false, target, now)?;
         // A holder's note moves focus; anyone else's note is an observation
         // and leaves focus where it was.
-        self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
+        self.focus_if_held(store, target, basis.claim.as_ref(), now)?;
         let note = WorkNoteIntent {
             status,
             summary,
@@ -237,7 +250,7 @@ impl LocalWorkService {
         if let Some(result) = attempt.result {
             let mut result: WorkNoteResult = serde_json::from_value(result)?;
             replayed_obligation_page(
-                &store,
+                store,
                 replayed_run_id(attempt.basis.as_ref(), &result.receipt),
                 &mut result.obligation_page,
             )?;
@@ -263,7 +276,7 @@ impl LocalWorkService {
                         "committed note basis has no focused work".into(),
                     )
                 })?;
-            let result = self.work_note_result(&store, work_id, &capture, now)?;
+            let result = self.work_note_result(store, work_id, &capture, now)?;
             store.finish_work_protocol_attempt(
                 &self.project_id,
                 &self.session_id,
@@ -296,7 +309,7 @@ impl LocalWorkService {
                 evidence,
                 checkpoint: None,
             };
-            let result = self.work_note_result(&store, work.work_id, &capture, now)?;
+            let result = self.work_note_result(store, work.work_id, &capture, now)?;
             store.finish_work_protocol_attempt(
                 &self.project_id,
                 &self.session_id,
@@ -335,7 +348,7 @@ impl LocalWorkService {
                 evidence,
                 checkpoint: None,
             };
-            let result = self.work_note_result(&store, work.work_id, &capture, now)?;
+            let result = self.work_note_result(store, work.work_id, &capture, now)?;
             store.finish_work_protocol_attempt(
                 &self.project_id,
                 &self.session_id,
@@ -368,7 +381,7 @@ impl LocalWorkService {
             )?
         } else {
             let (run_id, claim_id, claim_fence, actor) =
-                self.work_note_evidence_basis(&store, &basis, &work, now)?;
+                self.work_note_evidence_basis(store, &basis, &work, now)?;
             store.record_work_note(
                 &RecordWorkNoteRequest {
                     status,
@@ -387,7 +400,7 @@ impl LocalWorkService {
                 &DevelopmentNoopRedactor,
             )?
         };
-        let result = self.work_note_result(&store, work.work_id, &capture, now)?;
+        let result = self.work_note_result(store, work.work_id, &capture, now)?;
         store.finish_work_protocol_attempt(
             &self.project_id,
             &self.session_id,

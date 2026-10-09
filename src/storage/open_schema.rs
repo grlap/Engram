@@ -355,6 +355,7 @@ impl SqliteStore {
         let restored_findings = work::repair_rebuildable_schema_on(&connection)?;
         let store = Self {
             connection,
+            writer_admission: None,
             work_schema_version,
             host_path_policy: None,
         };
@@ -1202,6 +1203,7 @@ impl SqliteStore {
         let work_schema_version = work::schema_version(&connection)?;
         Ok(OpenAttempt::Opened(Self {
             connection,
+            writer_admission: None,
             work_schema_version,
             host_path_policy,
         }))

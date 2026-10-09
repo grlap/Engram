@@ -70,9 +70,16 @@ mod root_state;
 pub(crate) use root_read::RootReadScope;
 mod schema;
 mod session;
+mod writer_admission;
 pub(crate) use session::PendingWorkProtocolAttempt;
 #[cfg(test)]
 pub(crate) use session::before_refused_retirement;
+pub use writer_admission::WorkWriterAdmissionReason;
+pub(crate) use writer_admission::WriterAdmissionWindow;
+#[cfg(test)]
+pub(crate) use writer_admission::last_writer_admission_allowance;
+#[cfg(test)]
+pub(crate) use writer_admission::with_writer_admission_test_policy;
 mod status;
 pub(crate) use status::SelectedStatusNote;
 mod unadmitted;

@@ -22,6 +22,23 @@ use serde_json::{Value, json};
 )]
 pub fn store_error_value(error: &StoreError) -> Value {
     let details = match error {
+        StoreError::WorkWriterAdmissionRefused {
+            reason,
+            elapsed_ms,
+            budget_ms,
+            sqlite_primary_code,
+            sqlite_extended_code,
+            ..
+        } => json!({
+            "phase": "begin_immediate",
+            "reason": reason.as_str(),
+            "elapsed_ms": elapsed_ms,
+            "budget_ms": budget_ms,
+            "sqlite_primary_code": sqlite_primary_code,
+            "sqlite_extended_code": sqlite_extended_code,
+            "certainty": "acquisition_not_started",
+            "remedy": "inspect the item's notes and current state before retrying; earlier transactions of this word may already have committed",
+        }),
         StoreError::NoteIdempotencyConflict(key) => json!({ "idempotency_key": key }),
         StoreError::TaskAccessDenied { task, session } => json!({
             "task_id": task.0,
@@ -410,6 +427,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::GraphDifferentBuild => "different_build",
         StoreError::InvalidGraphSnapshot(_) => "graph_snapshot_corrupt",
         StoreError::Json(_)
+        | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::Sqlite(_)
         | StoreError::SqlitePath { .. }
         | StoreError::SqliteFile { .. }

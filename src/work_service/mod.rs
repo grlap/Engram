@@ -109,6 +109,7 @@ pub(crate) use projection::normalize_actor_context;
 mod propose;
 mod record_windows;
 pub(crate) use record_windows::ASSESSMENT_CONTINUATION_REFUSAL;
+mod note_admission;
 mod service;
 mod status;
 pub(crate) mod unadmitted;

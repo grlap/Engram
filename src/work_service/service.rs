@@ -180,6 +180,34 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
         let mut store = self.lock_store_at(now)?;
+        if let Some(window) = self.note_word_window() {
+            let mut scoped = store.note_writer_admission_with_window(window);
+            self.initialize_process_default_session_on(&mut scoped, now)?;
+        } else {
+            self.initialize_process_default_session_on(&mut store, now)?;
+        }
+        Ok(store)
+    }
+
+    pub(super) fn with_note_store_at<T>(
+        &self,
+        now: DateTime<Utc>,
+        capture: impl FnOnce(&mut SqliteStore) -> Result<T, StoreError>,
+    ) -> Result<T, StoreError> {
+        let mut store = self.lock_store_at(now)?;
+        let mut store = match self.note_word_window() {
+            Some(window) => store.note_writer_admission_with_window(window),
+            None => store.note_writer_admission(),
+        };
+        self.initialize_process_default_session_on(&mut store, now)?;
+        capture(&mut store)
+    }
+
+    fn initialize_process_default_session_on(
+        &self,
+        store: &mut SqliteStore,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
         if self
             .session_id
             .0
@@ -193,7 +221,7 @@ impl LocalWorkService {
             )?;
             let _ = self.process_default_session_initialized.set(());
         }
-        Ok(store)
+        Ok(())
     }
 
     /// Read words validate attribution, then open the existing store

@@ -1525,7 +1525,8 @@ impl AgentVerbs {
     /// Returns [`VerbError`] for empty text, invalid project/lifecycle binding,
     /// or a stale holder authority basis.
     pub fn note(&self, input: &NoteInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        self.disclosing_focus(|| self.note_word(input, now))
+        self.service
+            .note_writer_admission_word(|| self.disclosing_focus(|| self.note_word(input, now)))
     }
 
     fn note_word(&self, input: &NoteInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
