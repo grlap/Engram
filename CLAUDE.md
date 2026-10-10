@@ -8,9 +8,9 @@ Keep these files focused on current rules. Record incident history and
 decision provenance in work notes instead.
 
 Engram is a local-first work, behavioral-control, and execution-memory system
-for coding agents. SQLite is canonical on the active host; agent-private
-scratch and live execution authority stay there. External intake,
-backup/portable/sync, and publication are independent optional capabilities.
+for coding agents. SQLite is canonical on each host; agent-private scratch
+and live execution authority stay there. External intake, backup, optional
+Git task-text exchange, and publication are independent optional capabilities.
 
 ### Start and resume
 
@@ -206,8 +206,8 @@ their presence in a file alone does not prove delivery.
   An item may cite an immutable external snapshot, but Engram never silently
   mirrors external task state.
 - One stable project id must resolve concurrent sessions and worktrees to the
-  same active-host SQLite store. Local never means single-session; optional
-  portable handoff may restore that project on the next active host.
+  same host-local SQLite store. Local never means single-session; the selected
+  optional Git task-text exchange keeps each host independently writable.
 - Task scope is shared among participants and is the default for execution
   findings. Agent scope is private scratch.
 - Packet hashes reproduce content; typed dense positions in named project,
@@ -226,8 +226,8 @@ their presence in a file alone does not prove delivery.
   separate fenced `ReportAssemblyClaim`, without retaining completed-run
   authority or draining execution again.
 - One capture should generate work/task deltas, handoff material, evidence,
-  and report input. A future portable projection is a dormant
-  transfer/restore head, not a second live ledger.
+  and report input. Optional task-text exchange derives shared planning text
+  from host-local state.
 - Once a report reaches `report_ready`, its bytes and hash are frozen. A
   separately requested publication freezes target and idempotency key; retry
   sends the same payload. A revision creates a superseding report and intent.
@@ -236,18 +236,18 @@ their presence in a file alone does not prove delivery.
 - External publication still requires an explicit human decision. A host that
   runs the optional behavioral-control plane may independently raise the bar
   for model turns or material external actions.
-- SQLite is canonical on the active host. Planned external backup may raise
-  `local_backed_up`; planned `portable` mode provides one-active-host handoff with
-  scheduled push, writer-epoch release/acquire under remote-head CAS,
-  divergence refusal, and no transfer of live claims, grants, delivery
-  state, or private scratch. Release freezes old-host mutation; acquire must succeed before
-  new-host mutation; portable startup/resume must validate the remote epoch.
-  The portable projection must close every executable shared-state reference;
-  excluded provenance uses explicit stubs/placeholders, never dangling refs or
-  rewritten canonical bytes. FTS and work/query projections are
-  rebuildable. Concurrent team sync, proprietary adapters, embeddings, real
-  DLP, signing, service storage, and encryption are deferred—not silently
-  assumed.
+- SQLite is canonical on each host. Planned external backup may raise
+  `local_backed_up`; backup and full-store migration retain their separate
+  contracts. The selected [Git task sync](docs/features/git-task-sync.md) design
+  exchanges agent-merged task text on the ordinary code branch through explicit
+  export and import in the main checkout. Linked worktrees omit its task files
+  using the brief's sparse-checkout contract. Live claims, grants, delivery
+  state, and private scratch never transfer. The design uses no global writer
+  lock, writer epochs, or release/acquire protocol, and does not prevent
+  duplicate work across hosts. Task sync is planned, not shipped. FTS and
+  work/query projections are rebuildable. Cross-host execution coordination,
+  proprietary adapters, embeddings, real DLP, signing, service storage, and
+  encryption are deferred—not silently assumed.
 
 ### Documentation and Skills
 

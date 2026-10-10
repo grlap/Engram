@@ -7,10 +7,11 @@ description: Work in the Engram repository when changing its typed memory model,
 
 Engram is a local-first work, behavioral-control, and execution-memory service
 for multiple agent sessions. It owns local work from creation/decomposition
-through evidence-backed completion. SQLite is canonical on the active host;
+through evidence-backed completion. SQLite is canonical on each host;
 agent-private scratch and live execution authority remain there. External
-snapshot intake, backup/portable/sync, and frozen publication are independent
-optional capabilities. Preserve that boundary in code, tests, docs, and commands.
+snapshot intake, backup, optional Git task-text exchange, and frozen publication
+are independent optional capabilities. Preserve that boundary in code, tests,
+docs, and commands.
 
 ## Read the Relevant Contract
 
@@ -44,8 +45,9 @@ contract and keep the change narrow.
 - Local work needs no external reference. Explicit imports preserve immutable
   source snapshots and never silently mirror external state.
 - Local does not mean single-session: one stable project id resolves every
-  session and worktree to the same active-host store. Optional portable
-  handoff may restore it on the next active host.
+  session and worktree to the same host-local store. The selected optional Git
+  task-text exchange keeps each host's SQLite canonical and independently
+  writable.
 - Agent scope is private; task scope is shared among participants and is the
   default for execution findings.
 - Assignment is future intent; fenced work claims schedule execution, not
@@ -67,16 +69,16 @@ contract and keep the change narrow.
   runs the optional behavioral-control plane may independently mediate model
   turns or material external actions.
 - One capture must feed work/peer deltas, handoffs, evidence, and report
-  assembly. A future portable projection is a dormant transfer/restore head,
-  not a second live status ledger.
-- Planned `portable` mode is one-active-host handoff: scheduled push, writer-epoch
-  release/acquire under remote-head CAS, explicit restore, and divergence
-  refusal. Release freezes old-host mutation; acquire must succeed before
-  new-host mutation, and portable startup/resume validates the remote epoch.
-  Never restore live work claims, control grants/delivery
-  state, or agent-private scratch. Portable executable shared state must be
-  transitively closed; excluded provenance uses explicit stubs/placeholders,
-  never dangling references or rewritten canonical bytes.
+  assembly. Optional task-text exchange derives shared planning text from
+  host-local state.
+- The selected [Git task sync](../../../docs/features/git-task-sync.md) design
+  exchanges agent-merged task text on the ordinary code branch through explicit
+  export and import in the main checkout. Linked worktrees omit its task files
+  using the brief's sparse-checkout contract. Live work claims, control grants,
+  delivery state, and agent-private scratch never transfer. The design uses no
+  global writer lock, writer epochs, or release/acquire protocol, and does not
+  prevent duplicate work across hosts. Backup and full-store migration retain
+  their separate contracts. Task sync is planned, not shipped.
 - `report_ready` freezes report bytes and fingerprint. A separately requested
   publication freezes target and idempotency key. Failed publication returns
   to the same frozen report; revision creates a superseding report and intent.
@@ -103,9 +105,9 @@ contract and keep the change narrow.
   `evaluate` service entry, split by service setup, next/delivery, focus,
   propose, update, completion, handoff, evaluate, and memory operation
   families around shared projection helpers.
-- external adapters: backend-neutral source snapshots, backup, portable
-  handoff, later concurrent sync, frozen publication, idempotency, and receipt
-  capabilities.
+- external adapters: backend-neutral source snapshots, backup, optional Git
+  task-text exchange, later cross-host coordination, frozen publication,
+  idempotency, and receipt capabilities.
 - `verbs`: the fourteen-word agent surface whose `mod.rs` holds shared
   vocabulary; receipt shaping, terse show rendering, and word handlers live in
   owning modules, with mirrored tests under `src/verbs/tests/`; flat CLI flags
