@@ -85,6 +85,11 @@ const recordToken = /^[a-z0-9][a-z0-9-]*$/u;
 // Either separator ends a directory on every host: a record names the runner
 // the same way wherever it was produced.
 const runnerName = (command) => command.split(/[\\/]/u).at(-1).toLowerCase().replace(/\.(?:exe|cmd|bat)$/u, "");
+// These repository wrappers run Cargo's test binaries serially. A name or
+// Cargo-looking log alone does not establish that ownership contract.
+const cargoPhase = ({ command, args }) => ["win32", "linux"].some((platform) =>
+  requiredStages(platform).slice(3, 7).some((stage) => runnerName(command) === runnerName(stage.command)
+    && args.length === stage.args.length && args.every((arg, index) => arg === stage.args[index])));
 // Options whose value is the next argument, and the arguments that select a
 // part of the tests. Any other option changes how tests run, not which.
 const runners = {
@@ -187,34 +192,55 @@ async function eachLine(log, accept) {
   }
 }
 
-// Reads the complete log once after the stage closed. A count is given only
-// when every runner summary in the log is complete, valid and consistent;
+// Reads the complete log once after the stage closed. Generic counts require
+// every runner summary in the log to be complete, valid and consistent;
 // otherwise it is unknown, with the first reason met. Nothing but a runner's
 // own summary is read: no line of a log is taken for a test or a failure.
 // A summary is known by its shape, so text of that shape which a test prints
 // at the start of a line is counted as one. `failures` is the failed count
 // of every complete summary whose failed count reads, whatever became of the
-// executed count. A log that cannot be read gives no count.
-export async function countTests(log) {
+// executed count. For the repository's serial Cargo phases, explicit Cargo
+// frames own the first announcement and one outer summary. Unequal child
+// announcements without summaries do not replace that announcement or add
+// tests. Any ambiguous summary attribution still gives no numeric count.
+// A log that cannot be read gives no count.
+export async function countTests(log, { cargoFrames = false } = {}) {
   const counted = { passed: 0, failed: 0, ignored: 0, runners: 0, filteredOut: 0 };
   const nodeFields = ["tests", "suites", "pass", "fail", "cancelled", "skipped", "todo", "duration_ms"];
   // `running` is the size libtest announced and has not yet reported on;
   // `streams` counts TAP runners that started and have not yet summarized.
-  let why = null, running = null, streams = 0, block = null, failures = 0;
+  let why = null, running = null, streams = 0, block = null, failures = 0, frame = null;
   const unknown = (reason) => { why ??= reason; };
+  const uncertainFrame = (reason) => { unknown(reason); if (frame) frame.invalid = true; };
   const add = (passed, failed, ignored, filteredOut) => {
     counted.passed += passed; counted.failed += failed; counted.ignored += ignored;
     counted.filteredOut += filteredOut; counted.runners += 1;
   };
+  const finishFrame = () => {
+    if (!frame) return;
+    if (frame.result === null) uncertainFrame("incomplete-summary");
+    else if (!frame.invalid) add(...frame.result);
+    frame = null;
+  };
   const read = (raw, tooLong) => {
     const line = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/gu, "");
+    const cargoMarker = /^\s*(?:Running|Doc-tests)(?:\s|$)/u.test(line);
     if (tooLong) {
       // Only its beginning is known. Inside a summary, or beginning as one,
       // it is a summary line that does not read.
       if (block || /^(?:test result:|(?:ℹ|#) tests(?:\s|$))/u.test(line)) unknown("malformed-summary");
+      if (cargoFrames && (cargoMarker || /^running(?:\s|$)/u.test(line) || line.startsWith("test result:")))
+        uncertainFrame("malformed-summary");
       if (block?.mark === "#") streams -= 1;
       if (line.startsWith("test result:")) running = null;
       block = null;
+      return;
+    }
+    if (cargoFrames && cargoMarker) {
+      finishFrame();
+      frame = { announced: null, result: null, invalid: false };
+      if (!/^\s*Running .+ \(.+\)$/u.test(line) && !/^\s*Doc-tests \S.*$/u.test(line))
+        uncertainFrame("malformed-summary");
       return;
     }
     if (block) {
@@ -239,20 +265,42 @@ export async function countTests(log) {
       }
     }
     const first = /^(ℹ|#) tests (\d+)$/u.exec(line);
-    if (first) { block = { mark: first[1], values: [Number(first[2])] }; return; }
+    if (first) {
+      if (cargoFrames) uncertainFrame("ambiguous-summary");
+      block = { mark: first[1], values: [Number(first[2])] }; return;
+    }
     // A summary's first line that does not read is still a summary's.
     if (/^(?:ℹ|#) tests(?:\s|$)/u.test(line)) { unknown("malformed-summary"); return; }
     if (line === "TAP version 13") { streams += 1; return; }
     const announced = /^running (\d+) tests?$/u.exec(line);
     if (announced) {
+      if (cargoFrames) {
+        const size = Number(announced[1]);
+        if (!Number.isSafeInteger(size)) uncertainFrame("malformed-summary");
+        else if (!frame) unknown("incomplete-summary");
+        else if (frame.result !== null || frame.announced === size) uncertainFrame("ambiguous-summary");
+        else if (frame.announced === null) frame.announced = size;
+        return;
+      }
       if (running !== null) unknown("incomplete-summary");
       running = Number(announced[1]);
       return;
     }
+    if (cargoFrames && /^running(?:\s|$)/u.test(line)) { uncertainFrame("malformed-summary"); return; }
     if (!line.startsWith("test result:")) return;
     const result = /^test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out; finished in \d+(?:\.\d+)?s$/u.exec(line);
     const [passed, failed, ignored, measured, filteredOut] = (result ?? []).slice(1).map(Number);
     if (result && Number.isSafeInteger(failed)) failures += failed;
+    if (cargoFrames) {
+      if (!result || ![passed, failed, ignored, measured, filteredOut, passed + failed + ignored].every(Number.isSafeInteger))
+        uncertainFrame("malformed-summary");
+      else if (measured !== 0) uncertainFrame("benchmarks");
+      else if (!frame || frame.announced === null) uncertainFrame("incomplete-summary");
+      else if (frame.result !== null) uncertainFrame("ambiguous-summary");
+      else if (frame.announced !== passed + failed + ignored) uncertainFrame("ambiguous-summary");
+      else frame.result = [passed, failed, ignored, filteredOut];
+      return;
+    }
     if (!result || ![passed, failed, ignored, measured, filteredOut].every(Number.isSafeInteger)) unknown("malformed-summary");
     else {
       if (measured !== 0) unknown("benchmarks");
@@ -263,9 +311,11 @@ export async function countTests(log) {
   };
   // An unreadable log gives no count; the stage keeps its exit.
   try { await eachLine(log, read); } catch { unknown("no-summary"); }
+  finishFrame();
   if (block || running !== null || streams !== 0) unknown("incomplete-summary");
   if (!Object.values(counted).every(Number.isSafeInteger)) unknown("malformed-summary");
   const { passed, failed, ignored, runners: summaries, filteredOut } = counted;
+  if (!Number.isSafeInteger(passed + failed)) unknown("malformed-summary");
   if (summaries === 0) unknown("no-summary");
   if (!Number.isSafeInteger(failures)) failures = Number.MAX_SAFE_INTEGER;
   return why
@@ -724,7 +774,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       const outcome = await runCommand(stage.command, stage.args, { cwd: request.root, env: childEnv, log: entry.log });
       Object.assign(entry, outcome, { ended: new Date().toISOString(), state: outcome.code === 0 && !outcome.error ? "passed" : "failed" });
       if (stage.kind === "test") {
-        entry.tests = await countTests(entry.log);
+        entry.tests = await countTests(entry.log, { cargoFrames: cargoPhase(stage) });
         // Attribute known focused counts to the runner we started, never to
         // the shape of its output. Full gates keep their stage-kind contract.
         if (!request.full && entry.tests.executed !== "unknown"

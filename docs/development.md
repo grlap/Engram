@@ -293,6 +293,16 @@ known counts, and retain their stage-kind contract. Stdout/stderr
 go directly to logs, never through a terminal stream. Only the final summary,
 warnings, bounded failures and the closing record for the host reach context;
 truncation points to the full log.
+For the exact repository Rust phase commands, counts sum outer Cargo runners
+identified by `Running … (executable)` or `Doc-tests …` boundaries. A frame keeps
+its first libtest announcement; unequal child announcements without summaries
+are excluded from the total. Each frame needs one matching outer summary.
+Equal-count child announcements or extra complete summaries make attribution
+unknown (`ambiguous-summary`); missing, malformed or overflowing evidence also
+stays unknown. Other commands use the conservative generic summary parser even
+when their output resembles Cargo. Every readable complete summary still
+contributes its failed count, including a child whose numeric attribution is
+unknown.
 Filtering does not decide success: actual process exits do, with one addition.
 A test stage whose runners' complete summaries count failed tests is failed
 even when its command exited 0.
@@ -481,9 +491,14 @@ are this repository's own and pass their runners' exits on. It reads runner
 summaries and nothing else: no line of a log is taken for a test or for a
 failure. A summary is known by its shape alone. Text of that shape which a
 test prints at the start of a line, such as the forwarded output of a runner
-it started itself, cannot be told from the stage's own summary and is counted
-with it: it can add to the counts and fail a stage, and it cannot hide a
-failure, because the stage's exit and its runners' own summaries still count.
+it started itself, cannot be told from the stage's own summary. The generic
+parser counts it with the stage: it can add to the counts and fail a stage.
+The repository Cargo phases use the stricter attribution described above:
+an extra complete summary makes the numeric count unknown instead of adding
+to it. In either mode, a forwarded summary cannot hide a failure, because
+the stage's exit and every readable complete summary's failed count still
+count. Verbose Cargo output or test output resembling a Cargo boundary or
+libtest announcement can also leave a framed stage without a known count.
 Text that begins like a summary line but does not read as one makes the count
 unknown. Node's TAP reporter prints every line a test writes, and every
 diagnostic, behind `# `, and its default reporter prints a top-level
@@ -535,14 +550,19 @@ tests.
   stream that started and printed no summary, or a summary cut short;
   `malformed-summary`, a summary line that does not read, its first line
   included, or one longer than 16,384 characters; `inconsistent-summary`,
-  totals that do not add up or a result that does not account for the tests
-  announced; `cancelled-tests`; `benchmarks`, a nonzero libtest `measured`
-  count. A line longer than 16,384 characters is known by its beginning: it
-  is a summary line when it lies inside a Node summary or begins as a
+  totals that do not add up or, in the generic parser, a result that does not
+  account for the tests announced; `ambiguous-summary`, in a Cargo frame,
+  an equal-count child announcement, an extra complete summary, an
+  announcement after a result, a Node summary, or a result whose total differs
+  from the first announcement. That last case stays ambiguous even when no
+  child output was observed; `cancelled-tests`; `benchmarks`, a nonzero
+  libtest `measured` count. A line longer than 16,384 characters is known by
+  its beginning: it is a summary line when it lies inside a Node summary or begins as a
   summary line does, and any other is passed over like any other line of
   the log. A later complete summary does not take a reason back. Complete
-  summaries found beside an incomplete one still count in `runners`, and
-  never stand for the stage. An unknown count by itself fails nothing: the
+  summaries found beside an incomplete one still count in `runners` when
+  their attribution is valid (Cargo frames with ambiguous summaries are
+  excluded), and never stand for the stage. An unknown count by itself fails nothing: the
   stage's state is still its exit; an unreadable log does not fail the run.
   The failed tests of every complete summary whose failed count reads are
   kept, whatever its other numbers say, so a stage whose count is unknown

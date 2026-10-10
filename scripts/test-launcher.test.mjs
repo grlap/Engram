@@ -136,6 +136,7 @@ function rustWrapperFixture(root, platform) {
     const calls = existsSync(process.env.PHASE_CALLS) ? JSON.parse(readFileSync(process.env.PHASE_CALLS, 'utf8')) : [];
     calls.push({ args, cwd: process.cwd(), threads: process.env.RUST_TEST_THREADS });
     writeFileSync(process.env.PHASE_CALLS, JSON.stringify(calls));
+    console.log('     Running unittests src/lib.rs (target/debug/deps/fixture)');
     if (process.env.PHASE_RESULTS && args.includes('claim_validated_mutations_are_bounded_at_project_scale')) {
       const saved = JSON.parse(readFileSync(process.env.PHASE_RESULTS, 'utf8'));
       assert.deepEqual(saved.stages.map(({ state }) => state), ['passed', 'running', 'unrun', 'unrun']);
@@ -1779,13 +1780,110 @@ async function recordOf(root, stages, options = {}) {
   const result = await executeRun(runDir, env);
   return { result, record: parseRecord(machineRecord(result.plan, result)) };
 }
-async function counted(root, text) {
+async function counted(root, text, options) {
   const log = join(root, `${randomUUID()}.log`);
   writeFileSync(log, text);
-  try { return await countTests(log); } finally { unlinkSync(log); }
+  try { return await countTests(log, options); } finally { unlinkSync(log); }
 }
 const complete = (executed, passed, failed, ignored, runners, filteredOut) =>
   ({ executed, passed, failed, ignored, runners, filteredOut, failures: failed });
+const cargoFrame = (text, marker = "     Running unittests src/lib.rs (target/debug/deps/fixture)") => `${marker}\n${text}`;
+
+test("Cargo frames preserve outer counts beside killed children without summaries", async () => {
+  await repository(async (root) => {
+    const outer = libtest(5, 0, 1, 0).replace("tests\n", "tests\nrunning 1 test\nrunning 1 test\n");
+    for (const marker of ["     Running unittests src/lib.rs (target/debug/deps/fixture)",
+      "     Running tests/contract.rs (C:\\build dir\\fixture.exe)", "   Doc-tests engram"]) {
+      const text = `${cargoFrame(outer, marker)}${cargoFrame(libtest(2, 0, 0, 17))}${cargoFrame(libtest(0, 0, 0, 4))}`;
+      for (const styled of [text, `\x1b[32m${text.replaceAll("\n", "\r\n")}\x1b[0m`]) {
+        assert.deepEqual(await counted(root, styled, { cargoFrames: true }), complete(7, 7, 0, 1, 3, 21));
+        assert.equal((await counted(root, styled)).executed, "unknown", "Cargo-looking text alone never opts in");
+      }
+    }
+  });
+});
+
+test("Cargo frames refuse incomplete or ambiguous ownership and retain readable failures", async () => {
+  await repository(async (root) => {
+    const outer = libtest(3, 0, 0, 0);
+    const summary = outer.split("\n")[1];
+    const cases = [
+      ["running 3 tests\nrunning 1 test\n" + summary + "\n", "incomplete-summary"],
+      [cargoFrame("running 3 tests\n"), "incomplete-summary"],
+      [cargoFrame("running 3 tests\n") + cargoFrame(outer), "incomplete-summary"],
+      [cargoFrame("") + cargoFrame(outer), "incomplete-summary"],
+      [cargoFrame("running 3 tests\nrunning 3 tests\n" + summary + "\n"), "ambiguous-summary"],
+      [cargoFrame("running 3 tests\nrunning 3 tests\n" + summary + "\n" + summary + "\n"), "ambiguous-summary"],
+      [cargoFrame(outer + summary + "\n"), "ambiguous-summary"],
+      [cargoFrame("running 3 tests\n" + libtest(1, 0, 0, 0) + summary + "\n"), "ambiguous-summary"],
+      [cargoFrame(outer + libtest(1, 0, 0, 0)), "ambiguous-summary"],
+      [cargoFrame(outer + "running 1 test\n"), "ambiguous-summary"],
+      [cargoFrame(outer.replace("3 passed", "2 passed")), "ambiguous-summary"],
+      [cargoFrame(outer.replace("0 measured", "1 measured")), "benchmarks"],
+      [cargoFrame(outer.replace("3 passed", "9007199254740992 passed")), "malformed-summary"],
+      [cargoFrame(outer.replace("running 3", "running 9007199254740992")), "malformed-summary"],
+      [cargoFrame("running invalid tests\n" + summary + "\n"), "malformed-summary"],
+      [cargoFrame(outer, "     Running malformed") , "malformed-summary"],
+      [cargoFrame(outer, "   Doc-tests"), "malformed-summary"],
+      [cargoFrame(outer, "     Running " + "x".repeat(20_000)), "malformed-summary"],
+      [cargoFrame("running " + "0".repeat(20_000) + "3 tests\n" + summary + "\n"), "malformed-summary"],
+      [cargoFrame(outer.replace("3 passed", "0".repeat(20_000) + "3 passed")), "malformed-summary"],
+    ];
+    for (const [text, why] of cases) {
+      const result = await counted(root, text, { cargoFrames: true });
+      assert.equal(result.executed, "unknown", text.slice(0, 200));
+      assert.equal(result.why, why, text.slice(0, 200));
+      assert.equal(Object.hasOwn(result, "passed"), false);
+    }
+    const childFailure = cargoFrame("running 3 tests\n" + libtest(0, 1, 0, 0) + summary + "\n");
+    assert.deepEqual(await counted(root, childFailure, { cargoFrames: true }),
+      { executed: "unknown", why: "ambiguous-summary", runners: 0, filteredOut: 0, failures: 1 });
+    // Every field can be safe while the sum across confirmed runners is not.
+    const max = Number.MAX_SAFE_INTEGER;
+    for (const options of [undefined, { cargoFrames: true }]) {
+      const wrap = (text) => options ? cargoFrame(text) : text;
+      for (const text of [wrap(libtest(max, 0, 0, 0)) + wrap(libtest(0, 1, 0, 0)),
+        wrap(libtest(max, 0, 0, 0)) + wrap(libtest(1, 0, 0, 0))]) {
+        const result = await counted(root, text, options);
+        assert.equal(result.executed, "unknown");
+        assert.equal(result.why, "malformed-summary");
+      }
+    }
+  });
+});
+
+test("Cargo phase execution preserves native exits, failure masking and count records", { timeout: 60_000 }, async () => {
+  await repository(async (root) => {
+    const fixture = rustWrapperFixture(root, process.platform === "win32" ? "win32" : "linux");
+    const ordinary = requiredStages()[3];
+    const outer = libtest(3, 0, 1, 0);
+    const nested = cargoFrame(outer.replace("tests\n", "tests\nrunning 1 test\nrunning 1 test\n"));
+    const failingChild = cargoFrame("running 4 tests\n" + libtest(0, 1, 0, 0) + outer.split("\n")[1] + "\n");
+    for (const [text, code, state, why] of [[nested, 0, "passed", undefined],
+      [cargoFrame("running 4 tests\n"), 0, "passed", "incomplete-summary"],
+      [failingChild, 0, "failed", "ambiguous-summary"],
+      [cargoFrame(libtest(0, 1, 0, 0)), 0, "failed", undefined],
+      [nested, 101, "failed", undefined],
+      [cargoFrame("running 4 tests\n"), 101, "failed", "incomplete-summary"]]) {
+      writeFileSync(join(root, "scripts", "test-temp.mjs"), `process.stdout.write(${JSON.stringify(text)}); process.exitCode = ${code};`);
+      const { result, record } = await recordOf(root, [{ ...ordinary, name: "owner-from-command" },
+        printing("later", "test", libtest(1, 0, 0, 0))]);
+      assert.deepEqual([result.stages[0].state, result.stages[0].code, result.stages[0].signal], [state, code, null]);
+      assert.deepEqual([record.stages[0].state, record.stages[0].exit, record.stages[0].why], [state, String(code), why]);
+      assert.deepEqual(json(join(dirname(result.stages[0].log), "results.json")).stages[0].tests, result.stages[0].tests);
+      assert.equal(result.stages[1].state, state === "failed" ? "unrun" : "passed");
+      if (why) {
+        assert.equal(record.stages[0].executed, "unknown");
+        assert.equal(record.stages[0].passed, undefined);
+        assert.equal(countsAsPassedTests(record), false);
+      } else assert.equal(record.stages[0].executed, text === nested ? "3" : "1");
+    }
+    // The same full-stage name and framed text through another command stay generic.
+    const generic = await recordOf(root, [printing("rust", "test", nested)], { full: true });
+    assert.equal(generic.record.stages[0].executed, "unknown");
+    assert.equal(generic.record.stages[0].why, "incomplete-summary");
+  });
+});
 
 test("every required stage has a kind, and only runner stages are tests", () => {
   for (const platform of ["win32", "linux"]) {
