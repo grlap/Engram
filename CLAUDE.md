@@ -348,6 +348,16 @@ Choose landing validation by changed file type:
 | Runtime code, CLI implementation or schema | Full gate |
 | Any other path, including configuration, lockfiles and fixtures | Full gate |
 
+For the planned Git task sync layout, exported task data in
+`.engram/project.json` and `.engram/tasks/` is included in the normal
+code-branch commit that carries the code changes. That whole changeset is
+gated and reviewed once under the requirements above; its task-data changes
+need no separate full gate or review pair. A commit that changes only task
+data keeps the existing landing requirements, and no other landing condition
+changes. The task data in that commit is the export frozen with the changeset
+before its gate; tracker writes made after the gate, such as an evaluation or
+a completion, go with a later changeset and are never added to the gated tree.
+
 A Markdown code block or quoted command is prose and does not trigger the
 full gate by itself. Mixed or uncertain changes use the stronger applicable
 checks. Focused correction checks do not replace landing validation.
