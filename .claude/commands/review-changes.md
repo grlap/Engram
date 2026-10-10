@@ -400,7 +400,9 @@ CLAUDE.md cover — the parent sends the final frozen change (the diff of its
 tracked files and the content of each untracked file), the input fingerprint
 its checks recorded, and the list of recorded messages that word each changed
 passage of authority text to the auditing coordinator by TermAl mailbox. The
-change is neither committed nor pushed before the audit of that input is
+parent also sends the auditing coordinator the recorded message that carried
+each changed passage's final wording to Greg before the landing. The change
+is neither committed nor pushed before the audit of that input is
 recorded on the item as passed.
 
 Before judging the authority passages, the auditing coordinator confirms
