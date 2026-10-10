@@ -12,6 +12,43 @@ use crate::storage::{SqliteStore, StoreError};
 
 const NOTE_ADMISSION_WINDOW: Duration = Duration::from_secs(10);
 
+/// Keeps imported-origin reads shared within this mutation's transaction.
+#[derive(Debug)]
+pub(super) struct WorkMutation<'connection> {
+    // Drop the scope before the transaction rolls back on an early return.
+    origin_scope: super::task_sync::OriginScopeGuard,
+    transaction: Transaction<'connection>,
+}
+
+impl<'connection> Deref for WorkMutation<'connection> {
+    type Target = Transaction<'connection>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.transaction
+    }
+}
+
+impl WorkMutation<'_> {
+    pub(super) fn commit(self) -> rusqlite::Result<()> {
+        let Self {
+            origin_scope,
+            transaction,
+        } = self;
+        drop(origin_scope);
+        transaction.commit()
+    }
+
+    #[cfg(test)]
+    pub(super) fn rollback(self) -> rusqlite::Result<()> {
+        let Self {
+            origin_scope,
+            transaction,
+        } = self;
+        drop(origin_scope);
+        transaction.rollback()
+    }
+}
+
 /// Why SQLite did not admit this one write transaction. Earlier transactions
 /// of the same word may already have committed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -122,7 +159,7 @@ impl SqliteStore {
         }
     }
 
-    pub(super) fn begin_work_mutation(&mut self) -> Result<Transaction<'_>, StoreError> {
+    pub(super) fn begin_work_mutation(&mut self) -> Result<WorkMutation<'_>, StoreError> {
         #[cfg(test)]
         test_policy::before_acquisition();
         let started = Instant::now();
@@ -150,7 +187,11 @@ impl SqliteStore {
         let transaction = acquired
             .map_err(|source| admission_error(source, autocommit, started.elapsed(), allowance))?;
         require_work_schema_version(&transaction, self.work_schema_version)?;
-        Ok(transaction)
+        let origin_scope = super::task_sync::enter_origin_scope(&transaction)?;
+        Ok(WorkMutation {
+            origin_scope,
+            transaction,
+        })
     }
 }
 

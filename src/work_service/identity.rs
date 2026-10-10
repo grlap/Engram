@@ -39,6 +39,7 @@ impl DisplayIdentity<'_> {
     /// that recorded this session's work as another kind would no longer be
     /// called "you".
     pub(crate) fn author(&self, actor: &str, kind: &str, session: Option<&SessionId>) -> String {
+        let session = session.filter(|id| !id.is_task_sync_reported());
         match session {
             Some(session)
                 if session != self.session || self.is_reader(actor, kind, Some(session)) =>
@@ -53,7 +54,10 @@ impl DisplayIdentity<'_> {
     /// actor as the kind of actor the agent words record as, exactly when
     /// [`Self::author`] labels it "you".
     pub(crate) fn is_reader(&self, actor: &str, kind: &str, session: Option<&SessionId>) -> bool {
-        session == Some(self.session) && actor == self.actor && kind == super::WORD_ACTOR_KIND
+        !session.is_some_and(SessionId::is_task_sync_reported)
+            && session == Some(self.session)
+            && actor == self.actor
+            && kind == super::WORD_ACTOR_KIND
     }
 }
 

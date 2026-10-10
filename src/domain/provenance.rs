@@ -121,6 +121,13 @@ impl ProvenanceLink {
 }
 
 impl ActorContext {
+    /// This historical binding reports planning attribution, not a live session.
+    pub(crate) fn is_task_sync_reported(&self) -> bool {
+        self.session_id
+            .as_ref()
+            .is_some_and(SessionId::is_task_sync_reported)
+    }
+
     /// Whether this actor id was supplied by a shell default (the OS user or
     /// a synthetic process actor) rather than asserted by the caller or host.
     #[must_use]

@@ -43,7 +43,7 @@ capabilities.
 | `Index` | rebuild / search derived state | SQLite + FTS5 tables (disposable cache) |
 | `WorkSourceAdapter` | explicit external snapshot intake | optional; Beads snapshot import first, other trackers by immutable snapshot |
 | `BackupAdapter` | store, confirm, list and return verified backup copies | optional; designed, not built |
-| Task-text sync | local change export, Git commit import, external agent merge | selected design; not built |
+| Task-text sync | typed planning directory export/import; later Git exchange and agent merge | explicit directory profile shipped; Git exchange deferred |
 | Cross-host coordination | global claims, execution ordering and shared authority | deferred |
 | `PublicationAdapter` | publish a frozen report/work projection under a receipt | deferred; no adapter shipped |
 | `Redactor` | pre-write DLP / secret scanning | visibly labeled no-op |
@@ -154,7 +154,9 @@ global exclusion.
 Sync is optional, explicit and has no background networking. Disabling it
 leaves local work writable. The prior sequential writer-epoch handoff and
 dedicated-ref proposal is superseded for this workflow. Full-store backup and
-migration remain separate capabilities. No task-sync implementation is shipped.
+migration remain separate capabilities. The explicit
+[task planning directory profile](features/task-planning-text.md) is shipped;
+Git enablement, exchange and reconciliation remain deferred.
 
 ## Data flow
 

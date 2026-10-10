@@ -371,7 +371,11 @@ fn inherited_content(
             let member = serde_json::to_value(&event)?;
             WorkRecordContent::InheritedHistory {
                 summary: event.reason.unwrap_or_else(|| event.kind.clone()),
-                kind: event.kind,
+                kind: if event.kind == "disposed" && event.actor.is_task_sync_reported() {
+                    "disposal_reported".into()
+                } else {
+                    event.kind
+                },
                 actor: event.actor,
                 recorded_at: event.occurred_at,
                 member,

@@ -30,8 +30,10 @@ impl SqliteStore {
         work_id: crate::WorkId,
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        let item = load_work_item(&self.connection, work_id)?;
-        validate_detach_on(&self.connection, &item, now)
+        self.work_read_snapshot(|store| {
+            let item = load_work_item(&store.connection, work_id)?;
+            validate_detach_on(&store.connection, &item, now)
+        })
     }
 
     /// Creates an independent successor and supersedes the stranded child atomically.

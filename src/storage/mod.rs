@@ -8,7 +8,9 @@ mod control_runtime;
 mod control_support;
 mod doctor;
 mod fts_verification;
-mod graph_snapshot;
+pub(crate) mod graph_snapshot;
+pub(crate) use work::task_sync::OriginScopeGuard as WorkReadOriginScope;
+pub use work::task_sync::TaskSyncImportResult;
 pub mod migration;
 mod named_root_read;
 mod named_root_sighting_read;
@@ -305,8 +307,7 @@ pub(crate) fn admit_session_id(session: &crate::SessionId) -> Result<(), StoreEr
 }
 
 pub(crate) fn admit_session_id_text(value: &str) -> Result<(), StoreError> {
-    crate::domain::validate_session_id_length(value)
-        .map_err(|error| StoreError::InvalidWork(error.as_str().into()))
+    admit_session_id(&crate::SessionId(value.to_owned()))
 }
 
 pub(crate) fn admit_live_actor_session(

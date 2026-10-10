@@ -20,7 +20,8 @@ references another.
 | [Acceptance-evaluation lifecycle](acceptance-evaluation-lifecycle.md) | Design review of admission and completion owners, historical failure transitions, and the shared host check-and-cut guarantee |
 | [Local tasks & reports](local-tasks-and-reports.md) | Root execution, single-executor child runs, handoffs, completion seals, fenced report assembly, and optional receipted publication |
 | [SQLite store](sqlite-store.md) | Local append-only canonical store; recovery snapshots; optional agent-merged Git task exchange; deferred cross-host coordination |
-| [Git task synchronization](git-task-sync.md) | Selected design: task text on the code branch, local feed export, Git commit import and external agent merge; main-checkout exchange, not shipped |
+| [Git task synchronization](git-task-sync.md) | Selected design: task text on the code branch; Git exchange and reconciliation remain deferred |
+| [Task planning text](task-planning-text.md) | Shipped typed deterministic planning directory export/import into an empty graph, with exact repeat no-op |
 | [Work-graph snapshot](work-graph-snapshot.md) | Shipped deterministic save/load of the agent-visible work graph, inert history, and keyed project memories |
 | [Off-host backup](off-host-backup.md) | Design: two copy kinds, adapter receipts, a host-triggered push, and the exact rule for reporting `local_backed_up` with its off-host assurance |
 | [External adapters](tracker-adapter.md) | Optional snapshot intake, backup/portable storage, and separately authorized publication |

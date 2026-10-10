@@ -1456,7 +1456,7 @@ impl SqliteStore {
 /// authored, whatever its shape. This is a guard at authoring time against
 /// the likely mistake, not a proof: a value copied from another store is not
 /// known here and is admitted.
-fn refuse_record_id_pins_on(
+pub(super) fn refuse_record_id_pins_on(
     connection: &Connection,
     bindings: &[crate::domain::AcceptanceBinding],
 ) -> Result<(), StoreError> {

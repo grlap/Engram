@@ -443,7 +443,9 @@ impl SqliteStore {
         project_id: &crate::domain::ProjectId,
         work_ref: &str,
     ) -> Result<WorkItem, StoreError> {
-        resolve_work_ref_on(&self.connection, project_id, work_ref)
+        self.work_read_snapshot(|store| {
+            resolve_work_ref_on(&store.connection, project_id, work_ref)
+        })
     }
 
     /// Builds current completion-recovery guidance without persisting a
@@ -458,6 +460,7 @@ impl SqliteStore {
     ) -> Result<CompletionRecoverySnapshot, StoreError> {
         debug_assert!(self.connection.is_autocommit());
         let transaction = self.connection.unchecked_transaction()?;
+        let origin_scope = super::task_sync::enter_origin_scope(&transaction)?;
         let (work, _, _) = validate_live_claim_on(
             &transaction,
             expected_work.work_id,
@@ -503,6 +506,7 @@ impl SqliteStore {
             cause.clone(),
             context,
         )?;
+        drop(origin_scope);
         transaction.commit()?;
         Ok(recovery)
     }
@@ -668,7 +672,9 @@ impl SqliteStore {
         parent: &WorkItem,
         limit: usize,
     ) -> Result<Vec<WorkItem>, StoreError> {
-        self.waivable_required_children_in_scope(parent, limit, None)
+        self.work_read_snapshot(|store| {
+            store.waivable_required_children_in_scope(parent, limit, None)
+        })
     }
 
     pub(crate) fn waivable_required_children_in_scope(
@@ -1480,7 +1486,9 @@ impl SqliteStore {
         work_id: WorkId,
         limit: usize,
     ) -> Result<WorkPrerequisitePage, StoreError> {
-        bounded_prerequisite_projection_rows(&self.connection, work_id, limit)
+        self.work_read_snapshot(|store| {
+            bounded_prerequisite_projection_rows(&store.connection, work_id, limit)
+        })
     }
 
     /// Returns the projected claim for the active run, or the latest

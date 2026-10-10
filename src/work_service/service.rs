@@ -33,6 +33,7 @@ struct ReadScope {
     /// The service whose word opened the scope; another service's reads on
     /// this thread, such as a test's second session, keep their own.
     owner: usize,
+    origin_scope: Option<crate::storage::WorkReadOriginScope>,
     store: Option<Rc<SqliteStore>>,
 }
 
@@ -56,6 +57,35 @@ pub(super) enum FocusText {
 }
 
 impl LocalWorkService {
+    /// Export only shared task planning; this does not register a process session.
+    ///
+    /// # Errors
+    /// Refuses invalid attribution, store state, or incomplete planning graphs.
+    pub fn export_task_tree(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<crate::task_sync::TaskTree, StoreError> {
+        self.read_store_at(now)?.export_task_tree(&self.project_id)
+    }
+
+    /// Import a complete inert candidate atomically, without focus or execution state.
+    ///
+    /// # Errors
+    /// Refuses malformed, divergent, or native target state.
+    pub fn import_task_tree(
+        &self,
+        tree: &crate::task_sync::TaskTree,
+        dry_run: bool,
+        now: DateTime<Utc>,
+    ) -> Result<crate::storage::TaskSyncImportResult, StoreError> {
+        self.lock_store_at(now)?.import_task_tree(
+            &self.project_id,
+            &self.actor("task-sync:import", "import reported task planning state"),
+            tree,
+            dry_run,
+            now,
+        )
+    }
     /// Validates and optionally recreates a saved planning/history graph.
     ///
     /// # Errors
@@ -239,11 +269,11 @@ impl LocalWorkService {
                 return Ok(None);
             };
             if scope.store.is_none() {
-                let store = SqliteStore::open_existing_read_only(&self.database)?;
+                let store = Rc::new(SqliteStore::open_existing_read_only(&self.database)?);
                 // Every read of this word joins one transaction, so the
                 // word's parts share a single snapshot.
-                store.begin_held_read()?;
-                scope.store = Some(Rc::new(store));
+                scope.origin_scope = Some(store.begin_held_read()?);
+                scope.store = Some(store);
             }
             Ok(scope.store.clone())
         })?;
@@ -270,10 +300,13 @@ impl LocalWorkService {
             fn drop(&mut self) {
                 let ended = READ_SCOPE
                     .with(|scope| std::mem::replace(&mut *scope.borrow_mut(), self.0.take()));
-                if let Some(store) = ended.and_then(|scope| scope.store) {
-                    // A read-only transaction holds nothing to keep; ending
-                    // it only releases the snapshot.
-                    let _ = store.end_held_read();
+                if let Some(mut ended) = ended {
+                    drop(ended.origin_scope.take());
+                    if let Some(store) = ended.store.take() {
+                        // A read-only transaction holds nothing to keep; ending
+                        // it only releases the snapshot.
+                        let _ = store.end_held_read();
+                    }
                 }
             }
         }
@@ -287,8 +320,13 @@ impl LocalWorkService {
         if nested {
             return read();
         }
-        let outer =
-            READ_SCOPE.with(|scope| scope.borrow_mut().replace(ReadScope { owner, store: None }));
+        let outer = READ_SCOPE.with(|scope| {
+            scope.borrow_mut().replace(ReadScope {
+                owner,
+                origin_scope: None,
+                store: None,
+            })
+        });
         let _restore = Restore(outer);
         read()
     }
@@ -1655,7 +1693,11 @@ fn restored_history_view(records: Vec<crate::RestoredRecord>) -> RestoredHistory
                     });
                     RestoredHistoryEntry {
                         generation_index,
-                        kind: event.kind,
+                        kind: if event.kind == "disposed" && event.actor.is_task_sync_reported() {
+                            "disposal_reported".into()
+                        } else {
+                            event.kind
+                        },
                         summary: compact_text(&summary),
                         actor: event.actor,
                         created_at: event.occurred_at,

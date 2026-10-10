@@ -48,8 +48,10 @@ impl SqliteStore {
             snapshot.commit()?;
             return Ok(report);
         }
+        let _origin_scope = super::super::task_sync::enter_origin_scope(connection)?;
         let mut checked = 0_usize;
         let mut invalid = Vec::new();
+        super::super::task_sync::verify_origins(connection, &mut checked, &mut invalid)?;
         let mut seen_events = HashSet::new();
         let mut work_items = HashMap::new();
         let mut runs = HashMap::new();

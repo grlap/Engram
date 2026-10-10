@@ -19,6 +19,7 @@ pub mod project;
 pub mod schema;
 pub mod shell;
 pub mod storage;
+pub mod task_sync;
 pub mod verbs;
 pub mod work_service;
 

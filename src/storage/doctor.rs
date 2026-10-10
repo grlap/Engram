@@ -36,6 +36,7 @@ impl SqliteStore {
             snapshot.commit()?;
             return Ok(report);
         }
+        let _origin_scope = super::work::task_sync::enter_origin_scope(&self.connection)?;
         let mut statement = self
             .connection
             .prepare("SELECT object_id, canonical_json FROM objects ORDER BY object_id")?;

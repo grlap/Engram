@@ -425,7 +425,13 @@ fn validate_section_order(document: &WorkGraphSnapshotDocument) -> Result<(), St
 }
 
 fn validate_items_and_relations(document: &WorkGraphSnapshotDocument) -> Result<(), StoreError> {
-    let items = &document.body.items;
+    validate_planning_graph(&document.body.items, &document.body.blockers)
+}
+
+pub(crate) fn validate_planning_graph(
+    items: &[crate::WorkGraphSnapshotItem],
+    blockers: &[crate::WorkGraphSnapshotBlocker],
+) -> Result<(), StoreError> {
     let mut ids = HashSet::with_capacity(items.len());
     let mut refs = HashSet::with_capacity(items.len());
     for item in items {
@@ -444,7 +450,7 @@ fn validate_items_and_relations(document: &WorkGraphSnapshotDocument) -> Result<
         .map(|item| (item.work_id, item))
         .collect::<HashMap<_, _>>();
     let mut blocker_ids = HashSet::new();
-    for blocker in &document.body.blockers {
+    for blocker in blockers {
         if !ids.contains(&blocker.work_id) || !blocker_ids.insert(blocker.blocker_id.as_str()) {
             return Err(corrupt("duplicate or dangling blocker"));
         }

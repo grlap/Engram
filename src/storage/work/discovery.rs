@@ -222,11 +222,11 @@ impl SqliteStore {
 
     /// Opens a read transaction that every later read on this connection
     /// joins, so they all see one snapshot until [`Self::end_held_read`].
-    pub(crate) fn begin_held_read(&self) -> Result<(), StoreError> {
+    pub(crate) fn begin_held_read(&self) -> Result<super::task_sync::OriginScopeGuard, StoreError> {
         if self.connection.is_autocommit() {
             self.connection.execute_batch("BEGIN DEFERRED")?;
         }
-        Ok(())
+        super::task_sync::enter_origin_scope(&self.connection)
     }
 
     /// Ends the read transaction [`Self::begin_held_read`] opened.

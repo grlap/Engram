@@ -36,6 +36,7 @@ use bin_support::{
     graph::run_graph_from_cli,
     project::{ResolvedProject, resolve_project},
     store_lifecycle::{backup, initialize, restore},
+    task_sync::TaskSyncArgs,
     terminal_errors::{emit_anyhow_error, emit_host_path_probe_warning, emit_work_text_refusal},
 };
 
@@ -202,6 +203,8 @@ enum Command {
         #[command(subcommand)]
         operation: GraphCommand,
     },
+    /// Explicit directory interchange of inert shared task planning.
+    TaskSync(TaskSyncArgs),
     /// Serve the coding-agent local-work tools over MCP stdio.
     Mcp {
         /// Actor identity asserted by the host integration.
@@ -1078,6 +1081,7 @@ fn command_resolves_host_path_identity(command: &Command) -> bool {
         | Command::Work { .. }
         | Command::Mcp { .. }
         | Command::Graph { .. }
+        | Command::TaskSync(..)
         | Command::Backup { .. }
         | Command::Restore { .. } => false,
     }
@@ -1254,6 +1258,7 @@ async fn run_cli() -> Result<ExitCode> {
             source_skill,
             operation,
         )?,
+        Command::TaskSync(args) => bin_support::task_sync::run(database, project_id, args)?,
         Command::Mcp {
             actor_id,
             session_id,

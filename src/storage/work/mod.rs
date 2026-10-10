@@ -82,6 +82,7 @@ pub(crate) use writer_admission::last_writer_admission_allowance;
 #[cfg(test)]
 pub(crate) use writer_admission::with_writer_admission_test_policy;
 mod status;
+pub(in crate::storage) mod task_sync;
 pub(crate) use status::SelectedStatusNote;
 mod unadmitted;
 pub(in crate::storage) use unadmitted::{

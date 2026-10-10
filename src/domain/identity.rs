@@ -10,14 +10,19 @@ use uuid::Uuid;
 /// Inclusive maximum UTF-8 byte length of an admitted live session identity.
 pub const MAX_SESSION_ID_BYTES: usize = 64;
 
+/// Historical planning attribution without a live session identity.
+pub(crate) const TASK_SYNC_REPORTED_SESSION: &str = "task-sync-reported";
+
 /// Why a live caller or recipient session identity was refused.
 ///
-/// Length-only. Empty, whitespace, and charset rules stay at each existing
-/// admission surface. This type does not depend on storage errors.
+/// Bounds and reserved historical markers are checked here. Empty,
+/// whitespace and charset rules stay at each existing admission surface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionIdAdmissionError {
     /// The identity is longer than [`MAX_SESSION_ID_BYTES`].
     TooLong,
+    /// A historical attribution marker cannot name a live session.
+    ReservedReported,
 }
 
 impl SessionIdAdmissionError {
@@ -26,6 +31,7 @@ impl SessionIdAdmissionError {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::TooLong => "session id exceeds 64 UTF-8 bytes",
+            Self::ReservedReported => "reported task attribution cannot name a live session",
         }
     }
 }
@@ -66,14 +72,25 @@ pub struct ProjectId(pub String);
 pub struct SessionId(pub String);
 
 impl SessionId {
-    /// Length-only live admission. Construction and serde stay unrestricted.
+    /// Bounded live admission excludes historical attribution markers.
+    /// Construction and serde stay unrestricted.
     ///
     /// # Errors
     ///
     /// Returns [`SessionIdAdmissionError::TooLong`] when the identity exceeds
     /// [`MAX_SESSION_ID_BYTES`] UTF-8 bytes.
+    /// Returns [`SessionIdAdmissionError::ReservedReported`] for the
+    /// historical task planning attribution marker.
     pub fn validate_admitted(&self) -> Result<(), SessionIdAdmissionError> {
-        validate_session_id_length(&self.0)
+        validate_session_id_length(&self.0)?;
+        if self.is_task_sync_reported() {
+            return Err(SessionIdAdmissionError::ReservedReported);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn is_task_sync_reported(&self) -> bool {
+        self.0 == TASK_SYNC_REPORTED_SESSION
     }
 }
 

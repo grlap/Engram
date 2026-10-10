@@ -29,6 +29,7 @@ use crate::{
 };
 
 mod load;
+pub(crate) use load::validate_planning_graph;
 
 pub(super) const REDACTED_MEMORY_PLACEHOLDER: &str = "[redacted in work-graph snapshot]";
 pub(super) const RESTORED_MEMORY_SOURCE: &str = "engram:work-graph-snapshot";
@@ -58,12 +59,14 @@ impl SqliteStore {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Deferred)?;
-        let body = build_snapshot_body_on(
-            &transaction,
-            project_id,
-            widening_reason.as_deref(),
-            redactor,
-        )?;
+        let body = super::work::task_sync::with_origin_scope(&transaction, || {
+            build_snapshot_body_on(
+                &transaction,
+                project_id,
+                widening_reason.as_deref(),
+                redactor,
+            )
+        })?;
         let body_object = CanonicalObject::freeze(&body)?;
         let body_sha256 = body_object.key().clone();
         let manifest = WorkGraphSnapshotManifest {
@@ -767,7 +770,7 @@ fn snapshot_work_ids_on(
         .collect()
 }
 
-fn snapshot_item(
+pub(in crate::storage) fn snapshot_item(
     item: &crate::WorkItem,
     prerequisites: Vec<WorkId>,
     events: &[crate::WorkEvent],
@@ -834,7 +837,7 @@ fn current_disposal_reason(
     })
 }
 
-fn restored_records_on(
+pub(in crate::storage) fn restored_records_on(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<(ObjectId, Value, RestoredRecord)>, StoreError> {
@@ -1125,7 +1128,7 @@ fn snapshot_note_from_row(
     Ok((note, hash))
 }
 
-fn completion_from_events(
+pub(in crate::storage) fn completion_from_events(
     connection: &Connection,
     item: &crate::WorkItem,
     events: &[crate::WorkEvent],

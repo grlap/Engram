@@ -450,8 +450,10 @@ remain local. Independent offline hosts can both write, so this exchange does
 not provide global execution exclusion. It requires no writer epoch, remote
 startup check, scheduled push or background network service. The prior
 sequential `portable` handoff, dedicated-ref transport and remote-head CAS
-proposal is superseded for this workflow. Task sync is designed, not shipped,
-and is separate from full-store backup, restore and migration.
+proposal is superseded for this workflow. The explicit
+[task-planning directory profile](task-planning-text.md) is shipped; Git exchange
+remains planned. Task sync is separate from full-store backup, restore and
+migration.
 
 Generic JSONL export remains interchange only and is not automatically a
 backup of record. The recovery snapshot is a separate versioned contract with

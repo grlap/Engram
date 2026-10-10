@@ -1412,10 +1412,10 @@ pub(in crate::storage) fn on_one_snapshot<T>(
     read: impl FnOnce(&Connection) -> Result<T, StoreError>,
 ) -> Result<T, StoreError> {
     if !connection.is_autocommit() {
-        return read(connection);
+        return super::task_sync::with_origin_scope(connection, || read(connection));
     }
     let transaction = connection.unchecked_transaction()?;
-    let value = read(&transaction)?;
+    let value = super::task_sync::with_origin_scope(&transaction, || read(&transaction))?;
     transaction.commit()?;
     Ok(value)
 }
@@ -1714,7 +1714,7 @@ fn load_work_item_on_snapshot(
             )));
         }
     } else {
-        let Some((_, record)) = latest_restored_record(connection, work_id)? else {
+        let Some((record_id, record)) = latest_restored_record(connection, work_id)? else {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "work item {work_id:?} has neither canonical native nor restored history"
             )));
@@ -1728,17 +1728,19 @@ fn load_work_item_on_snapshot(
                 "work item {work_id:?} differs from its canonical restored record"
             )));
         }
-        let load = super::super::graph_snapshot::work_graph_snapshot_load_origin_on(
-            connection,
-            &item.project_id,
-        )?;
-        if item.created_by != load.actor
-            || item.created_at != load.loaded_at
-            || item.updated_at != load.loaded_at
-        {
-            return Err(StoreError::InvalidWorkProjection(format!(
-                "work item {work_id:?} differs from its canonical load attribution"
-            )));
+        if !super::task_sync::validate_item_origin(connection, &record_id, &record, &item)? {
+            let load = super::super::graph_snapshot::work_graph_snapshot_load_origin_on(
+                connection,
+                &item.project_id,
+            )?;
+            if item.created_by != load.actor
+                || item.created_at != load.loaded_at
+                || item.updated_at != load.loaded_at
+            {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "work item {work_id:?} differs from its canonical load attribution"
+                )));
+            }
         }
         super::planning::validated_current_work_relation_basis(connection, work_id)?;
     }
