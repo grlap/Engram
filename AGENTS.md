@@ -142,6 +142,9 @@ their presence in a file alone does not prove delivery.
   binary aside as a backup under C:\Users\grzeg\.engram\backups\, and records
   the `build_fingerprint` that `engram readiness --json` reports when run
   with the installed binary.
+  The Markdown-only exception changes landing validation, not installation:
+  the landing still installs a binary built from the clean committed tree and
+  records its `build_fingerprint`.
   The moment of a TermAl restart is the agents' decision: when
   running sessions need a landed fix, the Engram and TermAl coordinators agree
   on a moment when running work can resume, and the TermAl coordinator sends
