@@ -221,25 +221,28 @@ fn a_completed_record_is_kept_aside_under_its_utc_completion_time_and_never_repl
 
 #[test]
 fn an_abandoned_pending_record_is_archived_whole_under_a_new_name_and_cleared() {
-    let home = temp_home().unwrap();
-    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    assert_abandoned_archive(temp_home().unwrap().path());
+}
+
+fn assert_abandoned_archive(home: &Path) {
+    let paths = RecordPaths::new(home, &project(), CopyKind::Store);
     let lock = PushLock::try_acquire(&paths).unwrap();
     // Nothing pending: nothing is archived.
     assert!(matches!(
-        archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(5)),
+        archive_abandoned_pending(home, &project(), &lock, "greg", at(5)),
         Err(AbandonError::Archive(_))
     ));
     // A completed record is never abandoned.
     let mut completed = pending();
     completed.state = RestoreState::Completed;
     completed.completed_at = Some(at(2));
-    write_restore_record(home.path(), &project(), &lock, &completed).unwrap();
+    write_restore_record(home, &project(), &lock, &completed).unwrap();
     assert!(matches!(
-        archive_abandoned_pending(home.path(), &project(), &lock, "greg", at(5)),
+        archive_abandoned_pending(home, &project(), &lock, "greg", at(5)),
         Err(AbandonError::Archive(_))
     ));
     assert_eq!(
-        read_restore_record(home.path(), &project()),
+        read_restore_record(home, &project()),
         RestoreRecords::Recorded(Box::new(completed))
     );
 
@@ -251,14 +254,14 @@ fn an_abandoned_pending_record_is_archived_whole_under_a_new_name_and_cleared() 
     for name in taken {
         fs::write(paths.directory.join(name), name).unwrap();
     }
-    write_restore_record(home.path(), &project(), &lock, &pending()).unwrap();
+    write_restore_record(home, &project(), &lock, &pending()).unwrap();
     let original: serde_json::Value =
-        serde_json::from_slice(&fs::read(restore_record_path(home.path(), &project())).unwrap())
-            .unwrap();
+        serde_json::from_slice(&fs::read(restore_record_path(home, &project())).unwrap()).unwrap();
     let archived =
-        archive_abandoned_pending(home.path(), &project(), &lock, "Greg O'Neil", at(5)).unwrap();
+        archive_abandoned_pending(home, &project(), &lock, "Greg O'Neil", at(5)).unwrap();
     assert_eq!(archived.warnings, Vec::<String>::new());
     let archive = archived.archive;
+    assert_eq!(archive.parent(), Some(paths.directory.as_path()));
     assert_eq!(
         archive.file_name().unwrap().to_string_lossy(),
         "store.restore-abandoned-20261002T120005Z-2.json"
@@ -283,10 +286,47 @@ fn an_abandoned_pending_record_is_archived_whole_under_a_new_name_and_cleared() 
     let kept: RestoreRecord = serde_json::from_value(envelope.pending).unwrap();
     assert_eq!(kept, pending());
     // The active record is cleared: no restore is pending any more.
-    assert_eq!(
-        read_restore_record(home.path(), &project()),
-        RestoreRecords::None
-    );
+    assert_eq!(read_restore_record(home, &project()), RestoreRecords::None);
+}
+
+#[cfg(windows)]
+#[test]
+fn long_archive_paths_keep_collision_records_and_accept_relative_and_extended_homes() {
+    use std::os::windows::ffi::OsStrExt;
+
+    let root = temp_home().unwrap();
+    for desired in [260, 400] {
+        let mut home = root.path().join(format!("zażółć 🦀-{desired}"));
+        let length = |home: &Path| {
+            RecordPaths::new(home, &project(), CopyKind::Store)
+                .directory
+                .join(abandoned_name(at(5), 2))
+                .as_os_str()
+                .encode_wide()
+                .count()
+        };
+        let minimum = length(&home);
+        while length(&home) < desired {
+            let remaining = desired - length(&home);
+            if remaining <= 60 {
+                let mut name = home.file_name().unwrap().to_os_string();
+                name.push("x".repeat(remaining));
+                home.set_file_name(name);
+            } else {
+                home.push("x".repeat(59));
+            }
+        }
+        assert!(length(&home) >= desired);
+        if minimum <= desired {
+            assert_eq!(length(&home), desired);
+        }
+        assert_abandoned_archive(&home);
+    }
+    let extended = fs::canonicalize(root.path()).unwrap().join("extended");
+    assert_abandoned_archive(&extended);
+    let current = std::env::current_dir().unwrap();
+    let relative = root.path().strip_prefix(&current).unwrap().join("relative");
+    assert_abandoned_archive(&relative);
 }
 
 #[test]

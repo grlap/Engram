@@ -810,17 +810,20 @@ fn a_restored_store_equals_the_pushed_copy_byte_for_byte_and_row_for_row_and_doc
 
 #[test]
 fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
+    abandon_pending_without_contacting_target(&Homes::new(), "pending");
+}
+
+fn abandon_pending_without_contacting_target(homes: &Homes, name: &str) -> PathBuf {
     use engram::backup::{
         CopyKind,
         restore::{RestoreRecord, RestoreState, write_restore_record},
         target::{PushLock, RECORD_FORMAT_VERSION, RecordPaths, Statement},
     };
-    let homes = Homes::new();
-    homes.set_target("pending");
+    homes.set_target(name);
     // The target's directory is gone: a word that contacted it would fail.
     fs::remove_dir_all(homes.path("copies")).unwrap();
     let project = ProjectId(PROJECT.into());
-    let home = homes.path("pending");
+    let home = homes.path(name);
     let copy = "20261002T000000Z-pending";
     let write = |staging: &Path| {
         let lock =
@@ -852,7 +855,7 @@ fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
 
     // The status line names both ways on, the stored name quoted.
     write(Path::new("staging"));
-    let status = text(&homes.succeeded("pending", &["backup", "status"]).stdout);
+    let status = text(&homes.succeeded(name, &["backup", "status"]).stdout);
     for way in [
         format!("engram backup restore {copy} --origin-retired-by='Greg O'\"'\"'Neil'"),
         format!("engram backup restore {copy} --abandon-pending --abandoned-by=NAME"),
@@ -875,7 +878,7 @@ fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
             "greg",
         ],
     ] {
-        let output = homes.engram("pending", &args);
+        let output = homes.engram(name, &args);
         assert_eq!(
             output.status.code(),
             Some(2),
@@ -887,7 +890,7 @@ fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
     // A staging path that is not the restore's own is refused, removing
     // nothing and leaving the restore pending.
     let refusal = homes.refused(
-        "pending",
+        name,
         &[
             "backup",
             "restore",
@@ -905,17 +908,24 @@ fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
             .contains("stays pending"),
         "{refusal}"
     );
-    let status = text(&homes.succeeded("pending", &["backup", "status"]).stdout);
+    let status = text(&homes.succeeded(name, &["backup", "status"]).stdout);
     assert!(status.contains("restore: pending since "), "{status}");
 
     // Its own staging file is removed and its record archived.
-    let directory = homes.database("pending").parent().unwrap().to_path_buf();
+    let directory = homes.database(name).parent().unwrap().to_path_buf();
     fs::create_dir_all(&directory).unwrap();
     let staging = directory.join(format!(".backup-restore-{}.staging", uuid::Uuid::now_v7()));
     fs::write(&staging, b"staged copy").unwrap();
     write(&staging);
+    let pending: Value = serde_json::from_slice(
+        &fs::read(engram::backup::restore::restore_record_path(
+            &home, &project,
+        ))
+        .unwrap(),
+    )
+    .unwrap();
     let output = homes.succeeded(
-        "pending",
+        name,
         &[
             "backup",
             "restore",
@@ -936,11 +946,30 @@ fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
     let archive = PathBuf::from(receipt["archive"].as_str().unwrap());
     let envelope: Value = serde_json::from_slice(&fs::read(&archive).unwrap()).unwrap();
     assert_eq!(envelope["abandoned"]["by"], "greg");
-    assert_eq!(envelope["pending"]["copy"], copy);
-    let status = text(&homes.succeeded("pending", &["backup", "status"]).stdout);
+    assert_eq!(envelope["pending"], pending);
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(envelope["abandoned"]["at"].as_str().unwrap()).is_ok()
+    );
+    let records = RecordPaths::new(&home, &project, CopyKind::Store);
+    assert_eq!(archive.parent().unwrap(), records.directory);
+    assert_eq!(
+        fs::read_dir(&records.directory)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "tmp")
+            })
+            .count(),
+        0
+    );
+    let status = text(&homes.succeeded(name, &["backup", "status"]).stdout);
     assert!(!status.contains("restore:"), "{status}");
     homes.refused(
-        "pending",
+        name,
         &[
             "backup",
             "restore",
@@ -951,5 +980,7 @@ fn a_pending_restore_is_abandoned_by_copy_without_contacting_the_target() {
         ],
         "backup_restore_not_pending",
     );
-    assert!(!homes.database("pending").exists());
+    assert!(!homes.database(name).exists());
+    assert!(!homes.path("copies").exists());
+    archive
 }

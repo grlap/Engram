@@ -30,6 +30,41 @@ fn home_for_staging_length(homes: &Homes, label: &str, desired: usize) -> String
 }
 
 #[test]
+fn long_archive_paths_abandon_pending_without_contacting_the_target() {
+    use engram::backup::{CopyKind, target::RecordPaths};
+
+    for desired in [260, 400] {
+        let homes = Homes::new();
+        let mut name = "zażółć 🦀".to_owned();
+        let archive_path = |name: &str| {
+            RecordPaths::new(
+                &homes.path(name),
+                &ProjectId(PROJECT.into()),
+                CopyKind::Store,
+            )
+            .directory
+            .join("store.restore-abandoned-20261002T000000Z.json")
+        };
+        let minimum = utf16_length(&archive_path(&name));
+        while utf16_length(&archive_path(&name)) < desired {
+            let remaining = desired - utf16_length(&archive_path(&name));
+            if remaining <= 60 {
+                name.push_str(&"x".repeat(remaining));
+            } else {
+                name.push('/');
+                name.push_str(&"x".repeat(59));
+            }
+        }
+        let archive = abandon_pending_without_contacting_target(&homes, &name);
+        assert!(utf16_length(&archive) >= desired);
+        if minimum <= desired {
+            assert_eq!(utf16_length(&archive), desired);
+        }
+        assert!(!archive.as_os_str().to_string_lossy().starts_with(r"\\?\"));
+    }
+}
+
+#[test]
 fn long_staging_and_store_paths_restore_reopen_and_capture() {
     let homes = Homes::new();
     let manifest = homes.origin_copy();

@@ -323,15 +323,28 @@ pub fn archive_abandoned_pending(
         };
         AbandonError::Archive(TargetError::Io { path, source })
     };
+    // tempfile's Windows rename uses native paths for both ends. The lock
+    // and readable pending record already require this directory to exist.
+    #[cfg(windows)]
+    let native_directory = fs::canonicalize(&paths.directory)
+        .map_err(|source| failed(paths.directory.clone(), source, None))?;
+    #[cfg(not(windows))]
+    let native_directory = paths.directory.clone();
     let mut temporary = tempfile::Builder::new()
         .prefix("store.restore-abandoned.")
         .suffix(".tmp")
-        .tempfile_in(&paths.directory)
+        .tempfile_in(&native_directory)
         .map_err(|source| failed(paths.directory.clone(), source, None))?;
+    let logical_temporary = paths.directory.join(
+        temporary
+            .path()
+            .file_name()
+            .unwrap_or_else(|| temporary.path().as_os_str()),
+    );
     if let Err(source) =
         io::Write::write_all(&mut temporary, &body).and_then(|()| temporary.as_file().sync_all())
     {
-        let path = temporary.path().to_path_buf();
+        let path = logical_temporary.clone();
         let left = temporary.close().err().map(|error| (path.clone(), error));
         return Err(failed(path, source, left));
     }
@@ -340,15 +353,19 @@ pub fn archive_abandoned_pending(
     let mut suffix = 0_u32;
     let archive = loop {
         let archive = paths.directory.join(abandoned_name(at, suffix));
-        match pending_archive.persist_noclobber(&archive) {
+        let destination = native_directory.join(abandoned_name(at, suffix));
+        match pending_archive.persist_noclobber(&destination) {
             Ok(()) => break archive,
             Err(error) if error.error.kind() == io::ErrorKind::AlreadyExists => {
                 pending_archive = error.path;
                 suffix += 1;
             }
             Err(error) => {
-                let temporary = error.path.to_path_buf();
-                let left = error.path.close().err().map(|left| (temporary, left));
+                let left = error
+                    .path
+                    .close()
+                    .err()
+                    .map(|left| (logical_temporary.clone(), left));
                 return Err(failed(archive, error.error, left));
             }
         }
@@ -366,7 +383,7 @@ pub fn archive_abandoned_pending(
         if let Err(error) = removed {
             warnings.push(format!(
                 "the archive's temporary file {} could not be removed: {error}",
-                temporary.display()
+                logical_temporary.display()
             ));
         }
     }
