@@ -1,6 +1,6 @@
 # Engram — Specification
 
-**Draft 0.8 · 2026-08-26 · Local-work/control/portability working draft**
+**Draft 0.9 · 2026-10-09 · Local work and optional Git task sync**
 Authors: Fable::AgentMemory (Claude) · Codex::AgentMemory (Codex) — at Greg's
 request. Decision provenance in [Appendix A](#appendix-a--decision-log).
 
@@ -22,8 +22,9 @@ It is a new standalone project for use in a work environment, with no
 dependency on TermAl, Beads, or any one agent runtime. V1 is **local-first,
 not single-session**: multiple concurrent sessions and worktrees share the
 active host's project store. Coordination authority lives on that host;
-optional `portable` mode moves the canonical shared projection sequentially
-between hosts without transferring live authority. Work may originate locally
+optional Git task sync exchanges task text between independently writable
+hosts, with an external agent resolving divergent changes and no transfer of
+live authority. Work may originate locally
 or from an explicit external snapshot. Publication is a separate optional
 boundary reached only through explicit authorization (§9.5), never by
 mirroring Engram's local event stream.
@@ -44,8 +45,9 @@ knowledge graph or process scheduler.**
   work is underway.
 - Same-host multi-session coordination with atomic ownership, an ordered
   change feed, explicit handoffs, and a finalization barrier.
-- Optional sequential cross-machine portability with scheduled durable push,
-  explicit handoff/restore, divergence refusal, and no live-authority transfer.
+- Optional explicit Git push/pull of task text on the code branch, local
+  offline writes on every machine, and agent-mediated conflict resolution
+  without live-authority transfer.
 - Host-enforced turn admission: context,
   peer-delta, checkpoint, and finalization obligations are protocol
   preconditions rather than optional agent habits. Authorization of each
@@ -66,10 +68,10 @@ knowledge graph or process scheduler.**
 ### 1.2 Non-goals
 
 - Not a **concurrent** cross-host organizational planning service in V1.
-  Engram is the active-host work source of truth in `local` mode and may be
-  handed to the next host in `portable` mode; §3 reports durability and writer
-  assumptions, never making external storage a precondition for local
-  authority. Wider organization-wide commitments may still live in external
+  Engram is each host's local work source of truth. Optional task-text sync
+  permits divergent edits and explicit reconciliation; it does not coordinate
+  cross-host claims or prevent duplicate execution. External storage is never
+  a precondition for local authority (§3). Wider organization-wide commitments may still live in external
   systems and enter only as explicit snapshots (§9.1).
 - Not a transcript archive. Raw session logs are not persisted by default
   (§7).
@@ -100,9 +102,9 @@ knowledge graph or process scheduler.**
   receive projections; they are not a second live ledger (§8, §9).
 - **Durability is explicit, not implicit.** A host-local SQLite store is a
   valid local source of truth. Engram reports whether it is `local`,
-  `local_backed_up`, sequentially `portable`, or concurrently `synchronized`;
-  it claims off-host recovery only when a verified optional backend and
-  restore path provide it (§3).
+  `local_backed_up`, or configured for optional Git task exchange. Sync status
+  reports exported/imported commits and pending changes separately; a task
+  projection is not a full-store backup or a global coordination guarantee (§3).
 - **Trust follows origin and authority.** Who asserted something, and how
   binding it claims to be, determine whether it activates immediately or
   awaits approval (§5).
@@ -168,10 +170,11 @@ records retain their stored scope boundaries; there is no generic task-memory
 capture or search surface. Delivery classifications in stored records do not
 promise automatic pinned injection (§4).
 
-V1 execution authority operates on one active host with a stable project id
-shared across sessions and worktrees. Sequential `portable` handoff may move
-that local authority between hosts; `org`/`global` and concurrent cross-host
-team scope activate with a shared backend later (§3.2–3.3, §12).
+V1 execution authority is host-local, with a stable project id shared across
+that host's sessions and worktrees. Optional Git task sync transfers shared
+task state, never local execution authority. Independently writable machines
+may diverge; cross-host claim exclusion and `org`/`global` coordination remain
+separate deferred capabilities (§3.2–3.3, §12).
 
 ### 2.4 Version schema
 
@@ -612,11 +615,10 @@ references, projection bindings, and index freshness
 (§3.1.1). `local` mode relies on SQLite
 transactions. An optional verified restore-only copy at a configured target
 provides `local_backed_up`: a full-store copy, or the deterministic
-work-graph recovery snapshot as a second, smaller kind. Sequential off-host
-transfer under one active host provides `portable`. A later concurrent
-`Sync` backend provides `synchronized`.
-Distributed merge semantics are not required for valid local-only or portable
-operation.
+work-graph recovery snapshot as a second, smaller kind. Optional Git task
+sync (§3.2) exchanges an editable task projection between local stores; it
+does not change the durability mode into a full-store recovery claim. Semantic
+merge belongs to an external agent; the core validates and imports the result.
 
 #### 3.1.1 Canonical-bytes contract
 
@@ -626,11 +628,13 @@ the spec, not an implementation detail:
 - Objects serialize as **RFC 8785 (JCS) canonical JSON**, UTF-8, so equal
   content has equal bytes and can be compared directly.
 - An object's id is a **random UUID minted when it is stored**. The id is the
-  storage key — SQLite row key today, filename in a portable/shared backend
-  (§3.2–3.3) — and the only thing a link holds. It never depends on the
-  bytes, so a record can be re-expressed in a new shape under the id it has,
+  storage key — SQLite object row key today — and the only thing an object
+  link holds. It never depends on the bytes, so a record can be re-expressed
+  in a new shape under the id it has,
   and no link ever needs rewriting. Ids written before this rule are 64 hex
   digits and remain valid as opaque strings.
+  A Git task document (§3.2) is keyed by stable task identity, not by the
+  identity of an immutable canonical version.
 - A **SHA-256 over canonical bytes is a content fingerprint**: it compares
   content (idempotency intents, snapshot bodies, build identity). It is never
   an id or a link, and it is not a corruption check. SQLite guards the bytes
@@ -641,159 +645,186 @@ the spec, not an implementation detail:
 - A whole store changes format by [plain JSON export and
   import](features/full-store-migration.md), which carries ids unchanged.
 
-### 3.2 Optional portable replication
+### 3.2 Optional Git task sync
 
-`portable` is the V1 cross-machine mode for sequential handoff, not live team
-coordination. SQLite remains canonical on the active host. Engram projects a
-canonical, human-readable recovery tree containing an immutable manifest,
-shared objects, work/events, typed feed ordering, schemas, and permitted
-evidence references. A configured transport publishes that tree on a cadence
-and at clean session end. `engram doctor` reports the verified remote head and
-unpushed event, byte, and age lag; failed publication is a visible degraded
-durability state, not a work-execution failure.
+**Selected design, not shipped.** Each machine keeps its writable local SQLite
+store. Explicit Git push/pull exchanges human-readable task documents on the
+same ordinary branch as code. Divergence is expected: an external agent reads
+the common base, local and incoming text, merges tasks alongside code, and
+supplies the final state for Engram to validate and import. Engram never calls
+a model. This replaces sequential portable release/acquire as the selected
+personal cross-machine workflow; previous single-writer, remote-epoch,
+dedicated-ref and scheduled-push proposals do not govern this task-sync mode.
 
-Each projection comes from one consistent SQLite read cut. Its manifest binds:
+Sync is optional. Without export/sync configuration, Engram does not create or
+modify `.engram/` and performs no background activity. Local work needs no
+remote. Enablement, target selection, export/import, push and pull are deliberate
+visible actions. Disabling exchange leaves the local store usable and writable.
+There is no online startup check or global writer claim. Duplicate execution
+across machines is possible, and merging data cannot undo external effects.
 
-```text
-PortableManifest {
-  project_id, lineage_id, parent_manifest_hash?
-  schema_versions[], object_set_hash, feed_heads[]
-  writer_epoch, writer_instance_id, writer_state: active | released
-  export_policy_hash, projection_coverage_hash, created_at
-}
-```
+The tracked layout is `.engram/project.json` plus one pretty-printed UTF-8 JSON
+document at `.engram/tasks/<full-task-uuid>.json` per task, with stable key order,
+multiline arrays, LF and deterministic bytes for unchanged shared state. Project
+metadata names the project and exact interchange format, not machine/store
+identity. Task identity is
+stable; it is neither a content fingerprint nor a canonical version id. The
+typed export profile contains task planning fields, graph links, machine-qualified
+informational work-activity notices keyed by origin machine/activity and explicitly
+opted-in generic/status notes under a narrow disclosure profile. Runtime
+evidence and path-bearing notes are excluded by default; repository visibility
+and readership are recorded at enablement. Changed note text becomes a new
+attributed note citing its original, never a rewrite under the original id.
+Cancelled/superseded tasks stay in the tree; the initial profile has no task
+deletion/tombstone producer, and missing documents are refused, never deleted
+locally. Initial export includes terminal tasks. Imported
+completion is attributed historical/reported outcome, not a fabricated local
+completion seal or an acceptance-policy bypass. Live claims, grants, sessions,
+retained prompts, delivery progress and private scratch stay local. Foreign
+provenance remains machine-qualified and conveys no local host-verification
+credit or session/source-root binding. This task projection is not
+a full-store backup or a claim to transfer complete native execution history.
 
-Routine cadence pushes preserve the active writer epoch. A cross-machine move
-uses `engram portable release`: checkpoint/exit every local control session,
-make unfinished work claims recoverable,
-invalidate grants/delivery authority, advance the writer epoch, publish a
-`released` manifest by head CAS, and make that local store mutation-read-only.
-The next host runs `engram portable acquire`, restores the exact released head,
-CAS-publishes its new instance/epoch as `active`, and only then enables local
-mutation. If the old host crashed without release, acquisition requires an
-attributed recovery command that advances the epoch. An unreachable remote
-blocks acquiring the optional portable writer; it never blocks a project that
-was configured and operated as `local`.
+The main checkout owns export/import and normal `.engram/` conflict resolution.
+Linked worktrees use per-worktree cone-mode sparse-checkout to omit that
+directory while preserving it in Git trees; `.gitignore` is not the mechanism.
+A conflicting merge/rebase may materialize excluded task files: preserve the
+conflict, then abort/re-integrate in the main checkout or explicitly resolve in
+place without importing there. Do not pretend an in-progress merge transfers
+to another worktree. Enablement explicitly reconciles any existing ignored
+local `.engram/` state with the narrow tracked namespace, refusing collisions
+and retaining unrelated private files as ignored. All sessions/worktrees continue
+to share one host-local project database. The main export therefore includes
+project changes made in every worktree; it is not branch-isolated task state.
+The existing `.engram-project` identity marker remains available in worktrees.
+Checkout or branch changes never implicitly replace the database. A deliberate
+sync-branch rebind reconciles current state rather than rolling it backward.
 
-Acquire/restore never overwrites an arbitrary local store. Its destination
-must be empty or already at the exact expected manifest with no unpushed local
-tail. Otherwise Engram preserves the destination as a recovery bundle and
-refuses `portable_local_diverged`. On every process/session start or crash
-resume in portable mode, the host performs a bounded remote head/epoch check
-before issuing any mutation-capable turn grant. Remote mismatch
-makes the local store mutation-read-only and routes to reconcile; remote
-unavailability fails portable authority acquisition closed while leaving
-permitted reads/diagnostics available. This head check is authority
-validation, not use of the remote as a second work database. During an active
-session, a configured bounded cadence revalidates the epoch; forced takeover
-of an actually still-running old host therefore has an explicit detection
-window rather than an impossible distributed-lock claim. A detected mismatch
-advances the local admission epoch and invalidates outstanding grants.
+Two distinct durable local progress markers answer the transfer questions:
 
-Each push compare-and-swaps the expected parent manifest. A changed remote
-head produces `portable_diverged`; Engram refuses to push or merge. The named
-`engram portable reconcile` workflow previews both immutable lineages and
-either continues one while retaining the other as a recovery bundle/proposed
-import, or forks a new project identity. It never silently drops a lineage or
-renumbers its dense feeds. Moving to another machine is an explicit clean
-flush/handoff followed by `engram portable restore` of that head. Normal
-active execution never reads the remote as a second live database.
+- **What to send:** read the named local project feed after the last exported
+  position through a captured head, deduplicate affected task ids, and export
+  their final documents from that same SQLite snapshot. Reconcile both
+  committed-but-unimported and uncommitted Git task changes before replacing
+  any document; bind/recheck the candidate against the branch and exact task
+  tree/index/worktree basis. Clean Git status alone proves no import. Every exported change
+  family must have proven transactional feed/index coverage. Do not infer
+  changes from ids or timestamps. Advance export progress only when its output
+  is in a recoverable local Git commit; failed push retries that commit.
+- **What to receive:** diff the last successfully imported commit's task tree
+  against the incoming committed tree. Include all intervening changes and
+  merge commits. Preserve and reconcile pending local database/file edits;
+  fetching alone never advances import progress. Import records the exact
+  resolved commit, including any local merge commit, in the same transaction
+  as applying its task changes.
 
-Portable state never restores execution authority. Live work claims,
-control sessions, grants, action state, delivery progress,
-and agent-private scratch are excluded. Immutable claim lifecycle events may
-be retained for audit and fencing history, but an unfinished prior-host claim
-restores as `recoverable`; attributed recovery advances its generation/fence.
-Historical resource-lease audit events confer no live authority. This prevents a user from locking
-their new machine out with authority held by the old one.
+Progress is scoped to the local store/project and repository/branch binding.
+Retain the common task-tree merge base independently of export/import progress;
+local feed positions are never global cross-machine cursors. No-op re-export
+after an import must not generate feedback commits or consume unrelated
+unexported local changes.
 
-Portable projection is closed, not an arbitrary filtered object subset:
+For an initial push of 1,000 tasks to an empty remote branch, capture all tasks
+and the feed head in one read snapshot, write 1,000 task documents plus project
+metadata, validate their graph, create one commit, record its export position,
+then push. Writes after the captured head remain pending. An existing remote
+task tree is fetched and reconciled first, never overwritten by force. A new
+machine imports the full committed tree once; subsequent transfers use changed
+task ids/paths. Initial export does not require an agent to read every task.
 
-- **Executable shared-state closure** includes every transitive object needed
-  to rebuild work items/edges/events, readiness, policy/authority, root-shared
-  context, acceptance/evidence, completion seals, and typed feed heads. If
-  export policy will not permit one of those objects, release fails
-  `portable_projection_incomplete`; a stub may not stand in for executable
-  state.
-- A provenance-only reference into excluded private or non-executable content
-  resolves through an `ExclusionStub { target_id, object_kind, reason,
-  export_policy_hash, stub_id }`. The stub is a projection record under its own
-  minted `stub_id`; it names the excluded object's id and never stands in for
-  its content. `export_policy_hash` is a fingerprint of the policy that was
-  applied, kept for comparison. `doctor` treats a matching stub as deliberately
-  excluded and a missing target/stub as corruption. *(Draft text before
-  2026-09-17 called these `target_hash` and `stub_hash`; ids are minted, not
-  derived, since then.)*
-- An excluded non-semantic feed payload leaves an `ExcludedFeedEntry` binding
-  feed identity, dense position, the original event's id, the exclusion stub's
-  id, and the policy fingerprint. Positions are never removed or renumbered. A behavior-affecting
-  shared event cannot be replaced this way and must be included or fail the
-  release.
-- Projection of an already canonical object is **pass or exclude, never byte
-  rewrite**. A Redactor may transform a candidate before it is first written
-  and its id minted; it cannot mutate bytes during export under the same id.
-  Sanitized derivatives are new canonical objects with explicit provenance.
+TermAl remote collaboration can use this exchange: the remote agent claims
+locally, exports/pushes, and after confirmed publication notifies its peer with
+project, configured branch, commit and task id. The local peer pulls, merges
+and imports through its main checkout. Shared work-activity notices make the
+remote started/released/finished state visible even when notes are not exported;
+actual claims/fences/grants never travel. Each activity has a stable identity
+and origin-machine/actor provenance; its successive states use source-local
+ordering, not cross-machine timestamps. Imported notices are scheduling context,
+not local claims or fresh evidence. Concurrent/stale activity remains visible
+for agent reconciliation. Notifications trigger only explicitly authorized or
+deliberately configured collaboration actions, never implicit remote authority,
+and duplicate/delayed delivery cannot roll back newer imported state.
+The concrete configured remote-session/control notification route must be
+verified. TermAl's SSH remote sessions already exist, but remote agent mailbox
+access depends on its planned control-plane relay implementation. That design
+covers SSH executors attached to one control plane, not mailbox federation
+between two independent control-plane hosts.
+With Git alone, discover activity on the next explicit fetch, never by polling.
+The notified commit must belong to the fetched configured branch history.
+Route exchange to the main-checkout sync session under the existing gate/turn
+serialization. Renewals or unrecorded expiry do not create activity exports.
 
-The manifest coverage fingerprint commits included objects, stubs, excluded
-feed entries, and closure results. `doctor` reports counts/reasons and may claim
-`portable` only when executable shared-state closure is complete. Stubs leak
-existence, kind, and ids; the portable target must be authorized for that
-metadata. If policy forbids even stubs, Engram can make a marked-truncated
-backup/export but cannot call it portable or activate it as a working store.
-Acquire requires the same recognized `export_policy_hash`; mismatch refuses
-`portable_policy_mismatch` until an attributed policy adoption or a
-new lineage is chosen.
+Import validates the exact supported schema, stable identities, reference
+closure, graph invariants, missing-document refusal and lifecycle admission. It checks
+that affected local task bases have not changed while the agent prepared the
+merge; a changed basis requires reconciliation, never silent overwrite.
+In the same write transaction, revalidate the combined graph (including the
+parent/required-child and prerequisite union), referenced lifecycles and run
+admission, or fence that complete relevant read set. Changed-row checks alone
+do not prevent a concurrent A→B/B→A cycle. Apply the batch atomically and
+idempotently, appending attributed
+versions/events while preserving existing immutable canonical objects. Git
+commit/push and SQLite import remain separate recoverable steps, not one
+distributed transaction. Ordinary non-fast-forward conflicts return to merge;
+force-push is not required by this design.
 
-The port is substrate-neutral. For a personal or small private Git transport,
-the recommended layout is a dedicated plumbing ref such as
-`refs/engram/<project-id>/<scope>`, never a checked-out branch or the working
-tree. The configured remote is a disclosure boundary: export policy and the
-`Redactor` run before projection, `secret-ref` values remain references,
-agent-private scratch never leaves the host, and `engram doctor` reports the
-no-op redactor honestly. A shared code repository is not the organization-
-scale default: hundreds of developers require per-user private repositories,
-an access-controlled internal object store, or the service backend so ref
-count, privacy, and lifecycle do not couple to the code remote.
+The detailed workflow, initial profile, explicit imported-lifecycle mapping,
+recovery conditions and implementation acceptance cases are in
+[Git task synchronization](features/git-task-sync.md). Reported completions can
+satisfy ordinary planning prerequisites; required-child accounting names inert
+restored completions separately and never fabricates a native seal or host
+credit. A terminal import against an unfinished local run requires explicit
+affected-run admission hold, checkpoint/drain, attributed claim release and an
+audited superseded-by-import disposition; if these cannot finish safely this
+attempt is refused with the candidate retained. Native seals remain immutable.
+Reopen uses a new locally admitted execution generation. The new reconciliation
+transition must be implemented explicitly, not assumed to exist today.
+Changed bindings reach sessions through normal next-admission refresh/rebind;
+begun turns and retained/uncertain requests settle under their original bindings.
+Import never fabricates host/source credit, rebinds a named root, or silently
+clears a pending request. The host receives a structured import cause and remedy.
+Those cases require implementation proof; this specification does not claim
+that the exporter, importer, Git orchestration or worktree setup already exist.
 
-### 3.3 Deferred: concurrent cross-host sync
+### 3.3 Deferred: concurrent cross-host coordination
 
-**Deferred, not rejected.** Draft 0.2's shared backend—append-only
-objects under globally unique ids, set-union object transfer, concurrent heads
-surfacing as *contested* (§6.3), and tombstones preventing resurrection—solves
-live cross-host coordination. Same-host concurrent sessions and sequential
-portable handoff are already V1 requirements. Concurrent sync additionally
-needs per-origin feed positions or a trusted sequencer; it may not reinterpret
-one portable dense sequence as globally contiguous after divergent writes.
-
-Because objects already use the same canonical-bytes contract (§3.1.1), the
-object transfer remains simple, but claim/resource coordination, feed merge,
-privacy, and conflict semantics are not. The intended organization-scale
-substrate is a dedicated service/object store or private per-user/task stores,
-not hundreds of automation-generated refs in a shared code repository.
-Sensitive values never enter any shared history—vault references only (§7).
+Concurrent offline editing and explicit agent-mediated task merge are in §3.2.
+Globally exclusive execution, automatic semantic merge, shared control grants,
+cross-host run-feed ordering and organization-scale service coordination remain
+deferred. Task import does not splice two host-local dense feeds into one global
+sequence or transfer a live claim. It records local import events with source
+provenance. No remote head comparison can guarantee that another offline agent
+has stopped executing a task.
 
 ### 3.4 Ports
 
-Domain semantics bind to interfaces, not backends: `Store` (append / get /
-list-heads), `Index` (rebuild / search), optional `BackupAdapter`,
-`PortableStoreAdapter`, and later `Sync`, `WorkSourceAdapter` and
-`PublicationAdapter` (§9.2), `Redactor` (§7), and `Signer` (optional, §7). V1
-ships `SqliteStore` and recovery snapshot/restore. The portable sequential
-contract is a target; publication adapters are deferred, and the unwired
-dummy implementation has been removed. Git, internal
-object storage, and later service transports implement the appropriate port
-without changing work semantics.
+Domain semantics bind to interfaces, not backends: `Store`, `Index`, optional
+`BackupAdapter`, task-text export/import with Git transport, `WorkSourceAdapter`
+and `PublicationAdapter` (§9.2), `Redactor` (§7), and optional `Signer` (§7).
+These are architectural boundaries, not assertions that Rust traits or commands
+are shipped. SQLite and recovery snapshot/restore remain current source-tree
+capabilities; Git task sync is a selected design and publication adapters remain
+deferred. Full-store backup and migration retain their separate contracts.
+The backup mode `local_backed_up` is always reported with whether its target
+is off the host by the operator's assertion or by the remote's confirmation;
+`doctor` reports recorded backup evidence without implying remote contact
+([off-host backup](features/off-host-backup.md)).
 
-**Interchange and durability modes:** SQLite is canonical in `local` mode.
-`local_backed_up` adds a verified restore-only copy at a configured target,
-always reported with whether that target is off the host by the operator's
-assertion or by the remote's confirmation
-([off-host backup](features/off-host-backup.md)). `portable`
-adds a transferable working snapshot with exactly one active host, explicit
-handoff/restore, scheduled push, and divergence refusal. `synchronized`
-activates a later shared multi-writer backend. `engram doctor` reports mode,
-remote head, recovery point, lag/degradation, and writer assumption rather
-than implying durability or concurrency that is not present.
+Local sync progress and import receipts need an explicit durable schema design.
+If implementation changes the durable format, it follows full-store migration;
+JSON interchange is not evidence that migration is unnecessary. Sync status
+must show its configured branch, export/import progress, pending local changes,
+conflicts and last observed remote state without implying continuous remote
+contact or globally exclusive authority. Data-only commits must serialize with
+source landings and cannot move a branch underneath an active source freeze.
+A project-specific data validation/authorization policy is a prerequisite for
+unattended export commits; this spec grants no gate/review exception or new
+commit/push authority. Mixed code/data commits retain source delivery rules.
+Tracked task bytes still participate in source content identity; HEAD also
+participates in the current review freeze. No path exclusion redefines either.
+Use pinned detached code roots and serialized main-checkout exchange; importing
+planning changes can still stale evaluations even when those source roots do
+not change. See the detailed host contract in the task-sync brief.
 
 ## 4. Memory retrieval
 
@@ -897,12 +928,13 @@ makes "forget" safe to use freely.
 
 > **Purge is not an ordinary operation.** V1 purge = logical tombstone. In
 > the local SQLite store, physical erasure is *technically* feasible (delete
-> + vacuum), but it still spans every backup, portable head, and JSONL export and it breaks
+> + vacuum), but it still spans every backup, Git task history, and JSONL export and it breaks
 > the append-only contract — so it remains an exceptional, documented runbook
 > with preview and audit, not a CLI verb. Two boundaries stay effectively
 > irreversible regardless: anything already *published* in a report (§9.5)
-> may live on in the external target's history, and any Git-backed portable or
-> team store (§3.2–3.3) retains history across clones, reflogs, and host backups —
+> may live on in the external target's history, and any Git task exchange (§3.2)
+> or a future Git-backed team store (§3.3) retains history across clones,
+> reflogs, and host backups —
 > where erasure means coordinated history rewrite, force-push, and clone
 > invalidation. A v2 option is envelope encryption of sensitive payloads with
 > per-record keys, so crypto-shredding can render retained ciphertext
@@ -944,7 +976,7 @@ add-ons:
 - **No raw transcript persistence** by default; any ephemeral retention is
   explicit, bounded, and audited.
 - **Safe export defaults:** they differ by artifact. A generic JSONL export,
-  the work-graph file and a portable export exclude `restricted` records
+  the work-graph file and a Git task export exclude `restricted` records
   unless explicitly widened; a `graph` backup copy is never widened. A
   `secret-ref` label is writer-asserted: the work-graph file carries the
   labelled body as written, and no export resolves a reference into its
@@ -956,15 +988,16 @@ add-ons:
   records included. A backup copy goes only to a target the operator has
   authorized for the whole store
   ([off-host backup](features/off-host-backup.md)); a migration file is kept
-  where the store itself may be kept. Portable mode
-  additionally requires complete executable shared-state closure; excluded
-  provenance uses policy-authorized stubs and feed placeholders (§3.2). Apart
-  from those two artifacts, agent-private scratch never leaves the host.
+  where the store itself may be kept. Git task export (§3.2) applies the
+  explicit disclosure profile and restricted-record exclusions in
+  [Git task sync](features/git-task-sync.md); it transfers editable planning
+  state, not an executable snapshot or portable writer authority. Apart from
+  those two whole-store artifacts, agent-private scratch never leaves the host.
   They are how the rule that scratch and live authority stay on the active
   host is read: their rows leave it only as inert bytes of a whole-store
   artifact, in a place the operator chose for the whole store. Nothing
   reads them there as work state, the artifact grants nothing, and no
-  generic export, work-graph file, portable payload or publication carries
+  generic export, work-graph file, Git task payload or publication carries
   them.
 - **Signing is policy, not a dependency:** a `Signer` port supports signed
   objects and signed Git commits where a deployment requires cryptographic
@@ -1232,7 +1265,7 @@ host-specific dependency enters the domain core.
 ### 9.1 The boundary
 
 > **Division of labor.** Engram owns host-local work and execution memory.
-> External systems are optional snapshot sources, backup/portable/sync substrates, or
+> External systems are optional snapshot sources, backup or task-exchange substrates, or
 > publication targets. None is the live local work database, and none is
 > required to open, decompose, execute, or complete work.
 
@@ -1258,16 +1291,6 @@ BackupAdapter {
   get(project, copy) → artifact
 }
 
-PortableStoreAdapter {
-  read_head(project) → PortableHead
-  fetch_snapshot(project, head_hash) → RecoverySnapshot
-  publish(project, expected_parent, active_snapshot) → PortableReceipt
-  release_writer(project, expected_active_head, released_snapshot) → PortableReceipt
-  acquire_writer(project, expected_released_head, active_manifest) → PortableReceipt
-  recover_writer(project, expected_head, recovery_intent, active_manifest) → PortableReceipt
-  validate_writer(project, writer_instance_id, writer_epoch) → WriterValidation
-}
-
 PublicationAdapter {
   capabilities()
   publish_report(target, report, idempotency_key) → Receipt
@@ -1281,9 +1304,10 @@ hash, and bounded extension data. A `PublicationAdapter` accepts only an
 explicit target and frozen payload under a durable idempotency key.
 `BackupAdapter` stores, confirms, lists and returns immutable backup copies
 of either kind, as [off-host backup](features/off-host-backup.md) defines.
-`PortableStoreAdapter` publishes and restores a sequential working snapshot
-under parent-head compare-and-swap; it never merges or restores live execution
-authority. Both are separate from a later live multi-writer `Sync` backend.
+The earlier `PortableStoreAdapter` release/acquire interface is superseded for
+the selected personal workflow by task-text exchange (§3.2). Git transport
+carries ordinary commits; it does not transfer writer ownership. Backup remains
+separate from task exchange and a future live multi-writer `Sync` backend.
 
 ### 9.3 Provenance across a mutable source
 
@@ -1315,8 +1339,8 @@ so their basis remains reproducible after the source changes or disappears.
   work graph is fully functional in `local` durability mode.
 - **V1 portability/compatibility:** previewed, round-trip Beads snapshot
   import/export; deterministic work-graph recovery snapshot/restore;
-  sequential portable publish/handoff/restore with cadence, lag reporting,
-  head CAS, and divergence refusal. Publication remains a separate deferred
+  optional Git task-text export/import on the code branch, explicit push/pull,
+  local change cursors and agent-mediated merge (§3.2). Publication remains a separate deferred
   capability whose frozen-payload idempotency must be proved end to end.
 - **Later optional modes:** live concurrent `Sync`, real GitHub/Jira/
   proprietary intake and publication, comments, and link-backs. Automatic
@@ -1410,7 +1434,7 @@ Further retrieval measurement may use:
 
 | Phase | Contents |
 | --- | --- |
-| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; attributed work notes and keyed project memories; bounded work context, dense ordered peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts (designed and deferred, not part of v1: [action gates](features/action-gates.md)); deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
+| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from mutation authority, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; attributed work notes and keyed project memories; bounded work context, dense ordered peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; work handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts (designed and deferred, not part of v1: [action gates](features/action-gates.md)); deterministic recovery snapshot/restore, optional explicit Git task-text push/pull with agent-mediated merge and main-checkout exchange, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
 | **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction; completed-work retention compaction; budget and ready-ranking tuning; optional configured external backup automation. |
 | **v2+** | Optional live cross-host `Sync`/team backend; real GitHub/Jira/proprietary source and publication adapters; optional embeddings; comments/link-backs; real Redactor/DLP; Postgres/service `Store`; Signer-based attestation; envelope encryption for crypto-shredding. |
 
@@ -1430,9 +1454,9 @@ Codex::AgentMemory):
 | --- | --- |
 | Name | **Engram** — settled (binary: `engram`). |
 | Implementation language | **Rust.** |
-| External adapters | Optional on intake, durability, and publication. V1 targets deterministic recovery plus sequential portable handoff, defers publication adapters, and targets round-trip Beads compatibility; no proprietary integration is required (§9.4). |
+| External adapters | Optional on intake, durability, and publication. V1 targets deterministic recovery plus optional agent-mediated Git task sync, defers publication adapters, and targets round-trip Beads compatibility; no proprietary integration is required (§9.4). |
 | Identity source | Proprietary runtime context: instruction/authority arrives as text through the tools and skills in use — asserted context, not cryptographic identity (§7). No SSO/LDAP in V1. |
-| Cross-host storage / team scope | V1 starts local and adds optional sequential `portable` handoff for one active host. Concurrent team scope remains deferred with its design preserved (§3.3). |
+| Cross-host storage / team scope | Each host remains locally writable; optional task-text Git sync permits divergence and explicit merge (§3.2). Global execution coordination remains deferred (§3.3). |
 | Redaction backend | None selected. Port + safe defaults ship; the no-op development implementation is visibly labeled and implies no compliance assurance (§7). |
 | Architecture refinement | Local work graph plus dual-layer memory/report model; final report and publication are optional state machines after local completion (§1, §2.6, §9.5). |
 | Multi-session operating model | Normal in V1 on one host. Root-work memory is shared by default; agent scratch is private. Each `WorkRun` has one ordinary executor/claim, parallel sessions claim distinct children under a `RootExecution`, and claims, typed source/delivery positions, contributions, child seals, and a completion barrier are V1 primitives. |
@@ -1443,15 +1467,16 @@ Codex::AgentMemory):
 
 - Default grace period for post-publication retention (§9.5) — pick during V1
   implementation.
-- Trigger for sequential portability (§3.2) has fired: cross-machine handoff
-  is a V1 target. Concurrent sync (§3.3) remains deferred until two hosts must
-  coordinate live; same-host sessions do not trigger it.
+- Git task sync (§3.2) is selected for cross-machine use. The exact import
+  schema, completion/evidence mapping, transactional change coverage and
+  worktree setup require implementation design and validation. Global live
+  coordination remains deferred (§3.3).
 - Timing of the proprietary tracker adapter — when work authorizes real
   publication.
-- Portable push cadence and first transport substrate (recommended: a
-  private dedicated Git ref, not a branch; internal object storage for
-  organization scale). The copy kinds and defaults of `local_backed_up` are
-  decided in [off-host backup](features/off-host-backup.md).
+- The user configures the Git repository and code branch for optional task
+  exchange; there is no background cadence in the selected workflow. Backup
+  copy kinds and defaults remain separate, as decided in
+  [off-host backup](features/off-host-backup.md).
 
 ## Appendix A — Decision log
 
@@ -1482,8 +1507,8 @@ outcomes:
 | Round-7 local-work correction | Greg required Engram to replace Beads for local work: external injection and publication are both optional because heavy external systems do not scale to execution-time decomposition. Engram::Opus endorsed local ownership, claim/lease separation, derived readiness, and optional boundaries, while challenging durability, assignment, agent ceremony, root memory scope, and authority escalation. | Add a first-class work graph and six-operation ambient model protocol; keep assignment, claim, and resource lease distinct; bind grants to work/claim/lease/context fences; make completion evidence-based; separate publication; expose explicit durability modes. | **Adopted with Greg's clarification:** SQLite is immediately authoritative in valid `local` mode; optional durability improves over time but is never a prerequisite for local execution. Honest mode claims, restore/integrity tooling, and round-trip Beads compatibility bound the replacement promise (§2.6, §3.4, §8, §9) → Draft 0.7. |
 | Round-7 independent rereview | Engram::Opus accepted Greg's optional-storage clarification but found stale durability-gate prose, run-owned memory that would disappear on reopen, ambiguous sparse/global cursors in safety CAS, focus/claim coupling, and completion/report drain ordering. | Preserve memory on the root work item across runs; use dense named project/root/run source feeds plus a separate per-session delivery sequence; make focus navigation-only; put draining in `CompletionSeal` and make optional report assembly consume it. | **Adopted before implementation.** The rereview identified no additional P0/P1 category beyond these exact corrections (§1.2, §2.6–2.7, §3.1, §8–9). |
 | Round-7 Codex verification | Independent read-only verification found four implementation-blocking ambiguities: finalizer authority survived a terminal work claim, participant plurality conflicted with a singular run claim, scalar cursors lacked feed identity, and separately acyclic hierarchy/prerequisite graphs could still create a completion deadlock. | Add fenced post-completion `ReportAssemblyClaim`; make one executor own each child `WorkRun` under a root aggregate; type source feed positions separately from session delivery positions; cycle-check explicit prerequisites plus implicit required-child completion edges as one graph. | **Adopted before implementation.** No external storage is required by any correction (§2.6–2.7, §3.1, §9.5). |
-| Round-8 portability correction | Greg stated that Engram starts local but must persist remotely, that he moves between machines, and that repository scale may reach hundreds of developers. He agreed to a canonical human-readable work projection and proposed a branch. | Engram::Opus separated restore-only backup, sequential portability, and concurrent sync; recommended a dedicated plumbing ref rather than a branch/working tree, scheduled push with visible lag, divergence refusal, sensitivity filtering, and no transfer of live claims/leases. | **Adopted as the transport-neutral contract:** optional V1 `portable` mode has one active host, explicit handoff/restore, head CAS, and no live-authority transfer. A private dedicated Git ref is the recommended personal transport; organization-scale substrate remains a product choice (§3.2–3.4, §7, §9.2–9.4) → Draft 0.8. |
-| Round-8 portability verification | Independent Codex verification and Engram::Opus both found that push-time CAS alone did not protect restore/startup and that sensitivity-filtered content-addressed projections could sever object/feed references. | Add writer-epoch release/acquire, exact-base restore, bounded startup/resume validation, and honest forced-takeover detection; require executable shared-state closure, separately hashed exclusion stubs, dense feed placeholders, export pass-or-exclude, coverage diagnostics, and policy-hash equality on acquire. | **Adopted before portable implementation.** Steps 1–4 remain independent of remote storage; the portable step must satisfy these conformance rules (§2.7, §3.2, §7, §9.2–9.4). |
+| Round-8 portability correction | Greg stated that Engram starts local but must persist remotely, that he moves between machines, and that repository scale may reach hundreds of developers. He agreed to a canonical human-readable work projection and proposed a branch. | Engram::Opus separated restore-only backup, sequential portability, and concurrent sync; recommended a dedicated plumbing ref rather than a branch/working tree, scheduled push with visible lag, divergence refusal, sensitivity filtering, and no transfer of live claims/leases. | **Historical Draft 0.8 adoption, superseded for the selected personal workflow by §3.2:** optional V1 `portable` mode has one active host, explicit handoff/restore, head CAS, and no live-authority transfer. A private dedicated Git ref is the recommended personal transport; organization-scale substrate remains a product choice (§3.2–3.4, §7, §9.2–9.4) → Draft 0.8. |
+| Round-8 portability verification | Independent Codex verification and Engram::Opus both found that push-time CAS alone did not protect restore/startup and that sensitivity-filtered content-addressed projections could sever object/feed references. | Add writer-epoch release/acquire, exact-base restore, bounded startup/resume validation, and honest forced-takeover detection; require executable shared-state closure, separately hashed exclusion stubs, dense feed placeholders, export pass-or-exclude, coverage diagnostics, and policy-hash equality on acquire. | **Historical portable proposal, superseded for the selected personal workflow by §3.2.** Steps 1–4 remain independent of remote storage; the portable step must satisfy these conformance rules (§2.7, §3.2, §7, §9.2–9.4). |
 | Cleanup correction (2026-09-23) | Greg approved direct control-session binding, resource-lease and host-waiver removal, finalizer turn removal, object-id naming, and self-asserted acceptance disclosure. | Current contracts above supersede the lease/finalizer mechanisms described in the historical rows of this table; optional report assembly remains deferred. | Approved cleanup; paired host changes and explicit store conversion are required before deployment. |
 
 ## Appendix B — Beads verdict
@@ -1518,3 +1543,8 @@ situation a visible contested state instead); no scope, evidence, confidence,
 sensitivity, validity, or usage signals; coupling the project to Dolt;
 "memory decay" that summarizes closed issues while durable memory notes have
 no lifecycle at all.
+
+The 2026-10-09 Git task-sync decision (§3.2) supersedes the historical Round-8
+sequential-portability and dedicated-ref decisions above for the selected
+personal cross-machine workflow. The retained log records provenance, not a
+requirement to implement writer-epoch handoff before task sync.

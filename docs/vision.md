@@ -58,15 +58,16 @@ performed, decisions and rationale, discovered constraints, validation,
 risks, promotion candidates, provenance—and freezes it. A separately
 authorized adapter may publish those bytes under an idempotent, receipted
 handoff. Intake, external durability, and publication are independent
-options. Publication never mirrors Engram's local event stream; an optional
-portable store replicates the canonical work projection for recovery/handoff.
+options. Publication never mirrors Engram's local event stream. Full-store
+backup and restore remain separate from task exchange.
 
-V1 is **local-first, not single-session**: one active host and one stable
+V1 is **local-first, not single-session**: each host keeps its own stable
 project-id keyed SQLite store shared by concurrent sessions and worktrees.
-Optional `portable` mode moves that store between hosts sequentially through a
-canonical projection, explicit handoff/restore, and divergence refusal. Live
-cross-host team sync remains later (see
-[architecture](architecture.md#portable-and-synchronized-backends)).
+The selected optional Git task-sync design explicitly exports task text on
+the code branch for agent merge and validated import. Independent hosts can
+both write; this provides no global execution exclusion. Task sync is not
+shipped, and cross-host execution coordination remains deferred (see
+[architecture](architecture.md#optional-git-task-sync)).
 
 ## Principles
 
@@ -86,10 +87,11 @@ cross-host team sync remains later (see
   coexist visibly as *contested* until an attributed resolution supersedes
   them — never last-writer-wins.
 - **Local authority while working, explicit at every remote boundary.** Live
-  claims, grants, delivery state, and agent-private scratch stay on the
-  active host. A configured portable target may receive a sensitivity-filtered
-  shared work projection for sequential handoff; publication separately sends
-  a frozen report or explicit work projection under an idempotent receipt. See
+  claims, grants, delivery state, and agent-private scratch stay on their local
+  host. Optional Git task-text exchange uses an explicit disclosure profile,
+  with repository visibility and readership recorded at enablement. Publication
+  separately sends a frozen report or explicit work projection under an
+  idempotent receipt. See
   [local tasks & reports](features/local-tasks-and-reports.md).
 - **One write, many views.** Capture happens in the flow of work; the same
   task record drives peer deltas, handoffs, report assembly, and publication.
@@ -107,9 +109,10 @@ cross-host team sync remains later (see
 ## What Engram is not
 
 - **Not a concurrent cross-host organizational planning service in V1.**
-  Engram owns the active host's work graph. Optional external systems may
-  retain wider organizational commitments, provide backup/publication, or
-  transfer a portable snapshot to the next active host.
+  Engram owns each host's local work graph. Optional Git task-text exchange
+  shares planning text and gives no globally exclusive execution authority.
+  External systems may retain wider organizational commitments or provide
+  backup/publication.
 - **Not a scheduler or process supervisor.** It refuses or directs execution
   selected by the host; it does not choose agents, prompts, or backlog order.
 - **Not a transcript archive.** Raw session logs are not persisted by

@@ -434,37 +434,24 @@ store after strict preflight. Until a
 configured copy and `doctor` freshness reporting ship, it is a recreation and
 hand-carry artifact, not `local_backed_up`. The
 [off-host backup](off-host-backup.md) brief designs both copy kinds, the
-configured target and the rule for the claim. `portable` adds scheduled
-publication of a canonical, human-readable working snapshot plus explicit sequential
-handoff/restore under remote-head compare-and-swap. A later shared `Sync`
-backend provides `synchronized`. External storage is optional and never
-required on the hot execution path; `doctor` reports the actual mode, remote
-head, recovery point, unpushed lag, degraded pushes, and writer assumption.
+configured target and the rule for the claim. External storage is optional
+and never required on the hot execution path.
 
-Portable restore rebuilds SQLite but never restores live authority. Work
-claims, control sessions/grants, delivery progress, and
-agent-private scratch do not cross hosts; unfinished claim history becomes
-recoverable. Remote divergence refuses rather
-than merging dense feed sequences. A manifest binds one consistent read cut,
-parent head, feed heads, export policy, writer instance/state, and monotonic
-writer epoch. Release publishes a CAS-protected `released` head and freezes
-old-host mutation; acquire CAS-publishes the next active epoch before enabling
-new-host writes. Acquire refuses to overwrite a nonempty destination unless it
-is exactly at the expected head with no local tail. Portable startup/resume
-and a bounded active cadence validate the remote writer epoch before mutation;
-mismatch/unavailability makes the local store read-only. The recommended
-personal Git transport is a dedicated
-plumbing ref, never a branch or working-tree projection; an access-controlled
-object store/service is the organization-scale substrate.
+The selected [Git task-sync design](git-task-sync.md) exchanges task text on
+the ordinary code branch while SQLite remains canonical on each host. The main
+checkout alone exports and imports; linked worktrees omit the tracked task
+files while sharing the local store. Local project-feed progress selects
+outgoing changes, and imported Git commits identify incoming progress. An
+external agent merges divergent text; Engram validates and atomically imports
+the final graph as attributed versions and events.
 
-Projection integrity distinguishes three cases: included canonical content,
-an `ExclusionStub` under its own minted id for a provenance-only excluded
-target, and a typed excluded-feed placeholder preserving an original dense
-position. Executable shared-state references must resolve to included content;
-otherwise release fails. Existing canonical bytes are passed or excluded, never
-rewritten under their id. The manifest fingerprints inclusion/stub/placeholder
-coverage for comparison, `doctor` reports it, and only complete executable
-closure qualifies as `portable`. Export-policy mismatch blocks acquire.
+Live claims, control sessions/grants, delivery state and agent-private scratch
+remain local. Independent offline hosts can both write, so this exchange does
+not provide global execution exclusion. It requires no writer epoch, remote
+startup check, scheduled push or background network service. The prior
+sequential `portable` handoff, dedicated-ref transport and remote-head CAS
+proposal is superseded for this workflow. Task sync is designed, not shipped,
+and is separate from full-store backup, restore and migration.
 
 Generic JSONL export remains interchange only and is not automatically a
 backup of record. The recovery snapshot is a separate versioned contract with
@@ -475,15 +462,14 @@ body labelled `secret-ref` as written, without dereferencing it, and its
 load side always turns a restricted body into a placeholder. A whole-store
 copy carries every row, as [off-host backup](off-host-backup.md) sets out.
 
-## Portable projection and deferred concurrent sync
+## Task projection and deferred cross-host coordination
 
-V1 portable mode projects append-only `objects/<id>.json`, one file per record
-named by its minted id, plus a manifest, work/event data, and feed ordering
-behind `PortableStoreAdapter`. It supports
-one active host, explicit handoff/restore, and divergence refusal. Concurrent
-set-union transfer, per-origin ordering, contested-on-concurrency semantics,
-and cross-host claims remain **deferred, not rejected** behind `Sync`.
-Sensitive values never enter any shared history—vault references only. See
-[spec §3.2](../spec.md#32-optional-portable-replication),
-[spec §3.3](../spec.md#33-deferred-concurrent-cross-host-sync), and the
+The selected task projection uses editable task documents under `.engram/`,
+not a replica of append-only canonical objects or a transferable live SQLite
+store. Immutable stored records retain their bytes and minted ids; imported
+changes produce attributed new versions. Shared note bodies are opt-in, and
+live execution authority never comes from task text. Concurrent cross-host
+claims and global coordination remain deferred. See
+[spec §3.2](../spec.md#32-optional-git-task-sync),
+[spec §3.3](../spec.md#33-deferred-concurrent-cross-host-coordination), and the
 [roadmap](../roadmap.md).

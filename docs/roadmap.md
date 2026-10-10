@@ -45,7 +45,7 @@ running host before Engram + TermAl is installed for a colleague.
 | Source basis for repositories with submodules | Design accepted; implementation not started | Needed only when a pilot relies on host-recorded test evidence in a repository with submodules, such as Phoenix; not blocking otherwise. Until then only the scratch repository can earn that evidence. Git filters and LFS stay outside this design. | TermAl source accounting |
 | Typed Build outcomes | Landed and installed; not yet proven on the running host | Matters only when the chosen workflow relies on host-recorded Build evidence. | TermAl build producer |
 | Runtime safety requirements | Open | Second-host exclusion in the same directory, Stop and crash behavior on the current build, and ownership of child processes for profiles that admit them. Needed before an integrated pilot. | TermAl runtime |
-| Git push/pull and portable handoff | Design assessment reopened | No Git transport or portable handoff ships; neither path needs one. | Engram design, with TermAl consultation |
+| Optional Git task sync | Design selected; not implemented | No Git task transport ships; neither pilot path needs it. | Engram design, with TermAl consultation |
 
 The integrated path to a pilot: land the diagnostics; fix each observed stop
 for its proven cause without losing or duplicating a prompt; activate the
@@ -150,11 +150,12 @@ Optional report assembly remains deferred.
   referential/projection integrity, fixture-level retrieval checks, and
   `doctor` / explicit `doctor --repair-projections`. External durability is
   optional. The shipped off-host store-copy path is described below;
-  sequential `portable` handoff remains a V1 target under the
-  [delivery plan](spec.md#11-delivery-plan),
-  but is not implemented. Its Git push/pull scope assessment has reopened at
-  the operator's request. Concurrent synchronization remains deferred; neither
-  is an available durability mode or needed for either pilot path.
+  [optional Git task sync](features/git-task-sync.md) is the selected design
+  for task exchange on the code branch with external agent merge. It
+  supersedes the prior sequential `portable` handoff proposal for this
+  workflow, and is not implemented. Concurrent cross-host coordination
+  remains deferred; neither is an available durability mode or needed for
+  either pilot path.
 
 The local-work acceptance test is operational and running: this repository
 and one migrated project use Engram as their only writable local tracker,
@@ -238,7 +239,7 @@ item is partly shipped:
 
 - Real source/publication adapters
 - Concurrent Git/external-storage/service backend with org/team scopes
-  ([design preserved](spec.md#33-deferred-concurrent-cross-host-sync))
+  ([design preserved](spec.md#33-deferred-concurrent-cross-host-coordination))
 - Optional embeddings for retrieval
 - Wider outbound publication: comments and link-backs; no continuous mirror
 - Real Redactor/DLP integration
@@ -249,7 +250,7 @@ item is partly shipped:
 
 | Deferred capability | Revisit when |
 | --- | --- |
-| Concurrent team-sync backend | A future authorized cross-host scope needs concurrent live writers; neither it nor sequential portable handoff is needed for either pilot path. |
+| Concurrent cross-host coordination | A future authorized scope needs global execution coordination beyond the selected optional Git task exchange; neither is needed for either pilot path. |
 | Proprietary tracker adapter | Work authorizes real publication |
 | Real DLP/redaction backend | A tool is mandated, or memory starts holding sensitive material |
 | SSO/LDAP identity | Compliance-grade attribution becomes a deployment promise |
@@ -265,10 +266,10 @@ item is partly shipped:
 
 - Default grace period for post-publication retention — pick during V1
   implementation.
-- Git push/pull scope: distinguish ordinary backup/restore from transfer of
-  the active writer between hosts. The existing portable draft is not a
-  shipped transport or a concurrent-writer design. Portable push cadence
-  depends on that scope. The copy kinds, freshness window and other
+- Git task exchange is specified in
+  [the selected design](features/git-task-sync.md), including explicit
+  export/import and agent merge. It does not transfer the active writer or
+  require a portable push cadence. The copy kinds, freshness window and other
   defaults of the separate backup capability are decided in
   [off-host backup](features/off-host-backup.md).
 - See [spec §12](spec.md#12-decisions) for the resolved decision record.

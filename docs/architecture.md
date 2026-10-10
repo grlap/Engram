@@ -26,7 +26,7 @@ optional intake ─────────────────────�
 └──────────┬──────────────────┬──────────────────┬───────┘
            │ Store            │ Index            │ optional adapters
            ▼                  ▼                  ▼
-┌──────────────────┐   ┌──────────────┐   backup/portable/sync/publication
+┌──────────────────┐   ┌──────────────┐   backup/task exchange/publication
 │ SQLite canonical │   │ FTS5 + work  │
 │ + projections    │   │ projections  │
 └──────────────────┘   └──────────────┘
@@ -43,8 +43,8 @@ capabilities.
 | `Index` | rebuild / search derived state | SQLite + FTS5 tables (disposable cache) |
 | `WorkSourceAdapter` | explicit external snapshot intake | optional; Beads snapshot import first, other trackers by immutable snapshot |
 | `BackupAdapter` | store, confirm, list and return verified backup copies | optional; designed, not built |
-| `PortableStoreAdapter` | sequential publish/handoff/restore under remote-head CAS | optional V1 |
-| `Sync` | concurrent fetch / push / verify between active stores | dormant until later |
+| Task-text sync | local change export, Git commit import, external agent merge | selected design; not built |
+| Cross-host coordination | global claims, execution ordering and shared authority | deferred |
 | `PublicationAdapter` | publish a frozen report/work projection under a receipt | deferred; no adapter shipped |
 | `Redactor` | pre-write DLP / secret scanning | visibly labeled no-op |
 | `Signer` | optional cryptographic attestation | not shipped in V1 |
@@ -103,10 +103,9 @@ projections built from it, along with graph references, projection bindings, and
 configured durability freshness. It does not re-derive a record's id from its
 bytes: SQLite guards the bytes on disk. SQLite is canonical in `local` mode.
 A verified restore-only copy at a configured target produces
-`local_backed_up` ([off-host backup](features/off-host-backup.md)); sequential
-cross-machine handoff produces `portable`; a later concurrent `Sync` backend
-produces `synchronized`. These are honest durability claims, not runtime
-requirements.
+`local_backed_up` ([off-host backup](features/off-host-backup.md)). Optional
+Git task sync exchanges task projections between independently writable local
+stores; it is not full-store recovery or global execution coordination.
 See [SQLite store](features/sqlite-store.md).
 
 The database is selected by stable project id rather than the current
@@ -132,28 +131,30 @@ write-only audit index of turn reports, which no grant delivers and no
 decision reads. Existing `task_id` fields retain their scope identity for stored
 history and memory applicability, not a second task lifecycle.
 
-### Portable and synchronized backends
+### Optional Git task sync
 
-V1 portable mode publishes a canonical human-readable projection on a cadence
-and at clean handoff. Clean release freezes old-host mutation; acquire/restore
-requires an empty or exact-head destination, advances a writer epoch under
-parent-head compare-and-swap, and enables the next host only after activation.
-Portable startup/resume and a bounded cadence validate that remote epoch;
-divergence refuses and forced crash takeover has an explicit detection window,
-not a distributed-lock claim. Restore never activates live claims, grants,
-delivery state, or agent-private scratch. Executable shared state is
-transitively closed; safe stubs/placeholders preserve excluded
-provenance and feed positions without rewriting canonical bytes.
-For personal/private Git the recommended transport is a dedicated plumbing
-ref—not a branch or working-tree file. An access-controlled internal object
-store is the organization-scale substrate because shared code-repo readership
-does not imply access to in-flight work.
+The selected [task-sync design](features/git-task-sync.md) exports current task
+documents under tracked `.engram/` on the code branch. The main checkout owns
+export/import and normal merge; linked worktrees use sparse-checkout to omit
+these files while sharing the same local SQLite store. Git may materialize
+excluded files for conflicts, which must be preserved/resolved or the operation
+aborted; no task import runs in a linked worktree. Local project-feed progress
+selects outgoing task changes; Git commit/tree differences select incoming
+changes. These are local, separate progress markers, never a global feed
+sequence.
 
-Concurrent cross-host sync—set-union objects, per-origin ordering or a trusted
-sequencer, concurrent heads surfacing as contested, and tombstones preventing
-resurrection—is **deferred, not rejected**. Canonical bytes keep transfer
-simple, but authority and ordering semantics remain distinct. Sensitive
-values never enter any shared history—vault references only.
+An external agent merges divergent task text alongside code. Engram validates
+the final graph and atomically imports it as attributed new versions/events;
+it never calls a model or rewrites immutable stored records. Shared note bodies
+are opt-in; modifying one creates a new attributed note citing the original.
+Claims, sessions, grants and private scratch remain local. Offline machines
+can both write and may duplicate execution; task merge does not promise
+global exclusion.
+
+Sync is optional, explicit and has no background networking. Disabling it
+leaves local work writable. The prior sequential writer-epoch handoff and
+dedicated-ref proposal is superseded for this workflow. Full-store backup and
+migration remain separate capabilities. No task-sync implementation is shipped.
 
 ## Data flow
 
