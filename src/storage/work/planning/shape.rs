@@ -72,10 +72,10 @@ pub(crate) fn validate_revision_patch(
         ));
     }
     if let Some(title) = &patch.title {
-        normalize_text(title, "title")?;
+        normalize_text(title, crate::storage::refusal_labels::TITLE)?;
     }
     if let Some(outcome) = &patch.outcome {
-        normalize_text(outcome, "outcome")?;
+        normalize_text(outcome, crate::storage::refusal_labels::OUTCOME)?;
     }
     crate::domain::normalize_external_reference(patch.external_ref.as_deref())
         .map_err(StoreError::InvalidWork)?;
@@ -135,9 +135,9 @@ pub(crate) struct RootDraftShape<'a> {
 /// Pure root shape admission, shared before ambient navigation.
 pub(crate) fn validate_root_draft(root: &RootDraftShape<'_>) -> Result<(), StoreError> {
     crate::domain::normalize_initial_work_notes(root.notes).map_err(StoreError::InvalidWork)?;
-    validate_priority(root.priority, "priority")?;
-    normalize_text(root.title, "title")?;
-    normalize_text(root.outcome, "outcome")?;
+    validate_priority(root.priority, crate::storage::refusal_labels::PRIORITY)?;
+    normalize_text(root.title, crate::storage::refusal_labels::TITLE)?;
+    normalize_text(root.outcome, crate::storage::refusal_labels::OUTCOME)?;
     normalize_acceptance(root.acceptance, root.acceptance_bindings)?;
     crate::domain::normalize_external_reference(root.external_ref)
         .map_err(StoreError::InvalidWork)?;
@@ -191,7 +191,7 @@ fn reaches_own_path<'a>(
 /// appended under: refused here before anything is recorded.
 fn validate_initial_note_sizes(notes: &[String]) -> Result<(), StoreError> {
     for note in notes {
-        normalize_note_text(note, "note summary")?;
+        normalize_note_text(note, crate::storage::refusal_labels::NOTE_SUMMARY)?;
     }
     Ok(())
 }
@@ -226,8 +226,11 @@ pub(crate) fn validate_decomposition_drafts(
         normalize_acceptance(&draft.acceptance, &draft.acceptance_bindings)?;
         crate::domain::normalize_external_reference(draft.external_ref.as_deref())
             .map_err(StoreError::InvalidWork)?;
-        normalize_text(&draft.title, "child title")?;
-        normalize_text(&draft.outcome, "child outcome")?;
+        normalize_text(&draft.title, crate::storage::refusal_labels::CHILD_TITLE)?;
+        normalize_text(
+            &draft.outcome,
+            crate::storage::refusal_labels::CHILD_OUTCOME,
+        )?;
     }
     let keys = children
         .iter()
@@ -236,9 +239,9 @@ pub(crate) fn validate_decomposition_drafts(
     for edge in edges {
         let work_key = edge.work_key.trim();
         if !keys.contains(work_key) {
-            return Err(StoreError::InvalidWork(format!(
-                "prerequisite edge references unknown child {work_key:?}"
-            )));
+            return Err(StoreError::InvalidWork(
+                crate::storage::refusal_labels::unknown_child_edge(work_key),
+            ));
         }
         // A prerequisite naming a sibling's key is that sibling; naming the
         // gated child itself is a cycle whatever the store holds.

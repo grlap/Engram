@@ -2424,11 +2424,14 @@ pub(crate) fn normalize_completion_acceptance_shape(
                 reason: "acceptance assurance must equal the completing actor assurance".into(),
             });
         }
-        let criterion = normalize_text(&result.criterion, "acceptance criterion")?;
+        let criterion = normalize_text(
+            &result.criterion,
+            crate::storage::refusal_labels::ACCEPTANCE_CRITERION,
+        )?;
         if by_criterion.insert(criterion, result).is_some() {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
-                reason: "acceptance results contain a duplicate criterion".into(),
+                reason: crate::storage::refusal_labels::DUPLICATE_ACCEPTANCE_CRITERION.into(),
             });
         }
     }

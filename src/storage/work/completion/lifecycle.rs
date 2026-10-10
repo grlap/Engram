@@ -30,7 +30,10 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<RejectRequiredChildReceipt, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        let reason = normalize_text(&request.reason, "required-child rejection reason")?;
+        let reason = normalize_text(
+            &request.reason,
+            crate::storage::refusal_labels::REQUIRED_CHILD_REJECTION_REASON,
+        )?;
         let frozen = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(receipt) = replay_operation::<RejectRequiredChildReceipt>(
@@ -119,7 +122,8 @@ impl SqliteStore {
             &cancel,
             reason.clone(),
             &request_object(&cancel)?,
-        )?;
+        )?
+        .item;
         let waive = WaiveRequiredChildRequest {
             parent_id: parent.work_id,
             child_id: child.work_id,
@@ -144,6 +148,7 @@ impl SqliteStore {
             &receipt,
         )?;
         transaction.commit()?;
+        journal_disposed(&request.actor, request.work_id);
         Ok(receipt)
     }
 
@@ -159,7 +164,10 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkRun, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        let reason = normalize_text(&request.reason, "reopen reason")?;
+        let reason = normalize_text(
+            &request.reason,
+            crate::storage::refusal_labels::REOPEN_REASON,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(run) = replay_operation::<WorkRun>(
@@ -388,12 +396,19 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        let reason = normalize_text(&request.reason, "work disposal reason")?;
+        let reason = normalize_text(
+            &request.reason,
+            crate::storage::refusal_labels::WORK_DISPOSAL_REASON,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
-        let result = dispose_work_on(&transaction, request, reason, &request_object)?;
+        let disposal = dispose_work_on(&transaction, request, reason, &request_object)?;
         transaction.commit()?;
-        Ok(result)
+        // Only a fresh disposal ends a claim; a replay ended nothing now.
+        if disposal.fresh {
+            journal_disposed(&request.actor, request.work_id);
+        }
+        Ok(disposal.item)
     }
 
     /// Accounts for one deliberately cancelled or superseded required child
@@ -410,7 +425,10 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<RequiredChildWaiver, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        let reason = normalize_text(&request.reason, "required-child waiver reason")?;
+        let reason = normalize_text(
+            &request.reason,
+            crate::storage::refusal_labels::REQUIRED_CHILD_WAIVER_REASON,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         let result = waive_required_child_on(&transaction, request, reason, &request_object)?;
@@ -418,6 +436,16 @@ impl SqliteStore {
         Ok(result)
     }
 }
+
+/// A committed disposal: the disposed item is no longer open, so no claim on
+/// it binds any more, whoever held it, and the acting session's word must not
+/// disclose a binding it captured before.
+fn journal_disposed(actor: &crate::domain::ActorContext, work: crate::domain::WorkId) {
+    if let Some(session) = actor.session_id.as_ref() {
+        super::super::focus_journal::record_ended(session, work);
+    }
+}
+
 fn reject_refusal(child: &WorkItem, parent: Option<&WorkItem>, reason: &'static str) -> StoreError {
     let child_ref = child.short_ref.clone();
     let parent_ref = parent.map(|item| item.short_ref.clone());
@@ -456,19 +484,26 @@ fn reject_refusal_with_ancestor(
     }
 }
 
+/// A disposal's item, and whether this call disposed of it rather than
+/// replaying an earlier disposal.
+struct Disposal {
+    item: WorkItem,
+    fresh: bool,
+}
+
 fn dispose_work_on(
     transaction: &rusqlite::Transaction<'_>,
     request: &DisposeWorkRequest,
     reason: String,
     request_object: &crate::CanonicalObject,
-) -> Result<WorkItem, StoreError> {
+) -> Result<Disposal, StoreError> {
     if let Some(item) = replay_operation::<WorkItem>(
         transaction,
         "dispose_work",
         &request.idempotency_key,
         request_object.key(),
     )? {
-        return Ok(item);
+        return Ok(Disposal { item, fresh: false });
     }
     let mut item = load_work_item(transaction, request.work_id)?;
     assert_revision(&item, request.expected_work_revision)?;
@@ -508,7 +543,7 @@ fn dispose_work_on(
         (WorkDisposition::Superseded, Some(replacement_id)) => {
             if replacement_id == item.work_id {
                 return Err(StoreError::InvalidWork(
-                    "work cannot supersede itself".into(),
+                    crate::storage::refusal_labels::SELF_SUPERSEDE.into(),
                 ));
             }
             let replacement = load_work_item(transaction, replacement_id)?;
@@ -676,7 +711,7 @@ fn dispose_work_on(
         request_object.key(),
         &item,
     )?;
-    Ok(item)
+    Ok(Disposal { item, fresh: true })
 }
 
 fn waive_required_child_on(
@@ -709,7 +744,7 @@ fn waive_required_child_on(
         )
     {
         return Err(StoreError::InvalidWork(
-            "completion waiver requires a directly required cancelled or superseded child".into(),
+            crate::storage::refusal_labels::WAIVER_NEEDS_DISPOSED_REQUIRED_CHILD.into(),
         ));
     }
     if !ancestors_admit_execution(transaction, &parent)? {

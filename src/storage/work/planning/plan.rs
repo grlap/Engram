@@ -328,7 +328,7 @@ fn validate_plan(input: &WorkPlanInput) -> Result<PlanParts, StoreError> {
         // Each note is appended under the note size bound; refuse an oversized
         // one here, before the plan records an attempt, with the same text.
         for note in &task_notes {
-            super::normalize_note_text(note, "note summary")?;
+            super::normalize_note_text(note, crate::storage::refusal_labels::NOTE_SUMMARY)?;
         }
         notes.push(task_notes);
         let acceptance_bindings = task

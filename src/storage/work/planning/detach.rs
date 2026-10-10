@@ -47,7 +47,10 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        let reason = normalize_text(&request.reason, "detach reason")?;
+        let reason = normalize_text(
+            &request.reason,
+            crate::storage::refusal_labels::DETACH_REASON,
+        )?;
         let object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(root) = replay_operation::<WorkItem>(

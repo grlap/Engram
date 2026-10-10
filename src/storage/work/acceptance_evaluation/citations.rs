@@ -140,7 +140,10 @@ pub(super) fn bind_verdicts(
             criterion: criterion.clone(),
             verdict: input.verdict,
             basis: input.basis,
-            rationale: normalize_note_text(&input.rationale, "rationale")?,
+            rationale: normalize_note_text(
+                &input.rationale,
+                crate::storage::refusal_labels::RATIONALE,
+            )?,
             evidence,
         });
     }

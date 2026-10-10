@@ -1117,7 +1117,10 @@ impl AgentVerbs {
         // `add --under` focuses the parent before proposing, so a note over
         // the size bound is refused here, with the text the append uses.
         for note in &input.notes {
-            crate::storage::normalize_note_text(note, "note summary")?;
+            crate::storage::normalize_note_text(
+                note,
+                crate::storage::refusal_labels::NOTE_SUMMARY,
+            )?;
         }
         if input
             .acceptance
@@ -1150,10 +1153,8 @@ impl AgentVerbs {
     }
 
     fn add_inner(&self, input: AddInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let title = input.title.trim().to_owned();
-        if title.is_empty() {
-            return Err(StoreError::InvalidWork("title must not be empty".into()).into());
-        }
+        let title =
+            crate::storage::normalize_text(&input.title, crate::storage::refusal_labels::TITLE)?;
         let outcome = input
             .outcome
             .map(|value| value.trim().to_owned())
@@ -1879,6 +1880,10 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when no matching offer or claim exists.
     pub fn handoff(&self, input: HandoffInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        self.disclosing_focus(|| self.handoff_word(input, now))
+    }
+
+    fn handoff_word(&self, input: HandoffInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         // Refuse display labels before target binding can write focus or an
         // offer. This is a usability guard, not identity resolution or trust.
         if let HandoffAction::Offer { to, .. } = &input.action {
@@ -1962,6 +1967,11 @@ impl AgentVerbs {
         let holder = self.holder(&after, now);
         let line = format!("{verb}{}", held_suffix(holder, now));
         let guidance = self.guidance(&after, "handoff", now);
+        // Like note's, this receipt is not fitted to the budget less the
+        // focus reserve: it holds one line, the compact mutation receipt
+        // (ids, refs, revisions and states only), obligation counts and the
+        // allowed next words, all bounded and short, so it stays far below
+        // that budget whatever the item holds.
         Ok(self.finish_mutation(Receipt::assemble(
             vec![line],
             guidance,

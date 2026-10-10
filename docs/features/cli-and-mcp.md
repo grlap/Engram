@@ -262,8 +262,9 @@ Naming the item acts as before, and an explicit retry replays as before.
 With exactly one live claim, a bare `done` or `evaluate` acts on it as
 before. A bare `note`, `gate` or `handoff` is unchanged.
 
-An `add`, `claim` (with or without `--under`), `note`, `gate`, `evaluate` or
-`done` that actually moves this session's focus says so. Its receipt carries a
+An `add`, `claim` (with or without `--under`), `note`, `gate`, `evaluate`,
+`done`, `update` or `handoff` that actually moves this session's focus says
+so. Its receipt carries a
 top-level `focus_change` and one text line after the headline, for example
 `focus moved from w-… to w-…; the host binds w-…'s claim from its next turn,
 not this one`. The object holds `from` and `to` (work refs, either `null`
@@ -274,8 +275,10 @@ bound named source root, it adds `workspace_id` and `generation`. A
 workspace name longer than 192 bytes as JSON or as escaped shell text is
 given instead as `workspace_id_omitted_bytes`, its UTF-8 length. Shell text
 never shows the fence.
-Without such a claim the line ends `w-… has no live claim to bind`, and
-after `done` the completed item's claim has ended, so no binding is named.
+Without such a claim the line ends `w-… has no live claim to bind`. After
+`done`, a release, or a cancel, supersede or reject, the item's claim has
+ended, so no binding is named; after an accepted handoff the claim it
+transferred to this session is named.
 
 The change is what this invocation did, computed when the word finishes and
 never stored. A call that leaves focus where it was says nothing, and so does
@@ -283,8 +286,10 @@ one that ends where it started: `claim --under` passes through the parent on
 its way to the child. A peer's `note`, `gate` or `evaluate` moves nothing, and
 an exact retry reports only a move the retry itself made. A word that moved
 focus and then refused (a claim held elsewhere, a refused `done`, a note
-whose later check fails) carries the same `focus_change` beside `error` in
-CLI JSON and MCP, and its line after the message on the CLI text surface.
+whose later check fails, an `update` of an item another session holds, a
+`handoff --accept` with no offer to accept) carries the same `focus_change`
+beside `error` in CLI JSON and MCP, and its line after the message on the CLI
+text surface.
 A request whose input is malformed on its face (its shape, sizes, counts,
 duplicates, or its fields' relations with each other) refuses before moving
 focus. So do some refusals that read stored state: a work reference inside
@@ -297,8 +302,7 @@ result count other than its criteria's, a read basis it has moved past, a
 bound against its stored edges, and claim, lifecycle, execution or authority
 admission. A fresh `done` with malformed input on already completed work is
 refused too, while an exact resend of an admitted completion still returns
-its seal. The words that disclose a move disclose it with the refusal.
-`update` and `handoff` do not yet disclose their move.
+its seal. Every word that moves focus discloses the move with the refusal.
 
 The claiming turn keeps the binding the host admitted it with. The new
 target is only a candidate for the host's next admission, and the receipt

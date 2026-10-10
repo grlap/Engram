@@ -41,17 +41,23 @@ impl LocalWorkService {
                 crate::storage::admit_session_id_text(to)?;
                 if *to == self.session_id.0 {
                     return Err(StoreError::InvalidWork(
-                        "handoff source and destination must differ".into(),
+                        crate::storage::refusal_labels::HANDOFF_TO_ITSELF.into(),
                     ));
                 }
-                crate::storage::normalize_text(checkpoint_summary, "checkpoint summary")?;
+                crate::storage::normalize_text(
+                    checkpoint_summary,
+                    crate::storage::refusal_labels::CHECKPOINT_SUMMARY,
+                )?;
                 crate::storage::claim_expiry(
                     now,
                     ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
                 )?;
             }
             WorkHandoffInput::Cancel { reason, .. } => {
-                crate::storage::normalize_text(reason, "handoff cancellation reason")?;
+                crate::storage::normalize_text(
+                    reason,
+                    crate::storage::refusal_labels::HANDOFF_CANCELLATION_REASON,
+                )?;
             }
             WorkHandoffInput::Accept { .. } => {}
         }

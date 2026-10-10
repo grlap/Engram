@@ -51,6 +51,7 @@ pub(crate) use work::acceptance_attempt_identity;
 pub(crate) use work::cost as work_cost;
 #[cfg(test)]
 pub(crate) use work::plan_validations;
+pub(crate) use work::refusal_labels;
 pub(crate) use work::validate_work_plan;
 pub use work::{
     AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,

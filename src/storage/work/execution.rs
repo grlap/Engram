@@ -257,7 +257,10 @@ fn append_restored_work_evidence_on(
     }
     let (summary, refs, gate) = match input {
         RestoredWorkEvidenceInput::Note { summary, refs, .. } => (
-            super::planning::normalize_note_text(summary, "note summary")?,
+            super::planning::normalize_note_text(
+                summary,
+                crate::storage::refusal_labels::NOTE_SUMMARY,
+            )?,
             normalize_strings(refs),
             None,
         ),
@@ -439,7 +442,10 @@ impl SqliteStore {
         let fingerprint = |content: &NoteContent<'_>| {
             CanonicalObject::freeze(content).map(|object| object.key().clone())
         };
-        let retry_summary = super::planning::normalize_note_text(summary, "note summary")?;
+        let retry_summary = super::planning::normalize_note_text(
+            summary,
+            crate::storage::refusal_labels::NOTE_SUMMARY,
+        )?;
         let retry_refs = normalize_strings(refs);
         let stored_fingerprint = fingerprint(&NoteContent {
             work_id: evidence.work_id,
@@ -978,7 +984,10 @@ impl SqliteStore {
     ) -> Result<WorkRelease, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let reason = normalize_text(&request.reason, "release reason")?;
+        let reason = normalize_text(
+            &request.reason,
+            crate::storage::refusal_labels::RELEASE_REASON,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(release) = replay_operation::<WorkRelease>(
@@ -1074,6 +1083,8 @@ impl SqliteStore {
             &release,
         )?;
         transaction.commit()?;
+        // The released claim no longer binds; a replay above ended nothing.
+        super::focus_journal::record_ended(&release.claim.holder, release.claim.work_id);
         Ok(release)
     }
 
@@ -1090,7 +1101,10 @@ impl SqliteStore {
     ) -> Result<ObjectId, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let summary = normalize_text(&request.summary, "checkpoint summary")?;
+        let summary = normalize_text(
+            &request.summary,
+            crate::storage::refusal_labels::CHECKPOINT_SUMMARY,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(hash) = replay_operation::<ObjectId>(
@@ -1171,7 +1185,10 @@ impl SqliteStore {
     {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let summary = normalize_text(&request.summary, "checkpoint summary")?;
+        let summary = normalize_text(
+            &request.summary,
+            crate::storage::refusal_labels::CHECKPOINT_SUMMARY,
+        )?;
         let transaction = self.begin_work_mutation()?;
         expire_handoff_offers(
             &transaction,
@@ -1307,7 +1324,10 @@ impl SqliteStore {
     ) -> Result<ObjectId, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let summary = super::planning::normalize_note_text(&request.summary, "evidence summary")?;
+        let summary = super::planning::normalize_note_text(
+            &request.summary,
+            crate::storage::refusal_labels::EVIDENCE_SUMMARY,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(hash) = replay_operation::<ObjectId>(
@@ -1375,7 +1395,10 @@ impl SqliteStore {
     ) -> Result<WorkNoteCapture, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let summary = super::planning::normalize_note_text(&request.summary, "note summary")?;
+        let summary = super::planning::normalize_note_text(
+            &request.summary,
+            crate::storage::refusal_labels::NOTE_SUMMARY,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(capture) = replay_operation::<WorkNoteCapture>(

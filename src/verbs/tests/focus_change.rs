@@ -10,6 +10,7 @@ use crate::storage::{FOCUS_CHANGE_RESERVE, FocusBinding, FocusChange};
 use crate::verbs::focus_change::FocusDisclosure;
 
 mod invalid_input;
+mod update_handoff;
 
 struct Session {
     verbs: AgentVerbs,

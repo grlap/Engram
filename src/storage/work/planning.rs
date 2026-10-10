@@ -153,8 +153,8 @@ fn create_root_with_validation_on<R: Redactor>(
         validate_work_source_snapshot(&source, request.created_at)?;
     }
 
-    let title = normalize_text(&request.title, "title")?;
-    let outcome = normalize_text(&request.outcome, "outcome")?;
+    let title = normalize_text(&request.title, crate::storage::refusal_labels::TITLE)?;
+    let outcome = normalize_text(&request.outcome, crate::storage::refusal_labels::OUTCOME)?;
     let work_id = WorkId::new();
     let run_id = WorkRunId::new();
     let root_id = work_id;
@@ -442,7 +442,7 @@ impl SqliteStore {
             return Err(StoreError::WorkNotOpen(item.work_id));
         }
         if let Some(title) = request.patch.title.as_deref() {
-            item.title = normalize_text(title, "title")?;
+            item.title = normalize_text(title, crate::storage::refusal_labels::TITLE)?;
         }
         if let Some(external) = request.patch.external_ref.as_deref() {
             item.external_ref = crate::domain::normalize_external_reference(Some(external))
@@ -452,7 +452,7 @@ impl SqliteStore {
             item.external_ref = None;
         }
         if let Some(outcome) = request.patch.outcome.as_deref() {
-            item.outcome = normalize_text(outcome, "outcome")?;
+            item.outcome = normalize_text(outcome, crate::storage::refusal_labels::OUTCOME)?;
         }
         let authored_before = (item.acceptance.clone(), item.acceptance_bindings.clone());
         match (
@@ -686,7 +686,10 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkBlocker, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
-        let detail = normalize_text(&request.detail, "blocker detail")?;
+        let detail = normalize_text(
+            &request.detail,
+            crate::storage::refusal_labels::BLOCKER_DETAIL,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(blocker) = replay_operation::<WorkBlocker>(
@@ -952,9 +955,9 @@ fn decompose_work_with_validation_on<R: Redactor>(
     for edge in &request.prerequisites {
         let work_key = edge.work_key.trim();
         if !ids.contains_key(work_key) {
-            return Err(StoreError::InvalidWork(format!(
-                "prerequisite edge references unknown child {work_key:?}"
-            )));
+            return Err(StoreError::InvalidWork(
+                crate::storage::refusal_labels::unknown_child_edge(work_key),
+            ));
         }
         let prerequisite = match &edge.prerequisite {
             WorkDependencyRef::Existing(work_id) => {
@@ -1023,8 +1026,11 @@ fn decompose_work_with_validation_on<R: Redactor>(
             root_id: parent.root_id,
             parent_id: Some(parent.work_id),
             child_requirement: draft.child_requirement,
-            title: normalize_text(&draft.title, "child title")?,
-            outcome: normalize_text(&draft.outcome, "child outcome")?,
+            title: normalize_text(&draft.title, crate::storage::refusal_labels::CHILD_TITLE)?,
+            outcome: normalize_text(
+                &draft.outcome,
+                crate::storage::refusal_labels::CHILD_OUTCOME,
+            )?,
             acceptance,
             acceptance_bindings,
             kind: draft.kind,
@@ -1213,7 +1219,7 @@ fn validate_root_input(request: &CreateWorkRequest) -> Result<(), StoreError> {
                 .into(),
         ));
     }
-    validate_priority(request.priority, "priority")?;
+    validate_priority(request.priority, crate::storage::refusal_labels::PRIORITY)?;
     match (request.origin, request.source_snapshot_id.as_ref()) {
         (WorkOrigin::Local, None) | (WorkOrigin::Imported, Some(_)) => Ok(()),
         (WorkOrigin::Local, Some(_)) => Err(StoreError::InvalidWork(

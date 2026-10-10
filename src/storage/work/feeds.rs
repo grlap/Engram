@@ -1072,7 +1072,7 @@ fn append_work_event_on(
             .is_none_or(|session| session.0.trim().is_empty())
     {
         return Err(StoreError::InvalidWork(
-            "local work requires a non-empty asserted actor and session binding".into(),
+            crate::storage::refusal_labels::UNBOUND_LOCAL_ACTOR.into(),
         ));
     }
     let mut relation_basis = if let Some(basis) = planned_relations {

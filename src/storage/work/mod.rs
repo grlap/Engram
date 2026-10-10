@@ -60,6 +60,7 @@ pub(crate) use query::{
 };
 mod receipts;
 mod record_windows;
+pub(crate) mod refusal_labels;
 mod verification_read;
 pub(crate) use verification_read::VerificationReadRequest;
 pub(in crate::storage) use verification_read::read_acceptance_verifications_on;

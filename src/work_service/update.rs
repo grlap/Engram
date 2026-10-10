@@ -215,7 +215,7 @@ impl LocalWorkService {
         status: bool,
         now: DateTime<Utc>,
     ) -> Result<WorkNoteResult, StoreError> {
-        crate::storage::normalize_note_text(summary, "note summary")?;
+        crate::storage::normalize_note_text(summary, crate::storage::refusal_labels::NOTE_SUMMARY)?;
         self.with_note_store_at(now, |store| {
             self.capture_note_on(store, work_ref, summary, refs, status, now)
         })
@@ -610,7 +610,7 @@ impl LocalWorkService {
                 let replacement = store.resolve_work_ref(&self.project_id, replacement)?;
                 if named_target == Some(replacement.work_id) {
                     return Err(StoreError::InvalidWork(
-                        "work cannot supersede itself".into(),
+                        crate::storage::refusal_labels::SELF_SUPERSEDE.into(),
                     ));
                 }
             }
@@ -620,8 +620,7 @@ impl LocalWorkService {
                 // storage's refusal, given before focus moves.
                 if named_target == Some(child.work_id) {
                     return Err(StoreError::InvalidWork(
-                        "completion waiver requires a directly required cancelled or superseded child"
-                            .into(),
+                        crate::storage::refusal_labels::WAIVER_NEEDS_DISPOSED_REQUIRED_CHILD.into(),
                     ));
                 }
             }
@@ -1442,7 +1441,7 @@ fn validate_update_shape(input: &WorkUpdateInput, now: DateTime<Utc>) -> Result<
         WorkUpdateInput::Checkpoint {
             summary, evidence, ..
         } => {
-            normalize_text(summary, "checkpoint summary")?;
+            normalize_text(summary, crate::storage::refusal_labels::CHECKPOINT_SUMMARY)?;
             if let Some(evidence) = evidence {
                 parse_record_ids(evidence)?;
             }
@@ -1461,11 +1460,11 @@ fn validate_update_shape(input: &WorkUpdateInput, now: DateTime<Utc>) -> Result<
                 }
                 parse_record_id(&attach.evidence)?;
             } else {
-                normalize_note_text(summary, "evidence summary")?;
+                normalize_note_text(summary, crate::storage::refusal_labels::EVIDENCE_SUMMARY)?;
             }
         }
         WorkUpdateInput::Block { detail, .. } => {
-            normalize_text(detail, "blocker detail")?;
+            normalize_text(detail, crate::storage::refusal_labels::BLOCKER_DETAIL)?;
         }
         WorkUpdateInput::Unblock {
             blocker_id: Some(blocker_id),
@@ -1476,22 +1475,28 @@ fn validate_update_shape(input: &WorkUpdateInput, now: DateTime<Utc>) -> Result<
             ));
         }
         WorkUpdateInput::Release { reason, .. } => {
-            normalize_text(reason, "release reason")?;
+            normalize_text(reason, crate::storage::refusal_labels::RELEASE_REASON)?;
         }
         WorkUpdateInput::Reopen { reason, .. } => {
-            normalize_text(reason, "reopen reason")?;
+            normalize_text(reason, crate::storage::refusal_labels::REOPEN_REASON)?;
         }
         WorkUpdateInput::Cancel { reason, .. } | WorkUpdateInput::Supersede { reason, .. } => {
-            normalize_text(reason, "work disposal reason")?;
+            normalize_text(reason, crate::storage::refusal_labels::WORK_DISPOSAL_REASON)?;
         }
         WorkUpdateInput::Reject { reason, .. } => {
-            normalize_text(reason, "required-child rejection reason")?;
+            normalize_text(
+                reason,
+                crate::storage::refusal_labels::REQUIRED_CHILD_REJECTION_REASON,
+            )?;
         }
         WorkUpdateInput::Detach { reason, .. } => {
-            normalize_text(reason, "detach reason")?;
+            normalize_text(reason, crate::storage::refusal_labels::DETACH_REASON)?;
         }
         WorkUpdateInput::WaiveRequiredChild { reason, .. } => {
-            normalize_text(reason, "required-child waiver reason")?;
+            normalize_text(
+                reason,
+                crate::storage::refusal_labels::REQUIRED_CHILD_WAIVER_REASON,
+            )?;
         }
         WorkUpdateInput::Unblock { .. }
         | WorkUpdateInput::AddPrerequisite { .. }

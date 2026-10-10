@@ -152,7 +152,10 @@ fn prepare_work_observation_on(
         sequence: head
             .checked_add(1)
             .ok_or_else(|| invalid("observation sequence overflow"))?,
-        summary: normalize_note_text(&request.summary, "note summary")?,
+        summary: normalize_note_text(
+            &request.summary,
+            crate::storage::refusal_labels::NOTE_SUMMARY,
+        )?,
         refs: normalize_strings(&request.refs),
         actor: crate::domain::captured_note_actor(
             &request.actor,
@@ -208,7 +211,7 @@ pub(super) fn append_initial_notes_on<R: Redactor>(
     // this batch. Validate that basis once, then validate each note's shape.
     let mut previous: Option<WorkObservation> = None;
     for summary in notes {
-        normalize_note_text(summary, "note summary")?;
+        normalize_note_text(summary, crate::storage::refusal_labels::NOTE_SUMMARY)?;
         let request = RecordWorkObservationRequest {
             status: false,
             project_id: item.project_id.clone(),
@@ -298,7 +301,8 @@ fn validate_shape(value: &WorkObservation) -> Result<(), StoreError> {
         || value.work_revision <= 0
         || value.actor.session_id.is_none()
         || marker_count != 1
-        || normalize_text(&value.summary, "note summary")? != value.summary
+        || normalize_text(&value.summary, crate::storage::refusal_labels::NOTE_SUMMARY)?
+            != value.summary
         || normalize_strings(&value.refs) != value.refs
     {
         return Err(invalid("work observation has invalid shape or provenance"));

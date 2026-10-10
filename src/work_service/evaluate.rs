@@ -609,7 +609,10 @@ fn parse_evaluation_words(input: &WorkEvaluateInput) -> Result<ParsedEvaluation,
             if verdict.rationale.trim().is_empty() {
                 Ok(String::new())
             } else {
-                crate::storage::normalize_note_text(&verdict.rationale, "rationale")
+                crate::storage::normalize_note_text(
+                    &verdict.rationale,
+                    crate::storage::refusal_labels::RATIONALE,
+                )
             }
         })
         .collect::<Result<Vec<_>, StoreError>>()?;

@@ -53,6 +53,10 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when no action applies or the core refuses it.
     pub fn update(&self, input: UpdateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        self.disclosing_focus(|| self.update_word(input, now))
+    }
+
+    fn update_word(&self, input: UpdateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         #[cfg(test)]
         crate::storage::work_cost::phase("word.before_target");
         let view = self.target_unfocused("update", input.work_ref.as_deref(), now)?;
@@ -216,7 +220,7 @@ impl AgentVerbs {
             &receipt,
             &candidates,
             &action,
-            super::super::MAX_AGENT_WORK_RESPONSE_BYTES,
+            super::super::FOCUS_DISCLOSED_BUDGET,
             self.argument_names,
         )
     }

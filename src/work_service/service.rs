@@ -312,7 +312,7 @@ impl LocalWorkService {
     pub(super) fn validate_read_attribution(&self, now: DateTime<Utc>) -> Result<(), StoreError> {
         if self.actor_id.trim().is_empty() || self.session_id.0.trim().is_empty() {
             return Err(StoreError::InvalidWork(
-                "local work requires a non-empty asserted actor and session binding".into(),
+                crate::storage::refusal_labels::UNBOUND_LOCAL_ACTOR.into(),
             ));
         }
         crate::storage::admit_session_id(&self.session_id)?;

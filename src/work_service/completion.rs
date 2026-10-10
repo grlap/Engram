@@ -27,7 +27,7 @@ fn refuse_misaddressed_acceptance(
         {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
-                reason: "acceptance results contain a duplicate criterion".into(),
+                reason: crate::storage::refusal_labels::DUPLICATE_ACCEPTANCE_CRITERION.into(),
             });
         }
     }
@@ -87,7 +87,10 @@ pub(crate) fn validate_completion_request(input: &WorkCompleteInput) -> Result<(
     // that recovery stays there.
     for result in input.acceptance.iter().flatten() {
         if let Some(criterion) = result.criterion.as_deref() {
-            crate::storage::normalize_text(criterion, "acceptance criterion")?;
+            crate::storage::normalize_text(
+                criterion,
+                crate::storage::refusal_labels::ACCEPTANCE_CRITERION,
+            )?;
         }
     }
     // A result without a criterion stands for an item's sole criterion,
@@ -105,7 +108,10 @@ pub(crate) fn validate_completion_request(input: &WorkCompleteInput) -> Result<(
         landing.validate().map_err(StoreError::InvalidWork)?;
     }
     if let Some(capture) = &input.capture {
-        crate::storage::normalize_note_text(&capture.summary, "evidence summary")?;
+        crate::storage::normalize_note_text(
+            &capture.summary,
+            crate::storage::refusal_labels::EVIDENCE_SUMMARY,
+        )?;
     }
     parse_record_ids(&input.evidence)?;
     if let Some(acceptance) = &input.acceptance {

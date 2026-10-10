@@ -81,10 +81,13 @@ impl SqliteStore {
         validate_evidence_phase_marker(WorkLifecycle::Open, &request.actor)?;
         if request.from == request.to {
             return Err(StoreError::InvalidWork(
-                "handoff source and destination must differ".into(),
+                crate::storage::refusal_labels::HANDOFF_TO_ITSELF.into(),
             ));
         }
-        let summary = normalize_text(&request.checkpoint_summary, "checkpoint summary")?;
+        let summary = normalize_text(
+            &request.checkpoint_summary,
+            crate::storage::refusal_labels::CHECKPOINT_SUMMARY,
+        )?;
         let requested_expiry = claim_expiry(request.offered_at, request.ttl_seconds)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -216,7 +219,23 @@ impl SqliteStore {
             request_object.key(),
             &offer,
         )?;
+        // A pending offer keeps the claim from binding until it is settled;
+        // read in this transaction and journaled once it commits.
+        let journaled = Self::claimed_binding_on(
+            &transaction,
+            &request.from,
+            offer.work_id,
+            request.offered_at,
+        );
         transaction.commit()?;
+        if let Some((project_id, binding)) = journaled {
+            super::super::focus_journal::record_binding(
+                &project_id,
+                &request.from,
+                offer.work_id,
+                binding,
+            );
+        }
         Ok(offer)
     }
 
@@ -350,7 +369,23 @@ impl SqliteStore {
             request_object.key(),
             &claim,
         )?;
+        // The transferred claim binds for the accepting session, read in this
+        // transaction and journaled once it commits; a replay above took none.
+        let journaled = Self::claimed_binding_on(
+            &transaction,
+            &request.to,
+            claim.work_id,
+            request.accepted_at,
+        );
         transaction.commit()?;
+        if let Some((project_id, binding)) = journaled {
+            super::super::focus_journal::record_binding(
+                &project_id,
+                &request.to,
+                claim.work_id,
+                binding,
+            );
+        }
         Ok(claim)
     }
 
@@ -367,7 +402,10 @@ impl SqliteStore {
     ) -> Result<WorkHandoffOffer, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let reason = normalize_text(&request.reason, "handoff cancellation reason")?;
+        let reason = normalize_text(
+            &request.reason,
+            crate::storage::refusal_labels::HANDOFF_CANCELLATION_REASON,
+        )?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(offer) = replay_operation::<WorkHandoffOffer>(
@@ -468,7 +506,23 @@ impl SqliteStore {
             request_object.key(),
             &offer,
         )?;
+        // Cancelling leaves the retained claim free to bind again; read in
+        // this transaction and journaled once it commits.
+        let journaled = Self::claimed_binding_on(
+            &transaction,
+            &request.holder,
+            offer.work_id,
+            request.cancelled_at,
+        );
         transaction.commit()?;
+        if let Some((project_id, binding)) = journaled {
+            super::super::focus_journal::record_binding(
+                &project_id,
+                &request.holder,
+                offer.work_id,
+                binding,
+            );
+        }
         Ok(offer)
     }
 }
