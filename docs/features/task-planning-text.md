@@ -2,9 +2,9 @@
 
 The explicit directory profile is the first implemented slice of
 [Git task synchronization](git-task-sync.md). It exchanges current task
-planning and explicitly selected shared notes between isolated SQLite stores.
-It does not configure Git, exchange activity, reconcile an existing graph,
-or enable background work.
+planning, explicitly selected shared notes and informational machine activity
+between isolated SQLite stores. It does not configure Git, reconcile an existing
+graph or enable background work.
 Full native history remains in [graph snapshots](work-graph-snapshot.md) and
 [store migration](full-store-migration.md), separate formats with different scope.
 
@@ -17,6 +17,7 @@ store with `engram init` before using these commands.
 
 ```text
 engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY
+engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY --origin-machine host-A
 engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY --include-notes --origin-machine host-A
 engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --dry-run
 engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY
@@ -31,7 +32,8 @@ cannot perform that directory move without replacement refuses publication.
 
 Planning-only `project.json` contains `format: "engram-task-planning-v1"` and
 `project_id`. Opt-in note export adds `notes_included: true`; otherwise the
-field and task note arrays are absent and planning-only bytes remain unchanged.
+field and task note arrays are absent. Activity is independent of note selection;
+with neither notes nor activity, planning-only bytes remain unchanged.
 An absent `notes_included` and an explicit `false` are equivalent spellings of
 the planning-only profile; switching between them is an exact repeat.
 There is no inventory, store identity or runtime cursor.
@@ -158,6 +160,57 @@ row or projection derivation changes, and projection repair reproduces the new
 restored rows. Graph snapshots flatten note identity; a later task-text export
 of that flattened graph reports those members as legacy exclusions. Full-store
 migration retains origin objects and original note metadata unchanged.
+
+## Informational machine activity
+
+Supplying `--origin-machine ALIAS` includes native activity even without
+`--include-notes`. The alias has the same asserted, unauthenticated meaning and
+validation as the note alias. Without an alias, export captures no native
+activity; retained imported activity still travels under its original aliases.
+An empty activity map is absent from the task document.
+
+Each task's optional `activity` map is keyed first by origin alias, then by the
+original canonical start-event id. Each entry repeats that `activity_id`, its
+`task_id` and `origin_machine`, and carries an asserted actor principal and kind,
+`state`, positive `state_revision` and the original latest-transition `event_id`.
+Record ids travel unchanged, including supported historical ids. No claim token,
+session, run, fence, expiry, grant, private reason or host cursor is exported.
+
+Projection reads canonical events in source-feed order in the export snapshot.
+A claim starts an episode at revision 1. An explicit release, disposal or
+completion closes its current matching episode as `released`, `abandoned` or
+`finished`, incrementing its revision and preserving the start actor. Accepted
+handoff releases the prior episode and starts the successor with a new identity.
+Recovery starts a new episode without inventing abandonment of the old one.
+Renewal, checkpoint and inferred expiry produce no shared activity change.
+States on different machines are not ordered by wall clocks. A `started` entry
+is last-known information, never proof of a live lease or remote ownership.
+
+Import retains the map verbatim in the new import origin. It creates no local
+claim, run, session, activity event or verification credit, and re-export does
+not relabel imported entries as native activity. Maps from multiple origins
+remain separate. Candidate admission requires `started` at revision 1 with the
+start event id, or a closed state at revision 2 or later with a different event
+id. The complete empty-target/exact-repeat boundary applies:
+changed or removed entries, rollback and conflicting known identities refuse
+before writes. Updating notices in an existing graph awaits reconciliation.
+
+Restricted task labels and path/locator-shaped actor fields exclude complete
+entries on export, with separate `activity_omissions` counts in the local JSON
+receipt. Candidate import applies the same disclosure checks. Stored validation
+checks structure without changing retained bytes; export filtering leaves them
+intact. Omission counts never enter shared files. Typed event ids are provenance,
+not actor text to be filtered, and filtering is not secret detection.
+
+The map is an optional field in newly written import origins; existing canonical
+objects, restored history and projection derivation do not change. Activity
+requires an activity-aware reader after import: pre-activity builds refuse
+task-sync reads of origins containing the new field, and their doctor reports
+`corrupt_store`. Use an activity-aware build; this verdict does not call for
+projection repair or restoring a backup. Installing a binary does not update
+running consumers. Full-store migration retains the map through the generic
+row format.
+There is no TermAl remote relay or background notification in this slice.
 
 ## Atomic import and reported lifecycle
 

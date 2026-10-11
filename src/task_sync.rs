@@ -12,8 +12,10 @@ use crate::{
     storage::StoreError,
 };
 
+pub mod activity;
 pub mod directory;
 pub mod notes;
+pub use activity::TaskSyncExportOptions;
 
 /// The supported planning-only profile; other profiles require explicit admission.
 pub const FORMAT: &str = "engram-task-planning-v1";
@@ -107,6 +109,8 @@ pub struct TaskDocument {
     pub completion: Option<SharedCompletion>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<notes::SharedNote>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub activity: activity::ActivityMap,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -126,6 +130,7 @@ impl TaskTree {
         self.validate_note_profile()?;
         for task in &self.tasks {
             notes::validate_notes(&task.notes, &task.labels)?;
+            activity::validate_disclosure(&task.activity, &task.labels)?;
         }
         Ok(())
     }
@@ -148,6 +153,7 @@ impl TaskTree {
         let mut ids = HashSet::new();
         let mut blockers = HashSet::new();
         let mut note_ids = HashSet::new();
+        let mut activity_ids = HashSet::new();
         for task in &self.tasks {
             if !ids.insert(task.id) {
                 return Err(invalid("duplicate task id"));
@@ -156,6 +162,14 @@ impl TaskTree {
                 return Err(invalid("shared notes require explicit notes_included"));
             }
             notes::validate_note_structure(&task.notes)?;
+            activity::validate_structure(&task.activity, task.id)?;
+            for (machine, entries) in &task.activity {
+                for id in entries.keys() {
+                    if !activity_ids.insert((machine, id)) {
+                        return Err(invalid("duplicate origin-qualified activity id"));
+                    }
+                }
+            }
             for note in &task.notes {
                 if !note_ids.insert(&note.id) {
                     return Err(invalid("duplicate shared note id"));

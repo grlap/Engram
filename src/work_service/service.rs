@@ -81,6 +81,19 @@ impl LocalWorkService {
             .export_task_tree_with_notes(&self.project_id, machine)
     }
 
+    /// Export explicit shared disclosure options within one local read snapshot.
+    ///
+    /// # Errors
+    /// Refuses invalid aliases or shared state; it creates no session or claim.
+    pub fn export_task_tree_with_options(
+        &self,
+        options: &crate::task_sync::TaskSyncExportOptions,
+        now: DateTime<Utc>,
+    ) -> Result<crate::storage::TaskSyncNoteExport, StoreError> {
+        self.read_store_at(now)?
+            .export_task_tree_with_options(&self.project_id, options)
+    }
+
     /// Import a complete inert candidate atomically, without focus or execution state.
     ///
     /// # Errors

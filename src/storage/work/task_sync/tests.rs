@@ -7,6 +7,7 @@ use crate::{
     },
 };
 
+mod activity;
 mod exclusion;
 mod native;
 mod notes;
@@ -42,6 +43,7 @@ fn candidate() -> TaskTree {
         disposal_reason: None,
         completion: None,
         notes: Vec::new(),
+        activity: std::collections::BTreeMap::default(),
     };
     let mut root = make("root");
     root.external_ref = Some("external-item".into());

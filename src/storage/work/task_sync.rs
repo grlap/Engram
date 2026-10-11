@@ -16,6 +16,7 @@ use crate::{
     },
 };
 
+mod activity;
 mod notes;
 mod origin;
 pub(crate) use origin::OriginScopeGuard;
@@ -75,6 +76,7 @@ struct ImportOrigin {
 pub struct TaskSyncNoteExport {
     pub tree: TaskTree,
     pub omissions: crate::task_sync::notes::NoteOmissions,
+    pub activity_omissions: crate::task_sync::notes::NoteOmissions,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -102,19 +104,43 @@ impl SqliteStore {
         project: &ProjectId,
         machine: &str,
     ) -> Result<TaskSyncNoteExport, StoreError> {
-        crate::task_sync::notes::validate_machine_alias(machine)?;
+        self.export_task_tree_with_options(
+            project,
+            &crate::task_sync::TaskSyncExportOptions {
+                include_notes: true,
+                origin_machine: Some(machine.into()),
+            },
+        )
+    }
+
+    /// Shared activity with an explicit native alias, independently of prose notes.
+    ///
+    /// # Errors
+    /// Refuses invalid aliases, retained-entry conflicts or invalid shared state.
+    pub fn export_task_tree_with_options(
+        &self,
+        project: &ProjectId,
+        options: &crate::task_sync::TaskSyncExportOptions,
+    ) -> Result<TaskSyncNoteExport, StoreError> {
+        options.validate()?;
         self.work_read_snapshot(|store| {
             with_origin_scope(&store.connection, || {
                 let mut omissions = crate::task_sync::notes::NoteOmissions::default();
+                let mut activity_omissions = crate::task_sync::notes::NoteOmissions::default();
                 let tree = export_on_snapshot(
                     &store.connection,
                     project,
-                    true,
-                    Some(machine),
+                    options.include_notes,
+                    options.origin_machine.as_deref(),
                     false,
                     &mut omissions,
+                    &mut activity_omissions,
                 )?;
-                Ok(TaskSyncNoteExport { tree, omissions })
+                Ok(TaskSyncNoteExport {
+                    tree,
+                    omissions,
+                    activity_omissions,
+                })
             })
         })
     }
@@ -167,6 +193,7 @@ impl SqliteStore {
         }
         admit_origins(&transaction)?;
         notes::refuse_known_changes(&transaction, tree)?;
+        activity::refuse_known_changes(&transaction, tree)?;
         let current = with_origin_scope(&transaction, || {
             export_on_snapshot(
                 &transaction,
@@ -174,6 +201,7 @@ impl SqliteStore {
                 tree.project.notes_included,
                 None,
                 true,
+                &mut crate::task_sync::notes::NoteOmissions::default(),
                 &mut crate::task_sync::notes::NoteOmissions::default(),
             )
         })?;
@@ -258,6 +286,7 @@ fn export_on(connection: &Connection, project: &ProjectId) -> Result<TaskTree, S
             None,
             false,
             &mut crate::task_sync::notes::NoteOmissions::default(),
+            &mut crate::task_sync::notes::NoteOmissions::default(),
         )
     })
 }
@@ -269,6 +298,7 @@ fn export_on_snapshot(
     machine: Option<&str>,
     comparison: bool,
     omissions: &mut crate::task_sync::notes::NoteOmissions,
+    activity_omissions: &mut crate::task_sync::notes::NoteOmissions,
 ) -> Result<TaskTree, StoreError> {
     let ids = connection
         .prepare("SELECT work_id FROM work_items WHERE project_id = ?1 ORDER BY work_id")?
@@ -284,7 +314,19 @@ fn export_on_snapshot(
                 "task export refuses external imported origin and source snapshot; use graph export to retain that provenance",
             ));
         }
-        let events = query::canonical_work_events_for_item(connection, id)?;
+        let event_records = query::canonical_work_event_records_for_item(connection, id)?;
+        let shared_activity = activity::capture(
+            connection,
+            &item,
+            &event_records,
+            machine,
+            comparison,
+            activity_omissions,
+        )?;
+        let events = event_records
+            .into_iter()
+            .map(|(_, event)| event)
+            .collect::<Vec<_>>();
         let records = graph_snapshot::restored_records_on(connection, id)?;
         let prerequisites = query::load_prerequisite_projection_ids(connection, id)?;
         let snapshot =
@@ -344,6 +386,7 @@ fn export_on_snapshot(
             disposal_reason: snapshot.disposal_reason,
             completion,
             notes: shared_notes,
+            activity: shared_activity,
         });
     }
     let tree = TaskTree {

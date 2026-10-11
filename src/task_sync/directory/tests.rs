@@ -33,6 +33,7 @@ fn candidate() -> TaskTree {
             disposal_reason: None,
             completion: None,
             notes: Vec::new(),
+            activity: std::collections::BTreeMap::default(),
         }],
     }
 }

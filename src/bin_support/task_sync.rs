@@ -27,8 +27,9 @@ enum TaskSyncCommand {
         /// Include eligible generic/status notes and report omissions.
         #[arg(long, requires = "origin_machine")]
         include_notes: bool,
-        /// Asserted alias; imported notes retain their original alias.
-        #[arg(long, requires = "include_notes")]
+        /// Include native activity under this asserted alias, also when notes are off.
+        /// Imported notes and activity retain their original aliases.
+        #[arg(long)]
         origin_machine: Option<String>,
     },
     /// Import a complete candidate into an empty task graph; exact repeats are no-ops.
@@ -56,23 +57,25 @@ pub(crate) fn run(database: PathBuf, project: ProjectId, args: TaskSyncArgs) -> 
             include_notes,
             origin_machine,
         } => {
-            let (tree, omissions) = if include_notes {
-                let machine = origin_machine
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("origin-machine required"))?;
-                let exported = service.export_task_tree_with_notes(machine, chrono::Utc::now())?;
-                (exported.tree, Some(exported.omissions))
-            } else {
-                (service.export_task_tree(chrono::Utc::now())?, None)
-            };
-            directory::write(&path, &tree)?;
+            let exported = service.export_task_tree_with_options(
+                &engram::task_sync::TaskSyncExportOptions {
+                    include_notes,
+                    origin_machine: origin_machine.clone(),
+                },
+                chrono::Utc::now(),
+            )?;
+            directory::write(&path, &exported.tree)?;
             attribution.print_notices();
             eprintln!("REDACTOR: development no-op; task planning fields are shared text");
-            if let Some(omissions) = omissions {
+            if include_notes
+                || origin_machine.is_some()
+                || !exported.activity_omissions.counts.is_empty()
+            {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&serde_json::json!({
-                        "directory": path, "notes_included": true, "omissions": omissions,
+                        "directory": path, "notes_included": exported.tree.project.notes_included,
+                        "omissions": exported.omissions, "activity_omissions": exported.activity_omissions,
                     }))?
                 );
             } else {

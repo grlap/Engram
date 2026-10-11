@@ -126,13 +126,18 @@ fn task_sync_notes_native_holder_peer_and_status_round_trip_without_authority() 
         .unwrap();
     assert_eq!(reexport.tree.documents().unwrap(), bytes);
     assert_eq!(reexport.omissions.counts.len(), 0);
+    let mut planning_with_activity = TaskTree::from_documents(&planning).unwrap();
+    planning_with_activity.tasks[0]
+        .activity
+        .clone_from(&decoded.tasks[0].activity);
+    assert!(!planning_with_activity.tasks[0].activity.is_empty());
     assert_eq!(
         target
             .export_task_tree(&work.project_id)
             .unwrap()
             .documents()
             .unwrap(),
-        planning
+        planning_with_activity.documents().unwrap()
     );
     let before = state(&target);
     assert!(!import(&mut target, &decoded).changed);

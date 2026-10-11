@@ -5,9 +5,10 @@
 > [work-graph snapshots](work-graph-snapshot.md), and
 > [off-host backup](off-host-backup.md).
 
-Design selected on 2026-10-09. The [planning-only directory profile](task-planning-text.md)
-is implemented; Git enablement, exchange, notes, activity and reconciliation
-remain planned. This replaces sequential
+Design selected on 2026-10-09. The [explicit directory profile](task-planning-text.md)
+implements planning text, opt-in shared notes and informational machine activity.
+Git enablement, exchange and reconciliation remain planned. The contract below
+describes that broader target. This replaces sequential
 single-writer handoff as the selected personal cross-machine workflow.
 Previous portable writer-epoch, release/acquire, dedicated-ref and scheduled
 push proposals are not prerequisites for this feature. Local SQLite remains

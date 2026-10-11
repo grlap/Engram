@@ -1,4 +1,6 @@
 use chrono::{DateTime, Utc};
+mod activity;
+pub(in crate::storage) use activity::canonical_work_event_records_for_item;
 /// Test builds observe the executed statement, rather than estimating SQL work.
 pub(super) fn query_row_with_cost<T, P, F>(
     connection: &rusqlite::Connection,
