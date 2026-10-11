@@ -12,6 +12,65 @@ import { captureFingerprint, fingerprintLimitations } from "./review-freeze-fing
 const script = fileURLToPath(import.meta.url);
 const repository = resolve(dirname(script), "..");
 const diagnosticLimit = 2400;
+const inspectionLimit = 6000;
+const usageFailure = (message) => Object.assign(new Error(message), { safeCompletionText: message });
+const quote = (value) => JSON.stringify(value).replace(/[\u0085\u2028\u2029]/gu,
+  (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
+
+function launchText(value, name, maxBytes, address = false) {
+  if (typeof value !== "string" || !value.trim() || /[\r\n]/u.test(value)
+    || Buffer.byteLength(value) > maxBytes || (address && (value !== value.trim() || value.startsWith("-")))) {
+    throw usageFailure(`${name} requires nonblank single-paragraph text of at most ${maxBytes} UTF-8 bytes${address ? "; session addresses have no outer whitespace and cannot start with -" : ""}`);
+  }
+}
+
+function validateLaunchMetadata({ item, nextTransition }) {
+  if (item !== undefined) launchText(item, "--item", 256);
+  if (nextTransition !== undefined) {
+    if (!nextTransition || typeof nextTransition !== "object" || Array.isArray(nextTransition)
+      || Object.keys(nextTransition).some((key) => !["owner", "action"].includes(key))) {
+      throw new Error("nextTransition requires only owner and action");
+    }
+    launchText(nextTransition.owner, "--next-owner", 256, true);
+    launchText(nextTransition.action, "--next-action", 2000);
+  }
+}
+
+// Saved once before admission, for every completion projection. The execution
+// request remains separate; stages may rewrite it without changing this intent.
+function publishCompletionRequest(runDir, request) {
+  const { runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo } = request;
+  save(join(runDir, "completion.request.json"), {
+    runId, root, owner, started, expectedFingerprint, item, nextTransition, notifyTo,
+  });
+}
+function publishLaunchRequest(runDir, request) {
+  // Only createRun writes these files, before an executor or notifier can run.
+  // Complete rename publication works on filesystems without hard links.
+  save(join(runDir, "request.json"), request);
+  publishCompletionRequest(runDir, request);
+  if (request.notifyTo) save(join(runDir, "notification.target.json"), {
+    runId: request.runId, root: request.root, owner: request.owner, notifyTo: request.notifyTo,
+    ...(request.nextTransition && request.nextTransition.owner !== request.notifyTo
+      && request.nextTransition.owner !== request.owner ? { nextOwner: request.nextTransition.owner } : {}),
+  });
+}
+function completionRequest(runDir) {
+  const snapshot = join(runDir, "completion.request.json");
+  // Legacy runs have no admitted snapshot. A damaged new snapshot must not
+  // fall back to a mutable request and silently change the launch intent.
+  return readJson(existsSync(snapshot) ? snapshot : join(runDir, "request.json"));
+}
+
+// Publish complete immutable retry material, including under concurrent sends.
+function publish(path, text) {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, text, { flag: "wx", mode: 0o600 });
+    try { linkSync(temporary, path); }
+    catch (error) { if (error.code !== "EEXIST") throw error; }
+  } finally { rmSync(temporary, { force: true }); }
+}
 // A run without terminal results is alive while its heartbeat is fresh: the
 // launcher refreshes `heartbeat.at` every `heartbeat.everyMs`, and a heartbeat
 // older than this many intervals means the launcher has most likely stopped,
@@ -26,11 +85,17 @@ function heartbeatEveryMs(env) {
   if (raw === undefined || raw === "") return 10_000;
   const value = Number(raw);
   if (!validHeartbeatEveryMs(value)) {
-    throw new Error("ENGRAM_LAUNCHER_HEARTBEAT_MS must be an integer from 1000 to 600000");
+    throw usageFailure("ENGRAM_LAUNCHER_HEARTBEAT_MS must be an integer from 1000 to 600000");
   }
   return value;
 }
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+function readResults(runDir) {
+  try { return readJson(join(runDir, "results.json")); }
+  catch (error) {
+    throw Object.assign(usageFailure("results-unreadable"), { runDir, cause: error });
+  }
+}
 const transientRenameCodes = new Set(["EPERM", "EACCES", "EBUSY"]);
 // Windows can refuse a rename for a moment while another process, such as an
 // indexer or antivirus scanner, holds the target open. Retry that I/O briefly
@@ -566,7 +631,9 @@ catch {
   return started ? { state: "alive", created: `ps:${started}` } : unknown("unreadable process start time");
 }
 
-export function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false }, env = process.env) {
+export function createRun({ root = repository, stages, notifyTo, requiredBinaryEnv = [], full = false, detached = false,
+  item, nextTransition }, env = process.env) {
+  validateLaunchMetadata({ item, nextTransition });
   const everyMs = heartbeatEveryMs(env);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
     { cwd: root, encoding: "utf8", windowsHide: true });
@@ -575,8 +642,8 @@ export function createRun({ root = repository, stages, notifyTo, requiredBinaryE
   const runDir = join(git.stdout.trim(), runId);
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
-    owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString() };
-  save(join(runDir, "request.json"), request);
+    owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
+    ...(item !== undefined ? { item } : {}), ...(nextTransition !== undefined ? { nextTransition: { ...nextTransition } } : {}) };
   // A worker that never starts leaves this first heartbeat to go stale.
   save(join(runDir, "results.json"), { runId, state: "running", started: request.started,
     heartbeat: { at: request.started, everyMs }, limitations: fingerprintLimitations(),
@@ -585,16 +652,34 @@ export function createRun({ root = repository, stages, notifyTo, requiredBinaryE
     const input = captureFingerprint(root);
     save(join(runDir, "input.json"), input);
     request.expectedFingerprint = input.fingerprint;
-    save(join(runDir, "request.json"), request);
     // The capture blocks the event loop; beat once it returns.
     const created = readJson(join(runDir, "results.json"));
     created.heartbeat.at = new Date().toISOString();
     save(join(runDir, "results.json"), created);
   } catch (error) {
     const result = readJson(join(runDir, "results.json"));
-    Object.assign(result, { state: "failed", exitCode: 1, ended: new Date().toISOString(), error: error.message });
+    Object.assign(result, { state: "failed", exitCode: 1, reason: "input-capture-failed",
+      ended: new Date().toISOString(), error: error.message });
     save(join(runDir, "results.json"), result);
-    throw new Error(`input capture failed: ${error.message}; results: ${join(runDir, "results.json")}`, { cause: error });
+    try { publishLaunchRequest(runDir, request); }
+    catch (publicationError) {
+      throw Object.assign(usageFailure("request-publication-failed"), { runDir, cause: publicationError });
+    }
+    throw Object.assign(new Error(`input capture failed; results: ${join(runDir, "results.json")}`, { cause: error }),
+      { reason: "input-capture-failed", runDir });
+  }
+  // The launcher publishes this once, before worker admission. This is not
+  // filesystem protection against another process writing the run directory.
+  try { publishLaunchRequest(runDir, request); }
+  catch (error) {
+    try {
+      const result = readJson(join(runDir, "results.json"));
+      Object.assign(result, { state: "failed", exitCode: 1, reason: "request-publication-failed",
+        ended: new Date().toISOString(), error: error.message });
+      save(join(runDir, "results.json"), result);
+    }
+    catch { /* the locator survives even if the filesystem refuses this save */ }
+    throw Object.assign(usageFailure("request-publication-failed"), { runDir, cause: error });
   }
   return runDir;
 }
@@ -687,11 +772,12 @@ function currentFingerprint(root) {
 }
 
 function validateNotification(request, env) {
-  if (!request.notifyTo) throw new Error("no notification target recorded");
-  if (!request.owner || env.TERMAL_SESSION_ID !== request.owner) throw new Error("TERMAL_SESSION_ID must match the sender recorded at run creation (asserted context, not authentication)");
-  if (request.notifyTo === request.owner) throw new Error("self-send is not supported; use a genuine worker and coordinator, or foreground host completion wait");
-  if (!env.TERMAL_CLI || !isAbsolute(env.TERMAL_CLI)) throw new Error("TERMAL_CLI must name the inherited absolute executable");
-  return executable(env.TERMAL_CLI, request.root, env);
+  if (!request.notifyTo) throw usageFailure("no notification target recorded");
+  if (!request.owner || env.TERMAL_SESSION_ID !== request.owner) throw usageFailure("TERMAL_SESSION_ID must match the sender recorded at run creation (asserted context, not authentication)");
+  if (request.notifyTo === request.owner) throw usageFailure("self-send is not supported; use a genuine worker and coordinator, or foreground host completion wait");
+  if (!env.TERMAL_CLI || !isAbsolute(env.TERMAL_CLI)) throw usageFailure("TERMAL_CLI must name the inherited absolute executable");
+  try { return executable(env.TERMAL_CLI, request.root, env); }
+  catch { throw usageFailure("notification-cli-unavailable"); }
 }
 
 export async function executeRun(runDir, env = process.env, ready = () => {}) {
@@ -844,93 +930,126 @@ export function runLiveness(result, now = Date.now()) {
   return now - at > HEARTBEAT_STALE_INTERVALS * everyMs ? "interrupted" : "running";
 }
 
-export async function summarize(runDir, { now = Date.now(), compact = false } = {}) {
-  const result = readJson(join(runDir, "results.json"));
+const completionReasons = new Set(["input-capture-failed", "request-publication-failed", "input-changed", "fingerprint-check-failed", "preflight-failed",
+  "spawn-failed", "stage-failed", "launcher-error"]);
+const stageState = (entry) => entry.signal ? "interrupted" : entry.outcome === "unknown" ? "unknown"
+  : entry.state === "skipped" ? "unrun"
+    : ["passed", "failed", "running", "unrun"].includes(entry.state) ? entry.state : "unknown";
+function stateCounts(entries, state) {
+  const counts = { total: entries.length, passed: 0, failed: 0, interrupted: 0, running: 0, unrun: 0, unknown: 0 };
+  for (const entry of entries) counts[state(entry)] += 1;
+  return counts;
+}
+function completionInput(request, result) {
+  const values = [request.expectedFingerprint, result.expectedFingerprint, result.before, result.after];
+  const known = values.filter((value) => typeof value === "string" && value.length > 0);
+  const comparison = result.reason === "input-changed" || new Set(known).size > 1 ? "mismatch"
+    : known.length === 4 && known.every((value) => /^[a-f0-9]{64}$/u.test(value)) ? "matched" : "unknown";
+  return { expected: /^[a-f0-9]{64}$/u.test(request.expectedFingerprint ?? "") ? request.expectedFingerprint : "unknown", comparison };
+}
+
+// Read metadata only. Logs and saved diagnostic/error prose never enter this
+// projection. A launch snapshot can be supplied by the executing process.
+export function completionMetadata(request, result, now = Date.now()) {
+  const stages = Array.isArray(result.stages) ? result.stages : [];
+  const preflight = Array.isArray(result.preflight) ? result.preflight : [];
+  const input = completionInput(request, result);
   const liveness = runLiveness(result, now);
-  const terminal = liveness === "passed" || liveness === "failed";
-  // A recovered run failed only because its executor ended without a result:
-  // it reads with the word an inferred interruption uses, never as FAIL.
-  const recovered = liveness === "failed" && result.interrupted === true;
-  const status = recovered ? `INTERRUPTED (${recoveredWhere(result.recovered)}; recovered at ${result.recovered?.at ?? result.ended}: its executor had ended without a result, and no stage was rerun)` : {
-    passed: "PASS",
-    failed: "FAIL",
-    running: `RUNNING (no terminal result yet; heartbeat ${result.heartbeat?.at})`,
-    interrupted: `INTERRUPTED (no terminal result and no heartbeat since ${result.heartbeat?.at}, more than ${HEARTBEAT_STALE_INTERVALS} × ${result.heartbeat?.everyMs} ms ago; the launcher has most likely stopped)`,
-    unknown: "UNKNOWN (no terminal result and no heartbeat; running or interrupted)",
-  }[liveness];
-  const lines = [`${status} ${result.runId} exit=${terminal ? result.exitCode : "unknown"}`,
-    `results: ${join(runDir, "results.json")}`];
-  if (result.error) lines.push(`runner: ${result.error.slice(0, diagnosticLimit)}`);
-  if (compact && result.error?.length > diagnosticLimit) lines.push("[runner error truncated; full error in results.json]");
-  if (result.clearedToolchainOverrides?.length) lines.push("toolchain: inherited Rustup override cleared for repository selection; original value in results.json");
-  if (compact) {
-    const fingerprints = [result.expectedFingerprint, result.before, result.after];
-    const known = fingerprints.filter((value) => typeof value === "string" && value.length > 0);
-    const input = new Set(known).size > 1 ? "MISMATCH" : known.length === 3 ? "matched" : "unknown";
-    lines.push(`input: ${input}; expectedFingerprint/before/after in results.json (boundary comparison only; not host check credit)`);
-    const unknownCounts = result.stages.filter((stage) => stage.tests?.executed === "unknown");
-    if (unknownCounts.length) lines.push(`test counts unknown: ${unknownCounts.map((stage) => `${stage.name} (${stage.tests.why})`).join(", ")}; stages[].tests in results.json`);
+  const inferredInterruption = liveness === "interrupted" && !isTerminal(result) && result.interrupted !== true;
+  const interrupted = result.interrupted === true || stages.some((entry) => Boolean(entry.signal)) || liveness === "interrupted";
+  const contradictory = result.exitCode !== 0 || Boolean(result.error) || stages.length === 0
+    || stages.some((entry) => entry.state !== "passed" || entry.code !== 0 || entry.error || entry.signal || entry.outcome
+      || entry.tests?.failures > 0)
+    || preflight.some((entry) => entry.code !== 0 || entry.error || entry.signal);
+  const verdict = interrupted ? "INTERRUPTED" : liveness === "passed"
+    ? input.comparison === "mismatch" || contradictory ? "FAIL" : input.comparison === "matched" ? "PASS" : "UNKNOWN"
+    : { failed: "FAIL", running: "RUNNING", unknown: "UNKNOWN" }[liveness] ?? "UNKNOWN";
+  const terminal = isTerminal(result);
+  const start = Date.parse(request.started ?? result.started);
+  const end = Date.parse(result.ended);
+  const elapsed = !result.interrupted && terminal && Number.isFinite(start) && Number.isFinite(end) && end >= start
+    ? { ms: end - start, basis: "launch-to-terminal" }
+    : { ms: "unknown", basis: result.interrupted ? "recovery-end" : "unavailable" };
+  const failed = stages.find((entry) => stageState(entry) === "failed" || entry.signal);
+  const interruptedStage = inferredInterruption ? stages.find((entry) => entry.state === "running") : failed;
+  const stage = typeof failed?.name === "string" && recordToken.test(failed.name) ? failed.name : null;
+  const recoveredStage = typeof result.recovered?.stage === "string" && recordToken.test(result.recovered.stage)
+    ? result.recovered.stage : typeof interruptedStage?.name === "string" && recordToken.test(interruptedStage.name)
+      ? interruptedStage.name : stage;
+  const exit = Number.isInteger(result.exitCode) ? result.exitCode : null;
+  const inputUnverified = verdict === "UNKNOWN" && terminal && liveness === "passed" && input.comparison === "unknown";
+  const reason = input.comparison === "mismatch" ? "input-changed"
+    : inputUnverified ? "input-unverified"
+      : inferredInterruption ? "heartbeat-stale" : interrupted ? "interrupted" : completionReasons.has(result.reason) ? result.reason
+      : verdict === "PASS" ? "completed" : !terminal ? "no-terminal-result" : failed ? "stage-failed" : "launcher-error";
+  const blocker = interrupted ? { reason: "interrupted", stage: recoveredStage }
+    : inputUnverified ? { reason: "no-terminal-result", basis: "input-unverified" }
+      : !terminal ? { reason: "no-terminal-result" }
+      : failed ? { reason: "stage-failed", stage, exit: Number.isInteger(failed.code) ? failed.code : null }
+        : { reason: "runner-failed", exit,
+          ...(liveness === "passed" ? { basis: input.comparison === "mismatch" ? "input-changed" : "contradictory-result" } : {}) };
+  return { verdict, terminal, exit, reason, input, elapsed, blocker,
+    stages: stateCounts(stages, stageState),
+    preflight: stateCounts(preflight, (entry) => entry.signal ? "interrupted"
+      : entry.outcome === "unknown" || !Number.isInteger(entry.code) ? "unknown" : entry.code === 0 && !entry.error ? "passed" : "failed") };
+}
+
+function renderCompletion(runDir, request, result, now) {
+  const metadata = completionMetadata(request, result, now);
+  // These two lines are a live TermAl reader contract, not stylistic choices.
+  const lines = [`${metadata.verdict} ${basename(runDir)} exit=${metadata.terminal ? metadata.exit : "unknown"}`,
+    `results: ${join(runDir, "results.json")}`,
+    `reason: ${metadata.reason}`,
+    ...["stages", "preflight"].map((kind) => `${kind}: ${Object.entries(metadata[kind]).map(([name, count]) => `${name}=${count}`).join(" ")}`),
+    `elapsed: ms=${metadata.elapsed.ms} basis=${metadata.elapsed.basis}`,
+    `input: ${metadata.input.comparison}; expectedFingerprint=${metadata.input.expected}; boundary comparison only, not host check credit`];
+  if (["stage", "startup", "between-stages", "finishing"].includes(result.recovered?.phase)) {
+    const stage = typeof result.recovered.stage === "string" && recordToken.test(result.recovered.stage)
+      ? result.recovered.stage : null;
+    lines.push(`recovery: phase=${result.recovered.phase} stage=${quote(stage)}`);
   }
-  let remaining = 6000;
-  // Failure excerpts get first use of the shared budget; earlier successful
-  // commands may emit warnings but must not crowd out the actual failure.
-  const entries = [
-    ...(result.preflight ?? []).map((probe) => ({
-      ...probe, failed: probe.code !== 0 || Boolean(probe.error),
-      label: `preflight ${probe.name}`, positive: probe.code === 0,
-      header: `preflight ${probe.name}: exit=${probe.code} log=${probe.log}`,
-    })),
-    ...result.stages.map((stage) => ({ ...stage, failed: stage.state === "failed",
-      label: stage.name, positive: stage.state === "passed" && stage.code === 0,
-      header: `${stage.name}: ${stage.state}${stage.outcome ? ` outcome=${stage.outcome}` : ""} exit=${stage.code ?? "unrun/unknown"}${stage.log ? ` log=${stage.log}` : ""}`,
-    })),
-  ].sort((a, b) => Number(b.failed) - Number(a.failed));
-  const exceptional = (entry) => entry.error || entry.reported || entry.signal || entry.outcome
-    || entry.diagnostics?.text || entry.diagnostics?.truncated || entry.diagnostics?.fallback
-    || entry.tests?.failures > 0 || entry.tests?.executed === "unknown";
-  const grouped = new Set();
-  if (compact) {
-    for (const [label, matches] of [
-      ["passed (exit=0)", (entry) => entry.positive && !exceptional(entry)],
-      ...["unrun", "skipped"].map((state) => [`${state} (exit=unrun/unknown)`,
-        (entry) => entry.state === state && entry.code == null && !entry.log && !exceptional(entry)]),
-    ]) {
-      const group = entries.filter(matches);
-      if (group.length) lines.push(`${label}: ${group.map((entry) => entry.label).join(", ")}`);
-      for (const entry of group) grouped.add(entry);
-    }
+  if (request.item !== undefined) lines.push(`ITEM ${quote(request.item)}`);
+  else lines.push("item: undeclared");
+  if (request.nextTransition !== undefined) {
+    lines.push(`NEXT OWNER ${quote(request.nextTransition.owner)}`, `NEXT ACTION ${quote(request.nextTransition.action)}`);
+    if (metadata.verdict !== "PASS") lines.push(`BLOCKER ${quote(metadata.blocker)}`);
   }
-  for (const stage of entries) {
-    if (grouped.has(stage)) continue;
-    lines.push(stage.header);
-    if (compact && stage.signal) lines.push(`signal: ${stage.signal}`);
-    for (const error of new Set([stage.error, stage.reported].filter(Boolean))) {
-      if (error !== result.error) {
-        lines.push(error.slice(0, diagnosticLimit));
-        if (compact && error.length > diagnosticLimit) lines.push("[stage error truncated; full error in results.json]");
-      }
-    }
-    if (compact && stage.diagnostics?.fallback) lines.push(`diagnostics: ${stage.diagnostics.fallback}`);
-    if (stage.diagnostics?.text) {
-      const text = stage.diagnostics.text.trimEnd();
-      if (remaining > 0) lines.push(text.slice(0, remaining));
-      if (text.length > remaining) lines.push("[summary diagnostics truncated; full output in log]");
-      remaining = Math.max(0, remaining - text.length);
-    }
-    if (stage.diagnostics?.truncated) lines.push("[diagnostics truncated; full output in log]");
-  }
-  if (result.limitations) lines.push(...[result.limitations].flat());
+  // Fixed coverage metadata, never arbitrary text copied from results.json.
+  lines.push(...fingerprintLimitations());
   return `${lines.join("\n")}\n`;
 }
 
-function recoveredWhere(recovered) {
-  switch (recovered?.phase) {
-    case "stage": return `stopped in stage ${recovered.stage}`;
-    case "startup": return "stopped during startup, before any stage ran";
-    case "between-stages": return `stopped between stages, after ${recovered.stage}`;
-    case "finishing": return "stopped after its stages, before its result was saved";
-    default: return "stopped";
+export async function summarize(runDir, { now = Date.now(), request, result } = {}) {
+  if (!request) {
+    try { request = completionRequest(runDir); }
+    catch { request = {}; }
   }
+  result ??= readResults(runDir);
+  return renderCompletion(runDir, request, result, now);
+}
+
+// Explicit, bounded failure investigation. This is never called by a default
+// summary, notification, completion or recovery.
+export async function inspectFailure(runDir, selector, maxChars = diagnosticLimit) {
+  if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > inspectionLimit) {
+    throw usageFailure("--max-chars requires an integer from 1 to 6000");
+  }
+  const result = readResults(runDir);
+  const preflight = typeof selector === "string" && selector.startsWith("preflight:");
+  const name = preflight ? selector.slice("preflight:".length) : selector;
+  const entry = (preflight ? result.preflight : result.stages)?.find((candidate) => candidate.name === name);
+  if (!entry) throw usageFailure("inspection selector is unavailable");
+  const failed = preflight ? entry.code !== 0 || Boolean(entry.error) || Boolean(entry.signal)
+    : entry.state === "failed" || Boolean(entry.signal);
+  if (!failed) throw usageFailure("inspection requires a failed stage or preflight probe");
+  const lines = [`inspection: ${quote(selector)} max-chars=${maxChars}`, `results: ${join(runDir, "results.json")}`];
+  // Only this opt-in path reads the selected saved diagnostic prose. Full logs
+  // remain available at their locator, without executing or changing a run.
+  if (typeof entry.log === "string") lines.push(`log: ${quote(entry.log)}`);
+  const text = [entry.error, entry.reported, entry.diagnostics?.text].filter((value) => typeof value === "string" && value).join("\n");
+  lines.push(text ? text.slice(0, maxChars) : "inspection: no-saved-excerpt");
+  if (text.length > maxChars || entry.diagnostics?.truncated) lines.push("inspection: truncated; full log at locator");
+  return `${lines.join("\n")}\n`;
 }
 
 // The executor a run published: its process id, its host and, from the
@@ -951,7 +1070,7 @@ function recordedExecutor(result) {
   return Number.isSafeInteger(result.pid) && result.pid > 0 ? { pid: result.pid, created: null } : { unidentifiable: true };
 }
 
-const refused = (message) => Object.assign(new Error(message), { refused: true });
+const refused = (reason, message) => Object.assign(new Error(message), { refused: true, refusalReason: reason });
 
 // Settles a run whose executor has ended without saving a result, once, on
 // request. It writes the result TermAl's launcher and reader already agree on
@@ -968,36 +1087,38 @@ export async function recoverRun(runDir, {
 } = {}) {
   const path = join(runDir, "results.json");
   const read = () => {
-    const current = readJson(path);
+    let current;
+    try { current = readResults(runDir); }
+    catch { throw refused("results-unreadable", "results.json cannot be read as JSON"); }
     if (!current || typeof current !== "object" || current.runId !== basename(runDir) || !Array.isArray(current.stages)) {
-      throw refused(`results.json does not describe run ${basename(runDir)}`);
+      throw refused("results-mismatch", `results.json does not describe run ${basename(runDir)}`);
     }
     return current;
   };
   const seen = read();
   if (isTerminal(seen)) return { settled: false, result: seen };
   const executor = recordedExecutor(seen);
-  if (executor === null) throw refused("the run has not published its executor; it may still be starting");
-  if (executor.unidentifiable) throw refused("the run's record of its executor is malformed, so it cannot be identified");
+  if (executor === null) throw refused("executor-unpublished", "the run has not published its executor; it may still be starting");
+  if (executor.unidentifiable) throw refused("executor-unidentifiable", "the run's record of its executor is malformed, so it cannot be identified");
   // Its id is asked of this system only where the executor ran on it.
   if (executor.host && !sameHost(executor.host, host)) {
-    throw refused(`executor ${executor.pid} ran as ${describeHost(executor.host)}, not ${describeHost(host)}, so its id cannot be asked here`);
+    throw refused("executor-elsewhere", `executor ${executor.pid} ran as ${describeHost(executor.host)}, not ${describeHost(host)}, so its id cannot be asked here`);
   }
   if (executor.created !== null && executor.created.split(":", 1)[0] !== createdFamilies[host.platform]) {
-    throw refused(`executor ${executor.pid}'s creation time is not one ${host.platform} gives, so it ran elsewhere`);
+    throw refused("executor-elsewhere", `executor ${executor.pid}'s creation time is not one ${host.platform} gives, so it ran elsewhere`);
   }
   const found = identify(executor.pid);
-  if (found.state === "unknown") throw refused(`cannot tell whether executor ${executor.pid} is alive: ${found.why}`);
+  if (found.state === "unknown") throw refused("executor-unknown", `cannot tell whether executor ${executor.pid} is alive: ${found.why}`);
   if (found.state === "alive") {
     if (executor.created === null) {
-      throw refused(`a process with executor id ${executor.pid} exists, and the run recorded no creation time to tell it from a later one`);
+      throw refused("executor-unidentifiable", `a process with executor id ${executor.pid} exists, and the run recorded no creation time to tell it from a later one`);
     }
-    if (sameCreation(executor.created, found)) throw refused(`executor ${executor.pid} is alive; a stale heartbeat does not end a run`);
+    if (sameCreation(executor.created, found)) throw refused("executor-alive", `executor ${executor.pid} is alive; a stale heartbeat does not end a run`);
     if (!wellFormedCreated(found.created) || found.created.split(":", 1)[0] !== executor.created.split(":", 1)[0]) {
-      throw refused(`executor ${executor.pid}'s creation time cannot be compared with the recorded one`);
+      throw refused("executor-unidentifiable", `executor ${executor.pid}'s creation time cannot be compared with the recorded one`);
     }
   } else if (found.state !== "gone") {
-    throw refused(`cannot tell whether executor ${executor.pid} is alive: unreadable answer`);
+    throw refused("executor-unknown", `cannot tell whether executor ${executor.pid} is alive: unreadable answer`);
   }
   const lock = join(runDir, "recovery.lock");
   let locked = false;
@@ -1009,7 +1130,7 @@ export async function recoverRun(runDir, {
     // it ended, or an earlier recovery may have settled the run.
     const result = read();
     if (isTerminal(result)) return { settled: false, result };
-    if (!locked) throw refused(`another recovery of this run is in progress, or one was killed before releasing ${lock}`);
+    if (!locked) throw refused("recovery-lock-held", `another recovery of this run is in progress, or one was killed before releasing ${lock}`);
     const { stages } = result;
     const running = stages.find((stage) => stage.state === "running");
     const finished = stages.filter((stage) => stage.state !== "unrun" && stage.state !== "running");
@@ -1039,29 +1160,47 @@ export async function recoverRun(runDir, {
   }
 }
 
-export async function notifyRun(runDir, env = process.env, send = runCommand) {
-  const request = readJson(join(runDir, "request.json"));
-  const result = readJson(join(runDir, "results.json"));
-  if (!["passed", "failed"].includes(result.state) || !result.ended) throw new Error("cannot notify before terminal results are saved");
-  const cli = validateNotification(request, env);
+export async function notifyRun(runDir, env = process.env, send = runCommand, launchRequest) {
+  const targetFile = join(runDir, "notification.target.json");
   const messageFile = join(runDir, "notification.message.txt");
-  if (!existsSync(messageFile)) {
-    const temporary = `${messageFile}.${randomUUID()}.tmp`;
-    try {
-      writeFileSync(temporary, await summarize(runDir, { compact: true }), { flag: "wx", mode: 0o600 });
-      // Publish complete bytes without replacing a body another sender froze.
-      // An interrupted write leaves only a temporary file, never a retry body.
-      try { linkSync(temporary, messageFile); }
-      catch (error) { if (error.code !== "EEXIST") throw error; }
-    } finally { rmSync(temporary, { force: true }); }
+  let request = launchRequest;
+  if (!request && (!existsSync(targetFile) || !existsSync(messageFile))) request = completionRequest(runDir);
+  // New runs pin the route before execution; old frozen bodies keep their
+  // original request route and key. Only new targets pin a second recipient.
+  if (!existsSync(targetFile)) {
+    // Pin a legacy run's single recipient before its first retry. Never add
+    // a next-owner send to a historical body. Concurrent retries read the
+    // same published winner rather than use a local, possibly different intent.
+    const { runId, root, owner, notifyTo } = request;
+    publish(targetFile, `${JSON.stringify({ runId, root, owner, notifyTo })}\n`);
   }
-  const args = ["mailbox", "send", "--to", request.notifyTo, "--message-file", messageFile,
-    "--idempotency-key", `engram-tests:${request.runId}`, "--json"];
-  const log = join(runDir, `notification-${randomUUID()}.log`);
-  const outcome = await send(cli, args, { cwd: request.root, env, log });
-  const receipt = { ...outcome, log, attempted: new Date().toISOString() };
+  const target = readJson(targetFile);
+  const result = readJson(join(runDir, "results.json"));
+  if (!["passed", "failed"].includes(result.state) || !result.ended) throw usageFailure("cannot notify before terminal results are saved");
+  const cli = validateNotification(target, env);
+  if (!existsSync(messageFile)) {
+    publish(messageFile, await summarize(runDir, { request, result }));
+  }
+  const recipients = [{ to: target.notifyTo, key: `engram-tests:${target.runId}` }];
+  if (target.nextOwner && target.nextOwner !== target.notifyTo && target.nextOwner !== target.owner) {
+    recipients.push({ to: target.nextOwner, key: `engram-tests:${target.runId}:next-owner` });
+  }
+  const deliveries = [];
+  for (const { to, key } of recipients) {
+    const args = ["mailbox", "send", "--to", to, "--message-file", messageFile,
+      "--idempotency-key", key, "--json"];
+    const log = join(runDir, `notification-${randomUUID()}.log`);
+    let outcome;
+    try { outcome = await send(cli, args, { cwd: target.root, env, log }); }
+    catch (error) { outcome = { code: null, error: error.message }; }
+    deliveries.push({ ...outcome, log, attempted: new Date().toISOString(), to, key });
+  }
+  const { to: _to, key: _key, ...primary } = deliveries[0];
+  const ok = deliveries.every(({ code, error }) => code === 0 && !error);
+  const receipt = { ...primary, ok, ...(deliveries.length > 1 ? { deliveries } : {}) };
   save(join(runDir, "notification.json"), receipt);
-  if (outcome.code !== 0 || outcome.error) throw new Error(`notification failed; tests were NOT rerun. Retry: node scripts/test-launcher.mjs notify "${runDir}"; log=${log}`);
+  if (!ok) throw Object.assign(usageFailure("notification failed; tests were NOT rerun"),
+    { runDir, retry: "notify" });
   return receipt;
 }
 
@@ -1073,8 +1212,8 @@ function startupReceipt(runDir, pid, completion) {
 async function finish(runDir, { foregroundReceipt = false, workerHandshake = false } = {}) {
   // Whether to notify is read before any stage runs: a stage can rewrite or
   // break request.json. A request that cannot be read fails the run anyway.
-  let notifyTo;
-  try { notifyTo = readJson(join(runDir, "request.json")).notifyTo; } catch { notifyTo = undefined; }
+  let request;
+  try { request = completionRequest(runDir); } catch { request = {}; }
   const result = await executeRun(runDir, process.env, async () => {
     if (foregroundReceipt) process.stdout.write(startupReceipt(runDir, process.pid, "host-process-wait"));
     if (workerHandshake && process.send) {
@@ -1084,10 +1223,10 @@ async function finish(runDir, { foregroundReceipt = false, workerHandshake = fal
   });
   process.exitCode = result.exitCode;
   try {
-    process.stdout.write(await summarize(runDir));
-    if (notifyTo) {
-      try { await notifyRun(runDir); }
-      catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode ||= 1; }
+    process.stdout.write(await summarize(runDir, { request, result }));
+    if (request.notifyTo) {
+      try { await notifyRun(runDir, process.env, runCommand, request); }
+      catch { process.stderr.write(`notification failed; tests were NOT rerun\nresults: ${join(runDir, "results.json")}\nretry: notify ${quote(runDir)}\n`); process.exitCode ||= 1; }
     }
   } finally {
     // The record describes validation only, and ends this process's stdout
@@ -1130,13 +1269,31 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
       + "End your turn; do not poll. Missing terminal results mean running/interrupted, not PASS; "
       + `\`node scripts/test-launcher.mjs summary "${runDir}"\` tells which from the heartbeat.\n`);
     return { child, completion };
+  } catch (error) {
+    throw Object.assign(error, { runDir, safeCompletionText: "worker-startup-failed",
+      launcherLog: join(runDir, "launcher.log") });
   } finally { closeSync(fd); }
 }
 
 async function main(args) {
   const mode = args.shift();
   if (["summary", "notify", "recover", "_run"].includes(mode)) {
-    if (args.length !== 1) throw new Error(`${mode} requires one run directory`);
+    if (mode === "summary" && args.length > 1) {
+      const runDir = resolve(args.shift());
+      let selector, maxChars = diagnosticLimit;
+      const seen = new Set();
+      while (args.length) {
+        const flag = args.shift();
+        if (seen.has(flag)) throw usageFailure("duplicate inspection option");
+        seen.add(flag);
+        if (flag === "--stage") selector = args.shift();
+        else if (flag === "--max-chars") maxChars = Number(args.shift());
+        else throw usageFailure("invalid inspection option");
+      }
+      if (!selector) throw usageFailure("explicit inspection requires --stage NAME");
+      process.stdout.write(await inspectFailure(runDir, selector, maxChars)); return;
+    }
+    if (args.length !== 1) throw usageFailure(`${mode} requires one run directory`);
     const runDir = resolve(args[0]);
     if (mode === "summary") { process.stdout.write(await summarize(runDir)); return; }
     if (mode === "recover") {
@@ -1145,7 +1302,8 @@ async function main(args) {
       try { ({ settled } = await recoverRun(runDir)); }
       catch (error) {
         if (!error.refused) throw error;
-        process.stderr.write(`REFUSED recover ${runDir}: ${error.message}; nothing changed\n`);
+        process.stderr.write(`REFUSED recover; ${error.refusalReason}; nothing changed\nresults: ${join(runDir, "results.json")}\n`);
+        if (error.refusalReason === "recovery-lock-held") process.stderr.write(`lock: ${join(runDir, "recovery.lock")}\n`);
         process.exitCode = 1;
         return;
       }
@@ -1153,41 +1311,70 @@ async function main(args) {
       process.stdout.write(`${settled ? "Settled as interrupted" : "Already terminal"}; tests not rerun.\n`);
       return;
     }
-    if (mode === "notify") { await notifyRun(runDir); console.log(`Notification sent; tests not rerun. ${runDir}`); return; }
+    if (mode === "notify") {
+      try { await notifyRun(runDir); }
+      catch (error) { throw Object.assign(error, { runDir, retry: "notify" }); }
+      console.log(`Notification sent; tests not rerun. ${runDir}`); return;
+    }
     await finish(runDir, { workerHandshake: true }); return;
   }
-  if (!["full", "focused"].includes(mode)) throw new Error("usage: test-launcher.mjs full|focused [--notify SESSION] [--detach] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary|notify|recover RUN_DIR");
-  let notifyTo, detach = false;
+  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR");
+  let notifyTo, detach = false, item, nextOwner, nextAction;
+  const metadataFlags = new Set();
   const requiredBinaryEnv = [];
   while (args.length && args[0] !== "--") {
     const flag = args.shift();
     if (flag === "--detach") detach = true;
+    else if (["--item", "--next-owner", "--next-action"].includes(flag)) {
+      if (metadataFlags.has(flag)) throw usageFailure(`${flag} may be supplied only once`);
+      metadataFlags.add(flag);
+      const value = args.shift();
+      if (value?.startsWith("--")) throw usageFailure(`${flag} requires a value, not a flag`);
+      if (flag === "--item") item = value;
+      else if (flag === "--next-owner") nextOwner = value;
+      else nextAction = value;
+      launchText(value, flag, flag === "--next-action" ? 2000 : 256, flag === "--next-owner");
+    }
     else if (flag === "--notify") {
-      if (notifyTo !== undefined) throw new Error("--notify may be supplied only once");
-      if (!args[0]?.trim() || args[0].trim().startsWith("-")) throw new Error("--notify requires a session id (nonblank, not a flag)");
+      if (notifyTo !== undefined) throw usageFailure("--notify may be supplied only once");
+      if (!args[0]?.trim() || args[0].trim().startsWith("-")) throw usageFailure("--notify requires a session id (nonblank, not a flag)");
       notifyTo = args.shift().trim();
     }
     else if (flag === "--require-binary-env") {
-      if (!/^[A-Z][A-Z0-9_]*$/u.test(args[0] ?? "")) throw new Error("--require-binary-env requires an uppercase variable name");
+      if (!/^[A-Z][A-Z0-9_]*$/u.test(args[0] ?? "")) throw usageFailure("--require-binary-env requires an uppercase variable name");
       const name = args.shift();
-      if (requiredBinaryEnv.includes(name)) throw new Error(`duplicate binary prerequisite: ${name}`);
+      if (requiredBinaryEnv.includes(name)) throw usageFailure(`duplicate binary prerequisite: ${name}`);
       requiredBinaryEnv.push(name);
     }
-    else throw new Error(`invalid option: ${flag}`);
+    else throw usageFailure("invalid launcher option");
   }
   if (args[0] === "--") args.shift();
-  if ((mode === "full" && args.length) || (mode === "focused" && !args.length)) throw new Error("full takes no command; focused requires -- COMMAND ARGS");
-  if (detach && !notifyTo) throw new Error("detached mode requires a different coordinator --notify SESSION; otherwise use foreground host completion wait");
+  if ((nextOwner === undefined) !== (nextAction === undefined)) throw usageFailure("--next-owner and --next-action must be supplied together");
+  const nextTransition = nextOwner === undefined ? undefined : { owner: nextOwner, action: nextAction };
+  if ((mode === "full" && args.length) || (mode === "focused" && !args.length)) throw usageFailure("full takes no command; focused requires -- COMMAND ARGS");
+  if (detach && !notifyTo) throw usageFailure("detached mode requires a different coordinator --notify SESSION; otherwise use foreground host completion wait");
   if (notifyTo) validateNotification({ notifyTo, owner: process.env.TERMAL_SESSION_ID, root: repository }, process.env);
   const stages = mode === "full" ? requiredStages()
     : [{ name: "focused", kind: commandKind(args[0], args.slice(1)), command: args[0], args: args.slice(1) }];
-  const runDir = createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach });
+  const runDir = createRun({ stages, notifyTo, requiredBinaryEnv, full: mode === "full", detached: detach, item, nextTransition });
   if (!detach) { await finish(runDir, { foregroundReceipt: true }); return; }
-  await startDetached(runDir);
+  try { await startDetached(runDir); }
+  catch (error) { throw Object.assign(error, { runDir,
+    safeCompletionText: error.safeCompletionText ?? "worker-startup-failed", launcherLog: join(runDir, "launcher.log") }); }
 }
 
 // Node resolves this module's own path through links (macOS temp paths run
 // through /var -> /private/var), so resolve the invoked path the same way.
 if (process.argv[1] && realpathSync(process.argv[1]) === script) {
-  main(process.argv.slice(2)).catch((error) => { console.error(`FAIL launcher: ${error.message}`); process.exitCode = 1; });
+  main(process.argv.slice(2)).catch(async (error) => {
+    if (error.runDir) {
+      if (error.reason === "input-capture-failed") {
+        try { process.stdout.write(await summarize(error.runDir)); } catch { /* the artifact locator remains available */ }
+      }
+      process.stderr.write(`FAIL launcher: ${error.safeCompletionText ?? error.reason ?? "request-or-runtime-failed"}\nresults: ${join(error.runDir, "results.json")}\n`);
+      if (error.launcherLog) process.stderr.write(`launcher.log: ${error.launcherLog}\n`);
+      if (error.retry === "notify") process.stderr.write(`retry: notify ${quote(error.runDir)}\n`);
+    } else console.error(`FAIL launcher: ${error.safeCompletionText ?? "request-or-runtime-failed"}`);
+    process.exitCode = 1;
+  });
 }

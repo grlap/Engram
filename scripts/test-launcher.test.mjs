@@ -9,7 +9,7 @@ import test, { after, describe } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import {
-  commandKind, countTests, createRun, diagnostics, executeRun, machineRecord, notifyRun, processHost, processIdentity,
+  commandKind, completionMetadata, countTests, createRun, diagnostics, executeRun, inspectFailure, machineRecord, notifyRun, processHost, processIdentity,
   recoverRun, renameWithRetry, requiredStages, sameCreation, selectsTests, startDetached, summarize,
   systemProbes, wellFormedCreated, wmiFileTime,
 } from "./test-launcher.mjs";
@@ -284,7 +284,8 @@ test("nonzero exit is preserved and later stages remain unrun", async () => {
     assert.deepEqual(result.stages.map(({ cwd }) => cwd), [root, root]);
     assert.equal(result.stages[0].code, 23);
     assert.equal(existsSync(marker), false);
-    assert.match(await summarize(runDir), /deliberate fixture failure/u);
+    assert.doesNotMatch(await summarize(runDir), /deliberate fixture failure/u);
+    assert.match(await inspectFailure(runDir, "failure"), /deliberate fixture failure/u);
   });
 });
 
@@ -297,7 +298,7 @@ test("failed exits with only passing output retain exit and log, not passing lis
     assert.equal(result.stages[0].diagnostics.text, "");
     const summary = await summarize(runDir);
     assert.match(summary, /FAIL .*exit=23/u);
-    assert.ok(summary.includes(result.stages[0].log));
+    assert.ok(summary.includes(join(runDir, "results.json")));
     assert.doesNotMatch(summary, /passing-marker|pass_marker/u);
     assert.match(readFileSync(result.stages[0].log, "utf8"), /passing-marker/u);
   });
@@ -508,7 +509,7 @@ test("inherited toolchain overrides are cleared for repository selection", async
     assert.deepEqual(result.clearedToolchainOverrides,
       [{ name: "RUSTUP_TOOLCHAIN", value: "wrong-inherited-channel" }]);
     assert.deepEqual(json(join(runDir, "results.json")).clearedToolchainOverrides, result.clearedToolchainOverrides);
-    assert.match(await summarize(runDir), /inherited Rustup override cleared for repository selection/u);
+    assert.doesNotMatch(await summarize(runDir), /inherited Rustup override/u);
   });
 });
 
@@ -578,7 +579,7 @@ test("invalid foreground and detached notification setup refuses before creating
       ["fixture-parent", { TERMAL_SESSION_ID: "" }, /TERMAL_SESSION_ID/u],
       ["fixture-parent", { TERMAL_CLI: "" }, /TERMAL_CLI/u],
       ["fixture-parent", { TERMAL_CLI: "relative-cli" }, /TERMAL_CLI/u],
-      ["fixture-parent", { TERMAL_CLI: join(launcher, "missing.exe") }, /executable not found/u],
+      ["fixture-parent", { TERMAL_CLI: join(launcher, "missing.exe") }, /notification-cli-unavailable/u],
     ]) {
       for (const modeFlags of [[], ["--detach"]]) {
         const result = spawnSync(process.execPath, [join(root, "scripts", "test-launcher.mjs"), "focused", ...modeFlags, "--notify", notifyTo,
@@ -664,13 +665,14 @@ test("worker ready handshake follows admission and duplicate startup preserves r
   });
 });
 
-test("warnings remain visible without converting a successful exit to failure", async () => {
+test("warnings stay in artifacts without entering completion or converting success to failure", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("warning", "console.error('warning: fixture caution')")] }, env);
     const result = await executeRun(runDir, env);
     assert.equal(result.state, "passed");
     assert.equal(result.exitCode, 0);
-    assert.match(await summarize(runDir), /warning: fixture caution/u);
+    assert.match(result.stages[0].diagnostics.text, /warning: fixture caution/u);
+    assert.doesNotMatch(await summarize(runDir), /warning: fixture caution/u);
   });
 });
 
@@ -685,10 +687,10 @@ test("failure diagnostics take priority over earlier warning-heavy passing stage
     assert.equal(result.exitCode, 17);
     assert.deepEqual(result.stages.map(({ state }) => state), ["passed", "passed", "passed", "failed"]);
     const summary = await summarize(runDir);
-    assert.match(summary, /error: essential failure detail/u);
-    assert.ok(summary.indexOf("essential failure detail") < summary.indexOf("earlier caution"));
+    assert.doesNotMatch(summary, /essential failure detail|earlier caution/u);
+    assert.match(await inspectFailure(runDir, "broken"), /error: essential failure detail/u);
     assert.doesNotMatch(summary, /\n\n/u);
-    assert.match(summary, /summary diagnostics truncated/u);
+    assert.match(summary, /stages: total=4 passed=3 failed=1/u);
     assert.ok(Buffer.byteLength(summary) < 12_288);
   });
 });
@@ -702,7 +704,8 @@ test("an error within a failed stage precedes that stage's long warning excerpt"
     assert.ok(result.stages[0].diagnostics.text.startsWith("error: essential failure after warning\n"));
     assert.equal(result.stages[0].diagnostics.text.length, 2400);
     assert.equal(result.stages[0].diagnostics.truncated, true);
-    assert.match(await summarize(runDir), /essential failure after warning/u);
+    assert.doesNotMatch(await summarize(runDir), /essential failure after warning/u);
+    assert.match(await inspectFailure(runDir, "mixed"), /essential failure after warning/u);
   });
 });
 
@@ -802,10 +805,13 @@ test("input capture failure reports once before detached admission or notificati
     git(["config", "filter.refuse.clean", `"${process.execPath.replaceAll("\\", "/")}" -e "process.exit(7)"`], root);
     git(["config", "filter.refuse.required", "true"], root);
     const result = spawnSync(process.execPath, [join(root, "scripts", "test-launcher.mjs"), "focused",
-      "--detach", "--notify", "fixture-parent", "--", process.execPath, "-e", ""],
+      "--detach", "--notify", "fixture-parent", "--next-owner", "fixture-next", "--next-action", "Inspect the capture failure.",
+      "--", process.execPath, "-e", ""],
       { cwd: root, env, encoding: "utf8", windowsHide: true });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /input capture failed:.*git diff/su);
+    assert.match(result.stderr, /input-capture-failed/u);
+    assert.match(result.stdout, /^reason: input-capture-failed$/mu);
+    assert.doesNotMatch(result.stderr, /git diff|refuse.clean/u);
     assert.doesNotMatch(result.stdout, /STARTED/u);
     const runBase = join(root, ".git", "review-runs");
     const runs = readdirSync(runBase);
@@ -813,8 +819,15 @@ test("input capture failure reports once before detached admission or notificati
     const runDir = join(runBase, runs[0]);
     assert.equal(json(join(runDir, "request.json")).detached, true, "the CLI records --detach at creation");
     assert.equal(json(join(runDir, "results.json")).state, "failed");
+    assert.equal(json(join(runDir, "results.json")).reason, "input-capture-failed");
+    assert.equal(json(join(runDir, "notification.target.json")).nextOwner, "fixture-next");
+    assert.equal(existsSync(join(runDir, "notification.message.txt")), false, "capture failure never sends automatically");
+    const deliveries = [];
+    await notifyRun(runDir, env, async (_command, args) => { deliveries.push(args); return { code: 0 }; });
+    assert.deepEqual(deliveries.map((args) => args[args.indexOf("--to") + 1]), ["fixture-parent", "fixture-next"]);
+    assert.match(readFileSync(join(runDir, "notification.message.txt"), "utf8"), /NEXT ACTION "Inspect the capture failure\."/u);
     assert.equal(existsSync(join(runDir, "execution.lock")), false);
-    assert.equal(existsSync(join(runDir, "notification.message.txt")), false);
+    assert.equal(existsSync(join(runDir, "notification.message.txt")), true);
     assert.equal(existsSync(join(runDir, "launcher.log")), false);
   });
 });
@@ -849,7 +862,7 @@ test("missing command preflight prevents every stage from running", async () => 
     assert.equal(result.state, "failed");
     assert.notEqual(result.exitCode, 0);
     assert.deepEqual(result.stages.map(({ state }) => state), ["unrun", "unrun"]);
-    assert.match(await summarize(runDir), /missing-executable/u);
+    assert.match(await summarize(runDir), /reason: preflight-failed/u);
   });
 });
 
@@ -877,7 +890,7 @@ test("explicit binary prerequisites fail before running stages", async () => {
     const result = await executeRun(runDir, fixtureEnv);
     assert.equal(result.state, "failed");
     assert.equal(result.stages[0].state, "unrun");
-    assert.match(await summarize(runDir), /ENGRAM_LAUNCHER_FIXTURE_BIN/u);
+    assert.match(await summarize(runDir), /reason: preflight-failed/u);
   });
 });
 
@@ -912,8 +925,9 @@ test("summary of a silent failing preflight retains its exit and log header", as
     writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
     const summary = await summarize(runDir);
     assert.match(summary, /^FAIL/u);
-    assert.ok(summary.includes(`preflight silent: exit=13 log=${log}`));
-    assert.match(summary, /unused: unrun/u);
+    assert.match(summary, /preflight: total=1 passed=0 failed=1/u);
+    assert.match(summary, /unrun=1/u);
+    assert.ok((await inspectFailure(runDir, "preflight:silent")).includes(JSON.stringify(log)));
   });
 });
 
@@ -929,7 +943,8 @@ test("runtime spawn exceptions persist terminal failure and leave later stages u
     assert.equal(result.stages[0].error, result.error);
     assert.deepEqual(result.stages.map(({ state }) => state), ["failed", "unrun"]);
     assert.equal(json(join(runDir, "results.json")).state, "failed");
-    assert.ok((await summarize(runDir)).includes(result.error));
+    assert.doesNotMatch(await summarize(runDir), /null bytes/iu);
+    assert.ok((await inspectFailure(runDir, "invalid-argument")).includes(result.error));
   });
 });
 
@@ -946,7 +961,8 @@ test("large diagnostic output is bounded in results while the complete log survi
     assert.match(readFileSync(logPath(runDir, entry), "utf8"), /TAIL-MARKER/u);
     const summary = await summarize(runDir);
     assert.ok(Buffer.byteLength(summary) < 12_288);
-    assert.match(summary, /truncat|omitt|full log/iu);
+    assert.doesNotMatch(summary, /TAIL-MARKER|error: x/u);
+    assert.match(await inspectFailure(runDir, "large"), /truncated/u);
   });
 });
 
@@ -1117,6 +1133,403 @@ test("a killed launcher's run reads as interrupted once its heartbeat stops", { 
   });
 });
 
+test("admitted display metadata survives rewritten requests and an unpublished notification retry", async () => {
+  await repository(async (root) => {
+    const counter = join(root, ".git", "execution-count");
+    const runDir = createRun({ root, notifyTo: "fixture-parent", item: "original item",
+      nextTransition: { owner: "fixture-next", action: "Original pending action." },
+      stages: [stage("rewrite", `const fs = require('node:fs'), path = require('node:path');
+        const runs = path.join('.git', 'review-runs');
+        for (const name of fs.readdirSync(runs)) {
+          const file = path.join(runs, name, 'request.json');
+          const request = JSON.parse(fs.readFileSync(file, 'utf8'));
+          Object.assign(request, { item: 'rewritten item', nextTransition: { owner: 'wrong-owner', action: 'Wrong action.' },
+            expectedFingerprint: 'changed', started: 'invalid' });
+          fs.writeFileSync(file, JSON.stringify(request));
+        }
+        fs.appendFileSync(${JSON.stringify(counter)}, 'ran');`)] }, env);
+    const snapshot = readFileSync(join(runDir, "completion.request.json"));
+    await executeRun(runDir, env);
+    const summary = await summarize(runDir);
+    assert.match(summary, /^PASS /u);
+    assert.match(summary, /ITEM "original item"\nNEXT OWNER "fixture-next"\nNEXT ACTION "Original pending action\."/u);
+    assert.doesNotMatch(summary, /rewritten item|Wrong action|wrong-owner/u);
+    await assert.rejects(notifyRun(runDir, { ...env, TERMAL_CLI: "missing" }), /TERMAL_CLI/u);
+    assert.equal(existsSync(join(runDir, "notification.message.txt")), false);
+    writeFileSync(join(runDir, "request.json"), "{");
+    assert.equal(await summarize(runDir), summary);
+    assert.equal((await recoverRun(runDir)).settled, false);
+    const recovered = spawnSync(process.execPath, [launcher, "recover", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
+    assert.equal(recovered.status, 0, recovered.stderr);
+    assert.equal(recovered.stdout, `${summary}Already terminal; tests not rerun.\n`);
+    const sent = [];
+    await notifyRun(runDir, env, async (_command, args) => {
+      sent.push(args[args.indexOf("--to") + 1]);
+      assert.equal(readFileSync(args[args.indexOf("--message-file") + 1], "utf8"), summary);
+      return { code: 0 };
+    });
+    assert.deepEqual(sent, ["fixture-parent", "fixture-next"]);
+    assert.deepEqual(readFileSync(join(runDir, "completion.request.json")), snapshot);
+    assert.equal(readFileSync(counter, "utf8"), "ran");
+  });
+});
+
+test("stale-heartbeat sign-off names the running stage and distinguishes inferred interruption", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("active")], nextTransition: { owner: "fixture-next", action: "Recover the result." } }, env);
+    const result = json(join(runDir, "results.json"));
+    const at = Date.parse(result.heartbeat.at);
+    result.stages[0].state = "running";
+    writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+    const summary = await summarize(runDir, { now: at + 40_000 });
+    assert.match(summary, /^INTERRUPTED .*exit=unknown/u);
+    assert.match(summary, /^reason: heartbeat-stale$/mu);
+    assert.match(summary, /^BLOCKER \{"reason":"interrupted","stage":"active"\}$/mu);
+    assert.equal(completionMetadata(json(join(runDir, "completion.request.json")), { ...result,
+      state: "failed", exitCode: 1, ended: new Date(at + 40_000).toISOString(), interrupted: true }).reason, "interrupted");
+  });
+});
+
+test("CLI recover distinguishes lock, mismatched result and unpublished executor without writes", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    const original = json(join(runDir, "results.json"));
+    // A live pid with an impossible old creation time is deterministically a
+    // later process. Never depend on a terminated pid remaining unallocated.
+    const created = { win32: "win32:1", linux: "linux:1", darwin: "ps:fixture-before-boot" }[process.platform];
+    const executor = { pid: process.pid, created: created ?? null, host: processHost() };
+    for (const [reason, result, lock] of [
+      ["results-mismatch", { ...original, runId: "different-run" }, false],
+      ["executor-unpublished", original, false],
+      ["executor-unidentifiable", { ...original, executor: { pid: 0 } }, false],
+      [created ? "recovery-lock-held" : "executor-unknown", { ...original, executor }, true],
+    ]) {
+      writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+      if (lock) writeFileSync(join(runDir, "recovery.lock"), "");
+      const before = directoryBytes(runDir);
+      const refused = spawnSync(process.execPath, [launcher, "recover", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
+      assert.equal(refused.status, 1);
+      assert.ok(refused.stderr.includes(`REFUSED recover; ${reason}; nothing changed`), refused.stderr);
+      assert.ok(refused.stderr.includes(`results: ${join(runDir, "results.json")}`));
+      if (reason === "recovery-lock-held") assert.ok(refused.stderr.includes(`lock: ${join(runDir, "recovery.lock")}`));
+      assert.deepEqual(directoryBytes(runDir), before);
+    }
+  });
+});
+
+test("launch snapshots do not require hard links, including a notification route", async () => {
+  await repository(async (root) => {
+    mkdirSync(join(root, "scripts"));
+    const local = join(root, "scripts", "test-launcher.mjs");
+    const source = readFileSync(launcher, "utf8").replace("linkSync(temporary, path);",
+      'throw Object.assign(new Error("fixture: hard links unavailable"), { code: "ENOTSUP" });');
+    assert.notEqual(source, readFileSync(launcher, "utf8"));
+    writeFileSync(local, source);
+    copyFileSync(join(dirname(launcher), "review-freeze-fingerprint.mjs"), join(root, "scripts", "review-freeze-fingerprint.mjs"));
+    git(["add", "scripts"], root);
+    for (const notify of [false, true]) {
+      const result = spawnSync(process.execPath, [local, "focused", ...(notify ? ["--notify", "fixture-parent"] : []),
+        "--item", "portable launch", "--next-owner", "fixture-next", "--next-action", "Review the result.",
+        "--", process.execPath, "-e", "console.log('stage executed')"], { cwd: root, env, encoding: "utf8", windowsHide: true });
+      assert.equal(result.status, notify ? 1 : 0, result.stderr);
+      assert.match(result.stdout, /^PASS test-/mu);
+      const resultPath = /^results: (.+)$/mu.exec(result.stdout)?.[1];
+      assert.ok(resultPath, result.stdout);
+      const runDir = dirname(resultPath);
+      assert.equal(json(resultPath).state, "passed");
+      assert.equal(json(join(runDir, "completion.request.json")).item, "portable launch");
+      assert.deepEqual(json(join(runDir, "completion.request.json")).nextTransition,
+        { owner: "fixture-next", action: "Review the result." });
+      assert.match(readFileSync(join(runDir, "focused.log"), "utf8"), /stage executed/u);
+      if (notify) {
+        assert.equal(json(join(runDir, "notification.target.json")).nextOwner, "fixture-next");
+        assert.match(result.stderr, /notification failed; tests were NOT rerun/u);
+        assert.equal(existsSync(join(runDir, "notification.message.txt")), false);
+      }
+    }
+  });
+});
+
+test("launch snapshot publication failure saves terminal failure and a public CLI locator", async () => {
+  await repository(async (root) => {
+    mkdirSync(join(root, "scripts"));
+    const local = join(root, "scripts", "test-launcher.mjs");
+    const source = readFileSync(launcher, "utf8").replace('save(join(runDir, "completion.request.json"), {',
+      'throw new Error("fixture private publication diagnostic"); save(join(runDir, "completion.request.json"), {');
+    assert.notEqual(source, readFileSync(launcher, "utf8"));
+    writeFileSync(local, source);
+    copyFileSync(join(dirname(launcher), "review-freeze-fingerprint.mjs"), join(root, "scripts", "review-freeze-fingerprint.mjs"));
+    git(["add", "scripts"], root);
+    const result = spawnSync(process.execPath, [local, "focused", "--", process.execPath, "-e", ""],
+      { cwd: root, env, encoding: "utf8", windowsHide: true });
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stdout, /STARTED/u);
+    assert.match(result.stderr, /FAIL launcher: request-publication-failed/u);
+    assert.doesNotMatch(result.stderr, /private publication diagnostic|request-or-runtime-failed/u);
+    const resultPath = /^results: (.+)$/mu.exec(result.stderr)?.[1];
+    assert.ok(resultPath, result.stderr);
+    assert.equal(json(resultPath).state, "failed");
+    assert.equal(json(resultPath).reason, "request-publication-failed");
+    assert.equal(json(resultPath).stages[0].state, "unrun");
+    assert.equal(existsSync(join(dirname(resultPath), "focused.log")), false);
+  });
+});
+
+test("CLI heartbeat bounds name the setting before creating a run", async () => {
+  await repository(async (root) => {
+    mkdirSync(join(root, "scripts"));
+    for (const name of ["test-launcher.mjs", "review-freeze-fingerprint.mjs"]) {
+      copyFileSync(join(dirname(launcher), name), join(root, "scripts", name));
+    }
+    const result = spawnSync(process.execPath, [join(root, "scripts", "test-launcher.mjs"), "focused", "--", process.execPath, "-e", ""],
+      { cwd: root, env: { ...env, ENGRAM_LAUNCHER_HEARTBEAT_MS: "5" }, encoding: "utf8", windowsHide: true });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /ENGRAM_LAUNCHER_HEARTBEAT_MS must be an integer from 1000 to 600000/u);
+    assert.doesNotMatch(result.stderr, /request-or-runtime-failed/u);
+    assert.equal(result.stdout, "");
+    assert.equal(existsSync(join(root, ".git", "review-runs")), false);
+  });
+});
+
+test("CLI summary, inspection and recovery name unreadable result artifacts without mutation", async () => {
+  await repository(async (root) => {
+    for (const corrupt of [false, true]) {
+      const runDir = join(root, ".git", "review-runs", `test-${randomUUID()}`);
+      if (corrupt) {
+        mkdirSync(runDir, { recursive: true });
+        writeFileSync(join(runDir, "results.json"), "{ private corrupt diagnostic");
+      }
+      for (const args of [["summary", runDir], ["summary", runDir, "--stage", "unused"], ["recover", runDir]]) {
+        const result = spawnSync(process.execPath, [launcher, ...args], { cwd: root, env, encoding: "utf8", windowsHide: true });
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /results-unreadable/u);
+        assert.ok(result.stderr.includes(`results: ${join(runDir, "results.json")}`), result.stderr);
+        assert.doesNotMatch(result.stderr, /ENOENT|SyntaxError|private corrupt diagnostic|request-or-runtime-failed/u);
+        assert.equal(result.stdout, "");
+        assert.equal(existsSync(runDir), corrupt);
+        if (corrupt) {
+          assert.equal(readFileSync(join(runDir, "results.json"), "utf8"), "{ private corrupt diagnostic");
+          assert.deepEqual(readdirSync(runDir), ["results.json"]);
+        }
+      }
+    }
+  });
+});
+
+test("CLI safe failures retain startup locators, notification retry and inspection guidance", async () => {
+  await repository(async (root) => {
+    mkdirSync(join(root, "scripts"));
+    const local = join(root, "scripts", "test-launcher.mjs");
+    // Trigger a real child admission failure through the public detached CLI.
+    // The only fixture injection corrupts results just before startDetached.
+    const source = readFileSync(launcher, "utf8").replace("await startDetached(runDir);",
+      'writeFileSync(join(runDir, "results.json"), "{"); await startDetached(runDir);');
+    writeFileSync(local, source);
+    copyFileSync(join(dirname(launcher), "review-freeze-fingerprint.mjs"), join(root, "scripts", "review-freeze-fingerprint.mjs"));
+    git(["add", "scripts"], root);
+    const failed = spawnSync(process.execPath, [local, "focused", "--detach", "--notify", "fixture-parent",
+      "--", process.execPath, "-e", ""], { cwd: root, env, encoding: "utf8", windowsHide: true });
+    assert.equal(failed.status, 1);
+    assert.doesNotMatch(failed.stdout, /STARTED/u);
+    assert.match(failed.stderr, /FAIL launcher: worker-startup-failed/u);
+    const resultPath = /^results: (.+)$/mu.exec(failed.stderr)?.[1];
+    assert.ok(resultPath, failed.stderr);
+    const runDir = dirname(resultPath);
+    assert.ok(failed.stderr.includes(`launcher.log: ${join(runDir, "launcher.log")}`));
+    assert.equal(json(resultPath).state, "failed");
+    const retry = spawnSync(process.execPath, [launcher, "notify", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
+    assert.equal(retry.status, 1);
+    assert.match(retry.stderr, /notification failed; tests were NOT rerun/u);
+    assert.ok(retry.stderr.includes(`retry: notify ${JSON.stringify(runDir)}`));
+    for (const [args, reason] of [
+      [["--stage", "missing"], "inspection selector is unavailable"],
+      [["--stage", "focused"], "inspection requires a failed stage or preflight probe"],
+      [["--max-chars", "100"], "explicit inspection requires --stage NAME"],
+      [["--stage", "unused", "--max-chars", "6001"], "--max-chars requires an integer from 1 to 6000"],
+      [["--stage", "unused", "--stage", "unused"], "duplicate inspection option"],
+      [["--invalid"], "invalid inspection option"],
+    ]) {
+      const inspected = spawnSync(process.execPath, [launcher, "summary", runDir, ...args], { cwd: root, env, encoding: "utf8", windowsHide: true });
+      assert.equal(inspected.status, 1);
+      assert.ok(inspected.stderr.includes(reason), inspected.stderr);
+      assert.doesNotMatch(inspected.stderr, /request-or-runtime-failed|SyntaxError|stack/u);
+    }
+    const noResult = createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
+    const early = spawnSync(process.execPath, [launcher, "notify", noResult], { cwd: root, env, encoding: "utf8", windowsHide: true });
+    assert.equal(early.status, 1);
+    assert.match(early.stderr, /cannot notify before terminal results are saved/u);
+  });
+});
+
+test("launch metadata validation refuses before any run is created", async () => {
+  await repository(async (root) => {
+    const runs = join(root, ".git", "review-runs");
+    for (const invalid of [
+      { nextTransition: { owner: "fixture-owner" } }, { nextTransition: { action: "continue" } },
+      { nextTransition: { owner: " fixture-owner", action: "continue" } },
+      { nextTransition: { owner: "fixture-owner", action: " \t " } },
+      { nextTransition: { owner: "fixture-owner", action: "line\nline" } },
+      { nextTransition: { owner: "fixture-owner", action: "界".repeat(667) } },
+      { nextTransition: { owner: "-option", action: "continue" } },
+      { item: "" }, { item: "界".repeat(86) }, { item: "line\rline" },
+    ]) {
+      assert.throws(() => createRun({ root, stages: [stage("unused")], ...invalid }, env), /requires/u);
+      assert.equal(existsSync(runs), false);
+    }
+    const item = "  verify release  ";
+    const nextTransition = { owner: "fixture-owner", action: "  inspect \"quoted\" path\\name\u0085\u2028\u2029  " };
+    const runDir = createRun({ root, stages: [stage("clean")], item, nextTransition }, env);
+    const requestBytes = readFileSync(join(runDir, "request.json"));
+    await executeRun(runDir, env);
+    assert.deepEqual(readFileSync(join(runDir, "request.json")), requestBytes, "launcher never republishes the launch request during execution");
+    assert.equal(json(join(runDir, "request.json")).item, item);
+    assert.deepEqual(json(join(runDir, "request.json")).nextTransition, nextTransition);
+    const summary = await summarize(runDir);
+    const value = (prefix) => JSON.parse(summary.split("\n").find((line) => line.startsWith(prefix)).slice(prefix.length));
+    assert.equal(value("ITEM "), item);
+    assert.equal(value("NEXT OWNER "), nextTransition.owner);
+    assert.equal(value("NEXT ACTION "), nextTransition.action);
+    assert.doesNotMatch(summary, /[\u0085\u2028\u2029]/u);
+  });
+});
+
+test("CLI metadata flags preserve command arguments and refuse invalid pairs without a run", async () => {
+  await repository(async (root) => {
+    mkdirSync(join(root, "scripts"));
+    for (const name of ["test-launcher.mjs", "review-freeze-fingerprint.mjs"]) {
+      copyFileSync(fileURLToPath(new URL(name, import.meta.url)), join(root, "scripts", name));
+    }
+    const local = join(root, "scripts", "test-launcher.mjs");
+    const runs = join(root, ".git", "review-runs");
+    const command = ["--", process.execPath, "-e", "console.log('--next-action is a command argument')"];
+    for (const flags of [
+      ["--next-owner", "fixture-owner"], ["--next-action", "continue"],
+      ["--item", "one", "--item", "two"],
+      ["--next-owner", "fixture-owner", "--next-owner", "fixture-owner", "--next-action", "continue"],
+      ["--next-owner", " fixture-owner", "--next-action", "continue"],
+      ["--next-owner", "fixture-owner", "--next-action", "line\nline"],
+      ["--next-owner", "fixture-owner", "--next-action", "--detach"], ["--item", "--detach"],
+    ]) {
+      const result = spawnSync(process.execPath, [local, "focused", ...flags, ...command],
+        { cwd: root, env, encoding: "utf8", windowsHide: true });
+      assert.equal(result.status, 1, JSON.stringify(flags));
+      assert.equal(existsSync(runs), false);
+    }
+    const result = spawnSync(process.execPath, [local, "focused", "--item", "release validation",
+      "--next-owner", "fixture-owner", "--next-action", "  Review the exact input.  ", ...command],
+      { cwd: root, env, encoding: "utf8", windowsHide: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readdirSync(runs).length, 1);
+    const runDir = join(runs, readdirSync(runs)[0]);
+    assert.deepEqual(json(join(runDir, "request.json")).nextTransition,
+      { owner: "fixture-owner", action: "  Review the exact input.  " });
+    assert.match(result.stdout, /NEXT ACTION "  Review the exact input\.  "/u);
+    assert.doesNotMatch(result.stdout, /is a command argument/u);
+    assert.match(readFileSync(join(runDir, "focused.log"), "utf8"), /--next-action is a command argument/u);
+    const record = result.stdout.trimEnd().split("\n").at(-1);
+    assert.match(record, /^test-launcher\/v1 .*overall=passed scope=focused stages=1$/u);
+  });
+});
+
+test("sign-off carries exact transition metadata for pass, failure, interruption and input mismatch", async () => {
+  await repository(async (root) => {
+    const nextTransition = { owner: "fixture-owner", action: "Review the frozen input and consolidate the pair." };
+    const runDir = createRun({ root, stages: [stage("first"), stage("later")], item: "release validation", nextTransition }, env);
+    const request = json(join(runDir, "request.json"));
+    const fingerprint = request.expectedFingerprint;
+    const passed = { runId: basename(runDir), state: "passed", exitCode: 0,
+      started: request.started, ended: new Date(Date.parse(request.started) + 2000).toISOString(),
+      expectedFingerprint: fingerprint, before: fingerprint, after: fingerprint,
+      stages: request.stages.map(({ name }) => ({ name, state: "passed", code: 0 })) };
+    for (const [expected, result] of [
+      ["PASS", passed],
+      ["FAIL", { ...passed, state: "failed", exitCode: 13, stages: [{ name: "first", state: "failed", code: 13 }, { name: "later", state: "unrun" }] }],
+      ["INTERRUPTED", { ...passed, state: "failed", exitCode: 1, interrupted: true, recovered: { phase: "stage", stage: "first" } }],
+      ["INTERRUPTED", { ...passed, stages: [{ name: "first", state: "failed", signal: "SIGTERM", code: null }] }],
+      ["FAIL", { ...passed, after: `${fingerprint[0] === "0" ? "1" : "0"}${fingerprint.slice(1)}` }],
+      ["FAIL", { ...passed, reason: "input-changed", expectedFingerprint: undefined, before: undefined, after: undefined }],
+      ["UNKNOWN", { ...passed, after: undefined }],
+      ["UNKNOWN", { ...passed, state: "running", ended: undefined, heartbeat: undefined }],
+      ["FAIL", { ...passed, preflight: [{ name: "probe", code: 0, error: "fixture diagnostic" }] }],
+      ["FAIL", { ...passed, stages: [{ name: "first", state: "failed", code: 0, tests: { failures: 1 } }] }],
+    ]) {
+      writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+      const summary = await summarize(runDir);
+      assert.equal(summary.split("\n")[0], `${expected} ${basename(runDir)} exit=${result.ended ? result.exitCode : "unknown"}`);
+      assert.equal(summary.split("\n")[1], `results: ${join(runDir, "results.json")}`);
+      assert.ok(summary.includes(`NEXT OWNER ${JSON.stringify(nextTransition.owner)}\nNEXT ACTION ${JSON.stringify(nextTransition.action)}\n`));
+      const blocker = summary.split("\n").find((line) => line.startsWith("BLOCKER "));
+      if (expected === "PASS") assert.equal(blocker, undefined);
+      else assert.ok(["stage-failed", "runner-failed", "interrupted", "no-terminal-result"].includes(JSON.parse(blocker.slice(8)).reason));
+      if (expected === "UNKNOWN" && result.state === "passed") {
+        assert.match(summary, /^reason: input-unverified$/mu);
+        assert.deepEqual(JSON.parse(blocker.slice(8)), { reason: "no-terminal-result", basis: "input-unverified" });
+        assert.doesNotMatch(summary, /launcher-error|runner-failed/u);
+      }
+      if (expected === "FAIL" && result.state === "passed" && !result.stages.some((entry) => entry.state === "failed")) {
+        assert.deepEqual(JSON.parse(blocker.slice(8)), { reason: "runner-failed", exit: 0,
+          basis: result.preflight ? "contradictory-result" : "input-changed" });
+      }
+      assert.doesNotMatch(summary, /test-launcher\/v1/u);
+    }
+    assert.deepEqual(completionMetadata(request, passed).elapsed, { ms: 2000, basis: "launch-to-terminal" });
+    for (const started of [undefined, "invalid", new Date(Date.parse(passed.ended) + 1).toISOString()]) {
+      assert.equal(completionMetadata({ ...request, started }, { ...passed, started }).elapsed.ms, "unknown");
+    }
+    assert.deepEqual(completionMetadata(request, { ...passed, interrupted: true }).elapsed, { ms: "unknown", basis: "recovery-end" });
+  });
+});
+
+test("completion output ignores arbitrary saved prose and does not open stage logs", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("broken")], notifyTo: "fixture-parent",
+      nextTransition: { owner: "fixture-owner", action: "Inspect the failure." } }, env);
+    const result = await executeRun(runDir, env);
+    const marker = "NEVER-INJECT-DIAGNOSTIC-TEXT";
+    Object.assign(result, { state: "failed", exitCode: 1, error: marker, limitations: [marker], reason: marker });
+    Object.assign(result.stages[0], { state: "failed", code: 1, error: marker, reported: marker,
+      diagnostics: { text: marker.repeat(20_000), fallback: marker, truncated: true } });
+    const logBytes = readFileSync(result.stages[0].log);
+    unlinkSync(result.stages[0].log);
+    writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+    const saved = readFileSync(join(runDir, "results.json"));
+    const summary = await summarize(runDir);
+    assert.doesNotMatch(summary, /NEVER-INJECT/u);
+    assert.ok(Buffer.byteLength(summary) < 3000);
+    await notifyRun(runDir, env, async (_command, args) => {
+      assert.equal(readFileSync(args[args.indexOf("--message-file") + 1], "utf8"), summary);
+      return { code: 0 };
+    });
+    const excerpt = await inspectFailure(runDir, "broken", 100);
+    assert.ok(excerpt.includes(marker));
+    const bytes = readFileSync(join(runDir, "notification.message.txt"));
+    writeFileSync(join(runDir, "request.json"), "{");
+    await notifyRun(runDir, env, async (_command, args) => {
+      assert.equal(args[args.indexOf("--to") + 1], "fixture-parent");
+      assert.deepEqual(readFileSync(args[args.indexOf("--message-file") + 1]), bytes);
+      return { code: 0 };
+    });
+    assert.deepEqual(readFileSync(join(runDir, "results.json")), saved);
+    assert.equal(existsSync(result.stages[0].log), false);
+    assert.equal(logBytes.length, 0);
+  });
+});
+
+test("explicit failure inspection has an exact bound, selector and no side effects", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("failure", "console.error('error: ' + 'x'.repeat(4000));process.exitCode=2"), stage("later")] }, env);
+    await executeRun(runDir, env);
+    const before = directoryBytes(runDir);
+    const output = await inspectFailure(runDir, "failure", 37);
+    assert.ok(output.includes(`\n${"error: " + "x".repeat(30)}\n`));
+    assert.match(output, /inspection: truncated/u);
+    for (const size of [0, 6001, 1.5, NaN]) await assert.rejects(inspectFailure(runDir, "failure", size), /1 to 6000/u);
+    await assert.rejects(inspectFailure(runDir, "later"), /requires a failed/u);
+    await assert.rejects(inspectFailure(runDir, "missing"), /unavailable/u);
+    assert.deepEqual(directoryBytes(runDir), before);
+  });
+});
+
 test("notification follows durable completion and retries the same payload without rerunning tests", async () => {
   await repository(async (root) => {
     const counter = join(root, ".git", "execution-count");
@@ -1146,6 +1559,59 @@ test("notification follows durable completion and retries the same payload witho
   });
 });
 
+test("notification delivers one frozen sign-off to distinct owners with stable separate keys", async () => {
+  await repository(async (root) => {
+    const counter = join(root, ".git", "execution-count");
+    const runDir = createRun({ root, notifyTo: "fixture-parent",
+      nextTransition: { owner: "fixture-next", action: "Inspect this exact result." },
+      stages: [stage("count-once", `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'run\\n')`)] }, env);
+    await executeRun(runDir, env);
+    const saved = readFileSync(join(runDir, "results.json"));
+    const calls = [];
+    const send = async (_command, args) => {
+      calls.push({ args, body: readFileSync(args[args.indexOf("--message-file") + 1]) });
+      // Failure of the coordinator send must not withhold the owner's body.
+      return { code: calls.length === 1 || calls.length === 4 ? 7 : 0 };
+    };
+    await assert.rejects(notifyRun(runDir, env, send), /notification failed/u);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0].body, calls[1].body);
+    const receipt = json(join(runDir, "notification.json"));
+    assert.equal(receipt.ok, false);
+    assert.deepEqual(receipt.deliveries.map(({ to, code }) => [to, code]), [["fixture-parent", 7], ["fixture-next", 0]]);
+    assert.deepEqual(calls.map(({ args }) => args[args.indexOf("--idempotency-key") + 1]),
+      [`engram-tests:${basename(runDir)}`, `engram-tests:${basename(runDir)}:next-owner`]);
+    writeFileSync(join(runDir, "request.json"), "{");
+    await assert.rejects(notifyRun(runDir, env, send), /notification failed/u);
+    assert.deepEqual(calls[2], calls[0]);
+    assert.deepEqual(calls[3], calls[1]);
+    assert.deepEqual(json(join(runDir, "notification.json")).deliveries.map(({ code }) => code), [0, 7]);
+    assert.equal(json(join(runDir, "notification.json")).ok, false);
+    await notifyRun(runDir, env, send);
+    assert.deepEqual(calls[4], calls[0]);
+    assert.equal(json(join(runDir, "notification.json")).ok, true);
+    assert.deepEqual(calls[5], calls[1]);
+    assert.deepEqual(readFileSync(join(runDir, "results.json")), saved);
+    assert.equal(readFileSync(counter, "utf8"), "run\n");
+  });
+});
+
+test("notification suppresses a next-owner self-send and a repeated target", async () => {
+  await repository(async (root) => {
+    for (const owner of [env.TERMAL_SESSION_ID, "fixture-parent"]) {
+      const runDir = createRun({ root, notifyTo: "fixture-parent", nextTransition: { owner, action: "Continue." },
+        stages: [stage("clean")] }, env);
+      await executeRun(runDir, env);
+      const calls = [];
+      await notifyRun(runDir, env, async (_command, args) => { calls.push(args); return { code: 0 }; });
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0][calls[0].indexOf("--to") + 1], "fixture-parent");
+      assert.equal(calls[0][calls[0].indexOf("--idempotency-key") + 1], `engram-tests:${basename(runDir)}`);
+      assert.ok(readFileSync(join(runDir, "notification.message.txt"), "utf8").includes(`NEXT OWNER ${JSON.stringify(owner)}`));
+    }
+  });
+});
+
 test("notification publication ignores interrupted temporary bytes and freezes one complete body", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("clean")], notifyTo: "fixture-parent" }, env);
@@ -1167,7 +1633,7 @@ test("notification publication ignores interrupted temporary bytes and freezes o
   });
 });
 
-test("summary renders a shared runner and stage error only once", async () => {
+test("summary never renders a shared runner or stage error", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("broken")] }, env);
     const result = json(join(runDir, "results.json"));
@@ -1176,12 +1642,13 @@ test("summary renders a shared runner and stage error only once", async () => {
     Object.assign(result.stages[0], { state: "failed", code: 1, error });
     writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
     const summary = await summarize(runDir);
-    assert.equal(summary.split(error).length - 1, 1);
-    assert.match(summary, /broken: failed exit=1/u);
+    assert.doesNotMatch(summary, /fixture shared failure detail/u);
+    assert.match(summary, /stages: total=1 passed=0 failed=1/u);
+    assert.ok((await inspectFailure(runDir, "broken")).includes(error));
   });
 });
 
-test("compact summaries shorten clean full-stage listings and preserve boundary evidence", async () => {
+test("all default summaries are metadata-only and preserve boundary evidence", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: requiredStages(), notifyTo: "fixture-parent" }, env);
     const result = json(join(runDir, "results.json"));
@@ -1195,19 +1662,19 @@ test("compact summaries shorten clean full-stage listings and preserve boundary 
     writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
     const detailed = await summarize(runDir);
     const compact = await summarize(runDir, { compact: true });
-    assert.ok(Buffer.byteLength(compact) < Buffer.byteLength(detailed));
+    assert.equal(compact, detailed);
     assert.match(compact, /^PASS .* exit=0/mu);
-    assert.match(compact, /input: matched.*boundary comparison only; not host check credit/u);
-    assert.match(compact, /passed \(exit=0\): preflight cargo-version, preflight cargo-fmt, preflight cargo-clippy, fmt, check, clippy/u);
+    assert.match(compact, /input: matched.*boundary comparison only, not host check credit/u);
+    assert.match(compact, /stages: total=12 passed=12 failed=0/u);
+    assert.match(compact, /preflight: total=3 passed=3 failed=0/u);
     for (const limitation of result.limitations) assert.ok(compact.includes(limitation));
     assert.ok(compact.includes(join(runDir, "results.json")));
     assert.doesNotMatch(compact, /preflight-cargo-version\.log/u);
-    assert.match(detailed, /preflight cargo-version: exit=0 log=/u);
-    assert.match(detailed, /rust: passed exit=0 log=/u);
+    assert.doesNotMatch(detailed, /rust: passed|preflight cargo-version:|NEXT OWNER|NEXT ACTION/u);
   });
 });
 
-test("compact failure keeps warnings, failure-first budget, unrun states and both truncations", async () => {
+test("failure completion retains numeric states and omits all warning and failure prose", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("warning"), stage("failure"), stage("later")] }, env);
     const result = json(join(runDir, "results.json"));
@@ -1220,20 +1687,17 @@ test("compact failure keeps warnings, failure-first budget, unrun states and bot
     writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
     const compact = await summarize(runDir, { compact: true });
     assert.match(compact, /^FAIL .*exit=23/mu);
-    assert.match(compact, /unrun \(exit=unrun\/unknown\): later/u);
-    assert.doesNotMatch(compact, /passed \(exit=0\)/u);
-    assert.match(compact, /warning: passed exit=0 log=/u);
-    assert.match(compact, /warning: preceding stage/u);
-    assert.ok(compact.indexOf("essential failure detail") < compact.indexOf("preceding stage"));
-    assert.match(compact, /\[summary diagnostics truncated; full output in log\]/u);
-    assert.match(compact, /\[diagnostics truncated; full output in log\]/u);
-    assert.match(compact, /toolchain: inherited Rustup override cleared/u);
+    assert.match(compact, /stages: total=3 passed=1 failed=1 interrupted=0 running=0 unrun=1 unknown=0/u);
+    assert.doesNotMatch(compact, /preceding stage|essential failure detail|toolchain:|diagnostics truncated/u);
     assert.match(compact, /input: unknown/u);
-    for (const entry of result.stages.slice(0, 2)) assert.ok(compact.includes(entry.log));
+    const saved = readFileSync(join(runDir, "results.json"));
+    assert.match(await inspectFailure(runDir, "failure"), /essential failure detail/u);
+    await assert.rejects(inspectFailure(runDir, "warning"), /requires a failed/u);
+    assert.deepEqual(readFileSync(join(runDir, "results.json")), saved);
   });
 });
 
-test("compact summaries keep exceptional successes, silent preflight failures and original errors", async () => {
+test("exceptional saved success cannot hide an interruption or inject prose", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("exception"), stage("fallback"), stage("count")] }, env);
     const result = json(join(runDir, "results.json"));
@@ -1248,23 +1712,15 @@ test("compact summaries keep exceptional successes, silent preflight failures an
       tests: { executed: "unknown", why: "incomplete-summary", failures: 1 } });
     writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
     const compact = await summarize(runDir, { compact: true });
-    assert.match(compact, /preflight silent: exit=9 log=/u);
-    assert.match(compact, /exception: passed outcome=unknown exit=0 log=/u);
-    assert.match(compact, /signal: SIGTERM/u);
-    assert.equal(compact.split(shared).length - 1, 1);
-    assert.match(compact, /separate reported failure/u);
-    assert.match(compact, /fallback: passed exit=0 log=/u);
-    assert.match(compact, /diagnostics: no recognized diagnostic; bounded failure tail/u);
-    assert.match(compact, /test counts unknown: count \(incomplete-summary\)/u);
-    assert.match(compact, /count: passed exit=0 log=/u);
-    assert.doesNotMatch(compact, /passed \(exit=0\)/u);
+    assert.match(compact, /^INTERRUPTED /u);
+    assert.match(compact, /stages: total=3 passed=2 failed=0 interrupted=1/u);
+    assert.match(compact, /preflight: total=1 passed=0 failed=1/u);
+    assert.doesNotMatch(compact, /shared runner|separate reported failure|bounded failure tail|incomplete-summary/u);
     result.stages[0].error = "e".repeat(2500);
     result.error = "r".repeat(2500);
     writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
     const truncated = await summarize(runDir, { compact: true });
-    assert.match(truncated, /\[runner error truncated; full error in results.json\]/u);
-    assert.match(truncated, /\[stage error truncated; full error in results.json\]/u);
-    assert.match(truncated, /separate reported failure/u);
+    assert.equal(truncated, compact);
   });
 });
 
@@ -1289,11 +1745,11 @@ test("compact summaries preserve running, interrupted, recovered and unknown out
     Object.assign(result.stages[0], { state: "failed", outcome: "unknown", error: "interrupted: outcome unknown" });
     saveResult();
     const recovered = await summarize(runDir, { compact: true });
-    assert.match(recovered, /^INTERRUPTED \(stopped in stage unfinished;.*no stage was rerun\).*exit=1/mu);
-    assert.match(recovered, /unfinished: failed outcome=unknown exit=unrun\/unknown log=/u);
-    assert.match(recovered, /interrupted: outcome unknown/u);
-    assert.match(recovered, /unrun \(exit=unrun\/unknown\): later/u);
-    assert.match(recovered, /input: MISMATCH/u);
+    assert.match(recovered, /^INTERRUPTED .*exit=1/mu);
+    assert.match(recovered, /stages: total=2 passed=0 failed=0 interrupted=0 running=0 unrun=1 unknown=1/u);
+    assert.match(recovered, /elapsed: ms=unknown basis=recovery-end/u);
+    assert.doesNotMatch(recovered, /interrupted: outcome unknown/u);
+    assert.match(recovered, /input: mismatch/u);
     delete result.after;
     saveResult();
     assert.match(await summarize(runDir, { compact: true }), /input: unknown/u);
@@ -1305,7 +1761,7 @@ test("compact summaries preserve running, interrupted, recovered and unknown out
   });
 });
 
-test("compact retained-failure fixture preserves the full diagnostic and reduces routine output", async () => {
+test("retained failure stays in the artifact and requires explicit inspection", async () => {
   await repository(async (root) => {
     // Sanitized from a real durable repair-gate notification; identities and
     // fingerprints come from this fixture, not from the historical run.
@@ -1326,12 +1782,12 @@ test("compact retained-failure fixture preserves the full diagnostic and reduces
     writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
     const detailed = await summarize(runDir);
     const compact = await summarize(runDir, { compact: true });
-    assert.ok(Buffer.byteLength(compact) < Buffer.byteLength(detailed));
-    assert.ok(compact.includes(diagnostic.trimEnd()));
+    assert.equal(compact, detailed);
+    assert.doesNotMatch(compact, /doctor_cli_refusals|panicked|Temp audit/u);
     assert.match(compact, /^FAIL .* exit=101/mu);
-    assert.match(compact, /unrun \(exit=unrun\/unknown\): rust-scale-claims, rust-scale-roots, rust-scale-planning, freeze, mcp, control, parity, docs/u);
-    assert.match(compact, /test counts unknown: rust \(incomplete-summary\)/u);
-    assert.ok(compact.includes(result.stages[3].log));
+    assert.match(compact, /stages: total=12 passed=3 failed=1 interrupted=0 running=0 unrun=8 unknown=0/u);
+    assert.ok((await inspectFailure(runDir, "rust", 6000)).includes(diagnostic));
+    assert.equal(json(join(runDir, "results.json")).stages[3].diagnostics.text, diagnostic);
     for (const limitation of result.limitations) assert.ok(compact.includes(limitation));
   });
 });
@@ -1343,8 +1799,10 @@ test("pre-existing detailed notification retries keep frozen bytes, identity and
       `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'ran')`)], notifyTo: "fixture-parent" }, env);
     await executeRun(runDir, env);
     const saved = readFileSync(join(runDir, "results.json"));
-    const detailed = await summarize(runDir);
-    assert.notEqual(detailed, await summarize(runDir, { compact: true }));
+    const detailed = `PASS ${basename(runDir)} exit=0\nresults: ${join(runDir, "results.json")}\nwarning: historical frozen diagnostic bytes\n`;
+    assert.notEqual(detailed, await summarize(runDir));
+    unlinkSync(join(runDir, "notification.target.json")); // Historical runs had only their original request route.
+    unlinkSync(join(runDir, "completion.request.json"));
     writeFileSync(join(runDir, "notification.message.txt"), detailed);
     const calls = [];
     const send = async (_command, args) => {
@@ -1353,8 +1811,15 @@ test("pre-existing detailed notification retries keep frozen bytes, identity and
       return { code: calls.length === 1 ? 7 : 0 };
     };
     await assert.rejects(notifyRun(runDir, env, send), /notification failed/u);
+    const originalTarget = readFileSync(join(runDir, "notification.target.json"));
+    writeFileSync(join(runDir, "request.json"), JSON.stringify({ ...json(join(runDir, "request.json")),
+      notifyTo: "rewritten-recipient", nextTransition: { owner: "new-owner", action: "wrong action" } }));
+    await notifyRun(runDir, env, send);
+    writeFileSync(join(runDir, "request.json"), "{");
     await notifyRun(runDir, env, send);
     assert.deepEqual(calls[0], calls[1]);
+    assert.deepEqual(calls[0], calls[2]);
+    assert.deepEqual(readFileSync(join(runDir, "notification.target.json")), originalTarget);
     assert.equal(calls[0][calls[0].indexOf("--idempotency-key") + 1], `engram-tests:${basename(runDir)}`);
     assert.deepEqual(readFileSync(join(runDir, "results.json")), saved);
     assert.equal(readFileSync(counter, "utf8"), "ran");
@@ -2257,7 +2722,8 @@ test("complete summaries that count failed tests fail the stage whatever the com
     // The exit the process gave is kept; the state is what the runner counted.
     assert.deepEqual(record.stages.map(({ state, exit, executed, passed, failed, why }) => [state, exit, executed, passed, failed, why]),
       [["failed", "0", "1", "0", "1", undefined], ["skipped", "none", "unknown", undefined, undefined, "not-run"]]);
-    assert.match(await summarize(dirname(result.stages[0].log)), /the runners' summaries count 1 failed tests and the command exited 0/u);
+    assert.match(await summarize(dirname(result.stages[0].log)), /^FAIL /u);
+    assert.match(await inspectFailure(dirname(result.stages[0].log), result.stages[0].name), /the runners' summaries count 1 failed tests and the command exited 0/u);
     assert.equal(countsAsPassedTests(record), false);
 
     // The same when another runner of the stage left no complete summary.
@@ -2831,7 +3297,7 @@ test("recover refuses, changing no file, a run whose executor is alive, unknown,
     rewriteResults(runDir, (result) => ({ ...result, heartbeat: { at: hourAgo, everyMs: 1000 },
       pid: 4242, executor: { pid: 4242, created: "win32:100", host: fixtureHost },
       stages: [{ name: "first", state: "running" }, { name: "second", state: "unrun" }] }));
-    assert.match(await summarize(runDir), /^INTERRUPTED \(no terminal result/u, "the heartbeat alone reads as interrupted");
+    assert.match(await summarize(runDir), /^INTERRUPTED /u, "the heartbeat alone reads as interrupted");
     await refuses(() => ({ state: "alive", created: "win32:100" }), /executor 4242 is alive/u, "alive with a stale heartbeat");
     await refuses(() => ({ state: "unknown", why: "access is denied" }), /cannot tell .*access is denied/u, "unknown");
     await refuses(() => ({ state: "alive", created: "linux:5" }), /cannot be compared/u, "another clock");
@@ -2914,8 +3380,10 @@ test("recover writes the interrupted result TermAl's launcher writes and leaves 
       executor: { pid: 4242, created: "win32:100", host: fixtureHost }, found: "no process has its id", lastHeartbeat: result.heartbeat.at });
     assert.deepEqual(json(join(runDir, "results.json")), result);
     const summary = await summarize(runDir);
-    assert.match(summary, /^INTERRUPTED \(stopped in stage second; recovered at 2026-09-30T01:00:00.000Z: .*\) test-\S+ exit=1$/mu);
-    assert.match(summary, /^second: failed outcome=unknown exit=unrun\/unknown log=/mu);
+    assert.match(summary, /^INTERRUPTED test-\S+ exit=1$/mu);
+    assert.match(summary, /elapsed: ms=unknown basis=recovery-end/u);
+    assert.match(summary, /^recovery: phase=stage stage="second"$/mu);
+    assert.match(summary, /unknown=1/u);
     assert.doesNotMatch(summary, /^(?:PASS|FAIL)\b|test-launcher\/v1/mu);
 
     // Recovering again, like recovering any terminal run, changes nothing.
@@ -2931,12 +3399,15 @@ test("recover writes the interrupted result TermAl's launcher writes and leaves 
     const reused = await recover([{ name: "first", state: "unrun" }], () => ({ state: "alive", created: "win32:999" }));
     assert.deepEqual([reused.result.recovered.phase, reused.result.recovered.stage, reused.result.recovered.found],
       ["startup", null, "its id now names a later process"]);
-    assert.match(await summarize(reused.runDir), /^INTERRUPTED \(stopped during startup, before any stage ran;/mu);
+    assert.match(await summarize(reused.runDir), /^INTERRUPTED /mu);
+    assert.match(await summarize(reused.runDir), /^recovery: phase=startup stage=null$/mu);
     const between = await recover([passed, { name: "second", state: "unrun" }]);
     assert.deepEqual([between.result.recovered.phase, between.result.recovered.stage], ["between-stages", "first"]);
-    assert.match(await summarize(between.runDir), /^INTERRUPTED \(stopped between stages, after first;/mu);
+    assert.match(await summarize(between.runDir), /^INTERRUPTED /mu);
+    assert.match(await summarize(between.runDir), /^recovery: phase=between-stages stage="first"$/mu);
     const finishing = await recover([passed]);
     assert.deepEqual([finishing.result.recovered.phase, finishing.result.recovered.stage], ["finishing", null]);
+    assert.match(await summarize(finishing.runDir), /^recovery: phase=finishing stage=null$/mu);
 
     for (const state of ["passed", "failed"]) {
       const terminal = createRun({ root, stages: [stage("only")] }, env);
@@ -3054,7 +3525,8 @@ test("a launcher stopped during a Rust scale phase preserves the prior result wi
 
       const recovered = spawnSync(process.execPath, [launcher, "recover", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
       assert.equal(recovered.status, 0, recovered.stderr);
-      assert.match(recovered.stdout, /^INTERRUPTED \(stopped in stage rust-scale-claims;/u);
+      assert.match(recovered.stdout, /^INTERRUPTED test-\S+ exit=1$/mu);
+      assert.match(recovered.stdout, /^recovery: phase=stage stage="rust-scale-claims"$/mu);
       assert.match(recovered.stdout, /^Settled as interrupted; tests not rerun\.$/mu);
       assert.doesNotMatch(recovered.stdout, /^(?:PASS|FAIL)\b|test-launcher\/v1/mu);
       const after = json(join(runDir, "results.json"));
@@ -3097,15 +3569,15 @@ test("recover refuses a living launcher whose heartbeat has gone stale, changing
       assert.equal(parked[0], "connected");
       // The launcher lives; only its heartbeat reads an hour old.
       rewriteResults(runDir, (result) => ({ ...result, heartbeat: { ...result.heartbeat, at: new Date(Date.now() - 3_600_000).toISOString() } }));
-      assert.match(await summarize(runDir), /^INTERRUPTED \(no terminal result/u);
+      assert.match(await summarize(runDir), /^INTERRUPTED /u);
       const before = directoryBytes(runDir);
       const recovered = spawnSync(process.execPath, [launcher, "recover", runDir], { cwd: root, env, encoding: "utf8", windowsHide: true });
       assert.equal(recovered.status, 1);
       // Where start times move with the clock the living executor is unknown,
       // and recover refuses for that.
-      assert.match(recovered.stderr, identifies
-        ? /^REFUSED recover .*: executor \d+ is alive; a stale heartbeat does not end a run; nothing changed$/mu
-        : /^REFUSED recover .*: cannot tell whether executor \d+ is alive: .*; nothing changed$/mu);
+      assert.match(recovered.stderr, identifies ? /^REFUSED recover; executor-alive; nothing changed$/mu
+        : /^REFUSED recover; executor-unknown; nothing changed$/mu);
+      assert.ok(recovered.stderr.includes(`results: ${join(runDir, "results.json")}`));
       assert.equal(recovered.stdout, "");
       assert.deepEqual(directoryBytes(runDir), before);
       broker.release();

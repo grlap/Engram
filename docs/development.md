@@ -263,8 +263,8 @@ Both full and focused modes clear inherited `RUSTUP_TOOLCHAIN` overrides,
 leaving selection to Rustup. A directory override at the repository root still
 takes precedence over `rust-toolchain.toml`; `rustup show active-toolchain`
 reports the selection. Removed names and values
-are recorded in `results.json` as `clearedToolchainOverrides`, with a summary
-notice when present. To intentionally use another toolchain for a focused check,
+are recorded in `results.json` as `clearedToolchainOverrides`. To intentionally
+use another toolchain for a focused check,
 pass it explicitly, e.g. `focused -- cargo +nightly test ...`.
 Full mode probes Cargo components; both modes check required executables before
 expensive stages. For a focused external
@@ -290,9 +290,12 @@ a focused direct `node --test` command also carry `tests.runner: "node-test"`.
 Unknown counts omit that runner field and the `passed`, `failed`, and `ignored`
 fields. Full-mode stages omit `tests.runner`, including direct Node stages with
 known counts, and retain their stage-kind contract. Stdout/stderr
-go directly to logs, never through a terminal stream. Only the final summary,
-warnings, bounded failures and the closing record for the host reach context;
-truncation points to the full log.
+go directly to logs, never through a terminal stream. Automatic completion,
+notification, default `summary` and `recover` print metadata only, followed
+by the executor's closing record where applicable. Warnings, errors, stack
+traces and saved diagnostic excerpts stay in the artifacts. Failed-stage
+excerpts enter context only through explicit bounded failure inspection;
+warnings from successful stages are available in their saved logs.
 For the exact repository Rust phase commands, counts sum outer Cargo runners
 identified by `Running … (executable)` or `Doc-tests …` boundaries. A `Running`
 frame keeps its first libtest announcement; unequal child announcements without
@@ -326,7 +329,10 @@ process. A run with no terminal result is running while `heartbeat.at` is at
 most three intervals old. Once it is older the run is interrupted: the launcher
 has most likely stopped. A system sleep or clock change can also age a
 heartbeat, and a later beat then shows the run running again. `summary`
-reports such a run as `RUNNING` or `INTERRUPTED`, and one without a heartbeat
+reports a fresh heartbeat as `RUNNING` with reason `no-terminal-result`, and a
+stale heartbeat as `INTERRUPTED` with reason `heartbeat-stale`, distinct from a
+confirmed recovery's reason `interrupted`. Its blocker names
+the recorded running stage when its name is valid. One without a heartbeat
 as `UNKNOWN`. Saves of `results.json` retry a briefly refused rename, as
 Windows can refuse one while another process holds the file open; that retry is
 file I/O and never reruns a test.
@@ -393,8 +399,16 @@ write included; a lock left by a killed recovery makes the next one refuse and
 name the file. Under that lock `recover` reads the result again after the system
 has said the executor is gone, so a result the executor saved just before it
 ended is kept. `recover` never kills, reruns or notifies, and prints no record
-line. `summary` shows a recovered run as `INTERRUPTED`, with the stage or phase,
-never as a pass or a failure.
+line. `summary` shows a recovered run as `INTERRUPTED`, never as a pass or an
+ordinary failure. Its elapsed time is unknown: recovery's end timestamp is
+not the time its executor finished.
+Refusals print closed cause tokens (`executor-alive`, `executor-unknown`,
+`executor-unpublished`, `executor-unidentifiable`, `executor-elsewhere`,
+`results-mismatch`, `results-unreadable` or `recovery-lock-held`) and the results locator. The lock
+case also prints the lock's locator; no system-query diagnostic prose is echoed.
+`results-unreadable` means the result file is missing, unreadable or invalid
+JSON. `summary` and explicit inspection report the same condition as
+`FAIL launcher: results-unreadable`, with the results locator.
 
 Foreground and detached launch receipts both print the run directory, manifest
 path and expected fingerprint before waiting for completion. Foreground mode
@@ -438,19 +452,100 @@ node scripts/test-launcher.mjs notify RUN_DIRECTORY
 
 `notify` is only for a recorded notification target, using the original root
 identity. It resends the same saved body and idempotency key, not the tests.
-New automatic messages group clean zero-exit successes and list unrun stages
-separately. Warnings, exceptional states, failure diagnostics, truncation,
-toolchain notices and freeze limitations stay visible, with results and log
-locators. The input line reports the saved boundary comparison; it cannot
-detect transient edits or establish host test credit. Unknown test counts
-remain explicit. `summary` keeps the detailed stage and preflight listing
-on demand. Previously frozen detailed messages retain their original bytes
-on retry; changing presentation never changes notification timing.
-Sender equality checks asserted session context, not authenticated identity.
-Diagnostic excerpts are not redacted: anything a gate prints within the bounded
-excerpt can be sent to the coordinator. Do not put secrets in gate output.
+The metadata-only sign-off keeps the host's exact `PASS RUN exit=0` verdict
+line and unquoted `results: PATH` locator. Separate lines give numeric stage
+and recorded-preflight counts, the expected input fingerprint and its
+`matched`, `mismatch` or `unknown` boundary comparison, a fixed reason code,
+and launch-to-terminal wall-clock elapsed time when its timestamps are valid.
+Missing, invalid or reversed timestamps give unknown elapsed time; a recovered
+interruption gives unknown elapsed time with a recovery-end basis. Stage counts
+are not test counts. Test-count evidence remains in `results.json` and the
+executor's machine record. A known fingerprint mismatch or contradictory
+saved success never renders PASS. These boundary comparisons cannot detect
+transient edits or establish host test credit.
+
+Supply optional `--item TEXT` and paired `--next-owner SESSION --next-action
+TEXT` before the command separator. The item is an opaque display string;
+the transition names its next owner and exact pending action. Both flags are
+required together. Their strings are stored unchanged in optional
+`request.item` and `request.nextTransition: {owner, action}`; the existing
+`request.owner` still names the launching session. Item and owner are limited
+to 256 UTF-8 bytes, action to 2000, all nonblank without CR/LF. Owner addresses
+cannot start with `-` or have outer whitespace. Duplicate or invalid flags
+are refused before a run is created. CLI metadata flags consume the next
+argument as their value but refuse values beginning with `--`. The launcher
+publishes `request.json` once before execution, including when input capture
+fails. It also saves the admitted display metadata in
+`completion.request.json` before execution. All subsequent summaries,
+recovery summaries and first notification publications use that snapshot,
+so rewriting or breaking `request.json` cannot change the displayed transition.
+The single launcher publishes its complete snapshots by rename before worker
+admission; creating a run does not require hard-link support. A publication
+failure saves a terminal failure where possible and prints its results locator.
+These files are retry material, not filesystem protection against another
+process writing the run directory.
+
+`ITEM`, `NEXT OWNER` and `NEXT ACTION` lines use JSON-quoted strings, escaping
+Unicode line separators too. A declared action is echoed on every verdict;
+it is a pending transition, not permission to execute past a failed gate.
+Non-PASS verdicts with a declared transition also include a `BLOCKER` JSON object with a closed reason
+(`stage-failed`, `runner-failed`, `interrupted` or `no-terminal-result`), stage
+identity where relevant and numeric exit or null. It contains no diagnostic
+text. An absent transition produces no invented owner or action.
+An absent item is printed as `item: undeclared`.
+A terminal passed result with an unverified input comparison stays `UNKNOWN`
+with reason `input-unverified`. Its blocker uses `no-terminal-result` with
+`basis: "input-unverified"`: there is no verified terminal verdict to act on,
+even though a result file exists. It does not report a runner failure.
+An inconsistent saved success stays `FAIL`: its `runner-failed` blocker carries
+`basis: "input-changed"` for conflicting fingerprints or
+`basis: "contradictory-result"` for a contradictory result, even with exit zero.
+
+When `--notify` is supplied, the launcher sends the same frozen body to its target and also to
+a declared next owner distinct from both that target and the launching
+session. The target uses `engram-tests:RUN_ID`; the second recipient uses
+`engram-tests:RUN_ID:next-owner`. Retries keep both intents unchanged and
+attempt both recipients even when one send fails. Duplicate targets and
+self-sends are suppressed. A launching holder that names itself registers
+the existing `termal_resume_after_test_runs` route for the run; until persisted
+host waking is implemented, the coordinator relays the frozen sign-off to
+a launching holder that is neither recipient, with a stable per-run key.
+Persisted host waking of the declared next owner is pending a separate host
+implementation; it is not shipped by this launcher change.
+The agreed host UI contract distinguishes an active detached runner using
+its existing run id, launch timestamp and running stage, and shows the pending
+transition from the request. Host support and actual continuation must be established on
+that host; neither a launch receipt nor a mailbox receipt proves execution.
+Self-mailbox delivery remains refused. No polling or new scheduler is added.
+
+Explicit failure investigation selects one failed stage or preflight probe:
+
+```bash
+node scripts/test-launcher.mjs summary RUN_DIRECTORY --stage rust --max-chars 2400
+node scripts/test-launcher.mjs summary RUN_DIRECTORY --stage preflight:cargo-version --max-chars 1000
+```
+
+The excerpt comes from saved diagnostic/error fields, not a fresh test run.
+Its text is bounded by `--max-chars` (1–6000 characters, default 2400), with
+results and log locators; a missing excerpt is stated explicitly. Successful
+or unrun stages cannot be inspected this way. Inspection changes no file and
+emits no machine record. Excerpts are not redacted. Do not put secrets in gate
+output.
+
+Previously frozen detailed messages retain their original bytes and key on
+retry; presentation changes never rerun tests. A historical run without a
+target snapshot pins its then-recorded single target before its first resend;
+later request rewrites cannot retarget it, and no next-owner send is added.
+New runs pin the original
+notification recipients in `notification.target.json` before execution, so
+a later request rewrite cannot retarget a retry. The body uses launch metadata
+captured before stages run. Sender equality checks asserted session context,
+not authenticated identity.
 Notification errors do not erase test results. `notification.json` retains the
-latest attempt's receipt; each attempt's separate log remains available.
+latest attempt's receipt, including per-recipient deliveries for two targets
+and aggregate `ok` (false if any send fails). The top-level `code` still
+describes the original target's send, so use `ok` for the whole attempt;
+each send's separate log remains available.
 The notification body is written to a unique temporary file, then published
 without replacement through a hard link. Filesystems without hard-link support
 refuse notification publication; test results remain available. An interrupted
@@ -471,7 +566,7 @@ within the authorized scope, then validate the changed input; never retry blindl
 
 A process that executed the stages and waited for them ends its stdout with a
 record of what ran: one line per stage in stage order, then one overall line.
-The human summary above it is unchanged. The detached parent prints no record,
+The human summary above it is metadata-only. The detached parent prints no record,
 because its run has not finished; `summary`, `recover` and `notify` never print
 one, so a saved run cannot be replayed as a new one. A detached worker writes
 its record into `launcher.log`, which is a file like `results.json`.
@@ -619,8 +714,8 @@ the grammar; the command line cannot produce one, only a caller of the
 module. Each stage's kind and selection, the scope, and whether to notify
 are the ones read before the first stage ran; a stage that rewrites or
 breaks `request.json` changes neither what the record says of it nor
-whether the record is printed. The notification's target is read when it
-is sent. A stage that removes the run directory or makes `results.json`
+whether the record is printed. New runs pin the notification's target before
+execution. A stage that removes the run directory or makes `results.json`
 unwritable leaves the run without saved results, like any unwritable
 results directory, and then no record is printed: a host reads its absence
 as unknown. The lines are text that any command

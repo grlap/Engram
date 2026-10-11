@@ -304,8 +304,9 @@ Run the applicable checks below before handing off changes:
 The launcher has two modes, for two different jobs:
 
 - **Full landing validation:** `node scripts/test-launcher.mjs full` runs
-  this whole sequence, with full logs on disk and compact failures and
-  warnings in context. It runs on the frozen tree that is to be committed,
+  this whole sequence, with full logs on disk and metadata-only completion
+  in context; diagnostics require explicit bounded inspection. It runs on
+  the frozen tree that is to be committed,
   beside that tree's reviews; for any changeset with a non-`.md` path,
   only its pass counts toward landing.
 - **Fast correction check:** `node scripts/test-launcher.mjs focused --
