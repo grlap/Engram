@@ -177,6 +177,73 @@ pub(super) const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
     LIMIT ?6
 ";
 
+/// Registers a fresh process-default session inside `transaction`: it
+/// reclaims idle process-default sessions past retention and inserts this
+/// session's row, unless the row exists. Returns whether it registered. The
+/// registration is the caller's to keep: committing keeps it, and dropping
+/// the transaction, as any refusal does, rolls it back with the caller's own
+/// write.
+pub(in crate::storage) fn register_process_default_work_session_on(
+    transaction: &Transaction<'_>,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    now: DateTime<Utc>,
+) -> Result<bool, StoreError> {
+    let exists = transaction.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM work_session_state
+             WHERE project_id = ?1 AND session_id = ?2
+         )",
+        params![project_id.0, session_id.0],
+        |row| row.get::<_, i64>(0),
+    )? == 1;
+    if exists {
+        return Ok(false);
+    }
+    let retained_since = now
+        .checked_sub_signed(chrono::TimeDelta::seconds(
+            super::super::PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS,
+        ))
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "process-default session retention boundary overflowed".into(),
+            )
+        })?;
+    reclaim_inactive_process_default_work_sessions_on(
+        transaction,
+        project_id,
+        session_id,
+        retained_since,
+        now,
+    )?;
+    transaction.execute(
+        "INSERT INTO work_session_state (
+             project_id, session_id, focused_work_id, project_cursor, updated_at_ms
+         ) VALUES (?1, ?2, NULL, 0, ?3)",
+        params![project_id.0, session_id.0, now.timestamp_millis()],
+    )?;
+    Ok(true)
+}
+
+/// Registers a fresh process-default session inside a write that is not a
+/// work mutation, such as a project-memory write, under the same admission
+/// a work mutation applies: the work schema the store was opened at.
+///
+/// # Errors
+///
+/// Refuses a work schema that changed since the store was opened, and
+/// returns any failure to reclaim or insert.
+pub(in crate::storage) fn register_process_default_in_write(
+    transaction: &Transaction<'_>,
+    work_schema_version: i64,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    now: DateTime<Utc>,
+) -> Result<bool, StoreError> {
+    super::schema::require_work_schema_version(transaction, work_schema_version)?;
+    register_process_default_work_session_on(transaction, project_id, session_id, now)
+}
+
 /// Reclaims one bounded page of inactive CLI-generated session projections.
 ///
 /// This runs only inside the transaction that creates another process-default
@@ -537,44 +604,17 @@ impl SqliteStore {
         if exists {
             return Ok(false);
         }
-
-        let retained_since = now
-            .checked_sub_signed(chrono::TimeDelta::seconds(
-                super::super::PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS,
-            ))
-            .ok_or_else(|| {
-                StoreError::InvalidWorkProjection(
-                    "process-default session retention boundary overflowed".into(),
-                )
-            })?;
         let transaction = self.begin_work_mutation()?;
-        let exists = transaction.query_row(
-            "SELECT EXISTS(
-                 SELECT 1 FROM work_session_state
-                 WHERE project_id = ?1 AND session_id = ?2
-             )",
-            params![project_id.0, session_id.0],
-            |row| row.get::<_, i64>(0),
-        )? == 1;
-        if exists {
-            transaction.commit()?;
-            return Ok(false);
-        }
-        reclaim_inactive_process_default_work_sessions_on(
-            &transaction,
-            project_id,
-            session_id,
-            retained_since,
-            now,
-        )?;
-        transaction.execute(
-            "INSERT INTO work_session_state (
-                 project_id, session_id, focused_work_id, project_cursor, updated_at_ms
-             ) VALUES (?1, ?2, NULL, 0, ?3)",
-            params![project_id.0, session_id.0, now.timestamp_millis()],
-        )?;
+        let registered =
+            register_process_default_work_session_on(&transaction, project_id, session_id, now)?;
         transaction.commit()?;
-        Ok(true)
+        Ok(registered)
+    }
+
+    /// The work schema version this store was opened at, for a write that
+    /// registers a session inside a transaction of its own.
+    pub(in crate::storage) const fn opened_work_schema_version(&self) -> i64 {
+        self.work_schema_version
     }
 
     /// Returns ambient navigation state, defaulting to no focus and cursor zero.
@@ -1341,7 +1381,7 @@ impl SqliteStore {
     ) -> Result<WorkSessionState, StoreError> {
         if through < 0 {
             return Err(StoreError::InvalidWork(
-                "work acknowledgement cursor must not be negative".into(),
+                crate::storage::refusal_labels::NEGATIVE_ACK_CURSOR.into(),
             ));
         }
         let transaction = self.begin_work_mutation()?;

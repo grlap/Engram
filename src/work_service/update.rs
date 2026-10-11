@@ -31,7 +31,8 @@ impl LocalWorkService {
         revision: i64,
         now: DateTime<Utc>,
     ) -> Result<Option<crate::WorkBlocker>, StoreError> {
-        self.store_at(now)?.blocker_cleared_at(work_id, revision)
+        self.lock_store_at(now)?
+            .blocker_cleared_at(work_id, revision)
     }
 
     /// Applies one typed update to ambient focused work.
@@ -78,9 +79,10 @@ impl LocalWorkService {
     ) -> Result<WorkUpdateResult, StoreError> {
         crate::domain::normalize_gate_evidence_input(name, failed, evidence_ref)
             .map_err(StoreError::InvalidWork)?;
-        let mut store = self.store_at(now)?;
+        let mut store = self.lock_store_at(now)?;
         let target = self.resolve_target(&store, work_ref)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
+        self.register_on(&mut store, now)?;
         // A late gate on someone else's or completed work leaves focus.
         self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
@@ -239,6 +241,9 @@ impl LocalWorkService {
     ) -> Result<WorkNoteResult, StoreError> {
         let target = self.resolve_target(store, work_ref)?;
         let basis = self.protocol_basis(store, true, false, target, now)?;
+        // The store is already inside the note's admission window, so the
+        // session registers there, before the note's first write.
+        self.initialize_process_default_session_on(store, now)?;
         // A holder's note moves focus; anyone else's note is an observation
         // and leaves focus where it was.
         self.focus_if_held(store, target, basis.claim.as_ref(), now)?;
@@ -574,7 +579,8 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
         validate_update_shape(&input, now)?;
-        let mut store = self.store_at(now)?;
+        // The session registers at bind_target, after every check below.
+        let mut store = self.lock_store_at(now)?;
         // The target (named, or the current focus unless this repeats an
         // admitted act), read alone, so a ref the request names can be
         // compared with it before focus moves or an attempt is written.

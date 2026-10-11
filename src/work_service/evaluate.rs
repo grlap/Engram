@@ -17,8 +17,9 @@ use super::{
 };
 use crate::domain::{
     AcceptanceBasis, AcceptanceEvaluation, AcceptanceEvaluationMode, AcceptanceSourceBasis,
-    AcceptanceVerdict, CriterionVerdictInput, EvaluatorModel, MAX_EVALUATOR_MODEL_SEGMENT_BYTES,
-    RecordAcceptanceEvaluationRequest, SessionId, WorkItem, WorkRunId,
+    AcceptanceVerdict, CriterionVerdict, CriterionVerdictInput, EvaluatorModel,
+    MAX_EVALUATOR_MODEL_SEGMENT_BYTES, RecordAcceptanceEvaluationRequest, SessionId, WorkItem,
+    WorkRunId,
 };
 use crate::{DevelopmentNoopRedactor, ObjectId, SqliteStore, StoreError};
 
@@ -78,9 +79,11 @@ impl LocalWorkService {
             verdicts,
             evaluator_model,
             supersedes,
-            rationale_bytes,
+            verdict_bytes,
         } = parse_evaluation_words(input)?;
-        let mut store = self.store_at(now)?;
+        // The session registers just before the evaluation's first write,
+        // after the checks below.
+        let mut store = self.lock_store_at(now)?;
         let target = self.resolve_target(&store, input.work_ref.as_deref())?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
@@ -136,17 +139,19 @@ impl LocalWorkService {
                 })?;
             }
         }
-        // The record holds every rationale as stored, each as a canonical
-        // string under its own key, so it is larger than the canonical list of
-        // those strings alone: a list at the cap proves the record over it.
+        // The record holds the verdict list under its own key, each verdict
+        // with its criterion's text and resolved citations, so it is larger
+        // than that list with those at their smallest: a list at the cap
+        // proves the record over it, whatever the item and the run supply, and
+        // an evaluation already recorded under the cap is never refused here.
         // Storage checks the record's exact bytes. The bases name a revision
         // (from 1) and a feed position (from 0). Each is refused before a
         // holder's focus moves, with the refusal the record would get.
-        if rationale_bytes >= crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES {
+        if verdict_bytes >= crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES {
             return Err(StoreError::AcceptanceEvaluationRefused {
                 work: work.work_id,
                 reason: format!(
-                    "the evaluation's rationales alone take {rationale_bytes} canonical bytes, so the record would pass the {} byte cap; shorten the rationales",
+                    "the evaluation's verdicts alone take {verdict_bytes} canonical bytes, so the record would pass the {} byte cap; shorten the rationales",
                     crate::domain::MAX_ACCEPTANCE_EVALUATION_BYTES
                 ),
             });
@@ -167,6 +172,10 @@ impl LocalWorkService {
                 current: work.revision,
             });
         }
+        // A fresh process-default session registers inside the evaluation's
+        // own write transaction below, or on a replay just before it answers,
+        // so no refusal leaves a session behind. It holds no claim, so this
+        // moves no focus before then.
         // An independent evaluator does not hold the item; its evaluation
         // leaves its focus where it was.
         self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
@@ -275,6 +284,9 @@ impl LocalWorkService {
             )?;
             fit_projection(&mut result)?;
             ensure_agent_response_budget(&result, "work_evaluate")?;
+            // A replay answers without a write of its own; the session
+            // registers here, after its last refusal.
+            self.register_on(&mut store, now)?;
             return Ok(result);
         }
         if work.revision != input.acceptance_basis {
@@ -301,7 +313,15 @@ impl LocalWorkService {
         }
         let visible = preflight.projection.verdicts.len();
 
-        let receipt = store.record_acceptance_evaluation(&request, &DevelopmentNoopRedactor)?;
+        let register_at = self.process_default_registration_due(now);
+        let receipt = store.record_acceptance_evaluation_registering(
+            &request,
+            &DevelopmentNoopRedactor,
+            register_at.map(|now| (&self.session_id, now)),
+        )?;
+        if register_at.is_some() {
+            self.process_default_registered();
+        }
         let mut projection = project_record(&receipt.record, full_detail);
         projection.verdicts.truncate(visible);
         projection.verdicts_omitted = projection.verdicts_total - projection.verdicts.len();
@@ -537,8 +557,9 @@ struct ParsedEvaluation {
     verdicts: Vec<CriterionVerdictInput>,
     evaluator_model: Option<EvaluatorModel>,
     supersedes: Option<ObjectId>,
-    /// The canonical size of the list of normalized rationales.
-    rationale_bytes: usize,
+    /// The canonical size of the verdict list as the record would hold it,
+    /// with every part the item or the store supplies at its smallest.
+    verdict_bytes: usize,
 }
 
 /// The checks an evaluation request passes without its item: its words, its
@@ -602,21 +623,29 @@ fn parse_evaluation_words(input: &WorkEvaluateInput) -> Result<ParsedEvaluation,
     // A blank rationale is left to the verdict checks after the item is
     // resolved, which refuse it naming its criterion and the item; only the
     // size bound applies here.
-    let rationales = input
-        .verdicts
+    let smallest_verdicts = verdicts
         .iter()
         .map(|verdict| {
-            if verdict.rationale.trim().is_empty() {
-                Ok(String::new())
+            let rationale = if verdict.rationale.trim().is_empty() {
+                String::new()
             } else {
                 crate::storage::normalize_note_text(
                     &verdict.rationale,
                     crate::storage::refusal_labels::RATIONALE,
-                )
-            }
+                )?
+            };
+            // As the record holds it, with the criterion's text, which the
+            // item supplies, and the resolved citations at their smallest.
+            Ok(CriterionVerdict {
+                criterion: String::new(),
+                verdict: verdict.verdict,
+                basis: verdict.basis,
+                rationale,
+                evidence: Vec::new(),
+            })
         })
         .collect::<Result<Vec<_>, StoreError>>()?;
-    let rationale_bytes = crate::canonical::CanonicalObject::freeze(&rationales)?
+    let verdict_bytes = crate::canonical::CanonicalObject::freeze(&smallest_verdicts)?
         .bytes()
         .len();
     Ok(ParsedEvaluation {
@@ -624,7 +653,7 @@ fn parse_evaluation_words(input: &WorkEvaluateInput) -> Result<ParsedEvaluation,
         verdicts,
         evaluator_model,
         supersedes,
-        rationale_bytes,
+        verdict_bytes,
     })
 }
 

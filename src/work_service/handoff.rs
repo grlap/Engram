@@ -61,7 +61,9 @@ impl LocalWorkService {
             }
             WorkHandoffInput::Accept { .. } => {}
         }
-        let mut store = self.store_at(now)?;
+        // The session registers at bind_target, after the named target
+        // resolves.
+        let mut store = self.lock_store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, true, target, now)?;
         let intent = self.protocol_intent(&input);

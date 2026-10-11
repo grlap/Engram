@@ -141,6 +141,20 @@ impl LocalWorkService {
     ) -> Result<WorkNextView, StoreError> {
         crate::storage::validate_context_generation(query.context_generation.as_deref())?;
         let fit_core = agent_options.is_none_or(|options| options.verbose);
+        // The acknowledgement's own shape is refused before the session
+        // registers, after the caller's attribution, as before; whether it
+        // matches the staged page is checked by storage.
+        self.validate_read_attribution(now)?;
+        if acknowledge_through.is_some_and(|through| through < 0) {
+            return Err(StoreError::InvalidWork(
+                crate::storage::refusal_labels::NEGATIVE_ACK_CURSOR.into(),
+            ));
+        }
+        if acknowledge_through.is_none() && acknowledge_token.is_some() {
+            return Err(StoreError::InvalidWork(
+                "work delivery token requires acknowledge_through".into(),
+            ));
+        }
         let mut store = self.store_at(now)?;
         if let Some(through) = acknowledge_through {
             store.acknowledge_work_session_delivery(
@@ -150,10 +164,6 @@ impl LocalWorkService {
                 acknowledge_token,
                 now,
             )?;
-        } else if acknowledge_token.is_some() {
-            return Err(StoreError::InvalidWork(
-                "work delivery token requires acknowledge_through".into(),
-            ));
         }
         let sections = selected_work_next_sections(&query.sections);
         let wants_changes = sections.contains(&WorkNextSection::Changes);

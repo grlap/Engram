@@ -38,6 +38,7 @@ pub(crate) use focus_journal::{
 };
 mod import;
 mod integrity;
+pub(crate) use import::validate_input as validate_work_import_input;
 pub(in crate::storage) use import::{
     native_source_notices_on, validate_restored_source_notices_on,
 };
@@ -75,6 +76,7 @@ mod writer_admission;
 pub(crate) use session::PendingWorkProtocolAttempt;
 #[cfg(test)]
 pub(crate) use session::before_refused_retirement;
+pub(in crate::storage) use session::register_process_default_in_write;
 pub use writer_admission::WorkWriterAdmissionReason;
 pub(crate) use writer_admission::WriterAdmissionWindow;
 #[cfg(test)]

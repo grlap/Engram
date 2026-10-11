@@ -49,7 +49,13 @@ pub(super) fn validate_key(source: &WorkSourceKey) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn validate_input(input: &WorkImportInput, now: DateTime<Utc>) -> Result<(), StoreError> {
+/// An import's own input, checked without the store: the snapshot and any
+/// draft. The service checks it before a session registers; apply checks it
+/// again as its first step.
+pub(crate) fn validate_input(
+    input: &WorkImportInput,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
     validate_work_source_snapshot(&input.snapshot, now)?;
     if let Some(draft) = &input.draft {
         if draft.acceptance.len() > 64 {

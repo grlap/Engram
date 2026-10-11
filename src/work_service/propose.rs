@@ -53,7 +53,8 @@ impl LocalWorkService {
             ),
         };
         validate_proposal_shape(&input)?;
-        let mut store = self.store_at(now)?;
+        // The session registers at bind_target, after the checks below.
+        let mut store = self.lock_store_at(now)?;
         // A pin naming a stored record is refused by a read alone, before the
         // proposal moves focus.
         match &input {

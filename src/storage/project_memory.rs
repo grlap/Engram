@@ -66,6 +66,112 @@ pub(crate) fn validate_context_generation(
     Ok(())
 }
 
+/// Every check of a remember request that reads nothing from the store, in
+/// the order the write applies them, so a caller can refuse a request before
+/// it opens or registers anything. Returns the redacted actor and the key.
+///
+/// # Errors
+///
+/// Refuses the session or actor, an empty or oversized body, text the
+/// redactor refuses, an unsafe key, a revise or partial edit without its key
+/// and basis, partial-edit text no basis admits, a cleared retirement target
+/// without a revise, and retirement target text out of shape. Whether a
+/// local target names an item is the store's to answer.
+pub(crate) fn validate_remember_request<R: Redactor>(
+    request: &RememberProjectMemoryRequest,
+    edit: &crate::domain::ProjectMemoryEdit,
+    redactor: &R,
+) -> Result<(ActorContext, String), StoreError> {
+    let partial = *edit != crate::domain::ProjectMemoryEdit::Whole;
+    admit_live_project_memory_sessions(&request.session_id, &request.actor)?;
+    validate_project_memory_authorization(&request.session_id, &request.actor)?;
+    let actor = validated_project_memory_actor(&request.actor, redactor)?;
+    validate_project_memory_authorization(&request.session_id, &actor)?;
+    // A section edit may clear its section; the body it builds keeps the
+    // markers, so it is never empty.
+    if request.body.trim().is_empty()
+        && !matches!(edit, crate::domain::ProjectMemoryEdit::Section { .. })
+    {
+        return Err(StoreError::InvalidProjectMemory(
+            "memory body must not be empty".into(),
+        ));
+    }
+    if request.body.len() > MAX_PROJECT_MEMORY_BODY_BYTES {
+        return Err(StoreError::InvalidProjectMemory(format!(
+            "memory body exceeds {MAX_PROJECT_MEMORY_BODY_BYTES} UTF-8 bytes"
+        )));
+    }
+    redactor
+        .inspect(&request.body)
+        .map_err(StoreError::RedactionRefused)?;
+    // Target text is stored and shown like the body, so it is inspected
+    // like the body before anything is resolved or written.
+    if let crate::domain::ProjectMemoryRetiringTargetChange::Set { target } =
+        &request.retiring_target
+    {
+        match target {
+            crate::domain::ProjectMemoryRetiringTargetInput::Local { work_ref } => {
+                redactor.inspect(work_ref)
+            }
+            crate::domain::ProjectMemoryRetiringTargetInput::External { project, reference } => {
+                redactor
+                    .inspect(project)
+                    .and_then(|()| redactor.inspect(reference))
+            }
+        }
+        .map_err(StoreError::RedactionRefused)?;
+    }
+    let key = match request.key.as_deref() {
+        Some(key) => validate_project_memory_key(key)?,
+        None => slug_project_memory_key(&request.body)?,
+    };
+    if (request.revise && request.key.is_none())
+        || (!request.revise && request.expected_revision.is_some())
+        || request.expected_revision == Some(0)
+    {
+        return Err(StoreError::InvalidProjectMemory(
+            REVISE_NEEDS_KEY_REFUSAL.cli.into(),
+        ));
+    }
+    if partial && (!request.revise || request.expected_revision.is_none()) {
+        return Err(StoreError::InvalidProjectMemory(
+            PARTIAL_EDIT_NEEDS_REVISE_REFUSAL.cli.into(),
+        ));
+    }
+    match &request.retiring_target {
+        crate::domain::ProjectMemoryRetiringTargetChange::Clear if !request.revise => {
+            return Err(StoreError::InvalidProjectMemory(
+                CLEAR_TARGET_NEEDS_REVISE_REFUSAL.cli.into(),
+            ));
+        }
+        crate::domain::ProjectMemoryRetiringTargetChange::Set { target } => {
+            validate_retiring_target_input(target)?;
+        }
+        _ => {}
+    }
+    Ok((actor, key))
+}
+
+/// Every check of a forget request that reads nothing from the store, so a
+/// caller can refuse it before it opens or registers anything. Returns the
+/// redacted actor and the key. A key the store does not hold is the store's
+/// refusal, not this one.
+///
+/// # Errors
+///
+/// Refuses the session or actor and an unsafe key.
+pub(crate) fn validate_forget_request<R: Redactor>(
+    request: &ForgetProjectMemoryRequest,
+    redactor: &R,
+) -> Result<(ActorContext, String), StoreError> {
+    admit_live_project_memory_sessions(&request.session_id, &request.actor)?;
+    validate_project_memory_authorization(&request.session_id, &request.actor)?;
+    let actor = validated_project_memory_actor(&request.actor, redactor)?;
+    validate_project_memory_authorization(&request.session_id, &actor)?;
+    let key = validate_project_memory_key(&request.key)?;
+    Ok((actor, key))
+}
+
 impl SqliteStore {
     /// Builds an attributed legacy revision that dropped its retirement
     /// target without recording a clear, for full-read surface regressions.
@@ -114,19 +220,9 @@ impl SqliteStore {
         )
     }
 
-    /// Creates or revises one project memory as
-    /// [`Self::remember_project_memory_with_admission`] does, building a
-    /// revise's body from the revision it names: the request's text replaces
-    /// the whole body, is appended, or replaces one marked section. A partial
-    /// edit names its basis revision, which must be the current one, and is
-    /// assembled in the writer transaction, so an exact retry replays rather
-    /// than appending twice.
-    ///
-    /// # Errors
-    ///
-    /// Refuses as the whole-body path does; a partial edit without `--revise`,
-    /// a key and a positive basis; a basis revision that does not exist; and
-    /// a section the basis lacks or a body whose markers do not pair.
+    /// [`Self::remember_project_memory_registering`] for a caller that
+    /// registers no session.
+    #[cfg(test)]
     pub(crate) fn remember_project_memory_edit_with_admission<R, A>(
         &mut self,
         request: &RememberProjectMemoryRequest,
@@ -138,69 +234,57 @@ impl SqliteStore {
         R: Redactor,
         A: Fn(&ProjectMemoryFull, ProjectMemoryAdmission) -> Result<(), StoreError>,
     {
+        self.remember_project_memory_registering(request, edit, redactor, admit_full_response, None)
+    }
+
+    /// Creates or revises one project memory as the whole-body path does,
+    /// building a revise's body from the revision it names: the request's
+    /// text replaces the whole body, is appended, or replaces one marked
+    /// section. A partial edit names its basis revision, which must be the
+    /// current one, and is assembled in the writer transaction, so an exact
+    /// retry replays rather than appending twice.
+    ///
+    /// With `register_at`, it first registers the request's fresh
+    /// process-default session inside that same transaction: the write keeps
+    /// the registration only when it succeeds, a replay included, so any
+    /// refusal leaves no session row and reclaims nothing.
+    ///
+    /// # Errors
+    ///
+    /// Refuses as the whole-body path does; a partial edit without `--revise`,
+    /// a key and a positive basis; a basis revision that does not exist; a
+    /// section the basis lacks or a body whose markers do not pair; or a
+    /// registration that fails.
+    pub(crate) fn remember_project_memory_registering<R, A>(
+        &mut self,
+        request: &RememberProjectMemoryRequest,
+        edit: &crate::domain::ProjectMemoryEdit,
+        redactor: &R,
+        admit_full_response: A,
+        register_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError>
+    where
+        R: Redactor,
+        A: Fn(&ProjectMemoryFull, ProjectMemoryAdmission) -> Result<(), StoreError>,
+    {
         let partial = *edit != crate::domain::ProjectMemoryEdit::Whole;
-        admit_live_project_memory_sessions(&request.session_id, &request.actor)?;
-        validate_project_memory_authorization(&request.session_id, &request.actor)?;
-        let actor = validated_project_memory_actor(&request.actor, redactor)?;
-        validate_project_memory_authorization(&request.session_id, &actor)?;
-        // A section edit may clear its section; the body it builds keeps the
-        // markers, so it is never empty.
-        if request.body.trim().is_empty()
-            && !matches!(edit, crate::domain::ProjectMemoryEdit::Section { .. })
-        {
-            return Err(StoreError::InvalidProjectMemory(
-                "memory body must not be empty".into(),
-            ));
-        }
-        if request.body.len() > MAX_PROJECT_MEMORY_BODY_BYTES {
-            return Err(StoreError::InvalidProjectMemory(format!(
-                "memory body exceeds {MAX_PROJECT_MEMORY_BODY_BYTES} UTF-8 bytes"
-            )));
-        }
-        redactor
-            .inspect(&request.body)
-            .map_err(StoreError::RedactionRefused)?;
-        // Target text is stored and shown like the body, so it is inspected
-        // like the body before anything is resolved or written.
-        if let crate::domain::ProjectMemoryRetiringTargetChange::Set { target } =
-            &request.retiring_target
-        {
-            match target {
-                crate::domain::ProjectMemoryRetiringTargetInput::Local { work_ref } => {
-                    redactor.inspect(work_ref)
-                }
-                crate::domain::ProjectMemoryRetiringTargetInput::External {
-                    project,
-                    reference,
-                } => redactor
-                    .inspect(project)
-                    .and_then(|()| redactor.inspect(reference)),
-            }
-            .map_err(StoreError::RedactionRefused)?;
-        }
-        let key = match request.key.as_deref() {
-            Some(key) => validate_project_memory_key(key)?,
-            None => slug_project_memory_key(&request.body)?,
-        };
-        if (request.revise && request.key.is_none())
-            || (!request.revise && request.expected_revision.is_some())
-            || request.expected_revision == Some(0)
-        {
-            return Err(StoreError::InvalidProjectMemory(
-                REVISE_NEEDS_KEY_REFUSAL.cli.into(),
-            ));
-        }
-        if partial && (!request.revise || request.expected_revision.is_none()) {
-            return Err(StoreError::InvalidProjectMemory(
-                PARTIAL_EDIT_NEEDS_REVISE_REFUSAL.cli.into(),
-            ));
-        }
+        let (actor, key) = validate_remember_request(request, edit, redactor)?;
         let mut request = request.clone();
         request.actor = actor;
 
+        let work_schema_version = self.opened_work_schema_version();
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(now) = register_at {
+            super::work::register_process_default_in_write(
+                &transaction,
+                work_schema_version,
+                &request.project_id,
+                &request.session_id,
+                now,
+            )?;
+        }
         let _ = project_memory_state_on(&transaction, &request.project_id)?;
         let history = lookup_project_memory_history_on(&transaction, &request.project_id, &key)?;
         let existing = history.last();
@@ -265,15 +349,11 @@ impl SqliteStore {
         } else {
             None
         };
+        // A clear without a revise was refused with the request's own checks.
         let clears_target = matches!(
             request.retiring_target,
             crate::domain::ProjectMemoryRetiringTargetChange::Clear
         );
-        if clears_target && !request.revise {
-            return Err(StoreError::InvalidProjectMemory(
-                CLEAR_TARGET_NEEDS_REVISE_REFUSAL.cli.into(),
-            ));
-        }
         let retiring_target = match &request.retiring_target {
             crate::domain::ProjectMemoryRetiringTargetChange::Keep => {
                 basis_version.and_then(|entry| entry.version.retiring_target.clone())
@@ -323,7 +403,7 @@ impl SqliteStore {
                     .checked_sub(1)
                     .and_then(|index| history.get(index))
                     .map(|before| edit::change(edit, &before.version.body, &replay.version.body));
-                return Ok(ProjectMemoryMutationReceipt {
+                let receipt = ProjectMemoryMutationReceipt {
                     key,
                     revision: replay_revision,
                     replaced_revision: request.revise.then_some(replay_revision - 1),
@@ -331,7 +411,11 @@ impl SqliteStore {
                     forgotten_at: None,
                     duplicate: true,
                     change,
-                });
+                };
+                // A replay writes nothing of its own; it commits so that a
+                // registration made in this transaction is kept.
+                transaction.commit()?;
+                return Ok(receipt);
             }
             if !request.revise {
                 return Err(StoreError::ProjectMemoryExists(key));
@@ -448,14 +532,37 @@ impl SqliteStore {
         request: &ForgetProjectMemoryRequest,
         redactor: &R,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
-        admit_live_project_memory_sessions(&request.session_id, &request.actor)?;
-        validate_project_memory_authorization(&request.session_id, &request.actor)?;
-        let actor = validated_project_memory_actor(&request.actor, redactor)?;
-        validate_project_memory_authorization(&request.session_id, &actor)?;
-        let key = validate_project_memory_key(&request.key)?;
+        self.forget_project_memory_registering(request, redactor, None)
+    }
+
+    /// [`Self::forget_project_memory`], first registering the request's
+    /// fresh process-default session at `register_at`, when given, inside the
+    /// same transaction: any refusal leaves no session row and reclaims
+    /// nothing.
+    ///
+    /// # Errors
+    ///
+    /// Refuses as that function does, or when the registration fails.
+    pub(crate) fn forget_project_memory_registering<R: Redactor>(
+        &mut self,
+        request: &ForgetProjectMemoryRequest,
+        redactor: &R,
+        register_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        let (actor, key) = validate_forget_request(request, redactor)?;
+        let work_schema_version = self.opened_work_schema_version();
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(now) = register_at {
+            super::work::register_process_default_in_write(
+                &transaction,
+                work_schema_version,
+                &request.project_id,
+                &request.session_id,
+                now,
+            )?;
+        }
         let _ = project_memory_state_on(&transaction, &request.project_id)?;
         let history = lookup_project_memory_history_on(&transaction, &request.project_id, &key)?;
         let existing = history
@@ -463,7 +570,7 @@ impl SqliteStore {
             .ok_or_else(|| StoreError::ProjectMemoryNotFound(key.clone()))?;
         let revision = history_revision(&history)?;
         if existing.assertion.status == MemoryStatus::Tombstoned {
-            return Ok(ProjectMemoryMutationReceipt {
+            let receipt = ProjectMemoryMutationReceipt {
                 key,
                 revision,
                 replaced_revision: None,
@@ -471,7 +578,11 @@ impl SqliteStore {
                 forgotten_at: Some(existing.assertion.created_at),
                 duplicate: true,
                 change: None,
-            });
+            };
+            // A replay writes nothing of its own; it commits so that a
+            // registration made in this transaction is kept.
+            transaction.commit()?;
+            return Ok(receipt);
         }
         if existing.assertion.status != MemoryStatus::Active {
             return Err(StoreError::InvalidMemoryProjection(format!(
@@ -1008,17 +1119,36 @@ fn resolve_retiring_target_on(
     use crate::domain::{
         ProjectMemoryRetiringTarget as Target, ProjectMemoryRetiringTargetInput as Input,
     };
+    validate_retiring_target_input(input)?;
     let target = match input {
+        Input::Local { work_ref } => {
+            let work = super::work::resolve_work_ref_on(connection, project_id, work_ref)?;
+            Target::Local {
+                work_id: work.work_id,
+                work_ref: work.short_ref,
+            }
+        }
+        Input::External { project, reference } => Target::External {
+            project: project.clone(),
+            reference: reference.clone(),
+        },
+    };
+    validate_retiring_target_shape(&target)?;
+    Ok(target)
+}
+
+/// The checks of a retirement target as given that read nothing from the
+/// store; resolving a local reference is the store's.
+fn validate_retiring_target_input(
+    input: &crate::domain::ProjectMemoryRetiringTargetInput,
+) -> Result<(), StoreError> {
+    use crate::domain::ProjectMemoryRetiringTargetInput as Input;
+    match input {
         Input::Local { work_ref } => {
             if work_ref.is_empty() || work_ref.len() > 128 || work_ref.trim() != work_ref {
                 return Err(StoreError::InvalidProjectMemory(
                     "local retirement reference is invalid".into(),
                 ));
-            }
-            let work = super::work::resolve_work_ref_on(connection, project_id, work_ref)?;
-            Target::Local {
-                work_id: work.work_id,
-                work_ref: work.short_ref,
             }
         }
         Input::External { project, reference } => {
@@ -1029,14 +1159,9 @@ fn resolve_retiring_target_on(
                     )));
                 }
             }
-            Target::External {
-                project: project.clone(),
-                reference: reference.clone(),
-            }
         }
-    };
-    validate_retiring_target_shape(&target)?;
-    Ok(target)
+    }
+    Ok(())
 }
 
 /// What target text may hold, in words for refusals and documentation.

@@ -55,6 +55,20 @@ pub(crate) struct WorkAuthoredVerdict {
     pub citations: Vec<String>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static BETWEEN_AMBIENT_FOCUS_READS: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `hook` once, between the ambient focus read and its view.
+#[cfg(test)]
+pub(crate) fn between_ambient_focus_reads(hook: impl FnOnce() + 'static) {
+    BETWEEN_AMBIENT_FOCUS_READS.with(|slot| {
+        assert!(slot.borrow_mut().replace(Box::new(hook)).is_none());
+    });
+}
+
 impl LocalWorkService {
     /// Current direct open optional children, independent of the rich focus
     /// fitter. All rows and admission diagnostics share one read snapshot.
@@ -64,7 +78,7 @@ impl LocalWorkService {
         limit: usize,
         now: DateTime<Utc>,
     ) -> Result<super::WorkChildFollowupPage, StoreError> {
-        let store = self.store_at(now)?;
+        let store = self.lock_store_at(now)?;
         store.work_read_snapshot(|store| {
             store.resolve_work_ref(&self.project_id, &parent.0.to_string())?;
             let children = store
@@ -104,7 +118,7 @@ impl LocalWorkService {
     ///
     /// Returns [`StoreError`] when the reference is absent or outside the project.
     pub fn select_work(&self, work_ref: &str, now: DateTime<Utc>) -> Result<(), StoreError> {
-        let mut store = self.store_at(now)?;
+        let mut store = self.lock_store_at(now)?;
         self.bind_target(&mut store, Some(work_ref), now)?;
         Ok(())
     }
@@ -119,7 +133,7 @@ impl LocalWorkService {
         &self,
         now: DateTime<Utc>,
     ) -> Result<Vec<(WorkId, DateTime<Utc>)>, StoreError> {
-        let store = self.store_at(now)?;
+        let store = self.lock_store_at(now)?;
         store.work_held_by(&self.session_id, now)
     }
 
@@ -130,7 +144,7 @@ impl LocalWorkService {
     ///
     /// Returns [`StoreError`] when the store cannot be read.
     pub fn held_work_refs(&self, now: DateTime<Utc>) -> Result<Vec<(WorkId, String)>, StoreError> {
-        let store = self.store_at(now)?;
+        let store = self.lock_store_at(now)?;
         store.work_held_refs_in_project(&self.project_id, &self.session_id, now)
     }
 
@@ -144,14 +158,15 @@ impl LocalWorkService {
         &self,
         now: DateTime<Utc>,
     ) -> Result<Vec<(WorkId, SessionId, DateTime<Utc>)>, StoreError> {
-        let store = self.store_at(now)?;
+        let store = self.lock_store_at(now)?;
         store.live_work_claims(&self.project_id, now)
     }
 
     /// Inspects work by reference without changing ambient focus or staging
-    /// any delivery. It uses the service's writable connection and may
-    /// register a process-default session; a host read that must write
-    /// nothing uses [`Self::work_inspect`].
+    /// any delivery. It uses the service's writable connection but registers
+    /// no process-default session, so a word can inspect its target before it
+    /// knows its request is admitted; a host read that must open the store
+    /// read-only uses [`Self::work_inspect`].
     ///
     /// # Errors
     ///
@@ -161,7 +176,7 @@ impl LocalWorkService {
         work_ref: &str,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
-        let store = self.store_at(now)?;
+        let store = self.lock_store_at(now)?;
         let work = store.resolve_work_ref(&self.project_id, work_ref)?;
         self.focus_view(&store, work.work_id, false, true, now)
     }
@@ -279,6 +294,33 @@ impl LocalWorkService {
         Ok(held)
     }
 
+    /// The session's focused item, as a focus-only `next` shows it, read
+    /// without staging anything or registering a process-default session,
+    /// so a word can find its ambient target before it knows its request is
+    /// admitted. `None` when the session has no focus. The focus and its view
+    /// come from one snapshot, as `next` reads them, so a concurrent focus
+    /// change cannot pair one focus with another's view. Unlike `next`, the
+    /// view is not fitted again beside other sections; the words read only
+    /// its status, holder and claim.
+    pub(crate) fn ambient_focus_view(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Option<WorkFocusView>, StoreError> {
+        let store = self.lock_store_at(now)?;
+        store.work_read_snapshot(|store| {
+            let focused = store
+                .work_session_state(&self.project_id, &self.session_id, now)?
+                .focused_work_id;
+            #[cfg(test)]
+            if let Some(hook) = BETWEEN_AMBIENT_FOCUS_READS.with(|slot| slot.borrow_mut().take()) {
+                hook();
+            }
+            focused
+                .map(|work_id| self.focus_view(store, work_id, true, false, now))
+                .transpose()
+        })
+    }
+
     /// Resolves one work reference without projecting or changing ambient
     /// focus. Agent translations use this only to attribute core refusals.
     pub(crate) fn resolve_work_reference(
@@ -286,7 +328,7 @@ impl LocalWorkService {
         work_ref: &str,
         now: DateTime<Utc>,
     ) -> Result<WorkItem, StoreError> {
-        self.store_at(now)?
+        self.lock_store_at(now)?
             .resolve_work_ref(&self.project_id, work_ref)
     }
 
@@ -369,8 +411,9 @@ impl LocalWorkService {
         work_ref: &str,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
-        let mut store = self.store_at(now)?;
+        let mut store = self.lock_store_at(now)?;
         let item = store.resolve_work_ref(&self.project_id, work_ref)?;
+        self.register_on(&mut store, now)?;
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
         self.focus_view(&store, item.work_id, true, true, now)
     }

@@ -193,6 +193,24 @@ impl SqliteStore {
         request: &RecordAcceptanceEvaluationRequest,
         redactor: &R,
     ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
+        self.record_acceptance_evaluation_registering(request, redactor, None)
+    }
+
+    /// [`Self::record_acceptance_evaluation`], first registering the fresh
+    /// process-default session `register` names, at its time, inside the
+    /// same transaction: the write keeps the registration only when it
+    /// succeeds, a replay included, so any refusal leaves no session row and
+    /// reclaims nothing.
+    ///
+    /// # Errors
+    ///
+    /// Refuses as that function does, or when the registration fails.
+    pub(crate) fn record_acceptance_evaluation_registering<R: Redactor>(
+        &mut self,
+        request: &RecordAcceptanceEvaluationRequest,
+        redactor: &R,
+        register: Option<(&SessionId, chrono::DateTime<chrono::Utc>)>,
+    ) -> Result<AcceptanceEvaluationReceipt, StoreError> {
         inspect_work_request(redactor, request, &request.evaluator)?;
         crate::storage::admit_live_actor_session(&request.evaluator)?;
         let evaluator_session = IdentityShape::of_request(request)
@@ -201,6 +219,14 @@ impl SqliteStore {
             .ok_or_else(|| refused(request.work_id, "the evaluator must carry a session id"))?;
         validate_request_shape(request)?;
         let transaction = self.begin_work_mutation()?;
+        if let Some((session_id, now)) = register {
+            super::session::register_process_default_work_session_on(
+                &transaction,
+                &request.project_id,
+                session_id,
+                now,
+            )?;
+        }
         let item = load_work_item(&transaction, request.work_id)?;
         if item.project_id != request.project_id {
             return Err(refused(item.work_id, "the item belongs to another project"));

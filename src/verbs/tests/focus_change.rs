@@ -353,6 +353,56 @@ fn claim_under_reports_the_net_move_only() {
     assert_eq!(moved(&renewed), None, "child to parent to child is no move");
 }
 
+// Adding under a parent inspects the parent rather than focusing it first;
+// the proposal binds it, then focuses the new child. The net move is from
+// where the session was to the child, with nothing in between disclosed,
+// and the session's focus is the child afterwards.
+#[test]
+fn add_under_moves_focus_from_the_session_focus_to_the_new_child() {
+    let (agent, _peer, database) = sessions();
+    let parent = add(&agent.verbs, "Parent", None, 1);
+    let other = add(&agent.verbs, "Other", None, 2);
+
+    let added = agent
+        .verbs
+        .add(
+            AddInput {
+                title: "Child".into(),
+                acceptance: vec!["Child works".into()],
+                under: Some(parent),
+                ..AddInput::default()
+            },
+            at(3),
+        )
+        .expect("add under");
+    let child = added.value["work"]["short_ref"]
+        .as_str()
+        .expect("child ref")
+        .to_owned();
+    assert_eq!(
+        added.value["focus_change"],
+        json!({"from": other, "to": child}),
+        "{}",
+        added.value
+    );
+    assert!(text_has_move(&added, &other, &child), "{}", added.text());
+    let focused = SqliteStore::open(&database)
+        .expect("store")
+        .work_session_state(
+            &ProjectId("focus-change".into()),
+            &SessionId("agent".into()),
+            at(4),
+        )
+        .expect("session")
+        .focused_work_id;
+    let child_id = SqliteStore::open(&database)
+        .expect("store")
+        .resolve_work_ref(&ProjectId("focus-change".into()), &child)
+        .expect("child")
+        .work_id;
+    assert_eq!(focused, Some(child_id));
+}
+
 // Two words of one session run at once on two threads over one shared
 // service, as the MCP server runs them; each receipt carries only a move its
 // own word made.

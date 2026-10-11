@@ -215,23 +215,41 @@ impl LocalWorkService {
         bindings: &[crate::domain::AcceptanceBinding],
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        self.store_at(now)?.refuse_record_id_pins(bindings)
+        self.lock_store_at(now)?.refuse_record_id_pins(bindings)
     }
 
+    /// The writable store with this session registered: the composition of
+    /// [`Self::lock_store_at`] and [`Self::register_on`], for a path whose
+    /// request checks all come before it.
     pub(super) fn store_at(
         &self,
         now: DateTime<Utc>,
     ) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
         let mut store = self.lock_store_at(now)?;
-        if let Some(window) = self.note_word_window() {
-            let mut scoped = store.note_writer_admission_with_window(window);
-            self.initialize_process_default_session_on(&mut scoped, now)?;
-        } else {
-            self.initialize_process_default_session_on(&mut store, now)?;
-        }
+        self.register_on(&mut store, now)?;
         Ok(store)
     }
 
+    /// Registers a process-default session on the guard the word already
+    /// holds, once, inside the note word's writer-admission window when one
+    /// is open. A word calls it immediately before its first write, after its
+    /// request checks, so a request refused for its own input leaves no
+    /// session behind.
+    pub(super) fn register_on(
+        &self,
+        store: &mut SqliteStore,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        if let Some(window) = self.note_word_window() {
+            let mut scoped = store.note_writer_admission_with_window(window);
+            self.initialize_process_default_session_on(&mut scoped, now)
+        } else {
+            self.initialize_process_default_session_on(store, now)
+        }
+    }
+
+    /// The note word's store, inside its writer-admission window. The capture
+    /// registers the session itself, after its request checks.
     pub(super) fn with_note_store_at<T>(
         &self,
         now: DateTime<Utc>,
@@ -242,11 +260,33 @@ impl LocalWorkService {
             Some(window) => store.note_writer_admission_with_window(window),
             None => store.note_writer_admission(),
         };
-        self.initialize_process_default_session_on(&mut store, now)?;
         capture(&mut store)
     }
 
-    fn initialize_process_default_session_on(
+    /// The time a write that registers this session inside its own
+    /// transaction must register it at, while a fresh process-default session
+    /// is still unregistered; `None` once nothing is owed. The caller records
+    /// the registration with [`Self::process_default_registered`] only after
+    /// that write succeeds.
+    pub(super) fn process_default_registration_due(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Option<DateTime<Utc>> {
+        (self
+            .session_id
+            .0
+            .starts_with(PROCESS_DEFAULT_WORK_SESSION_NAMESPACE)
+            && self.process_default_session_initialized.get().is_none())
+        .then_some(now)
+    }
+
+    /// Records that a write registered this session in its own transaction
+    /// and committed.
+    pub(super) fn process_default_registered(&self) {
+        let _ = self.process_default_session_initialized.set(());
+    }
+
+    pub(super) fn initialize_process_default_session_on(
         &self,
         store: &mut SqliteStore,
         now: DateTime<Utc>,
@@ -269,8 +309,9 @@ impl LocalWorkService {
 
     /// Read words validate attribution, then open the existing store
     /// read-only for this one call, as peek does: they record nothing, never
-    /// register a process-default session (its first stateful operation still
-    /// does that in `store_at`), and never create or initialize a store; a
+    /// register a process-default session (a stateful word registers it
+    /// with `register_on`, on its own guard, just before its first write),
+    /// and never create or initialize a store; a
     /// path without one refuses with `store_not_initialized`. A refusal is
     /// never retried through the writable connection.
     pub(super) fn read_store_at(&self, now: DateTime<Utc>) -> Result<ReadStore, StoreError> {
@@ -354,7 +395,14 @@ impl LocalWorkService {
         self.lock_store_at(now)
     }
 
-    fn lock_store_at(&self, now: DateTime<Utc>) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+    /// The writable store without registering a process-default session:
+    /// for reads a word makes before it knows its request is admitted, and
+    /// for request checks that need the store. A word registers on this same
+    /// guard with [`Self::register_on`] before its first write.
+    pub(super) fn lock_store_at(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
         self.validate_read_attribution(now)?;
         self.lock_validated_store()
     }
@@ -692,7 +740,7 @@ impl LocalWorkService {
         &self,
         now: DateTime<Utc>,
     ) -> Result<crate::domain::AcceptanceEvaluationPolicy, StoreError> {
-        self.store_at(now)?.acceptance_evaluation_policy()
+        self.lock_store_at(now)?.acceptance_evaluation_policy()
     }
 
     /// The keyless attempt identity of clearing one named blocker: this
@@ -725,16 +773,22 @@ impl LocalWorkService {
     /// Resolves an optional caller-supplied target, makes it the ambient
     /// focus on this connection, and returns its id so the mutation binds to
     /// it regardless of any concurrent focus change by the same session.
+    /// It is a word's first write: the session registers here, after the
+    /// named target resolves and every request check before it, whether or
+    /// not a target is named.
     pub(super) fn bind_target(
         &self,
         store: &mut SqliteStore,
         work_ref: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<Option<WorkId>, StoreError> {
-        let Some(work_ref) = work_ref else {
+        let work = work_ref
+            .map(|work_ref| store.resolve_work_ref(&self.project_id, work_ref))
+            .transpose()?;
+        self.register_on(store, now)?;
+        let Some(work) = work else {
             return Ok(None);
         };
-        let work = store.resolve_work_ref(&self.project_id, work_ref)?;
         store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
         Ok(Some(work.work_id))
     }

@@ -102,23 +102,37 @@ impl LocalWorkService {
         edit: &crate::domain::ProjectMemoryEdit,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
-        self.store_at(now)?
-            .remember_project_memory_edit_with_admission(
-                &RememberProjectMemoryRequest {
-                    project_id: self.project_id.clone(),
-                    session_id: self.session_id.clone(),
-                    key,
-                    revise,
-                    expected_revision,
-                    body,
-                    retiring_target,
-                    actor: self.actor("remember", "record attributed project memory"),
-                    created_at: now,
-                },
-                edit,
-                &DevelopmentNoopRedactor,
-                ensure_project_memory_full_is_admissible,
-            )
+        let request = RememberProjectMemoryRequest {
+            project_id: self.project_id.clone(),
+            session_id: self.session_id.clone(),
+            key,
+            revise,
+            expected_revision,
+            body,
+            retiring_target,
+            actor: self.actor("remember", "record attributed project memory"),
+            created_at: now,
+        };
+        // Attribution and a read-only connection refuse first, as before; the
+        // lock registers nothing. The request's own shape checks then refuse
+        // early, and the write repeats them.
+        let mut store = self.lock_store_at(now)?;
+        crate::storage::validate_remember_request(&request, edit, &DevelopmentNoopRedactor)?;
+        // The session registers inside the write's own transaction, which
+        // keeps it only when the write succeeds: no refusal, of the request
+        // or of the store, leaves a session behind.
+        let register_at = self.process_default_registration_due(now);
+        let receipt = store.remember_project_memory_registering(
+            &request,
+            edit,
+            &DevelopmentNoopRedactor,
+            ensure_project_memory_full_is_admissible,
+            register_at,
+        )?;
+        if register_at.is_some() {
+            self.process_default_registered();
+        }
+        Ok(receipt)
     }
 
     /// Lists live project memories without exposing body text.
@@ -215,16 +229,31 @@ impl LocalWorkService {
         key: String,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
-        self.store_at(now)?.forget_project_memory(
-            &ForgetProjectMemoryRequest {
-                project_id: self.project_id.clone(),
-                session_id: self.session_id.clone(),
-                key,
-                actor: self.actor("forget", "retire attributed project memory"),
-                created_at: now,
-            },
+        let request = ForgetProjectMemoryRequest {
+            project_id: self.project_id.clone(),
+            session_id: self.session_id.clone(),
+            key,
+            actor: self.actor("forget", "retire attributed project memory"),
+            created_at: now,
+        };
+        // Attribution and a read-only connection refuse first, as before; the
+        // lock registers nothing. The request's own shape checks then refuse
+        // early, and the write repeats them.
+        let mut store = self.lock_store_at(now)?;
+        crate::storage::validate_forget_request(&request, &DevelopmentNoopRedactor)?;
+        // The session registers inside the write's own transaction, which
+        // keeps it only when the write succeeds: a key the store lacks leaves
+        // no session behind either.
+        let register_at = self.process_default_registration_due(now);
+        let receipt = store.forget_project_memory_registering(
+            &request,
             &DevelopmentNoopRedactor,
-        )
+            register_at,
+        )?;
+        if register_at.is_some() {
+            self.process_default_registered();
+        }
+        Ok(receipt)
     }
 }
 

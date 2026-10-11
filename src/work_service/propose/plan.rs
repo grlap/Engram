@@ -61,8 +61,11 @@ impl LocalWorkService {
             &WorkProposeResult::Plan(bound),
             MAX_WORK_PLAN_RESPONSE_BYTES,
         )?;
-        let mut store = self.store_at(now)?;
+        let mut store = self.lock_store_at(now)?;
         validated.refuse_unresolvable_on(&store, &self.project_id)?;
+        // The session registers once the plan's references resolve, before
+        // its attempt is written.
+        self.register_on(&mut store, now)?;
         let input = WorkProposeInput::Plan { plan: plan.clone() };
         let basis = (); // New roots have no ambient target or claim basis.
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {

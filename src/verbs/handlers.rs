@@ -8,9 +8,9 @@ use super::{
     WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION, WorkAttributionDefaults,
     WorkAvailability, WorkBlockerKind, WorkChildInput, WorkCompleteInput, WorkCompleteResult,
     WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput, WorkItemKind, WorkLifecycle,
-    WorkNextQuery, WorkNextSection, WorkNextView, WorkPrerequisiteState, WorkProposeInput,
-    WorkProposeResult, WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, held_suffix,
-    item_line, json, lifecycle_word, nonempty,
+    WorkNextQuery, WorkNextSection, WorkPrerequisiteState, WorkProposeInput, WorkProposeResult,
+    WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, held_suffix, item_line, json,
+    lifecycle_word, nonempty,
     receipts::{compact_next_lines, compact_next_receipt, compact_next_value, ready_line},
     section_word, short,
     show::{fit_show_receipt, live, show_lines, show_receipt_value},
@@ -1261,13 +1261,14 @@ impl AgentVerbs {
         child: WorkChildInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
-        // Focusing the parent comes first, so a pin the proposal would refuse
-        // is refused before it.
+        // A pin the proposal would refuse is refused first. The parent is
+        // only inspected here: the proposal binds it after its own checks,
+        // so a refused child leaves focus and the session as they were.
         self.service
             .refuse_record_id_pins(&child.acceptance_bindings, now)?;
         let parent = self
             .service
-            .work_focus(under, now)
+            .inspect_work(under, now)
             .map_err(|error| VerbError::at(error, under))?;
         let parent_ref = parent.status.work.short_ref.clone();
         let result = self
@@ -1980,17 +1981,10 @@ impl AgentVerbs {
         )))
     }
 
-    /// Reads the ambient focus without staging or acknowledging deliveries.
+    /// The session's ambient focus, read without staging or acknowledging
+    /// deliveries and without registering a session.
     fn focused(&self, now: DateTime<Utc>) -> Result<Option<WorkFocusView>, VerbError> {
-        let view: WorkNextView = self.service.work_next(
-            1,
-            WorkNextQuery {
-                sections: vec![WorkNextSection::Focus],
-                ..WorkNextQuery::default()
-            },
-            now,
-        )?;
-        Ok(view.focus)
+        Ok(self.service.ambient_focus_view(now)?)
     }
 
     fn refreshed(

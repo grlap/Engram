@@ -29,6 +29,7 @@ pub(crate) const WAIVER_NEEDS_DISPOSED_REQUIRED_CHILD: &str =
 pub(crate) const HANDOFF_TO_ITSELF: &str = "handoff source and destination must differ";
 pub(crate) const UNBOUND_LOCAL_ACTOR: &str =
     "local work requires a non-empty asserted actor and session binding";
+pub(crate) const NEGATIVE_ACK_CURSOR: &str = "work acknowledgement cursor must not be negative";
 
 /// A proposed prerequisite edge whose gated child is not among the proposal.
 pub(crate) fn unknown_child_edge(work_key: &str) -> String {

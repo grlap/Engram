@@ -31,12 +31,14 @@ mod task_memory;
 mod unadmitted_observation;
 mod verification_bind;
 mod work;
+pub(crate) use project_memory::{validate_forget_request, validate_remember_request};
 pub(crate) use work::PendingWorkProtocolAttempt;
 pub(crate) use work::WriterAdmissionWindow;
 #[cfg(test)]
 pub(crate) use work::before_refused_retirement;
 #[cfg(test)]
 pub(crate) use work::last_writer_admission_allowance;
+pub(crate) use work::validate_work_import_input;
 #[cfg(test)]
 pub(crate) use work::with_writer_admission_test_policy;
 

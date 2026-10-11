@@ -2,6 +2,7 @@ use super::super::test_support::*;
 use super::super::*;
 
 mod held;
+mod registration;
 
 #[test]
 fn a_completed_landing_without_a_readable_native_seal_is_unavailable() {

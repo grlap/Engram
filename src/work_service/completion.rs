@@ -278,7 +278,8 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkCompleteResult, StoreError> {
         validate_completion_request(&input)?;
-        let mut store = self.store_at(now)?;
+        // The session registers at bind_target, after the checks below.
+        let mut store = self.lock_store_at(now)?;
         if let Some(acceptance) = &input.acceptance
             && let Some(item) = self.preview_target(&store, work_ref, now)?
         {

@@ -82,6 +82,11 @@ impl LocalWorkService {
         token: &ObjectId,
         now: DateTime<Utc>,
     ) -> Result<WorkImportReceipt, StoreError> {
+        // The input's own shape is refused before the session registers,
+        // after the caller's attribution, as before; the preview token,
+        // source and replay are storage's to judge.
+        self.validate_read_attribution(now)?;
+        crate::storage::validate_work_import_input(input, now)?;
         self.store_at(now)?.apply_work_import(
             &self.project_id,
             input,

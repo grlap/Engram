@@ -80,6 +80,80 @@ fn evaluate_input(
     }
 }
 
+// A fresh process-default session whose first word is an evaluation the
+// store records registers inside that write: its row appears at the write's
+// time, and the service records the registration.
+#[test]
+fn a_first_evaluation_registers_inside_its_own_write() {
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("engram.sqlite3");
+    let project = ProjectId("evaluated-registration".into());
+    let holder = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("holder".into()),
+        Some("protocol-test".into()),
+    );
+    let root = proposed_root(
+        holder
+            .work_propose(root_input("Evaluated root", "evaluated-root"), at(0))
+            .expect("root"),
+    );
+    holder
+        .work_update(
+            WorkUpdateInput::Claim {
+                ttl_seconds: Some(3_600),
+                recovery_reason: None,
+                idempotency_key: "evaluated-claim".into(),
+            },
+            at(1),
+        )
+        .expect("claim");
+    enable(
+        &database,
+        &[AcceptanceEvaluationMode::IndependentSession],
+        2,
+    );
+    let evaluator = LocalWorkService::new_with_attribution(
+        database.clone(),
+        project,
+        "evaluator".into(),
+        process_default_session_at(40, at(10)),
+        None,
+        None,
+        WorkAttributionDefaults {
+            actor: None,
+            session: true,
+        },
+    );
+    let mut input = evaluate_input(
+        &root.short_ref,
+        root.revision,
+        completion_run_feed_head(&holder, root.work_id),
+        vec![verdict(1, "fail", "asserted", &[])],
+    );
+    input.mode = "independent_session".into();
+    evaluator
+        .work_evaluate_on(&input, at(10))
+        .expect("the evaluation is recorded");
+    let row: Option<i64> = rusqlite::Connection::open(&database)
+        .expect("reader")
+        .query_row(
+            "SELECT updated_at_ms FROM work_session_state WHERE session_id = ?1",
+            [&evaluator.session_id.0],
+            |row| row.get(0),
+        )
+        .ok();
+    assert_eq!(row, Some(at(10).timestamp_millis()));
+    assert!(
+        evaluator
+            .process_default_session_initialized
+            .get()
+            .is_some()
+    );
+}
+
 // The service word binds the ambient focus, the printed revision basis, and
 // the session's attributed identity; completion then consumes only a fresh
 // passing record, and peers see the evaluation as one `next` change.
