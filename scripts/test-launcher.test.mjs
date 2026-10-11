@@ -1793,13 +1793,86 @@ test("Cargo frames preserve outer counts beside killed children without summarie
   await repository(async (root) => {
     const outer = libtest(5, 0, 1, 0).replace("tests\n", "tests\nrunning 1 test\nrunning 1 test\n");
     for (const marker of ["     Running unittests src/lib.rs (target/debug/deps/fixture)",
-      "     Running tests/contract.rs (C:\\build dir\\fixture.exe)", "   Doc-tests engram"]) {
+      "     Running tests/contract.rs (C:\\build dir\\fixture.exe)"]) {
       const text = `${cargoFrame(outer, marker)}${cargoFrame(libtest(2, 0, 0, 17))}${cargoFrame(libtest(0, 0, 0, 4))}`;
       for (const styled of [text, `\x1b[32m${text.replaceAll("\n", "\r\n")}\x1b[0m`]) {
         assert.deepEqual(await counted(root, styled, { cargoFrames: true }), complete(7, 7, 0, 1, 3, 21));
         assert.equal((await counted(root, styled)).executed, "unknown", "Cargo-looking text alone never opts in");
       }
     }
+  });
+});
+
+test("Cargo Doc-tests count the captured mixed edition-2024 rustdoc runners", async () => {
+  await repository(async (root) => {
+    const transcript = readFileSync(new URL("./fixtures/mixed-edition-doctests.txt", import.meta.url), "utf8");
+    assert.equal(transcript.match(/^\s*Doc-tests .+$/gmu).length, 1);
+    assert.equal(transcript.match(/^running 1 test$/gmu).length, 2);
+    assert.equal(transcript.match(/^test result: ok\./gmu).length, 2);
+    assert.deepEqual(await counted(root, transcript, { cargoFrames: true }), complete(2, 2, 0, 0, 2, 0));
+    // cargo test --doc does not run unit tests; an ordinary Cargo stage does.
+    const ordinary = cargoFrame(libtest(0, 0, 0, 0)) + transcript;
+    assert.deepEqual(await counted(root, ordinary, { cargoFrames: true }), complete(2, 2, 0, 0, 3, 0));
+  });
+});
+
+test("Cargo Doc-tests accept sequential pairs, including zero runners and frame transitions", async () => {
+  await repository(async (root) => {
+    const pairs = libtest(0, 0, 0, 2) + libtest(2, 0, 1, 3) + libtest(2, 0, 0, 4);
+    const text = cargoFrame(pairs, "   Doc-tests fixture") + cargoFrame(libtest(1, 0, 0, 5));
+    for (const styled of [text, `\x1b[32m${text.replaceAll("\n", "\r\n")}\x1b[0m`, text.trimEnd()]) {
+      assert.deepEqual(await counted(root, styled, { cargoFrames: true }), complete(5, 5, 0, 1, 4, 14));
+    }
+    assert.deepEqual(await counted(root, cargoFrame(libtest(0, 0, 0, 0).repeat(2), "   Doc-tests fixture"),
+      { cargoFrames: true }), complete(0, 0, 0, 0, 2, 0));
+  });
+});
+
+test("Cargo Doc-tests invalidate the whole frame for overlapping or unfinished pairs", async () => {
+  await repository(async (root) => {
+    const pair = libtest(3, 0, 0, 0), summary = pair.split("\n")[1];
+    const max = Number.MAX_SAFE_INTEGER;
+    const cases = [
+      ["", "incomplete-summary"],
+      [summary + "\n", "incomplete-summary"],
+      ["running 3 tests\n", "incomplete-summary"],
+      [pair + "running 1 test\n", "incomplete-summary"],
+      [pair + summary + "\n", "ambiguous-summary"],
+      ["running 3 tests\nrunning 1 test\n" + summary + "\n", "ambiguous-summary"],
+      ["running 3 tests\nrunning 3 tests\n" + summary + "\n", "ambiguous-summary"],
+      ["running 3 tests\n" + libtest(1, 0, 0, 0) + summary + "\n", "ambiguous-summary"],
+      [pair + pair.replace("3 passed", "2 passed"), "ambiguous-summary"],
+      [pair + pair.replace("0 measured", "1 measured"), "benchmarks"],
+      [pair + "running invalid tests\n", "malformed-summary"],
+      [pair + "running 1 test\ntest result: ok. 1 passed;", "malformed-summary"],
+      [pair + pair.replace("running 3", "running 9007199254740992"), "malformed-summary"],
+      [pair + pair.replace("3 passed", "9007199254740992 passed"), "malformed-summary"],
+      [pair + "running " + "0".repeat(20_000) + "1 test\n", "malformed-summary"],
+      [pair + "test result: " + "x".repeat(20_000) + "\n", "malformed-summary"],
+      [pair + nodeSummary("#", { tests: 1, pass: 1 }), "ambiguous-summary"],
+      [pair + "# tests invalid\n", "malformed-summary"],
+      [pair + "# tests " + "0".repeat(20_000) + "1\n", "malformed-summary"],
+      [libtest(max, 0, 0, 0) + libtest(1, 0, 0, 0), "malformed-summary"],
+      [libtest(max, 0, 0, 0) + libtest(0, 1, 0, 0), "malformed-summary"],
+      [libtest(0, 0, 0, max) + libtest(0, 0, 0, 1), "malformed-summary"],
+    ];
+    for (const [body, why] of cases) {
+      for (const next of ["", cargoFrame(libtest(1, 0, 0, 0))]) {
+        const separator = next && body && !body.endsWith("\n") ? "\n" : "";
+        const result = await counted(root, cargoFrame(body, "   Doc-tests fixture") + separator + next, { cargoFrames: true });
+        assert.equal(result.executed, "unknown", body.slice(0, 200));
+        assert.equal(result.why, why, body.slice(0, 200));
+        assert.equal(result.runners, next ? 1 : 0,
+          "a later defect discards every earlier pair in its frame: " + body.slice(0, 200));
+        for (const field of ["passed", "failed", "ignored"]) assert.equal(Object.hasOwn(result, field), false);
+      }
+    }
+    const failing = pair + "running 3 tests\n" + libtest(0, 1, 0, 0) + summary + "\n";
+    assert.deepEqual(await counted(root, cargoFrame(failing, "   Doc-tests fixture"), { cargoFrames: true }),
+      { executed: "unknown", why: "ambiguous-summary", runners: 0, filteredOut: 0, failures: 1 });
+    assert.deepEqual(await counted(root, cargoFrame(pair + nodeSummary("#", { tests: 1, pass: 0, fail: 1 }),
+      "   Doc-tests fixture"), { cargoFrames: true }),
+      { executed: "unknown", why: "ambiguous-summary", runners: 0, filteredOut: 0, failures: 1 });
   });
 });
 
@@ -1859,12 +1932,19 @@ test("Cargo phase execution preserves native exits, failure masking and count re
     const outer = libtest(3, 0, 1, 0);
     const nested = cargoFrame(outer.replace("tests\n", "tests\nrunning 1 test\nrunning 1 test\n"));
     const failingChild = cargoFrame("running 4 tests\n" + libtest(0, 1, 0, 0) + outer.split("\n")[1] + "\n");
+    const doctests = cargoFrame(libtest(1, 0, 0, 0).repeat(2), "   Doc-tests fixture");
+    const doctestFailure = cargoFrame(libtest(1, 0, 0, 0) + libtest(0, 1, 0, 0), "   Doc-tests fixture");
+    const doctestOverlap = cargoFrame("running 2 tests\n" + libtest(0, 1, 0, 0), "   Doc-tests fixture");
     for (const [text, code, state, why] of [[nested, 0, "passed", undefined],
       [cargoFrame("running 4 tests\n"), 0, "passed", "incomplete-summary"],
       [failingChild, 0, "failed", "ambiguous-summary"],
       [cargoFrame(libtest(0, 1, 0, 0)), 0, "failed", undefined],
       [nested, 101, "failed", undefined],
-      [cargoFrame("running 4 tests\n"), 101, "failed", "incomplete-summary"]]) {
+      [cargoFrame("running 4 tests\n"), 101, "failed", "incomplete-summary"],
+      [doctests, 0, "passed", undefined], [doctests, 101, "failed", undefined],
+      [doctestFailure, 0, "failed", undefined], [doctestFailure, 101, "failed", undefined],
+      [doctestOverlap, 0, "failed", "ambiguous-summary"],
+      [doctestOverlap, 101, "failed", "ambiguous-summary"]]) {
       writeFileSync(join(root, "scripts", "test-temp.mjs"), `process.stdout.write(${JSON.stringify(text)}); process.exitCode = ${code};`);
       const { result, record } = await recordOf(root, [{ ...ordinary, name: "owner-from-command" },
         printing("later", "test", libtest(1, 0, 0, 0))]);
@@ -1876,7 +1956,8 @@ test("Cargo phase execution preserves native exits, failure masking and count re
         assert.equal(record.stages[0].executed, "unknown");
         assert.equal(record.stages[0].passed, undefined);
         assert.equal(countsAsPassedTests(record), false);
-      } else assert.equal(record.stages[0].executed, text === nested ? "3" : "1");
+      } else assert.equal(record.stages[0].executed, text === nested ? "3"
+        : text === doctests || text === doctestFailure ? "2" : "1");
     }
     // The same full-stage name and framed text through another command stay generic.
     const generic = await recordOf(root, [printing("rust", "test", nested)], { full: true });

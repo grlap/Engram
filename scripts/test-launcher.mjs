@@ -200,9 +200,12 @@ async function eachLine(log, accept) {
 // at the start of a line is counted as one. `failures` is the failed count
 // of every complete summary whose failed count reads, whatever became of the
 // executed count. For the repository's serial Cargo phases, explicit Cargo
-// frames own the first announcement and one outer summary. Unequal child
-// announcements without summaries do not replace that announcement or add
-// tests. Any ambiguous summary attribution still gives no numeric count.
+// Running frames own the first announcement and one outer summary. Unequal
+// child announcements without summaries do not replace it or add tests.
+// Doc-tests frames accept sequential complete announcement/summary pairs;
+// overlapping announcements invalidate the whole frame. Text alone cannot
+// distinguish a byte-identical forwarded transcript from rustdoc's output.
+// Any ambiguous summary attribution still gives no numeric count.
 // A log that cannot be read gives no count.
 export async function countTests(log, { cargoFrames = false } = {}) {
   const counted = { passed: 0, failed: 0, ignored: 0, runners: 0, filteredOut: 0 };
@@ -212,13 +215,16 @@ export async function countTests(log, { cargoFrames = false } = {}) {
   let why = null, running = null, streams = 0, block = null, failures = 0, frame = null;
   const unknown = (reason) => { why ??= reason; };
   const uncertainFrame = (reason) => { unknown(reason); if (frame) frame.invalid = true; };
-  const add = (passed, failed, ignored, filteredOut) => {
+  const add = (passed, failed, ignored, filteredOut, runners = 1) => {
     counted.passed += passed; counted.failed += failed; counted.ignored += ignored;
-    counted.filteredOut += filteredOut; counted.runners += 1;
+    counted.filteredOut += filteredOut; counted.runners += runners;
   };
   const finishFrame = () => {
     if (!frame) return;
-    if (frame.result === null) uncertainFrame("incomplete-summary");
+    if (frame.docTests) {
+      if (frame.announced !== null || frame.runners === 0) uncertainFrame("incomplete-summary");
+      else if (!frame.invalid) add(...frame.totals, frame.runners);
+    } else if (frame.result === null) uncertainFrame("incomplete-summary");
     else if (!frame.invalid) add(...frame.result);
     frame = null;
   };
@@ -228,7 +234,10 @@ export async function countTests(log, { cargoFrames = false } = {}) {
     if (tooLong) {
       // Only its beginning is known. Inside a summary, or beginning as one,
       // it is a summary line that does not read.
-      if (block || /^(?:test result:|(?:ℹ|#) tests(?:\s|$))/u.test(line)) unknown("malformed-summary");
+      if (block || /^(?:test result:|(?:ℹ|#) tests(?:\s|$))/u.test(line)) {
+        if (cargoFrames) uncertainFrame("malformed-summary");
+        else unknown("malformed-summary");
+      }
       if (cargoFrames && (cargoMarker || /^running(?:\s|$)/u.test(line) || line.startsWith("test result:")))
         uncertainFrame("malformed-summary");
       if (block?.mark === "#") streams -= 1;
@@ -238,7 +247,8 @@ export async function countTests(log, { cargoFrames = false } = {}) {
     }
     if (cargoFrames && cargoMarker) {
       finishFrame();
-      frame = { announced: null, result: null, invalid: false };
+      frame = { docTests: /^\s*Doc-tests(?:\s|$)/u.test(line), announced: null,
+        result: null, totals: [0, 0, 0, 0], runners: 0, invalid: false };
       if (!/^\s*Running .+ \(.+\)$/u.test(line) && !/^\s*Doc-tests \S.*$/u.test(line))
         uncertainFrame("malformed-summary");
       return;
@@ -256,7 +266,7 @@ export async function countTests(log, { cargoFrames = false } = {}) {
           else {
             if (tests !== pass + fail + cancelled + skipped + todo) unknown("inconsistent-summary");
             else if (cancelled !== 0) unknown("cancelled-tests");
-            else add(pass, fail, skipped + todo, 0);
+            else if (!cargoFrames) add(pass, fail, skipped + todo, 0);
           }
           if (block.mark === "#") streams -= 1;
           block = null;
@@ -270,7 +280,11 @@ export async function countTests(log, { cargoFrames = false } = {}) {
       block = { mark: first[1], values: [Number(first[2])] }; return;
     }
     // A summary's first line that does not read is still a summary's.
-    if (/^(?:ℹ|#) tests(?:\s|$)/u.test(line)) { unknown("malformed-summary"); return; }
+    if (/^(?:ℹ|#) tests(?:\s|$)/u.test(line)) {
+      if (cargoFrames) uncertainFrame("malformed-summary");
+      else unknown("malformed-summary");
+      return;
+    }
     if (line === "TAP version 13") { streams += 1; return; }
     const announced = /^running (\d+) tests?$/u.exec(line);
     if (announced) {
@@ -278,7 +292,8 @@ export async function countTests(log, { cargoFrames = false } = {}) {
         const size = Number(announced[1]);
         if (!Number.isSafeInteger(size)) uncertainFrame("malformed-summary");
         else if (!frame) unknown("incomplete-summary");
-        else if (frame.result !== null || frame.announced === size) uncertainFrame("ambiguous-summary");
+        else if (frame.docTests && frame.announced !== null) uncertainFrame("ambiguous-summary");
+        else if (!frame.docTests && (frame.result !== null || frame.announced === size)) uncertainFrame("ambiguous-summary");
         else if (frame.announced === null) frame.announced = size;
         return;
       }
@@ -295,10 +310,17 @@ export async function countTests(log, { cargoFrames = false } = {}) {
       if (!result || ![passed, failed, ignored, measured, filteredOut, passed + failed + ignored].every(Number.isSafeInteger))
         uncertainFrame("malformed-summary");
       else if (measured !== 0) uncertainFrame("benchmarks");
-      else if (!frame || frame.announced === null) uncertainFrame("incomplete-summary");
+      else if (!frame || frame.announced === null)
+        uncertainFrame(frame?.docTests && frame.runners > 0 ? "ambiguous-summary" : "incomplete-summary");
       else if (frame.result !== null) uncertainFrame("ambiguous-summary");
       else if (frame.announced !== passed + failed + ignored) uncertainFrame("ambiguous-summary");
-      else frame.result = [passed, failed, ignored, filteredOut];
+      else if (frame.docTests) {
+        frame.totals = frame.totals.map((total, index) => total + [passed, failed, ignored, filteredOut][index]);
+        frame.runners += 1;
+        frame.announced = null;
+        if (![...frame.totals, frame.runners, frame.totals[0] + frame.totals[1]].every(Number.isSafeInteger))
+          uncertainFrame("malformed-summary");
+      } else frame.result = [passed, failed, ignored, filteredOut];
       return;
     }
     if (!result || ![passed, failed, ignored, measured, filteredOut].every(Number.isSafeInteger)) unknown("malformed-summary");

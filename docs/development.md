@@ -294,12 +294,17 @@ go directly to logs, never through a terminal stream. Only the final summary,
 warnings, bounded failures and the closing record for the host reach context;
 truncation points to the full log.
 For the exact repository Rust phase commands, counts sum outer Cargo runners
-identified by `Running … (executable)` or `Doc-tests …` boundaries. A frame keeps
-its first libtest announcement; unequal child announcements without summaries
-are excluded from the total. Each frame needs one matching outer summary.
-Equal-count child announcements or extra complete summaries make attribution
-unknown (`ambiguous-summary`); missing, malformed or overflowing evidence also
-stays unknown. Other commands use the conservative generic summary parser even
+identified by `Running … (executable)` or `Doc-tests …` boundaries. A `Running`
+frame keeps its first libtest announcement; unequal child announcements without
+summaries are excluded from the total. It needs one matching outer summary;
+equal-count child announcements or extra summaries make attribution unknown.
+A `Doc-tests` frame may contain sequential complete announcement/summary pairs,
+as edition-2024 rustdoc runs merged and standalone doctests separately. Each
+pair's total must match its own announcement, and no pair may open before the
+previous one closes. At the next Cargo boundary or EOF, at least one pair must
+be complete and none left open. Any overlap or invalid pair discards the whole
+frame's numeric count. Missing, malformed or overflowing evidence also stays
+unknown. Other commands use the conservative generic summary parser even
 when their output resembles Cargo. Every readable complete summary still
 contributes its failed count, including a child whose numeric attribution is
 unknown.
@@ -493,9 +498,13 @@ failure. A summary is known by its shape alone. Text of that shape which a
 test prints at the start of a line, such as the forwarded output of a runner
 it started itself, cannot be told from the stage's own summary. The generic
 parser counts it with the stage: it can add to the counts and fail a stage.
-The repository Cargo phases use the stricter attribution described above:
-an extra complete summary makes the numeric count unknown instead of adding
-to it. In either mode, a forwarded summary cannot hide a failure, because
+The repository Cargo phases use the attribution described above: an extra
+complete summary in a `Running` frame makes the numeric count unknown instead
+of adding to it. `Doc-tests` frames accept only complete sequential pairs and
+reject observable nesting or interleaving. Text parsing cannot prove that a
+byte-identical forwarded transcript is the frame's own output; Cargo markers
+and rustdoc's timing epilogue are printable text too. In either mode, a
+forwarded summary cannot hide a failure, because
 the stage's exit and every readable complete summary's failed count still
 count. Verbose Cargo output or test output resembling a Cargo boundary or
 libtest announcement can also leave a framed stage without a known count.
@@ -547,23 +556,28 @@ tests.
   `no-summary`, as when compilation fails, the reporter is one the launcher
   does not read, or the log could not be read; `incomplete-summary`, a
   libtest runner that announced its tests and printed no result, a TAP
-  stream that started and printed no summary, or a summary cut short;
+  stream that started and printed no summary, or a summary cut short; in Cargo
+  mode, also a frame without an announced and summarized runner or a
+  `Doc-tests` frame with an open pair at its end;
   `malformed-summary`, a summary line that does not read, its first line
   included, or one longer than 16,384 characters; `inconsistent-summary`,
   totals that do not add up or, in the generic parser, a result that does not
-  account for the tests announced; `ambiguous-summary`, in a Cargo frame,
-  an equal-count child announcement, an extra complete summary, an
-  announcement after a result, a Node summary, or a result whose total differs
-  from the first announcement. That last case stays ambiguous even when no
-  child output was observed; `cancelled-tests`; `benchmarks`, a nonzero
+  account for the tests announced; `ambiguous-summary`, in a `Running` frame,
+  an equal-count child announcement, an extra complete summary, or an
+  announcement after a result; in a `Doc-tests` frame, overlapping
+  announcements or a duplicate result; in either frame, a Node summary or a
+  result whose total differs from its announcement. That last case stays
+  ambiguous even when no child output was observed; `cancelled-tests`;
+  `benchmarks`, a nonzero
   libtest `measured` count. A line longer than 16,384 characters is known by
-  its beginning: it is a summary line when it lies inside a Node summary or begins as a
-  summary line does, and any other is passed over like any other line of
+  its beginning: it is a summary line when it lies inside a Node summary or
+  begins as a summary line does, and any other is passed over like any other line of
   the log. A later complete summary does not take a reason back. Complete
   summaries found beside an incomplete one still count in `runners` when
-  their attribution is valid (Cargo frames with ambiguous summaries are
-  excluded), and never stand for the stage. An unknown count by itself fails nothing: the
-  stage's state is still its exit; an unreadable log does not fail the run.
+  their attribution is valid (Cargo frames whose attribution became uncertain
+  are excluded), and never stand for the stage. An unknown count by itself
+  fails nothing: the stage's state is still its exit; an unreadable log does
+  not fail the run.
   The failed tests of every complete summary whose failed count reads are
   kept, whatever its other numbers say, so a stage whose count is unknown
   still fails on them, as when a summary counts both cancelled and failed

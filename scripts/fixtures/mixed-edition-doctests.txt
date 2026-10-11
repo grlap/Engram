@@ -1,0 +1,18 @@
+# Captured on Windows with rustc/rustdoc 1.99.0 (b940084d7 2026-09-28).
+# Command: cargo test --doc --manifest-path target/tmp/mixed-doctest/Cargo.toml
+# Dependency-free edition-2024 library: one ordinary doctest and one compile_fail doctest.
+# The transcript below is the real Cargo Doc-tests section, with native exit 0.
+   Doc-tests mixed_doctest
+
+running 1 test
+test src\lib.rs - (line 3) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 1 test
+test src\lib.rs - (line 9) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+all doctests ran in 1.61s; merged doctests compilation took 0.79s
