@@ -11,6 +11,7 @@ mod fts_verification;
 pub(crate) mod graph_snapshot;
 pub(crate) use work::task_sync::OriginScopeGuard as WorkReadOriginScope;
 pub use work::task_sync::TaskSyncImportResult;
+pub use work::task_sync::TaskSyncNoteExport;
 pub mod migration;
 mod named_root_read;
 mod named_root_sighting_read;

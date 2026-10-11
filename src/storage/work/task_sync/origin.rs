@@ -107,6 +107,25 @@ fn lookup(connection: &Connection, id: &ObjectId) -> Result<ImportOrigin, StoreE
     })
 }
 
+pub(super) fn for_item(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<Option<ImportOrigin>, StoreError> {
+    if item.created_by.source_tool.as_deref() != Some(super::IMPORT_TOOL) {
+        return Ok(None);
+    }
+    let id = super::origin_reference(&item.created_by)?;
+    let origin = lookup(connection, &id)?;
+    validate_record(connection, &origin)?;
+    if origin.project_id != item.project_id
+        || origin.task.id != item.work_id
+        || item.created_by != super::linked_actor(&origin.actor, &id)
+    {
+        return Err(invalid("task import origin item binding differs"));
+    }
+    Ok(Some(origin))
+}
+
 pub(in crate::storage::work) fn validate_item_origin(
     connection: &Connection,
     record_id: &ObjectId,
@@ -148,8 +167,9 @@ pub(in crate::storage) fn verify_origins(
         .prepare("SELECT object_id FROM objects WHERE object_kind = ?1 ORDER BY object_id")?
         .query_map([ORIGIN_KIND], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
-    let mut projects = BTreeMap::<String, Vec<crate::task_sync::TaskDocument>>::new();
+    let mut projects = BTreeMap::<String, (bool, Vec<crate::task_sync::TaskDocument>)>::new();
     let mut records = HashSet::new();
+    let mut note_ids = HashSet::new();
     let mut roots = HashMap::new();
     for id in ids {
         *checked += 1;
@@ -174,27 +194,36 @@ pub(in crate::storage) fn verify_origins(
             if !records.insert(origin.record_id.clone()) {
                 return Err(invalid("duplicate import record binding"));
             }
+            crate::task_sync::notes::validate_note_structure(&origin.task.notes)?;
+            if !origin.notes_included && !origin.task.notes.is_empty() {
+                return Err(invalid("import origin notes inclusion differs"));
+            }
+            for note in &origin.task.notes {
+                if !note_ids.insert(note.id.clone()) {
+                    return Err(invalid("duplicate shared note id across import origins"));
+                }
+            }
             roots.insert((origin.project_id.0.clone(), origin.task.id), root);
             Ok(origin)
         }) {
             Ok(origin) => {
-                projects
-                    .entry(origin.project_id.0)
-                    .or_default()
-                    .push(origin.task);
+                let project = projects.entry(origin.project_id.0).or_default();
+                project.0 |= origin.notes_included;
+                project.1.push(origin.task);
             }
             Err(_) => invalid_records.push(format!("task_sync_import_origin:{id}")),
         }
     }
-    for (project, tasks) in projects {
+    for (project, (notes_included, tasks)) in projects {
         let tree = TaskTree {
             project: ProjectDocument {
                 format: FORMAT.into(),
                 project_id: crate::ProjectId(project.clone()),
+                notes_included,
             },
             tasks,
         };
-        let valid = tree.validate().is_ok()
+        let valid = tree.validate_stored().is_ok()
             && tree.snapshots().is_ok_and(|items| {
                 items
                     .iter()

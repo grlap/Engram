@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub mod directory;
+pub mod notes;
 
 /// The supported planning-only profile; other profiles require explicit admission.
 pub const FORMAT: &str = "engram-task-planning-v1";
@@ -22,6 +23,8 @@ pub const FORMAT: &str = "engram-task-planning-v1";
 pub struct ProjectDocument {
     pub format: String,
     pub project_id: ProjectId,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub notes_included: bool,
 }
 
 /// Shared attribution deliberately has no session, run, tool, path or authority.
@@ -77,7 +80,7 @@ pub struct SharedBlocker {
     pub created_at: DateTime<Utc>,
 }
 
-/// One complete planning identity. Notes, runtime state and native proof are excluded.
+/// One complete planning identity with optional reported shared notes.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskDocument {
@@ -102,6 +105,8 @@ pub struct TaskDocument {
     pub superseded_by: Option<WorkId>,
     pub disposal_reason: Option<String>,
     pub completion: Option<SharedCompletion>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<notes::SharedNote>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -117,6 +122,23 @@ impl TaskTree {
     /// # Errors
     /// Refuses unsupported profiles, malformed policy, incomplete graphs or collisions.
     pub fn validate(&self) -> Result<(), StoreError> {
+        self.validate_stored()?;
+        self.validate_note_profile()?;
+        for task in &self.tasks {
+            notes::validate_notes(&task.notes, &task.labels)?;
+        }
+        Ok(())
+    }
+
+    fn validate_note_profile(&self) -> Result<(), StoreError> {
+        if self.project.notes_included && self.tasks.is_empty() {
+            return Err(invalid("notes_included requires at least one task"));
+        }
+        Ok(())
+    }
+
+    /// Retained notes keep their recorded meaning when admission policy changes.
+    pub(crate) fn validate_stored(&self) -> Result<(), StoreError> {
         if self.project.format != FORMAT {
             return Err(invalid("unsupported task format"));
         }
@@ -125,9 +147,19 @@ impl TaskTree {
         }
         let mut ids = HashSet::new();
         let mut blockers = HashSet::new();
+        let mut note_ids = HashSet::new();
         for task in &self.tasks {
             if !ids.insert(task.id) {
                 return Err(invalid("duplicate task id"));
+            }
+            if !self.project.notes_included && !task.notes.is_empty() {
+                return Err(invalid("shared notes require explicit notes_included"));
+            }
+            notes::validate_note_structure(&task.notes)?;
+            for note in &task.notes {
+                if !note_ids.insert(&note.id) {
+                    return Err(invalid("duplicate shared note id"));
+                }
             }
             if (task.lifecycle == WorkLifecycle::Completed) != task.completion.is_some() {
                 return Err(invalid("completion and planning lifecycle disagree"));
@@ -186,9 +218,10 @@ impl TaskTree {
     /// Deterministic pretty JSON documents, always UTF-8 with LF and a final newline.
     ///
     /// # Errors
-    /// Refuses any invalid complete candidate before producing output.
+    /// Refuses structurally invalid data; retained notes are not filtered again.
     pub fn documents(&self) -> Result<BTreeMap<String, Vec<u8>>, StoreError> {
-        self.validate()?;
+        self.validate_stored()?;
+        self.validate_note_profile()?;
         let mut result = BTreeMap::new();
         result.insert("project.json".into(), pretty(&self.project)?);
         for task in &self.tasks {
@@ -202,6 +235,14 @@ impl TaskTree {
     /// # Errors
     /// Refuses unsupported fields, partial graphs, mismatched filenames and conflict text.
     pub fn from_documents(documents: &BTreeMap<String, Vec<u8>>) -> Result<Self, StoreError> {
+        let tree = Self::from_stored_documents(documents)?;
+        tree.validate()?;
+        Ok(tree)
+    }
+
+    pub(crate) fn from_stored_documents(
+        documents: &BTreeMap<String, Vec<u8>>,
+    ) -> Result<Self, StoreError> {
         let project = parse(
             documents
                 .get("project.json")
@@ -220,7 +261,7 @@ impl TaskTree {
         }
         tasks.sort_by_key(|task| task.id.0);
         let tree = Self { project, tasks };
-        tree.validate()?;
+        tree.validate_stored()?;
         Ok(tree)
     }
 

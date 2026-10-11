@@ -16,6 +16,7 @@ use crate::{
     },
 };
 
+mod notes;
 mod origin;
 pub(crate) use origin::OriginScopeGuard;
 pub(in crate::storage) use origin::enter_origin_scope;
@@ -66,6 +67,14 @@ struct ImportOrigin {
     task: TaskDocument,
     actor: ActorContext,
     imported_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    notes_included: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TaskSyncNoteExport {
+    pub tree: TaskTree,
+    pub omissions: crate::task_sync::notes::NoteOmissions,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -82,6 +91,32 @@ impl SqliteStore {
     /// Refuses invalid canonical/projection state or an incomplete project graph.
     pub fn export_task_tree(&self, project: &ProjectId) -> Result<TaskTree, StoreError> {
         self.work_read_snapshot(|store| export_on(&store.connection, project))
+    }
+
+    /// Opt-in shared prose with asserted origin-machine and visible exclusions.
+    ///
+    /// # Errors
+    /// Refuses invalid aliases, note bindings or shared candidates.
+    pub fn export_task_tree_with_notes(
+        &self,
+        project: &ProjectId,
+        machine: &str,
+    ) -> Result<TaskSyncNoteExport, StoreError> {
+        crate::task_sync::notes::validate_machine_alias(machine)?;
+        self.work_read_snapshot(|store| {
+            with_origin_scope(&store.connection, || {
+                let mut omissions = crate::task_sync::notes::NoteOmissions::default();
+                let tree = export_on_snapshot(
+                    &store.connection,
+                    project,
+                    true,
+                    Some(machine),
+                    false,
+                    &mut omissions,
+                )?;
+                Ok(TaskSyncNoteExport { tree, omissions })
+            })
+        })
     }
 
     /// Admit an empty graph once; exact repeats have no durable side effects.
@@ -131,7 +166,17 @@ impl SqliteStore {
             ));
         }
         admit_origins(&transaction)?;
-        let current = export_on(&transaction, project)?;
+        notes::refuse_known_changes(&transaction, tree)?;
+        let current = with_origin_scope(&transaction, || {
+            export_on_snapshot(
+                &transaction,
+                project,
+                tree.project.notes_included,
+                None,
+                true,
+                &mut crate::task_sync::notes::NoteOmissions::default(),
+            )
+        })?;
         if current.documents()? == tree.documents()? {
             return Ok(TaskSyncImportResult {
                 task_count: tree.tasks.len(),
@@ -205,18 +250,32 @@ fn admit_origins(connection: &Connection) -> Result<(), StoreError> {
 }
 
 fn export_on(connection: &Connection, project: &ProjectId) -> Result<TaskTree, StoreError> {
-    with_origin_scope(connection, || export_on_snapshot(connection, project))
+    with_origin_scope(connection, || {
+        export_on_snapshot(
+            connection,
+            project,
+            false,
+            None,
+            false,
+            &mut crate::task_sync::notes::NoteOmissions::default(),
+        )
+    })
 }
 
 fn export_on_snapshot(
     connection: &Connection,
     project: &ProjectId,
+    include_notes: bool,
+    machine: Option<&str>,
+    comparison: bool,
+    omissions: &mut crate::task_sync::notes::NoteOmissions,
 ) -> Result<TaskTree, StoreError> {
     let ids = connection
         .prepare("SELECT work_id FROM work_items WHERE project_id = ?1 ORDER BY work_id")?
         .query_map([&project.0], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     let mut tasks = Vec::new();
+    let mut notes_included = include_notes && !comparison;
     for id in ids {
         let id = WorkId(uuid::Uuid::parse_str(&id).map_err(|error| invalid(error.to_string()))?);
         let item = query::load_work_item(connection, id)?;
@@ -249,6 +308,20 @@ fn export_on_snapshot(
             })
             .collect::<Vec<_>>();
         blockers.sort_by(|a, b| a.blocker_id.cmp(&b.blocker_id));
+        let shared_notes = if include_notes || comparison {
+            let (notes, stored_inclusion) = notes::capture(
+                connection,
+                &item,
+                machine,
+                include_notes,
+                comparison,
+                omissions,
+            )?;
+            notes_included |= stored_inclusion;
+            notes
+        } else {
+            Vec::new()
+        };
         tasks.push(TaskDocument {
             id,
             external_ref: item.external_ref,
@@ -270,16 +343,18 @@ fn export_on_snapshot(
             superseded_by: item.superseded_by,
             disposal_reason: snapshot.disposal_reason,
             completion,
+            notes: shared_notes,
         });
     }
     let tree = TaskTree {
         project: ProjectDocument {
             format: FORMAT.into(),
             project_id: project.clone(),
+            notes_included,
         },
         tasks,
     };
-    tree.validate()?;
+    tree.validate_stored()?;
     Ok(tree)
 }
 
@@ -313,6 +388,7 @@ fn insert_task(
         task: task.clone(),
         actor: actor.clone(),
         imported_at: now,
+        notes_included: tree.project.notes_included,
     };
     let origin_object = CanonicalObject::mint(&origin)?;
     let item = WorkItem {
@@ -414,7 +490,18 @@ fn history(
         .collect();
     WorkGraphSnapshotHistory {
         source_notices: Vec::new(),
-        notes: Vec::new(),
+        notes: task
+            .notes
+            .iter()
+            .map(|note| crate::WorkGraphSnapshotNote {
+                evidence_kind: crate::WorkEvidenceKind::Generic,
+                summary: note.body.clone(),
+                refs: Vec::new(),
+                gate: None,
+                actor: note.author.reported(),
+                recorded_at: note.recorded_at,
+            })
+            .collect(),
         events,
         completion: task
             .completion

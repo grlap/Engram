@@ -68,6 +68,19 @@ impl LocalWorkService {
         self.read_store_at(now)?.export_task_tree(&self.project_id)
     }
 
+    /// Export opt-in reported notes with an operator-supplied machine alias.
+    ///
+    /// # Errors
+    /// Refuses invalid aliases, source state or note candidates.
+    pub fn export_task_tree_with_notes(
+        &self,
+        machine: &str,
+        now: DateTime<Utc>,
+    ) -> Result<crate::storage::TaskSyncNoteExport, StoreError> {
+        self.read_store_at(now)?
+            .export_task_tree_with_notes(&self.project_id, machine)
+    }
+
     /// Import a complete inert candidate atomically, without focus or execution state.
     ///
     /// # Errors

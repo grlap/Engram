@@ -22,7 +22,15 @@ pub(crate) struct TaskSyncArgs {
 #[derive(Debug, clap::Subcommand)]
 enum TaskSyncCommand {
     /// Write deterministic project.json and tasks/<uuid>.json into an explicit directory.
-    Export { directory: PathBuf },
+    Export {
+        directory: PathBuf,
+        /// Include eligible generic/status notes and report omissions.
+        #[arg(long, requires = "origin_machine")]
+        include_notes: bool,
+        /// Asserted alias; imported notes retain their original alias.
+        #[arg(long, requires = "include_notes")]
+        origin_machine: Option<String>,
+    },
     /// Import a complete candidate into an empty task graph; exact repeats are no-ops.
     Import {
         directory: PathBuf,
@@ -43,12 +51,33 @@ pub(crate) fn run(database: PathBuf, project: ProjectId, args: TaskSyncArgs) -> 
         attribution.defaults,
     );
     match args.operation {
-        TaskSyncCommand::Export { directory: path } => {
-            let tree = service.export_task_tree(chrono::Utc::now())?;
+        TaskSyncCommand::Export {
+            directory: path,
+            include_notes,
+            origin_machine,
+        } => {
+            let (tree, omissions) = if include_notes {
+                let machine = origin_machine
+                    .as_deref()
+                    .ok_or_else(|| anyhow::anyhow!("origin-machine required"))?;
+                let exported = service.export_task_tree_with_notes(machine, chrono::Utc::now())?;
+                (exported.tree, Some(exported.omissions))
+            } else {
+                (service.export_task_tree(chrono::Utc::now())?, None)
+            };
             directory::write(&path, &tree)?;
             attribution.print_notices();
             eprintln!("REDACTOR: development no-op; task planning fields are shared text");
-            println!("{}", path.display());
+            if let Some(omissions) = omissions {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "directory": path, "notes_included": true, "omissions": omissions,
+                    }))?
+                );
+            } else {
+                println!("{}", path.display());
+            }
         }
         TaskSyncCommand::Import {
             directory: path,

@@ -1296,12 +1296,11 @@ pub(crate) fn normalize_text(value: &str, label: &str) -> Result<String, StoreEr
 
 /// Write-boundary limit only. Retained canonical notes remain readable at any size.
 pub(crate) fn normalize_note_text(value: &str, label: &str) -> Result<String, StoreError> {
-    const LIMIT: usize = 64 * 1024;
     let text = normalize_text(value, label)?;
-    if text.len() > LIMIT {
+    if text.len() > crate::domain::MAX_WORK_NOTE_BYTES {
         return Err(StoreError::WorkNoteTooLarge {
             bytes: text.len(),
-            limit: LIMIT,
+            limit: crate::domain::MAX_WORK_NOTE_BYTES,
         });
     }
     Ok(text)

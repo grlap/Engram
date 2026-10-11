@@ -14,6 +14,12 @@ const MAX_TASKS: usize = 100_000;
 /// # Errors
 /// Refuses partial, oversized, linked or malformed candidates.
 pub fn read(path: &Path) -> Result<TaskTree> {
+    let tree = read_stored(path)?;
+    tree.validate()?;
+    Ok(tree)
+}
+
+fn read_stored(path: &Path) -> Result<TaskTree> {
     regular_directory(path)?;
     let mut documents = BTreeMap::new();
     let mut total_bytes = 0;
@@ -56,7 +62,7 @@ pub fn read(path: &Path) -> Result<TaskTree> {
     if !has_tasks {
         return Err(invalid("tasks directory missing").into());
     }
-    Ok(TaskTree::from_documents(&documents)?)
+    Ok(TaskTree::from_stored_documents(&documents)?)
 }
 
 fn add_document(
@@ -91,7 +97,7 @@ pub fn write(path: &Path, tree: &TaskTree) -> Result<()> {
         return Err(invalid("export exceeds the supported task candidate limits").into());
     }
     if path.try_exists()? {
-        if read(path)?.documents()? == documents {
+        if read_stored(path)?.documents()? == documents {
             return Ok(());
         }
         return Err(invalid("export destination already contains a different candidate").into());

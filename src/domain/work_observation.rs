@@ -9,6 +9,9 @@ use crate::ObjectId;
 /// Bounds all initial observations in one root creation or decomposition.
 pub(crate) const MAX_INITIAL_WORK_NOTES: usize = 16;
 
+/// UTF-8 body limit at native and shared-note write boundaries.
+pub(crate) const MAX_WORK_NOTE_BYTES: usize = 64 * 1024;
+
 pub(crate) fn validate_initial_work_note_count(count: usize) -> Result<(), String> {
     if count > MAX_INITIAL_WORK_NOTES {
         return Err(format!(

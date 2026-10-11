@@ -9,6 +9,7 @@ use crate::{
 
 mod exclusion;
 mod native;
+mod notes;
 mod origin_links;
 mod regressions;
 
@@ -40,6 +41,7 @@ fn candidate() -> TaskTree {
         superseded_by: None,
         disposal_reason: None,
         completion: None,
+        notes: Vec::new(),
     };
     let mut root = make("root");
     root.external_ref = Some("external-item".into());
@@ -76,6 +78,7 @@ fn candidate() -> TaskTree {
         project: ProjectDocument {
             format: FORMAT.into(),
             project_id: ProjectId("task-sync".into()),
+            notes_included: false,
         },
         tasks,
     }

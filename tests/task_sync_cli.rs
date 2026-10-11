@@ -78,6 +78,8 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
             "author-session",
             "add",
             "shared task",
+            "--note",
+            "Shared progress",
         ])
         .output()
         .unwrap();
@@ -145,6 +147,41 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
     assert_eq!(
         directory::read(&exported).unwrap().documents().unwrap(),
         original
+    );
+    let notes_path = fixture.path().join("with-notes");
+    let output = command(&source, &marker)
+        .args(["task-sync", "export"])
+        .arg(&notes_path)
+        .arg("--include-notes")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!notes_path.exists());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--origin-machine"));
+    let output = command(&source, &marker)
+        .args(["task-sync", "export"])
+        .arg(&notes_path)
+        .args(["--include-notes", "--origin-machine", "host-A"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["notes_included"], true);
+    assert_eq!(receipt["omissions"]["counts"], serde_json::json!({}));
+    let notes_tree = directory::read(&notes_path).unwrap();
+    assert_eq!(notes_tree.tasks[0].notes.len(), 1);
+    assert_eq!(notes_tree.tasks[0].notes[0].body, "Shared progress");
+    assert_eq!(notes_tree.tasks[0].notes[0].origin_machine, "host-A");
+    assert!(
+        !notes_tree
+            .documents()
+            .unwrap()
+            .values()
+            .any(|b| String::from_utf8_lossy(b).contains("omissions"))
     );
     let candidate_bytes = serde_json_canonicalizer::to_vec(&original).unwrap();
     eprintln!(

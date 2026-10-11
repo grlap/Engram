@@ -9,6 +9,7 @@ fn candidate() -> TaskTree {
         project: ProjectDocument {
             format: FORMAT.into(),
             project_id: ProjectId("directory-test".into()),
+            notes_included: false,
         },
         tasks: vec![TaskDocument {
             id: WorkId(uuid::Uuid::new_v4()),
@@ -31,6 +32,7 @@ fn candidate() -> TaskTree {
             superseded_by: None,
             disposal_reason: None,
             completion: None,
+            notes: Vec::new(),
         }],
     }
 }
@@ -109,4 +111,71 @@ fn task_sync_directory_refuses_non_directory_destination_without_overwriting() {
     assert_eq!(fs::read(&path).unwrap(), b"owned existing file");
     assert!(write(&fixture.path().join("missing/candidate"), &candidate()).is_err());
     assert!(!fixture.path().join("missing").exists());
+}
+
+#[test]
+fn task_sync_directory_refuses_inline_note_overflow_without_publishing_or_staging() {
+    use crate::task_sync::{
+        SharedActor,
+        notes::{SharedNote, SharedNoteKind},
+    };
+    let fixture = crate::test_support::temp_home().unwrap();
+    let path = fixture.path().join("candidate");
+    let mut tree = candidate();
+    tree.project.notes_included = true;
+    // Each body fits the native note limit; their escaped inline total does not.
+    let body = "Progress Ω\r\n".repeat(4000);
+    assert!(body.len() < 64 * 1024);
+    tree.tasks[0].notes = (0..24)
+        .map(|_| SharedNote {
+            id: crate::CanonicalObject::mint(&body).unwrap().key().clone(),
+            kind: SharedNoteKind::Generic,
+            body: body.trim_end().into(),
+            author: SharedActor {
+                actor_id: "writer".into(),
+                actor_kind: "human".into(),
+            },
+            recorded_at: chrono::DateTime::from_timestamp(1, 0).unwrap(),
+            origin_machine: "host-A".into(),
+        })
+        .collect();
+    tree.tasks[0]
+        .notes
+        .sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
+    let task_file = format!("tasks/{}.json", tree.tasks[0].id.0);
+    assert!(tree.documents().unwrap()[&task_file].len() > usize::try_from(MAX_FILE_BYTES).unwrap());
+    let error = write(&path, &tree).unwrap_err().to_string();
+    assert!(error.contains("supported task candidate limits"), "{error}");
+    assert!(!path.exists());
+    assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn task_sync_directory_refuses_empty_notes_profile_before_publication_and_admission() {
+    let fixture = crate::test_support::temp_home().unwrap();
+    let path = fixture.path().join("candidate");
+    let mut tree = candidate();
+    tree.tasks.clear();
+    tree.project.notes_included = true;
+    let error = write(&path, &tree).unwrap_err().to_string();
+    assert!(error.contains("notes_included requires at least one task"));
+    assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 0);
+    fs::create_dir(&path).unwrap();
+    fs::create_dir(path.join("tasks")).unwrap();
+    let bytes = super::super::pretty(&tree.project).unwrap();
+    fs::write(path.join("project.json"), &bytes).unwrap();
+    assert!(
+        read(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("notes_included requires at least one task")
+    );
+    assert_eq!(fs::read(path.join("project.json")).unwrap(), bytes);
+    tree.project.notes_included = false;
+    fs::write(
+        path.join("project.json"),
+        tree.documents().unwrap()["project.json"].clone(),
+    )
+    .unwrap();
+    assert_eq!(read(&path).unwrap(), tree);
 }
