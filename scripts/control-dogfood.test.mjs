@@ -3,12 +3,15 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import {
   readFileSync,
+  existsSync,
   realpathSync,
   writeFileSync,
 } from "node:fs";
-import { fixtureHome, removeFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
+import { fixtureHome, removeFixtureHomes, registerFixtureChild, tempSnapshot, assertTempClean } from "./test-temp.mjs";
+import { FixtureChild, finishFixture } from "./fixture-child.mjs";
 import { join, resolve } from "node:path";
 import test, { after } from "node:test";
 
@@ -58,24 +61,7 @@ function executeSql(database, sql) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-function closeChild(child, label, stderr) {
-  if (child.exitCode !== null) return Promise.resolve();
-  return new Promise((resolvePromise, reject) => {
-    const onExit = () => {
-      clearTimeout(timer);
-      resolvePromise();
-    };
-    const timer = setTimeout(() => {
-      child.removeListener("exit", onExit);
-      child.kill();
-      reject(new Error(`${label} shutdown timed out: ${stderr()}`));
-    }, 5000);
-    child.once("exit", onExit);
-    child.stdin.end();
-  });
-}
-
-async function holdSqliteWriter(database) {
+async function holdSqliteWriter(database, home) {
   const helper = String.raw`
     import { DatabaseSync } from "node:sqlite";
     const database = new DatabaseSync(process.argv.at(-1));
@@ -93,35 +79,29 @@ async function holdSqliteWriter(database) {
     { cwd: root, stdio: ["pipe", "pipe", "pipe"] },
   );
   let stderr = "";
+  const lifecycle = new FixtureChild(child, "SQLite writer helper", () => stderr);
+  registerFixtureChild(home, lifecycle);
   child.stderr.on("data", (chunk) => {
     stderr += chunk.toString("utf8");
   });
-  await new Promise((resolvePromise, reject) => {
-    let output = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`SQLite writer helper timed out: ${stderr}`));
-    }, 5000);
-    child.stdout.on("data", (chunk) => {
-      output += chunk.toString("utf8");
-      if (!output.includes("ready\n")) return;
-      clearTimeout(timer);
-      resolvePromise();
+  try {
+    await new Promise((resolvePromise, reject) => {
+      let output = "";
+      const timer = setTimeout(() => {
+        reject(lifecycle.error("readiness timed out"));
+      }, 5000);
+      lifecycle.onFailure = (error) => { clearTimeout(timer); reject(error); };
+      child.stdout.on("data", (chunk) => {
+        output += chunk.toString("utf8");
+        if (!output.includes("ready\n")) return;
+        clearTimeout(timer);
+        resolvePromise();
+      });
     });
-    child.once("exit", (code, signal) => {
-      clearTimeout(timer);
-      reject(
-        new Error(
-          `SQLite writer helper exited code=${code} signal=${signal}: ${stderr}`,
-        ),
-      );
-    });
-  });
-  return {
-    close() {
-      return closeChild(child, "SQLite writer helper", () => stderr);
-    },
-  };
+  } catch (error) {
+    await finishFixture(error, [lifecycle], () => {});
+  }
+  return lifecycle;
 }
 
 function canonicalJson(value) {
@@ -157,7 +137,7 @@ function median(values) {
 }
 
 class ControlClient {
-  constructor(engramHome, sessionId, { phaseTrace = false } = {}) {
+  constructor(engramHome, sessionId, { phaseTrace = false, command = binary, args } = {}) {
     this.pending = [];
     this.buffer = "";
     this.stderr = "";
@@ -165,8 +145,8 @@ class ControlClient {
     if (phaseTrace) environment[PHASE_TRACE_ENV] = "1";
     else delete environment[PHASE_TRACE_ENV];
     this.child = spawn(
-      binary,
-      [
+      command,
+      args ?? [
         "--home",
         engramHome,
         "control",
@@ -184,22 +164,19 @@ class ControlClient {
       ],
       { cwd: root, env: environment, stdio: ["pipe", "pipe", "pipe"] },
     );
+    this.lifecycle = new FixtureChild(this.child, `control server ${sessionId}`, () => this.stderr);
+    registerFixtureChild(engramHome, this.lifecycle);
+    this.lifecycle.onFailure = (error) => this.#rejectPending(error);
     this.child.stdout.on("data", (chunk) => this.#receive(chunk));
     this.child.stderr.on("data", (chunk) => {
       this.stderr += chunk.toString("utf8");
     });
-    // Resolves once the child's stdio has closed, after its last stderr
-    // bytes arrived; "exit" can come before them.
-    this.closed = new Promise((resolvePromise) => {
-      this.child.once("close", () => resolvePromise());
-    });
-    this.child.on("exit", (code, signal) => {
-      const error = new Error(
-        `control server exited code=${code} signal=${signal}: ${this.stderr}`,
-      );
-      for (const pending of this.pending) pending.reject(error);
-      this.pending = [];
-    });
+    this.closed = this.lifecycle.closed;
+  }
+
+  #rejectPending(error) {
+    const pending = this.pending.splice(0);
+    for (const request of pending) request.reject(error);
   }
 
   #receive(chunk) {
@@ -211,36 +188,50 @@ class ControlClient {
       this.buffer = this.buffer.slice(newline + 1);
       if (line === "") continue;
       const pending = this.pending.shift();
-      assert.ok(pending, `unexpected control response: ${line}`);
-      pending.resolve(JSON.parse(line));
+      if (!pending) {
+        this.lifecycle.fail("response_error", new Error(`unexpected control response: ${line}`));
+        continue;
+      }
+      try { pending.resolve(JSON.parse(line)); }
+      catch (error) {
+        pending.reject(error);
+        this.lifecycle.fail("response_error", error);
+      }
     }
   }
 
   request(request) {
+    if (this.lifecycle.closePromise || this.lifecycle.hasExited || this.lifecycle.hasClosed || this.lifecycle.firstError) {
+      return Promise.reject(this.lifecycle.error(`request refused after shutdown or failure: ${request.operation}`));
+    }
     return new Promise((resolvePromise, reject) => {
       const timer = setTimeout(() => {
-        reject(
-          new Error(
-            `control request timed out: ${request.operation}; stderr=${this.stderr}`,
-          ),
-        );
+        // FIFO responses cannot be attributed after one request times out.
+        this.lifecycle.fail("request_error", new Error(`request timed out: ${request.operation}`));
       }, 15000);
       this.pending.push({
         resolve: (response) => {
           clearTimeout(timer);
+          this.lifecycle.request(request.operation, "answered", this.pending.length);
           resolvePromise(response);
         },
         reject: (error) => {
           clearTimeout(timer);
+          this.lifecycle.request(request.operation, "failed", this.pending.length);
           reject(error);
         },
       });
-      this.child.stdin.write(`${JSON.stringify(request)}\n`);
+      this.lifecycle.request(request.operation, "written", this.pending.length);
+      try {
+        this.child.stdin.write(`${JSON.stringify(request)}\n`, (error) => {
+          if (error) this.lifecycle.fail("stdin_error", error);
+        });
+      } catch (error) { this.lifecycle.fail("stdin_error", error); }
     });
   }
 
   close() {
-    return closeChild(this.child, "control server", () => this.stderr);
+    return this.lifecycle.close();
   }
 }
 
@@ -248,6 +239,218 @@ function ok(response) {
   assert.equal(response.status, "ok", JSON.stringify(response));
   return response.result;
 }
+
+function childEvents({ pid = 42 } = {}) {
+  const child = new EventEmitter();
+  child.pid = pid;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.stdin = new EventEmitter();
+  child.endCalls = 0;
+  child.killCalls = 0;
+  child.stdin.end = () => { child.endCalls += 1; child.stdin.emit("finish"); };
+  child.kill = () => { child.killCalls += 1; return false; };
+  child.exit = (code, signal = null) => {
+    child.exitCode = code;
+    child.signalCode = signal;
+    child.emit("exit", code, signal);
+  };
+  child.closeStdio = () => child.emit("close", child.exitCode, child.signalCode);
+  return child;
+}
+
+test("fixture child shutdown waits for stdio and reuses its one close result", async () => {
+  const child = childEvents();
+  const lifecycle = new FixtureChild(child, "event child");
+  child.emit("spawn");
+  const first = lifecycle.close();
+  assert.equal(lifecycle.close(), first);
+  assert.equal(child.endCalls, 1);
+  child.exit(0);
+  let resolved = false;
+  first.then(() => { resolved = true; });
+  await Promise.resolve();
+  assert.equal(resolved, false, "exit does not establish stdio closure");
+  child.closeStdio();
+  await first;
+  assert.equal(lifecycle.close(), first);
+  assert.equal(child.killCalls, 0);
+  assert.equal(lifecycle.hasClosed, true);
+  assert.ok(lifecycle.events.close >= lifecycle.events.exit);
+});
+
+test("fixture child shutdown handles observed exit, signals and absent PID without guessing closure", async () => {
+  for (const [pid, code, signal] of [[42, 0, null], [42, null, "SIGTERM"], [undefined, null, null]]) {
+    const child = childEvents({ pid });
+    child.pid = pid;
+    const lifecycle = new FixtureChild(child, "event child");
+    if (pid) child.exit(code, signal);
+    const closing = lifecycle.close();
+    assert.equal(lifecycle.hasClosed, false);
+    assert.equal(child.endCalls, pid ? 0 : 1);
+    child.closeStdio();
+    await closing;
+    assert.equal(child.killCalls, 0);
+    assert.equal(lifecycle.snapshot().signal, signal);
+  }
+  const child = childEvents();
+  const lifecycle = new FixtureChild(child, "closed child");
+  child.exit(0);
+  child.closeStdio();
+  await lifecycle.close();
+  assert.equal(child.endCalls, 0);
+});
+
+test("fixture child shutdown enforces its elapsed bound before a delayed timer fires", async (t) => {
+  let now = 0;
+  t.mock.method(performance, "now", () => now);
+  for (const elapsed of [5000, 5001]) {
+    const child = childEvents();
+    const lifecycle = new FixtureChild(child, "delayed timer child");
+    const closing = lifecycle.close();
+    // Advance observation time without yielding to the real timeout callback.
+    now += elapsed;
+    child.closeStdio();
+    if (elapsed === 5000) {
+      await closing;
+      assert.equal(lifecycle.events.timeout, undefined);
+    } else {
+      const error = await closing.then(() => assert.fail("expected elapsed timeout"), (error) => error);
+      assert.match(error.message, /shutdown timed out/);
+      assert.equal(error.lifecycle.stdio_closed, true);
+      assert.equal(error.lifecycle.kill, null);
+      assert.equal(error.lifecycle.events.close - error.lifecycle.events.close_call, elapsed);
+      assert.equal(lifecycle.close(), closing);
+      await assert.rejects(lifecycle.close(), (again) => again === error);
+    }
+    assert.equal(child.endCalls, 1);
+    assert.equal(child.killCalls, 0);
+  }
+});
+
+test("fixture child shutdown timeout stays rejected after late close with bounded kill evidence", async () => {
+  const child = childEvents();
+  const lifecycle = new FixtureChild(child, "timeout child", () => "retained stderr");
+  lifecycle.request("session_status", "answered", 0);
+  const first = lifecycle.close();
+  const error = await first.then(() => assert.fail("expected timeout"), (error) => error);
+  assert.match(error.message, /shutdown timed out: retained stderr/);
+  assert.equal(error.lifecycle.stdio_closed, false);
+  assert.equal(error.lifecycle.latest_request.operation, "session_status");
+  assert.equal(error.lifecycle.pending, 0);
+  assert.equal(error.lifecycle.kill.returned, false, "kill refusal is not termination proof");
+  assert.equal(child.endCalls, 1);
+  assert.equal(child.killCalls, 1);
+  child.exit(0);
+  child.closeStdio();
+  assert.equal(lifecycle.close(), first);
+  await assert.rejects(lifecycle.close(), (again) => again === error);
+  assert.equal(error.lifecycle.stdio_closed, false, "the failure snapshot is immutable");
+});
+
+test("fixture child shutdown captures spawn and pipe failures before readiness", async () => {
+  for (const event of ["child_error", "stdin_error"]) {
+    const child = childEvents({ pid: undefined });
+    const lifecycle = new FixtureChild(child, "failed child");
+    let received;
+    lifecycle.onFailure = (error) => { received = error; };
+    const cause = new Error(event === "child_error" ? "spawn ENOENT" : "write EPIPE");
+    (event === "child_error" ? child : child.stdin).emit("error", cause);
+    assert.equal(received.cause, cause);
+    const closing = lifecycle.close();
+    child.closeStdio();
+    await assert.rejects(closing, (error) => error.cause === cause);
+    assert.equal(typeof lifecycle.events[event], "number");
+  }
+});
+
+test("fixture child normal EOF retains final stderr and rejects new control requests", async (t) => {
+  const home = fixtureHome("engram-child-eof-", t);
+  const client = new ControlClient(home, "node-fixture", {
+    command: process.execPath,
+    args: ["-e", 'process.stdin.resume(); process.stdin.on("data", () => process.stdout.write("{\\"status\\":\\"ok\\"}\\n")); process.stdin.on("end", () => process.stderr.write("final stderr\\n"));'],
+  });
+  let failure;
+  try {
+    assert.equal((await client.request({ operation: "probe" })).status, "ok");
+    const closing = client.close();
+    await assert.rejects(client.request({ operation: "too_late" }), /request refused after shutdown/);
+    await closing;
+    assert.equal(client.stderr, "final stderr\n");
+    assert.equal(client.lifecycle.latestRequest.outcome, "answered");
+    assert.equal(client.lifecycle.pending, 0);
+    assert.equal(client.lifecycle.hasClosed, true);
+  } catch (error) { failure = error; }
+  finally { await finishFixture(failure, [client], () => removeFixtureHomes(home)); }
+});
+
+test("fixture control spawn and asynchronous pipe errors settle pending requests", async (t) => {
+  const home = fixtureHome("engram-child-errors-", t);
+  const missing = new ControlClient(home, "missing-fixture", { command: join(home, "missing-executable") });
+  await assert.rejects(missing.request({ operation: "probe" }), /ENOENT/);
+  await assert.rejects(missing.close(), /shutdown failed/);
+  assert.equal(missing.pending.length, 0);
+  assert.equal(missing.lifecycle.hasClosed, true);
+  const client = new ControlClient(home, "pipe-fixture", {
+    command: process.execPath, args: ["-e", "process.stdin.resume();"],
+  });
+  const pending = client.request({ operation: "probe" });
+  client.child.stdin.destroy(Object.assign(new Error("injected EPIPE"), { code: "EPIPE" }));
+  await assert.rejects(pending, /EPIPE/);
+  await assert.rejects(client.close(), /shutdown failed/);
+  assert.equal(client.pending.length, 0);
+  assert.equal(client.lifecycle.hasClosed, true);
+  await assert.rejects(client.request({ operation: "after_error" }), /request refused/);
+  removeFixtureHomes(home);
+});
+
+test("fixture cleanup preserves the first error and attempts every client", async (t) => {
+  const body = new Error("body assertion");
+  const cleanup = new Error("child shutdown");
+  const called = [];
+  const diagnostics = [];
+  t.mock.method(console, "error", (error) => diagnostics.push(error));
+  const clients = [
+    { close() { called.push("first"); throw cleanup; } },
+    { close() { called.push("second"); } },
+  ];
+  await assert.rejects(finishFixture(body, clients, () => called.push("remove")), (error) => error === body);
+  assert.deepEqual(called, ["first", "second", "remove"]);
+  assert.equal(diagnostics[0].errors[0], cleanup);
+  await assert.rejects(finishFixture(null, clients, () => {}), AggregateError);
+});
+
+test("fixture cleanup guards explicit and automatic home removal until stdio closes", async (t) => {
+  let automatic;
+  const home = fixtureHome("engram-child-removal-", { after(fn) { automatic = fn; } });
+  const lifecycle = new FixtureChild(childEvents(), "unclosed child");
+  registerFixtureChild(home, lifecycle);
+  const diagnostics = [];
+  t.mock.method(console, "error", (error) => diagnostics.push(error));
+  removeFixtureHomes(home);
+  assert.equal(existsSync(home), true);
+  automatic();
+  assert.equal(existsSync(home), true);
+  assert.equal(diagnostics.length, 2);
+  assert.match(diagnostics[0].errors[0].message, /Owned child stdio remains open/);
+  lifecycle.child.exit(0);
+  lifecycle.child.closeStdio();
+  automatic();
+  assert.equal(existsSync(home), false);
+});
+
+test("fixture SQLite writer rolls back and cleans up setup failure", async (t) => {
+  const home = fixtureHome("engram-writer-lifecycle-", t);
+  const database = join(home, "writer.db");
+  executeSql(database, "CREATE TABLE value (n INTEGER)");
+  const writer = await holdSqliteWriter(database, home);
+  await writer.close();
+  assert.equal(writer.hasClosed, true);
+  executeSql(database, "BEGIN IMMEDIATE; INSERT INTO value VALUES (1); ROLLBACK");
+  await assert.rejects(holdSqliteWriter(join(home, "absent", "writer.db"), home), /SQLite writer helper exited/);
+  removeFixtureHomes(home);
+  assert.equal(existsSync(home), false, "failed setup's owned child was closed too");
+});
 
 function setObligationRuleSet(
   engramHome,
@@ -1017,7 +1220,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
       fingerprint(projectId),
       "engram.db",
     );
-    sqliteWriter = await holdSqliteWriter(database);
+    sqliteWriter = await holdSqliteWriter(database, engramHome);
     const doctor = spawnSync(binary, ["--home", engramHome, "doctor"], {
       cwd: root,
       encoding: "utf8",
@@ -1054,15 +1257,8 @@ test("host control survives restart and gates turn dispatch", async (t) => {
   } catch (error) {
     failure = error;
   } finally {
-    try {
-      await closeFixtureClients(sqliteWriter, advisory, peer, client, successor);
-    } catch (error) {
-      failure = failure
-        ? new AggregateError([failure, error], "Control fixture and shutdown failed", { cause: failure })
-        : error;
-    } finally {
-      removeFixtureHomes(engramHome, actionGatedHome);
-    }
+    await finishFixture(failure, [sqliteWriter, advisory, peer, client, successor],
+      () => removeFixtureHomes(engramHome, actionGatedHome));
   }
   if (failure) throw failure;
 });
@@ -1287,6 +1483,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
   const engramHome = fixtureHome("engram-control-work-bound-", t);
   const actor = "bound-runner";
   let client;
+  let failure;
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
       cwd: root,
@@ -2738,12 +2935,10 @@ test("work-bound control records observations and rebinds after a stale fence", 
       encoding: "utf8",
     });
     assert.equal(doctor.status, 0, doctor.stderr);
+  } catch (error) {
+    failure = error;
   } finally {
-    try {
-      await client?.close();
-    } finally {
-      removeFixtureHomes(engramHome);
-    }
+    await finishFixture(failure, [client], () => removeFixtureHomes(engramHome));
   }
 });
 
@@ -2754,6 +2949,7 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
   for (const caseName of ["eligibility", "source_root", "wrong_run", "beyond_cut", "wrong_source"]) {
     const engramHome = fixtureHome(`engram-admission-${caseName.replaceAll("_", "-")}-`, t);
     const clients = [];
+    let failure;
     const actor = `admission-${caseName}`;
     const word = (session, ...args) => spawnSync(binary,
       ["--home", engramHome, "work", "--actor-id", session, "--session-id", session, ...args],
@@ -2867,9 +3063,10 @@ test("evaluation admission causes survive the native CLI and host-recorded evide
         assert.equal(cause.evaluated_cut, cut);
         assert.equal(cause.requirement.check_kind, "test");
       }
+    } catch (error) {
+      failure = error;
     } finally {
-      for (const client of clients) await client.close();
-      removeFixtureHomes(engramHome);
+      await finishFixture(failure, clients, () => removeFixtureHomes(engramHome));
     }
   }
 });
@@ -2886,6 +3083,7 @@ test("a host reads what satisfied each bound criterion and lists its candidates 
     return JSON.parse(result.stdout);
   };
   let client;
+  let failure;
   try {
     const init = spawnSync(binary, ["--home", engramHome, "init"], { cwd: root, encoding: "utf8" });
     assert.equal(init.status, 0, init.stderr);
@@ -2985,9 +3183,10 @@ test("a host reads what satisfied each bound criterion and lists its candidates 
     }
     const chosenKind = await client.request({ ...candidates, check_kind: "lint" });
     assert.equal(chosenKind.error.code, "invalid_request", JSON.stringify(chosenKind));
+  } catch (error) {
+    failure = error;
   } finally {
-    if (client) await client.close();
-    removeFixtureHomes(engramHome);
+    await finishFixture(failure, [client], () => removeFixtureHomes(engramHome));
   }
 });
 
@@ -2997,6 +3196,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
   assert.equal(built.status, 0, built.stderr);
   const engramHome = fixtureHome("engram-source-recovery-", t);
   const actor = "source-recovery-runner";
+  let failure;
   const word = (...args) => spawnSync(binary,
     ["--home", engramHome, "work", "--actor-id", actor, "--session-id", actor, ...args],
     { cwd: root, encoding: "utf8" });
@@ -3161,9 +3361,10 @@ test("source recovery keeps a judgment through host confirmation and separates f
     assert.equal(absent.value.recovery.source.expected_fingerprint, undefined);
     assert.match(absent.value.remedy, /new acceptance evaluation/u);
     assert.match(absent.value.remedy, /copying.*insufficient/u);
+  } catch (error) {
+    failure = error;
   } finally {
-    if (client) await client.close();
-    removeFixtureHomes(engramHome);
+    await finishFixture(failure, [client], () => removeFixtureHomes(engramHome));
   }
 });
 
@@ -3271,10 +3472,7 @@ test("the opt-in control phase trace numbers every frame and an unset process wr
   } catch (error) {
     failure = error;
   } finally {
-    for (const client of clients) {
-      try { await client.close(); } catch { /* already closed */ }
-    }
-    removeFixtureHomes(engramHome);
+    await finishFixture(failure, clients, () => removeFixtureHomes(engramHome));
   }
   if (failure) throw failure;
 });
@@ -3292,6 +3490,7 @@ function withTimeout(promise, ms, label) {
 test("an opted-in control process whose stderr nobody drains answers every frame and still exits", async (t) => {
   const engramHome = fixtureHome("engram-control-undrained-", t);
   let child;
+  let lifecycle;
   let failure;
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
@@ -3318,6 +3517,8 @@ test("an opted-in control process whose stderr nobody drains answers every frame
       ["--home", engramHome, "control", "--actor-id", "undrained", "--session-id", "undrained"],
       { cwd: root, env: { ...process.env, [PHASE_TRACE_ENV]: "1" }, stdio: ["pipe", "pipe", "pipe"] },
     );
+    lifecycle = new FixtureChild(child, "undrained control server");
+    registerFixtureChild(engramHome, lifecycle);
     // Stderr is never read: once its buffer is full the pipe fills, and the
     // trace's writer blocks on it.
     child.stderr.pause();
@@ -3353,8 +3554,12 @@ test("an opted-in control process whose stderr nobody drains answers every frame
   } catch (error) {
     failure = error;
   } finally {
-    if (child && child.exitCode === null) child.kill();
-    removeFixtureHomes(engramHome);
+    // Keep this test's intentionally undrained stderr distinct. On teardown
+    // alone discard its buffered bytes so stdio can close after the proven
+    // process exit (or after killing our own child on a body failure).
+    child?.stderr.destroy();
+    lifecycle?.killIfRunning();
+    await finishFixture(failure, [lifecycle], () => removeFixtureHomes(engramHome));
   }
   if (failure) throw failure;
 });

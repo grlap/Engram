@@ -25,6 +25,14 @@ if (dirname(fixtureRoot) !== productRoot || !basename(fixtureRoot).startsWith("r
 // tests and the child processes of runs launched through this module.
 process.env.GIT_CEILING_DIRECTORIES = fixtureRoot;
 const owned = new Set();
+const children = new Map();
+
+// Both explicit cleanup and fixtureHome's after hook consult the same guard.
+export function registerFixtureChild(home, lifecycle) {
+  if (!owned.has(home)) throw new Error(`Child fixture is not owned: ${home}`);
+  if (!children.has(home)) children.set(home, new Set());
+  children.get(home).add(lifecycle);
+}
 
 function refuseLink(path, label, { missingOk = false } = {}) {
   let stat;
@@ -118,8 +126,13 @@ export function removeFixtureHomes(...homes) {
   for (const home of homes) {
     if (!owned.has(home)) continue;
     try {
+      const unclosed = [...(children.get(home) ?? [])].filter((child) => !child.hasClosed);
+      if (unclosed.length) {
+        throw new Error(`Owned child stdio remains open; retaining fixture: ${JSON.stringify(unclosed.map((child) => child.snapshot()))}`);
+      }
       removeFixturePath(home);
       owned.delete(home);
+      children.delete(home);
     } catch (error) {
       errors.push(new Error(`Engram test fixture cleanup FAILED: ${home}: ${error.message}`, { cause: error }));
     }
