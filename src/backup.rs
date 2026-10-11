@@ -79,7 +79,7 @@ pub enum CaptureCheck {
 /// The step a capture was in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CapturePhase {
-    /// Checking the stage's free space.
+    /// Reading the build's identity and checking the stage's free space.
     Space,
     /// Copying the live store into the stage.
     Copy,
@@ -305,9 +305,6 @@ pub fn capture_store(
         Some(probe) => interrupt.with_probe(probe.clone()),
         None => interrupt,
     };
-    // Read within the capture's time: its first reading in a process hashes
-    // the running executable.
-    let build_fingerprint = crate::build_identity::current().build_fingerprint.clone();
     let observe = |phase| {
         if let Some(observer) = options.observer {
             observer(phase);
@@ -318,6 +315,15 @@ pub fn capture_store(
     let stage_root = home.join(STAGE_DIRECTORY).join(&digest);
 
     observe(CapturePhase::Space);
+    // Read within the capture's time: its first reading in a process hashes
+    // the running executable, which the capture waits for only until its
+    // deadline.
+    let Some(identity) = crate::build_identity::current_by(interrupt.deadline()) else {
+        return Err(BackupError::CaptureDeadline {
+            phase: CapturePhase::Space,
+        });
+    };
+    let build_fingerprint = identity.build_fingerprint.clone();
     let database_bytes = match std::fs::metadata(&database) {
         Ok(metadata) => metadata.len(),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {

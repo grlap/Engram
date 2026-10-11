@@ -2015,13 +2015,16 @@ This is the contract a host builds its push trigger on.
   running build's identity, the stage's space check, the read-only open of
   the store, the copy, which is the only time the push holds a read
   transaction on the store, the copy's full check and hash, and the
-  compressed file prepared from it. It is checked cooperatively: after the
-  space check, which follows reading the build's identity (on a process's
-  first capture that hashes the running executable, with no check of its
-  own), by SQLite's progress handler during the copy and its check, between
-  chunks of the copy's hash and of the reads that build the compressed file,
-  and once that file is written. No call is interrupted while it runs, so one
-  that stalls holds the push until it returns.
+  compressed file prepared from it. On a process's first capture, reading
+  the build's identity hashes the running executable on a thread of its
+  own; the capture waits for it only until the deadline, and a deadline
+  passed first fails the capture in its `space` step before any stage
+  exists, while the reading goes on for a later capture. The rest is
+  checked cooperatively: after the space check, by SQLite's progress
+  handler during the copy and its check, between chunks of the copy's hash
+  and of the reads that build the compressed file, and once that file is
+  written. No call is interrupted while it runs, so one that stalls holds
+  the push until it returns.
 - `--transport-deadline-secs N`, 1800 by default, is one budget for every
   request to the target together: resolving a pending attempt, confirming
   the newest copy, the put with its read-back, and retention removals. Each

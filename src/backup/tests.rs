@@ -603,15 +603,37 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
              COMMIT;",
         )
         .unwrap();
+    // This test is about the lock wait, so the build's identity, whose
+    // first reading the test below bounds, is read before the clock starts.
+    let _ = crate::build_identity::current();
+    let began = Instant::now();
+    // When each step began, so an overrun names the step that took the time.
+    let steps = std::cell::RefCell::new(Vec::new());
+    let observer = |phase| steps.borrow_mut().push((phase, began.elapsed()));
     let mut options = options(&plenty);
     options.deadline = Duration::from_millis(1500);
-    let began = Instant::now();
+    options.observer = Some(&observer);
     let error = capture_store(home.path(), &project, &options).unwrap_err();
     let took = began.elapsed();
     drop(holder);
     assert_eq!(error.code(), "backup_capture_deadline", "{error}");
+    // The deadline passed in the wait for the locked store.
+    assert!(
+        matches!(
+            error,
+            BackupError::CaptureDeadline {
+                phase: CapturePhase::Copy
+            }
+        ),
+        "{error}; steps began at {:?}",
+        steps.borrow()
+    );
     // The ordinary five-second lock wait was cut to the time left.
-    assert!(took < Duration::from_secs(5), "{took:?}");
+    assert!(
+        took < Duration::from_secs(5),
+        "{took:?}: {error}; steps began at {:?}",
+        steps.borrow()
+    );
     assert_eq!(stage_entries(home.path(), &project), Vec::<PathBuf>::new());
 
     // A deadline too large for the clock means no deadline, not a panic.
@@ -620,6 +642,61 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
         .unwrap()
         .discard()
         .unwrap();
+}
+
+#[test]
+fn capture_waits_for_the_first_identity_reading_only_until_its_deadline() {
+    use crate::build_identity::{BuildIdentity, Latch};
+
+    static OPEN: Mutex<bool> = Mutex::new(false);
+    static OPENED: std::sync::Condvar = std::sync::Condvar::new();
+    static HELD: Latch<BuildIdentity> = Latch::new();
+    /// A first reading that takes until the test lets it finish.
+    fn read_once_opened() -> BuildIdentity {
+        let mut open = OPEN.lock().unwrap();
+        while !*open {
+            open = OPENED.wait(open).unwrap();
+        }
+        drop(open);
+        crate::build_identity::current().clone()
+    }
+
+    let (home, project, _) = fixture(1, 16);
+    let _stand_in = crate::build_identity::stand_in(&HELD, read_once_opened);
+    let steps = std::cell::RefCell::new(Vec::new());
+    let observer = |phase| steps.borrow_mut().push(phase);
+    let mut options = options(&plenty);
+    options.deadline = Duration::from_millis(300);
+    options.observer = Some(&observer);
+    let began = Instant::now();
+    let error = capture_store(home.path(), &project, &options).unwrap_err();
+    let took = began.elapsed();
+    assert!(
+        matches!(
+            error,
+            BackupError::CaptureDeadline {
+                phase: CapturePhase::Space
+            }
+        ),
+        "{error}"
+    );
+    // It waited out its own deadline, and no longer than the locked-store
+    // capture above may take.
+    assert!(took >= Duration::from_millis(300), "{took:?}");
+    assert!(took < Duration::from_secs(5), "{took:?}");
+    assert_eq!(*steps.borrow(), vec![CapturePhase::Space]);
+    assert_eq!(stage_entries(home.path(), &project), Vec::<PathBuf>::new());
+
+    // The reading went on without the capture; a later capture uses it.
+    *OPEN.lock().unwrap() = true;
+    OPENED.notify_all();
+    options.deadline = Duration::from_secs(120);
+    let capture = capture_store(home.path(), &project, &options).unwrap();
+    assert_eq!(
+        capture.manifest.build_fingerprint,
+        crate::build_identity::current().build_fingerprint
+    );
+    capture.discard().unwrap();
 }
 
 /// The capture that the test below runs in a child process and kills: inside

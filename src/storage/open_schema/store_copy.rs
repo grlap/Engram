@@ -120,6 +120,12 @@ impl CopyInterrupt {
         false
     }
 
+    /// When the interrupt fires, or `None` when it has no deadline.
+    #[must_use]
+    pub const fn deadline(&self) -> Option<Instant> {
+        self.deadline
+    }
+
     /// Whether any check has seen the deadline pass.
     #[must_use]
     pub fn fired(&self) -> bool {
