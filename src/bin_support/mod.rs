@@ -15,6 +15,7 @@ pub(crate) mod control_session_inspect;
 pub(crate) mod doctor;
 pub(crate) mod graph;
 pub(crate) mod import;
+pub(crate) mod mcp;
 pub(crate) mod migration;
 pub(crate) mod project;
 pub(crate) mod readiness;

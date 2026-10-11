@@ -33,6 +33,7 @@ pub struct McpServer {
     read_only: bool,
     /// The opt-in phase trace, when enabled at server start.
     phase_trace: Option<Arc<crate::phase_trace::PhaseTrace>>,
+    diagnostics: Option<Arc<crate::diagnostics::mcp::Observer>>,
 }
 
 impl McpServer {
@@ -124,6 +125,7 @@ impl McpServer {
             tool_router,
             read_only,
             phase_trace: None,
+            diagnostics: None,
         }
     }
 
@@ -131,6 +133,13 @@ impl McpServer {
     #[must_use]
     pub fn with_phase_trace(mut self, trace: Option<Arc<crate::phase_trace::PhaseTrace>>) -> Self {
         self.phase_trace = trace;
+        self
+    }
+
+    /// Enables the bounded durable observer for this explicitly configured process.
+    #[must_use]
+    pub fn with_diagnostics(mut self, observer: Arc<crate::diagnostics::mcp::Observer>) -> Self {
+        self.diagnostics = Some(observer);
         self
     }
 
@@ -156,6 +165,9 @@ impl McpServer {
     }
 
     fn verb(&self, outcome: Result<Receipt, VerbError>) -> CallToolResult {
+        if let Err(error) = &outcome {
+            crate::diagnostics::mcp::typed_fault(crate::diagnostics::Fault::store(&error.error));
+        }
         tools::verb(outcome, &self.verbs())
     }
 
@@ -193,6 +205,30 @@ impl ServerHandler for McpServer {
     }
 
     async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        if let Some(observer) = &self.diagnostics {
+            let ticket = observer.started(&context, &request.name);
+            let (result, fault) =
+                crate::diagnostics::mcp::scoped(self.call_tool_traced(request, context)).await;
+            let fault = fault.or_else(|| match &result {
+                Err(_) => Some(crate::diagnostics::Fault::rpc_error()),
+                Ok(CallToolResponse::Complete(response)) if response.is_error == Some(true) => {
+                    Some(crate::diagnostics::Fault::tool_error())
+                }
+                Ok(_) => None,
+            });
+            observer.settled(ticket, fault);
+            return result;
+        }
+        self.call_tool_traced(request, context).await
+    }
+}
+
+impl McpServer {
+    async fn call_tool_traced(
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,

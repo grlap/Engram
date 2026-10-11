@@ -23,7 +23,6 @@ use engram::{
     WorkUpdateInput, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
     probe_host_path_policy, store_error_value, validate_session_id_length,
 };
-use rmcp::{ServiceExt, transport::stdio};
 
 mod bin_support;
 
@@ -1124,6 +1123,7 @@ async fn run_cli() -> Result<ExitCode> {
         project_file,
         project_id,
         database,
+        home,
     } = match resolve_project(cli.project_file.as_deref(), cli.home) {
         Ok(project) => project,
         Err(error) => {
@@ -1272,14 +1272,18 @@ async fn run_cli() -> Result<ExitCode> {
             } else {
                 McpServer::new_with_actor_context
             };
-            serve_mcp(server(
-                database,
-                project_id,
-                actor_id,
-                SessionId(session_id),
-                source_skill,
-                actor_context,
-            ))
+            bin_support::mcp::serve(
+                server(
+                    database,
+                    project_id,
+                    actor_id,
+                    SessionId(session_id.clone()),
+                    source_skill,
+                    actor_context,
+                ),
+                &home,
+                &session_id,
+            )
             .await?;
         }
         Command::Control {
@@ -1288,6 +1292,7 @@ async fn run_cli() -> Result<ExitCode> {
             actor_context,
             source_skill,
         } => bin_support::control::serve_control(
+            &home,
             database,
             identity,
             project_id,
@@ -2348,39 +2353,6 @@ fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
         input
     };
     serde_json::from_str(json).with_context(|| format!("invalid {label} JSON"))
-}
-
-async fn serve_mcp(server: McpServer) -> Result<()> {
-    // ENGRAM_MCP_PHASE_TRACE=1 at start records each tool call's phases to
-    // stderr; unset, the server and its transport are untouched.
-    let Some(trace) = engram::phase_trace::PhaseTrace::from_env() else {
-        let server = server
-            .serve(stdio())
-            .await
-            .context("failed to start Engram MCP stdio server")?;
-        server
-            .waiting()
-            .await
-            .context("Engram MCP stdio server stopped with an error")?;
-        return Ok(());
-    };
-    let transport = rmcp::transport::IntoTransport::<
-        rmcp::RoleServer,
-        std::io::Error,
-        rmcp::transport::async_rw::TransportAdapterAsyncRW,
-    >::into_transport(stdio());
-    let server = server
-        .with_phase_trace(Some(std::sync::Arc::clone(&trace)))
-        .serve(engram::phase_trace::TracingTransport::new(
-            transport,
-            std::sync::Arc::clone(&trace),
-        ))
-        .await
-        .context("failed to start Engram MCP stdio server")?;
-    let stopped = server.waiting().await;
-    trace.shutdown_stage(engram::phase_trace::ShutdownStage::ServiceWaitingReturned);
-    stopped.context("Engram MCP stdio server stopped with an error")?;
-    Ok(())
 }
 
 /// Flat flags for one planning/lifecycle update, boxed in the command enum.

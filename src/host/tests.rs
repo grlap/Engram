@@ -1,6 +1,7 @@
 use std::io::Cursor;
 
 use super::*;
+mod diagnostics;
 
 #[test]
 fn turn_grant_read_round_trips_on_the_host_channel() {
@@ -18,6 +19,9 @@ fn turn_grant_read_round_trips_on_the_host_channel() {
         source_skill: None,
         actor_context: None,
         actor_context_normalized: false,
+        diagnostics: None,
+        diagnostic_frame: None,
+        diagnostic_sequence: 0,
     };
     let bound = server
         .handle(HostControlRequest::SessionBind {
@@ -207,6 +211,9 @@ fn oversized_control_frame_is_rejected_and_drained() {
         source_skill: None,
         actor_context: None,
         actor_context_normalized: false,
+        diagnostics: None,
+        diagnostic_frame: None,
+        diagnostic_sequence: 0,
     };
 
     server

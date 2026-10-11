@@ -394,6 +394,7 @@ pub struct PhaseTrace {
     pending: Mutex<Pending>,
     lines: LineWriter,
     started: Instant,
+    diagnostics: Mutex<Option<Arc<crate::diagnostics::mcp::Observer>>>,
 }
 
 impl std::fmt::Debug for PhaseTrace {
@@ -411,6 +412,7 @@ impl PhaseTrace {
             pending: Mutex::new(Pending::default()),
             lines: LineWriter::new(sink, capacity, "engram-phase-trace"),
             started: Instant::now(),
+            diagnostics: Mutex::new(None),
         }
     }
 
@@ -425,6 +427,11 @@ impl PhaseTrace {
     /// Records after the existing close flush are best effort too; this adds
     /// no flush wait, and an observer must treat missing stages as unknown.
     pub fn shutdown_stage(&self, stage: ShutdownStage) {
+        if let Ok(observer) = self.diagnostics.lock()
+            && let Some(observer) = &*observer
+        {
+            observer.stage(stage);
+        }
         self.emit(
             serde_json::json!({
                 "engram_mcp_shutdown_trace": 1,
@@ -434,6 +441,13 @@ impl PhaseTrace {
             })
             .to_string(),
         );
+    }
+
+    /// Connects the already-observed shutdown milestones to the durable sink.
+    pub fn observe_diagnostics(&self, observer: Arc<crate::diagnostics::mcp::Observer>) {
+        if let Ok(mut slot) = self.diagnostics.lock() {
+            *slot = Some(observer);
+        }
     }
 
     fn counters(&self, pending: &Pending) -> Counters {

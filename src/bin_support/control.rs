@@ -4,7 +4,7 @@
 use anyhow::{Context as _, Result};
 use engram::{HostControlServer, HostPathPolicy, ProjectId, SessionId};
 use std::io::{self, BufReader, BufWriter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// An opted-in control process's trace while it runs. Dropped on any
 /// return, it ends a startup still open as incomplete and closes the trace.
@@ -24,6 +24,7 @@ impl Drop for ControlStartup {
     reason = "the control command's resolved context, plus its opt-in trace"
 )]
 pub(crate) fn serve_control(
+    home: &Path,
     database: PathBuf,
     identity: Option<HostPathPolicy>,
     project_id: ProjectId,
@@ -33,8 +34,14 @@ pub(crate) fn serve_control(
     source_skill: Option<String>,
     trace: Option<&std::sync::Arc<engram::phase_trace::control::ControlTrace>>,
 ) -> Result<()> {
+    let diagnostics = engram::diagnostics::Diagnostics::start(
+        home,
+        &session_id,
+        engram::diagnostics::Surface::Control,
+    );
+    let _finish = DiagnosticExit(diagnostics.clone());
     // ENGRAM_MCP_PHASE_TRACE=1 at start traces startup and each frame to
-    // stderr; unset, the server is untouched.
+    // stderr; unset, only the default diagnostic observer is installed.
     if let Err(error) = crate::validate_session_id_length(&session_id) {
         if let Some(trace) = trace {
             trace.abandon_startup("invalid_session_id");
@@ -50,8 +57,16 @@ pub(crate) fn serve_control(
         source_skill,
     );
     let mut server = match opened {
-        Ok(server) => server.with_actor_context(actor_context),
+        Ok(server) => server
+            .with_actor_context(actor_context)
+            .with_diagnostics(diagnostics.clone()),
         Err(error) => {
+            diagnostics.emit(engram::diagnostics::Event::failure(
+                "startup",
+                engram::diagnostics::Correlation::default(),
+                std::time::Duration::ZERO,
+                engram::diagnostics::Fault::store(&error),
+            ));
             if let Some(trace) = trace {
                 trace.startup_finished(Some(engram::host::store_error_code(&error)));
             }
@@ -68,4 +83,11 @@ pub(crate) fn serve_control(
         None => server.serve(reader, writer),
     };
     stopped.context("Engram host-control stdio service stopped with an error")
+}
+
+struct DiagnosticExit(engram::diagnostics::Diagnostics);
+impl Drop for DiagnosticExit {
+    fn drop(&mut self) {
+        let _ = self.0.flush(engram::diagnostics::EXIT_FLUSH);
+    }
 }

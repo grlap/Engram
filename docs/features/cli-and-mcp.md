@@ -1839,7 +1839,7 @@ engram work --actor-id codex --session-id session-unique-id next
 engram work --actor-id codex --session-id session-unique-id \
   claim <short-ref>
 engram mcp --actor-id codex --session-id session-unique-id
-# The same identity, for a child that must not write.
+# The same identity, for a child that must not mutate the store.
 engram mcp --actor-id codex --session-id session-unique-id --read-only
 
 # Host/operator escape hatch: the six-operation JSON protocol from the shell.
@@ -2482,8 +2482,9 @@ described under the
 [control phase trace](behavioral-control-plane.md#opt-in-control-phase-trace).
 
 `ENGRAM_MCP_PHASE_TRACE=1` at `engram mcp` start turns on a phase trace for
-diagnosing slow calls. Any other value, or none, leaves the server and its
-transport untouched and writes nothing. With it on, every tool call whose
+diagnosing slow calls. Any other value, or none, leaves stderr phase tracing
+and detailed SQLite profiling disabled. The default
+[operational diagnostics](diagnostics.md) remain active. With tracing on, every tool call whose
 handler returns ends in exactly one JSON line on stderr, at most 4 KiB,
 keyed `engram_mcp_phase_trace`; a handler that panics writes none.
 
@@ -2540,8 +2541,10 @@ does not assert success. The records use the existing bounded queue and add
 no flush wait; the final two are best effort after the existing close flush.
 The dogfood close diagnostic retains server times and client receipt times
 relative to stdin EOF separately. Missing records, and cleanup after the
-service returns, remain unknown. With tracing off, the original unwrapped
-transport and shutdown path are unchanged.
+service returns, remain unknown. With tracing off, stderr tracing is absent;
+the default [bounded operational diagnostics](diagnostics.md) observer retains
+observed failures and overruns without changing rmcp close behavior, then adds
+a bounded diagnostic exit flush of at most one second.
 
 Durations are elapsed wall time and overlap where one phase contains another.
 They are not summed, and a fast server record does not prove a fast client.
@@ -2836,7 +2839,7 @@ fourteen words plus `search`.
 #### Read-only mode
 
 `engram mcp --read-only`, with the same identity arguments, serves a host
-child that must not write. It lists only the read words `next`, `ls`,
+child that must not mutate the store. It lists only the read words `next`, `ls`,
 `search`, `show` and `memories`, and admits only their reading forms:
 
 - `next` only with `peek` exactly `true`, which stages no delivery and
@@ -2866,6 +2869,11 @@ since `next` and `memories` have writing forms there. The text a read word
 returns may still suggest a writing command; in this mode such a call is
 refused. `initialize` gives a read-only connection its own instructions,
 naming the five read words and their admitted forms.
+The process still writes bounded [operational diagnostics](diagnostics.md)
+outside SQLite under the selected home's `diagnostics/` directory, including
+refused calls and its exit summary. Read-only mode restricts store operations;
+it does not promise a filesystem with no writes. An unwritable diagnostic
+destination preserves responses and may lose diagnostics as documented.
 
 A read-only child cannot record a memories listing, so when its host passes
 a context generation, the peek's direction to run `memories` with that

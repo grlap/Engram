@@ -1668,8 +1668,9 @@ transitions, or finalization.
 `ENGRAM_MCP_PHASE_TRACE=1` in the environment of `engram control` when it
 starts turns on a phase trace. It shows where startup and each input frame
 spent their time, for a host that diagnoses a slow or expired exchange. A
-process keeps the setting it started with. Unset, nothing is installed and
-nothing is written.
+process keeps the setting it started with. Unset, stderr phase tracing and
+detailed SQLite profiling are disabled; the default bounded
+[operational diagnostics](diagnostics.md) remain active.
 
 The trace changes no response and adds nothing to stdout. Each record is one
 JSON line on stderr, at most 4,096 bytes with its newline, keyed

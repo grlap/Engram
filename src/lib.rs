@@ -9,6 +9,7 @@ pub mod backup;
 pub mod build_identity;
 pub mod canonical;
 pub mod control;
+pub mod diagnostics;
 pub mod domain;
 pub mod graph_snapshot;
 pub mod host;

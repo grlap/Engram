@@ -219,9 +219,30 @@ pub struct HostControlServer {
     source_skill: Option<String>,
     actor_context: Option<String>,
     actor_context_normalized: bool,
+    diagnostics: Option<crate::diagnostics::Diagnostics>,
+    diagnostic_frame: Option<crate::diagnostics::control::Frame>,
+    diagnostic_sequence: u64,
 }
 
 impl HostControlServer {
+    /// Adds a bounded diagnostic sink selected by the process's explicit home.
+    #[must_use]
+    pub fn with_diagnostics(mut self, sink: crate::diagnostics::Diagnostics) -> Self {
+        self.diagnostics = Some(sink);
+        self
+    }
+
+    fn observe_refusal(&self, code: Option<crate::ControlRefusalCode>) {
+        if let Some(code) = code {
+            self.observe_fault(crate::diagnostics::Fault::control(code));
+        }
+    }
+
+    fn observe_fault(&self, fault: crate::diagnostics::Fault) {
+        if let (Some(sink), Some(frame)) = (&self.diagnostics, self.diagnostic_frame) {
+            frame.emit(sink, fault);
+        }
+    }
     /// Attributes this connection's records to the host-asserted execution
     /// context (agent, model, reasoning), normalized exactly as the work
     /// words normalize it. It describes the actor; it never changes the
@@ -289,6 +310,9 @@ impl HostControlServer {
             source_skill,
             actor_context: None,
             actor_context_normalized: false,
+            diagnostics: None,
+            diagnostic_frame: None,
+            diagnostic_sequence: 0,
         })
     }
 
@@ -464,20 +488,31 @@ impl HostControlServer {
                         "intent_fingerprint must be a lowercase SHA-256 digest".into(),
                     )
                 })?;
-                serde_json::to_value(self.store.evaluate_control_turn(
-                    &self.project_id,
-                    &self.session_id,
-                    &self.connection_token,
-                    &routing_token,
-                    &TurnIntent {
-                        idempotency_key,
-                        intent_fingerprint,
-                        purpose,
-                        requested_effects,
-                        resource_intents,
-                    },
-                    now,
-                )?)
+                serde_json::to_value(
+                    self.store
+                        .evaluate_control_turn(
+                            &self.project_id,
+                            &self.session_id,
+                            &self.connection_token,
+                            &routing_token,
+                            &TurnIntent {
+                                idempotency_key,
+                                intent_fingerprint,
+                                purpose,
+                                requested_effects,
+                                resource_intents,
+                            },
+                            now,
+                        )
+                        .inspect(|decision| {
+                            self.observe_refusal(match decision {
+                                crate::ControlTurnDecision::Grant { .. } => None,
+                                crate::ControlTurnDecision::Refuse { directive } => {
+                                    Some(directive.code)
+                                }
+                            });
+                        })?,
+                )
                 .map_err(StoreError::Json)
             }
             HostControlRequest::TurnBegin {
@@ -485,16 +520,25 @@ impl HostControlServer {
                 grant_id,
                 delivery_tokens,
                 idempotency_key,
-            } => serde_json::to_value(self.store.begin_control_turn(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &routing_token,
-                &grant_id,
-                &delivery_tokens,
-                &idempotency_key,
-                now,
-            )?)
+            } => serde_json::to_value(
+                self.store
+                    .begin_control_turn(
+                        &self.project_id,
+                        &self.session_id,
+                        &self.connection_token,
+                        &routing_token,
+                        &grant_id,
+                        &delivery_tokens,
+                        &idempotency_key,
+                        now,
+                    )
+                    .inspect(|decision| {
+                        self.observe_refusal(match decision {
+                            crate::ControlTurnBeginDecision::Begin { .. } => None,
+                            crate::ControlTurnBeginDecision::Refuse { code } => Some(*code),
+                        });
+                    })?,
+            )
             .map_err(StoreError::Json),
             HostControlRequest::ExecutionObserve {
                 routing_token,
@@ -538,19 +582,30 @@ impl HostControlServer {
                 verification_evidence,
                 environment_evidence,
                 idempotency_key,
-            } => serde_json::to_value(self.store.checkpoint_control_turn_with_evidence(
-                &self.project_id,
-                &self.session_id,
-                &self.connection_token,
-                &routing_token,
-                &grant_id,
-                next_intent,
-                &observations,
-                &verification_evidence,
-                &environment_evidence,
-                &idempotency_key,
-                now,
-            )?)
+            } => serde_json::to_value(
+                self.store
+                    .checkpoint_control_turn_with_evidence(
+                        &self.project_id,
+                        &self.session_id,
+                        &self.connection_token,
+                        &routing_token,
+                        &grant_id,
+                        next_intent,
+                        &observations,
+                        &verification_evidence,
+                        &environment_evidence,
+                        &idempotency_key,
+                        now,
+                    )
+                    .inspect(|decision| {
+                        self.observe_refusal(match decision {
+                            crate::ControlTurnCheckpointDecision::Checkpointed { .. } => None,
+                            crate::ControlTurnCheckpointDecision::Refuse { code, .. } => {
+                                Some(*code)
+                            }
+                        });
+                    })?,
+            )
             .map_err(StoreError::Json),
             HostControlRequest::VerificationBind {
                 routing_token,
@@ -588,23 +643,8 @@ impl HostControlServer {
     /// # Errors
     ///
     /// Returns an I/O error when the transport itself cannot read or write.
-    pub fn serve(
-        &mut self,
-        mut reader: impl BufRead,
-        mut writer: impl Write,
-    ) -> std::io::Result<()> {
-        loop {
-            let Some(frame) = read_control_frame(&mut reader)? else {
-                return Ok(());
-            };
-            let response = match parse_frame(frame) {
-                Ok(request) => self.respond(request),
-                Err(refusal) => refusal,
-            };
-            serde_json::to_writer(&mut writer, &response)?;
-            writer.write_all(b"\n")?;
-            writer.flush()?;
-        }
+    pub fn serve(&mut self, reader: impl BufRead, writer: impl Write) -> std::io::Result<()> {
+        self.serve_observed(reader, writer, None)
     }
 
     /// [`Self::serve`] with the opt-in phase trace: the same responses, byte
@@ -618,24 +658,61 @@ impl HostControlServer {
     /// after the frame's terminal trace line.
     pub fn serve_traced(
         &mut self,
+        reader: impl BufRead,
+        writer: impl Write,
+        trace: &crate::phase_trace::control::ControlTrace,
+    ) -> std::io::Result<()> {
+        self.serve_observed(reader, writer, Some(trace))
+    }
+
+    fn serve_observed(
+        &mut self,
         mut reader: impl BufRead,
         mut writer: impl Write,
-        trace: &crate::phase_trace::control::ControlTrace,
+        trace: Option<&crate::phase_trace::control::ControlTrace>,
     ) -> std::io::Result<()> {
         use crate::phase_trace::control::{ControlPhase, Terminal};
         loop {
-            if reader.fill_buf()?.is_empty() {
+            let available = match reader.fill_buf() {
+                Ok(bytes) => !bytes.is_empty(),
+                Err(error) => {
+                    if let Some(sink) = &self.diagnostics {
+                        sink.emit(crate::diagnostics::Event::failure(
+                            "unknown",
+                            crate::diagnostics::Correlation::default(),
+                            std::time::Duration::ZERO,
+                            crate::diagnostics::Fault::transport_failed(),
+                        ));
+                    }
+                    return Err(error);
+                }
+            };
+            if !available {
+                self.diagnostic_frame = None;
                 return Ok(());
             }
-            trace.begin_frame();
+            self.diagnostic_sequence = self.diagnostic_sequence.saturating_add(1);
+            self.diagnostic_frame = self
+                .diagnostics
+                .as_ref()
+                .map(|_| crate::diagnostics::control::Frame::new(self.diagnostic_sequence));
+            if let Some(trace) = trace {
+                trace.begin_frame();
+            }
             let frame = match read_control_frame(&mut reader) {
                 Ok(Some(frame)) => frame,
                 Ok(None) => {
-                    trace.finish(Terminal::Incomplete, None);
+                    if let Some(trace) = trace {
+                        trace.finish(Terminal::Incomplete, None);
+                    }
+                    self.observe_fault(crate::diagnostics::Fault::incomplete());
                     return Ok(());
                 }
                 Err(error) => {
-                    trace.finish(Terminal::Incomplete, None);
+                    if let Some(trace) = trace {
+                        trace.finish(Terminal::Incomplete, None);
+                    }
+                    self.observe_fault(crate::diagnostics::Fault::transport_failed());
                     return Err(error);
                 }
             };
@@ -644,11 +721,19 @@ impl HostControlServer {
             // that stalls in it says which operation it is.
             let response = match parse_frame(frame) {
                 Ok(request) => {
-                    trace.set_operation(request.operation());
+                    if let Some(trace) = trace {
+                        trace.set_operation(request.operation());
+                    }
+                    if let Some(frame) = &mut self.diagnostic_frame {
+                        frame.request(&request);
+                    }
                     self.respond(request)
                 }
                 Err(refusal) => {
-                    trace.set_operation("invalid");
+                    if let Some(trace) = trace {
+                        trace.set_operation("invalid");
+                    }
+                    self.observe_fault(crate::diagnostics::Fault::invalid_request());
                     refusal
                 }
             };
@@ -656,24 +741,44 @@ impl HostControlServer {
                 HostControlResponse::Ok { .. } => "ok",
                 HostControlResponse::Error { error } => error.code,
             };
-            trace.enter(ControlPhase::ResponseSerialize);
-            let bytes = match serde_json::to_vec(&response) {
-                Ok(bytes) => bytes,
-                Err(error) => {
-                    trace.finish(Terminal::Incomplete, Some(outcome));
-                    return Err(error.into());
+            if let Some(trace) = trace {
+                trace.enter(ControlPhase::ResponseSerialize);
+            }
+            if let Some(trace) = trace {
+                let bytes = match serde_json::to_vec(&response) {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        trace.finish(Terminal::Incomplete, Some(outcome));
+                        self.observe_fault(crate::diagnostics::Fault::incomplete());
+                        return Err(error.into());
+                    }
+                };
+                trace.enter(ControlPhase::ResponseWriteFlush);
+                if let Err(error) = writer.write_all(&bytes) {
+                    trace.finish(Terminal::WriteFailed, Some(outcome));
+                    self.observe_fault(crate::diagnostics::Fault::send_failed());
+                    return Err(error);
                 }
-            };
-            trace.enter(ControlPhase::ResponseWriteFlush);
-            let written = writer
-                .write_all(&bytes)
-                .and_then(|()| writer.write_all(b"\n"))
-                .and_then(|()| writer.flush());
+            } else if let Err(error) = stream_control_response(&mut writer, &response) {
+                self.observe_fault(if error.is_io() {
+                    crate::diagnostics::Fault::send_failed()
+                } else {
+                    crate::diagnostics::Fault::incomplete()
+                });
+                return Err(error.into());
+            }
+            let written = writer.write_all(b"\n").and_then(|()| writer.flush());
             if let Err(error) = written {
-                trace.finish(Terminal::WriteFailed, Some(outcome));
+                if let Some(trace) = trace {
+                    trace.finish(Terminal::WriteFailed, Some(outcome));
+                }
+                self.observe_fault(crate::diagnostics::Fault::send_failed());
                 return Err(error);
             }
-            trace.finish(Terminal::Complete, Some(outcome));
+            if let Some(trace) = trace {
+                trace.finish(Terminal::Complete, Some(outcome));
+            }
+            self.diagnostic_frame = None;
         }
     }
 
@@ -681,13 +786,16 @@ impl HostControlServer {
     fn respond(&mut self, request: HostControlRequest) -> HostControlResponse {
         match self.handle(request) {
             Ok(result) => HostControlResponse::Ok { result },
-            Err(error) => HostControlResponse::Error {
-                error: HostControlErrorBody {
-                    code: store_error_code(&error),
-                    message: error.to_string(),
-                    details: store_error_details(&error),
-                },
-            },
+            Err(error) => {
+                self.observe_fault(crate::diagnostics::Fault::store(&error));
+                HostControlResponse::Error {
+                    error: HostControlErrorBody {
+                        code: store_error_code(&error),
+                        message: error.to_string(),
+                        details: store_error_details(&error),
+                    },
+                }
+            }
         }
     }
 
@@ -727,6 +835,14 @@ impl HostControlServer {
             reason: reason.into(),
         }
     }
+}
+
+/// The default path streams JSON directly, without a response-sized buffer.
+fn stream_control_response(
+    writer: &mut impl Write,
+    response: &HostControlResponse,
+) -> serde_json::Result<()> {
+    serde_json::to_writer(writer, response)
 }
 
 /// The request one frame holds, or the response refusing it: an oversize

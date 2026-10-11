@@ -23,6 +23,7 @@ pub(crate) struct ResolvedProject {
     pub(crate) project_file: PathBuf,
     pub(crate) project_id: ProjectId,
     pub(crate) database: PathBuf,
+    pub(crate) home: PathBuf,
 }
 
 /// Resolves the stable project id and its host-local database. The project
@@ -40,6 +41,7 @@ pub(crate) fn resolve_project(
         project_file,
         project_id,
         database,
+        home,
     })
 }
 
