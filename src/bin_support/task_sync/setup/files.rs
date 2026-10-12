@@ -30,6 +30,7 @@ impl Directory {
                         .last()
                         .context("directory root missing")?
                         .open_dir_nofollow(name)?;
+                    #[cfg(windows)]
                     check_directory(&child)?;
                     directories.push(child);
                 }
@@ -40,6 +41,7 @@ impl Directory {
         if directories.is_empty() {
             directories.push(Dir::open_ambient_dir(anchor, cap_std::ambient_authority())?);
         }
+        #[cfg(windows)]
         check_directory(&directories[0])?;
         Ok(Self(directories))
     }
@@ -102,6 +104,7 @@ impl Directory {
     }
 }
 
+#[cfg(windows)]
 fn check_directory(directory: &Dir) -> Result<()> {
     #[cfg(windows)]
     {
@@ -112,7 +115,5 @@ fn check_directory(directory: &Dir) -> Result<()> {
             "setup ancestor is a reparse point"
         );
     }
-    #[cfg(not(windows))]
-    let _ = directory;
     Ok(())
 }
