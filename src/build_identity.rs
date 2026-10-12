@@ -421,6 +421,17 @@ mod tests {
         assert_eq!(value, None);
         assert!(took >= Duration::from_millis(300), "{took:?}");
         assert!(took < Duration::from_secs(30), "{took:?}");
+        // That call's reading runs in a thread it spawned, which need not have
+        // begun yet; wait until it has, as no deadline above depends on it.
+        let waiting = Instant::now();
+        while READINGS.load(Ordering::SeqCst) < 2 {
+            assert!(
+                waiting.elapsed() < Duration::from_secs(30),
+                "the new reading never began"
+            );
+            std::thread::yield_now();
+        }
+        assert_eq!(READINGS.load(Ordering::SeqCst), 2);
         // A deadline already passed gives up at once and starts no other.
         assert_eq!(LATCH.get_by(Some(Instant::now()), panic_first), None);
         assert_eq!(READINGS.load(Ordering::SeqCst), 2);
