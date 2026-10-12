@@ -53,7 +53,9 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
     let project = ProjectId("task-sync-cli".into());
     let source = fixture.path().join("source-home");
     let target = fixture.path().join("target-home");
-    let host_policy = if cfg!(windows) {
+    // SqliteStore::open below checks the store against the host default, so
+    // initialize with that policy rather than guessing it per platform.
+    let host_policy = if engram::HostPathPolicy::host_default().case_fold_paths {
         "case_fold"
     } else {
         "case_sensitive"

@@ -35,7 +35,9 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
     let project = ProjectId("activity-cli".into());
     let source = fixture.path().join("source");
     let target = fixture.path().join("target");
-    let host_policy = if cfg!(windows) {
+    // SqliteStore::open below checks the store against the host default, so
+    // initialize with that policy rather than guessing it per platform.
+    let host_policy = if engram::HostPathPolicy::host_default().case_fold_paths {
         "case_fold"
     } else {
         "case_sensitive"
