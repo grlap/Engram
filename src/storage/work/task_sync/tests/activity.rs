@@ -7,6 +7,7 @@ use crate::task_sync::{
 
 mod retention;
 mod validation;
+mod without_alias;
 
 fn export(store: &SqliteStore, project: &ProjectId, machine: &str) -> TaskTree {
     store
