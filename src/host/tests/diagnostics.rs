@@ -1,5 +1,8 @@
 use super::*;
-use crate::diagnostics::{Diagnostics, EXIT_FLUSH, Fingerprint, Surface, tests::records};
+use crate::diagnostics::{
+    Diagnostics, Fingerprint, Surface,
+    tests::{drain, records},
+};
 use std::io::{self, Write};
 
 #[test]
@@ -69,7 +72,7 @@ fn diagnostics_control_read_failure_before_a_frame_is_retained() {
         io::ErrorKind::PermissionDenied
     );
     assert_eq!(output.len(), 0);
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let fault = rows
         .iter()
@@ -80,7 +83,7 @@ fn diagnostics_control_read_failure_before_a_frame_is_retained() {
 }
 impl Write for Failed<'_> {
     fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-        assert!(self.sink.flush(EXIT_FLUSH));
+        drain(self.sink);
         assert_eq!(
             records(self.home)
                 .iter()
@@ -163,7 +166,7 @@ fn diagnostics_control_refusals_keep_wire_bytes_and_safe_frame_correlation() {
         .unwrap();
     trace.close();
     assert_eq!(baseline, traced_bytes);
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let refused = rows
         .iter()
@@ -214,7 +217,7 @@ fn diagnostics_control_parse_refusal_is_queued_before_failed_response_delivery()
             .kind(),
         io::ErrorKind::BrokenPipe
     );
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     assert_eq!(
         rows.iter()

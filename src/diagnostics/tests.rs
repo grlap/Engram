@@ -9,6 +9,17 @@ use std::{
     time::Duration,
 };
 
+// Record assertions need completion, not the best-effort production exit
+// budget. This finite watchdog bounds a broken test under host or disk load.
+pub(crate) const RECORD_DRAIN: Duration = Duration::from_secs(30);
+
+pub(crate) fn drain(sink: &Diagnostics) {
+    assert!(
+        sink.flush(RECORD_DRAIN),
+        "diagnostic records did not drain within {RECORD_DRAIN:?}: {sink:#?}"
+    );
+}
+
 pub(crate) fn records(home: &Path) -> Vec<Value> {
     (0..4)
         .flat_map(|index| {
@@ -43,7 +54,7 @@ fn diagnostics_writer_admission_keeps_native_fields_without_source_text() {
         Duration::from_millis(10_011),
         Fault::store(&error),
     ));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let event = &rows
         .iter()
@@ -82,7 +93,7 @@ fn exact_fingerprints_and_privacy_survive_normal_exit() {
         Duration::from_secs(6),
         Fault::store(&error),
     ));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     assert_eq!(rows.len(), 2);
     let row = rows
@@ -256,7 +267,7 @@ fn real_sqlite_contention_preserves_typed_codes_without_logging_sql() {
         Duration::ZERO,
         Fault::store(&crate::StoreError::Sqlite(error)),
     ));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let error = rows
         .iter()

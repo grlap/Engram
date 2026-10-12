@@ -2,6 +2,53 @@ use super::*;
 use crate::diagnostics::{Correlation, Fault};
 use std::sync::atomic::AtomicUsize;
 
+fn drain(writer: &Writer) -> bool {
+    let result = writer.flush(crate::diagnostics::tests::RECORD_DRAIN);
+    assert_eq!(
+        writer.shared.flushed.load(Ordering::Acquire),
+        writer.shared.flush_requested.load(Ordering::Acquire),
+        "{writer:#?}"
+    );
+    assert!(
+        writer.shared.processed.load(Ordering::Acquire)
+            >= writer.shared.flush_target.load(Ordering::Acquire),
+        "{writer:#?}"
+    );
+    result
+}
+
+#[test]
+fn completed_flush_is_observed_before_wait_without_notification() {
+    let (sender, _receiver) = mpsc::sync_channel(1);
+    let shared = Arc::new(Shared::default());
+    let writer = Writer::from_spawn(sender, Arc::clone(&shared), true);
+    shared.accepted.store(1, Ordering::Release);
+    shared.processed.store(1, Ordering::Release);
+    shared.flush_target.store(1, Ordering::Release);
+    shared.flush_requested.store(1, Ordering::Release);
+    shared.flushed.store(1, Ordering::Release);
+    let guard = shared.notification.0.lock().unwrap();
+    // Model acknowledgement arriving before the caller starts to wait. No
+    // notification is sent, and no scheduling or remaining budget is needed.
+    assert!(writer.wait_for_flush(1, guard, Instant::now(), Duration::ZERO));
+    assert_eq!(shared.counters.timeout.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn pending_flush_with_no_remaining_allowance_counts_timeout() {
+    let (sender, _receiver) = mpsc::sync_channel(1);
+    let shared = Arc::new(Shared::default());
+    let writer = Writer::from_spawn(sender, Arc::clone(&shared), true);
+    shared.accepted.store(1, Ordering::Release);
+    shared.flush_target.store(1, Ordering::Release);
+    shared.flush_requested.store(1, Ordering::Release);
+    let guard = shared.notification.0.lock().unwrap();
+    assert!(!writer.wait_for_flush(1, guard, Instant::now(), Duration::ZERO));
+    assert_eq!(shared.flushed.load(Ordering::Acquire), 0);
+    assert_eq!(shared.processed.load(Ordering::Acquire), 0);
+    assert_eq!(shared.counters.timeout.load(Ordering::Relaxed), 1);
+}
+
 fn event() -> Event {
     Event::failure(
         "note",
@@ -67,7 +114,7 @@ fn post_fence_drops_cannot_acknowledge_older_queued_records() {
     assert_eq!(writer.shared.processed.load(Ordering::Acquire), 1);
     assert_eq!(lines.lock().unwrap().len(), 1);
     resume.send(()).unwrap();
-    assert!(writer.flush(super::super::EXIT_FLUSH));
+    assert!(drain(&writer), "{writer:#?}");
     let rows = lines.lock().unwrap();
     assert_eq!(
         rows.iter()
@@ -170,11 +217,14 @@ fn control_startup_and_admission_do_not_wait_for_build_identity() {
         assert_eq!(writer.shared.accepted.load(Ordering::Acquire), 1);
         assert_eq!(writer.shared.processed.load(Ordering::Acquire), 0);
         assert!(!writer.flush(Duration::ZERO));
+        assert_eq!(writer.shared.flush_target.load(Ordering::Acquire), 1);
+        assert_eq!(writer.shared.flushed.load(Ordering::Acquire), 0);
+        assert_eq!(writer.shared.counters.timeout.load(Ordering::Relaxed), 1);
     }
     resume.send(()).unwrap();
     startup.join().unwrap();
     let (_, writer) = started.expect("control startup waited for the identity reader");
-    assert!(writer.flush(super::super::EXIT_FLUSH));
+    assert!(drain(&writer), "{writer:#?}");
     let rows = lines.lock().unwrap();
     assert_eq!(rows[0]["event"]["code"], "tool_error");
     assert_eq!(rows[0]["producer"]["surface"], "control");
@@ -198,7 +248,7 @@ fn idle_flush_wakes_writer_and_clean_exit_is_a_summary() {
             failure: io::ErrorKind::Other,
         },
     );
-    assert!(writer.flush(super::super::EXIT_FLUSH));
+    assert!(drain(&writer), "{writer:#?}");
     let lines = lines.lock().unwrap();
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0]["event"]["kind"], "summary");
@@ -228,7 +278,7 @@ fn losses_are_saturating_and_disclosed_after_each_injected_io_failure() {
         );
         writer.emit(&event());
         writer.emit(&event());
-        assert!(!writer.flush(super::super::EXIT_FLUSH));
+        assert!(!drain(&writer), "{writer:#?}");
         let lines = lines.lock().unwrap();
         assert_eq!(lines.len(), 2);
         let field = if failure == io::ErrorKind::WouldBlock {
@@ -284,8 +334,11 @@ fn queue_full_exit_signal_cannot_be_dropped_or_join_a_blocked_writer() {
         writer.emit(&event());
     }
     assert!(!writer.flush(Duration::from_millis(20)));
+    assert_eq!(writer.shared.processed.load(Ordering::Acquire), 0);
+    assert_eq!(writer.shared.flushed.load(Ordering::Acquire), 0);
+    assert_eq!(writer.shared.counters.timeout.load(Ordering::Relaxed), 1);
     resume.send(()).unwrap();
-    assert!(writer.flush(super::super::EXIT_FLUSH));
+    assert!(drain(&writer), "{writer:#?}");
     let lines = lines.lock().unwrap();
     let summary = lines.last().unwrap();
     assert_eq!(summary["event"]["code"], "loss_summary");

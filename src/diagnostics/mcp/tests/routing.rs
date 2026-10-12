@@ -95,7 +95,7 @@ async fn actual_mcp_routing_errors_keep_response_bytes_and_typed_faults() {
     let observer = Observer::new(sink.clone());
     let candidate = routed(make().with_diagnostics(Arc::clone(&observer)), observer).await;
     assert_eq!(baseline, candidate);
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     assert!(rows.iter().any(|row| row["event"]["operation"] == "show"));
     assert!(rows.iter().any(|row| row["event"]["code"] == "rpc_error"));
@@ -184,7 +184,7 @@ async fn actual_rmcp_cancellation_releases_slots_and_quarantine_overflow_fails_c
                 .count(),
             0
         );
-        assert!(sink.flush(EXIT_FLUSH));
+        drain(&sink);
     }
     // rmcp drops cancelled responses instead of calling the transport's send.
     // Even a settled handler may have an old response in rmcp's queue.
@@ -207,7 +207,7 @@ async fn actual_rmcp_cancellation_releases_slots_and_quarantine_overflow_fails_c
     writer.shutdown().await.unwrap();
     bounded(serving).await.unwrap();
     observer.finished();
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     assert_eq!(
         rows.iter()
@@ -363,7 +363,7 @@ async fn ambiguous_order(cancel_old: bool) {
     bounded(writer.shutdown()).await.unwrap();
     bounded(serving).await.unwrap();
     observer.finished();
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let old_fault = rows
         .iter()

@@ -1,5 +1,8 @@
 use super::*;
-use crate::diagnostics::{EXIT_FLUSH, Surface, tests::records};
+use crate::diagnostics::{
+    Surface,
+    tests::{drain, records},
+};
 mod routing;
 mod transport;
 
@@ -19,7 +22,7 @@ fn duplicate_handler_first_has_no_receive_generation() {
     observer.settled(original, Some(Fault::tool_error()));
     assert!(observer.dispatching(&id, true).is_none());
     observer.finished();
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let faults = rows
         .iter()
@@ -42,7 +45,7 @@ fn quarantine_boundary_preserves_fresh_tracking_then_fails_closed() {
         let id = NumberOrString::Number(id);
         observer.requested(&id, "note", Instant::now());
         observer.cancelled(&id);
-        assert!(sink.flush(EXIT_FLUSH));
+        drain(&sink);
     }
     let fresh = NumberOrString::Number(1000);
     observer.requested(&fresh, "show", Instant::now());
@@ -60,7 +63,7 @@ fn quarantine_boundary_preserves_fresh_tracking_then_fails_closed() {
     observer.settled(ticket, Some(Fault::tool_error()));
     observer.cancelled(&NumberOrString::Number(998));
     observer.finished();
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let uncorrelated = rows
         .iter()
@@ -97,7 +100,7 @@ fn cancelled_before_start_cannot_claim_a_reused_id() {
     assert!(observer.dispatching(&id, false).is_none());
     observer.settled(new, Some(Fault::tool_error()));
     observer.finished();
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let late = rows
         .iter()
@@ -117,7 +120,7 @@ fn receive_termination_without_a_runtime_is_checked_at_completion() {
     observer.input_ended();
     let eof = observer.state.lock().unwrap().eof.unwrap();
     observer.finished_at(eof + Duration::from_secs(11));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     assert_eq!(
         records(home.path())
             .iter()
@@ -164,7 +167,7 @@ fn removing_a_middle_request_preserves_moved_tickets_and_reused_ids() {
     );
     observer.finished();
     assert_eq!(observer.state.lock().unwrap().active, 0);
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     assert_eq!(records(home.path()).last().unwrap()["loss"]["tracking"], 3);
 }
 
@@ -177,7 +180,7 @@ fn handler_errors_are_retained_before_send_and_reused_ids_get_new_ordinals() {
     observer.requested(&id, "note", Instant::now());
     let ticket = observer.starting(&id, "note", || false);
     observer.settled(ticket, Some(Fault::tool_error()));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     assert_eq!(
         records(home.path())
             .iter()
@@ -210,7 +213,7 @@ fn handler_errors_are_retained_before_send_and_reused_ids_get_new_ordinals() {
         0
     );
     observer.finished();
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let cancelled = rows
         .iter()
@@ -246,7 +249,7 @@ fn finishing_after_threshold_records_overrun_before_a_delayed_timer() {
     observer.finished_at(start + Duration::from_secs(11));
     observer.check_shutdown(start + Duration::from_secs(12));
     observer.finished_at(start + Duration::from_secs(13));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let overrun = rows
         .iter()
@@ -280,7 +283,7 @@ fn slow_terminal_threshold_is_strict_and_includes_dispatch_and_send() {
             false,
         );
     }
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let slow = rows
         .iter()
@@ -310,7 +313,7 @@ fn actual_eof_clock_emits_once_only_while_shutdown_is_open() {
     observer.check_shutdown(start + Duration::from_secs(11));
     observer.finished();
     observer.check_shutdown(start + Duration::from_secs(12));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let overrun = rows
         .iter()

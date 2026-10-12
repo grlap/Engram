@@ -68,7 +68,7 @@ async fn error_is_queued_before_send_poll_and_delivery_failures_remain_errors() 
         expected
     );
     let sending = transport.send(response(2, true));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     assert_eq!(
         records(home.path())
             .iter()
@@ -77,7 +77,7 @@ async fn error_is_queued_before_send_poll_and_delivery_failures_remain_errors() 
         1
     );
     assert_eq!(sending.await.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     assert_eq!(
         rows.iter()
@@ -107,7 +107,7 @@ async fn abandoned_send_is_incomplete_and_string_id_never_leaks() {
     observer.requested(&private_id, "PRIVATE-word", Instant::now());
     observer.cancelled(&private_id);
     observer.finished();
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     assert_eq!(
         rows.iter()
@@ -148,7 +148,7 @@ async fn observed_eof_and_open_close_report_overrun_without_completing_the_close
     })
     .await;
     observer.check_shutdown(Instant::now());
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     let overrun = rows
         .iter()
@@ -159,7 +159,7 @@ async fn observed_eof_and_open_close_report_overrun_without_completing_the_close
     release.notify_one();
     closing.await.unwrap();
     observer.finished();
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     assert_eq!(
         records(home.path())
             .iter()
@@ -190,7 +190,7 @@ fn pending_tracking_is_bounded_and_discloses_overflow() {
     );
     let lost = observer.starting(&NumberOrString::Number(999), "show", || false);
     observer.settled(lost, Some(Fault::tool_error()));
-    assert!(sink.flush(EXIT_FLUSH));
+    drain(&sink);
     let rows = records(home.path());
     assert_eq!(rows.last().unwrap()["loss"]["tracking"], 1);
     assert!(rows[0]["event"]["request_seq"].is_null());

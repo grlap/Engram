@@ -152,7 +152,7 @@ impl Writer {
             return false;
         };
         let started = Instant::now();
-        let Ok(mut guard) = self.shared.notification.0.lock() else {
+        let Ok(guard) = self.shared.notification.0.lock() else {
             return false;
         };
         {
@@ -175,6 +175,16 @@ impl Writer {
         if let Err(mpsc::TrySendError::Disconnected(_)) = sender.try_send(None) {
             return false;
         }
+        self.wait_for_flush(generation, guard, started, allowance)
+    }
+
+    fn wait_for_flush(
+        &self,
+        generation: u64,
+        mut guard: std::sync::MutexGuard<'_, ()>,
+        started: Instant,
+        allowance: Duration,
+    ) -> bool {
         while self.shared.flushed.load(Ordering::Acquire) < generation {
             let remaining = allowance.saturating_sub(started.elapsed());
             if remaining.is_zero() {
