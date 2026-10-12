@@ -40,17 +40,17 @@ fn cold_open_restart_refusal() -> StoreError {
 
 /// What one attempt to open a store found.
 enum OpenAttempt {
-    Opened(SqliteStore),
+    /// The store is open, with this active work schema.
+    Opened { work_schema_version: i64 },
     /// Another opener initialized the store between this attempt's probe and
     /// its write lock; nothing was written, and the open starts again.
-    InitializedMeanwhile {
-        connection: Connection,
-        initial_control_policy: Option<InitialControlPolicy>,
-    },
+    InitializedMeanwhile,
 }
 
+mod protocol_retry;
 mod restore_copy;
 mod store_copy;
+use protocol_retry::{OpenPhase, ProtocolRetry};
 pub use restore_copy::{LiveAuthority, RestoreCopyReport, installed_sidecar_problem};
 pub(crate) use store_copy::CopyProbePoint;
 pub use store_copy::{CopyInterrupt, VerifiedStoreCopy};
@@ -127,9 +127,19 @@ impl SqliteStore {
     }
 
     fn open_existing_read_only_untraced(path: &Path) -> Result<Self, StoreError> {
+        Self::open_existing_read_only_with(path, ProtocolRetry::Once)
+    }
+
+    fn open_existing_read_only_with(path: &Path, retry: ProtocolRetry) -> Result<Self, StoreError> {
         let connection = Self::open_existing_read_only_connection(path)?;
         connection.pragma_update(None, "query_only", true)?;
-        Self::from_connection(connection, None, None)
+        Self::from_connection_with_busy_timeout(
+            connection,
+            None,
+            None,
+            Duration::from_secs(5),
+            retry,
+        )
     }
 
     /// A read-only SQLite connection to an existing store file, not yet
@@ -221,7 +231,12 @@ impl SqliteStore {
                 "control inspection requires resolved host path policy".into(),
             )
         })?;
-        let store = Self::open_existing_read_only(path)?;
+        // A host runs this inspection under its own end-to-end deadline, so
+        // the open returns SQLite's locking-protocol refusal at once rather
+        // than spend another ten seconds starting again.
+        let started = crate::phase_trace::start();
+        let opened = Self::open_existing_read_only_with(path, ProtocolRetry::Never);
+        let store = Self::traced_open(started, opened)?;
         let snapshot = store.connection.unchecked_transaction()?;
         // Admission and presence must describe the SAME snapshot, even if the
         // schema/policy changed after the preliminary ordinary read-only open.
@@ -607,7 +622,15 @@ impl SqliteStore {
         if let Some(interrupt) = interrupt {
             interrupt.install(&connection, CopyProbePoint::Admit)?;
         }
-        let store = Self::from_connection(connection, None, None)?;
+        // A backup's verification never starts again: an immutable open never
+        // reads a write-ahead log, and a copy runs under its own deadline.
+        let store = Self::from_connection_with_busy_timeout(
+            connection,
+            None,
+            None,
+            Duration::from_secs(5),
+            ProtocolRetry::Never,
+        )?;
         if let Some(interrupt) = interrupt {
             interrupt.install(&store.connection, CopyProbePoint::Scan)?;
         }
@@ -647,10 +670,36 @@ impl SqliteStore {
         path: impl AsRef<Path>,
         identity: Option<HostPathPolicy>,
     ) -> Result<Self, StoreError> {
+        Self::open_path_with_identity(path.as_ref(), identity, ProtocolRetry::Once)
+    }
+
+    /// Opens a store as [`Self::open_with_host_path_identity`] does, for a
+    /// control host's call, which its host bounds by a deadline. The open
+    /// does not start again after SQLite's locking-protocol refusal: that
+    /// refusal already took SQLite about ten seconds, and another attempt
+    /// could pass the host's deadline. The refusal names its phase and is
+    /// classified as a busy store; the host opens again on a later call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when SQLite cannot open or initialize the store
+    /// or the persisted policy differs from the resolved one.
+    pub(crate) fn open_for_control_host(
+        path: impl AsRef<Path>,
+        identity: Option<HostPathPolicy>,
+    ) -> Result<Self, StoreError> {
+        Self::open_path_with_identity(path.as_ref(), identity, ProtocolRetry::Never)
+    }
+
+    fn open_path_with_identity(
+        path: &Path,
+        identity: Option<HostPathPolicy>,
+        retry: ProtocolRetry,
+    ) -> Result<Self, StoreError> {
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionOpen,
         );
-        let connection = open_sqlite_file(path.as_ref(), rusqlite::OpenFlags::default())?;
+        let connection = open_sqlite_file(path, rusqlite::OpenFlags::default())?;
         // A traced control process notes when each BEGIN IMMEDIATE and
         // COMMIT starts and how long it ran, from its first statement on.
         if crate::phase_trace::control::active() {
@@ -660,7 +709,13 @@ impl SqliteStore {
                 Some(crate::phase_trace::control::sql_event),
             );
         }
-        Self::from_connection(connection, identity, None)
+        Self::from_connection_with_busy_timeout(
+            connection,
+            identity,
+            None,
+            Duration::from_secs(5),
+            retry,
+        )
     }
 
     /// The filesystem identity this opener resolved, if any.
@@ -749,7 +804,7 @@ impl SqliteStore {
         Self::from_connection(
             connection,
             identity,
-            Some(InitialControlPolicy {
+            Some(&InitialControlPolicy {
                 required_assurance,
                 authorized_by,
             }),
@@ -796,45 +851,70 @@ impl SqliteStore {
     fn from_connection(
         connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
-        initial_control_policy: Option<InitialControlPolicy>,
+        initial_control_policy: Option<&InitialControlPolicy>,
     ) -> Result<Self, StoreError> {
         Self::from_connection_with_busy_timeout(
             connection,
             host_path_policy,
             initial_control_policy,
             Duration::from_secs(5),
+            ProtocolRetry::Once,
         )
     }
 
     /// Opens the store on `connection`. Openers of a new store decide that it
     /// is new before they take its write lock, so one may find under the lock
     /// that another has initialized it meanwhile; that opener starts again
-    /// once, from the top, against the initialized store.
+    /// once, from the top, against the initialized store. An attempt ended by
+    /// SQLite's locking-protocol refusal also starts again from the top, once
+    /// when `retry` allows it; the two allowances are separate.
     fn from_connection_with_busy_timeout(
-        connection: Connection,
+        mut connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
-        initial_control_policy: Option<InitialControlPolicy>,
+        initial_control_policy: Option<&InitialControlPolicy>,
         busy_timeout: Duration,
+        retry: ProtocolRetry,
     ) -> Result<Self, StoreError> {
-        match Self::open_attempt(
-            connection,
-            host_path_policy,
-            initial_control_policy,
-            busy_timeout,
-        )? {
-            OpenAttempt::Opened(store) => Ok(store),
-            OpenAttempt::InitializedMeanwhile {
-                connection,
-                initial_control_policy,
-            } => match Self::open_attempt(
-                connection,
+        let mut restarted = false;
+        // Where the refusal ended the first attempt, once the open retried.
+        let mut retried_after: Option<OpenPhase> = None;
+        loop {
+            let mut phase = OpenPhase::ProbeSnapshot;
+            match Self::open_attempt(
+                &mut connection,
+                &mut phase,
                 host_path_policy,
                 initial_control_policy,
                 busy_timeout,
-            )? {
-                OpenAttempt::Opened(store) => Ok(store),
-                OpenAttempt::InitializedMeanwhile { .. } => Err(cold_open_restart_refusal()),
-            },
+            ) {
+                Ok(OpenAttempt::Opened {
+                    work_schema_version,
+                }) => {
+                    return Ok(Self {
+                        connection,
+                        writer_admission: None,
+                        work_schema_version,
+                        host_path_policy,
+                    });
+                }
+                Ok(OpenAttempt::InitializedMeanwhile) if restarted => {
+                    return Err(cold_open_restart_refusal());
+                }
+                Ok(OpenAttempt::InitializedMeanwhile) => restarted = true,
+                Err(error) if protocol_retry::is_locking_protocol(&error) => {
+                    protocol_retry::end_attempt(&connection, phase)?;
+                    if retried_after.is_some() || retry == ProtocolRetry::Never {
+                        return Err(protocol_retry::locking_protocol_refusal(
+                            phase,
+                            retried_after,
+                        ));
+                    }
+                    retried_after = Some(phase);
+                }
+                // Dropping the connection ends any transaction the attempt
+                // began.
+                Err(error) => return Err(error),
+            }
         }
     }
 
@@ -844,9 +924,10 @@ impl SqliteStore {
         reason = "the cold-schema branch stays adjacent to the complete idempotent DDL for auditability"
     )]
     fn open_attempt(
-        mut connection: Connection,
+        connection: &mut Connection,
+        phase: &mut OpenPhase,
         host_path_policy: Option<HostPathPolicy>,
-        initial_control_policy: Option<InitialControlPolicy>,
+        initial_control_policy: Option<&InitialControlPolicy>,
         busy_timeout: Duration,
     ) -> Result<OpenAttempt, StoreError> {
         use crate::phase_trace::control::{ControlPhase, enter};
@@ -855,40 +936,39 @@ impl SqliteStore {
         let read_only = connection.is_readonly("main")?;
         // Every probe below reads one snapshot, so another opener committing
         // a new store meanwhile cannot make two of them disagree. An error
-        // drops the connection, which ends the read.
+        // ends the read: the caller rolls it back or drops the connection.
         connection.execute_batch("BEGIN DEFERRED;")?;
-        let store_has_schema = Self::sqlite_user_schema_exists(&connection)?;
+        let store_has_schema = Self::sqlite_user_schema_exists(connection)?;
+        protocol_retry::enter_phase(phase, OpenPhase::ProbeSnapshot)?;
         if read_only && !store_has_schema {
             return Err(StoreError::StoreNotInitialized);
         }
-        let core_store_exists = Self::sqlite_table_exists(&connection, "objects")?;
+        let core_store_exists = Self::sqlite_table_exists(connection, "objects")?;
         if store_has_schema && !core_store_exists {
             return Err(different_build_store_error());
         }
-        if core_store_exists && Self::current_core_durable_schema_issue(&connection)?.is_some() {
+        if core_store_exists && Self::current_core_durable_schema_issue(connection)?.is_some() {
             return Err(different_build_store_error());
         }
         let allow_initialization = !store_has_schema;
-        work::preflight_schema(&connection, allow_initialization)?;
-        if Self::sqlite_table_exists(&connection, "control_changes")? {
-            Self::require_task_local_cursor_schema(&connection)?;
+        work::preflight_schema(connection, allow_initialization)?;
+        if Self::sqlite_table_exists(connection, "control_changes")? {
+            Self::require_task_local_cursor_schema(connection)?;
         }
         enter(ControlPhase::HostPathPolicy);
-        Self::preflight_host_path_policy(&connection, host_path_policy)?;
+        Self::preflight_host_path_policy(connection, host_path_policy)?;
         enter(ControlPhase::PolicyHistoryVerify);
-        Self::preflight_control_policy_schema(&connection)?;
-        let control_policy_preexisted = Self::control_policy_preexisted(&connection)?;
+        Self::preflight_control_policy_schema(connection)?;
+        let control_policy_preexisted = Self::control_policy_preexisted(connection)?;
         Self::preflight_initial_control_assurance(
-            &connection,
+            connection,
             control_policy_preexisted,
-            initial_control_policy
-                .as_ref()
-                .map(|policy| policy.required_assurance),
+            initial_control_policy.map(|policy| policy.required_assurance),
         )?;
         enter(ControlPhase::SchemaInit);
-        let core_schema_complete = Self::current_core_schema_is_complete(&connection)?;
+        let core_schema_complete = Self::current_core_schema_is_complete(connection)?;
         if core_store_exists && !core_schema_complete {
-            let issue = Self::current_core_rebuildable_schema_issue(&connection)?
+            let issue = Self::current_core_rebuildable_schema_issue(connection)?
                 .unwrap_or_else(|| "the current schema inventory is incomplete".into());
             return Err(StoreError::InvalidControlProjection(format!(
                 "{}{issue}; run `engram doctor --repair-projections` explicitly",
@@ -898,28 +978,27 @@ impl SqliteStore {
         // The snapshot ends before the connection settings, which do not
         // apply inside a transaction, and before any write lock.
         connection.execute_batch("COMMIT;")?;
+        protocol_retry::enter_phase(phase, OpenPhase::ConnectionSettings)?;
         connection.execute_batch(
             "PRAGMA foreign_keys = ON;
              PRAGMA synchronous = NORMAL;",
         )?;
         if !read_only {
-            Self::use_write_ahead_log(&connection, busy_timeout)?;
+            Self::use_write_ahead_log(connection, phase, busy_timeout)?;
         }
         if !read_only && !core_schema_complete {
             #[cfg(test)]
             if !building_schema_reference() {
                 cold_open_rendezvous();
             }
+            *phase = OpenPhase::ColdInitialization;
             connection.execute_batch("BEGIN IMMEDIATE;")?;
             // The probes above ran before this lock; another opener may have
             // initialized the store since. Every check then runs again on
             // what it committed.
-            if Self::sqlite_user_schema_exists(&connection)? {
+            if Self::sqlite_user_schema_exists(connection)? {
                 connection.execute_batch("ROLLBACK;")?;
-                return Ok(OpenAttempt::InitializedMeanwhile {
-                    connection,
-                    initial_control_policy,
-                });
+                return Ok(OpenAttempt::InitializedMeanwhile);
             }
             // `project_context_revisions` and `agent_context_revisions` once
             // fenced the turn grant's context packet. Nothing reads or updates
@@ -1157,13 +1236,16 @@ impl SqliteStore {
                     "injected cold-schema failure after DDL".into(),
                 ));
             }
+            protocol_retry::enter_phase(phase, OpenPhase::ColdInitialization)?;
+        } else {
+            protocol_retry::enter_phase(phase, OpenPhase::StoreSetup)?;
         }
         if core_schema_complete {
-            Self::bind_host_path_policy(&mut connection, host_path_policy)?;
+            Self::bind_host_path_policy(connection, host_path_policy)?;
         } else if let Some(policy) = host_path_policy {
-            Self::bind_host_path_policy_on(&connection, policy)?;
+            Self::bind_host_path_policy_on(connection, policy)?;
         } else {
-            Self::preflight_host_path_policy(&connection, None)?;
+            Self::preflight_host_path_policy(connection, None)?;
         }
         if !core_schema_complete {
             connection.execute(
@@ -1172,7 +1254,7 @@ impl SqliteStore {
                 [],
             )?;
         }
-        Self::require_task_local_cursor_schema(&connection)?;
+        Self::require_task_local_cursor_schema(connection)?;
         if !core_schema_complete {
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS control_changes_task_cursor
@@ -1182,16 +1264,16 @@ impl SqliteStore {
         }
         if core_schema_complete {
             Self::initialize_control_policy(
-                &mut connection,
+                connection,
                 control_policy_preexisted,
                 initial_control_policy,
             )?;
-            work::initialize_schema(&mut connection, allow_initialization)?;
+            work::initialize_schema(connection, allow_initialization)?;
         } else {
-            Self::initialize_control_policy_on(&connection, initial_control_policy)?;
+            Self::initialize_control_policy_on(connection, initial_control_policy)?;
             // The work schema commits with the core schema, so no opener
             // ever sees a store that has one without the other.
-            work::create_schema_on(&connection)?;
+            work::create_schema_on(connection)?;
             #[cfg(test)]
             if fail_cold_schema_before_commit() {
                 return Err(StoreError::InvalidControlProjection(
@@ -1199,14 +1281,12 @@ impl SqliteStore {
                 ));
             }
             connection.execute_batch("COMMIT;")?;
+            protocol_retry::enter_phase(phase, OpenPhase::StoreSetup)?;
         }
-        let work_schema_version = work::schema_version(&connection)?;
-        Ok(OpenAttempt::Opened(Self {
-            connection,
-            writer_admission: None,
+        let work_schema_version = work::schema_version(connection)?;
+        Ok(OpenAttempt::Opened {
             work_schema_version,
-            host_path_policy,
-        }))
+        })
     }
 
     /// Puts the store in write-ahead-log mode, outside any transaction, as
@@ -1217,15 +1297,18 @@ impl SqliteStore {
     /// since another opener may have switched it meanwhile.
     fn use_write_ahead_log(
         connection: &Connection,
+        phase: &mut OpenPhase,
         busy_timeout: Duration,
     ) -> Result<(), StoreError> {
         let deadline = std::time::Instant::now() + busy_timeout;
         loop {
+            protocol_retry::enter_phase(phase, OpenPhase::JournalQuery)?;
             let mode =
                 connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))?;
             if matches!(mode.as_str(), "wal" | "memory") {
                 return Ok(());
             }
+            protocol_retry::enter_phase(phase, OpenPhase::JournalSwitch)?;
             match connection.execute_batch("PRAGMA journal_mode = WAL;") {
                 Ok(()) => return Ok(()),
                 Err(rusqlite::Error::SqliteFailure(error, _))
@@ -1490,15 +1573,13 @@ impl SqliteStore {
     fn initialize_control_policy(
         connection: &mut Connection,
         policy_preexisted: bool,
-        initial_control_policy: Option<InitialControlPolicy>,
+        initial_control_policy: Option<&InitialControlPolicy>,
     ) -> Result<(), StoreError> {
         if policy_preexisted {
             Self::preflight_initial_control_assurance(
                 connection,
                 true,
-                initial_control_policy
-                    .as_ref()
-                    .map(|policy| policy.required_assurance),
+                initial_control_policy.map(|policy| policy.required_assurance),
             )?;
             return Ok(());
         }
@@ -1506,7 +1587,6 @@ impl SqliteStore {
         if Self::control_policy_row_exists(&transaction)? {
             let policy = Self::verify_control_policy_history(&transaction)?;
             if initial_control_policy
-                .as_ref()
                 .is_some_and(|initial| initial.required_assurance != policy.required_assurance)
             {
                 return Err(StoreError::InvalidControlProjection(
@@ -1523,7 +1603,7 @@ impl SqliteStore {
 
     fn initialize_control_policy_on(
         connection: &Connection,
-        initial_control_policy: Option<InitialControlPolicy>,
+        initial_control_policy: Option<&InitialControlPolicy>,
     ) -> Result<(), StoreError> {
         if !Self::control_policy_operation_results_table_is_complete(connection)? {
             return Err(StoreError::InvalidControlProjection(
@@ -1532,7 +1612,7 @@ impl SqliteStore {
         }
         let now = Utc::now();
         let (required_assurance, authorized_by) = if let Some(initial) = initial_control_policy {
-            (initial.required_assurance, initial.authorized_by)
+            (initial.required_assurance, initial.authorized_by.clone())
         } else {
             let source = "engram:init";
             let reason = "install the default project bootstrap control policy";

@@ -8,7 +8,8 @@ use std::sync::{
 use std::time::Instant;
 
 use super::{
-    CanonicalObject, Connection, Duration, ObjectId, Path, SqliteStore, StoreError, store_sidecars,
+    CanonicalObject, Connection, Duration, ObjectId, Path, ProtocolRetry, SqliteStore, StoreError,
+    store_sidecars,
 };
 use crate::{FeedId, ProjectId, WorkGraphSnapshotCut};
 
@@ -225,8 +226,13 @@ impl SqliteStore {
         // read-only open already rules out any write to the store.
         let connection = Self::open_existing_read_only_connection(source)?;
         interrupt.install(&connection, CopyProbePoint::Admit)?;
-        let store =
-            Self::from_connection_with_busy_timeout(connection, None, None, interrupt.lock_wait())?;
+        let store = Self::from_connection_with_busy_timeout(
+            connection,
+            None,
+            None,
+            interrupt.lock_wait(),
+            ProtocolRetry::Never,
+        )?;
         interrupt.checked()?;
         store.connection.busy_timeout(interrupt.lock_wait())?;
         interrupt.install(&store.connection, CopyProbePoint::Copy)?;
@@ -257,6 +263,7 @@ impl SqliteStore {
             None,
             None,
             interrupt.lock_wait(),
+            ProtocolRetry::Never,
         )?);
         for sidecar in store_sidecars(path) {
             match std::fs::remove_file(&sidecar) {

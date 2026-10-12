@@ -1856,7 +1856,11 @@ pub(crate) fn before_cold_lock(action: impl FnOnce() + 'static) {
 
 /// A point where several openers of a new store wait for each other after
 /// deciding the store is new. Waiting is bounded, so an opener that fails
-/// before arriving turns into a failed test rather than a hung one.
+/// before arriving turns into a failed test rather than a hung one. The bound
+/// outlasts what an open may spend before arriving: SQLite spends about ten
+/// seconds before its locking-protocol refusal, and an ordinary open meets
+/// it at most twice, so a shorter bound would fail the test while the open
+/// was still recovering.
 #[cfg(test)]
 pub(crate) struct ColdOpenGate {
     arrived: std::sync::Mutex<usize>,
@@ -1880,7 +1884,7 @@ impl ColdOpenGate {
         self.all_arrived.notify_all();
         let (arrived, waited) = self
             .all_arrived
-            .wait_timeout_while(arrived, std::time::Duration::from_secs(10), |arrived| {
+            .wait_timeout_while(arrived, std::time::Duration::from_secs(60), |arrived| {
                 *arrived < self.expected
             })
             .expect("cold-open gate");

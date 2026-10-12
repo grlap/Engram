@@ -47,7 +47,10 @@ record for the id is absent, nor authorize recycling the id or overwriting
 a connection token.
 Ordinary schema/policy admission still has its normal cost; it is not a
 constant-time promise. SQLite busy waits use the existing five-second timeout;
-hosts must also impose their own end-to-end process deadline.
+hosts must also impose their own end-to-end process deadline. For that
+deadline's sake the inspection's open does not start again after SQLite's
+locking-protocol refusal, as ordinary opens do once: it returns the refusal,
+classified as a busy store (see [the SQLite store](sqlite-store.md)).
 
 The command requires both a stored and resolved matching host-path policy.
 It never binds a missing one. Without the global `--host-path-policy` override,

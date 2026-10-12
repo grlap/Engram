@@ -219,6 +219,19 @@ all find it new: each checks again under the write lock, and one that finds
 the store initialized meanwhile starts its open again once, against that
 store. The switch to write-ahead logging, which SQLite refuses at once while
 another opener holds a lock, is retried within the busy timeout.
+SQLite's locking-protocol refusal (`SQLITE_PROTOCOL`), which it returns after
+about ten seconds of failing to begin a read on the write-ahead log, ends an
+open attempt: the open rolls back the transaction the attempt had open and
+starts again from its first probe, once, separately from the restart above;
+that probe checks again whatever earlier steps of the attempt committed. An
+open for a control host's call, a control-session inspection or a store copy,
+which run under deadlines of their own, does not start again. When the
+refusal ends an open, its message names the step it ended (`probe_snapshot`,
+`connection_settings`, `journal_query`, `journal_switch`,
+`cold_initialization` or `store_setup`), and after a retry also the step that
+ended the first attempt; it is classified as a busy store, safe to open
+again. A write transaction after the open does not start again on this
+refusal.
 
 Work-note writer admission uses one monotonic 10-second contention window
 across session registration, focus, attempt recording, note capture and result

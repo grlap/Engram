@@ -296,7 +296,7 @@ impl HostControlServer {
         source_skill: Option<String>,
     ) -> Result<Self, StoreError> {
         crate::storage::admit_session_id(&session_id)?;
-        let mut store = SqliteStore::open_with_host_path_identity(database, identity)?;
+        let mut store = SqliteStore::open_for_control_host(database, identity)?;
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionResume,
         );
