@@ -3,7 +3,9 @@
 use super::attribution::resolve_shell_work_attribution;
 use anyhow::Result;
 use engram::{LocalWorkService, ProjectId, SessionId, task_sync::directory};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+mod setup;
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct TaskSyncArgs {
@@ -35,6 +37,20 @@ enum TaskSyncCommand {
         #[arg(long)]
         rebaseline: bool,
     },
+    /// Prepare private setup intent and proposed edits; does not enable exchange.
+    SetupPrepare {
+        repository: PathBuf,
+        #[arg(long)]
+        branch: String,
+        #[arg(long, value_parser = ["public", "private"])]
+        visibility: String,
+        #[arg(long)]
+        readership: String,
+        #[arg(long, requires = "origin_machine")]
+        include_notes: bool,
+        #[arg(long)]
+        origin_machine: Option<String>,
+    },
     /// Write deterministic project.json and tasks/<uuid>.json into an explicit directory.
     Export {
         directory: PathBuf,
@@ -54,8 +70,45 @@ enum TaskSyncCommand {
     },
 }
 
-pub(crate) fn run(database: PathBuf, project: ProjectId, args: TaskSyncArgs) -> Result<()> {
+pub(crate) fn run(
+    database: PathBuf,
+    project: ProjectId,
+    project_file: &Path,
+    args: TaskSyncArgs,
+) -> Result<()> {
     let attribution = resolve_shell_work_attribution(args.actor_id, args.session_id)?;
+    if let TaskSyncCommand::SetupPrepare {
+        repository,
+        branch,
+        visibility,
+        readership,
+        include_notes,
+        origin_machine,
+    } = args.operation
+    {
+        let receipt = setup::prepare(
+            project_file,
+            &project,
+            &repository,
+            &branch,
+            setup::Assertions {
+                visibility,
+                readership,
+                include_notes,
+                origin_machine,
+                profile: engram::task_sync::FORMAT.into(),
+            },
+            setup::Attribution {
+                actor_id: attribution.actor_id.clone(),
+                session_id: attribution.session_id.clone(),
+                actor_context: args.actor_context,
+                source_skill: args.source_skill,
+            },
+        )?;
+        attribution.print_notices();
+        println!("{}", serde_json::to_string_pretty(&receipt)?);
+        return Ok(());
+    }
     let service = LocalWorkService::new_with_attribution(
         database,
         project,
@@ -87,6 +140,9 @@ pub(crate) fn run(database: PathBuf, project: ProjectId, args: TaskSyncArgs) -> 
             attribution.print_notices();
             eprintln!("REDACTOR: development no-op; task planning fields are shared text");
             println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        TaskSyncCommand::SetupPrepare { .. } => {
+            unreachable!("setup handled before service creation")
         }
         TaskSyncCommand::Export {
             directory: path,

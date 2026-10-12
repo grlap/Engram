@@ -1258,7 +1258,9 @@ async fn run_cli() -> Result<ExitCode> {
             source_skill,
             operation,
         )?,
-        Command::TaskSync(args) => bin_support::task_sync::run(database, project_id, args)?,
+        Command::TaskSync(args) => {
+            bin_support::task_sync::run(database, project_id, &project_file, args)?;
+        }
         Command::Mcp {
             actor_id,
             session_id,

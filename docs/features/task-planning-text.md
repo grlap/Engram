@@ -69,13 +69,76 @@ session, new local record ids or import time.
 Claims, grants, sessions, run ids, delivery state, retained prompts, private
 scratch, project memories, native verification/evaluation records
 and completion seals are outside this profile. There is no remote relay,
-enablement configuration, Git command, ignore/attribute edit or polling.
+enablement configuration, ignore/attribute edit or polling in export/import.
 Export visibly reports the development no-op redactor: it filters nothing.
 Authored planning fields are shared text, not automatically scrubbed secrets.
 Items imported from an external source with an immutable source snapshot are
 refused by this profile; graph export retains that provenance instead.
 The CLI accepts `--actor-context` (or `ENGRAM_ACTOR_CONTEXT`) and
 `--source-skill` for local import attribution; these never enter shared files.
+
+## Private Git setup preparation
+
+```text
+engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync setup-prepare MAIN --branch ordinary --visibility private --readership "project maintainers"
+```
+
+This separate command does not open or initialize SQLite. It verifies the
+selected marker and project, the main repository root, an attached explicitly
+selected branch and a nonsparse checkout. Linked worktrees, bare repositories,
+ambiguous roots, links/reparse ancestors, applied unsafe attributes, and dirty,
+staged or conflicted reserved/setup paths refuse before preparation. An existing
+`.engram/project.json` or `.engram/tasks` is unowned occupancy, even if its bytes
+match an intended export; relocate it explicitly first. Reserved occupancy in
+the index or HEAD also refuses, including paths absent from disk and ASCII case
+aliases. Setup-file case aliases in the index or HEAD refuse before status. Setup files
+and the selected marker refuse index flags that suppress inspection
+(`assume-unchanged` or `skip-worktree`). Unrelated local state is preserved.
+
+Preparation queries current Git attributes on the manifest, a representative
+task filename, the setup files and the marker before status compares their
+contents. A filter, custom diff or merge driver, encoding or ident attribute, or
+a non-LF eol attribute, names its path and attribute in the refusal. Built-in
+text diffs (`diff`) and the boolean built-in merge attribute (`merge`) are admitted. Unused configured
+filters are admitted. Nested `.engram/.gitattributes` and `.engram/.gitignore`
+files refuse. The proposed ignore block reopens the root `.engram` directory
+before excluding private contents and admitting the shared paths. The proposed
+root block sets text and LF, enables built-in text diffs and the text merge
+driver, and unsets filters, encoding and ident;
+it is not yet applied. A later materializer must query every actual task path
+after applying the block and before writing shared files, including overrides
+from Git-admin `info/attributes`. Preparation does not prove future filenames
+or the attributes of a hypothetical edited checkout.
+
+Visibility (`public` or `private`), nonblank intended readership, attribution,
+the planning profile, and optional `--include-notes --origin-machine ALIAS` are
+operator assertions, not authenticated disclosure scope. An alias without notes
+is accepted for future activity capture. The development redactor remains a
+no-op; this command does not approve protected task-field disclosure.
+
+The receipt names `engram-task-sync-setup.json` in the actual Git admin directory,
+including a separate Git directory. The private immutable intent holds the
+repository/branch/project basis, original setup bytes and proposed narrow ignore
+and LF attribute edits. Setup inputs are bounded at 64 KiB (the marker at 4 KiB).
+Compact JSON keeps the raw-byte arrays within the private reader's 2 MiB bound;
+publication also checks that bound.
+The edits are not applied: no `.engram` files, index, branch, global configuration
+or SQLite rows change. Preparation enables no sync and introduces no remote
+relay, sparse enrollment, commit or network operation.
+
+A matching disclosure assertion and repository basis returns the original
+operation and unchanged intent bytes. The first caller's attribution (including
+actor context and source skill) is recorded separately; a new process session
+does not change retry identity. A different or unowned record refuses without
+replacement. Moving HEAD makes the recorded basis stale; this preparation slice
+does not replace or retire it.
+An immediately contended private lock refuses; it is not retried or reclaimed
+by age. Lock ownership bytes and the intent are published with no-replace hard
+links of complete private pending
+file; unsupported filesystems refuse. An interruption can leave an owned
+pending file, which is not a published intent. This is process-interruption
+safety, not a power-loss guarantee. A later materialization operation must
+revalidate the recorded basis before applying edits or shared task bytes.
 
 ## Opt-in shared notes
 
