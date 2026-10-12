@@ -27,7 +27,8 @@ pub struct SharedNote {
 }
 
 /// Local disclosure accounting, never part of the deterministic shared files.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NoteOmissions {
     pub counts: BTreeMap<String, usize>,
 }

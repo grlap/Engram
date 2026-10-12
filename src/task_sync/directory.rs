@@ -20,6 +20,11 @@ pub fn read(path: &Path) -> Result<TaskTree> {
 }
 
 fn read_stored(path: &Path) -> Result<TaskTree> {
+    Ok(TaskTree::from_stored_documents(&read_documents(path)?)?)
+}
+
+/// Read retained bytes without applying today's note disclosure admission.
+pub(crate) fn read_documents(path: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
     regular_directory(path)?;
     let mut documents = BTreeMap::new();
     let mut total_bytes = 0;
@@ -62,7 +67,68 @@ fn read_stored(path: &Path) -> Result<TaskTree> {
     if !has_tasks {
         return Err(invalid("tasks directory missing").into());
     }
-    Ok(TaskTree::from_stored_documents(&documents)?)
+    TaskTree::from_stored_documents(&documents)?;
+    Ok(documents)
+}
+
+/// Preflight existing output without recording a pending operation.
+pub(crate) fn matching_destination(
+    path: &Path,
+    documents: &BTreeMap<String, Vec<u8>>,
+) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) if read_documents(path)? == *documents => Ok(true),
+        Ok(_) => Err(invalid("export destination already contains a different candidate").into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Publish already selected documents, preserving exact bytes on retry.
+pub(crate) fn write_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+    let tree = TaskTree::from_stored_documents(documents)?;
+    if tree.project.notes_included && tree.tasks.is_empty() {
+        return Err(invalid("notes_included requires at least one task").into());
+    }
+    if documents.len().saturating_sub(1) > MAX_TASKS
+        || documents
+            .values()
+            .any(|bytes| bytes.len() as u64 > MAX_FILE_BYTES)
+        || documents.values().map(Vec::len).sum::<usize>() > MAX_TREE_BYTES
+    {
+        return Err(invalid("export exceeds the supported task candidate limits").into());
+    }
+    let absolute = std::path::absolute(path)?;
+    let path = absolute.as_path();
+    if matching_destination(path, documents)? {
+        return Ok(());
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| invalid("export directory has no parent"))?;
+    regular_directory(parent)?;
+    let staging = parent.join(format!(".engram-task-candidate-{}", uuid::Uuid::now_v7()));
+    fs::create_dir(&staging)?;
+    let result = (|| {
+        fs::create_dir(staging.join("tasks"))?;
+        for (relative, bytes) in documents {
+            use std::io::Write;
+            let mut file = fs::File::create(staging.join(relative))?;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+        }
+        let mut pending = tempfile::TempPath::try_from_path(&staging)?;
+        pending.disable_cleanup(true);
+        pending
+            .persist_noclobber(path)
+            .map_err(|error| error.error)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        // The UUID staging path was created by this call under the checked parent.
+        let _ = fs::remove_dir_all(&staging);
+    }
+    result
 }
 
 fn add_document(

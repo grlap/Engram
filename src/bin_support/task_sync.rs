@@ -21,6 +21,20 @@ pub(crate) struct TaskSyncArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum TaskSyncCommand {
+    /// Prepare a complete candidate, serializing only changed tasks, with local progress.
+    Prepare {
+        directory: PathBuf,
+        #[arg(long)]
+        progress_directory: PathBuf,
+        #[arg(long, requires = "origin_machine")]
+        include_notes: bool,
+        /// Include native activity under this asserted alias, also when notes are off.
+        #[arg(long)]
+        origin_machine: Option<String>,
+        /// Discard a valid completed baseline; existing output is preserved.
+        #[arg(long)]
+        rebaseline: bool,
+    },
     /// Write deterministic project.json and tasks/<uuid>.json into an explicit directory.
     Export {
         directory: PathBuf,
@@ -52,6 +66,28 @@ pub(crate) fn run(database: PathBuf, project: ProjectId, args: TaskSyncArgs) -> 
         attribution.defaults,
     );
     match args.operation {
+        TaskSyncCommand::Prepare {
+            directory,
+            progress_directory,
+            include_notes,
+            origin_machine,
+            rebaseline,
+        } => {
+            let profile = engram::task_sync::progress::ExportProfile {
+                include_notes,
+                origin_machine,
+            };
+            let result = service.prepare_task_tree(
+                &directory,
+                &progress_directory,
+                &profile,
+                rebaseline,
+                chrono::Utc::now(),
+            )?;
+            attribution.print_notices();
+            eprintln!("REDACTOR: development no-op; task planning fields are shared text");
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
         TaskSyncCommand::Export {
             directory: path,
             include_notes,

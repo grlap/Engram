@@ -17,6 +17,7 @@ use crate::{
 };
 
 mod activity;
+mod incremental;
 mod notes;
 mod origin;
 pub(crate) use origin::OriginScopeGuard;

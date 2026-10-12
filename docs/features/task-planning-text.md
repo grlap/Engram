@@ -242,6 +242,63 @@ The profile contains no original disposal actor or time. Its local history
 labels disposal as `disposal_reported`, attributed to the importing actor as a
 report at import time, rather than claiming they performed the original act.
 
+## Local incremental preparation
+
+`task-sync prepare DIRECTORY --progress-directory PROGRESS` prepares an immutable,
+complete directory candidate. Add `--include-notes --origin-machine ALIAS` for
+the same opt-in note profile as export. Supply `--origin-machine ALIAS` alone
+to include native activity without prose notes. Imported activity retains its
+original aliases in every profile. Keep the progress directory host-local
+and separate from the candidate, the SQLite store and `.engram/tasks`.
+Preparation does not enable Git exchange. The operator chooses the candidate
+destination; preparation does not choose or configure a tracked task layout.
+
+The first operation serializes every task. Later operations capture a dense
+project-feed cut and the complete typed inventory in one SQLite read snapshot,
+including imports without project-feed entries and notes whose feed entry has
+no task id. They reuse the exact retained bytes of unchanged task documents and
+serialize each changed task once, in its final state at that cut. Removed tasks
+are absent from the next complete candidate. Runtime-only changes do not change
+planning bytes. This still scans the typed inventory; it does not promise a
+cost proportional only to the feed delta.
+With an explicit native alias, meaningful starts and releases update shared
+activity; renewals and checkpoints leave its bytes unchanged.
+
+The receipt reports `prepared`, an operation UUID, `recovered`, the selected
+`path` (`full` or `incremental`), its `reason`, the captured `project_position`,
+`serialized_tasks`, note `omissions` and separate `activity_omissions`. Prepared progress means a local
+candidate exists; it says nothing about Git staging, commits or remote exchange.
+Original task and note identities remain in the ordinary shared documents.
+
+The host-local journal retains a predecessor and a current generation, with
+the project, store route, profile, producing build and captured cut. A changed
+producer, missing or malformed generation, uncertain feed continuity, or missing or
+divergent prior output selects a full capture automatically. A store path and
+feed anchor are continuity checks, not a portable store identity. Changing a
+valid profile or machine alias requires `--rebaseline`; it does not overwrite
+an existing candidate. Unexpected progress-directory entries or more than two
+generations are refused visibly, without deleting unknown content. Remove those
+unexpected entries explicitly before retrying.
+
+A process-held file lock refuses concurrent preparation immediately and names
+the lock path. Process exit releases the lock; recovery never deletes a live
+lock or guesses from a PID. Before publishing the output, preparation retains
+the immutable pending candidate and cut. A retry finishes that same operation
+at the same destination without taking a newer snapshot. Later local changes
+are captured by the next operation. Divergent existing output is refused and
+left intact; a known divergent destination refuses before recording new progress.
+A pending operation must finish with its original store and project binding
+before rebaselining or changing its destination. File flushing and no-replace
+publication support process-exit recovery; this is not a power-loss durability
+guarantee. A process exit during output staging may leave an ordinary
+`.engram-task-candidate-<uuid>` directory beside the destination. Recovery still
+publishes the retained pending bytes but does not sweep the operator's parent
+directory; an operator may remove an orphan after confirming no exporter is using it.
+
+Preparation adds no SQLite rows, tables, indexes, schema changes or projection
+derivation. Its local sidecar is disposable progress, separate from canonical
+storage, full-store migration and ordinary complete-candidate import.
+
 ## Storage and repair
 
 Each imported task has a new canonical `task_sync_import_origin` object in the

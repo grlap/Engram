@@ -57,6 +57,35 @@ pub(super) enum FocusText {
 }
 
 impl LocalWorkService {
+    /// Prepare local task text without registering a runtime session or Git state.
+    ///
+    /// # Errors
+    /// Refuses unsafe progress paths, contention, source errors and overwrite.
+    pub fn prepare_task_tree(
+        &self,
+        destination: &std::path::Path,
+        progress: &std::path::Path,
+        profile: &crate::task_sync::progress::ExportProfile,
+        rebaseline: bool,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<crate::task_sync::progress::PrepareReceipt> {
+        crate::task_sync::progress::prepare(
+            destination,
+            progress,
+            &self.database,
+            &self.project_id,
+            profile,
+            rebaseline,
+            |previous| {
+                Ok(self.read_store_at(now)?.capture_task_prepare(
+                    &self.project_id,
+                    profile,
+                    previous,
+                )?)
+            },
+        )
+    }
+
     /// Export only shared task planning; this does not register a process session.
     ///
     /// # Errors

@@ -16,6 +16,7 @@ pub mod activity;
 pub mod directory;
 pub mod notes;
 pub use activity::TaskSyncExportOptions;
+pub mod progress;
 
 /// The supported planning-only profile; other profiles require explicit admission.
 pub const FORMAT: &str = "engram-task-planning-v1";
@@ -378,7 +379,7 @@ fn validate_shared_actor(actor: &SharedActor) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn pretty(value: &impl Serialize) -> Result<Vec<u8>, StoreError> {
+pub(crate) fn pretty(value: &impl Serialize) -> Result<Vec<u8>, StoreError> {
     let mut bytes = serde_json::to_vec_pretty(value)?;
     bytes.push(b'\n');
     Ok(bytes)
