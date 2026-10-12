@@ -13,6 +13,9 @@ use crate::{ObjectId, ProjectId};
 
 mod journal;
 mod lock;
+mod prepared;
+
+pub use prepared::{PreparedCandidate, PreparedProvenance, PreparedSelection, read_prepared};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

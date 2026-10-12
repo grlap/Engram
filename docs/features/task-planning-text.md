@@ -369,6 +369,32 @@ Preparation adds no SQLite rows, tables, indexes, schema changes or projection
 derivation. Its local sidecar is disposable progress, separate from canonical
 storage, full-store migration and ordinary complete-candidate import.
 
+### Reading a selected preparation
+
+The library's `task_sync::progress::read_prepared` takes a progress directory
+and a `PreparedSelection`: an operation UUID, candidate destination, project
+and export profile. It returns the exact retained document bytes, a structurally
+validated task tree and typed local provenance (sequence, predecessor, producer,
+store route, captured cut and separate note/activity omission reports). It checks
+that the selected generation is complete and its output is byte-identical;
+it never substitutes a newer operation or reserializes the documents.
+
+The reader creates no lock, marker or directory, performs no cleanup and opens
+no SQLite store. Missing, pending, malformed, unknown, linked or divergent
+inputs refuse with their entries and bytes preserved. Reads use bounded files
+and retained directory handles without following links, including Windows
+reparse points. Caller paths must have no linked ancestors. On Windows these
+handles temporarily deny deletion or renaming of retained directories and their
+ancestors, so concurrent preparation may refuse while pruning. Non-selected
+generation handles are released after journal validation and selection.
+A progress journal may prune a selected operation later;
+missing retained bytes are a refusal, never a request for a new capture.
+This is not an atomic filesystem snapshot or approval to publish. Retained
+notes and activity keep their stored structural meaning; a later materializer
+must separately check its disclosure policy and preserve these exact bytes.
+The whole retained journal inventory must be complete and well formed; the
+latest generation may start a new baseline without a predecessor after recovery.
+
 ## Storage and repair
 
 Each imported task has a new canonical `task_sync_import_origin` object in the

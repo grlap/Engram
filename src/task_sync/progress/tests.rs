@@ -5,6 +5,7 @@ use crate::{
 };
 use std::{cell::Cell, fs};
 
+mod prepared;
 mod recovery;
 
 fn tree(count: usize) -> TaskTree {
