@@ -951,8 +951,10 @@ function completionInput(request, result) {
 // Read metadata only. Logs and saved diagnostic/error prose never enter this
 // projection. A launch snapshot can be supplied by the executing process.
 export function completionMetadata(request, result, now = Date.now()) {
-  const stages = Array.isArray(result.stages) ? result.stages : [];
-  const preflight = Array.isArray(result.preflight) ? result.preflight : [];
+  const entries = (value) => Array.isArray(value)
+    ? value.map((entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry) ? entry : {}) : [];
+  const stages = entries(result.stages);
+  const preflight = entries(result.preflight);
   const input = completionInput(request, result);
   const liveness = runLiveness(result, now);
   const inferredInterruption = liveness === "interrupted" && !isTerminal(result) && result.interrupted !== true;
@@ -990,6 +992,11 @@ export function completionMetadata(request, result, now = Date.now()) {
           ...(liveness === "passed" ? { basis: input.comparison === "mismatch" ? "input-changed" : "contradictory-result" } : {}) };
   return { verdict, terminal, exit, reason, input, elapsed, blocker,
     stages: stateCounts(stages, stageState),
+    stageDetails: stages.map((entry) => {
+      const name = typeof entry.name === "string" && recordToken.test(entry.name) ? entry.name : null;
+      return { name, state: name === null ? "unknown" : stageState(entry),
+        exit: name !== null && Number.isSafeInteger(entry.code) ? entry.code : "unknown" };
+    }),
     preflight: stateCounts(preflight, (entry) => entry.signal ? "interrupted"
       : entry.outcome === "unknown" || !Number.isInteger(entry.code) ? "unknown" : entry.code === 0 && !entry.error ? "passed" : "failed") };
 }
@@ -999,6 +1006,10 @@ function renderCompletion(runDir, request, result, now) {
   // These two lines are a live TermAl reader contract, not stylistic choices.
   const lines = [`${metadata.verdict} ${basename(runDir)} exit=${metadata.terminal ? metadata.exit : "unknown"}`,
     `results: ${join(runDir, "results.json")}`,
+    // The supported focused/full modes have 1/12 stages, within the host's
+    // bounded completion window. Preserve every stage for larger saved runs.
+    ...metadata.stageDetails.map((stage) => `${stage.name ?? "unknown-stage"}: ${stage.state} exit=${stage.exit} log=${
+      stage.name === null ? "unknown" : join(runDir, `${stage.name}.log`)}`),
     `reason: ${metadata.reason}`,
     ...["stages", "preflight"].map((kind) => `${kind}: ${Object.entries(metadata[kind]).map(([name, count]) => `${name}=${count}`).join(" ")}`),
     `elapsed: ms=${metadata.elapsed.ms} basis=${metadata.elapsed.basis}`,

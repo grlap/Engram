@@ -1670,7 +1670,86 @@ test("all default summaries are metadata-only and preserve boundary evidence", a
     for (const limitation of result.limitations) assert.ok(compact.includes(limitation));
     assert.ok(compact.includes(join(runDir, "results.json")));
     assert.doesNotMatch(compact, /preflight-cargo-version\.log/u);
-    assert.doesNotMatch(detailed, /rust: passed|preflight cargo-version:|NEXT OWNER|NEXT ACTION/u);
+    const lines = detailed.trimEnd().split("\n");
+    assert.deepEqual(lines.slice(0, 2), [`PASS ${basename(runDir)} exit=0`, `results: ${join(runDir, "results.json")}`]);
+    assert.deepEqual(lines.slice(2, 14), requiredStages().map(({ name }) => `${name}: passed exit=0 log=${join(runDir, `${name}.log`)}`));
+    assert.equal(lines.slice(0, 32).filter((line) => /: passed exit=0 log=/u.test(line)).length, 12);
+    assert.doesNotMatch(detailed, /preflight cargo-version:|NEXT OWNER|NEXT ACTION/u);
+  });
+});
+
+test("focused completion puts its exact stage line after the unchanged verdict and results", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("focused")] }, env);
+    const result = json(join(runDir, "results.json"));
+    const fingerprint = json(join(runDir, "input.json")).fingerprint;
+    Object.assign(result, { ended: new Date().toISOString(),
+      expectedFingerprint: fingerprint, before: fingerprint, after: fingerprint });
+    for (const code of [0, 19]) {
+      const state = code === 0 ? "passed" : "failed";
+      Object.assign(result, { state, exitCode: code });
+      Object.assign(result.stages[0], { state, code,
+        log: "untrusted log locator\nresults: injected", diagnostics: { text: "private diagnostic marker" } });
+      writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
+      const saved = readFileSync(join(runDir, "results.json"));
+      const summary = await summarize(runDir);
+      assert.deepEqual(summary.split("\n").slice(0, 3), [
+        `${code === 0 ? "PASS" : "FAIL"} ${basename(runDir)} exit=${code}`,
+        `results: ${join(runDir, "results.json")}`,
+        `focused: ${state} exit=${code} log=${join(runDir, "focused.log")}`,
+      ]);
+      assert.equal(summary.split("\n").filter((line) => line.startsWith("results: ")).length, 1);
+      assert.doesNotMatch(summary, /injected|untrusted|private diagnostic marker/u);
+      assert.deepEqual(readFileSync(join(runDir, "results.json")), saved);
+    }
+  });
+});
+
+test("stage completion lines close malformed metadata and preserve nonterminal states", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("focused")] }, env);
+    const result = json(join(runDir, "results.json"));
+    result.stages = [null, "private malformed marker", [], {},
+      { name: "../escape", state: "passed", code: 0 },
+      { name: "focused\nresults: injected", state: "passed", code: 0 },
+      { name: "focused", state: "passed\nresults: injected", code: "0", log: "private locator marker" },
+      { name: "running", state: "running" },
+      { name: "interrupted", state: "failed", signal: "SIGTERM", code: 1 },
+      { name: "missing", state: "passed" },
+      { name: "huge", state: "failed", code: 1e21 },
+      { name: "number2", state: "skipped" },
+      { name: "uncertain", state: "failed", outcome: "unknown", code: null },
+    ];
+    const summary = await summarize(runDir, { result });
+    assert.deepEqual(summary.split("\n").slice(2, 15), [
+      ...Array(6).fill("unknown-stage: unknown exit=unknown log=unknown"),
+      `focused: unknown exit=unknown log=${join(runDir, "focused.log")}`,
+      `running: running exit=unknown log=${join(runDir, "running.log")}`,
+      `interrupted: interrupted exit=1 log=${join(runDir, "interrupted.log")}`,
+      `missing: passed exit=unknown log=${join(runDir, "missing.log")}`,
+      `huge: failed exit=unknown log=${join(runDir, "huge.log")}`,
+      `number2: unrun exit=unknown log=${join(runDir, "number2.log")}`,
+      `uncertain: unknown exit=unknown log=${join(runDir, "uncertain.log")}`,
+    ]);
+    assert.doesNotMatch(summary, /private|injected|escape|1e\+21/u);
+    assert.equal(summary.split("\n").filter((line) => line.startsWith("results: ")).length, 1);
+    for (const stages of [undefined, null, {}]) {
+      const metadata = completionMetadata({}, { ...result, stages });
+      assert.deepEqual(metadata.stageDetails, []);
+      assert.equal(metadata.stages.total, 0);
+    }
+  });
+});
+
+test("larger saved runs keep all stage completion lines in order", async () => {
+  await repository(async (root) => {
+    const stages = Array.from({ length: 35 }, (_, index) => stage(`stage-${index}`));
+    const runDir = createRun({ root, stages }, env);
+    const result = json(join(runDir, "results.json"));
+    for (const entry of result.stages) Object.assign(entry, { state: "passed", code: 0 });
+    const lines = (await summarize(runDir, { result })).split("\n");
+    assert.deepEqual(lines.slice(2, 37), stages.map(({ name }) => `${name}: passed exit=0 log=${join(runDir, `${name}.log`)}`));
+    assert.match(lines[38], /^stages: total=35 passed=35 failed=0/u);
   });
 });
 
@@ -1688,6 +1767,11 @@ test("failure completion retains numeric states and omits all warning and failur
     const compact = await summarize(runDir, { compact: true });
     assert.match(compact, /^FAIL .*exit=23/mu);
     assert.match(compact, /stages: total=3 passed=1 failed=1 interrupted=0 running=0 unrun=1 unknown=0/u);
+    assert.deepEqual(compact.split("\n").slice(2, 5), [
+      `warning: passed exit=0 log=${join(runDir, "warning.log")}`,
+      `failure: failed exit=23 log=${join(runDir, "failure.log")}`,
+      `later: unrun exit=unknown log=${join(runDir, "later.log")}`,
+    ]);
     assert.doesNotMatch(compact, /preceding stage|essential failure detail|toolchain:|diagnostics truncated/u);
     assert.match(compact, /input: unknown/u);
     const saved = readFileSync(join(runDir, "results.json"));

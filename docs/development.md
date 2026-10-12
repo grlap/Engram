@@ -457,7 +457,20 @@ node scripts/test-launcher.mjs notify RUN_DIRECTORY
 `notify` is only for a recorded notification target, using the original root
 identity. It resends the same saved body and idempotency key, not the tests.
 The metadata-only sign-off keeps the host's exact `PASS RUN exit=0` verdict
-line and unquoted `results: PATH` locator. Separate lines give numeric stage
+line and unquoted `results: PATH` locator. Immediately after those two lines,
+each stage has a metadata-only `<name>: <state> exit=<code> log=<absolute path>`
+line in stage order. The log locator is derived from the run directory and
+validated stage name; no log contents or saved diagnostic text are copied.
+An invalid name yields `unknown-stage: unknown exit=unknown log=unknown`.
+Missing or unsafe integer exits are `unknown`; states use the closed summary
+vocabulary. An unrun stage's locator may name a log that does not exist yet.
+The supported focused (one stage) and full (twelve stages) modes put every
+stage within the first 32 physical lines. Larger saved runs retain every
+stage in order, without that placement guarantee. TermAl's text recognizer
+accepts lowercase letters and hyphens in stage names and `passed` or `failed`
+states; digit-containing names remain valid launcher metadata but do not
+promise host recognition. Text alone never establishes test credit.
+Separate lines give numeric stage
 and recorded-preflight counts, the expected input fingerprint and its
 `matched`, `mismatch` or `unknown` boundary comparison, a fixed reason code,
 and launch-to-terminal wall-clock elapsed time when its timestamps are valid.
