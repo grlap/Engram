@@ -331,11 +331,15 @@ has most likely stopped. A system sleep or clock change can also age a
 heartbeat, and a later beat then shows the run running again. `summary`
 reports a fresh heartbeat as `RUNNING` with reason `no-terminal-result`, and a
 stale heartbeat as `INTERRUPTED` with reason `heartbeat-stale`, distinct from a
-confirmed recovery's reason `interrupted`. Its blocker names
-the recorded running stage when its name is valid. One without a heartbeat
-as `UNKNOWN`. Saves of `results.json` retry a briefly refused rename, as
-Windows can refuse one while another process holds the file open; that retry is
-file I/O and never reruns a test.
+confirmed recovery's reason `interrupted`. For a stale heartbeat, the
+blocker, with reason `interrupted`, names the recorded running stage when that
+name is valid. A run with no terminal result and no valid heartbeat is
+reported as `UNKNOWN` with reason `no-terminal-result`. `summary` shows a
+`BLOCKER` line only when the launch declared a next transition
+(`--next-owner` with `--next-action`) and the verdict is not `PASS`. Saves of
+`results.json` retry a briefly refused rename, as Windows can refuse one while
+another process holds the file open; that retry is file I/O and never reruns a
+test.
 The snapshot checks are boundary checks, not proof against transient edits.
 Normalization limits are emitted in freeze CLI stderr and every run's
 results/summary; fingerprint stdout remains unchanged.
