@@ -65,6 +65,29 @@ fn task_sync_notes_plain_labels_and_principals_survive_glue_detection() {
         crate::task_sync::notes::author_exclusion("org.example/codex"),
         None
     );
+    // Two-segment principals stay admitted as authors, internal dots, hyphens
+    // and labels included; plain prefix words are not slash paths, and a
+    // prefix word glued into a longer last segment is not a prefix segment.
+    for principal in [
+        "greg/codex",
+        "greg/claude.v2",
+        "org.example/codex-2",
+        "Engram::Fable/x",
+        "team/docs-bot",
+        "greg/home-assistant",
+        "ci/tests_runner",
+        "Greg Lapinski/claude",
+        "Engram::Fable",
+        "greg/claude",
+        "home",
+        "src",
+    ] {
+        assert_eq!(
+            crate::task_sync::notes::author_exclusion(principal),
+            None,
+            "{principal}"
+        );
+    }
 }
 
 #[test]
@@ -295,23 +318,45 @@ fn task_sync_notes_keep_actor_principals_but_refuse_path_bearing_authors() {
         "greg/.ssh/id_rsa",
         "x/home/operator/secret",
         "team/Users/operator/AppData",
+        // A dot-leading or listed-prefix final segment, or any third segment.
+        "greg/.ssh",
+        "x/etc/shadow",
+        "team/var/lib/engram/key.pem",
+        "x/users",
+        "x/USERS",
+        "x/users-",
+        "a/b/c",
+        "greg/claude/",
+        // Separators split these into principal-shaped tokens; the whole value
+        // still has three segments.
+        "x/My Documents/key.pem",
+        "a/b c/d",
     ]
     .into_iter()
     .map(String::from)
     .collect::<Vec<_>>();
     authors.extend(glued_paths());
     for author in authors {
-        let mut candidate = exported.tree.clone();
-        candidate.tasks[0].notes[0].author.actor_id = author.clone();
-        let mut target = SqliteStore::open_in_memory().unwrap();
-        let before = state(&target);
-        for dry in [true, false] {
-            assert!(
-                target
+        for kind_field in [false, true] {
+            let mut candidate = exported.tree.clone();
+            if kind_field {
+                candidate.tasks[0].notes[0].author.actor_kind = author.clone();
+            } else {
+                candidate.tasks[0].notes[0].author.actor_id = author.clone();
+            }
+            let mut target = SqliteStore::open_in_memory().unwrap();
+            let before = state(&target);
+            for dry in [true, false] {
+                let error = target
                     .import_task_tree(&item.project_id, &actor("importer"), &candidate, dry, at(5))
-                    .is_err()
-            );
-            assert_eq!(state(&target), before);
+                    .unwrap_err()
+                    .to_string();
+                assert!(
+                    error.starts_with("local work input is invalid: shared note refused: "),
+                    "{author}: {error}"
+                );
+                assert_eq!(state(&target), before);
+            }
         }
         let mut source = SqliteStore::open_in_memory().unwrap();
         request.actor = actor(&author);
@@ -323,5 +368,31 @@ fn task_sync_notes_keep_actor_principals_but_refuse_path_bearing_authors() {
             .unwrap();
         assert_eq!(omitted.tree.tasks[0].notes, [] as [SharedNote; 0]);
         assert_eq!(omitted.omissions.counts.values().sum::<usize>(), 1);
+        // Neither the omitted body nor its author reaches the shared bytes.
+        let shared = omitted
+            .tree
+            .documents()
+            .unwrap()
+            .into_values()
+            .flatten()
+            .collect::<Vec<_>>();
+        let shared = String::from_utf8(shared).unwrap();
+        assert!(!shared.contains("Plain progress"), "{author}");
+        assert!(
+            !shared.contains(&serde_json::to_string(&author).unwrap()),
+            "{author}"
+        );
+        let note_ids = source
+            .connection
+            .prepare("SELECT object_id FROM objects WHERE object_kind = 'work_observation'")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_ne!(note_ids, [] as [String; 0]);
+        for id in note_ids {
+            assert!(!shared.contains(&id), "{author}");
+        }
     }
 }

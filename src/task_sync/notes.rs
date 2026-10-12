@@ -117,6 +117,12 @@ pub(crate) fn prose_exclusion(text: &str) -> Option<&'static str> {
 }
 
 pub(crate) fn author_exclusion(text: &str) -> Option<&'static str> {
+    // The whole value keeps the principal shape even when spaces or other
+    // separators split it into tokens that each look like a principal.
+    let whole = text.trim().to_ascii_lowercase();
+    if author_path_shaped(whole.trim_matches('_').trim_end_matches('.')) {
+        return Some("repository or evidence path");
+    }
     text_exclusion(text, false)
 }
 
@@ -149,7 +155,9 @@ fn text_exclusion(text: &str, slash_paths: bool) -> Option<&'static str> {
                 }
             }
         }
-        for token in std::iter::once(token).chain(token.split([':', '-', '_', '%'])) {
+        let pieces = std::iter::once(token).chain(token.split([':', '-', '_', '%']));
+        for (index, token) in pieces.enumerate() {
+            let whole = index == 0;
             let token = token.trim_matches('_').trim_end_matches('.');
             let bytes = token.as_bytes();
             if token.starts_with("./") || token.starts_with("../") {
@@ -197,6 +205,12 @@ fn text_exclusion(text: &str, slash_paths: bool) -> Option<&'static str> {
                         return Some("repository or evidence path");
                     }
                 }
+                // Only the whole author value, never a fragment split at a
+                // hyphen, underscore, percent or colon, must keep the shape of
+                // a two-segment principal such as `greg/claude`.
+                if whole && author_path_shaped(token) {
+                    return Some("repository or evidence path");
+                }
             }
             let mut segments = token.split('/');
             let first = segments.next().unwrap_or_default();
@@ -238,6 +252,21 @@ fn text_exclusion(text: &str, slash_paths: bool) -> Option<&'static str> {
         start = end;
     }
     None
+}
+
+/// Whether a whole author value is path-shaped rather than a principal: three
+/// or more slash segments, a dot-leading segment, or a last segment that is a
+/// listed prefix once trailing glue (`-`, `_`, `%`, `:` or `.`) is removed.
+fn author_path_shaped(token: &str) -> bool {
+    if !token.contains('/') {
+        return false;
+    }
+    let segments = token.split('/').collect::<Vec<_>>();
+    segments.len() >= 3
+        || segments.iter().any(|segment| segment.starts_with('.'))
+        || segments
+            .last()
+            .is_some_and(|last| path_prefix(last.trim_end_matches(['-', '_', '%', ':', '.'])))
 }
 
 fn path_prefix(segment: &str) -> bool {

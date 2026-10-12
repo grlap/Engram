@@ -29,6 +29,10 @@ fn task_sync_activity_validates_typed_ids_keys_task_alias_and_disclosure() {
         "task",
         "revision",
         "actor",
+        "actor-final-dot",
+        "actor-three-segments",
+        "actor-final-prefix",
+        "kind-path",
         "restricted",
         "empty-map",
     ] {
@@ -47,6 +51,10 @@ fn task_sync_activity_validates_typed_ids_keys_task_alias_and_disclosure() {
             "task" => notice.task_id = WorkId(uuid::Uuid::new_v4()),
             "revision" => notice.state_revision = 0,
             "actor" => notice.actor.actor_id = "C:\\private\\actor".into(),
+            "actor-final-dot" => notice.actor.actor_id = "greg/.ssh".into(),
+            "actor-three-segments" => notice.actor.actor_id = "x/etc/shadow".into(),
+            "actor-final-prefix" => notice.actor.actor_id = "x/Users".into(),
+            "kind-path" => notice.actor.actor_kind = "team/var/lib/engram/key.pem".into(),
             "restricted" => task.labels.push("restricted".into()),
             "empty-map" => task.activity.get_mut("host-A").unwrap().clear(),
             _ => unreachable!(),
@@ -185,7 +193,11 @@ fn task_sync_activity_exports_visible_omissions_without_redacting_typed_ids() {
     for (label, principal) in [
         (Some("restricted"), "ordinary-author"),
         (None, "C:\\private\\actor"),
+        (None, "greg/.ssh"),
+        (None, "x/etc/shadow"),
+        (None, "x/users"),
         (None, "greg/codex"),
+        (None, "org.example/codex"),
     ] {
         let mut store = SqliteStore::open_in_memory().unwrap();
         let mut request = root_request("exclusions", "create", 0);
@@ -206,9 +218,21 @@ fn task_sync_activity_exports_visible_omissions_without_redacting_typed_ids() {
                 },
             )
             .unwrap();
-        if label.is_some() || principal.starts_with("C:") {
-            assert_eq!(notices(&result.tree).len(), 0);
+        let admitted = ["greg/codex", "org.example/codex"].contains(&principal);
+        if label.is_some() || !admitted {
+            assert_eq!(notices(&result.tree).len(), 0, "{principal}");
             assert_eq!(result.activity_omissions.counts.values().sum::<usize>(), 1);
+            let shared = result
+                .tree
+                .documents()
+                .unwrap()
+                .into_values()
+                .flatten()
+                .collect::<Vec<_>>();
+            let shared = String::from_utf8(shared).unwrap();
+            // Compare the JSON form, so an escaped principal cannot hide.
+            let encoded = serde_json::to_string(principal).unwrap();
+            assert!(!shared.contains(&encoded), "{principal}");
         } else {
             assert_eq!(notices(&result.tree).len(), 1);
             assert!(result.activity_omissions.counts.is_empty());

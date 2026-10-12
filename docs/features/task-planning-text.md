@@ -170,11 +170,18 @@ Detection also checks starts after assignment and prose punctuation, so forms
 such as `root=/private` and `dir=$HOME/private` are excluded. Glued option,
 hyphen, underscore, slash and colon starts are checked too. Markdown emphasis
 and quote delimiters are handled only for detection; stored and exported text
-is never rewritten. Author fields
-use the same checks except that slash-separated actor principals remain allowed;
-known repository/evidence prefixes (`src`, `docs`, `scripts`, `.engram`,
-`.worktrees`, `target`, `tests`, `.git`, `Users`, `home`, `evidence`, `scratch`)
-are still refused there, including prefixes in later slash segments. Standalone
+is never rewritten. Author fields use the same checks except that a
+two-segment slash-separated actor principal such as `greg/claude`,
+`org.example/codex` or `team/docs-bot` remains allowed. An author value, or
+any word in it, with three or more slash segments or a dot-leading slash
+segment is refused, so spaces cannot split `x/My Documents/key.pem` into
+allowed pieces. So is one whose last slash segment, ignoring trailing `-`,
+`_`, `%`, `:` or `.`, is a known repository/evidence prefix (`src`, `docs`,
+`scripts`, `.engram`, `.worktrees`, `target`, `tests`, `.git`, `Users`,
+`home`, `evidence`, `scratch`, matched case-insensitively). A prefix followed
+by another slash
+segment is refused anywhere in the value, including after a hyphen,
+underscore, percent sign or colon. Standalone
 8–64 hexadecimal tokens and member locators count as `possible locator`;
 this conservatively excludes commit hashes as well. Ordinary actor principals
 and `w-…` task references remain allowed. Filtering removes the whole note,
