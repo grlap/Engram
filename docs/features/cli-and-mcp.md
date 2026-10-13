@@ -1561,7 +1561,10 @@ Rules that matter:
 
 The same fourteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
 `update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`, and
-`forget`) with the same flat arguments, plus `search` — fifteen tools. The
+`forget`) with the same flat arguments, plus `search` — fifteen work tools.
+The separate `task_sync_settings` configuration tool reads or changes the
+[host-local project opt-in](task-planning-text.md#project-opt-in-setting).
+The
 six-operation work core is unchanged: `gate` wraps the existing evidence
 path, `remember`/`memories`/`forget` are a thin project-memory surface outside
 it (no focus mutation, no claim renewal), and `evaluate` calls the service's
@@ -2471,8 +2474,9 @@ attribution contract.
 The optional actor context can equivalently arrive through
 `ENGRAM_ACTOR_CONTEXT`; it is fixed when the CLI invocation or MCP connection
 binds its session. The MCP process retains one `LocalWorkService` and its
-lazily opened SQLite connection for its lifetime. All fifteen MCP tools use
-that service. A failed operation rolls back before the next call uses the
+lazily opened SQLite connection for its lifetime. The fifteen work tools use
+that connection; the separate `task_sync_settings` operation uses the service
+without opening SQLite. A failed store operation rolls back before the next call uses the
 connection.
 
 The same variable, `ENGRAM_MCP_PHASE_TRACE=1`, at `engram control` start
@@ -2816,8 +2820,10 @@ operation does not make the retained shell command authenticated.
 
 ### MCP tools
 
-`engram mcp` registers exactly the fifteen agent-facing tools below: the
-fourteen words plus `search`.
+`engram mcp` registers the fifteen work tools below (fourteen words plus
+`search`) and the separate `task_sync_settings` configuration tool.
+Its [settings contract](task-planning-text.md#project-opt-in-setting) uses
+`action: status|enable|disable`; project and attribution are connection-bound.
 
 | Tool | Purpose |
 | --- | --- |
@@ -2828,6 +2834,7 @@ fourteen words plus `search`.
 | `claim` | Hold an item; later calls default to it |
 | `update` | One `action`: `release`, `blocked`, `unblock` (optional `blocker` selector), `revise`, `cancel`, `reject`, `after`, `drop_after`, `waive`, `detach`, or `supersede` |
 | `gate` | Record one bounded pass/fail observation; completed work accepts it as a late finding without a claim or reopen |
+| `evaluate` | Record attributed acceptance verdicts for the held item; independent evaluation remains host-owned |
 | `note` | Record evidence and checkpoint open work; completed work records only late evidence, both keyless |
 | `done` | Complete the held item. A source change with no later matching passing test is recorded and disclosed as untested; any other open obligation returns the typed `open_work_obligations` result |
 | `search` | `ls` over every lifecycle |
@@ -2835,17 +2842,21 @@ fourteen words plus `search`.
 | `remember` | Create or explicitly revise an attributed episode under one permanent key; retain history |
 | `memories` | List/search current rows or read one current/historical revision of a live key |
 | `forget` | Append an attributed terminal tombstone; never erase or reuse the key |
+| `task_sync_settings` | Read or explicitly enable/disable the connection-bound project's host-local task-sync opt-in setting |
 
 #### Read-only mode
 
 `engram mcp --read-only`, with the same identity arguments, serves a host
-child that must not mutate the store. It lists only the read words `next`, `ls`,
-`search`, `show` and `memories`, and admits only their reading forms:
+child that must not mutate the store. It lists the read words `next`, `ls`,
+`search`, `show` and `memories`, plus `task_sync_settings` with `action: status`,
+and admits only their reading forms:
 
 - `next` only with `peek` exactly `true`, which stages no delivery and
   records nothing;
 - `memories` only without `context_generation`: the argument present at all,
   even as `null`, is refused, because a listing that carries one records it;
+- `task_sync_settings` only with `action: status`; its enable and disable
+  actions are refused before any setting path is created;
 - each tool only with the arguments it declares.
 
 Any other call, a tool that is not a read word, a writing form of a read
@@ -2855,20 +2866,22 @@ tool error (`isError: true`) whose JSON reads
 refused TOOL: …", "details": {"mode": "read_only", "tool": TOOL,
 "restriction": R}, "reminders": […], "next": […]}}`, where `R` is
 `tool_not_admitted`, `argument_not_admitted`, `next_without_peek` or
-`memories_with_context_generation`; the code is stable. Like every tool
+`memories_with_context_generation`, or `settings_mutation`; the code is stable. Like every tool
 error Engram itself returns, it carries `reminders`, one line naming the
 restriction, and `next`, the read to make instead: `engram work next
 --peek` after a tool that is not a read word or a `next` without the peek,
 `engram work memories` after a listing with a generation, and nothing after
-undeclared arguments. The read words open the store read-only for each call, and the connection never opens or holds
+undeclared arguments; `engram task-sync status --json` follows a settings
+mutation refusal. The read words open the store read-only for each call, and the connection never opens or holds
 the writable one, so nothing it does writes the database or its WAL; SQLite
 may still coordinate through the shared-memory file. A missing or
-uninitialized store refuses and is not created. Ordinary `engram mcp` is
-unchanged: it lists all fifteen tools and marks none of them read-only,
+uninitialized store refuses and is not created. Ordinary `engram mcp`
+lists all sixteen tools and marks none of them read-only,
 since `next` and `memories` have writing forms there. The text a read word
 returns may still suggest a writing command; in this mode such a call is
 refused. `initialize` gives a read-only connection its own instructions,
-naming the five read words and their admitted forms.
+naming the five read words, the separate configuration status read and their
+admitted forms. The settings status read creates no files and opens no SQLite.
 The process still writes bounded [operational diagnostics](diagnostics.md)
 outside SQLite under the selected home's `diagnostics/` directory, including
 refused calls and its exit summary. Read-only mode restricts store operations;
@@ -3195,7 +3208,7 @@ check, `next` adds `show REF --note RECORD`, which reads that check's
 detail. Recovery guidance is not a replayable result: it
 is rebuilt from a coherent current snapshot so a retry observes a child,
 contribution, obligation, or acceptance barrier that moved. Native `done` and
-the fifteen-tool MCP surface return this as a typed refusal receipt. The JSON
+the fifteen MCP work tools return this as a typed refusal receipt. The JSON
 core prints the same typed refusal receipt on stdout and exits with status 1;
 it does not wrap the refusal in an error envelope. Short-ref ambiguity likewise
 returns a stable
@@ -3544,7 +3557,7 @@ Build an executable and configure one stdio MCP process per agent session:
 ```
 
 The proprietary runtime supplies actor/session/tool/skill instruction context.
-This process exposes exactly the fifteen MCP tools. V1 records host
+This process exposes fifteen work tools and the separate settings tool. V1 records host
 context with `asserted` assurance; configuration text is not authentication.
 Distinct concurrent sessions need distinct `--session-id` values. The database
 is shared; the MCP processes are not.

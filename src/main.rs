@@ -219,8 +219,8 @@ enum Command {
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long)]
         source_skill: Option<String>,
-        /// List only the read words (next, ls, search, show, memories) and
-        /// refuse every other call, and every writing form of a read word,
+        /// List the read words (next, ls, search, show, memories) and
+        /// `task_sync_settings` status; refuse every other tool or writing form
         /// for a host child that must not write.
         #[arg(long)]
         read_only: bool,
@@ -1127,6 +1127,11 @@ async fn run_cli() -> Result<ExitCode> {
     } = match resolve_project(cli.project_file.as_deref(), cli.home) {
         Ok(project) => project,
         Err(error) => {
+            if let Command::TaskSync(args) = &cli.command
+                && bin_support::task_sync::settings_resolution_error(args)?
+            {
+                return Ok(ExitCode::FAILURE);
+            }
             if let Command::Readiness { json } = &cli.command {
                 bin_support::readiness::resolution_error(&error, *json)?;
                 return Ok(ExitCode::FAILURE);
@@ -1259,7 +1264,9 @@ async fn run_cli() -> Result<ExitCode> {
             operation,
         )?,
         Command::TaskSync(args) => {
-            bin_support::task_sync::run(database, project_id, &project_file, args)?;
+            if !bin_support::task_sync::run(database, project_id, &project_file, args)? {
+                return Ok(ExitCode::FAILURE);
+            }
         }
         Command::Mcp {
             actor_id,

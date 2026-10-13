@@ -22,6 +22,21 @@ use serde_json::json;
 
 #[tool_router(router = agent_tool_router, vis = "pub(super)")]
 impl McpServer {
+    /// Read or explicitly change this project's host-local task-sync opt-in.
+    #[tool(
+        name = "task_sync_settings",
+        description = "Separate configuration tool: status reads without creating a store; enable requires user_instruction quoting the user's explicit request; disable needs no quote. Actor and session are asserted server context. Changing this setting creates or removes no shared task files."
+    )]
+    pub(super) fn task_sync_settings(
+        &self,
+        Parameters(args): Parameters<crate::task_sync::settings::Request>,
+    ) -> CallToolResult {
+        match self.work_service.task_sync_settings(&args, Utc::now()) {
+            Ok(status) => CallToolResult::structured(json!(status)),
+            Err(error) => CallToolResult::structured_error(json!(error)),
+        }
+    }
+
     /// What is ready, what this session holds, and what changed.
     #[tool(
         name = "next",

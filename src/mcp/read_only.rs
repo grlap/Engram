@@ -9,10 +9,17 @@ use serde_json::{Map, Value, json};
 use super::arguments::{LsArgs, MemoriesArgs, NextArgs, ShowArgs, WorkSearchArgs};
 
 /// The tools the read-only mode lists and admits.
-pub(super) const READ_TOOLS: [&str; 5] = ["next", "ls", "search", "show", "memories"];
+pub(super) const READ_TOOLS: [&str; 6] = [
+    "next",
+    "ls",
+    "search",
+    "show",
+    "memories",
+    "task_sync_settings",
+];
 
 /// What `initialize` tells a read-only connection.
-pub(super) const INSTRUCTIONS: &str = "Read-only mode: five read words. next only with peek: true; ls; search; show; memories without context_generation. Every other tool, and every writing form of a read word, is refused as a tool error with code mcp_read_only_refused. Answers may still suggest commands that write; here those are refused.";
+pub(super) const INSTRUCTIONS: &str = "Read-only mode: five read words. next only with peek: true; ls; search; show; memories without context_generation. The separate configuration tool task_sync_settings is admitted only with action status. Every other tool or writing form is refused as a tool error with code mcp_read_only_refused. Answers may still suggest commands that write; here those are refused.";
 
 /// The stable code of every read-only refusal.
 pub(super) const READ_ONLY_REFUSED: &str = "mcp_read_only_refused";
@@ -28,6 +35,7 @@ pub(super) enum Restriction {
     NextWithoutPeek,
     /// `memories` was given `context_generation`, which records a listing.
     MemoriesWithContextGeneration,
+    SettingsMutation,
 }
 
 impl Restriction {
@@ -37,6 +45,7 @@ impl Restriction {
             Self::ArgumentNotAdmitted => "argument_not_admitted",
             Self::NextWithoutPeek => "next_without_peek",
             Self::MemoriesWithContextGeneration => "memories_with_context_generation",
+            Self::SettingsMutation => "settings_mutation",
         }
     }
 
@@ -47,13 +56,14 @@ impl Restriction {
             Self::ToolNotAdmitted | Self::NextWithoutPeek => &["engram work next --peek"],
             Self::MemoriesWithContextGeneration => &["engram work memories"],
             Self::ArgumentNotAdmitted => &[],
+            Self::SettingsMutation => &["engram task-sync status --json"],
         }
     }
 
     fn reason(self) -> &'static str {
         match self {
             Self::ToolNotAdmitted => {
-                "this tool is not a read word; the read-only mode admits next, ls, search, show and memories"
+                "this tool is not admitted; the read-only mode admits next, ls, search, show and memories, plus task_sync_settings status"
             }
             Self::ArgumentNotAdmitted => {
                 "these arguments are not valid declared arguments of the read word"
@@ -64,6 +74,7 @@ impl Restriction {
             Self::MemoriesWithContextGeneration => {
                 "memories is admitted only without context_generation, which records a listing"
             }
+            Self::SettingsMutation => "task_sync_settings is admitted only with action status",
         }
     }
 }
@@ -79,6 +90,7 @@ pub(super) fn admit(name: &str, arguments: Option<&Map<String, Value>>) -> Resul
         "search" => declares::<WorkSearchArgs>(arguments),
         "show" => declares::<ShowArgs>(arguments),
         "memories" => declares::<MemoriesArgs>(arguments),
+        "task_sync_settings" => declares::<crate::task_sync::settings::Request>(arguments),
         _ => return Err(Restriction::ToolNotAdmitted),
     };
     if !declared {
@@ -91,6 +103,11 @@ pub(super) fn admit(name: &str, arguments: Option<&Map<String, Value>>) -> Resul
     // reads without recording.
     if name == "memories" && arguments.contains_key("context_generation") {
         return Err(Restriction::MemoriesWithContextGeneration);
+    }
+    if name == "task_sync_settings"
+        && arguments.get("action") != Some(&Value::String("status".into()))
+    {
+        return Err(Restriction::SettingsMutation);
     }
     Ok(())
 }
@@ -385,7 +402,7 @@ mod tests {
         // The ordinary server keeps every tool, and marks none read-only:
         // next and memories have writing forms there.
         let ordinary = writer.tool_router.list_all();
-        assert_eq!(ordinary.len(), 15);
+        assert_eq!(ordinary.len(), 16);
         for tool in ordinary {
             assert!(
                 tool.annotations

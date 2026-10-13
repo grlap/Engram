@@ -203,6 +203,9 @@ their presence in a file alone does not prove delivery.
   vocabulary; receipt shaping, terse show rendering, and word handlers live
   in owning modules, and `src/verbs/tests/` mirrors those modules; its public
   re-exports preserve the existing `crate::verbs` paths.
+- `task_sync_settings` is a separate MCP configuration tool outside the
+  fourteen work words and `search`; it shares its host-local opt-in operation
+  with `engram task-sync status|enable|disable`.
 - External publication adapters are deferred; no publication port or dummy
   implementation is shipped. Vendor-specific types stay outside the core.
 - Engram owns host-local work from creation/decomposition through completion.

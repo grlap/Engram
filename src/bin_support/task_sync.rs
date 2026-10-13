@@ -23,6 +23,23 @@ pub(crate) struct TaskSyncArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum TaskSyncCommand {
+    /// Observe this project's host-local opt-in without opening SQLite.
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Explicitly opt in; this does not materialize or export shared files.
+    Enable {
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        user_instruction: Option<String>,
+    },
+    /// Opt out without removing shared files.
+    Disable {
+        #[arg(long)]
+        json: bool,
+    },
     /// Prepare a complete candidate, serializing only changed tasks, with local progress.
     Prepare {
         directory: PathBuf,
@@ -70,12 +87,121 @@ enum TaskSyncCommand {
     },
 }
 
+impl TaskSyncArgs {
+    pub(crate) fn settings_action(
+        &self,
+    ) -> Option<(engram::task_sync::settings::Action, bool, Option<&str>)> {
+        use engram::task_sync::settings::Action;
+        match &self.operation {
+            TaskSyncCommand::Status { json } => Some((Action::Status, *json, None)),
+            TaskSyncCommand::Enable {
+                json,
+                user_instruction,
+            } => Some((Action::Enable, *json, user_instruction.as_deref())),
+            TaskSyncCommand::Disable { json } => Some((Action::Disable, *json, None)),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) fn settings_resolution_error(args: &TaskSyncArgs) -> Result<bool> {
+    let Some((action, json, _)) = args.settings_action() else {
+        return Ok(false);
+    };
+    let error = engram::task_sync::settings::Error::new(
+        None,
+        action,
+        "project_selection_failed",
+        "select a valid project marker and Engram home",
+        None,
+    );
+    settings_error(&error, json)?;
+    Ok(true)
+}
+
+fn settings_error(error: &engram::task_sync::settings::Error, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string(error)?);
+    } else {
+        eprintln!("{error}");
+    }
+    Ok(())
+}
+
+fn run_settings(database: PathBuf, project: ProjectId, args: &TaskSyncArgs) -> Result<bool> {
+    use engram::task_sync::settings::{Action, Error, Request};
+    let (action, json, instruction) = args.settings_action().expect("settings command selected");
+    let attribution = if action == Action::Status {
+        None
+    } else if let Ok(attribution) =
+        resolve_shell_work_attribution(args.actor_id.clone(), args.session_id.clone())
+    {
+        Some(attribution)
+    } else {
+        let error = Error::new(
+            Some(&project),
+            action,
+            "invalid_attribution",
+            "current actor or session attribution is invalid",
+            Some(engram::task_sync::settings::read(&database, &project)),
+        );
+        settings_error(&error, json)?;
+        return Ok(false);
+    };
+    let service = LocalWorkService::new_with_attribution(
+        database,
+        project,
+        attribution
+            .as_ref()
+            .map_or_else(String::new, |value| value.actor_id.clone()),
+        SessionId(
+            attribution
+                .as_ref()
+                .map_or_else(String::new, |value| value.session_id.clone()),
+        ),
+        args.source_skill.clone(),
+        args.actor_context.clone(),
+        attribution
+            .as_ref()
+            .map_or_else(engram::WorkAttributionDefaults::default, |value| {
+                value.defaults
+            }),
+    );
+    let outcome = service.task_sync_settings(
+        &Request {
+            action,
+            user_instruction: instruction.map(str::to_owned),
+        },
+        chrono::Utc::now(),
+    );
+    if let Some(attribution) = attribution {
+        attribution.print_notices();
+    }
+    match outcome {
+        Ok(status) => {
+            if json {
+                println!("{}", serde_json::to_string(&status)?);
+            } else {
+                println!("{}\n{}", status.reason, status.effect);
+            }
+            Ok(true)
+        }
+        Err(error) => {
+            settings_error(&error, json)?;
+            Ok(false)
+        }
+    }
+}
+
 pub(crate) fn run(
     database: PathBuf,
     project: ProjectId,
     project_file: &Path,
     args: TaskSyncArgs,
-) -> Result<()> {
+) -> Result<bool> {
+    if args.settings_action().is_some() {
+        return run_settings(database, project, &args);
+    }
     let attribution = resolve_shell_work_attribution(args.actor_id, args.session_id)?;
     if let TaskSyncCommand::SetupPrepare {
         repository,
@@ -107,7 +233,7 @@ pub(crate) fn run(
         )?;
         attribution.print_notices();
         println!("{}", serde_json::to_string_pretty(&receipt)?);
-        return Ok(());
+        return Ok(true);
     }
     let service = LocalWorkService::new_with_attribution(
         database,
@@ -119,6 +245,9 @@ pub(crate) fn run(
         attribution.defaults,
     );
     match args.operation {
+        TaskSyncCommand::Status { .. }
+        | TaskSyncCommand::Enable { .. }
+        | TaskSyncCommand::Disable { .. } => unreachable!("settings handled before store access"),
         TaskSyncCommand::Prepare {
             directory,
             progress_directory,
@@ -184,5 +313,5 @@ pub(crate) fn run(
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
     }
-    Ok(())
+    Ok(true)
 }

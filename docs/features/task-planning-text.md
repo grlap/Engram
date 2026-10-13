@@ -77,6 +77,61 @@ refused by this profile; graph export retains that provenance instead.
 The CLI accepts `--actor-context` (or `ENGRAM_ACTOR_CONTEXT`) and
 `--source-skill` for local import attribution; these never enter shared files.
 
+## Project opt-in setting
+
+Engram owns one host-local setting per stable project id and Engram home,
+shared across worktrees. It lives beside `engram.db` as `task-sync-setting.json`,
+outside the repository. These operations never open SQLite, change its schema,
+or create or remove shared task files. Git materialization and operation-start
+admission remain separate; this setting alone does not ship Git exchange.
+
+```text
+engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync status --json
+engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync enable --user-instruction "Enable Git task sync for this project." --json
+engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync disable --json
+```
+
+The separate MCP tool `task_sync_settings` takes `action: status`, `enable`
+or `disable`. Enable requires nonblank `user_instruction` quoting the user's
+explicit request, at most 4096 bytes; disable needs no quote. CLI actor/session
+flags and environment defaults supply asserted attribution; `--session-id`
+is optional. MCP uses its connection's project, actor and session. This is not
+authenticated human intent. Read-only MCP and the service itself refuse setters
+before filesystem writes; status creates no directories, locks, files or store.
+
+Status format `engram-task-sync-status-v1` reports `project_id`, `state`,
+`reason`, `effect` and `user_instruction`. Absence is `disabled`, with reason
+`not configured (off by default)`. Explicit values report `enabled` or
+`disabled`; unreadable, linked, oversized or invalid input is `unknown`.
+Only enabled status returns the stored instruction; other states return null.
+The effect describes opt-in per project on this machine without creating or
+removing shared files. Disabled and unknown are not opt-in.
+
+Setters return the observed status. Successful CLI status reads exit 0,
+including unknown; refused setters or project selection exit 1 with format
+`engram-task-sync-error-v1`, `project_id`, `operation`, `error: {code, message}`
+and `status` (null when no project was selected). MCP operation refusals return
+the same body with `isError`; malformed MCP arguments and read-only admission
+retain their existing envelopes. CLI usage errors retain parser behavior.
+TermAl uses this dedicated, non-strict API; invalid replies, unsupported commands
+and timeouts are unknown. Host-control operations and strict readers are unchanged.
+
+The private document is strictly typed, duplicate-rejecting and bounded to
+16 KiB. It records format `engram-task-sync-setting-v1`, project id, enabled,
+actor, session, UTC timestamp and instruction. Reads use retained no-follow
+ancestor handles and reject Windows reparse points. RFC 3339 timestamps are
+accepted; stored attribution does not expire with a process session. New Unix
+directories/files use 0700/0600, while Windows inherits the home's ACLs.
+Existing permissions are not rewritten.
+
+An attributed setter replaces malformed configuration. It writes and syncs
+a complete same-directory temporary file, renames it over the setting, then
+reads back: concurrent setters use last writer wins and return what they observed.
+Status is an observation, not a reservation. No lock or CAS is used; power-loss
+durability beyond sync and rename is not promised. Temporary files never count
+as configuration. Linked/nonordinary/unreadable paths and unsupported replacement
+operations refuse, with no delete-then-rename fallback.
+
 ## Private Git setup preparation
 
 ```text

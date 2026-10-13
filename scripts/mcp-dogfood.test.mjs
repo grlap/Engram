@@ -2145,7 +2145,7 @@ test("read-only MCP lists the read words and refuses every writing call as a too
     cliJson(engramHome, "writer", "remember", "a rule to read", "--key", "read-rule");
     client = new McpClient(engramHome, "reader", undefined, "reader", ["--read-only"]);
     await client.initialize();
-    assert.deepEqual([...(await client.toolNames())].sort(), ["ls", "memories", "next", "search", "show"]);
+    assert.deepEqual([...(await client.toolNames())].sort(), ["ls", "memories", "next", "search", "show", "task_sync_settings"]);
     for (const [name, arguments_] of [
       ["next", { peek: true }],
       ["ls", {}],
@@ -2153,6 +2153,7 @@ test("read-only MCP lists the read words and refuses every writing call as a too
       ["show", { work_ref: ref }],
       ["memories", {}],
       ["memories", { query: "read-rule", full: true }],
+      ["task_sync_settings", { action: "status" }],
     ]) {
       structured(await client.call(name, arguments_));
     }
@@ -2171,10 +2172,13 @@ test("read-only MCP lists the read words and refuses every writing call as a too
         next_without_peek: ["engram work next --peek"],
         memories_with_context_generation: ["engram work memories"],
         argument_not_admitted: [],
+        settings_mutation: ["engram task-sync status --json"],
       };
       assert.deepEqual(error.next, instead[restriction]);
     };
     await refused("next", {}, "next_without_peek");
+    await refused("task_sync_settings", { action: "enable", user_instruction: "Enable this project." }, "settings_mutation");
+    await refused("task_sync_settings", { action: "disable" }, "settings_mutation");
     await refused("next", { peek: false }, "next_without_peek");
     await refused("next", { peek: "true" }, "argument_not_admitted");
     await refused("memories", { context_generation: null }, "memories_with_context_generation");
@@ -4422,7 +4426,7 @@ test("every MCP word refuses an unknown argument by name and lists the accepted 
       return result.content.filter(({ type }) => type === "text").map(({ text }) => text).join("\n");
     };
     const tools = await client.tools();
-    assert.equal(tools.length, 15);
+    assert.equal(tools.length, 16);
     for (const tool of tools) {
       assert.equal(tool.inputSchema.additionalProperties, false, tool.name);
       const text = argumentText(await client.call(tool.name, { unknown_argument: true }));
@@ -5639,7 +5643,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async (t
   let b;
   try {
     buildAndInit(engramHome);
-    // Both sessions receive the same fifteen-tool MCP surface with only
+    // Both sessions receive the same work and configuration MCP surface with only
     // project and asserted actor/session bindings.
     a = new McpClient(engramHome, sessionA);
     b = new McpClient(engramHome, sessionB);
@@ -5651,7 +5655,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async (t
     assert.doesNotMatch(a.instructions, /Ten words/u);
     const aToolDefinitions = await a.tools();
     const aTools = new Set(aToolDefinitions.map(({ name }) => name));
-    assert.deepEqual([...aTools].sort(), [...AGENT_TOOLS].sort());
+    assert.deepEqual([...aTools].sort(), [...AGENT_TOOLS, "task_sync_settings"].sort());
     for (const tool of aToolDefinitions) {
       assert.doesNotMatch(
         JSON.stringify(tool.inputSchema),

@@ -115,32 +115,81 @@ mod tests {
     #[test]
     fn every_listed_input_schema_is_the_one_rmcps_wrapper_gives() {
         use rmcp::handler::server::{common::schema_for_input, wrapper::Parameters as Rmcp};
-        let reference = |name: &str| {
-            let schema = match name {
-                "next" => schema_for_input::<Rmcp<super::super::arguments::NextArgs>>(),
-                "ls" => schema_for_input::<Rmcp<super::super::arguments::LsArgs>>(),
-                "search" => schema_for_input::<Rmcp<super::super::arguments::WorkSearchArgs>>(),
-                "show" => schema_for_input::<Rmcp<super::super::arguments::ShowArgs>>(),
-                "add" => schema_for_input::<Rmcp<super::super::arguments::AddArgs>>(),
-                "claim" => schema_for_input::<Rmcp<super::super::arguments::WorkClaimArgs>>(),
-                "update" => schema_for_input::<Rmcp<super::super::arguments::UpdateArgs>>(),
-                "gate" => schema_for_input::<Rmcp<super::super::arguments::GateArgs>>(),
-                "evaluate" => schema_for_input::<Rmcp<super::super::arguments::EvaluateArgs>>(),
-                "note" => schema_for_input::<Rmcp<super::super::arguments::NoteArgs>>(),
-                "done" => schema_for_input::<Rmcp<super::super::arguments::DoneArgs>>(),
-                "handoff" => schema_for_input::<Rmcp<super::super::arguments::HandoffArgs>>(),
-                "remember" => schema_for_input::<Rmcp<super::super::arguments::RememberArgs>>(),
-                "memories" => schema_for_input::<Rmcp<super::super::arguments::MemoriesArgs>>(),
-                "forget" => schema_for_input::<Rmcp<super::super::arguments::ForgetArgs>>(),
-                other => panic!("a listed tool without a reference schema: {other}"),
-            };
-            schema.expect("reference schema")
-        };
+        let references = [
+            (
+                "next",
+                schema_for_input::<Rmcp<super::super::arguments::NextArgs>>(),
+            ),
+            (
+                "ls",
+                schema_for_input::<Rmcp<super::super::arguments::LsArgs>>(),
+            ),
+            (
+                "search",
+                schema_for_input::<Rmcp<super::super::arguments::WorkSearchArgs>>(),
+            ),
+            (
+                "show",
+                schema_for_input::<Rmcp<super::super::arguments::ShowArgs>>(),
+            ),
+            (
+                "add",
+                schema_for_input::<Rmcp<super::super::arguments::AddArgs>>(),
+            ),
+            (
+                "claim",
+                schema_for_input::<Rmcp<super::super::arguments::WorkClaimArgs>>(),
+            ),
+            (
+                "update",
+                schema_for_input::<Rmcp<super::super::arguments::UpdateArgs>>(),
+            ),
+            (
+                "gate",
+                schema_for_input::<Rmcp<super::super::arguments::GateArgs>>(),
+            ),
+            (
+                "evaluate",
+                schema_for_input::<Rmcp<super::super::arguments::EvaluateArgs>>(),
+            ),
+            (
+                "note",
+                schema_for_input::<Rmcp<super::super::arguments::NoteArgs>>(),
+            ),
+            (
+                "done",
+                schema_for_input::<Rmcp<super::super::arguments::DoneArgs>>(),
+            ),
+            (
+                "handoff",
+                schema_for_input::<Rmcp<super::super::arguments::HandoffArgs>>(),
+            ),
+            (
+                "remember",
+                schema_for_input::<Rmcp<super::super::arguments::RememberArgs>>(),
+            ),
+            (
+                "memories",
+                schema_for_input::<Rmcp<super::super::arguments::MemoriesArgs>>(),
+            ),
+            (
+                "forget",
+                schema_for_input::<Rmcp<super::super::arguments::ForgetArgs>>(),
+            ),
+            (
+                "task_sync_settings",
+                schema_for_input::<Rmcp<crate::task_sync::settings::Request>>(),
+            ),
+        ];
         let tools = super::super::McpServer::agent_tool_router().list_all();
-        assert_eq!(tools.len(), 15);
-        for tool in tools {
+        assert_eq!(tools.len(), references.len());
+        for (name, reference) in references {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .expect("registered reference tool");
             let listed = serde_json::to_string(&tool.input_schema).unwrap();
-            let expected = serde_json::to_string(&reference(&tool.name)).unwrap();
+            let expected = serde_json::to_string(&reference.expect("reference schema")).unwrap();
             assert_eq!(listed, expected, "{}", tool.name);
         }
     }
