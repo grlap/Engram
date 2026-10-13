@@ -47,9 +47,11 @@ enum OpenAttempt {
     InitializedMeanwhile,
 }
 
+mod lock_wait;
 mod protocol_retry;
 mod restore_copy;
 mod store_copy;
+use lock_wait::LockWait;
 use protocol_retry::{OpenPhase, ProtocolRetry};
 pub use restore_copy::{LiveAuthority, RestoreCopyReport, installed_sidecar_problem};
 pub(crate) use store_copy::CopyProbePoint;
@@ -133,11 +135,11 @@ impl SqliteStore {
     fn open_existing_read_only_with(path: &Path, retry: ProtocolRetry) -> Result<Self, StoreError> {
         let connection = Self::open_existing_read_only_connection(path)?;
         connection.pragma_update(None, "query_only", true)?;
-        Self::from_connection_with_busy_timeout(
+        Self::from_connection_with_lock_wait(
             connection,
             None,
             None,
-            Duration::from_secs(5),
+            LockWait::Timeout(Duration::from_secs(5)),
             retry,
         )
     }
@@ -624,11 +626,11 @@ impl SqliteStore {
         }
         // A backup's verification never starts again: an immutable open never
         // reads a write-ahead log, and a copy runs under its own deadline.
-        let store = Self::from_connection_with_busy_timeout(
+        let store = Self::from_connection_with_lock_wait(
             connection,
             None,
             None,
-            Duration::from_secs(5),
+            LockWait::Timeout(Duration::from_secs(5)),
             ProtocolRetry::Never,
         )?;
         if let Some(interrupt) = interrupt {
@@ -709,11 +711,11 @@ impl SqliteStore {
                 Some(crate::phase_trace::control::sql_event),
             );
         }
-        Self::from_connection_with_busy_timeout(
+        Self::from_connection_with_lock_wait(
             connection,
             identity,
             None,
-            Duration::from_secs(5),
+            LockWait::Timeout(Duration::from_secs(5)),
             retry,
         )
     }
@@ -853,26 +855,27 @@ impl SqliteStore {
         host_path_policy: Option<HostPathPolicy>,
         initial_control_policy: Option<&InitialControlPolicy>,
     ) -> Result<Self, StoreError> {
-        Self::from_connection_with_busy_timeout(
+        Self::from_connection_with_lock_wait(
             connection,
             host_path_policy,
             initial_control_policy,
-            Duration::from_secs(5),
+            LockWait::Timeout(Duration::from_secs(5)),
             ProtocolRetry::Once,
         )
     }
 
-    /// Opens the store on `connection`. Openers of a new store decide that it
+    /// Opens the store on `connection`, waiting for locks as `lock_wait`
+    /// says. Openers of a new store decide that it
     /// is new before they take its write lock, so one may find under the lock
     /// that another has initialized it meanwhile; that opener starts again
     /// once, from the top, against the initialized store. An attempt ended by
     /// SQLite's locking-protocol refusal also starts again from the top, once
     /// when `retry` allows it; the two allowances are separate.
-    fn from_connection_with_busy_timeout(
+    fn from_connection_with_lock_wait(
         mut connection: Connection,
         host_path_policy: Option<HostPathPolicy>,
         initial_control_policy: Option<&InitialControlPolicy>,
-        busy_timeout: Duration,
+        lock_wait: LockWait,
         retry: ProtocolRetry,
     ) -> Result<Self, StoreError> {
         let mut restarted = false;
@@ -885,7 +888,7 @@ impl SqliteStore {
                 &mut phase,
                 host_path_policy,
                 initial_control_policy,
-                busy_timeout,
+                lock_wait,
             ) {
                 Ok(OpenAttempt::Opened {
                     work_schema_version,
@@ -928,13 +931,13 @@ impl SqliteStore {
         phase: &mut OpenPhase,
         host_path_policy: Option<HostPathPolicy>,
         initial_control_policy: Option<&InitialControlPolicy>,
-        busy_timeout: Duration,
+        lock_wait: LockWait,
     ) -> Result<OpenAttempt, StoreError> {
         use crate::phase_trace::control::{ControlPhase, enter};
         enter(ControlPhase::SchemaCheck);
-        connection.busy_timeout(busy_timeout)?;
+        lock_wait.install(connection)?;
         #[cfg(test)]
-        super::copy_trace::mark(|| format!("open: busy timeout {busy_timeout:?} set"));
+        super::copy_trace::mark(|| format!("open: lock wait {lock_wait:?} set"));
         let read_only = connection.is_readonly("main")?;
         // Every probe below reads one snapshot, so another opener committing
         // a new store meanwhile cannot make two of them disagree. An error
@@ -996,7 +999,7 @@ impl SqliteStore {
              PRAGMA synchronous = NORMAL;",
         )?;
         if !read_only {
-            Self::use_write_ahead_log(connection, phase, busy_timeout)?;
+            Self::use_write_ahead_log(connection, phase, lock_wait)?;
         }
         if !read_only && !core_schema_complete {
             #[cfg(test)]
@@ -1305,14 +1308,14 @@ impl SqliteStore {
     /// every writable open does. Switching a new file's journal mode needs
     /// an exclusive lock, and SQLite refuses the switch at once, without its
     /// busy wait, while another opener of the same new file holds a lock. The
-    /// switch is retried until `busy_timeout`, reading the mode again first,
+    /// switch is retried until `lock_wait` ends, reading the mode again first,
     /// since another opener may have switched it meanwhile.
     fn use_write_ahead_log(
         connection: &Connection,
         phase: &mut OpenPhase,
-        busy_timeout: Duration,
+        lock_wait: LockWait,
     ) -> Result<(), StoreError> {
-        let deadline = std::time::Instant::now() + busy_timeout;
+        let limit = lock_wait.retry_limit(std::time::Instant::now());
         loop {
             protocol_retry::enter_phase(phase, OpenPhase::JournalQuery)?;
             let mode =
@@ -1323,11 +1326,13 @@ impl SqliteStore {
             protocol_retry::enter_phase(phase, OpenPhase::JournalSwitch)?;
             match connection.execute_batch("PRAGMA journal_mode = WAL;") {
                 Ok(()) => return Ok(()),
-                Err(rusqlite::Error::SqliteFailure(error, _))
-                    if error.code == rusqlite::ErrorCode::DatabaseBusy
-                        && std::time::Instant::now() < deadline =>
+                Err(rusqlite::Error::SqliteFailure(error, message))
+                    if error.code == rusqlite::ErrorCode::DatabaseBusy =>
                 {
-                    std::thread::sleep(Duration::from_millis(5));
+                    match lock_wait.retry_pause(limit, std::time::Instant::now()) {
+                        Some(pause) => std::thread::sleep(pause),
+                        None => return Err(rusqlite::Error::SqliteFailure(error, message).into()),
+                    }
                 }
                 Err(error) => return Err(error.into()),
             }

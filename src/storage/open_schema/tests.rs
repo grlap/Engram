@@ -1211,11 +1211,11 @@ fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
         .expect("hold the SQLite writer slot");
     let current = Connection::open(&database).expect("open current-store connection");
     drop(
-        SqliteStore::from_connection_with_busy_timeout(
+        SqliteStore::from_connection_with_lock_wait(
             current,
             Some(HostPathPolicy::host_default()),
             None,
-            Duration::from_millis(25),
+            super::LockWait::Timeout(Duration::from_millis(25)),
             super::ProtocolRetry::Once,
         )
         .expect("a current warm open remains read-only while another writer is active"),
@@ -1235,11 +1235,11 @@ fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .expect("hold the writer slot across the repair attempt");
     let candidate = Connection::open(&database).expect("open repair candidate connection");
-    let result = SqliteStore::from_connection_with_busy_timeout(
+    let result = SqliteStore::from_connection_with_lock_wait(
         candidate,
         Some(HostPathPolicy::host_default()),
         None,
-        Duration::from_millis(25),
+        super::LockWait::Timeout(Duration::from_millis(25)),
         super::ProtocolRetry::Once,
     );
     let Err(StoreError::Sqlite(error)) = result else {

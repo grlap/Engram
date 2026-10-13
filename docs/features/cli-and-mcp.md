@@ -2035,7 +2035,15 @@ This is the contract a host builds its push trigger on.
   checked cooperatively: after the space check, by SQLite's progress
   handler during the copy and its check, between chunks of the copy's hash
   and of the reads that build the compressed file, and once that file is
-  written. No call is interrupted while it runs, so one that stalls holds
+  written. When another connection holds a lock the copy needs, SQLite
+  calls the copy's busy handler, which reads the clock after each short
+  sleep. One such wait ends at the deadline or five seconds after it
+  began, whichever comes first; a wait cut off by the five seconds fails
+  the capture as a busy store. A sleep can last longer than asked, so a
+  wait can end a little late. SQLite's own retries to begin a read on the
+  write-ahead log sleep inside SQLite, outside this handler; the
+  [SQLite store](sqlite-store.md) describes them.
+  No call is interrupted while it runs, so one that stalls holds
   the push until it returns.
 - `--transport-deadline-secs N`, 1800 by default, is one budget for every
   request to the target together: resolving a pending attempt, confirming

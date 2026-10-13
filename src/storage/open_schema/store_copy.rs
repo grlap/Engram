@@ -7,9 +7,10 @@ use std::sync::{
 };
 use std::time::Instant;
 
+use super::lock_wait::CopyWaitScope;
 use super::{
-    CanonicalObject, Connection, Duration, ObjectId, Path, ProtocolRetry, SqliteStore, StoreError,
-    store_sidecars,
+    CanonicalObject, Connection, Duration, LockWait, ObjectId, Path, ProtocolRetry, SqliteStore,
+    StoreError, store_sidecars,
 };
 #[cfg(test)]
 use crate::storage::copy_trace::{mark, outcome};
@@ -17,9 +18,6 @@ use crate::{FeedId, ProjectId, WorkGraphSnapshotCut};
 
 /// How many SQLite virtual-machine steps pass between two deadline checks.
 const PROGRESS_STEPS: std::ffi::c_int = 1000;
-
-/// The longest a copy connection waits for a lock, as ordinary opens do.
-const LOCK_WAIT: Duration = Duration::from_secs(5);
 
 /// The points at which a copy checks its deadline while SQLite or the hash
 /// runs; a test may fire the interrupt at one of them on purpose.
@@ -39,7 +37,8 @@ pub(crate) enum CopyProbePoint {
 
 /// One deadline shared by every step of a copy. Every SQLite connection a
 /// copy opens checks it through a progress handler and is interrupted once it
-/// has passed; lock waits are bounded by the time left; the steps between
+/// has passed; a lock wait ends once the clock reaches it, however long the
+/// sleeps in between lasted; the steps between
 /// statements, and closing a connection, are checked explicitly. It is checked,
 /// not enforced to the instant: a file-system call
 /// that stalls is not interrupted. Once a check has seen the deadline pass,
@@ -135,24 +134,6 @@ impl CopyInterrupt {
         self.fired.load(Ordering::SeqCst)
     }
 
-    /// The time left rounded up to SQLite's whole milliseconds, at most
-    /// [`LOCK_WAIT`]. A positive remainder never disables its busy handler.
-    fn lock_wait(&self) -> Duration {
-        self.lock_wait_at(Instant::now())
-    }
-
-    fn lock_wait_at(&self, now: Instant) -> Duration {
-        self.deadline.map_or(LOCK_WAIT, |deadline| {
-            let remaining = deadline.saturating_duration_since(now).min(LOCK_WAIT);
-            let fractional_ns = remaining.subsec_nanos() % 1_000_000;
-            if fractional_ns == 0 {
-                remaining
-            } else {
-                remaining + Duration::from_nanos(u64::from(1_000_000 - fractional_ns))
-            }
-        })
-    }
-
     #[cfg(test)]
     fn probed(&self, point: CopyProbePoint) -> bool {
         if self.probe.as_ref().is_some_and(|probe| probe(point)) {
@@ -223,6 +204,8 @@ impl SqliteStore {
         target: &Path,
         interrupt: &CopyInterrupt,
     ) -> Result<(), StoreError> {
+        // First, so that it outlives every connection below.
+        let _lock_wait = CopyWaitScope::enter(interrupt.deadline());
         interrupt.checked()?;
         #[cfg(test)]
         mark(|| "copy: open begins".into());
@@ -233,14 +216,13 @@ impl SqliteStore {
         mark(|| format!("copy: open {}", outcome(&connection)));
         let connection = connection?;
         interrupt.install(&connection, CopyProbePoint::Admit)?;
-        let lock_wait = interrupt.lock_wait();
         #[cfg(test)]
-        mark(|| format!("copy: admission begins, lock wait {lock_wait:?}"));
-        let store = Self::from_connection_with_busy_timeout(
+        mark(|| "copy: admission begins".into());
+        let store = Self::from_connection_with_lock_wait(
             connection,
             None,
             None,
-            lock_wait,
+            LockWait::CopyDeadline,
             ProtocolRetry::Never,
         );
         // On an error this includes closing the connection.
@@ -248,11 +230,16 @@ impl SqliteStore {
         mark(|| format!("copy: admission {}", outcome(&store)));
         let store = store?;
         interrupt.checked()?;
-        let lock_wait = interrupt.lock_wait();
-        store.connection.busy_timeout(lock_wait)?;
+        LockWait::CopyDeadline.install(&store.connection)?;
         interrupt.install(&store.connection, CopyProbePoint::Copy)?;
         #[cfg(test)]
-        mark(|| format!("copy: vacuum begins, lock wait {lock_wait:?}"));
+        mark(|| {
+            let timeout = store
+                .connection
+                .query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))
+                .map_or_else(|error| format!("error: {error}"), |ms| format!("{ms} ms"));
+            format!("copy: vacuum begins, busy timeout {timeout}")
+        });
         let copied = super::super::sqlite_path::vacuum_into(&store.connection, target);
         #[cfg(test)]
         mark(|| format!("copy: vacuum {}", outcome(&copied)));
@@ -274,17 +261,19 @@ impl SqliteStore {
         path: &Path,
         interrupt: &CopyInterrupt,
     ) -> Result<(), StoreError> {
+        // First, so that it outlives the connection below.
+        let _lock_wait = CopyWaitScope::enter(interrupt.deadline());
         interrupt.checked()?;
         // The copy came from an admitted store, so this ordinary open settles
         // its journal mode and initializes nothing. Closing it folds its log;
         // that last checkpoint is checked only after it returns.
         let connection = super::super::open_sqlite_file(path, rusqlite::OpenFlags::default())?;
         interrupt.install(&connection, CopyProbePoint::Settle)?;
-        drop(Self::from_connection_with_busy_timeout(
+        drop(Self::from_connection_with_lock_wait(
             connection,
             None,
             None,
-            interrupt.lock_wait(),
+            LockWait::CopyDeadline,
             ProtocolRetry::Never,
         )?);
         for sidecar in store_sidecars(path) {
