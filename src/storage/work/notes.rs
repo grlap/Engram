@@ -46,7 +46,7 @@ pub(crate) struct WorkNoteRecord {
 }
 
 /// What the host recorded for one verification: its typed result and check
-/// kind, the source revision it ran on, and its producer observation's
+/// kind, the source revision and workspace it ran on, and its producer observation's
 /// outcome. Read from the immutable records, never inferred from the summary,
 /// which stays the host's attributed prose.
 #[derive(Clone, Debug)]
@@ -55,6 +55,7 @@ pub(crate) struct VerificationFacts {
     pub check_kind: VerificationKind,
     pub source_revision: String,
     pub producer_outcome: ExecutionOutcome,
+    pub source_workspace: String,
 }
 
 pub(super) const NOTE_OBJECTS: &str = "
@@ -118,6 +119,7 @@ pub(super) fn load_note(
                     check_kind: evidence.check_kind,
                     source_revision: evidence.source_basis.source_revision.clone(),
                     producer_outcome: producer.outcome,
+                    source_workspace: evidence.source_basis.workspace_id.clone(),
                 })
             } else {
                 None

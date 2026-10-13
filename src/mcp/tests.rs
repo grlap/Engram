@@ -20,6 +20,7 @@ use serde_json::{Value, json};
 mod agent_error_refs;
 mod criterion_links;
 mod task_sync_settings;
+mod verification_workspaces;
 
 /// The MCP `show` tool gives a native verification record's typed facts,
 /// in the notes window and in the record's detail, beside its summary.

@@ -972,6 +972,15 @@ Rules that matter:
   reference lines are framed as data in text; JSON preserves exact content.
   These existing canonical locators are read-navigation exceptions, not
   execution tokens. No per-note identity is invented for inherited members.
+- Native verification rows in the notes window and full-note detail carry
+  `verification` with `result`, `check_kind`, `source_revision`, and
+  `producer_outcome`. Its additive `source_workspace` is the recorded
+  `source_basis.workspace_id`, copied verbatim beside `source_revision` in
+  CLI JSON and MCP, even when another workspace holds the same revision or
+  the current root has moved. Native verification evidence requires a source
+  basis, so both source fields are present together. Generic and restored
+  notes without typed verification facts carry neither field. The field
+  does not change rendered text or note ordering.
 - For a native verification record, `--note LOCATOR` adds `assessment`: each
   obligation of the record's check kind on its run, reconstructed at the
   record's own run-feed position under the current matching rules

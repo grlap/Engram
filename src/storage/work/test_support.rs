@@ -1,5 +1,8 @@
 use super::*;
 
+mod verification_workspaces;
+pub(crate) use verification_workspaces::verification_workspace_notes_fixture;
+
 pub(super) use crate::domain::{
     ActorContext, AssuranceLevel, CheckpointWorkRequest, ChildWorkDraft, ChildWorkPrerequisite,
     CompleteWorkRequest, ControlAssurance, ControlRefusalCode, ControlTurnBeginDecision,

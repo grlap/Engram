@@ -858,6 +858,7 @@ fn verification_value(facts: &crate::storage::VerificationFacts) -> Value {
         "check_kind": word(json!(facts.check_kind)),
         "source_revision": facts.source_revision,
         "producer_outcome": word(json!(facts.producer_outcome)),
+        "source_workspace": facts.source_workspace,
     });
     // Why an indeterminate verification does not count, in plain words.
     if facts.result == crate::domain::VerificationResult::Indeterminate {
