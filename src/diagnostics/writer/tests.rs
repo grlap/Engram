@@ -2,11 +2,37 @@ use super::*;
 use crate::diagnostics::{Correlation, Fault};
 use std::sync::atomic::AtomicUsize;
 
-fn drain(writer: &Writer) -> bool {
-    let result = writer.flush(crate::diagnostics::tests::RECORD_DRAIN);
+#[derive(Clone, Copy)]
+struct DrainStart {
+    timeouts: u64,
+    requested: u64,
+}
+
+impl DrainStart {
+    fn capture(writer: &Writer) -> Self {
+        Self {
+            timeouts: writer.shared.counters.timeout.load(Ordering::Relaxed),
+            requested: writer.shared.flush_requested.load(Ordering::Acquire),
+        }
+    }
+}
+
+// Test drains have one sequential flush caller; another caller would advance
+// the generation independently of the flush whose result we are checking.
+fn drained(writer: &Writer, start: DrainStart, result: bool) -> bool {
     assert_eq!(
-        writer.shared.flushed.load(Ordering::Acquire),
+        writer.shared.counters.timeout.load(Ordering::Relaxed),
+        start.timeouts,
+        "diagnostic drain timed out: {writer:#?}"
+    );
+    let generation = start.requested + 1;
+    assert_eq!(
         writer.shared.flush_requested.load(Ordering::Acquire),
+        generation,
+        "diagnostic drain did not request exactly one generation: {writer:#?}"
+    );
+    assert!(
+        writer.shared.flushed.load(Ordering::Acquire) >= generation,
         "{writer:#?}"
     );
     assert!(
@@ -15,6 +41,69 @@ fn drain(writer: &Writer) -> bool {
         "{writer:#?}"
     );
     result
+}
+
+fn drain(writer: &Writer) -> bool {
+    let start = DrainStart::capture(writer);
+    let result = writer.flush(crate::diagnostics::tests::RECORD_DRAIN);
+    drained(writer, start, result)
+}
+
+#[test]
+fn drain_rejects_timeout_even_after_late_acknowledgement() {
+    let (sender, _receiver) = mpsc::sync_channel(1);
+    let shared = Arc::new(Shared::default());
+    let writer = Writer::from_spawn(sender, Arc::clone(&shared), true);
+    shared.accepted.store(1, Ordering::Release);
+    let start = DrainStart::capture(&writer);
+    let result = writer.flush(Duration::ZERO);
+    assert!(!result);
+    assert_eq!(
+        shared.counters.timeout.load(Ordering::Relaxed),
+        start.timeouts + 1
+    );
+    let requested = shared.flush_requested.load(Ordering::Acquire);
+    let target = shared.flush_target.load(Ordering::Acquire);
+    assert_eq!(requested, start.requested + 1);
+    assert_eq!(target, 1);
+    // No worker runs: model its acknowledgement after the timeout directly.
+    shared.flushed.store(requested, Ordering::Release);
+    shared.processed.store(target, Ordering::Release);
+    // Both old drain checks pass, despite the false result being a timeout.
+    assert_eq!(
+        shared.flushed.load(Ordering::Acquire),
+        shared.flush_requested.load(Ordering::Acquire)
+    );
+    assert!(
+        shared.processed.load(Ordering::Acquire) >= shared.flush_target.load(Ordering::Acquire)
+    );
+    assert!(std::panic::catch_unwind(|| drained(&writer, start, result)).is_err());
+}
+
+#[test]
+fn drain_rejects_early_return_without_a_new_generation() {
+    let (sender, _receiver) = mpsc::sync_channel(1);
+    let shared = Arc::new(Shared::default());
+    let writer = Writer::from_spawn(sender, Arc::clone(&shared), false);
+    let start = DrainStart::capture(&writer);
+    let result = writer.flush(Duration::ZERO);
+    assert!(!result);
+    assert_eq!(
+        shared.counters.timeout.load(Ordering::Relaxed),
+        start.timeouts
+    );
+    assert_eq!(
+        shared.flush_requested.load(Ordering::Acquire),
+        start.requested
+    );
+    assert_eq!(
+        shared.flushed.load(Ordering::Acquire),
+        shared.flush_requested.load(Ordering::Acquire)
+    );
+    assert!(
+        shared.processed.load(Ordering::Acquire) >= shared.flush_target.load(Ordering::Acquire)
+    );
+    assert!(std::panic::catch_unwind(|| drained(&writer, start, result)).is_err());
 }
 
 #[test]
