@@ -601,17 +601,13 @@ fn dispose_work_on(
     {
         assert_actor_session(&request.actor, &current.holder)?;
     }
-    if let Some(run) = run.as_ref() {
-        let pending: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM work_handoff_offers WHERE run_id = ?1 AND state = 'offered')",
-            [run.run_id.0.to_string()],
-            |row| row.get(0),
-        )?;
-        if pending {
-            return Err(StoreError::InvalidWork(
-                crate::storage::PENDING_HANDOFF_REFUSAL.into(),
-            ));
-        }
+    if let Some(run) = run.as_ref()
+        && let Some(offer) =
+            super::super::execution::live_handoff_on(transaction, run.run_id, request.disposed_at)?
+    {
+        return Err(StoreError::WorkHandoffPending {
+            offer_id: offer.offer_id,
+        });
     }
     let claim_fence = if let Some(current) = claim.as_mut() {
         if current.state == WorkClaimState::Active {

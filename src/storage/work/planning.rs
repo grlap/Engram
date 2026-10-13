@@ -2068,20 +2068,12 @@ pub(super) fn validate_live_claim_for_item_in_scope(
     if !exact_authority_basis {
         return Err(StoreError::WorkClaimMismatch { work: work_id });
     }
-    if !allow_pending_handoff {
-        let pending: Option<i64> = connection
-            .query_row(
-                "SELECT 1 FROM work_handoff_offers
-                 WHERE run_id = ?1 AND state = 'offered' AND expires_at_ms > ?2",
-                params![run_id.0.to_string(), now.timestamp_millis()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if pending.is_some() {
-            return Err(StoreError::InvalidWork(
-                super::super::PENDING_HANDOFF_REFUSAL.into(),
-            ));
-        }
+    if !allow_pending_handoff
+        && let Some(offer) = super::execution::live_handoff_on(connection, run_id, now)?
+    {
+        return Err(StoreError::WorkHandoffPending {
+            offer_id: offer.offer_id,
+        });
     }
     Ok((item, run, claim))
 }
@@ -2140,6 +2132,7 @@ pub(in crate::storage) fn validate_control_work_binding_in_scope(
             StoreError::WorkRevisionConflict { .. }
             | StoreError::WorkClaimMismatch { .. }
             | StoreError::WorkClaimLapsed { .. }
+            | StoreError::WorkHandoffPending { .. }
             | StoreError::InvalidWork(_),
         ) => Err(StoreError::ControlWorkBindingStale {
             work: binding.work_id,

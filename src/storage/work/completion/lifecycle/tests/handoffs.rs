@@ -127,7 +127,7 @@ fn disposal_handoff_cancel_and_supersede_refuse_without_effects_then_retry() {
             .dispose_work(&request, &DevelopmentNoopRedactor)
             .unwrap_err();
         assert!(
-            matches!(error, StoreError::InvalidWork(ref reason) if reason == crate::storage::PENDING_HANDOFF_REFUSAL)
+            matches!(error, StoreError::WorkHandoffPending { offer_id } if offer_id == offer.offer_id)
         );
         assert_eq!(
             test_database_shape_snapshot(&store.connection).unwrap(),
@@ -175,7 +175,7 @@ fn disposal_handoff_reject_refusal_and_failed_waiver_roll_back_everything() {
     };
     let before = test_database_shape_snapshot(&store.connection).unwrap();
     assert!(
-        matches!(store.reject_required_child(&request, &DevelopmentNoopRedactor), Err(StoreError::InvalidWork(ref reason)) if reason == crate::storage::PENDING_HANDOFF_REFUSAL)
+        matches!(store.reject_required_child(&request, &DevelopmentNoopRedactor), Err(StoreError::WorkHandoffPending { offer_id }) if offer_id == offer.offer_id)
     );
     assert_eq!(
         test_database_shape_snapshot(&store.connection).unwrap(),
@@ -374,7 +374,8 @@ fn disposal_handoff_accept_and_dispose_serialize_across_connections() {
         assert_eq!(accepted.join().unwrap().unwrap().holder, offer.to);
         let error = disposed.join().unwrap().unwrap_err();
         assert!(
-            matches!(error, StoreError::InvalidWork(ref reason) if reason == crate::storage::PENDING_HANDOFF_REFUSAL || reason.contains("does not match lifecycle holder"))
+            matches!(error, StoreError::WorkHandoffPending { .. })
+                || matches!(error, StoreError::InvalidWork(ref reason) if reason.contains("does not match lifecycle holder"))
         );
     });
     assert_eq!(
@@ -433,8 +434,8 @@ fn disposal_handoff_offer_and_dispose_serialize_across_connections() {
         (offered.join().unwrap(), disposed.join().unwrap())
     });
     match (offered, disposed) {
-        (Ok(_), Err(StoreError::InvalidWork(reason))) => {
-            assert_eq!(reason, crate::storage::PENDING_HANDOFF_REFUSAL);
+        (Ok(offer), Err(StoreError::WorkHandoffPending { offer_id })) => {
+            assert_eq!(offer_id, offer.offer_id);
             assert_eq!(
                 store.get_work_item(work.work_id).unwrap().lifecycle,
                 WorkLifecycle::Open

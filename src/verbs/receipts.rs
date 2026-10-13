@@ -754,8 +754,8 @@ impl VerbError {
                 vec!["no item is selected; name one or claim one first".into()],
                 vec!["engram work next".into()],
             ),
-            StoreError::InvalidWork(reason) if reason == crate::storage::PENDING_HANDOFF_REFUSAL => (
-                vec![reason.clone()],
+            StoreError::WorkHandoffPending { .. } => (
+                vec!["record status before offering; cancel the offer to resume holder mutations, or use your host's peer channel while waiting".into()],
                 vec![format!("engram work handoff {target} --cancel \"…\"")],
             ),
             StoreError::WorkAncestorNotOpen { ancestor, .. } => (

@@ -46,7 +46,7 @@ fn offered_guidance_fixture() -> (
         .unwrap();
     assert_disposal_guidance(&owner, &reference, 2, true);
     let before = owner.service.inspect_work(&reference, at(2)).unwrap();
-    owner
+    let offered = owner
         .handoff(
             HandoffInput {
                 work_ref: Some(reference.clone()),
@@ -59,13 +59,27 @@ fn offered_guidance_fixture() -> (
             at(3),
         )
         .unwrap();
+    assert_pending_handoff_commands(&offered, &reference);
     assert_disposal_guidance(&owner, &reference, 4, false);
     let live = owner.service.inspect_work(&reference, at(4)).unwrap();
     let mut expected = before.allowed_next;
     expected.retain(|action| {
         !matches!(
             action.as_str(),
-            "work_complete" | "work_update:cancel" | "work_update:supersede" | "work_handoff:offer"
+            "work_complete"
+                | "work_update:cancel"
+                | "work_update:supersede"
+                | "work_handoff:offer"
+                | "work_update:note"
+                | "work_update:checkpoint"
+                | "work_update:evidence"
+                | "work_update:release"
+                | "work_update:revise"
+                | "work_update:block"
+                | "work_update:unblock"
+                | "work_update:add_prerequisite"
+                | "work_update:remove_prerequisite"
+                | "work_propose:decompose"
         )
     });
     expected.push("work_handoff:cancel".into());
@@ -80,6 +94,86 @@ fn offered_guidance_fixture() -> (
     );
     assert_disposal_guidance(&recipient, &reference, 4, false);
     (directory, owner, recipient, reference)
+}
+
+fn assert_pending_handoff_commands(receipt: &Receipt, reference: &str) {
+    let next = receipt.value["next"].as_array().unwrap();
+    assert!(next.contains(&json!(format!(
+        "engram work handoff {reference} --cancel \"…\""
+    ))));
+    for command in next.iter().filter_map(serde_json::Value::as_str) {
+        assert!(!command.starts_with("engram work note "), "{command}");
+        assert!(!command.starts_with("engram work claim "), "{command}");
+        assert!(!command.starts_with("engram work done "), "{command}");
+    }
+}
+
+#[test]
+fn pending_handoff_words_omit_blocked_holder_actions_and_keep_peer_notes() {
+    let (_directory, owner, recipient, reference) = offered_guidance_fixture();
+    let shown = owner.show(&reference, at(4)).unwrap();
+    assert_pending_handoff_commands(&shown, &reference);
+    for view in [
+        owner.service.work_focus(&reference, at(4)).unwrap(),
+        owner
+            .service
+            .work_inspect(&reference, at(4))
+            .unwrap()
+            .view()
+            .clone(),
+    ] {
+        assert_eq!(view.allowed_next, ["work_focus", "work_handoff:cancel"]);
+    }
+    for status in [false, true] {
+        let error = owner
+            .note(
+                &NoteInput {
+                    status,
+                    work_ref: Some(reference.clone()),
+                    text: "Waiting for recipient".into(),
+                    refs: vec![],
+                },
+                at(4),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.guidance().next,
+            [format!("engram work handoff {reference} --cancel \"…\"")]
+        );
+        assert!(
+            error
+                .guidance()
+                .reminders
+                .iter()
+                .any(|line| line.contains("record status before offering"))
+        );
+    }
+    let error = owner
+        .claim(
+            ClaimInput {
+                work_ref: reference.clone(),
+                ttl_seconds: Some(7_200),
+                recover: None,
+            },
+            at(4),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.guidance().next,
+        [format!("engram work handoff {reference} --cancel \"…\"")]
+    );
+    let noted = recipient
+        .note(
+            &NoteInput {
+                status: true,
+                work_ref: Some(reference.clone()),
+                text: "Recipient waiting".into(),
+                refs: vec![],
+            },
+            at(4),
+        )
+        .unwrap();
+    assert_eq!(noted.value["non_holder"], true);
 }
 
 #[test]

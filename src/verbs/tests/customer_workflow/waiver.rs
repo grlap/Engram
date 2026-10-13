@@ -5,10 +5,6 @@ fn waiver_guidance_preserves_specific_invalid_work_remedies() {
     for (reason, command) in [
         ("work does not exist", "engram work ls"),
         (
-            crate::storage::PENDING_HANDOFF_REFUSAL,
-            "engram work handoff w-parent --cancel \"…\"",
-        ),
-        (
             crate::work_service::COMPLETED_WORK_LATE_FINDING_REFUSAL,
             "engram work note w-parent \"…\"",
         ),
@@ -17,6 +13,16 @@ fn waiver_guidance_preserves_specific_invalid_work_remedies() {
         let error = VerbError::for_waiver(StoreError::InvalidWork(reason.into()), "w-parent");
         assert_eq!(error.guidance().next, [command]);
     }
+    let error = VerbError::for_waiver(
+        StoreError::WorkHandoffPending {
+            offer_id: crate::WorkHandoffOfferId::new(),
+        },
+        "w-parent",
+    );
+    assert_eq!(
+        error.guidance().next,
+        ["engram work handoff w-parent --cancel \"…\""]
+    );
 }
 
 #[test]

@@ -137,9 +137,10 @@ pub fn store_error_value(error: &StoreError) -> Value {
                 "remedy": crate::verbs::GATE_WORK_REF_REQUIRED,
             })
         }
-        StoreError::InvalidWork(message) if message == crate::storage::PENDING_HANDOFF_REFUSAL => {
+        StoreError::WorkHandoffPending { offer_id } => {
             json!({
-                "reason": message,
+                "reason": crate::storage::PENDING_HANDOFF_REFUSAL,
+                "offer_id": offer_id,
                 "remedy": "cancel the handoff offer, or let it be accepted or expire before retrying",
             })
         }
@@ -393,7 +394,9 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
         StoreError::WorkImplicitTargetConflict(_) => "work_implicit_target_conflict",
         StoreError::WorkBareTargetAmbiguous(_) => "work_bare_target_ambiguous",
-        StoreError::InvalidWork(_) | StoreError::WorkAncestorNotOpen { .. } => "work_invalid",
+        StoreError::InvalidWork(_)
+        | StoreError::WorkHandoffPending { .. }
+        | StoreError::WorkAncestorNotOpen { .. } => "work_invalid",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",
         StoreError::WorkOperationIdempotencyConflict { .. } => "work_idempotency_conflict",

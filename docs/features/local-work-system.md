@@ -389,6 +389,14 @@ identity and fence stay fixed; an immutable `claim_renewed` event records the
 renewal. An explicit core idempotency key replays its original result instead.
 Renewal is refused while a live handoff offer is pending: cancel the offer,
 or let it be accepted or expire before attempting another holder mutation.
+The same refusal covers holder notes (including status notes), checkpoints,
+evidence, release and claim-bound planning. Fresh `allowed_next` and suggested
+commands omit those actions and offer cancellation instead. Refusal details
+carry the blocking `offer_id` while keeping the existing reason and remedy.
+Record a WAIT or status before offering; to resume holder writes, cancel the
+offer, or use the host's peer channel while waiting. Peer observation notes
+remain available and do not mutate the claim or offered checkpoint. Successful
+idempotent retries still replay their original receipts unchanged.
 A non-holder `note` on open work is a project/root observation only: it neither
 renews a claim nor creates a checkpoint or run contribution. A
 later `note` or `gate` is the narrow exception: any project-bound session may

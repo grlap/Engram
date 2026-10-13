@@ -3078,7 +3078,17 @@ names the exact tool and tagged operation. For example,
 `allowed_next: ["work_update:claim(recovery_reason_required)"]` directs the
 agent to submit the `work_update` claim variant with an attributed
 `recovery_reason`; ordinary
-claiming is `work_update:claim`. A successful claim receipt includes
+claiming is `work_update:claim`.
+
+While a live offer is pending, fresh holder notes, checkpoints, evidence,
+release, renewal and claim-bound planning are refused. Fresh action lists and
+next commands omit them and suggest cancelling the offer. The refusal's
+details include `offer_id`; its reason code and existing remedy are unchanged.
+Record status before offering, cancel to resume holder writes, or use the
+host's peer channel while waiting. Non-holder observations remain admitted;
+successful historical retries keep their original receipts.
+
+A successful claim receipt includes
 `control_binding { root_execution_id, work_id, run_id, work_revision,
 claim_id, claim_fence }`, ready to pass unchanged to host-private
 `session_bind`. The same live tuple appears as `focus.control_binding`;

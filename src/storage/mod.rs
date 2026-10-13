@@ -1460,6 +1460,11 @@ pub enum StoreError {
     WorkNotFound(crate::domain::WorkId),
     #[error("local work input is invalid: {0}")]
     InvalidWork(String),
+    /// Pending-offer context without changing the existing refusal message.
+    #[error("local work input is invalid: {}", PENDING_HANDOFF_REFUSAL)]
+    WorkHandoffPending {
+        offer_id: crate::domain::WorkHandoffOfferId,
+    },
     #[error(
         "work reference {reference:?} is ambiguous; use a full work id for one of {candidates:?}; {more} additional candidates omitted"
     )]

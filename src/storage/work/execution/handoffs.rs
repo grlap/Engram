@@ -14,6 +14,32 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+pub(in crate::storage::work) fn live_handoff_on(
+    connection: &Connection,
+    run_id: super::WorkRunId,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<WorkHandoffOffer>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT offer_object_id, offer_json FROM work_handoff_offers
+         WHERE run_id = ?1 AND state = 'offered' AND expires_at_ms > ?2 ORDER BY offer_id",
+    )?;
+    let mut rows = statement.query_map(
+        params![run_id.0.to_string(), now.timestamp_millis()],
+        |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+    )?;
+    if let Some(row) = rows.next() {
+        let offer = load_handoff_offer_projection(connection, row?)?;
+        if !offer.is_live_for_run(run_id, now) {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "handoff offer {:?} live index differs from its canonical state or run",
+                offer.offer_id
+            )));
+        }
+        return Ok(Some(offer));
+    }
+    Ok(None)
+}
+
 pub(in crate::storage::work) fn latest_canonical_handoff_offer(
     connection: &Connection,
     offer_id: &str,

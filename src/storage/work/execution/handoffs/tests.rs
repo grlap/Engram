@@ -140,6 +140,41 @@ fn outgoing_holder_can_cancel_a_handoff_and_resume_progress() {
             if reason == "destination did not accept"
     ));
     evidence(&mut store, &root, &claim, "agent-a", "resumed-evidence", 4);
+
+    store
+        .connection
+        .execute(
+            "UPDATE work_handoff_offers SET state = 'offered' WHERE offer_id = ?1",
+            [offer.offer_id.0.to_string()],
+        )
+        .expect("damage only the indexed state of the canonical cancelled offer");
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).unwrap();
+    let error = store
+        .record_work_evidence(
+            &RecordWorkEvidenceRequest {
+                work_id: root.work_id,
+                run_id: claim.run_id,
+                expected_work_revision: root.revision,
+                holder: claim.holder.clone(),
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+                summary: "must not bypass damaged handoff index".into(),
+                refs: Vec::new(),
+                actor: actor("agent-a"),
+                idempotency_key: "damaged-index-evidence".into(),
+                recorded_at: at(5),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("indexed live state cannot bypass the canonical cancelled offer");
+    assert!(
+        matches!(error, StoreError::InvalidWorkProjection(_)),
+        "{error:?}"
+    );
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).unwrap(),
+        before
+    );
 }
 
 #[test]

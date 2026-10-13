@@ -250,6 +250,7 @@ fn claims_recover_across_connections_and_handoff_fences_old_sessions() {
             .any(|record| record.contains("work_handoff_offer"))
     );
     restore_savepoint(&second);
+    let before_refusal = crate::storage::test_database_shape_snapshot(&second.connection).unwrap();
     let blocked_while_pending = second.record_work_evidence(
         &RecordWorkEvidenceRequest {
             work_id: root.work_id,
@@ -266,10 +267,23 @@ fn claims_recover_across_connections_and_handoff_fences_old_sessions() {
         },
         &DevelopmentNoopRedactor,
     );
-    assert!(matches!(
-        blocked_while_pending,
-        Err(StoreError::InvalidWork(_))
-    ));
+    let blocked_while_pending = blocked_while_pending.expect_err("a live offer refuses evidence");
+    assert!(
+        matches!(&blocked_while_pending, StoreError::WorkHandoffPending { offer_id }
+        if *offer_id == offer.offer_id)
+    );
+    assert_eq!(
+        crate::store_error_value(&blocked_while_pending)["error"]["code"],
+        "work_invalid"
+    );
+    assert_eq!(
+        blocked_while_pending.to_string(),
+        StoreError::InvalidWork(crate::storage::PENDING_HANDOFF_REFUSAL.into()).to_string()
+    );
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&second.connection).unwrap(),
+        before_refusal
+    );
     let accepted = first
         .accept_work_handoff(
             &AcceptWorkHandoffRequest {

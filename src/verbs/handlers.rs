@@ -2304,7 +2304,7 @@ fn observation_guidance(guidance: &mut Guidance, work_ref: &str) {
 
 /// Fixed table from `allowed_next` tags to literal commands. Only the moves
 /// that change who holds the item or whether it is finished are suggested
-/// (accept, claim, note, done, unblock) — at most [`NEXT_LIFECYCLE_LIMIT`] in
+/// (accept, cancel an offer, claim, note, done, unblock) — at most [`NEXT_LIFECYCLE_LIMIT`] in
 /// priority order — followed by `engram work show REF` for the rest. The one
 /// planning exception is removing a dead prerequisite that can never
 /// satisfy its edge. Other planning edits and entries the agent cannot run
@@ -2346,6 +2346,9 @@ pub(super) fn next_commands(
     }
     if has("work_handoff:accept") {
         push(format!("engram work handoff {work_ref} --accept"));
+    }
+    if has("work_handoff:cancel") {
+        push(format!("engram work handoff {work_ref} --cancel \"…\""));
     }
     if has(WORK_UPDATE_CLAIM_ACTION) {
         push(format!("engram work claim {work_ref}"));

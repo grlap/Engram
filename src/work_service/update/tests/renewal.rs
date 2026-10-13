@@ -42,8 +42,11 @@ fn phoenix_claim_renewal_refuses_pending_handoff_and_completed_work() {
         structured["error"]["details"]["remedy"],
         "cancel the handoff offer, or let it be accepted or expire before retrying"
     );
-    assert!(matches!(error, StoreError::InvalidWork(ref message)
-        if message.contains("cancel the offer") && message.contains("accepted or expire")));
+    assert!(matches!(error, StoreError::WorkHandoffPending { .. }));
+    assert_eq!(
+        error.to_string(),
+        StoreError::InvalidWork(crate::storage::PENDING_HANDOFF_REFUSAL.into()).to_string()
+    );
     let error: crate::verbs::VerbError = error.into();
     let guidance = error.guidance();
     assert!(

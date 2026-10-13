@@ -2363,21 +2363,22 @@ fn append_claim_actions(
                 && claim.holder == *session
                 && claim.expires_at > now =>
         {
-            let outgoing_offer = handoffs.iter().any(|offer| {
-                offer.state == WorkHandoffState::Offered
-                    && offer.from == *session
-                    && offer.expires_at > now
+            let pending = handoffs.iter().find(|offer| {
+                status.work.active_run_id == Some(claim.run_id)
+                    && offer.is_live_for_run(claim.run_id, now)
             });
-            append_holder_execution_actions(
-                allowed,
-                completion_capture_ready,
-                completion_preflight_ready,
-                if outgoing_offer {
-                    "work_handoff:cancel"
-                } else {
-                    "work_handoff:offer"
-                },
-            );
+            if let Some(offer) = pending {
+                if offer.from == *session {
+                    allowed.push("work_handoff:cancel".into());
+                }
+            } else {
+                append_holder_execution_actions(
+                    allowed,
+                    completion_capture_ready,
+                    completion_preflight_ready,
+                    "work_handoff:offer",
+                );
+            }
         }
         Some(claim)
             if claim.state == WorkClaimState::Active
@@ -2405,7 +2406,11 @@ fn append_claim_actions(
         _ => {}
     }
     if handoffs.iter().any(|offer| {
-        offer.state == WorkHandoffState::Offered && offer.to == *session && offer.expires_at > now
+        status
+            .work
+            .active_run_id
+            .is_some_and(|run_id| offer.is_live_for_run(run_id, now))
+            && offer.to == *session
     }) {
         allowed.push("work_handoff:accept".into());
     }
@@ -2424,13 +2429,27 @@ fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<Stri
     if status.work.lifecycle != WorkLifecycle::Open {
         return allowed;
     }
-    allowed.push("work_update:note".into());
+    let live_handoff = context.handoffs.iter().any(|offer| {
+        status
+            .work
+            .active_run_id
+            .is_some_and(|run_id| offer.is_live_for_run(run_id, context.now))
+    });
+    let own_live_claim = context.claim.is_some_and(|claim| {
+        status.work.active_run_id == Some(claim.run_id)
+            && claim.state == WorkClaimState::Active
+            && claim.holder == *context.session
+            && claim.expires_at > context.now
+    });
+    if !live_handoff || !own_live_claim {
+        allowed.push("work_update:note".into());
+    }
     let another_session_holds_live_claim = context.claim.is_some_and(|claim| {
         claim.state == WorkClaimState::Active
             && claim.holder != *context.session
             && claim.expires_at > context.now
     });
-    if !another_session_holds_live_claim {
+    if !another_session_holds_live_claim && !live_handoff {
         allowed.extend([
             "work_update:revise".into(),
             "work_update:block".into(),
@@ -2439,14 +2458,7 @@ fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<Stri
             "work_update:remove_prerequisite".into(),
             crate::storage::DECOMPOSE_PROTOCOL_OPERATION.into(),
         ]);
-        let live_handoff = context.handoffs.iter().any(|offer| {
-            offer.state == WorkHandoffState::Offered
-                && status.work.active_run_id == Some(offer.run_id)
-                && offer.expires_at > context.now
-        });
-        if !live_handoff {
-            allowed.extend(["work_update:cancel".into(), "work_update:supersede".into()]);
-        }
+        allowed.extend(["work_update:cancel".into(), "work_update:supersede".into()]);
     }
     if context.can_waive_required_child {
         allowed.push("work_update:waive_required_child".into());

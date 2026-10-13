@@ -320,6 +320,7 @@ fn expired_handoff_is_swept_before_progress_and_terminal_completion() {
         .expect("offer");
     assert_eq!(offer.expires_at, at(5));
 
+    let before_refusal = test_database_shape_snapshot(&store.connection).unwrap();
     let blocked = store.record_work_evidence(
         &RecordWorkEvidenceRequest {
             work_id: root.work_id,
@@ -336,7 +337,23 @@ fn expired_handoff_is_swept_before_progress_and_terminal_completion() {
         },
         &DevelopmentNoopRedactor,
     );
-    assert!(matches!(blocked, Err(StoreError::InvalidWork(_))));
+    let blocked = blocked.expect_err("a live offer refuses evidence");
+    assert!(
+        matches!(&blocked, StoreError::WorkHandoffPending { offer_id }
+        if *offer_id == offer.offer_id)
+    );
+    assert_eq!(
+        crate::store_error_value(&blocked)["error"]["code"],
+        "work_invalid"
+    );
+    assert_eq!(
+        blocked.to_string(),
+        StoreError::InvalidWork(crate::storage::PENDING_HANDOFF_REFUSAL.into()).to_string()
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).unwrap(),
+        before_refusal
+    );
 
     let refused_completion = store.complete_work_for_protocol(
         &completion_request(

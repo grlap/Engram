@@ -1084,6 +1084,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::ControlPolicyConflict { .. }
         | StoreError::WorkNotFound(_)
         | StoreError::InvalidWork(_)
+        | StoreError::WorkHandoffPending { .. }
         | StoreError::InvalidWorkProjection(_)
         | StoreError::WorkRevisionConflict { .. }
         | StoreError::WorkOperationIdempotencyConflict { .. }

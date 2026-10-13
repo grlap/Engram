@@ -719,6 +719,13 @@ pub struct WorkHandoffOffer {
     pub state: WorkHandoffState,
 }
 
+impl WorkHandoffOffer {
+    /// Whether this offer blocks fresh mutations on the selected run.
+    pub(crate) fn is_live_for_run(&self, run_id: WorkRunId, now: DateTime<Utc>) -> bool {
+        self.run_id == run_id && self.state == WorkHandoffState::Offered && self.expires_at > now
+    }
+}
+
 /// Structurally typed payload for one agent-reported quality-gate observation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GateEvidenceRecord {

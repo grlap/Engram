@@ -57,7 +57,7 @@ pub(super) use gate_evidence::validate_gate_evidence_chain;
 use gate_evidence::{LATEST_GATE_EVIDENCE_SQL, latest_gate_evidence_on};
 
 mod handoffs;
-pub(super) use handoffs::latest_canonical_handoff_offer;
+pub(super) use handoffs::{latest_canonical_handoff_offer, live_handoff_on};
 
 #[cfg(test)]
 mod tests;

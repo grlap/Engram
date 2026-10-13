@@ -4,6 +4,21 @@ use super::*;
 mod diagnostics;
 
 #[test]
+fn pending_handoff_preserves_host_and_agent_error_classifications() {
+    let old = StoreError::InvalidWork(crate::storage::PENDING_HANDOFF_REFUSAL.into());
+    let pending = StoreError::WorkHandoffPending {
+        offer_id: crate::WorkHandoffOfferId::new(),
+    };
+    assert_eq!(store_error_code(&pending), store_error_code(&old));
+    assert_eq!(store_error_code(&pending), "storage_error");
+    assert_eq!(pending.to_string(), old.to_string());
+    assert_eq!(
+        crate::store_error_value(&pending)["error"]["code"],
+        "work_invalid"
+    );
+}
+
+#[test]
 fn turn_grant_read_round_trips_on_the_host_channel() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let session_id = SessionId("grant-read-host".into());
