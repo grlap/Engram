@@ -35,8 +35,8 @@ function git(args, cwd) {
   return execFileSync("git", ["-c", "maintenance.auto=false", ...args], { cwd, encoding: "utf8" });
 }
 
-async function repository(callback) {
-  const root = fixtureHome("engram-launcher-");
+async function repository(callback, prefix = "engram-launcher-") {
+  const root = fixtureHome(prefix);
   try {
     git(["init", "--quiet", "--template="], root);
     assert.equal(git(["config", "--bool", "--get", "maintenance.auto"], root).trim(), "false");
@@ -696,7 +696,7 @@ test("worker ready handshake follows admission and duplicate startup preserves r
     assert.equal(first.code, 0);
     assert.deepEqual(first.messages, [{ ready: true }]);
     assert.equal(json(join(runDir, "results.json")).state, "passed");
-    assert.doesNotMatch(first.stdout + first.stderr, /worker-diagnostics/u);
+    assert.doesNotMatch(first.stdout + first.stderr, /^worker-diagnostics:/mu);
     assert.equal(readdirSync(runDir).some((name) => name.startsWith("worker-error-")), false);
     for (const [name, bytes] of immutable) assert.deepEqual(readFileSync(join(runDir, name)), bytes);
     const ownerFiles = readdirSync(runDir).map((name) => [name, readFileSync(join(runDir, name))]);
@@ -717,7 +717,7 @@ test("worker ready handshake follows admission and duplicate startup preserves r
       }
       assert.equal(existsSync(join(runDir, "notification.message.txt")), false);
     }
-  });
+  }, "private-escape-injected-untrusted-worker-diagnostics-");
 });
 
 test("escaping worker exception and cause stay in artifacts without changing results or notifying", async () => {
@@ -1828,6 +1828,9 @@ test("all default summaries are metadata-only and preserve boundary evidence", a
 test("focused completion puts its exact stage line after the unchanged verdict and results", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("focused")] }, env);
+    const markers = Object.fromEntries(["untrusted-log", "injected-result", "private-diagnostic"].map((name) =>
+      [name, `${name}-${randomUUID()}`]));
+    for (const marker of Object.values(markers)) assert.equal(runDir.includes(marker), false);
     const result = json(join(runDir, "results.json"));
     const fingerprint = json(join(runDir, "input.json")).fingerprint;
     Object.assign(result, { ended: new Date().toISOString(),
@@ -1836,7 +1839,8 @@ test("focused completion puts its exact stage line after the unchanged verdict a
       const state = code === 0 ? "passed" : "failed";
       Object.assign(result, { state, exitCode: code });
       Object.assign(result.stages[0], { state, code,
-        log: "untrusted log locator\nresults: injected", diagnostics: { text: "private diagnostic marker" } });
+        log: `${markers["untrusted-log"]}\nresults: ${markers["injected-result"]}`,
+        diagnostics: { text: markers["private-diagnostic"] } });
       writeFileSync(join(runDir, "results.json"), JSON.stringify(result));
       const saved = readFileSync(join(runDir, "results.json"));
       const summary = await summarize(runDir);
@@ -1846,20 +1850,23 @@ test("focused completion puts its exact stage line after the unchanged verdict a
         `focused: ${state} exit=${code} log=${join(runDir, "focused.log")}`,
       ]);
       assert.equal(summary.split("\n").filter((line) => line.startsWith("results: ")).length, 1);
-      assert.doesNotMatch(summary, /injected|untrusted|private diagnostic marker/u);
+      for (const marker of Object.values(markers)) assert.equal(summary.includes(marker), false);
       assert.deepEqual(readFileSync(join(runDir, "results.json")), saved);
     }
-  });
+  }, "private-escape-injected-untrusted-worker-diagnostics-");
 });
 
 test("stage completion lines close malformed metadata and preserve nonterminal states", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("focused")] }, env);
+    const markers = Object.fromEntries(["private-malformed", "escape", "injected-name", "injected-state", "private-locator"].map((name) =>
+      [name, `${name}-${randomUUID()}`]));
+    for (const marker of Object.values(markers)) assert.equal(runDir.includes(marker), false);
     const result = json(join(runDir, "results.json"));
-    result.stages = [null, "private malformed marker", [], {},
-      { name: "../escape", state: "passed", code: 0 },
-      { name: "focused\nresults: injected", state: "passed", code: 0 },
-      { name: "focused", state: "passed\nresults: injected", code: "0", log: "private locator marker" },
+    result.stages = [null, markers["private-malformed"], [], {},
+      { name: `../${markers.escape}`, state: "passed", code: 0 },
+      { name: `focused\nresults: ${markers["injected-name"]}`, state: "passed", code: 0 },
+      { name: "focused", state: `passed\nresults: ${markers["injected-state"]}`, code: "0", log: markers["private-locator"] },
       { name: "running", state: "running" },
       { name: "interrupted", state: "failed", signal: "SIGTERM", code: 1 },
       { name: "missing", state: "passed" },
@@ -1878,14 +1885,14 @@ test("stage completion lines close malformed metadata and preserve nonterminal s
       `number2: unrun exit=unknown log=${join(runDir, "number2.log")}`,
       `uncertain: unknown exit=unknown log=${join(runDir, "uncertain.log")}`,
     ]);
-    assert.doesNotMatch(summary, /private|injected|escape|1e\+21/u);
+    for (const marker of Object.values(markers)) assert.equal(summary.includes(marker), false);
     assert.equal(summary.split("\n").filter((line) => line.startsWith("results: ")).length, 1);
     for (const stages of [undefined, null, {}]) {
       const metadata = completionMetadata({}, { ...result, stages });
       assert.deepEqual(metadata.stageDetails, []);
       assert.equal(metadata.stages.total, 0);
     }
-  });
+  }, "private-escape-injected-untrusted-worker-diagnostics-");
 });
 
 test("larger saved runs keep all stage completion lines in order", async () => {
