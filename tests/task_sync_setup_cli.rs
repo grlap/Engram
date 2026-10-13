@@ -416,6 +416,41 @@ fn setup_refuses_suppressed_setup_inspection_and_absent_reserved_index_entries()
 }
 
 #[test]
+fn setup_refuses_a_non_directory_engram_on_disk_in_the_index_and_in_head() {
+    // A regular file on disk hides the reserved paths below it.
+    let file = Fixture::new(false);
+    fs::write(file.root.join(".engram"), "not a directory\n").unwrap();
+    let index = fs::read(file.admin.join("index")).unwrap();
+    file.refusal("reserved shared path is occupied: .engram is not a directory");
+    assert_eq!(
+        fs::read(file.root.join(".engram")).unwrap(),
+        b"not a directory\n"
+    );
+    assert_eq!(fs::read(file.admin.join("index")).unwrap(), index);
+
+    // An indexed file whose working copy is gone.
+    let indexed = Fixture::new(false);
+    fs::write(indexed.root.join(".engram"), "indexed\n").unwrap();
+    git(&indexed.root, &["add", "-f", ".engram"]);
+    fs::remove_file(indexed.root.join(".engram")).unwrap();
+    let index = fs::read(indexed.admin.join("index")).unwrap();
+    indexed.refusal("reserved shared path is occupied in index: .engram");
+    assert!(!indexed.root.join(".engram").exists());
+    assert_eq!(fs::read(indexed.admin.join("index")).unwrap(), index);
+
+    // A file only HEAD still holds.
+    let retained = Fixture::new(false);
+    fs::write(retained.root.join(".engram"), "committed\n").unwrap();
+    git(&retained.root, &["add", "-f", ".engram"]);
+    commit_fixture(&retained);
+    git(&retained.root, &["rm", "-q", ".engram"]);
+    let index = fs::read(retained.admin.join("index")).unwrap();
+    retained.refusal("reserved shared path is occupied in HEAD: .engram");
+    assert!(!retained.root.join(".engram").exists());
+    assert_eq!(fs::read(retained.admin.join("index")).unwrap(), index);
+}
+
+#[test]
 fn setup_ignore_proposals_reopen_only_root_shared_paths_across_ignore_sources() {
     for (source, rule) in [
         ("root", "/.engram/"),

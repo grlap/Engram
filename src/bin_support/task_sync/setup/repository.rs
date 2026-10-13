@@ -89,6 +89,16 @@ pub(super) fn inspect(
     // No reserved shared state can be adopted, including ignored equal bytes.
     // Do this before recursive status can apply a filename-specific filter.
     ordinary_ancestors(&root.join(".engram"))?;
+    // A file there would hide the reserved paths below it: Windows reports
+    // them as missing rather than as lying under a non-directory.
+    match fs::symlink_metadata(root.join(".engram")) {
+        Ok(metadata) => ensure!(
+            metadata.is_dir(),
+            "reserved shared path is occupied: .engram is not a directory; relocate explicitly before preparation"
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
     for relative in [
         ".engram/project.json",
         ".engram/tasks",
@@ -121,6 +131,10 @@ pub(super) fn inspect(
             "malformed Git index result"
         );
         let name = std::str::from_utf8(&entry[2..])?;
+        ensure!(
+            !name.eq_ignore_ascii_case(".engram"),
+            "reserved shared path is occupied in index: {name}"
+        );
         let Some(selected) = selected_path(name, &paths) else {
             continue;
         };
@@ -142,6 +156,10 @@ pub(super) fn inspect(
         .filter(|entry| !entry.is_empty())
     {
         let name = std::str::from_utf8(entry)?;
+        ensure!(
+            !name.eq_ignore_ascii_case(".engram"),
+            "reserved shared path is occupied in HEAD: {name}"
+        );
         if let Some(selected) = selected_path(name, &paths) {
             ensure!(
                 !selected.starts_with(".engram/"),
