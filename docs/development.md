@@ -571,13 +571,47 @@ not add a power-loss durability guarantee.
 An unreadable request cannot supply a notification target, so it fails startup
 without a `STARTED` receipt. A killed process or unwritable results directory
 cannot guarantee completion delivery; a run without terminal results reads as
-interrupted once its heartbeat is stale and never as a pass; `recover` settles
-it as failed and interrupted.
+interrupted once its heartbeat is stale and never as a pass. `recover` can settle
+it as failed and interrupted only when its recorded executor is confirmed gone.
 `execution.lock` prevents a second execution of the same run directory, not
 separate launches; the caller owns repository-level serialization. After a
 crash, recover its artifacts and classify
 the failure before choosing a new run. Diagnose actual failures and repair them
 within the authorized scope, then validate the changed input; never retry blindly.
+
+A detached worker (`--detach`) refused because `execution.lock` already exists
+reports
+`FAIL launcher: execution-lock-held`; other failures to create that lock report
+`FAIL launcher: execution-admission-failed`. Any other error escaping the worker
+boundary reports `FAIL launcher: worker-runtime-failed`. For all three failures,
+the worker attempts to save its stack and cause in a separate, exclusively
+created `worker-error-<UUID>.log` in the run directory, without replacing the
+admitted owner's artifacts. Its stderr prints `worker-diagnostics: PATH`, or
+`worker-diagnostics: unavailable` if the file cannot be written. Worker-error
+logs and `launcher.log` are not redacted; do not put secrets in gate output.
+
+With `--detach`, the worker's stdout and stderr go to `launcher.log`; inspect
+that file for the failure token and diagnostic locator. If the spawned worker
+fails before the startup handshake, the caller gets
+`FAIL launcher: worker-startup-failed` and a `launcher.log:` locator, without a
+`STARTED` receipt. The escaping-error handler
+does not send a completion notification or update `results.json`. Results may
+therefore remain `running`; once the heartbeat is stale, `summary` reports the
+run as interrupted. For a nonterminal run, `recover` requires a published executor
+confirmed gone and otherwise follows the refusal rules above. A failure before
+executor publication leaves `recover` refusing with `executor-unpublished`, even
+after the heartbeat is stale; retain the startup failure and diagnostic artifacts
+as failure evidence. An `execution-lock-held` refusal leaves the admitted owner's
+run to be read or recovered on its own terms. Any already saved terminal results
+remain available. Inspect the worker-error file explicitly for the stack and cause.
+These separate diagnostic files are specific to the detached worker boundary:
+an error escaping foreground execution instead reports
+`FAIL launcher: request-or-runtime-failed` without saving a worker-error log.
+
+If Git cannot resolve the run directory, the launcher reports
+`git-run-directory-unavailable` with guidance to run from a repository worktree
+with Git available. This refusal happens before a run directory is created,
+so there is no run artifact to inspect.
 
 #### Record for the host
 
