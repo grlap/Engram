@@ -2135,6 +2135,52 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
   }
 });
 
+test("task-sync settings wire refuses instructions on status and disable and preserves settings", async (t) => {
+  const engramHome = fixtureHome("engram-settings-instruction-", t);
+  let writer, reader;
+  try {
+    buildAndInit(engramHome);
+    writer = new McpClient(engramHome, "settings-writer");
+    reader = new McpClient(engramHome, "settings-reader", undefined, "settings-reader", ["--read-only"]);
+    await writer.initialize();
+    await reader.initialize();
+    const enabled = structured(await writer.call("task_sync_settings", { action: "enable", user_instruction: "Original enable request." }));
+    assert.equal(enabled.state, "enabled");
+    const project = join(engramHome, "projects", readdirSync(join(engramHome, "projects"))[0]);
+    const setting = join(project, "task-sync-setting.json");
+    const before = readFileSync(setting);
+    const entries = readdirSync(project).sort();
+    for (const [client, action, code] of [
+      [writer, "status", "invalid_user_instruction"],
+      [writer, "disable", "invalid_user_instruction"],
+      [reader, "status", "invalid_user_instruction"],
+      [reader, "disable", "mcp_read_only_refused"],
+    ]) {
+      const result = await client.call("task_sync_settings", { action, user_instruction: "rejected instruction sentinel" });
+      structuredError(result, code);
+      assert.doesNotMatch(JSON.stringify(result), /rejected instruction sentinel/u);
+      assert.deepEqual(readFileSync(setting), before);
+      assert.deepEqual(readdirSync(project).sort(), entries);
+    }
+    for (const arguments_ of [{ action: "status", user_instruction: 1 }, { action: "status", unknown: true }]) {
+      const result = await writer.call("task_sync_settings", arguments_);
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent, undefined);
+      assert.match(result.content.map(({ text }) => text).join("\n"), /failed to deserialize parameters: field/u);
+      assert.deepEqual(readFileSync(setting), before);
+    }
+    for (const client of [writer, reader]) {
+      assert.deepEqual(structured(await client.call("task_sync_settings", { action: "status" })), enabled);
+      assert.deepEqual(structured(await client.call("task_sync_settings", { action: "status", user_instruction: null })), enabled);
+    }
+    const disabled = structured(await writer.call("task_sync_settings", { action: "disable", user_instruction: null }));
+    assert.equal(disabled.state, "disabled");
+  } finally {
+    try { await writer?.close(); await reader?.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("read-only MCP lists the read words and refuses every writing call as a tool error", async (t) => {
   const engramHome = fixtureHome("engram-read-only-", t);
   let client;

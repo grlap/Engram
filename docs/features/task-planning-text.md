@@ -93,7 +93,9 @@ engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync disable -
 
 The separate MCP tool `task_sync_settings` takes `action: status`, `enable`
 or `disable`. Enable requires nonblank `user_instruction` quoting the user's
-explicit request, at most 4096 bytes; disable needs no quote. CLI actor/session
+explicit request, at most 4096 bytes. Status and disable accept only an omitted
+or null instruction; any string is refused with `invalid_user_instruction`
+before settings writes. Read-only mutation refusal takes precedence. CLI actor/session
 flags and environment defaults supply asserted attribution; `--session-id`
 is optional. MCP uses its connection's project, actor and session. This is not
 authenticated human intent. Read-only MCP and the service itself refuse setters

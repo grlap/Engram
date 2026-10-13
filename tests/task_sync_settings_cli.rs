@@ -128,6 +128,47 @@ fn settings_absence_is_disabled_without_creating_home_or_database() {
 }
 
 #[test]
+fn settings_cli_refuses_misplaced_instruction_flags_without_changing_settings() {
+    for existing in [false, true] {
+        let fixture = Fixture::new();
+        let original = existing.then(|| {
+            fixture.enable();
+            fs::read(fixture.setting()).unwrap()
+        });
+        let entries = existing.then(|| {
+            let mut names = fs::read_dir(fixture.database.parent().unwrap())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>();
+            names.sort();
+            names
+        });
+        for action in ["status", "disable"] {
+            let output = fixture
+                .command(action)
+                .args(["--user-instruction", "misplaced instruction"])
+                .output()
+                .unwrap();
+            // Clap refuses this flag before the shared service is called.
+            assert_eq!(output.status.code(), Some(2));
+            assert!(String::from_utf8_lossy(&output.stderr).contains("--user-instruction"));
+            if let Some(original) = &original {
+                assert_eq!(&fs::read(fixture.setting()).unwrap(), original);
+                let mut after = fs::read_dir(fixture.database.parent().unwrap())
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect::<Vec<_>>();
+                after.sort();
+                assert_eq!(Some(after), entries);
+            } else {
+                assert!(!fixture.home.exists());
+            }
+            assert!(!fixture.database.exists());
+        }
+    }
+}
+
+#[test]
 fn settings_enable_requires_instruction_before_creating_any_setting_path() {
     let fixture = Fixture::new();
     for args in [vec![], vec!["--user-instruction", " \n\t"]] {

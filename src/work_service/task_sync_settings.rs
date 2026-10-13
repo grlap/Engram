@@ -8,7 +8,7 @@ impl LocalWorkService {
     /// The same host-local setting operation used by CLI and MCP.
     ///
     /// # Errors
-    /// Refuses mutations on a read-only service, invalid attribution or an
+    /// Refuses mutations on a read-only service, misrouted instructions, invalid attribution or an
     /// unsuitable filesystem path. Malformed setting bytes may be replaced
     /// by an explicit attributed setter; concurrent setters use last writer wins.
     pub fn task_sync_settings(
@@ -16,9 +16,6 @@ impl LocalWorkService {
         request: &Request,
         now: DateTime<Utc>,
     ) -> Result<Status, Error> {
-        if request.action == Action::Status {
-            return Ok(settings::read(&self.database, &self.project_id));
-        }
         let refuse = |code, message| {
             Error::new(
                 Some(&self.project_id),
@@ -28,11 +25,20 @@ impl LocalWorkService {
                 Some(settings::read(&self.database, &self.project_id)),
             )
         };
-        if self.read_only {
+        if self.read_only && request.action != Action::Status {
             return Err(refuse(
                 "mcp_read_only_refused",
                 "this connection is read-only",
             ));
+        }
+        if request.action != Action::Enable && request.user_instruction.is_some() {
+            return Err(refuse(
+                "invalid_user_instruction",
+                "user_instruction is allowed only with action enable",
+            ));
+        }
+        if request.action == Action::Status {
+            return Ok(settings::read(&self.database, &self.project_id));
         }
         if self.validate_read_attribution(now).is_err() {
             return Err(refuse(
@@ -51,3 +57,6 @@ impl LocalWorkService {
         )
     }
 }
+
+#[cfg(test)]
+mod tests;

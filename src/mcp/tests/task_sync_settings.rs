@@ -4,6 +4,44 @@ use super::*;
 use crate::task_sync::settings::{Action, Request};
 
 #[test]
+fn task_sync_settings_mcp_refuses_instructions_on_status_and_disable() {
+    let fixture = crate::test_support::temp_home().unwrap();
+    let project = ProjectId("settings/mcp-instruction".into());
+    let database = crate::project_database_path(&fixture.path().join("missing-home"), &project);
+    let server = McpServer::new_with_actor_context(
+        database.clone(),
+        project,
+        "actor".into(),
+        SessionId("session".into()),
+        None,
+        None,
+    );
+    for action in [Action::Status, Action::Disable] {
+        let refused = server.task_sync_settings(Parameters(Request {
+            action,
+            user_instruction: Some("rejected instruction sentinel".into()),
+        }));
+        assert_eq!(refused.is_error, Some(true));
+        let value = refused.structured_content.unwrap();
+        assert_eq!(value["format"], "engram-task-sync-error-v1");
+        assert_eq!(value["error"]["code"], "invalid_user_instruction");
+        assert_eq!(value["operation"], json!(action));
+        assert!(!value.to_string().contains("rejected instruction sentinel"));
+        assert!(!database.parent().unwrap().exists());
+    }
+    for arguments in [
+        json!({"action":"status"}),
+        json!({"action":"status","user_instruction":null}),
+    ] {
+        let request = serde_json::from_value(arguments).unwrap();
+        let status = server.task_sync_settings(Parameters(request));
+        assert_ne!(status.is_error, Some(true));
+        assert_eq!(status.structured_content.unwrap()["state"], "disabled");
+    }
+    assert!(!database.parent().unwrap().exists());
+}
+
+#[test]
 fn task_sync_settings_mcp_uses_bound_project_actor_and_session_without_sqlite() {
     let fixture = crate::test_support::temp_home().unwrap();
     let project = ProjectId("settings/mcp".into());
