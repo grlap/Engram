@@ -93,7 +93,19 @@ impl Directory {
         Ok(names)
     }
 
+    pub(super) fn check_file(&self, name: &Path, limit: usize) -> Result<()> {
+        self.open_file(name, limit).map(drop)
+    }
+
     pub(super) fn read(&self, name: &Path, limit: usize) -> Result<Vec<u8>> {
+        let file = self.open_file(name, limit)?;
+        let mut bytes = Vec::new();
+        file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
+        ensure!(bytes.len() <= limit, "prepared input grew past byte bound");
+        Ok(bytes)
+    }
+
+    fn open_file(&self, name: &Path, limit: usize) -> Result<std::fs::File> {
         ensure!(
             matches!(
                 name.components().collect::<Vec<_>>().as_slice(),
@@ -122,10 +134,7 @@ impl Directory {
                 "prepared file is a reparse point"
             );
         }
-        let mut bytes = Vec::new();
-        file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
-        ensure!(bytes.len() <= limit, "prepared input grew past byte bound");
-        Ok(bytes)
+        Ok(file)
     }
 }
 

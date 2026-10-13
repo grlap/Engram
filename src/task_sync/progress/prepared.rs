@@ -68,7 +68,7 @@ pub fn read_prepared(progress: &Path, selection: &PreparedSelection) -> Result<P
     let mut generations = Vec::new();
     for name in &names {
         if name == "prepare.lock" {
-            progress.read(Path::new(name), 64)?;
+            progress.check_file(Path::new(name), 64)?;
             continue;
         }
         let name_text = name.to_str().context("non-UTF8 prepared journal entry")?;

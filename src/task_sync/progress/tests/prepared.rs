@@ -417,34 +417,35 @@ fn task_prepared_reader_refuses_metadata_and_graph_drift() {
 #[test]
 fn task_prepared_reader_does_not_acquire_or_create_a_lock() {
     let fixture = Fixture::new();
+    let expected = fixture.read().documents;
+    let lock_path = fixture.progress.join("prepare.lock");
+    fs::write(&lock_path, [0xa5; 64]).unwrap();
     let before = snapshot(fixture.home.path());
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(fixture.progress.join("prepare.lock"))
-        .unwrap();
-    lock.try_lock().unwrap();
-    let result = read_prepared(&fixture.progress, &fixture.selection);
-    #[cfg(not(windows))]
-    assert!(
-        result.is_ok(),
-        "reader acquired the held advisory lock: {result:?}"
-    );
-    // Windows byte locks can deny reading the lock file even without acquisition.
-    #[cfg(windows)]
-    if let Err(error) = result {
-        assert!(
-            error.chain().any(|cause| cause
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|cause| cause.raw_os_error() == Some(33))),
-            "{error:#}"
-        );
-    }
+    let lock = crate::task_sync::progress::lock::ProgressLock::acquire(&fixture.progress).unwrap();
+    let result = read_prepared(&fixture.progress, &fixture.selection)
+        .expect("reader must inspect the candidate while preparation holds its lock");
+    assert_eq!(result.provenance.operation, fixture.selection.operation);
+    assert_eq!(result.documents, expected);
     drop(lock);
     assert_eq!(before, snapshot(fixture.home.path()));
-    fs::remove_file(fixture.progress.join("prepare.lock")).unwrap();
+    fs::remove_file(&lock_path).unwrap();
     fixture.read();
-    assert!(!fixture.progress.join("prepare.lock").exists());
+    assert!(!lock_path.exists());
+}
+
+#[test]
+fn task_prepared_reader_refuses_nonordinary_or_oversize_lock_without_mutation() {
+    for directory in [false, true] {
+        let fixture = Fixture::new();
+        let lock_path = fixture.progress.join("prepare.lock");
+        if directory {
+            fs::remove_file(&lock_path).unwrap();
+            fs::create_dir(&lock_path).unwrap();
+        } else {
+            fs::write(&lock_path, [0xa5; 65]).unwrap();
+        }
+        fixture.refuse();
+    }
 }
 
 #[cfg(windows)]
