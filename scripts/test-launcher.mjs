@@ -7,6 +7,7 @@ import { constants, accessSync, closeSync, createReadStream, existsSync, linkSyn
 import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inspect } from "node:util";
 import { captureFingerprint, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
 
 const script = fileURLToPath(import.meta.url);
@@ -637,7 +638,8 @@ export function createRun({ root = repository, stages, notifyTo, requiredBinaryE
   const everyMs = heartbeatEveryMs(env);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
     { cwd: root, encoding: "utf8", windowsHide: true });
-  if (git.error || git.status !== 0) throw new Error(`cannot locate Git run directory: ${git.error?.message ?? git.stderr}`);
+  if (git.error || git.status !== 0) throw usageFailure(
+    "git-run-directory-unavailable; run the launcher from a repository worktree with Git available");
   const runId = `test-${randomUUID()}`;
   const runDir = join(git.stdout.trim(), runId);
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
@@ -783,7 +785,10 @@ function validateNotification(request, env) {
 export async function executeRun(runDir, env = process.env, ready = () => {}) {
   // Exclusive admission: an interrupted run is not a retryable test command.
   // A losing invocation must not overwrite the admitted owner's results.
-  closeSync(openSync(join(runDir, "execution.lock"), "wx", 0o600));
+  try { closeSync(openSync(join(runDir, "execution.lock"), "wx", 0o600)); }
+  catch (error) {
+    throw because(error.code === "EEXIST" ? "execution-lock-held" : "execution-admission-failed", error);
+  }
   let request, heartbeat;
   let result = { runId: basename(runDir), started: null, stages: [], limitations: fingerprintLimitations() };
   const resultPath = join(runDir, "results.json");
@@ -1286,6 +1291,26 @@ export async function startDetached(runDir, env = process.env, write = (text) =>
   } finally { closeSync(fd); }
 }
 
+// An error escaping a worker must not replace the admitted owner's artifacts.
+// Keep its stack and cause in a separate exclusive file, never in completion.
+function workerFailure(runDir, error) {
+  const failure = Object.assign(new Error("worker failure", { cause: error }), {
+    runDir, safeCompletionText: ["execution-lock-held", "execution-admission-failed"].includes(error?.reason)
+      ? error.reason : "worker-runtime-failed",
+  });
+  try {
+    const workerLog = join(runDir, `worker-error-${randomUUID()}.log`);
+    const text = `${inspect({ stack: error?.stack ?? String(error), cause: error?.cause },
+      { customInspect: false, depth: 8 })}\n`;
+    writeFileSync(workerLog, text, { flag: "wx", mode: 0o600 });
+    failure.workerDiagnosticLog = workerLog;
+  } catch {
+    // Missing paths, disk space or permissions cannot mask the worker failure.
+    failure.workerDiagnosticMissing = true;
+  }
+  return failure;
+}
+
 async function main(args) {
   const mode = args.shift();
   if (["summary", "notify", "recover", "_run"].includes(mode)) {
@@ -1327,7 +1352,9 @@ async function main(args) {
       catch (error) { throw Object.assign(error, { runDir, retry: "notify" }); }
       console.log(`Notification sent; tests not rerun. ${runDir}`); return;
     }
-    await finish(runDir, { workerHandshake: true }); return;
+    try { await finish(runDir, { workerHandshake: true }); }
+    catch (error) { throw workerFailure(runDir, error); }
+    return;
   }
   if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR");
   let notifyTo, detach = false, item, nextOwner, nextAction;
@@ -1384,6 +1411,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === script) {
       }
       process.stderr.write(`FAIL launcher: ${error.safeCompletionText ?? error.reason ?? "request-or-runtime-failed"}\nresults: ${join(error.runDir, "results.json")}\n`);
       if (error.launcherLog) process.stderr.write(`launcher.log: ${error.launcherLog}\n`);
+      if (error.workerDiagnosticLog) process.stderr.write(`worker-diagnostics: ${error.workerDiagnosticLog}\n`);
+      else if (error.workerDiagnosticMissing) process.stderr.write("worker-diagnostics: unavailable\n");
       if (error.retry === "notify") process.stderr.write(`retry: notify ${quote(error.runDir)}\n`);
     } else console.error(`FAIL launcher: ${error.safeCompletionText ?? "request-or-runtime-failed"}`);
     process.exitCode = 1;

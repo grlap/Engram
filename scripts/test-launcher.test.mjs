@@ -616,17 +616,52 @@ test("detached parent rejects failed admission after child closure without a rec
   });
 });
 
-async function worker(runDir) {
-  const child = spawn(process.execPath, [launcher, "_run", runDir],
-    { env, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
+async function worker(runDir, scriptPath = launcher) {
+  const child = spawn(process.execPath, [scriptPath, "_run", runDir],
+    { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  const stdout = [], stderr = [];
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
   const messages = [];
   child.on("message", (message) => messages.push(message));
   const code = await new Promise((done, reject) => {
     child.once("error", reject);
     child.once("close", done);
   });
-  return { code, messages };
+  return { code, messages, stdout: Buffer.concat(stdout).toString("utf8"),
+    stderr: Buffer.concat(stderr).toString("utf8") };
 }
+
+function copyLauncher(root, transform = (source) => source) {
+  const scripts = join(root, "scripts");
+  mkdirSync(scripts);
+  const local = join(scripts, "test-launcher.mjs");
+  writeFileSync(local, transform(readFileSync(launcher, "utf8")));
+  copyFileSync(join(dirname(launcher), "review-freeze-fingerprint.mjs"), join(scripts, "review-freeze-fingerprint.mjs"));
+  return local;
+}
+
+const workerException = "fixture private escaping worker exception";
+const workerCause = "fixture private worker cause";
+function injectWorkerException(source) {
+  const changed = source.replace("await finish(runDir, { workerHandshake: true });",
+    `throw new Error(${JSON.stringify(workerException)}, { cause: new Error(${JSON.stringify(workerCause)}) });`);
+  assert.notEqual(changed, source, "the copied launcher must inject the worker exception");
+  return changed;
+}
+
+test("CLI Git run-directory failure gives safe repository guidance without artifacts", (t) => {
+  const root = fixtureHome("launcher-no-git-", t);
+  const local = copyLauncher(root);
+  const result = spawnSync(process.execPath, [local, "focused", "--", process.execPath, "-e", ""],
+    { cwd: root, env, encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "FAIL launcher: git-run-directory-unavailable; run the launcher from a repository worktree with Git available\n");
+  assert.doesNotMatch(result.stdout + result.stderr, /^[a-z][a-z-]*: (passed|failed)\b/mu);
+  assert.doesNotMatch(result.stderr, /fatal:|not a git repository|ENOENT|spawn/u);
+  assert.deepEqual(readdirSync(root), ["scripts"]);
+});
 
 test("worker startup errors are terminal and never acknowledge readiness", async () => {
   await repository(async (root) => {
@@ -654,15 +689,127 @@ test("worker startup errors are terminal and never acknowledge readiness", async
 test("worker ready handshake follows admission and duplicate startup preserves results", async () => {
   await repository(async (root) => {
     const runDir = createRun({ root, stages: [stage("clean")] }, env);
+    const immutable = ["request.json", "completion.request.json", "input.json"].map((name) =>
+      [name, readFileSync(join(runDir, name))]);
+    writeFileSync(join(runDir, "launcher.log"), "admitted owner's existing log\n", { flag: "wx" });
     const first = await worker(runDir);
     assert.equal(first.code, 0);
     assert.deepEqual(first.messages, [{ ready: true }]);
-    const saved = readFileSync(join(runDir, "results.json"), "utf8");
-    const second = await worker(runDir);
-    assert.equal(second.code, 1);
-    assert.deepEqual(second.messages, []);
-    assert.equal(readFileSync(join(runDir, "results.json"), "utf8"), saved);
+    assert.equal(json(join(runDir, "results.json")).state, "passed");
+    assert.doesNotMatch(first.stdout + first.stderr, /worker-diagnostics/u);
+    assert.equal(readdirSync(runDir).some((name) => name.startsWith("worker-error-")), false);
+    for (const [name, bytes] of immutable) assert.deepEqual(readFileSync(join(runDir, name)), bytes);
+    const ownerFiles = readdirSync(runDir).map((name) => [name, readFileSync(join(runDir, name))]);
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const refused = await worker(runDir);
+      assert.equal(refused.code, 1);
+      assert.deepEqual(refused.messages, []);
+      assert.equal(refused.stdout, "");
+      assert.match(refused.stderr, /FAIL launcher: execution-lock-held/u);
+      assert.doesNotMatch(refused.stdout + refused.stderr, /^[a-z][a-z-]*: (passed|failed)\b/mu);
+      assert.doesNotMatch(refused.stderr, /EEXIST|Error:|request-or-runtime-failed/u);
+      for (const [name, bytes] of ownerFiles) assert.deepEqual(readFileSync(join(runDir, name)), bytes, name);
+      const logs = readdirSync(runDir).filter((name) => name.startsWith("worker-error-"));
+      assert.equal(logs.length, attempt);
+      for (const name of logs) {
+        assert.match(readFileSync(join(runDir, name), "utf8"), /EEXIST.*execution\.lock/u);
+        if (process.platform !== "win32") assert.equal(statSync(join(runDir, name)).mode & 0o777, 0o600);
+      }
+      assert.equal(existsSync(join(runDir, "notification.message.txt")), false);
+    }
   });
+});
+
+test("escaping worker exception and cause stay in artifacts without changing results or notifying", async () => {
+  await repository(async (root) => {
+    const local = copyLauncher(root, injectWorkerException);
+    git(["add", "scripts"], root);
+    const runDir = createRun({ root, stages: [stage("unused")], notifyTo: "fixture-parent" }, env);
+    const original = readFileSync(join(runDir, "results.json"));
+    const failed = await worker(runDir, local);
+    assert.equal(failed.code, 1);
+    assert.deepEqual(failed.messages, []);
+    assert.equal(failed.stdout, "");
+    assert.match(failed.stderr, /FAIL launcher: worker-runtime-failed/u);
+    assert.doesNotMatch(failed.stdout + failed.stderr, /^[a-z][a-z-]*: (passed|failed)\b/mu);
+    assert.doesNotMatch(failed.stderr, /fixture private|Error:|request-or-runtime-failed/u);
+    const artifact = /^worker-diagnostics: (.+)$/mu.exec(failed.stderr)?.[1];
+    assert.ok(artifact, failed.stderr);
+    assert.equal(dirname(artifact), runDir);
+    const text = readFileSync(artifact, "utf8");
+    assert.ok(text.includes(workerException));
+    assert.ok(text.includes(workerCause));
+    assert.deepEqual(readFileSync(join(runDir, "results.json")), original);
+    assert.equal(existsSync(join(runDir, "execution.lock")), false);
+    assert.equal(existsSync(join(runDir, "notification.message.txt")), false);
+  });
+});
+
+test("detached worker exception saves diagnostics before startup rejection without leaking prose", async () => {
+  await repository(async (root) => {
+    const local = copyLauncher(root, injectWorkerException);
+    git(["add", "scripts"], root);
+    const failed = spawnSync(process.execPath, [local, "focused", "--detach", "--notify", "fixture-parent",
+      "--", process.execPath, "-e", ""], { cwd: root, env, encoding: "utf8", windowsHide: true });
+    assert.equal(failed.status, 1);
+    assert.equal(failed.stdout, "");
+    assert.match(failed.stderr, /FAIL launcher: worker-startup-failed/u);
+    assert.doesNotMatch(failed.stderr, /fixture private|Error:/u);
+    const resultPath = /^results: (.+)$/mu.exec(failed.stderr)?.[1];
+    assert.ok(resultPath, failed.stderr);
+    const runDir = dirname(resultPath);
+    const saved = readFileSync(join(runDir, "launcher.log"), "utf8");
+    assert.doesNotMatch(failed.stdout + failed.stderr + saved, /^[a-z][a-z-]*: (passed|failed)\b/mu);
+    const artifact = /^worker-diagnostics: (.+)$/mu.exec(saved)?.[1];
+    assert.ok(artifact, saved);
+    assert.doesNotMatch(saved, /fixture private|Error:/u);
+    assert.ok(readFileSync(artifact, "utf8").includes(workerException));
+    assert.equal(json(resultPath).state, "running");
+    assert.equal(existsSync(join(runDir, "notification.message.txt")), false);
+  });
+});
+
+test("worker diagnostic write refusal reports missing artifact without masking duplicate admission", async () => {
+  await repository(async (root) => {
+    const local = copyLauncher(root, (source) => {
+      const changed = source.replace('writeFileSync(workerLog, text, { flag: "wx", mode: 0o600 });',
+        'throw Object.assign(new Error("fixture private diagnostic write refusal"), { code: "ENOSPC" });');
+      assert.notEqual(changed, source, "the copied launcher must refuse the diagnostic write");
+      return changed;
+    });
+    git(["add", "scripts"], root);
+    const runDir = createRun({ root, stages: [stage("unused")] }, env);
+    writeFileSync(join(runDir, "execution.lock"), "owner's lock\n", { flag: "wx" });
+    const ownerFiles = readdirSync(runDir).map((name) => [name, readFileSync(join(runDir, name))]);
+    const failed = await worker(runDir, local);
+    assert.equal(failed.code, 1);
+    assert.deepEqual(failed.messages, []);
+    assert.equal(failed.stdout, "");
+    assert.match(failed.stderr, /FAIL launcher: execution-lock-held/u);
+    assert.doesNotMatch(failed.stdout + failed.stderr, /^[a-z][a-z-]*: (passed|failed)\b/mu);
+    assert.match(failed.stderr, /^worker-diagnostics: unavailable$/mu);
+    assert.doesNotMatch(failed.stderr, /ENOSPC|fixture private|Error:|worker-runtime-failed/u);
+    assert.deepEqual(readdirSync(runDir).sort(), ownerFiles.map(([name]) => name).sort());
+    for (const [name, bytes] of ownerFiles) assert.deepEqual(readFileSync(join(runDir, name)), bytes);
+  });
+});
+
+test("worker missing or file-valued run directory never creates a fallback artifact", async (t) => {
+  const root = fixtureHome("worker-no-dir-", t);
+  const file = join(root, "file");
+  writeFileSync(file, "keep original file\n");
+  for (const runDir of [join(root, "missing"), file]) {
+    const failed = await worker(runDir);
+    assert.equal(failed.code, 1);
+    assert.deepEqual(failed.messages, []);
+    assert.equal(failed.stdout, "");
+    assert.match(failed.stderr, /FAIL launcher: execution-admission-failed/u);
+    assert.doesNotMatch(failed.stdout + failed.stderr, /^[a-z][a-z-]*: (passed|failed)\b/mu);
+    assert.match(failed.stderr, /^worker-diagnostics: unavailable$/mu);
+    assert.doesNotMatch(failed.stderr, /ENOENT|ENOTDIR|Error:/u);
+    assert.deepEqual(readdirSync(root), ["file"]);
+    assert.equal(readFileSync(file, "utf8"), "keep original file\n");
+  }
 });
 
 test("warnings stay in artifacts without entering completion or converting success to failure", async () => {
