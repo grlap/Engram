@@ -27,6 +27,22 @@ impl HostSession {
         checks: &[(VerificationKind, ExecutionOutcome)],
         second: i64,
     ) -> Vec<ObjectId> {
+        self.checkpoint_commands(store, source_changed, checks, second, None)
+    }
+
+    /// A host may repeat the same command on different source revisions.
+    /// Callers without explicit commands retain the existing per-turn keys.
+    pub(super) fn checkpoint_commands(
+        &mut self,
+        store: &mut SqliteStore,
+        source_changed: bool,
+        checks: &[(VerificationKind, ExecutionOutcome)],
+        second: i64,
+        commands: Option<&[ObjectId]>,
+    ) -> Vec<ObjectId> {
+        if let Some(commands) = commands {
+            assert_eq!(commands.len(), checks.len(), "one fingerprint per command");
+        }
         let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
         self.begin(store, &grant, second + 1);
         let mut observations = Vec::new();
@@ -54,8 +70,13 @@ impl HostSession {
             };
             observations.push(ExecutionObservationInput {
                 observation_id: observation_id.clone(),
-                action_fingerprint: ObjectId::from_canonical_bytes(
-                    self.key(&format!("run check {index}")).as_bytes(),
+                action_fingerprint: commands.map_or_else(
+                    || {
+                        ObjectId::from_canonical_bytes(
+                            self.key(&format!("run check {index}")).as_bytes(),
+                        )
+                    },
+                    |commands| commands[index].clone(),
                 ),
                 effect: EffectClass::MutateLocal,
                 outcome,

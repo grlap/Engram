@@ -219,7 +219,7 @@ pub(in crate::storage) fn read_acceptance_verifications_on(
 /// The feed is the enumeration authority, so every verification the run's
 /// evidence projection holds must have its run-feed entry: one without would
 /// silently drop out of the candidates. That is a damaged store.
-fn require_fed_verifications_on(
+pub(super) fn require_fed_verifications_on(
     connection: &Connection,
     run_id: WorkRunId,
 ) -> Result<(), StoreError> {
@@ -264,6 +264,26 @@ struct CandidateScan<'a> {
     /// producer must name.
     root_execution_id: RootExecutionId,
     requirement: &'a VerificationRequirement,
+}
+
+/// Validate one feed candidate without imposing the public page's current-head
+/// requirement. Evaluation refusals use their already judged transaction cut.
+pub(super) fn verification_candidate_on(
+    connection: &Connection,
+    basis: &AcceptanceBindingReadBasis,
+    requirement: &VerificationRequirement,
+    id: &ObjectId,
+    position: i64,
+    evidence: VerificationEvidence,
+) -> Result<AcceptanceBindingVerification, StoreError> {
+    let run = load_work_run(connection, basis.run_id)?;
+    CandidateScan {
+        connection,
+        basis,
+        root_execution_id: run.root_execution_id,
+        requirement,
+    }
+    .candidate(id, position, evidence)
 }
 
 impl CandidateScan<'_> {

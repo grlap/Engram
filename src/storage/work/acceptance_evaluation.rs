@@ -423,9 +423,26 @@ impl SqliteStore {
             };
             cause.judged_revision = judged.as_ref().map(|source| source.revision.clone());
             cause.producer_observation.clone_from(&stale.producer);
+            let original_reason = stale.refusal(&item, judged.as_ref(), cut)?;
+            let reason = if cause.mismatch == EvaluationCitationMismatch::WrongSource {
+                let records = citable::records(
+                    &transaction,
+                    &item,
+                    run_id,
+                    cut,
+                    stale.criterion,
+                    judged.as_ref(),
+                    named_root.as_ref(),
+                )?;
+                let reason = format!("{}{original_reason}", citable::prefix(&records));
+                cause.citable_records = Some(records);
+                reason
+            } else {
+                original_reason
+            };
             return Err(admission::refusal(
                 item.work_id,
-                stale.refusal(&item, judged.as_ref(), cut)?,
+                reason,
                 AcceptanceEvaluationAdmissionCause::Citation(Box::new(cause)),
             ));
         }
@@ -1908,6 +1925,177 @@ pub(super) fn blocking_cause(
 }
 
 mod admission;
+mod citable {
+    //! Bounded wrong-source refusal guidance from the same admission snapshot.
+
+    use super::source::{JudgedSource, NamedEvaluationRoot};
+    use super::{
+        Connection, ObjectId, OptionalExtension, StoreError, VerificationEvidence,
+        VerificationResult, WorkItem, WorkRunId, load_typed_work_object, params,
+        stale_bound_citation,
+    };
+    use crate::domain::{AcceptanceBindingReadBasis, CitableVerificationRecords};
+    use crate::storage::work::verification_read::{
+        require_fed_verifications_on, verification_candidate_on,
+    };
+
+    const MAX_RECORDS: usize = 4;
+
+    /// Find checks that could be cited for this bound criterion. Discovery does
+    /// not alter the submitted citations, guarantee a verdict, or satisfy done.
+    pub(super) fn records(
+        connection: &Connection,
+        item: &WorkItem,
+        run_id: WorkRunId,
+        cut: i64,
+        criterion: usize,
+        judged: Option<&JudgedSource>,
+        root: Option<&NamedEvaluationRoot>,
+    ) -> Result<CitableVerificationRecords, StoreError> {
+        let mut found = CitableVerificationRecords {
+            records: Vec::new(),
+            more: false,
+        };
+        let Some(binding) = item
+            .acceptance_bindings
+            .iter()
+            .find(|b| b.criterion == criterion)
+        else {
+            return Ok(found);
+        };
+        if judged.is_none() {
+            return Ok(found);
+        }
+        require_fed_verifications_on(connection, run_id)?;
+        let basis = AcceptanceBindingReadBasis {
+            project_id: item.project_id.clone(),
+            work_id: item.work_id,
+            work_revision: item.revision,
+            run_id,
+            run_cut: cut,
+        };
+        let mut statement = connection.prepare(
+            "SELECT position, object_id FROM work_feed_entries
+             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position <= ?2
+               AND object_kind = 'verification_evidence'
+             ORDER BY position DESC",
+        )?;
+        let entries = statement.query_map(params![run_id.0.to_string(), cut], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for entry in entries {
+            let (position, stored) = entry?;
+            let id = ObjectId::from_stored(stored.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored))?;
+            let evidence: VerificationEvidence =
+                load_typed_work_object(connection, &id, "verification_evidence")?;
+            if evidence.check_kind != binding.requirement.check_kind {
+                continue;
+            }
+            // A fed verification must have its verification projection even
+            // when source admission would otherwise exclude it. Missing or
+            // retyped rows are damage, not an absence of matching checks.
+            let projected_kind: Option<String> = connection
+                .query_row(
+                    "SELECT evidence_kind FROM work_run_evidence
+                     WHERE run_id = ?1 AND evidence_id = ?2",
+                    params![run_id.0.to_string(), id.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if projected_kind.as_deref() != Some("verification") {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "fed verification evidence {id} has no verification projection on run {run_id:?}"
+                )));
+            }
+            // Exclude checks the existing admission rule refuses before the
+            // stricter candidate reader checks producer agreement. Historical
+            // no-source or other-root producers are ineligible alternatives,
+            // not a reason to replace the original source refusal.
+            if stale_bound_citation(
+                connection,
+                item,
+                run_id,
+                judged,
+                cut,
+                [(criterion, std::slice::from_ref(&id))],
+                root,
+            )?
+            .is_some()
+            {
+                continue;
+            }
+            let candidate = verification_candidate_on(
+                connection,
+                &basis,
+                &binding.requirement,
+                &id,
+                position,
+                evidence,
+            )?;
+            if candidate.result != VerificationResult::Passed
+                || binding
+                    .requirement
+                    .check_fingerprint
+                    .as_ref()
+                    .is_some_and(|required| *required != candidate.check_fingerprint)
+            {
+                continue;
+            }
+            if found.records.len() == MAX_RECORDS {
+                found.more = true;
+                break;
+            }
+            found.records.push(id);
+        }
+        Ok(found)
+    }
+
+    /// Put complete ids ahead of potentially long source/path text: hosts may
+    /// retain only the first 512 bytes of an earlier refusal's message.
+    pub(super) fn prefix(records: &CitableVerificationRecords) -> String {
+        let ids = if records.records.is_empty() {
+            "none".to_owned()
+        } else {
+            records
+                .records
+                .iter()
+                .map(ObjectId::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!(
+            "Citable verification records: {ids}; more={}; ",
+            records.more
+        )
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn full_historical_id_widths_fit_the_host_refusal_excerpt() {
+            // Derive full-width historical keys at runtime, never pin a digest.
+            let records = CitableVerificationRecords {
+                records: (0_u8..4)
+                    .map(|seed| ObjectId::from_canonical_bytes(&[seed]))
+                    .collect(),
+                more: true,
+            };
+            let message = format!(
+                "acceptance evaluation refused for work {:?}: {}{}",
+                crate::domain::WorkId(uuid::Uuid::new_v4()),
+                prefix(&records),
+                "long rejection ".repeat(50)
+            );
+            for record in &records.records {
+                assert!(message[..512].contains(record.as_str()), "{message}");
+            }
+            assert!(message[..512].contains("more=true"));
+        }
+    }
+}
 mod citations;
 use citations::{
     Citation, bind_verdicts, citation_position, cited_gate_names, classify_citation,

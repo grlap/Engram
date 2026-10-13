@@ -8,6 +8,597 @@ use crate::domain::{
     AcceptanceBinding, VerificationRequirement, WaiveWorkObligationRequest, WorkObligationState,
 };
 
+mod citable {
+    //! Wrong-source suggestions describe admitted alternatives, never rescue a submission.
+
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn suggestions(cause: &crate::domain::CitationAdmissionCause) -> Value {
+        serde_json::to_value(cause)
+            .expect("serialize transient citation context")
+            .get("citable_records")
+            .cloned()
+            .expect("wrong-source refusal includes citable-record discovery")
+    }
+
+    fn wrong_source(
+        store: &mut SqliteStore,
+        request: &RecordAcceptanceEvaluationRequest,
+    ) -> (String, Box<crate::domain::CitationAdmissionCause>) {
+        let before = test_database_shape_snapshot(&store.connection).expect("before refusal");
+        let (reason, cause) = admission::typed_refusal(record(store, request));
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).expect("after refusal"),
+            before,
+            "candidate discovery and rejected submissions write nothing"
+        );
+        let AcceptanceEvaluationAdmissionCause::Citation(cause) = cause else {
+            panic!("citation refusal: {cause:?}");
+        };
+        assert_eq!(cause.mismatch, EvaluationCitationMismatch::WrongSource);
+        assert_eq!(cause.remedy, Remedy::RunCurrentCheckAndEvaluate);
+        (reason, cause)
+    }
+
+    fn source_matrix(workspace: bool, candidate_present: bool) {
+        let (mut fixture, work, _claim, mut host) = bound_fixture("citable-source-matrix", false);
+        let note = fixture.evidence.clone();
+        let store = &mut fixture.store;
+        let bad = one_check(host.checkpoint(
+            store,
+            true,
+            Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+            20,
+        ));
+        if workspace {
+            host.basis.workspace_id = "other-workspace".into();
+        } else {
+            host.basis.source_revision = "revision-e".into();
+        }
+        host.checkpoint(store, true, None, 30);
+        let candidate = candidate_present.then(|| {
+            one_check(host.checkpoint(
+                store,
+                false,
+                Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+                40,
+            ))
+        });
+        let source = declared(&host.basis.source_revision, Some(&host.basis.workspace_id));
+        let input = evaluation(
+            store,
+            &work,
+            std::slice::from_ref(&bad),
+            &note,
+            Some(source),
+            50,
+        );
+        let (reason, cause) = wrong_source(store, &input);
+        assert_eq!(cause.citation, bad.as_str());
+        assert!(
+            reason.contains(bad.as_str()),
+            "the original offender remains named"
+        );
+        assert!(
+            reason.contains("run the check on the current source"),
+            "{reason}"
+        );
+        let records = candidate.iter().map(ObjectId::as_str).collect::<Vec<_>>();
+        assert_eq!(
+            suggestions(&cause),
+            json!({"records": records, "more": false})
+        );
+        if let Some(candidate) = candidate {
+            assert!(
+                reason.starts_with("Citable verification records"),
+                "{reason}"
+            );
+            assert!(
+                reason[..reason.len().min(512)].contains(candidate.as_str()),
+                "{reason}"
+            );
+            // Discovery includes a record the evaluator did not submit. Adding it
+            // cannot make the rejected citation disappear or admit the submission.
+            let mut mixed = input.clone();
+            mixed.verdicts[0].evidence.push(candidate.clone());
+            let (_, mixed_cause) = wrong_source(store, &mixed);
+            assert_eq!(mixed_cause.citation, bad.as_str());
+            let mut valid = input;
+            valid.verdicts[0].evidence = vec![candidate];
+            record(store, &valid).expect("the suggested record alone admits the bound pass");
+        } else {
+            assert!(
+                reason.starts_with("Citable verification records: none"),
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn citable_records_wrong_revision_with_matching_record() {
+        source_matrix(false, true);
+    }
+
+    #[test]
+    fn citable_records_wrong_revision_without_matching_record() {
+        source_matrix(false, false);
+    }
+
+    #[test]
+    fn citable_records_wrong_workspace_with_matching_record() {
+        source_matrix(true, true);
+    }
+
+    #[test]
+    fn citable_records_wrong_workspace_without_matching_record() {
+        source_matrix(true, false);
+    }
+
+    #[test]
+    fn citable_records_newest_four_are_visible_before_long_rejection_text() {
+        let (mut fixture, work, _claim, mut host) = bound_fixture("citable-limit", false);
+        let note = fixture.evidence.clone();
+        let store = &mut fixture.store;
+        host.basis.workspace_id = format!("old-{}", "x".repeat(240));
+        let bad = one_check(host.checkpoint(
+            store,
+            true,
+            Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+            20,
+        ));
+        host.basis.workspace_id = format!("new-{}", "y".repeat(240));
+        host.checkpoint(store, true, None, 30);
+        let mut candidates = Vec::new();
+        for second in [40, 50, 60, 70, 80, 90] {
+            candidates.push(one_check(host.checkpoint(
+                store,
+                false,
+                Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+                second,
+            )));
+        }
+        // A newer failed check or a check of another kind must not consume the cap.
+        host.checkpoint(
+            store,
+            false,
+            Some((VerificationKind::Test, ExecutionOutcome::Failed)),
+            100,
+        );
+        host.checkpoint(
+            store,
+            false,
+            Some((VerificationKind::Build, ExecutionOutcome::Succeeded)),
+            110,
+        );
+        host.checkpoint(
+            store,
+            false,
+            Some((VerificationKind::Test, ExecutionOutcome::Unknown)),
+            115,
+        );
+        let source = declared(&host.basis.source_revision, Some(&host.basis.workspace_id));
+        let input = evaluation(
+            store,
+            &work,
+            std::slice::from_ref(&bad),
+            &note,
+            Some(source),
+            120,
+        );
+        let (reason, cause) = wrong_source(store, &input);
+        let expected = candidates
+            .iter()
+            .rev()
+            .take(4)
+            .map(ObjectId::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            suggestions(&cause),
+            json!({"records": expected, "more": true})
+        );
+        for candidate in candidates.iter().rev().take(4) {
+            assert!(reason[..512].contains(candidate.as_str()), "{reason}");
+        }
+        assert!(!reason[..512].contains(candidates[0].as_str()), "{reason}");
+        assert!(reason[..512].contains("more=true"), "{reason}");
+        let (again, _) = wrong_source(store, &input);
+        assert_eq!(again, reason, "same snapshot gives deterministic ordering");
+    }
+
+    #[test]
+    fn citable_records_do_not_use_a_check_beyond_the_evaluated_cut() {
+        let (mut fixture, work, _claim, mut host) = bound_fixture("citable-cut", false);
+        let note = fixture.evidence.clone();
+        let store = &mut fixture.store;
+        let bad = one_check(host.checkpoint(
+            store,
+            true,
+            Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+            20,
+        ));
+        host.basis.source_revision = "revision-e".into();
+        host.checkpoint(store, true, None, 30);
+        let input = evaluation(
+            store,
+            &work,
+            std::slice::from_ref(&bad),
+            &note,
+            Some(declared("revision-e", None)),
+            35,
+        );
+        let later = one_check(host.checkpoint(
+            store,
+            false,
+            Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+            40,
+        ));
+        // A later passing check on the same judged source does not stale this
+        // basis. Discovery still stops at the evaluated cut, so it cannot offer it.
+        let (reason, cause) = wrong_source(store, &input);
+        assert_eq!(suggestions(&cause), json!({"records": [], "more": false}));
+        assert!(
+            !reason.contains(later.as_str()),
+            "a future record is not suggested"
+        );
+    }
+
+    #[test]
+    fn citable_records_honor_the_pinned_command_without_requiring_a_new_work_revision() {
+        let (mut fixture, work, claim, mut host) = bound_fixture("citable-command", false);
+        let note = fixture.evidence.clone();
+        let store = &mut fixture.store;
+        let command = ObjectId::from_canonical_bytes(b"cargo test --lib selected");
+        let checks = [(VerificationKind::Test, ExecutionOutcome::Succeeded)];
+        let bad = one_check(host.checkpoint_commands(
+            store,
+            true,
+            &checks,
+            20,
+            Some(std::slice::from_ref(&command)),
+        ));
+        host.basis.source_revision = "revision-e".into();
+        host.checkpoint(store, true, None, 30);
+        let good = one_check(host.checkpoint_commands(
+            store,
+            false,
+            &checks,
+            40,
+            Some(std::slice::from_ref(&command)),
+        ));
+        let other_command = ObjectId::from_canonical_bytes(b"cargo test --lib another");
+        let other = one_check(host.checkpoint_commands(
+            store,
+            false,
+            &checks,
+            50,
+            Some(std::slice::from_ref(&other_command)),
+        ));
+        let work = revise(
+            store,
+            &work,
+            &claim,
+            WorkRevisionPatch {
+                acceptance_bindings: Some(vec![AcceptanceBinding {
+                    criterion: 1,
+                    requirement: VerificationRequirement {
+                        check_kind: VerificationKind::Test,
+                        check_fingerprint: Some(command),
+                    },
+                }]),
+                ..empty_patch()
+            },
+            "pin-command",
+            60,
+        )
+        .expect("pin the command after its checks");
+        let input = evaluation(
+            store,
+            &work,
+            std::slice::from_ref(&bad),
+            &note,
+            Some(declared("revision-e", None)),
+            70,
+        );
+        let (reason, cause) = wrong_source(store, &input);
+        assert_eq!(
+            suggestions(&cause),
+            json!({"records": [good], "more": false})
+        );
+        assert!(
+            !reason.starts_with(&format!("Citable verification records: {other}")),
+            "{reason}"
+        );
+        let mut valid = input;
+        valid.verdicts[0].evidence = vec![good];
+        record(store, &valid).expect("a valid older-work-revision record remains admissible");
+    }
+
+    fn damaged_candidate_is_not_an_empty_list(damage: &str) {
+        let (mut fixture, work, _claim, mut host) = bound_fixture("citable-damage", false);
+        let note = fixture.evidence.clone();
+        let store = &mut fixture.store;
+        let bad = one_check(host.checkpoint(
+            store,
+            true,
+            Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+            20,
+        ));
+        host.basis.source_revision = "revision-e".into();
+        host.checkpoint(store, true, None, 30);
+        let good = one_check(host.checkpoint(
+            store,
+            false,
+            Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+            40,
+        ));
+        assert_eq!(
+            store
+                .connection
+                .execute(damage, [good.as_str()])
+                .expect("damage the candidate projection"),
+            1
+        );
+        let input = evaluation(
+            store,
+            &work,
+            std::slice::from_ref(&bad),
+            &note,
+            Some(declared("revision-e", None)),
+            50,
+        );
+        let before = test_database_shape_snapshot(&store.connection).expect("before damaged read");
+        let error = record(store, &input).expect_err("candidate corruption must be visible");
+        assert!(
+            matches!(error, StoreError::InvalidWorkProjection(_)),
+            "{error:?}"
+        );
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).expect("after damaged read"),
+            before
+        );
+    }
+
+    #[test]
+    fn citable_records_do_not_turn_projection_damage_into_no_matching_records() {
+        damaged_candidate_is_not_an_empty_list(
+            "UPDATE work_run_evidence SET source_revision = 'damaged' WHERE evidence_id = ?1",
+        );
+    }
+
+    #[test]
+    fn citable_records_refuse_a_missing_candidate_projection() {
+        damaged_candidate_is_not_an_empty_list(
+            "DELETE FROM work_run_evidence WHERE evidence_id = ?1",
+        );
+    }
+
+    #[test]
+    fn citable_records_refuse_a_retyped_candidate_projection() {
+        damaged_candidate_is_not_an_empty_list(
+            "UPDATE work_run_evidence SET evidence_kind = 'environment' WHERE evidence_id = ?1",
+        );
+    }
+
+    #[test]
+    fn citable_records_include_an_admissible_bound_verification() {
+        let directory = crate::test_support::temp_home().expect("fixture directory");
+        let database = directory.path().join("bound-candidate.db");
+        let (_, bound_id, original_id) = crate::storage::work::bound_assessment_fixture(&database);
+        let mut store = SqliteStore::open(&database).expect("reopen bound fixture");
+        let bound: VerificationEvidence =
+            load_typed_work_object(&store.connection, &bound_id, "verification_evidence")
+                .expect("bound canonical evidence");
+        assert_eq!(
+            bound
+                .bound_from
+                .as_ref()
+                .expect("real bound provenance")
+                .verification,
+            original_id
+        );
+        let work = store
+            .get_work_item(bound.binding.work_id)
+            .expect("target item");
+        let claim = crate::storage::work::query::load_work_claim_optional(
+            &store.connection,
+            work.active_run_id.expect("target run"),
+        )
+        .expect("target claim query")
+        .expect("target claim");
+        enable(
+            &mut store,
+            &[Mode::SameSession],
+            MechanicalBasis::Observed,
+            false,
+            "bound-candidate-policy",
+            40,
+        );
+        let mut foreign_basis = bound.source_basis.clone();
+        foreign_basis.workspace_id = "foreign-root".into();
+        foreign_basis.source_revision = "R0".into();
+        let bad = host_verification_from_basis(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "foreign-bound-candidate-check",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            50,
+            foreign_basis,
+        );
+        let mut input = request(
+            &work,
+            cut(&store, &work),
+            "runner",
+            Mode::SameSession,
+            vec![
+                verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Observed,
+                    &[bad],
+                ),
+                verdict(
+                    2,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&bound_id),
+                ),
+            ],
+            60,
+        );
+        input.source_basis = Some(declared("R1", Some("workspace-root")));
+        let (reason, cause) = wrong_source(&mut store, &input);
+        assert_eq!(
+            suggestions(&cause),
+            json!({"records": [bound_id], "more": false})
+        );
+        assert!(reason.starts_with(&format!("Citable verification records: {bound_id};")));
+        input.verdicts[0].evidence = vec![bound_id];
+        record(&mut store, &input).expect("the suggested bound check alone is admitted");
+    }
+
+    #[test]
+    fn citable_records_exclude_a_matching_check_from_another_run() {
+        let (mut fixture, work, _claim, mut host) = bound_fixture("citable-other-run", false);
+        let note = fixture.evidence.clone();
+        let store = &mut fixture.store;
+        let bad = one_check(host.checkpoint(
+            store,
+            true,
+            Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+            20,
+        ));
+        host.basis.source_revision = "revision-e".into();
+        host.checkpoint(store, true, None, 30);
+        let foreign = store
+            .create_work(
+                &root_request(&work.project_id.0, "another-run", 40),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("another item");
+        let foreign_claim =
+            super::super::claim(store, &foreign, "peer", "foreign-claim", 41, 3_600);
+        let foreign_check = host_verification_from_basis(
+            store,
+            &foreign,
+            &foreign_claim,
+            "peer",
+            "same-source-foreign-check",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            42,
+            host.basis.clone(),
+        );
+        let input = evaluation(
+            store,
+            &work,
+            std::slice::from_ref(&bad),
+            &note,
+            Some(declared("revision-e", None)),
+            50,
+        );
+        let (reason, cause) = wrong_source(store, &input);
+        assert_eq!(suggestions(&cause), json!({"records": [], "more": false}));
+        assert!(!reason.contains(foreign_check.as_str()), "{reason}");
+    }
+
+    #[test]
+    fn citable_records_exclude_checks_outside_the_current_named_generation() {
+        let (mut fixture, work, claim, mut host) = bound_fixture("citable-naming", false);
+        let note = fixture.evidence.clone();
+        let store = &mut fixture.store;
+        let bad = one_check(host.checkpoint(
+            store,
+            true,
+            Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+            20,
+        ));
+        let target = ExecutionSourceBasis {
+            workspace_id: "workspace-B".into(),
+            source_revision: "revision-d".into(),
+            source_root_generation: None,
+            source_root_state: None,
+        };
+        let unnamed = host_verification_from_basis(
+            store,
+            &work,
+            &claim,
+            "runner",
+            "before-naming",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            25,
+            target.clone(),
+        );
+        store
+            .bind_named_root(
+                &work.project_id,
+                &host.session_id,
+                &host.connection_token,
+                &host.routing_token,
+                claim.claim_id,
+                claim.fence,
+                "workspace-B",
+                9,
+                at(30),
+                crate::domain::NamedRootBindingKind::Bound,
+                None,
+                &mut actor("runner"),
+                "bind-citable-root",
+                at(30),
+            )
+            .expect("name the current root");
+        let old = host_verification_from_basis(
+            store,
+            &work,
+            &claim,
+            "runner",
+            "old-naming",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            35,
+            ExecutionSourceBasis {
+                source_root_generation: Some(8),
+                source_root_state: Some(SourceRootState::Named),
+                ..target.clone()
+            },
+        );
+        let current = host_verification_from_basis(
+            store,
+            &work,
+            &claim,
+            "runner",
+            "current-naming",
+            VerificationKind::Test,
+            VerificationResult::Passed,
+            40,
+            ExecutionSourceBasis {
+                source_root_generation: Some(9),
+                source_root_state: Some(SourceRootState::Named),
+                ..target
+            },
+        );
+        let input = evaluation(
+            store,
+            &work,
+            std::slice::from_ref(&bad),
+            &note,
+            Some(declared("revision-d", Some("workspace-B"))),
+            50,
+        );
+        let (reason, cause) = wrong_source(store, &input);
+        assert_eq!(
+            suggestions(&cause),
+            json!({"records": [current], "more": false})
+        );
+        assert!(!reason.contains(unnamed.as_str()), "{reason}");
+        assert!(!reason.contains(old.as_str()), "{reason}");
+    }
+}
+
 /// The fixture's item with its first criterion bound to a test, under an
 /// evaluated policy that requires observed mechanical passes, with a host
 /// session on its live claim reporting the source at `revision-d`.

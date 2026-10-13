@@ -10,6 +10,7 @@ pub(crate) struct AdmissionTransportFixture {
     pub input: crate::WorkEvaluateInput,
     pub family: &'static str,
     pub mismatch: &'static str,
+    pub citable_record: Option<ObjectId>,
 }
 
 /// Real recorded histories used by both the service and MCP handler checks.
@@ -71,6 +72,7 @@ pub(crate) fn admission_transport_fixture(
     let mut citation = fixture.evidence.clone();
     let mut basis = cut(store, &work);
     let mut declared = None;
+    let mut citable_record = None;
     let (family, mismatch) = match case {
         "eligibility" => ("eligibility", "same_session_unmarked"),
         "source_root" => {
@@ -142,6 +144,14 @@ pub(crate) fn admission_transport_fixture(
             if case == "wrong_source" {
                 host.basis.source_revision = "transport-S".into();
                 host.checkpoint(store, true, None, second + 20);
+                citable_record = host
+                    .checkpoint(
+                        store,
+                        false,
+                        Some((VerificationKind::Test, ExecutionOutcome::Succeeded)),
+                        second + 30,
+                    )
+                    .pop();
                 basis = cut(store, &work);
                 declared = Some("transport-S".into());
                 ("citation", "wrong_source")
@@ -199,6 +209,7 @@ pub(crate) fn admission_transport_fixture(
         input,
         family,
         mismatch,
+        citable_record,
     }
 }
 

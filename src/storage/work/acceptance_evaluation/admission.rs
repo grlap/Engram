@@ -111,6 +111,7 @@ impl CitationContext<'_> {
             checked_revision: None,
             judged_revision: None,
             producer_observation: None,
+            citable_records: None,
             // Every mismatch is mapped here by name, so a new one must be
             // given its remedy deliberately.
             remedy: match mismatch {

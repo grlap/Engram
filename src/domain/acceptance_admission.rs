@@ -92,6 +92,14 @@ pub struct SourceRootAdmissionCause {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CitableVerificationRecords {
+    /// Full ids of at most four admissible checks, newest first at the judged cut.
+    pub records: Vec<ObjectId>,
+    /// At least one additional admissible record exists; not an omitted count.
+    pub more: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CitationAdmissionCause {
     pub mismatch: EvaluationCitationMismatch,
     pub criterion: usize,
@@ -112,6 +120,9 @@ pub struct CitationAdmissionCause {
     pub judged_revision: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub producer_observation: Option<ObjectId>,
+    /// Discovery for a wrong-source refusal, not an accepted citation or verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub citable_records: Option<CitableVerificationRecords>,
     pub remedy: EvaluationAdmissionRemedy,
 }
 

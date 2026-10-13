@@ -242,6 +242,7 @@ impl LocalWorkService {
                                     checked_revision: None,
                                     judged_revision: None,
                                     producer_observation: None,
+                                    citable_records: None,
                                     remedy: EvaluationAdmissionRemedy::ReadRunEvidence,
                                 }),
                             )),

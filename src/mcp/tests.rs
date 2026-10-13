@@ -510,6 +510,26 @@ fn evaluation_admission_errors_keep_status_and_deciding_causes_across_service_an
         let (message, details) = agent_work_projection(&shared, &fixture.work);
         assert_eq!(error["message"], message);
         assert_eq!(error["details"], details);
+        if let Some(candidate) = &fixture.citable_record {
+            assert_eq!(
+                error["details"]["cause"]["citable_records"],
+                json!({"records": [candidate], "more": false})
+            );
+            let message = error["message"].as_str().expect("refusal message");
+            let first = message.as_bytes().get(..512).unwrap_or(message.as_bytes());
+            assert!(
+                String::from_utf8_lossy(first).contains(candidate.as_str()),
+                "{message}"
+            );
+            assert!(
+                shared["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains(candidate.as_str())
+            );
+        } else {
+            assert!(error["details"]["cause"].get("citable_records").is_none());
+        }
         let cause: crate::AcceptanceEvaluationAdmissionCause =
             serde_json::from_value(error["details"]["cause"].clone()).unwrap();
         let remedy = mcp_spelled(&crate::work_service::evaluation_admission_remedy(&cause));

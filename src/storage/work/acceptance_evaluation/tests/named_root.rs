@@ -1298,6 +1298,14 @@ fn a_citation_whose_producer_ran_outside_the_root_is_refused() {
         "contradicted",
         11,
     ));
+    let candidates = refused
+        .strip_prefix("Citable verification records: ")
+        .expect("discovery preserves the source refusal")
+        .split(';')
+        .next()
+        .expect("candidate prefix");
+    assert!(!candidates.contains(contradicted.as_str()), "{refused}");
+    assert!(candidates.contains(named.current.as_str()), "{refused}");
     assert!(
         refused.contains(
             "its producer observation ran in workspace workspace-A, not in the named root's workspace workspace-B"
@@ -1494,6 +1502,13 @@ fn a_check_or_producer_recorded_before_the_naming_names_both_positions() {
             key,
             20,
         ));
+        let candidates = refused
+            .strip_prefix("Citable verification records: ")
+            .expect("discovery preserves the naming refusal")
+            .split(';')
+            .next()
+            .expect("candidate prefix");
+        assert!(!candidates.contains(check.as_str()), "{refused}");
         assert!(refused.contains(&names), "{key}: {refused}");
         assert!(!refused.contains("not the workspace"), "{key}: {refused}");
     }
@@ -1981,6 +1996,14 @@ fn a_check_whose_producer_has_no_source_basis_says_so() {
         "unsourced",
         11,
     ));
+    let candidates = refused
+        .strip_prefix("Citable verification records: ")
+        .expect("discovery preserves the unsourced-producer refusal")
+        .split(';')
+        .next()
+        .expect("candidate prefix");
+    assert!(!candidates.contains(check.as_str()), "{refused}");
+    assert!(candidates.contains(named.current.as_str()), "{refused}");
     assert!(
         refused.contains(
             "its producer observation carries no source basis to place under the current root naming"

@@ -331,6 +331,21 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   the host's source revision, such as a Git commit id, matches no check and
   is corrected instead, which the refusal names only when the evaluation
   declared a source. Completion applies the same rule again (F8).
+
+  A wrong-source citation refusal first lists up to four full ids of existing
+  citable verification records, newest first through the submitted evidence
+  cut, and a `more` flag when additional matches exist. It explicitly says
+  `none` when no match exists and retains the current-check guidance. Its
+  transient `cause.citable_records` carries the same `records` and `more`.
+  Candidates must satisfy the current bound kind and optional check fingerprint,
+  canonical passed result, provenance, and the same source and naming checks
+  used by admission. No workspace is invented when admission leaves it
+  unconstrained. The complete ids precede the original rejection and remedy
+  so they survive a host's bounded refusal excerpt. They are discovery, not a
+  verdict or completion proof: an invalid extra citation still rejects the
+  entire submission without a write. Inspect the suggested record before a
+  fresh evaluation cites it. This guidance does not automatically refresh a
+  host's evaluator brief or retry its submission.
 - **R6 non-pass citations.** `fail`, `insufficient_evidence`, and `needs_human`
   carry a rationale; citations are optional but must belong to this run, and a
   failed check may be cited (a failed build supports a `fail`).
