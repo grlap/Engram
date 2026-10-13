@@ -746,7 +746,10 @@ a raw recovery error retains `work_completion_recovery_required`.
 
 Admission refusals for eligibility, named-root source, citation and re-roll
 checks carry `AcceptanceEvaluationAdmissionCause` beside their unchanged
-reason text. CLI JSON and MCP use `acceptance_evaluation_refused`, with
+reason text, except that a wrong-source citation refusal puts the
+citable-record discovery described under
+[Record-time validation](#record-time-validation) (R5) before it; the
+original rejection and remedy follow unchanged. CLI JSON and MCP use `acceptance_evaluation_refused`, with
 `details.cause` tagged by `kind`: `eligibility`, `source_root`, `citation` or
 `reroll`. The CLI still exits 1 and MCP still returns an error. The
 host-private control transport retains `storage_error` for the first three
