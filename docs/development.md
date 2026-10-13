@@ -10,6 +10,9 @@ govern review ownership, revalidation, communication, and durable recovery.
 The remaining [Fable and Codex pilot proposal](agent-pair-workflow.md#pilot-proposal-fable-and-codex-working-as-a-pair)
 is a proposal, not a change to standing instructions.
 
+The [team strategy](team-strategy.md) records package ownership, root
+capacity, and reassessment.
+
 ## Task tracking
 
 This project tracks its work in Engram — the fourteen agent words, documented in
