@@ -2039,7 +2039,9 @@ This is the contract a host builds its push trigger on.
   calls the copy's busy handler, which reads the clock after each short
   sleep. One such wait ends at the deadline or five seconds after it
   began, whichever comes first; a wait cut off by the five seconds fails
-  the capture as a busy store. A sleep can last longer than asked, so a
+  the push with outcome `failed`, code `storage_error` and SQLite's
+  "database is locked" message, not with the `busy` outcome, which means
+  another push holds the lock. A sleep can last longer than asked, so a
   wait can end a little late. SQLite's own retries to begin a read on the
   write-ahead log sleep inside SQLite, outside this handler; the
   [SQLite store](sqlite-store.md) describes them.
