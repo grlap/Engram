@@ -401,14 +401,26 @@ pub fn capture_store(
             check,
             attempt,
         }),
-        Err(error) => match remove_attempt(&attempt) {
-            Ok(()) => Err(error),
-            Err((path, source)) => Err(BackupError::StageCleanup {
-                error: Box::new(error),
-                path,
-                source,
-            }),
-        },
+        Err(error) => {
+            #[cfg(test)]
+            crate::storage::copy_trace::mark(|| "capture: attempt removal begins".into());
+            let removed = remove_attempt(&attempt);
+            #[cfg(test)]
+            crate::storage::copy_trace::mark(|| {
+                format!(
+                    "capture: attempt removal {}",
+                    if removed.is_ok() { "ok" } else { "failed" }
+                )
+            });
+            match removed {
+                Ok(()) => Err(error),
+                Err((path, source)) => Err(BackupError::StageCleanup {
+                    error: Box::new(error),
+                    path,
+                    source,
+                }),
+            }
+        }
     }
 }
 
@@ -429,6 +441,8 @@ fn capture_into(
 ) -> Result<(CaptureManifest, CaptureCheck), BackupError> {
     let classified = |phase: CapturePhase| {
         move |error: StoreError| {
+            #[cfg(test)]
+            crate::storage::copy_trace::mark(|| format!("capture: {phase:?} store error: {error}"));
             // A failure once the deadline has passed is the deadline's, even
             // when it surfaced as another error, such as a lock wait that
             // the time left cut short.

@@ -933,12 +933,24 @@ impl SqliteStore {
         use crate::phase_trace::control::{ControlPhase, enter};
         enter(ControlPhase::SchemaCheck);
         connection.busy_timeout(busy_timeout)?;
+        #[cfg(test)]
+        super::copy_trace::mark(|| format!("open: busy timeout {busy_timeout:?} set"));
         let read_only = connection.is_readonly("main")?;
         // Every probe below reads one snapshot, so another opener committing
         // a new store meanwhile cannot make two of them disagree. An error
         // ends the read: the caller rolls it back or drops the connection.
         connection.execute_batch("BEGIN DEFERRED;")?;
-        let store_has_schema = Self::sqlite_user_schema_exists(connection)?;
+        #[cfg(test)]
+        super::copy_trace::mark(|| "open: read transaction begun".into());
+        let store_has_schema = Self::sqlite_user_schema_exists(connection);
+        #[cfg(test)]
+        super::copy_trace::mark(|| {
+            format!(
+                "open: first read {}",
+                super::copy_trace::outcome(&store_has_schema)
+            )
+        });
+        let store_has_schema = store_has_schema?;
         protocol_retry::enter_phase(phase, OpenPhase::ProbeSnapshot)?;
         if read_only && !store_has_schema {
             return Err(StoreError::StoreNotInitialized);

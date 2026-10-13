@@ -258,6 +258,9 @@ pub(crate) use work::test_support::{
 pub(crate) mod concurrent_commit;
 
 #[cfg(test)]
+pub(crate) mod copy_trace;
+
+#[cfg(test)]
 use control_runtime::resolve_verification_environment_on;
 use control_support::{normalize_control_policy_actor, normalize_control_policy_idempotency_key};
 use project_memory::{

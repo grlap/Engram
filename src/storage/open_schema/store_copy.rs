@@ -11,6 +11,8 @@ use super::{
     CanonicalObject, Connection, Duration, ObjectId, Path, ProtocolRetry, SqliteStore, StoreError,
     store_sidecars,
 };
+#[cfg(test)]
+use crate::storage::copy_trace::{mark, outcome};
 use crate::{FeedId, ProjectId, WorkGraphSnapshotCut};
 
 /// How many SQLite virtual-machine steps pass between two deadline checks.
@@ -222,22 +224,42 @@ impl SqliteStore {
         interrupt: &CopyInterrupt,
     ) -> Result<(), StoreError> {
         interrupt.checked()?;
+        #[cfg(test)]
+        mark(|| "copy: open begins".into());
         // No `query_only`: SQLite refuses `VACUUM INTO` under it, and the
         // read-only open already rules out any write to the store.
-        let connection = Self::open_existing_read_only_connection(source)?;
+        let connection = Self::open_existing_read_only_connection(source);
+        #[cfg(test)]
+        mark(|| format!("copy: open {}", outcome(&connection)));
+        let connection = connection?;
         interrupt.install(&connection, CopyProbePoint::Admit)?;
+        let lock_wait = interrupt.lock_wait();
+        #[cfg(test)]
+        mark(|| format!("copy: admission begins, lock wait {lock_wait:?}"));
         let store = Self::from_connection_with_busy_timeout(
             connection,
             None,
             None,
-            interrupt.lock_wait(),
+            lock_wait,
             ProtocolRetry::Never,
-        )?;
+        );
+        // On an error this includes closing the connection.
+        #[cfg(test)]
+        mark(|| format!("copy: admission {}", outcome(&store)));
+        let store = store?;
         interrupt.checked()?;
-        store.connection.busy_timeout(interrupt.lock_wait())?;
+        let lock_wait = interrupt.lock_wait();
+        store.connection.busy_timeout(lock_wait)?;
         interrupt.install(&store.connection, CopyProbePoint::Copy)?;
-        super::super::sqlite_path::vacuum_into(&store.connection, target)?;
+        #[cfg(test)]
+        mark(|| format!("copy: vacuum begins, lock wait {lock_wait:?}"));
+        let copied = super::super::sqlite_path::vacuum_into(&store.connection, target);
+        #[cfg(test)]
+        mark(|| format!("copy: vacuum {}", outcome(&copied)));
+        copied?;
         drop(store);
+        #[cfg(test)]
+        mark(|| "copy: closed".into());
         interrupt.checked()
     }
 

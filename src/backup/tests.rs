@@ -606,6 +606,9 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
     // This test is about the lock wait, so the build's identity, whose
     // first reading the test below bounds, is read before the clock starts.
     let _ = crate::build_identity::current();
+    // When each sub-step of the copy began and ended, so an overrun names
+    // the sub-step that took the time.
+    crate::storage::copy_trace::start();
     let began = Instant::now();
     // When each step began, so an overrun names the step that took the time.
     let steps = std::cell::RefCell::new(Vec::new());
@@ -615,7 +618,9 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
     options.observer = Some(&observer);
     let error = capture_store(home.path(), &project, &options).unwrap_err();
     let took = began.elapsed();
+    let trace = crate::storage::copy_trace::take();
     drop(holder);
+    println!("capture took {took:?}; copy sub-steps: {trace:?}");
     assert_eq!(error.code(), "backup_capture_deadline", "{error}");
     // The deadline passed in the wait for the locked store.
     assert!(
@@ -625,13 +630,13 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
                 phase: CapturePhase::Copy
             }
         ),
-        "{error}; steps began at {:?}",
+        "{error}; steps began at {:?}; copy sub-steps: {trace:?}",
         steps.borrow()
     );
     // The ordinary five-second lock wait was cut to the time left.
     assert!(
         took < Duration::from_secs(5),
-        "{took:?}: {error}; steps began at {:?}",
+        "{took:?}: {error}; steps began at {:?}; copy sub-steps: {trace:?}",
         steps.borrow()
     );
     assert_eq!(stage_entries(home.path(), &project), Vec::<PathBuf>::new());
