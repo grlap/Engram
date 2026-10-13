@@ -32,6 +32,9 @@ fn isolate_git(command: &mut Command, global: &Path) {
         command.env_remove(name);
     }
     command
+        // Keep Git's ordinary global config locations inside this fixture too.
+        .env("HOME", global.parent().unwrap())
+        .env("XDG_CONFIG_HOME", global.parent().unwrap())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", global)
         .env("GIT_ATTR_NOSYSTEM", "1")
@@ -40,7 +43,7 @@ fn isolate_git(command: &mut Command, global: &Path) {
 
 fn git(root: &Path, args: &[&str]) -> Vec<u8> {
     let mut command = Command::new("git");
-    isolate_git(&mut command, &root.parent().unwrap().join("global.config"));
+    isolate_git(&mut command, &root.parent().unwrap().join(".gitconfig"));
     let output = command
         .current_dir(root)
         .args([
@@ -59,7 +62,8 @@ fn git(root: &Path, args: &[&str]) -> Vec<u8> {
         .unwrap();
     assert!(
         output.status.success(),
-        "{}",
+        "git {args:?} exited with {}: {}",
+        output.status,
         String::from_utf8_lossy(&output.stderr)
     );
     output.stdout
@@ -68,7 +72,7 @@ fn git(root: &Path, args: &[&str]) -> Vec<u8> {
 impl Fixture {
     fn new(separate: bool) -> Self {
         let owned = test_support::temp_home().unwrap();
-        let global_config = owned.path().join("global.config");
+        let global_config = owned.path().join(".gitconfig");
         fs::write(&global_config, "[core]\n attributesFile =\n").unwrap();
         let root = owned.path().join("repository");
         fs::create_dir(&root).unwrap();
@@ -732,6 +736,7 @@ fn setup_supports_actual_separate_git_directory_and_alias_without_notes() {
     let fixture = Fixture::new(true);
     let output = fixture
         .command(&fixture.root, &fixture.root.join(".engram-project"))
+        .current_dir(fixture.owned.path())
         .args(["--origin-machine", "workstation-1"])
         .output()
         .unwrap();
@@ -747,6 +752,33 @@ fn setup_supports_actual_separate_git_directory_and_alias_without_notes() {
     );
     assert_eq!(intent["basis"]["assertions"]["include_notes"], false);
     assert!(fixture.root.join(".git").is_file());
+    assert!(!fixture.home.exists());
+}
+
+#[test]
+fn setup_resolves_relative_git_directory_from_outside_repository() {
+    let fixture = Fixture::new(false);
+    let top_level =
+        String::from_utf8(git(&fixture.root, &["rev-parse", "--show-toplevel"])).unwrap();
+    let top_level = Path::new(top_level.strip_suffix('\n').unwrap());
+    assert!(top_level.is_absolute());
+    assert_eq!(
+        fs::canonicalize(top_level).unwrap(),
+        fs::canonicalize(&fixture.root).unwrap()
+    );
+    let output = fixture
+        .command(&fixture.root, &fixture.root.join(".engram-project"))
+        .current_dir(fixture.owned.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "relative .git path from an outside cwd: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let intent = fixture.intent();
+    assert_eq!(intent["basis"]["branch"], "ordinary");
+    assert!(fixture.admin.join("config").is_file());
     assert!(!fixture.home.exists());
 }
 

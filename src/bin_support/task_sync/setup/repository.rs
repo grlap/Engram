@@ -219,13 +219,15 @@ fn selected_path<'a>(name: &str, paths: &[&'a str]) -> Option<&'a str> {
 }
 
 fn git_path(root: &Path, flag: &str) -> Result<PathBuf> {
-    let bytes = git(root, &["rev-parse", "--path-format=absolute", flag])?;
+    let bytes = git(root, &["rev-parse", flag])?;
     let text = std::str::from_utf8(&bytes)?
         .strip_suffix('\n')
         .context("unterminated Git path")?;
     ensure!(!text.contains(['\r', '\n', '\0']), "ambiguous Git path");
-    ordinary_ancestors(Path::new(text))?;
-    Ok(fs::canonicalize(text)?)
+    // git() passes this exact directory to current_dir; relative output is based here.
+    let path = root.join(text);
+    ordinary_ancestors(&path)?;
+    Ok(fs::canonicalize(path)?)
 }
 
 pub(super) fn ordinary_ancestors(path: &Path) -> Result<()> {
