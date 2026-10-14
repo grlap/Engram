@@ -14,6 +14,7 @@ use crate::{
 
 pub mod activity;
 pub mod directory;
+pub mod exchange;
 pub mod notes;
 pub use activity::TaskSyncExportOptions;
 pub mod git;

@@ -615,6 +615,70 @@ separately checks its disclosure policy and preserves these exact bytes.
 The whole retained journal inventory must be complete and well formed; the
 latest generation may start a new baseline without a predecessor after recovery.
 
+## Explicit HTTPS process runner
+
+The library's `task_sync::exchange` module provides typed observation, fetch to
+an explicit private retention ref, and non-force push of an explicit commit to
+one configured branch. It is process infrastructure, not a Git exchange CLI,
+an import receipt, or permission to publish. The shared
+`LocalWorkService::run_task_sync_exchange` entry refuses read-only use and
+requires the project's current opt-in before any Git subprocess. The existing
+offline Git builder remains separate.
+
+The runner requires Git 2.31 or newer and checks the version before reading
+configuration or starting transport. URL-scoped runtime configuration uses
+separate environment keys and values, avoiding Git's `-c key=value` splitting.
+The selected repository must be an ordinary absolute path without linked
+ancestors. The runner observes and rechecks one identical fetch/push HTTPS URL
+and its supported credential helper selection. Multiple destinations, SSH,
+other transports, URL userinfo, query strings, fragments, and Git URL rewrite configuration
+refuse. Refusal of URL rewrites also covers unrelated aliases: supply a direct
+configured HTTPS destination. Rechecks detect observed configuration drift;
+they are not a configuration lock against concurrent same-user edits. URL paths
+accept ASCII letters, digits, unreserved punctuation (`-._~`), `/`, and `%`;
+other bytes require percent encoding. Literal `=` and shell punctuation refuse
+at admission; percent-encoded `%3D` remains literal input to Git.
+Configured bundle fetch sources and default push options also refuse. The
+explicit push disables tag following, mirroring, pruning and signing; fetch
+does not prune refs or tags, recurse into submodules, or write `FETCH_HEAD`.
+
+Engram launches Git directly and interpolates no caller text into a shell.
+Git can use its own shell to invoke its normal credential helper. Only the
+configured helper names `manager`, `manager-core`, and `wincred` are admitted,
+without helper arguments or `!` scripts. All ordered unscoped helper entries
+are observed, including reset entries, and participate in drift detection.
+URL-scoped helper configuration refuses explicitly rather than approximating
+Git's matching rules; the refusal redacts its URL scope, names its bounded
+escaped file origin, and asks the operator to remove the entry or move an
+admitted helper to unscoped `credential.helper`. An empty helper selection supports
+anonymous HTTPS. Git uses the user's existing credential facility; Engram
+stores no credentials. Terminal, askpass and interactive helper prompts are
+disabled, as are trace and secret-trace diagnostics. TLS verification is
+enabled and HTTP redirects are refused. Errors contain categories, safe version
+numbers, and the bounded escaped file origin for scoped-helper refusals; they
+never contain raw Git/helper stderr or destination URLs. Successful stdout is bounded
+protocol data for the calling workflow, not a diagnostic to print unexamined.
+
+On Windows, `process-wrap` starts the child suspended, assigns it to an owned
+kill-on-close Job Object, and then resumes it. Git's helpers and descendants
+remain in that job. Root exit, cancellation, output overflow, deadline and
+dropping the execution future terminate the owned tree; concurrent bounded
+pipe reads avoid waiting indefinitely for inherited handles. The default
+budget is 30 seconds, 1 MiB stdout and 64 KiB stderr. Callers may select up to
+120 seconds and 1 MiB per stream. These are execution/output limits, not a
+download, object-store or repository-size quota. Native synchronous spawn is
+not preempted by the async deadline.
+
+Confinement is not atomic at process creation: abrupt parent death between
+suspended spawn and job assignment can leave an inert suspended process.
+No child code has run in that interval. There is no claim of resource cleanup
+for that gap. A controller/spawn failure refuses instead of launching an
+unconfined fallback. Other platforms refuse before transport execution.
+Owned local subprocess tests establish controller cleanup, pipe bounds and
+configuration admission. They do not establish real-network authentication,
+cross-machine exchange, SSH support, or recovery of an unknown remote push.
+The caller must reconcile an uncertain remote outcome explicitly.
+
 ## Storage and repair
 
 Each imported task has a new canonical `task_sync_import_origin` object in the

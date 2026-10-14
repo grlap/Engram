@@ -112,6 +112,7 @@ pub(crate) use record_windows::ASSESSMENT_CONTINUATION_REFUSAL;
 mod note_admission;
 mod service;
 mod status;
+mod task_sync_exchange;
 mod task_sync_settings;
 mod task_sync_setup;
 pub(crate) mod unadmitted;

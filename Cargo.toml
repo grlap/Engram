@@ -37,6 +37,13 @@ unicode-general-category = "1.1"
 unicode-normalization = "0.1"
 uuid = { version = "1.18", features = ["serde", "v4", "v7"] }
 
+[target.'cfg(windows)'.dependencies]
+# Own Git and its credential descendants through a kill-on-close Windows job.
+process-wrap = { version = "=10.0.0", default-features = false, features = ["tokio1", "job-object", "kill-on-drop", "creation-flags"] }
+tokio = { version = "1.47", features = ["process", "io-util", "time"] }
+# Only the safe creation-flag constant is used; Engram forbids unsafe code.
+windows = { version = "0.62.2", features = ["Win32_System_Threading"] }
+
 [dev-dependencies]
 rusqlite = { version = "0.40", default-features = false, features = ["trace"] }
 
