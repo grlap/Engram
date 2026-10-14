@@ -231,15 +231,16 @@ pub(super) fn publish(
     documents: BTreeMap<String, Vec<u8>>,
 ) -> Result<Generation> {
     // A generation no reader admits must never be published: check its state
-    // before pruning, staging or writing anything.
+    // before pruning, staging or writing anything. Preparation builds this
+    // metadata itself, so an oversized state is an internal defect, not
+    // invalid caller input.
     let state_bytes = serde_json::to_vec(&meta)?;
     if state_bytes.len() > STATE_LIMIT {
-        return Err(invalid(format!(
-            "task-sync progress state is {} bytes, over the {} byte limit; shorten the capture reason or reduce the omitted entries",
+        anyhow::bail!(
+            "task-sync preparation metadata is {} bytes, over Engram's internal {}-byte bound; nothing was published, and the existing progress generations and output are unchanged. This is an Engram defect: report it with this byte count.",
             state_bytes.len(),
             STATE_LIMIT
-        ))
-        .into());
+        );
     }
     let entries = generations(directory)?;
     // Keep the current generation as predecessor before publishing its successor.

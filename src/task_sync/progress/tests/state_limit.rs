@@ -2,7 +2,29 @@
 
 use super::*;
 
-const REMEDY: &str = "shorten the capture reason or reduce the omitted entries";
+const REFUSAL_START: &str = "task-sync preparation metadata is ";
+
+/// The whole refusal an agent reads for state of `bytes` bytes.
+fn refusal(bytes: usize) -> String {
+    format!(
+        "{REFUSAL_START}{bytes} bytes, over Engram's internal {}-byte bound; nothing was published, and the existing progress generations and output are unchanged. This is an Engram defect: report it with this byte count.",
+        journal::STATE_LIMIT
+    )
+}
+
+/// The CLI prints one `error:` line per cause in the chain, so the refusal
+/// must be the only cause, worded exactly; returns its byte count.
+fn refused_bytes(error: &anyhow::Error) -> usize {
+    assert_eq!(error.chain().count(), 1, "{error:#}");
+    let message = error.to_string();
+    let bytes = message
+        .strip_prefix(REFUSAL_START)
+        .and_then(|rest| rest.split_once(" bytes,"))
+        .and_then(|(bytes, _)| bytes.parse().ok())
+        .unwrap_or_else(|| panic!("unexpected refusal: {message}"));
+    assert_eq!(message, refusal(bytes));
+    bytes
+}
 
 struct Seeded {
     home: crate::test_support::TempHome,
@@ -109,15 +131,12 @@ fn task_prepare_refuses_oversized_progress_state_before_changing_progress_or_out
         let before = listing(seeded.home.path());
         let mut captured = capture(seeded.tree.clone());
         enlarge(&mut captured);
-        let error = seeded.prepare(captured).unwrap_err().to_string();
-        assert!(
-            error.contains("task-sync progress state is ")
-                && error.contains(&format!(
-                    "bytes, over the {} byte limit; {REMEDY}",
-                    journal::STATE_LIMIT
-                )),
-            "{field}: {error}"
-        );
+        let error = seeded.prepare(captured).unwrap_err();
+        assert!(refused_bytes(&error) > journal::STATE_LIMIT, "{field}");
+        // The refusal says the existing generations and output are unchanged:
+        // every entry and byte under the home, including both generations,
+        // their state and the candidate output, is as it was, and no staging
+        // directory was left behind.
         assert_eq!(
             before,
             listing(seeded.home.path()),
@@ -142,18 +161,9 @@ fn task_prepare_state_at_its_limit_stays_readable_and_recoverable_after_opt_out(
     let room = journal::STATE_LIMIT - serde_json::to_vec(&probe).unwrap().len();
 
     let before = listing(seeded.home.path());
-    let error = seeded
-        .prepare(seeded.with_reason(room + 1))
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains(&format!(
-            "task-sync progress state is {} bytes, over the {} byte limit; {REMEDY}",
-            journal::STATE_LIMIT + 1,
-            journal::STATE_LIMIT
-        )),
-        "{error}"
-    );
+    let error = seeded.prepare(seeded.with_reason(room + 1)).unwrap_err();
+    assert_eq!(error.chain().count(), 1, "{error:#}");
+    assert_eq!(error.to_string(), refusal(journal::STATE_LIMIT + 1));
     assert_eq!(before, listing(seeded.home.path()));
 
     let receipt = seeded.prepare(seeded.with_reason(room)).unwrap();
