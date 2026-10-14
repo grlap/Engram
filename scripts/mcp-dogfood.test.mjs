@@ -2135,6 +2135,58 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
   }
 });
 
+async function closeSettingsFixture(engramHome, writer, reader) {
+  try { await closeFixtureClients(writer, reader); }
+  finally { removeFixtureHomes(engramHome); }
+}
+
+for (const rejectReader of [false, true]) {
+  test(`task-sync settings cleanup closes both clients after ${rejectReader ? "both close methods reject" : "writer close rejects"}`, async (t) => {
+    const engramHome = fixtureHome("engram-settings-close-", t);
+    const clients = [];
+    const attempts = [];
+    const writerError = new Error("Writer close diagnostic");
+    const readerError = new Error("Reader close diagnostic");
+    try {
+      buildAndInit(engramHome);
+      const writer = new McpClient(engramHome, "settings-close-writer");
+      const closeWriter = writer.close.bind(writer);
+      clients.push({ client: writer, close: closeWriter });
+      const reader = new McpClient(engramHome, "settings-close-reader", undefined, "settings-close-reader", ["--read-only"]);
+      const closeReader = reader.close.bind(reader);
+      clients.push({ client: reader, close: closeReader });
+      await writer.initialize();
+      await reader.initialize();
+      writer.close = async () => {
+        attempts.push("writer");
+        await closeWriter();
+        throw writerError;
+      };
+      reader.close = async () => {
+        attempts.push("reader");
+        await closeReader();
+        if (rejectReader) throw readerError;
+      };
+      const error = await closeSettingsFixture(engramHome, writer, reader).then(() => undefined, (failure) => failure);
+      assert.deepEqual(attempts, ["writer", "reader"]);
+      for (const { client } of clients) {
+        assert.equal(client.closeObservation.exit?.code, 0);
+        assert.equal(client.closeObservation.exit?.signal, null);
+        assert.equal(client.closeObservation.close?.code, 0);
+        assert.equal(client.closeObservation.close?.signal, null);
+      }
+      assert.equal(existsSync(engramHome), false);
+      assert.ok(error instanceof AggregateError);
+      assert.equal(error.errors.length, rejectReader ? 2 : 1);
+      assert.equal(error.errors[0], writerError);
+      if (rejectReader) assert.equal(error.errors[1], readerError);
+    } finally {
+      try { await closeFixtureClients(...clients.filter(({ client }) => !client.closeObservation.close)); }
+      finally { removeFixtureHomes(engramHome); }
+    }
+  });
+}
+
 test("task-sync settings wire refuses instructions on status and disable and preserves settings", async (t) => {
   const engramHome = fixtureHome("engram-settings-instruction-", t);
   let writer, reader;
@@ -2176,8 +2228,7 @@ test("task-sync settings wire refuses instructions on status and disable and pre
     const disabled = structured(await writer.call("task_sync_settings", { action: "disable", user_instruction: null }));
     assert.equal(disabled.state, "disabled");
   } finally {
-    try { await writer?.close(); await reader?.close(); }
-    finally { removeFixtureHomes(engramHome); }
+    await closeSettingsFixture(engramHome, writer, reader);
   }
 });
 
