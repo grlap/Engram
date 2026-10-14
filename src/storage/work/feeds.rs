@@ -1387,14 +1387,20 @@ pub(super) fn expire_handoff_offers(
     actor: &crate::domain::ActorContext,
 ) -> Result<Vec<WorkHandoffOffer>, StoreError> {
     let mut statement = transaction.prepare(
-        "SELECT offer_object_id, offer_json FROM work_handoff_offers
+        "SELECT offer_object_id, offer_json, expires_at_ms FROM work_handoff_offers
          WHERE run_id = ?1 AND state = 'offered' AND expires_at_ms <= ?2
          ORDER BY offer_id",
     )?;
     let rows = statement
         .query_map(
             params![run_id.0.to_string(), now.timestamp_millis()],
-            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
         )?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
@@ -1409,7 +1415,20 @@ pub(super) fn expire_handoff_offers(
     };
     let mut expired = Vec::with_capacity(rows.len());
     for row in rows {
-        let mut offer = load_handoff_offer_projection(transaction, row)?;
+        let (object_id, bytes, expires_at_ms) = row;
+        let mut offer = load_handoff_offer_projection(transaction, (object_id, bytes))?;
+        if offer.run_id != run_id
+            || offer.state != WorkHandoffState::Offered
+            || offer.expires_at.timestamp_millis() != expires_at_ms
+        {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "handoff offer {:?} expiry index differs from its canonical state, run or expiry",
+                offer.offer_id
+            )));
+        }
+        if offer.expires_at > now {
+            continue;
+        }
         offer.state = WorkHandoffState::Expired;
         let offer_object = CanonicalObject::mint(&offer)?;
         SqliteStore::insert_object(transaction, "work_handoff_offer", &offer_object)?;

@@ -397,6 +397,13 @@ Record a WAIT or status before offering; to resume holder writes, cancel the
 offer, or use the host's peer channel while waiting. Peer observation notes
 remain available and do not mutate the claim or offered checkpoint. Successful
 idempotent retries still replay their original receipts unchanged.
+Handoff liveness uses the exact stored expiry timestamp: it remains live
+immediately before that instant and expires at equality. Millisecond columns
+only narrow storage candidates. Sweeps recheck the canonical timestamp before
+changing state; recipient discovery excludes expired boundary candidates before
+counting and limiting displayed offers. Inactive
+process-session retention conservatively protects handoffs through the expiry
+millisecond, so it cannot delete a still-live recipient.
 A non-holder `note` on open work is a project/root observation only: it neither
 renews a claim nor creates a checkpoint or run contribution. A
 later `note` or `gate` is the narrow exception: any project-bound session may

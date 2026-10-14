@@ -6,12 +6,21 @@ use crate::{
     AddWorkBlockerRequest, ChangeWorkPrerequisiteRequest, ClaimWorkRequest, DecomposeWorkRequest,
     ReviseWorkRequest, SessionId, WorkAvailability, WorkBlockerKind, WorkReadinessReason,
 };
+use rusqlite::params;
 
 fn fixture(claim_child: bool) -> (SqliteStore, WorkItem, WorkItem) {
     fixture_with_handoff(claim_child, false)
 }
 
 fn fixture_with_handoff(claim_child: bool, handoff: bool) -> (SqliteStore, WorkItem, WorkItem) {
+    fixture_with_handoff_at(claim_child, handoff, at(5))
+}
+
+fn fixture_with_handoff_at(
+    claim_child: bool,
+    handoff: bool,
+    offered_at: chrono::DateTime<chrono::Utc>,
+) -> (SqliteStore, WorkItem, WorkItem) {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let root = store
         .create_work(&root_request("detach", "root", 0), &DevelopmentNoopRedactor)
@@ -59,7 +68,7 @@ fn fixture_with_handoff(claim_child: bool, handoff: bool) -> (SqliteStore, WorkI
                         checkpoint_summary: "Retained child offer".into(),
                         actor: actor("child"),
                         idempotency_key: "child-offer".into(),
-                        offered_at: at(5),
+                        offered_at,
                     },
                     &DevelopmentNoopRedactor,
                 )
@@ -460,6 +469,44 @@ fn detach_live_handoff_is_an_independent_refusal() {
         .detach_work(&request, &DevelopmentNoopRedactor)
         .expect("expired offer admits detach");
     assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn fractional_handoff_detach_refuses_the_offer_until_exact_expiry_then_the_claim() {
+    let (store, _, child) =
+        fixture_with_handoff_at(true, true, at(5) + Duration::microseconds(500));
+    let expiry = at(65) + Duration::microseconds(500);
+    let before = test_database_shape_snapshot(&store.connection).unwrap();
+    for (now, expected) in [
+        (
+            expiry - Duration::nanoseconds(1),
+            "wait for the live child handoff to expire before detaching",
+        ),
+        (
+            expiry,
+            "wait for the live child claim to expire before detaching",
+        ),
+    ] {
+        let error = store
+            .check_work_detach_admission(child.work_id, now)
+            .unwrap_err();
+        assert!(
+            matches!(error, StoreError::WorkDetachRefused { ref reason, .. }
+            if reason == expected),
+            "{error:?}"
+        );
+        assert!(
+            !store
+                .inspect_work(child.work_id, now)
+                .unwrap()
+                .reason_codes
+                .contains(&WorkReadinessReason::DetachAvailable)
+        );
+    }
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).unwrap(),
+        before
+    );
 }
 
 #[test]

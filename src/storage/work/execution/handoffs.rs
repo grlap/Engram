@@ -14,28 +14,42 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+/// Millisecond columns narrow candidates; canonical timestamps decide liveness.
+/// A same-millisecond expired offer is excluded, while index damage fails closed.
 pub(in crate::storage::work) fn live_handoff_on(
     connection: &Connection,
     run_id: super::WorkRunId,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<Option<WorkHandoffOffer>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT offer_object_id, offer_json FROM work_handoff_offers
-         WHERE run_id = ?1 AND state = 'offered' AND expires_at_ms > ?2 ORDER BY offer_id",
+        "SELECT offer_object_id, offer_json, expires_at_ms FROM work_handoff_offers
+         WHERE run_id = ?1 AND state = 'offered' AND expires_at_ms >= ?2 ORDER BY offer_id",
     )?;
-    let mut rows = statement.query_map(
+    let rows = statement.query_map(
         params![run_id.0.to_string(), now.timestamp_millis()],
-        |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        },
     )?;
-    if let Some(row) = rows.next() {
-        let offer = load_handoff_offer_projection(connection, row?)?;
-        if !offer.is_live_for_run(run_id, now) {
+    for row in rows {
+        let (object_id, bytes, expires_at_ms) = row?;
+        let offer = load_handoff_offer_projection(connection, (object_id, bytes))?;
+        if offer.run_id != run_id
+            || offer.state != WorkHandoffState::Offered
+            || offer.expires_at.timestamp_millis() != expires_at_ms
+        {
             return Err(StoreError::InvalidWorkProjection(format!(
-                "handoff offer {:?} live index differs from its canonical state or run",
+                "handoff offer {:?} live index differs from its canonical state, run or expiry",
                 offer.offer_id
             )));
         }
-        return Ok(Some(offer));
+        if offer.is_live_for_run(run_id, now) {
+            return Ok(Some(offer));
+        }
     }
     Ok(None)
 }

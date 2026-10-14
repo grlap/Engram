@@ -2,8 +2,8 @@ use super::{
     Connection, DateTime, ReadyWork, SqliteStore, StoreError, Utc, Value, WorkAvailability,
     WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkClaim, WorkClaimState, WorkId, WorkItem,
     WorkLifecycle, WorkPrerequisiteState, derive_projected_work_availability, encode_state,
-    load_work_claim_optional, load_work_item_projection, normalize_work_catalog_key, params,
-    parse_work_id, projected_prerequisite_state,
+    live_handoff_on, load_work_claim_optional, load_work_item_projection,
+    normalize_work_catalog_key, params, parse_work_id, projected_prerequisite_state,
 };
 use rusqlite::OptionalExtension;
 
@@ -125,8 +125,14 @@ pub(super) fn projected_detach_admitted(
     {
         return Ok(false);
     }
-    connection.query_row(
-        "SELECT NOT EXISTS (
+    if let Some(run_id) = item.active_run_id
+        && live_handoff_on(connection, run_id, now)?.is_some()
+    {
+        return Ok(false);
+    }
+    connection
+        .query_row(
+            "SELECT NOT EXISTS (
              WITH RECURSIVE descendants(work_id, lifecycle) AS (
                  SELECT work_id, lifecycle FROM work_items WHERE parent_id = ?1
                  UNION SELECT child.work_id, child.lifecycle FROM work_items child
@@ -134,11 +140,15 @@ pub(super) fn projected_detach_admitted(
              ) SELECT 1 FROM descendants WHERE lifecycle IN ('open', 'proposed')
          ) AND NOT EXISTS (
              SELECT 1 FROM work_claims WHERE run_id = ?2 AND state = 'active' AND expires_at_ms > ?3
-         ) AND NOT EXISTS (
-             SELECT 1 FROM work_handoff_offers WHERE run_id = ?2 AND state = 'offered' AND expires_at_ms > ?3
          )",
-        params![item.work_id.0.to_string(), item.active_run_id.map(|id| id.0.to_string()), now.timestamp_millis()],
-        |row| row.get(0)).map_err(StoreError::from)
+            params![
+                item.work_id.0.to_string(),
+                item.active_run_id.map(|id| id.0.to_string()),
+                now.timestamp_millis()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::from)
 }
 
 /// The open direct child of `parent_id` on which `holder` has a live claim,

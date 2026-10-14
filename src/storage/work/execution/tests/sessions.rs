@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn fractional_handoff_protects_recipient_retention_through_the_boundary_millisecond() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let project = ProjectId("fractional-retention".into());
+    let recipient = process_default_session_at(100, at(0));
+    store
+        .initialize_process_default_work_session(&project, &recipient, at(0))
+        .unwrap();
+    let root = store
+        .create_work(
+            &root_request(&project.0, "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let cleanup_second = crate::storage::PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS + 100;
+    let held = claim(
+        &mut store,
+        &root,
+        "holder",
+        "claim",
+        cleanup_second - 2,
+        7_200,
+    );
+    let offer = store
+        .offer_work_handoff(
+            &OfferWorkHandoffRequest {
+                work_id: root.work_id,
+                run_id: held.run_id,
+                expected_work_revision: root.revision,
+                from: held.holder.clone(),
+                to: recipient.clone(),
+                claim_id: held.claim_id,
+                claim_fence: held.fence,
+                ttl_seconds: 30,
+                checkpoint_summary: "retain recipient until exact expiry".into(),
+                actor: actor("holder"),
+                idempotency_key: "offer".into(),
+                offered_at: at(cleanup_second - 1) + Duration::microseconds(500),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    for (index, now, retained) in [
+        (0, offer.expires_at - Duration::nanoseconds(1), true),
+        (1, offer.expires_at, true),
+        (2, offer.expires_at + Duration::milliseconds(1), false),
+    ] {
+        let creator = process_default_session_at(101 + index, now);
+        store
+            .initialize_process_default_work_session(&project, &creator, now)
+            .unwrap();
+        let exists = store.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_session_state WHERE project_id = ?1 AND session_id = ?2)",
+            params![project.0, recipient.0], |row| row.get::<_, bool>(0),
+        ).unwrap();
+        assert_eq!(exists, retained);
+    }
+    assert_eq!(
+        store.work_handoff_offers(root.work_id).unwrap()[0].state,
+        WorkHandoffState::Offered
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
 fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_authority() {
     let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");

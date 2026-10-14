@@ -6,6 +6,17 @@ fn fixture() -> (
     LocalWorkService,
     WorkItemSummary,
 ) {
+    fixture_with_offer_at(at(2))
+}
+
+fn fixture_with_offer_at(
+    offered_at: chrono::DateTime<chrono::Utc>,
+) -> (
+    crate::test_support::TempHome,
+    LocalWorkService,
+    LocalWorkService,
+    WorkItemSummary,
+) {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("handoff.sqlite3");
     let project = ProjectId("service-disposal".into());
@@ -46,10 +57,107 @@ fn fixture() -> (
                 checkpoint_summary: "Transfer".into(),
                 idempotency_key: "offer".into(),
             },
-            at(2),
+            offered_at,
         )
         .unwrap();
     (directory, owner, recipient, work)
+}
+
+#[test]
+fn fractional_handoff_guidance_agrees_with_holder_note_and_renewal_admission() {
+    for operation in ["note", "status", "keyless-renewal", "keyed-renewal"] {
+        for delta in [-1, 0, 1] {
+            let (directory, owner, _, work) =
+                fixture_with_offer_at(at(2) + chrono::Duration::microseconds(500));
+            let expiry = at(32) + chrono::Duration::microseconds(500);
+            let now = expiry + chrono::Duration::nanoseconds(delta);
+            let guidance = {
+                let store = owner.store().unwrap();
+                let claim = store.current_work_claim(work.work_id).unwrap().unwrap();
+                assert!(claim.expires_at > expiry);
+                owner.work_guidance(&store, work.work_id, now).unwrap()
+            };
+            let receipt = crate::verbs::AgentVerbs::new(
+                directory.path().join("handoff.sqlite3"),
+                ProjectId("service-disposal".into()),
+                "owner".into(),
+                SessionId("owner".into()),
+                None,
+            )
+            .show(&work.short_ref, now)
+            .unwrap();
+            let result = if operation.ends_with("renewal") {
+                owner
+                    .work_update(
+                        WorkUpdateInput::Claim {
+                            ttl_seconds: Some(7_200),
+                            recovery_reason: None,
+                            idempotency_key: if operation == "keyless-renewal" {
+                                String::new()
+                            } else {
+                                "fresh-renewal".into()
+                            },
+                        },
+                        now,
+                    )
+                    .map(|_| ())
+            } else {
+                owner
+                    .work_note_with_status_on(
+                        Some(&work.short_ref),
+                        "Progress at the exact boundary",
+                        &[],
+                        operation == "status",
+                        now,
+                    )
+                    .map(|_| ())
+            };
+            if delta < 0 {
+                assert_eq!(
+                    guidance.allowed_next,
+                    vec!["work_focus", "work_handoff:cancel"]
+                );
+                assert_eq!(
+                    receipt.next,
+                    vec![
+                        format!("engram work handoff {} --cancel \"…\"", work.short_ref),
+                        format!("engram work show {} --history", work.short_ref),
+                    ]
+                );
+                assert!(
+                    !receipt
+                        .next
+                        .iter()
+                        .any(|command| command.starts_with("engram work note ")
+                            || command.starts_with("engram work claim "))
+                );
+                assert!(matches!(result, Err(StoreError::WorkHandoffPending { .. })));
+            } else {
+                assert!(guidance.allowed_next.contains(&"work_update:note".into()));
+                assert!(
+                    !guidance
+                        .allowed_next
+                        .contains(&"work_handoff:cancel".into())
+                );
+                assert!(
+                    receipt
+                        .next
+                        .iter()
+                        .any(|command| command.starts_with("engram work note "))
+                );
+                result.unwrap();
+            }
+            let store = owner.store().unwrap();
+            assert_eq!(
+                store.work_handoff_offers(work.work_id).unwrap()[0].state,
+                if delta < 0 {
+                    WorkHandoffState::Offered
+                } else {
+                    WorkHandoffState::Expired
+                }
+            );
+        }
+    }
 }
 
 #[test]

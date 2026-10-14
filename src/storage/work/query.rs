@@ -35,7 +35,7 @@ use super::completion::{
     load_work_obligation_records_on, work_run_uses_active_root_execution,
 };
 use super::execution::{
-    work_evidence_kind_on, work_run_evidence_on, work_run_evidence_projection_on,
+    live_handoff_on, work_evidence_kind_on, work_run_evidence_on, work_run_evidence_projection_on,
 };
 use super::feeds::{
     checkpoint_feed_end, load_handoff_offer_projection, load_typed_work_object,
@@ -420,14 +420,7 @@ impl SqliteStore {
         {
             return Ok((false, false));
         }
-        let live_handoff = self.connection.query_row(
-            "SELECT EXISTS(
-                 SELECT 1 FROM work_handoff_offers
-                 WHERE run_id = ?1 AND state = 'offered' AND expires_at_ms > ?2
-             )",
-            params![run_id.0.to_string(), now.timestamp_millis()],
-            |row| row.get::<_, bool>(0),
-        )?;
+        let live_handoff = live_handoff_on(&self.connection, run_id, now)?.is_some();
         let active_blocker = self.connection.query_row(
             "SELECT EXISTS(
                  SELECT 1 FROM work_blockers WHERE work_id = ?1 AND state = 'active'

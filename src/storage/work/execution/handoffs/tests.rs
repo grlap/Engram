@@ -2,6 +2,300 @@ use super::*;
 use crate::storage::work::test_support::*;
 use crate::storage::work::*;
 
+fn fractional_handoff() -> (SqliteStore, WorkItem, WorkClaim, WorkHandoffOffer) {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let root = store
+        .create_work(
+            &root_request("fractional-handoff", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let held = claim(&mut store, &root, "holder", "claim", 1, 7_200);
+    let offer = store
+        .offer_work_handoff(
+            &OfferWorkHandoffRequest {
+                work_id: root.work_id,
+                run_id: held.run_id,
+                expected_work_revision: root.revision,
+                from: held.holder.clone(),
+                to: SessionId("recipient".into()),
+                claim_id: held.claim_id,
+                claim_fence: held.fence,
+                ttl_seconds: 30,
+                checkpoint_summary: "fractional expiry".into(),
+                actor: actor("holder"),
+                idempotency_key: "offer".into(),
+                offered_at: at(2) + Duration::microseconds(500),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let held = store.current_work_claim(root.work_id).unwrap().unwrap();
+    assert_eq!(offer.expires_at, at(32) + Duration::microseconds(500));
+    assert!(held.expires_at > offer.expires_at);
+    (store, root, held, offer)
+}
+
+fn expiry_events(store: &SqliteStore, work: &WorkItem) -> usize {
+    store
+        .work_event_tail(work.work_id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|entry| {
+            let event: WorkEvent =
+                load_typed_work_object(&store.connection, &entry.object_id, "work_event").unwrap();
+            matches!(event.transition, WorkTransition::HandoffExpired { .. })
+        })
+        .count()
+}
+
+#[test]
+fn fractional_handoff_notes_and_renewals_use_the_exact_expiry() {
+    for operation in ["note", "status", "keyless-renewal", "keyed-renewal"] {
+        for delta in [-1, 0, 1] {
+            let (mut store, root, held, offer) = fractional_handoff();
+            let now = offer.expires_at + Duration::nanoseconds(delta);
+            let before = test_database_shape_snapshot(&store.connection).unwrap();
+            assert_eq!(
+                live_handoff_on(&store.connection, held.run_id, now)
+                    .unwrap()
+                    .is_some(),
+                delta < 0,
+            );
+            assert_eq!(
+                store
+                    .work_completion_readiness(root.work_id, &held.holder, now)
+                    .unwrap()
+                    .0,
+                delta >= 0,
+            );
+            let result = if operation.ends_with("renewal") {
+                store
+                    .claim_work(
+                        &ClaimWorkRequest {
+                            work_id: root.work_id,
+                            expected_work_revision: root.revision,
+                            expected_run_id: Some(held.run_id),
+                            holder: held.holder.clone(),
+                            ttl_seconds: 7_200,
+                            recovery_reason: None,
+                            actor: actor("holder"),
+                            idempotency_key: if operation == "keyless-renewal" {
+                                String::new()
+                            } else {
+                                "renew".into()
+                            },
+                            claimed_at: now,
+                        },
+                        &DevelopmentNoopRedactor,
+                    )
+                    .map(|_| ())
+            } else {
+                store
+                    .record_work_note(
+                        &crate::domain::RecordWorkNoteRequest {
+                            status: operation == "status",
+                            work_id: root.work_id,
+                            run_id: held.run_id,
+                            expected_work_revision: root.revision,
+                            holder: held.holder.clone(),
+                            claim_id: held.claim_id,
+                            claim_fence: held.fence,
+                            summary: "resume progress".into(),
+                            refs: Vec::new(),
+                            actor: actor("holder"),
+                            idempotency_key: "note".into(),
+                            recorded_at: now,
+                        },
+                        &DevelopmentNoopRedactor,
+                    )
+                    .map(|_| ())
+            };
+            if delta < 0 {
+                assert!(
+                    matches!(
+                        result, Err(StoreError::WorkHandoffPending { offer_id })
+                            if offer_id == offer.offer_id
+                    ),
+                    "{operation}: {result:?}"
+                );
+                assert_eq!(
+                    test_database_shape_snapshot(&store.connection).unwrap(),
+                    before
+                );
+                assert_eq!(expiry_events(&store, &root), 0);
+            } else {
+                result.unwrap();
+                assert_eq!(
+                    store.work_handoff_offers(root.work_id).unwrap()[0].state,
+                    WorkHandoffState::Expired
+                );
+                assert_eq!(expiry_events(&store, &root), 1);
+                evidence(&mut store, &root, &held, "holder", "later-evidence", 33);
+                assert_eq!(expiry_events(&store, &root), 1);
+            }
+            assert!(store.verify_all().unwrap().is_healthy());
+        }
+    }
+}
+
+#[test]
+fn fractional_handoff_accept_and_cancel_observe_the_exact_boundary() {
+    for operation in ["accept", "cancel"] {
+        for delta in [-1, 0] {
+            let (mut store, root, held, offer) = fractional_handoff();
+            let now = offer.expires_at + Duration::nanoseconds(delta);
+            let result = if operation == "accept" {
+                store
+                    .accept_work_handoff(
+                        &AcceptWorkHandoffRequest {
+                            work_id: root.work_id,
+                            offer_id: offer.offer_id,
+                            to: offer.to.clone(),
+                            actor: actor("recipient"),
+                            idempotency_key: "accept".into(),
+                            accepted_at: now,
+                        },
+                        &DevelopmentNoopRedactor,
+                    )
+                    .map(|_| ())
+            } else {
+                store
+                    .cancel_work_handoff(
+                        &CancelWorkHandoffRequest {
+                            work_id: root.work_id,
+                            run_id: held.run_id,
+                            expected_work_revision: root.revision,
+                            holder: held.holder.clone(),
+                            offer_id: offer.offer_id,
+                            claim_id: held.claim_id,
+                            claim_fence: held.fence,
+                            reason: "retain ownership".into(),
+                            actor: actor("holder"),
+                            idempotency_key: "cancel".into(),
+                            cancelled_at: now,
+                        },
+                        &DevelopmentNoopRedactor,
+                    )
+                    .map(|_| ())
+            };
+            if delta < 0 {
+                result.unwrap();
+                assert_eq!(expiry_events(&store, &root), 0);
+            } else {
+                assert!(
+                    matches!(result, Err(StoreError::InvalidWork(ref reason))
+                    if reason == "handoff offer has expired"),
+                    "{result:?}"
+                );
+                assert_eq!(
+                    store.work_handoff_offers(root.work_id).unwrap()[0].state,
+                    WorkHandoffState::Expired
+                );
+                assert_eq!(expiry_events(&store, &root), 1);
+            }
+            assert!(store.verify_all().unwrap().is_healthy());
+        }
+    }
+}
+
+#[test]
+fn fractional_handoff_failed_authority_rolls_back_expiry_at_the_exact_boundary() {
+    let (mut store, root, held, offer) = fractional_handoff();
+    let before = test_database_shape_snapshot(&store.connection).unwrap();
+    let result = store.record_work_note(
+        &crate::domain::RecordWorkNoteRequest {
+            status: false,
+            work_id: root.work_id,
+            run_id: held.run_id,
+            expected_work_revision: root.revision,
+            holder: held.holder.clone(),
+            claim_id: held.claim_id,
+            claim_fence: held.fence + 1,
+            summary: "stale fence must not commit expiry".into(),
+            refs: Vec::new(),
+            actor: actor("holder"),
+            idempotency_key: "stale-note".into(),
+            recorded_at: offer.expires_at,
+        },
+        &DevelopmentNoopRedactor,
+    );
+    assert!(result.is_err());
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).unwrap(),
+        before
+    );
+    assert_eq!(expiry_events(&store, &root), 0);
+}
+
+#[test]
+fn fractional_handoff_exact_boundary_exclusion_does_not_hide_index_damage() {
+    for damage in ["state", "run", "expiry"] {
+        let (mut store, root, held, offer) = fractional_handoff();
+        let mut selected_run = held.run_id;
+        match damage {
+            "state" => {
+                store
+                    .cancel_work_handoff(
+                        &CancelWorkHandoffRequest {
+                            work_id: root.work_id,
+                            run_id: held.run_id,
+                            expected_work_revision: root.revision,
+                            holder: held.holder.clone(),
+                            offer_id: offer.offer_id,
+                            claim_id: held.claim_id,
+                            claim_fence: held.fence,
+                            reason: "cancel before damaging the index".into(),
+                            actor: actor("holder"),
+                            idempotency_key: "cancel".into(),
+                            cancelled_at: at(3),
+                        },
+                        &DevelopmentNoopRedactor,
+                    )
+                    .unwrap();
+                store
+                    .connection
+                    .execute(
+                        "UPDATE work_handoff_offers SET state = 'offered' WHERE offer_id = ?1",
+                        [offer.offer_id.0.to_string()],
+                    )
+                    .unwrap();
+            }
+            "run" => {
+                let other = store
+                    .create_work(
+                        &root_request("fractional-handoff", "other", 0),
+                        &DevelopmentNoopRedactor,
+                    )
+                    .unwrap();
+                selected_run = other.active_run_id.unwrap();
+                store
+                    .connection
+                    .execute(
+                        "UPDATE work_handoff_offers SET run_id = ?2 WHERE offer_id = ?1",
+                        params![offer.offer_id.0.to_string(), selected_run.0.to_string()],
+                    )
+                    .unwrap();
+            }
+            _ => {
+                store.connection.execute(
+                    "UPDATE work_handoff_offers SET expires_at_ms = expires_at_ms + 1 WHERE offer_id = ?1",
+                    [offer.offer_id.0.to_string()],
+                ).unwrap();
+            }
+        }
+        let before = test_database_shape_snapshot(&store.connection).unwrap();
+        assert!(matches!(
+            live_handoff_on(&store.connection, selected_run, offer.expires_at),
+            Err(StoreError::InvalidWorkProjection(_))
+        ));
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).unwrap(),
+            before
+        );
+    }
+}
+
 #[test]
 fn expired_handoff_is_audited_and_does_not_block_a_new_offer() {
     let mut store = SqliteStore::open_in_memory().expect("store");

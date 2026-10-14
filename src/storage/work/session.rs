@@ -122,6 +122,8 @@ struct WorkProtocolAttemptRow {
 }
 
 pub(super) const MAX_PROCESS_DEFAULT_SESSION_RECLAIMS_PER_CREATION: usize = 64;
+// Retention is conservative through the boundary millisecond. It must not
+// delete a recipient's session while its exact handoff timestamp is still live.
 pub(super) const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
     SELECT stale.session_id
     FROM work_session_state AS stale INDEXED BY work_session_state_retention
@@ -161,7 +163,7 @@ pub(super) const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
           JOIN work_items AS item ON item.work_id = offer.work_id
           WHERE json_extract(offer.offer_json, '$.from') = stale.session_id
             AND offer.state = 'offered'
-            AND offer.expires_at_ms > ?5
+            AND offer.expires_at_ms >= ?5
             AND item.project_id = ?1
       )
       AND NOT EXISTS (
@@ -170,7 +172,7 @@ pub(super) const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
           JOIN work_items AS item ON item.work_id = offer.work_id
           WHERE json_extract(offer.offer_json, '$.to') = stale.session_id
             AND offer.state = 'offered'
-            AND offer.expires_at_ms > ?5
+            AND offer.expires_at_ms >= ?5
             AND item.project_id = ?1
       )
     ORDER BY stale.updated_at_ms, stale.session_id

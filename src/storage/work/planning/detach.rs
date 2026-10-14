@@ -1,6 +1,7 @@
 //! Independent follow-ups for work stranded below a terminal ancestor.
 
 use super::super::DETACH_PROVENANCE_SOURCE;
+use super::super::execution::live_handoff_on;
 use super::super::query::classified_prerequisite_projections;
 use super::super::query::load_root_execution;
 use super::{
@@ -8,9 +9,9 @@ use super::{
     SqliteStore, StoreError, Utc, WorkClaimState, WorkEventDraft, WorkItem, WorkLifecycle,
     WorkOrigin, WorkRunState, WorkTransition, append_work_event, assert_revision, create_root_on,
     inspect_work_request, load_active_blocker_projections, load_work_claim_optional,
-    load_work_item, load_work_run, normalize_text, params, persist_operation_result,
-    persist_work_item, persist_work_run, replay_operation, request_object,
-    require_work_item_relation_integrity, short_ref,
+    load_work_item, load_work_run, normalize_text, persist_operation_result, persist_work_item,
+    persist_work_run, replay_operation, request_object, require_work_item_relation_integrity,
+    short_ref,
 };
 use super::{persist_root_execution, waive_root_contributor};
 use crate::RootExecutionState;
@@ -254,10 +255,7 @@ fn validate_detach_on(
     if let Some(run_id) = item.active_run_id {
         // Prefer the handoff-specific refusal when an offer and its claim are
         // both live; neither admission check may silently subsume the other.
-        let offered: bool = connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM work_handoff_offers WHERE run_id = ?1 AND state = 'offered' AND expires_at_ms > ?2)",
-            params![run_id.0.to_string(), now.timestamp_millis()], |row| row.get(0))?;
-        if offered {
+        if live_handoff_on(connection, run_id, now)?.is_some() {
             return Err(refuse(
                 "wait for the live child handoff to expire before detaching",
                 show(),

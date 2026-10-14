@@ -161,3 +161,108 @@ fn compact_peek_does_not_count_cancelled_accepted_or_expired_offers_as_pending()
     let late = recipient.next(&peek_input(false), at(69)).unwrap();
     assert!(late.value.get("incoming_handoffs").is_none());
 }
+
+#[test]
+fn fractional_handoff_peek_filters_expired_candidates_before_limit_and_count() {
+    let (_home, owner, database, project) = fixture();
+    let recipient = coordinator(&database, &project);
+    let mut live_refs = Vec::new();
+    for index in 0..12 {
+        let reference = add(
+            &owner,
+            &format!("Fractional incoming {index}"),
+            None,
+            false,
+            0,
+        );
+        owner
+            .claim(
+                ClaimInput {
+                    work_ref: reference.clone(),
+                    ttl_seconds: Some(3600),
+                    recover: None,
+                },
+                at(1),
+            )
+            .unwrap();
+        owner
+            .handoff(
+                HandoffInput {
+                    work_ref: Some(reference.clone()),
+                    action: HandoffAction::Offer {
+                        to: "coordinator-session".into(),
+                        summary: None,
+                        ttl_seconds: Some(60),
+                    },
+                },
+                at(2) + chrono::Duration::microseconds(if index < 6 { 100 } else { 900 }),
+            )
+            .unwrap();
+        if index >= 6 {
+            live_refs.push(reference);
+        }
+    }
+    let before = recipient
+        .next(
+            &peek_input(false),
+            at(62) + chrono::Duration::microseconds(100) - chrono::Duration::nanoseconds(1),
+        )
+        .unwrap();
+    assert_eq!(
+        before.value["incoming_handoffs"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_eq!(before.value["incoming_handoffs"]["omitted"], 7);
+
+    let middle = recipient
+        .next(
+            &peek_input(false),
+            at(62) + chrono::Duration::microseconds(500),
+        )
+        .unwrap();
+    let incoming = &middle.value["incoming_handoffs"];
+    assert_eq!(incoming["items"].as_array().unwrap().len(), 5);
+    assert_eq!(incoming["omitted"], 1);
+    for item in incoming["items"].as_array().unwrap() {
+        assert!(live_refs.iter().any(|reference| item["ref"] == *reference));
+    }
+    let reference = &live_refs[0];
+    let early = owner
+        .show(reference, at(62) + chrono::Duration::microseconds(899))
+        .unwrap();
+    assert_eq!(
+        early.value["allowed_next"],
+        json!(["work_focus", "work_handoff:cancel"])
+    );
+    assert!(
+        early
+            .next
+            .iter()
+            .any(|command| command.contains("handoff") && command.contains("--cancel"))
+    );
+    assert!(
+        !early
+            .next
+            .iter()
+            .any(|command| command.starts_with("engram work note "))
+    );
+    let boundary = at(62) + chrono::Duration::microseconds(900);
+    let exact = owner.show(reference, boundary).unwrap();
+    assert!(
+        exact.value["allowed_next"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("work_update:note"))
+    );
+    assert!(
+        exact
+            .next
+            .iter()
+            .any(|command| command.starts_with("engram work note "))
+    );
+    let after = recipient.next(&peek_input(false), boundary).unwrap();
+    assert!(after.value.get("incoming_handoffs").is_none());
+}
