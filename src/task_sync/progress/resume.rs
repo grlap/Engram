@@ -9,6 +9,12 @@ use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::OpenOptions;
 use std::path::Path;
 
+const DISABLED_PREPARATION: &str = concat!(
+    "task sync is not enabled and no admitted pending preparation is available; ",
+    "to start a new preparation, enable task sync with an explicit user instruction ",
+    "(`engram task-sync enable --user-instruction \"<user's explicit request>\"`)"
+);
+
 pub(crate) fn resume_pending(
     destination: &Path,
     progress: &Path,
@@ -22,8 +28,8 @@ pub(crate) fn resume_pending(
         "task sync is not enabled; a new baseline cannot start"
     );
     let supplied_progress = progress;
-    let progress = prepared::files::Directory::open(supplied_progress)
-        .context("task sync is not enabled and no admitted pending preparation is available")?;
+    let progress =
+        prepared::files::Directory::open(supplied_progress).context(DISABLED_PREPARATION)?;
     let progress_path = super::resolved_child(supplied_progress)?;
     // Existing-only open: a losing or disabled caller creates no progress or lock.
     let mut options = OpenOptions::new();
@@ -35,7 +41,8 @@ pub(crate) fn resume_pending(
     }
     let lock = progress
         .dir()
-        .open_with("prepare.lock", &options)?
+        .open_with("prepare.lock", &options)
+        .context(DISABLED_PREPARATION)?
         .into_std();
     ensure!(
         lock.metadata()?.is_file(),
@@ -59,7 +66,7 @@ pub(crate) fn resume_pending(
             name.to_str()
                 .is_some_and(|name| name.starts_with("generation-"))
         })
-        .context("task sync is not enabled and no admitted pending preparation is available")?;
+        .context(DISABLED_PREPARATION)?;
     let generation = progress.child(Path::new(name))?;
     let state = generation.read(Path::new("state.json"), journal::STATE_LIMIT)?;
     let meta: journal::Metadata = crate::task_sync::parse(&state)?;
