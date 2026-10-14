@@ -1370,6 +1370,10 @@ and do no retention scan. Recent activity, an explicit control-session binding, 
 delivery, a pending protocol attempt, a live claim, or an open handoff offer
 prevents reclamation. Those tables are operational only; canonical work,
 events, evidence, and result objects remain intact.
+Claim and handoff retention conservatively includes the entire expiry
+millisecond, so a fractional expiry cannot cause early reclamation. This may
+keep an otherwise inactive session until the next millisecond; mutation
+authority still ends at the exact expiry timestamp.
 
 A targeted agent read never changes focus or staged delivery. Reading an item
 does not steer a later write; use the explicit target in receipt commands.

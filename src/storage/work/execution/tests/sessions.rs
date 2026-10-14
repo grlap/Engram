@@ -1,5 +1,229 @@
 use super::*;
 
+fn fractional_claim_retention_fixture() -> (SqliteStore, WorkItem, WorkClaim, String) {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let project = ProjectId("fractional-claim-retention".into());
+    let holder = process_default_session_at(200, at(0));
+    store
+        .initialize_process_default_work_session(&project, &holder, at(0))
+        .unwrap();
+    let root = store
+        .create_work(
+            &root_request(&project.0, "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    store
+        .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+            project_id: &project,
+            session_id: &holder,
+            operation: "work_update:gate",
+            idempotency_key: "finished-attempt",
+            intent: &serde_json::json!({"name": "retention"}),
+            basis: &serde_json::json!({"revision": root.revision}),
+            now: at(0),
+        })
+        .unwrap();
+    store
+        .finish_work_protocol_attempt(
+            &project,
+            &holder,
+            "work_update:gate",
+            "finished-attempt",
+            &gate_result(root.work_id),
+        )
+        .unwrap();
+    let result_id = store
+        .connection
+        .query_row(
+            "SELECT result_id FROM work_protocol_attempts WHERE session_id = ?1",
+            [&holder.0],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    let cleanup_second = crate::storage::PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS + 100;
+    let held = store
+        .claim_work(
+            &ClaimWorkRequest {
+                work_id: root.work_id,
+                expected_work_revision: root.revision,
+                expected_run_id: root.active_run_id,
+                holder: holder.clone(),
+                ttl_seconds: 30,
+                recovery_reason: None,
+                actor: actor(&holder.0),
+                idempotency_key: "fractional-claim".into(),
+                claimed_at: at(cleanup_second - 30) + Duration::microseconds(500),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    assert_eq!(
+        held.expires_at,
+        at(cleanup_second) + Duration::microseconds(500)
+    );
+    assert_eq!(
+        store
+            .connection
+            .query_row(
+                "SELECT updated_at_ms FROM work_session_state WHERE session_id = ?1",
+                [&holder.0],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        at(0).timestamp_millis(),
+        "claiming must not refresh the stale process-session activity"
+    );
+    (store, root, held, result_id)
+}
+
+#[test]
+fn fractional_claim_retention_preserves_sessions_without_extending_exact_authority() {
+    let cleanup_second = crate::storage::PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS + 100;
+    for (offset, retained, live) in [
+        (
+            Duration::microseconds(500) - Duration::nanoseconds(1),
+            true,
+            true,
+        ),
+        (Duration::microseconds(500), true, false),
+        (
+            Duration::microseconds(500) + Duration::nanoseconds(1),
+            true,
+            false,
+        ),
+        (
+            Duration::milliseconds(1) - Duration::nanoseconds(1),
+            true,
+            false,
+        ),
+        (Duration::milliseconds(1), false, false),
+    ] {
+        let (mut store, root, held, result_id) = fractional_claim_retention_fixture();
+        let now = at(cleanup_second) + offset;
+        let mut before = crate::storage::test_database_shape_snapshot(&store.connection).unwrap();
+        let creator = process_default_session_at(201, now);
+        assert!(
+            store
+                .initialize_process_default_work_session(&root.project_id, &creator, now)
+                .unwrap()
+        );
+        for table in ["work_session_state", "work_protocol_attempts"] {
+            let count = store
+                .connection
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE session_id = ?1"),
+                    [&held.holder.0],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap();
+            assert_eq!(count, i64::from(retained), "{table} at {now}");
+        }
+        let mut after = crate::storage::test_database_shape_snapshot(&store.connection).unwrap();
+        // Only these operational rows change; canonical work, claims, feeds,
+        // events and the saved protocol result must remain byte-for-byte intact.
+        for snapshot in [&mut before, &mut after] {
+            snapshot.rows.retain(|(table, _)| {
+                table != "work_session_state" && table != "work_protocol_attempts"
+            });
+        }
+        assert_eq!(after, before, "durable data at {now}");
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM objects WHERE object_id = ?1",
+                    [&result_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        let guard = crate::storage::work::planning::validate_live_claim_on(
+            &store.connection,
+            root.work_id,
+            held.run_id,
+            root.revision,
+            &held.holder,
+            held.claim_id,
+            held.fence,
+            now,
+            false,
+        );
+        if live {
+            assert_eq!(guard.unwrap().2, held);
+        } else {
+            assert!(
+                matches!(guard, Err(StoreError::WorkClaimLapsed { work, expired_at })
+                if work == root.work_id && expired_at == held.expires_at)
+            );
+            let before_note =
+                crate::storage::test_database_shape_snapshot(&store.connection).unwrap();
+            let error = store
+                .record_work_note(
+                    &crate::domain::RecordWorkNoteRequest {
+                        status: false,
+                        work_id: root.work_id,
+                        run_id: held.run_id,
+                        expected_work_revision: root.revision,
+                        holder: held.holder.clone(),
+                        claim_id: held.claim_id,
+                        claim_fence: held.fence,
+                        summary: "a retained row grants no authority".into(),
+                        refs: Vec::new(),
+                        actor: actor(&held.holder.0),
+                        idempotency_key: "note-at-expiry".into(),
+                        recorded_at: now,
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error, StoreError::WorkClaimLapsed { work, expired_at }
+                if work == root.work_id && expired_at == held.expires_at)
+            );
+            assert_eq!(
+                crate::storage::test_database_shape_snapshot(&store.connection).unwrap(),
+                before_note
+            );
+        }
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+}
+
+#[test]
+fn fractional_claim_retention_allows_a_holder_note_before_exact_expiry() {
+    // Keep this positive control separate: a successful note renews the claim.
+    let (mut store, root, held, _) = fractional_claim_retention_fixture();
+    store
+        .record_work_note(
+            &crate::domain::RecordWorkNoteRequest {
+                status: false,
+                work_id: root.work_id,
+                run_id: held.run_id,
+                expected_work_revision: root.revision,
+                holder: held.holder.clone(),
+                claim_id: held.claim_id,
+                claim_fence: held.fence,
+                summary: "progress strictly before expiry".into(),
+                refs: Vec::new(),
+                actor: actor(&held.holder.0),
+                idempotency_key: "note-before-expiry".into(),
+                recorded_at: held.expires_at - Duration::nanoseconds(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    assert!(
+        store
+            .current_work_claim(root.work_id)
+            .unwrap()
+            .unwrap()
+            .expires_at
+            > held.expires_at
+    );
+}
+
 #[test]
 fn fractional_handoff_protects_recipient_retention_through_the_boundary_millisecond() {
     let mut store = SqliteStore::open_in_memory().unwrap();
