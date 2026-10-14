@@ -50,6 +50,88 @@ fn expiry_events(store: &SqliteStore, work: &WorkItem) -> usize {
 }
 
 #[test]
+fn damaged_handoff_index_refuses_a_cancelled_offer_expiry_sweep() {
+    for damaged_index in [false, true] {
+        let (mut store, root, held, offer) = fractional_handoff();
+        store
+            .cancel_work_handoff(
+                &CancelWorkHandoffRequest {
+                    work_id: root.work_id,
+                    run_id: held.run_id,
+                    expected_work_revision: root.revision,
+                    holder: held.holder.clone(),
+                    offer_id: offer.offer_id,
+                    claim_id: held.claim_id,
+                    claim_fence: held.fence,
+                    reason: "cancel before the expiry sweep".into(),
+                    actor: actor("holder"),
+                    idempotency_key: "cancel".into(),
+                    cancelled_at: at(3),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .unwrap();
+        if damaged_index {
+            assert_eq!(
+                store
+                    .connection
+                    .execute(
+                        "UPDATE work_handoff_offers SET state = 'offered' WHERE offer_id = ?1",
+                        [offer.offer_id.0.to_string()],
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+        let before = test_database_shape_snapshot(&store.connection).unwrap();
+        let result = store.record_work_note(
+            &crate::domain::RecordWorkNoteRequest {
+                status: false,
+                work_id: root.work_id,
+                run_id: held.run_id,
+                expected_work_revision: root.revision,
+                holder: held.holder.clone(),
+                claim_id: held.claim_id,
+                claim_fence: held.fence,
+                summary: "holder progress after cancellation".into(),
+                refs: Vec::new(),
+                actor: actor("holder"),
+                idempotency_key: "note-after-cancel".into(),
+                recorded_at: at(33),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        if damaged_index {
+            let error = result.unwrap_err();
+            let expected = format!(
+                "handoff offer {:?} expiry index differs from its canonical state, run or expiry",
+                offer.offer_id
+            );
+            assert!(matches!(
+                &error,
+                StoreError::InvalidWorkProjection(reason) if reason == &expected
+            ));
+            assert_eq!(
+                error.to_string(),
+                format!("work projection contains invalid data: {expected}")
+            );
+            assert_eq!(
+                test_database_shape_snapshot(&store.connection).unwrap(),
+                before
+            );
+        } else {
+            result.unwrap();
+            assert_eq!(
+                store.work_handoff_offers(root.work_id).unwrap()[0].state,
+                WorkHandoffState::Cancelled
+            );
+            assert!(store.verify_all().unwrap().is_healthy());
+        }
+        assert_eq!(expiry_events(&store, &root), 0);
+    }
+}
+
+#[test]
 fn fractional_handoff_notes_and_renewals_use_the_exact_expiry() {
     for operation in ["note", "status", "keyless-renewal", "keyed-renewal"] {
         for delta in [-1, 0, 1] {

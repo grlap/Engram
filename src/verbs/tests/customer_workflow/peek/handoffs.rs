@@ -39,6 +39,50 @@ fn offer(owner: &AgentVerbs, name: &str, now: i64) -> String {
 }
 
 #[test]
+fn damaged_handoff_index_refuses_recipient_peek_without_mutation() {
+    let (_home, owner, database, project) = fixture();
+    let recipient = coordinator(&database, &project);
+    let offered = offer(&owner, "Incoming work with a damaged expiry index", 0);
+    let peek = recipient.next(&peek_input(false), at(5)).unwrap();
+    let incoming = &peek.value["incoming_handoffs"];
+    assert_eq!(incoming["items"].as_array().unwrap().len(), 1);
+    assert_eq!(incoming["items"][0]["ref"], offered);
+    assert_eq!(incoming["omitted"], 0);
+
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    assert_eq!(
+        connection
+            .execute(
+                "UPDATE work_handoff_offers SET expires_at_ms = expires_at_ms + 1",
+                [],
+            )
+            .unwrap(),
+        1
+    );
+    let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+    let error = recipient.next(&peek_input(false), at(5)).unwrap_err();
+    let reason = "incoming handoff differs from its current recipient binding";
+    assert!(matches!(
+        &error.error,
+        StoreError::InvalidWorkProjection(actual) if actual == reason
+    ));
+    let message = format!("work projection contains invalid data: {reason}");
+    assert_eq!(error.to_string(), message);
+    let envelope = crate::verbs::store_error_value(&error.error);
+    assert_eq!(envelope["error"]["code"], "work_projection_invalid");
+    assert_eq!(envelope["error"]["message"], message);
+    assert_eq!(envelope["error"]["details"]["reason"], reason);
+    assert_eq!(
+        envelope["error"]["details"]["remedy"],
+        "run next, then show the affected item and follow next"
+    );
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&connection).unwrap(),
+        before
+    );
+}
+
+#[test]
 fn compact_peek_recovers_pending_handoff_without_focus_or_with_unrelated_held_focus() {
     for held_focus in [false, true] {
         let (_home, owner, database, project) = fixture();
