@@ -2863,6 +2863,16 @@ Its [settings contract](task-planning-text.md#project-opt-in-setting) uses
 | `forget` | Append an attributed terminal tombstone; never erase or reuse the key |
 | `task_sync_settings` | Read or explicitly enable/disable the connection-bound project's host-local task-sync opt-in setting |
 
+Task-text exchange remains an explicit CLI/shared-service operation, separate
+from that configuration tool. `task-sync setup-materialize MAIN` selects
+`--setup-operation`, `--prepared-operation`, `--progress-directory` and
+`--candidate-directory`; it publishes retained raw preparation bytes through
+owned local recovery, without opening SQLite, staging Git or sending a network
+request. New preparation/export/import/materialization require project opt-in;
+an already admitted pending operation can finish after opt-out. See
+[selected materialization](task-planning-text.md#materializing-a-selected-preparation)
+for admission, refusal, ownership, filesystem and recovery limits.
+
 #### Read-only mode
 
 `engram mcp --read-only`, with the same identity arguments, serves a host

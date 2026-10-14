@@ -33,6 +33,7 @@ const PATH_LIST_SEPARATOR: u8 = if cfg!(windows) { b';' } else { b':' };
 /// repository stores beside its commits may rewrite ancestry: replace refs are
 /// ignored, the commit-graph file is not read, and (in [`git_command`]) the
 /// graft file is empty.
+#[cfg(test)]
 const GIT_HARDENING: &[&str] = &[
     "--no-pager",
     "--no-optional-locks",
@@ -53,6 +54,7 @@ const GIT_HARDENING: &[&str] = &[
 /// shallow file or configuration; cleared so the named repository alone is
 /// read. It holds every repository-local variable git names (`git rev-parse
 /// --local-env-vars`) except `GIT_GRAFT_FILE`, which [`git_command`] sets.
+#[cfg(test)]
 const CLEARED_GIT_ENVIRONMENT: &[&str] = &[
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -82,26 +84,7 @@ const CLEARED_GIT_ENVIRONMENT: &[&str] = &[
 /// as [`resolve_repository`] resolves it: git compares it with the real
 /// directory it starts in.
 pub(crate) fn git_command(repository: &Path, args: &[&str]) -> Command {
-    let mut command = Command::new("git");
-    command
-        .current_dir(repository)
-        .args(GIT_HARDENING)
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_NO_LAZY_FETCH", "1")
-        .env("GIT_ALLOW_PROTOCOL", "")
-        // Git reads the null device as an empty graft file on every platform.
-        .env("GIT_GRAFT_FILE", "/dev/null")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    for name in CLEARED_GIT_ENVIRONMENT {
-        command.env_remove(name);
-    }
-    if let Some(parent) = repository.parent() {
-        command.env("GIT_CEILING_DIRECTORIES", parent);
-    }
-    command
+    engram::task_sync::git::command(repository, args)
 }
 
 /// How one git call ended.

@@ -2,14 +2,14 @@
 
 use std::{
     fs,
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, Instant},
 };
 
+use crate::ProjectId;
 use anyhow::{Context, Result, bail, ensure};
-use engram::ProjectId;
 
 use super::{Assertions, Basis, policy};
 
@@ -218,6 +218,105 @@ fn selected_path<'a>(name: &str, paths: &[&'a str]) -> Option<&'a str> {
     })
 }
 
+pub(super) fn index_basis(basis: &Basis) -> Result<Vec<u8>> {
+    let marker = basis
+        .project_file
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("selected marker has no UTF-8 filename")?;
+    git(
+        &basis.repository,
+        &[
+            "ls-files",
+            "--stage",
+            "-z",
+            "--",
+            ".engram",
+            ".gitignore",
+            ".gitattributes",
+            marker,
+        ],
+    )
+}
+
+/// Recovery admission deliberately performs no worktree content comparison in Git.
+/// Physical ownership and before/after bytes are checked by the publisher.
+pub(super) fn recheck(basis: &Basis, index: &[u8]) -> Result<()> {
+    let root = &basis.repository;
+    ordinary_ancestors(root)?;
+    ensure!(
+        git(root, &["rev-parse", "--is-bare-repository"])? == b"false\n",
+        "materialization requires a non-bare main checkout"
+    );
+    ensure!(
+        same_file::is_same_file(root, git_path(root, "--show-toplevel")?)?
+            && same_file::is_same_file(&basis.git_directory, git_path(root, "--git-dir")?)?
+            && same_file::is_same_file(&basis.git_directory, git_path(root, "--git-common-dir")?)?,
+        "selected repository or Git administration changed"
+    );
+    ensure!(
+        git(root, &["symbolic-ref", "--quiet", "HEAD"])?
+            == format!("refs/heads/{}\n", basis.branch).as_bytes(),
+        "prepared branch changed"
+    );
+    ensure!(
+        git(root, &["rev-parse", "--verify", "HEAD"])? == format!("{}\n", basis.head).as_bytes(),
+        "prepared HEAD changed"
+    );
+    let sparse = git_allow_missing(root, &["config", "--bool", "--get", "core.sparseCheckout"])?;
+    ensure!(
+        sparse.is_empty() || sparse == b"false\n",
+        "materialization refuses sparse checkout"
+    );
+    ensure!(
+        read_optional(&basis.project_file)?.as_ref() == Some(&basis.marker),
+        "prepared project marker changed"
+    );
+    ensure!(
+        index_basis(basis)? == index,
+        "prepared relevant index changed"
+    );
+    let marker = basis
+        .project_file
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("selected marker has no UTF-8 filename")?;
+    let paths = [
+        ".engram/project.json",
+        ".engram/tasks",
+        ".engram/.gitignore",
+        ".engram/.gitattributes",
+        ".gitignore",
+        ".gitattributes",
+        marker,
+    ];
+    for entry in git(root, &["ls-files", "-v", "-z"])?
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+    {
+        ensure!(
+            entry.len() > 2 && entry[1] == b' ',
+            "malformed Git index result"
+        );
+        let name = std::str::from_utf8(&entry[2..])?;
+        if let Some(selected) = selected_path(name, &paths) {
+            ensure!(
+                name == selected && !selected.starts_with(".engram/"),
+                "reserved or aliased setup index entry"
+            );
+            ensure!(
+                entry[0] != b'S' && !entry[0].is_ascii_lowercase(),
+                "index inspection is suppressed for setup path"
+            );
+        }
+        ensure!(
+            !name.eq_ignore_ascii_case(".engram"),
+            "reserved index entry"
+        );
+    }
+    Ok(())
+}
+
 fn git_path(root: &Path, flag: &str) -> Result<PathBuf> {
     let bytes = git(root, &["rev-parse", flag])?;
     let text = std::str::from_utf8(&bytes)?
@@ -228,6 +327,11 @@ fn git_path(root: &Path, flag: &str) -> Result<PathBuf> {
     let path = root.join(text);
     ordinary_ancestors(&path)?;
     Ok(fs::canonicalize(path)?)
+}
+
+pub(super) fn administration(root: &Path) -> Result<PathBuf> {
+    ordinary_ancestors(root)?;
+    git_path(root, "--git-dir")
 }
 
 pub(super) fn ordinary_ancestors(path: &Path) -> Result<()> {
@@ -271,19 +375,54 @@ pub(super) fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
 }
 
 pub(super) fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    git_run(root, args, false)
+    git_run(root, args, false, None)
 }
 
-fn git_allow_missing(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    git_run(root, args, true)
+pub(super) fn git_allow_missing(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    git_run(root, args, true, None)
 }
 
-fn git_run(root: &Path, args: &[&str], missing: bool) -> Result<Vec<u8>> {
-    let mut command = crate::bin_support::doctor::landings::git_command(root, args);
+pub(super) fn git_input_allow_missing(root: &Path, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
+    git_run(root, args, true, Some(input))
+}
+
+fn git_run(root: &Path, args: &[&str], missing: bool, input: Option<&[u8]>) -> Result<Vec<u8>> {
+    ensure!(
+        input.is_none_or(|bytes| bytes.len() as u64 <= MAX_BYTES),
+        "Git admission input exceeded byte bound"
+    );
+    let mut command = crate::task_sync::git::command(root, args);
     command.env_remove("GIT_ATTR_SOURCE");
     command.env("GIT_LITERAL_PATHSPECS", "1");
+    if args.first() == Some(&"check-ignore") {
+        // check-ignore accepts pathname input, not pathspec magic. These inputs
+        // are generated canonical project/task paths, never caller patterns.
+        for name in [
+            "GIT_LITERAL_PATHSPECS",
+            "GIT_GLOB_PATHSPECS",
+            "GIT_NOGLOB_PATHSPECS",
+            "GIT_ICASE_PATHSPECS",
+        ] {
+            command.env_remove(name);
+        }
+    }
     command.stdout(Stdio::piped());
+    if input.is_some() {
+        command.stdin(Stdio::piped());
+    }
     let mut child = command.spawn().context("start local Git admission query")?;
+    let input_result = if let Some(input) = input {
+        let input = input.to_vec();
+        let mut stdin = child.stdin.take().context("missing Git stdin")?;
+        let (sender, receiver) = std::sync::mpsc::channel();
+        // A stalled stdin write must not bypass the existing child deadline.
+        std::thread::spawn(move || {
+            let _ = sender.send(stdin.write_all(&input));
+        });
+        Some(receiver)
+    } else {
+        None
+    };
     let stdout = child.stdout.take().context("missing Git stdout")?;
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -313,6 +452,13 @@ fn git_run(root: &Path, args: &[&str], missing: bool) -> Result<Vec<u8>> {
             .saturating_sub(start.elapsed())
             .max(Duration::from_secs(1)),
     )??;
+    if let Some(receiver) = input_result {
+        receiver.recv_timeout(
+            GIT_BOUND
+                .saturating_sub(start.elapsed())
+                .max(Duration::from_secs(1)),
+        )??;
+    }
     ensure!(
         bytes.len() as u64 <= MAX_BYTES,
         "Git admission output exceeded byte bound"

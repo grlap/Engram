@@ -14,6 +14,9 @@ use crate::{ObjectId, ProjectId};
 mod journal;
 mod lock;
 mod prepared;
+mod resume;
+
+pub(crate) use resume::resume_pending;
 
 pub use prepared::{PreparedCandidate, PreparedProvenance, PreparedSelection, read_prepared};
 
@@ -280,7 +283,7 @@ fn select_documents(
     Ok((documents, serialized))
 }
 
-fn documents_fingerprint(documents: &BTreeMap<String, Vec<u8>>) -> String {
+pub(crate) fn documents_fingerprint(documents: &BTreeMap<String, Vec<u8>>) -> String {
     let mut hash = Sha256::new();
     for (path, bytes) in documents {
         hash.update((path.len() as u64).to_le_bytes());

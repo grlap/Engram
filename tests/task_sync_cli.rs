@@ -1,6 +1,9 @@
 #[path = "../src/test_support.rs"]
 mod test_support;
 
+#[path = "common/task_sync_opt_in.rs"]
+mod task_sync_opt_in;
+
 use std::{fs, path::Path, process::Command};
 
 use engram::{ProjectId, SqliteStore, project_database_path, task_sync::directory};
@@ -61,6 +64,7 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
         "case_sensitive"
     };
     for home in [&source, &target] {
+        task_sync_opt_in::enable(home, &project.0);
         let output = command(home, &marker)
             .args(["--host-path-policy", host_policy, "init"])
             .output()

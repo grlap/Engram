@@ -68,8 +68,9 @@ session, new local record ids or import time.
 
 Claims, grants, sessions, run ids, delivery state, retained prompts, private
 scratch, project memories, native verification/evaluation records
-and completion seals are outside this profile. There is no remote relay,
-enablement configuration, ignore/attribute edit or polling in export/import.
+and completion seals are outside this profile. Export/import require the
+[host-local opt-in](#project-opt-in-setting); they perform no remote relay,
+ignore/attribute edit or polling.
 Export visibly reports the development no-op redactor: it filters nothing.
 Authored planning fields are shared text, not automatically scrubbed secrets.
 Items imported from an external source with an immutable source snapshot are
@@ -82,8 +83,16 @@ The CLI accepts `--actor-context` (or `ENGRAM_ACTOR_CONTEXT`) and
 Engram owns one host-local setting per stable project id and Engram home,
 shared across worktrees. It lives beside `engram.db` as `task-sync-setting.json`,
 outside the repository. These operations never open SQLite, change its schema,
-or create or remove shared task files. Git materialization and operation-start
-admission remain separate; this setting alone does not ship Git exchange.
+or create or remove shared task files. Configuration remains separate from
+materialization; enabling alone does not publish task text.
+
+Supported CLI and shared-service preparation, export, import (including dry-run),
+setup preparation and new materialization require this opt-in before new state,
+capture or writes. Disabled, absent, invalid and unreadable settings refuse.
+An already admitted pending preparation or materialization can finish from its
+retained bytes after opt-out. A completed setup intent alone does not admit a
+new materialization. Pure format readers, the selected-preparation reader,
+backup and migration remain independent.
 
 ```text
 engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync status --json
@@ -161,10 +170,10 @@ filters are admitted. Nested `.engram/.gitattributes` and `.engram/.gitignore`
 files refuse. The proposed ignore block reopens the root `.engram` directory
 before excluding private contents and admitting the shared paths. The proposed
 root block sets text and LF, enables built-in text diffs and the text merge
-driver, and unsets filters, encoding and ident;
-it is not yet applied. A later materializer must query every actual task path
-after applying the block and before writing shared files, including overrides
-from Git-admin `info/attributes`. Preparation does not prove future filenames
+driver, and unsets filters, encoding and ident. Preparation leaves it unapplied.
+The [explicit materializer](#materializing-a-selected-preparation) queries every
+actual task path after applying the block and before writing shared files,
+including overrides from Git-admin `info/attributes`. Preparation does not prove future filenames
 or the attributes of a hypothetical edited checkout.
 
 Visibility (`public` or `private`), nonblank intended readership, attribution,
@@ -179,6 +188,9 @@ repository/branch/project basis, original setup bytes and proposed narrow ignore
 and LF attribute edits. Setup inputs are bounded at 64 KiB (the marker at 4 KiB).
 Compact JSON keeps the raw-byte arrays within the private reader's 2 MiB bound;
 publication also checks that bound.
+Managed setup blocks may enlarge the 64 KiB inputs. Materialization checks the
+complete published setup files against the recorded after-lengths and bytes;
+it does not apply the before-file cap to those derived outputs or truncate them.
 The edits are not applied: no `.engram` files, index, branch, global configuration
 or SQLite rows change. Preparation enables no sync and introduces no remote
 relay, sparse enrollment, commit or network operation.
@@ -194,8 +206,159 @@ by age. Lock ownership bytes and the intent are published with no-replace hard
 links of complete private pending
 file; unsupported filesystems refuse. An interruption can leave an owned
 pending file, which is not a published intent. This is process-interruption
-safety, not a power-loss guarantee. A later materialization operation must
-revalidate the recorded basis before applying edits or shared task bytes.
+safety, not a power-loss guarantee. Materialization revalidates the recorded
+basis before applying edits or shared task bytes.
+
+## Materializing a selected preparation
+
+```text
+engram --home LOCAL_HOME --project-file MAIN/.engram-project task-sync setup-materialize MAIN --setup-operation SETUP_UUID --prepared-operation PREPARED_UUID --progress-directory PROGRESS --candidate-directory CANDIDATE
+```
+
+This explicit main-checkout operation consumes the immutable setup intent and
+one completed, matching prepared candidate. The shared `LocalWorkService`
+entrypoint performs the same actual repository admission as the CLI. There is
+no separate materialization MCP tool. Selection never falls back to the latest
+operation, recaptures SQLite or reserializes a task document. Recovery and exact
+repeat require the same recorded absolute path spellings for the repository,
+progress and candidate selection; reuse the original command paths even when
+another spelling names the same filesystem objects. The CLI refuses `..` parent
+components in selection paths before materialization; supply paths without
+parent components on every platform. Candidate documents
+must already use LF bytes; they are refused rather than normalized.
+
+The whole candidate passes current disclosure admission before any new private
+operation or public write. Tasks labelled `restricted`, `secret` or `secret-ref`
+are refused, including tasks without notes. Retained notes and activity receive
+their separate current admission checks. A refusal reports bounded task IDs,
+counts and a static reason, without quoting field values. The receipt reports
+the development no-op redactor, recorded note/activity omissions, asserted first
+attribution and the count of omitted linked worktrees. Assertions and quoted
+instructions are not authenticated human consent or real DLP.
+
+The repository must retain its main nonsparse checkout, attached branch, HEAD,
+project marker and relevant index basis. Setup and shared-path ASCII case
+aliases (including `Project.json` or `Tasks` inside an existing `.engram`),
+links/reparse points, suppressed index inspection and unowned occupancy
+refuse. After applying only the recorded root ignore and attribute edits, the
+operation queries effective text/LF, built-in diff/merge, filter, encoding,
+ident and ignore policy on **every actual** project/task filename, including
+Git-admin overrides. Unsafe policy refuses before shared task publication.
+
+An existing process-held setup lock is acquired without initialization; a
+contender creates nothing. An exclusive private operation directory in Git
+administration retains the exact raw candidate separately from publication
+sources, an immutable bounded journal, physical directory identities and first
+attribution. Git administration and checkout must share a filesystem that
+supports hard links. The Windows dependency exposes a volume serial and a file
+index reported as 64-bit, compared together with exact bytes and inventory.
+Filesystems with wider identities, such as ReFS with 128-bit IDs, can report
+colliding indices for distinct objects. An equal-byte false match on a published
+file can misreport it as already published; that check neither replaces nor
+deletes the file. Before-file admission also uses index plus exact before bytes:
+a false match can apply the declared setup edit to a distinct file whose bytes
+are identical to the approved before-content. Its displaced bytes are always
+retained privately; the journal records their location and approved before bytes.
+An unowned empty directory is never adopted or removed. A saved directory ID
+can collide or be reused after the original disappears, so repeat can misreport
+another empty directory as equal or complete while preserving it. Mismatched
+or unavailable IDs refuse. These comparisons are not collision-free ownership
+proofs. No ReFS or UNC runtime assurance is claimed, and no interpreter or
+volume-management subprocess is used.
+
+Existing setup files move into fresh private replacement attempts. The arrived
+file must match its recorded physical identity and before bytes; an after file
+is then linked without replacing a public target. If a concurrent edit was
+moved, compensation links those displaced bytes back without replacing another
+target. A lost compensation reports `restore_incomplete` and names the retained
+private location. Both displaced and newly occupied public bytes are preserved.
+An attempt interrupted before its complete ownership marker is preserved and
+refused; names, age or equal bytes never justify adoption or cleanup.
+
+Shared directories are staged privately and renamed into the absent target.
+Existing `.engram` private contents are preserved: only the tasks subtree and
+project file are published there. The accepted rename race can replace an
+empty target directory; a nonempty target fails without a delete fallback.
+An independently present empty tasks directory with an expected empty export
+is preserved and reported as equal unowned content. A nonempty expectation
+refuses that directory. Independent files with different reported identities
+remain unowned and refuse, including equal-byte files.
+An owned freshly published `.engram` also permits unrelated private siblings
+during recovery and exact repeat. Its directory identity, canonical reserved
+names, project ownership and exact tasks inventory are still checked; a case
+alias of `project.json` or `tasks` refuses even beside an unrelated sibling.
+Before admitting new state, bounded directory scans reserve room for every
+missing declared root or shared entry. An operation that would exceed the
+100,000-entry scan limit refuses before publication, so its own added paths
+cannot exceed the recovery and repeat reader's bound.
+
+Recoverable publication boundaries use retained physical source links and exact
+bytes. After admission, recovery needs neither the original B1 generation nor
+a current SQLite snapshot, and can finish after opt-out. Completion records the
+observed public directory and project/task identities; exact repeat rechecks
+those identities, bytes, inventory and repository policy without writing.
+Missing or edited completed state and detected independent replacement refuse.
+The reported-ID collision and reuse limitations above also apply to repeat.
+Ordinary public edits are covered; hostile same-user tampering with the private
+operation directory, multi-file atomicity and power-loss durability are not promised.
+
+### Resolving a materialization refusal
+
+Before admitting `journal.json`, materialization creates both private replacement
+directories and complete no-replace plan markers. The journal binds the directory
+and plan identities. After admission, each setup edit uses only these bound
+plans; no replacement directory or plan is created between public edits. A
+missing or replaced plan after admission is a refusal for changed private state,
+not an expected interruption state.
+
+The admission journal binds an exclusively created private completion-recovery
+directory and source file. If completion preparation is interrupted after public
+publication, retry preserves the original `.complete.pending` bytes and identity.
+It verifies the recovery source's complete prefix against the expected completion,
+appends only the missing suffix, syncs it and links the complete marker without
+replacement. Another interruption resumes the same bound file. A changed prefix,
+identity or inventory refuses with all witnesses retained. This admitted recovery
+also works after opt-out; new materialization still requires current opt-in.
+
+Retain the printed operation paths and refusal before changing anything. Stop
+concurrent writers while making a manual repair, and preserve copies of the
+private operation, setup intent and public files. The command never removes an
+incomplete operation or infers ownership from an empty directory.
+
+If an interruption or refusal occurred before `journal.json` was published,
+including during replacement-plan preparation, automatic recovery refuses that
+incomplete private attempt.
+Examples include setup-byte drift during admission, unavailable hard links,
+or a failed Git admission query after private initialization began. After
+preserving it, restore the original root setup files described by the setup
+intent, preserving any displaced originals and unrelated public edits. Move the
+incomplete operation directory aside within Git administration, then run setup
+preparation and materialization again. This is an explicit operator repair,
+not an automatic retry or a retire command. Do not remove an unfamiliar entry
+to make a refusal disappear; a changed index, branch or shared tree still needs
+its own reconciliation.
+
+After setup edits are published, `.gitignore` and `.gitattributes` are hard links
+to the operation's retained `after` sources. To fix an attribute-policy refusal,
+correct the separate override (for example Git-admin `info/attributes`) while
+leaving those managed files intact. An in-place edit to a managed file also
+changes its retained source; restore the exact `after` bytes recorded in the
+immutable journal, in place, before retrying. If an editor replaced the public
+file, preserve that replacement separately and explicitly restore the retained
+source's hard link without overwriting it. A refusal concerning displaced bytes
+keeps those bytes at the reported private path; `restore_incomplete=false`
+means that observed displaced object already occupies the public path, including
+on a later retry. These repairs require inspecting the actual retained state;
+there is no general retire or replacement-materialization command.
+If a public setup path becomes occupied after its original was moved, the
+refusal names both that path and the retained displaced path. Preserve both
+objects and reconcile the public entry explicitly before retrying; publication
+never overwrites the new occupant.
+
+This operation changes no SQLite rows/schema/projections, Git index, branch,
+configuration or commits. It enrolls no linked worktree, runs no network relay
+and adds no retire/replace or sparse-enrollment command. Disable changes only
+the private opt-in setting and removes no shared files.
 
 ## Opt-in shared notes
 
@@ -447,8 +610,8 @@ generation handles are released after journal validation and selection.
 A progress journal may prune a selected operation later;
 missing retained bytes are a refusal, never a request for a new capture.
 This is not an atomic filesystem snapshot or approval to publish. Retained
-notes and activity keep their stored structural meaning; a later materializer
-must separately check its disclosure policy and preserve these exact bytes.
+notes and activity keep their stored structural meaning; materialization
+separately checks its disclosure policy and preserves these exact bytes.
 The whole retained journal inventory must be complete and well formed; the
 latest generation may start a new baseline without a predecessor after recovery.
 

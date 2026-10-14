@@ -7,8 +7,9 @@
 
 Design selected on 2026-10-09. The [explicit directory profile](task-planning-text.md)
 implements planning text, opt-in shared notes and informational machine activity.
-Git enablement, exchange and reconciliation remain planned. The contract below
-describes that broader target. This replaces sequential
+The [host-local opt-in and explicit prepared materialization](task-planning-text.md#materializing-a-selected-preparation)
+are implemented. Automated exchange and reconciliation remain planned. The
+contract below describes that broader target. This replaces sequential
 single-writer handoff as the selected personal cross-machine workflow.
 Previous portable writer-epoch, release/acquire, dedicated-ref and scheduled
 push proposals are not prerequisites for this feature. Local SQLite remains

@@ -16,8 +16,10 @@ pub mod activity;
 pub mod directory;
 pub mod notes;
 pub use activity::TaskSyncExportOptions;
+pub mod git;
 pub mod progress;
 pub mod settings;
+pub mod setup;
 
 /// The supported planning-only profile; other profiles require explicit admission.
 pub const FORMAT: &str = "engram-task-planning-v1";

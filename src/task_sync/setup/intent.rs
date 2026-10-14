@@ -91,6 +91,11 @@ fn acquire_lock(bound: &Directory) -> Result<std::fs::File> {
         Err(error) => return Err(error.into()),
         Ok(_) => (),
     }
+    acquire_existing_lock(bound)
+}
+
+pub(super) fn acquire_existing_lock(bound: &Directory) -> Result<std::fs::File> {
+    let lock_name = Path::new("engram-task-sync-setup.lock");
     // Windows byte-range locks can prevent a contended read. Acquire first and
     // validate ownership on that same handle without changing its bytes.
     let file = bound.open_file(lock_name, true, false)?;
@@ -105,6 +110,31 @@ fn acquire_lock(bound: &Directory) -> Result<std::fs::File> {
         "unowned setup lock path or changed lock; preserve it"
     );
     Ok(file)
+}
+
+pub(super) fn read(bound: &Directory, operation: uuid::Uuid) -> Result<Intent> {
+    let bytes = bound
+        .read(Path::new("engram-task-sync-setup.json"))?
+        .ok_or_else(|| anyhow::anyhow!("selected setup intent is missing"))?;
+    let intent: Intent = crate::task_sync::parse(&bytes)?;
+    ensure!(
+        intent.format == FORMAT && intent.operation == operation,
+        "setup intent differs from selected operation"
+    );
+    intent.basis.assertions.validate()?;
+    ensure!(
+        intent.basis.edits.len() == 2
+            && intent.basis.edits[0].path == ".gitignore"
+            && intent.basis.edits[1].path == ".gitattributes",
+        "invalid prepared setup edits"
+    );
+    for edit in &intent.basis.edits {
+        ensure!(
+            super::policy::propose(&edit.path, edit.before.clone())? == *edit,
+            "prepared setup edit differs from its recorded input"
+        );
+    }
+    Ok(intent)
 }
 
 fn receipt(path: std::path::PathBuf, operation: uuid::Uuid, repeated: bool) -> Receipt {

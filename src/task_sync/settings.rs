@@ -9,6 +9,23 @@ use std::path::Path;
 
 use crate::{ProjectId, project_home_of};
 
+/// Refuse fresh exchange work unless this project's private setting is enabled.
+/// This observation neither creates settings paths nor opens SQLite.
+///
+/// # Errors
+/// An absent, invalid, unreadable or disabled setting is not enabled.
+pub fn require_enabled(
+    database: &Path,
+    project: &ProjectId,
+) -> Result<(), crate::storage::StoreError> {
+    if read(database, project).state != State::Enabled {
+        return Err(crate::task_sync::invalid(
+            "task sync is not enabled for this project; explicitly enable it before starting exchange",
+        ));
+    }
+    Ok(())
+}
+
 pub const STATUS_FORMAT: &str = "engram-task-sync-status-v1";
 const SETTING_FORMAT: &str = "engram-task-sync-setting-v1";
 const EFFECT: &str = "Opt-in for explicit Git task sync for this project on this machine; changing it does not create or remove shared task files.";

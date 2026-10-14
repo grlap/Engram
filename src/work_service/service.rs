@@ -69,6 +69,18 @@ impl LocalWorkService {
         rebaseline: bool,
         now: DateTime<Utc>,
     ) -> anyhow::Result<crate::task_sync::progress::PrepareReceipt> {
+        self.require_task_sync_writer()?;
+        self.validate_read_attribution(now)?;
+        if self.require_task_sync_enabled().is_err() {
+            return crate::task_sync::progress::resume_pending(
+                destination,
+                progress,
+                &self.database,
+                &self.project_id,
+                profile,
+                rebaseline,
+            );
+        }
         crate::task_sync::progress::prepare(
             destination,
             progress,
@@ -94,6 +106,7 @@ impl LocalWorkService {
         &self,
         now: DateTime<Utc>,
     ) -> Result<crate::task_sync::TaskTree, StoreError> {
+        self.require_task_sync_enabled()?;
         self.read_store_at(now)?.export_task_tree(&self.project_id)
     }
 
@@ -106,6 +119,7 @@ impl LocalWorkService {
         machine: &str,
         now: DateTime<Utc>,
     ) -> Result<crate::storage::TaskSyncNoteExport, StoreError> {
+        self.require_task_sync_enabled()?;
         self.read_store_at(now)?
             .export_task_tree_with_notes(&self.project_id, machine)
     }
@@ -119,6 +133,7 @@ impl LocalWorkService {
         options: &crate::task_sync::TaskSyncExportOptions,
         now: DateTime<Utc>,
     ) -> Result<crate::storage::TaskSyncNoteExport, StoreError> {
+        self.require_task_sync_enabled()?;
         self.read_store_at(now)?
             .export_task_tree_with_options(&self.project_id, options)
     }
@@ -133,6 +148,8 @@ impl LocalWorkService {
         dry_run: bool,
         now: DateTime<Utc>,
     ) -> Result<crate::storage::TaskSyncImportResult, StoreError> {
+        self.require_task_sync_writer()?;
+        self.require_task_sync_enabled()?;
         self.lock_store_at(now)?.import_task_tree(
             &self.project_id,
             &self.actor("task-sync:import", "import reported task planning state"),

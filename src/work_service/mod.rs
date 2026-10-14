@@ -113,6 +113,7 @@ mod note_admission;
 mod service;
 mod status;
 mod task_sync_settings;
+mod task_sync_setup;
 pub(crate) mod unadmitted;
 pub(crate) use projection::shed_work_next_focus;
 pub use status::WorkCurrentStatus;

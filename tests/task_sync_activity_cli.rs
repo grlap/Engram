@@ -1,6 +1,9 @@
 #[path = "../src/test_support.rs"]
 mod test_support;
 
+#[path = "common/task_sync_opt_in.rs"]
+mod task_sync_opt_in;
+
 use std::{fs, path::Path, process::Command};
 
 use engram::{ProjectId, SqliteStore, project_database_path, task_sync::directory};
@@ -43,6 +46,7 @@ fn task_sync_cli_activity_without_notes_preserves_origin_and_restores_no_authori
         "case_sensitive"
     };
     for home in [&source, &target] {
+        task_sync_opt_in::enable(home, &project.0);
         success(command(home, &marker).args(["--host-path-policy", host_policy, "init"]));
     }
     let added: Value = serde_json::from_slice(&success(command(&source, &marker).args([

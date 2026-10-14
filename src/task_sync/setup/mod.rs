@@ -4,18 +4,22 @@
 mod attributes;
 mod files;
 mod intent;
+mod materialize;
 mod policy;
 mod repository;
 
+pub(crate) use materialize::materialize;
+pub use materialize::{MaterializeReceipt, MaterializeSelection};
+
 use std::path::{Path, PathBuf};
 
+use crate::{ProjectId, task_sync};
 use anyhow::{Result, ensure};
-use engram::{ProjectId, task_sync};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Assertions {
+pub struct Assertions {
     pub visibility: String,
     pub readership: String,
     pub profile: String,
@@ -23,13 +27,32 @@ pub(crate) struct Assertions {
     pub origin_machine: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Attribution {
+pub struct Attribution {
     pub actor_id: String,
     pub session_id: String,
     pub actor_context: Option<String>,
     pub source_skill: Option<String>,
+}
+
+impl Attribution {
+    fn validate(&self) -> Result<()> {
+        for (name, text, limit) in [
+            ("actor", Some(self.actor_id.as_str()), 1024),
+            ("session", Some(self.session_id.as_str()), 1024),
+            ("actor context", self.actor_context.as_deref(), 4096),
+            ("source skill", self.source_skill.as_deref(), 1024),
+        ] {
+            ensure!(
+                text.is_none_or(|text| !text.trim().is_empty()
+                    && text.len() <= limit
+                    && !text.chars().any(char::is_control)),
+                "{name} must be nonblank bounded text without control characters"
+            );
+        }
+        Ok(())
+    }
 }
 
 impl Assertions {
@@ -84,7 +107,7 @@ struct Intent {
 }
 
 #[derive(Serialize)]
-pub(crate) struct Receipt {
+pub struct Receipt {
     pub intent: PathBuf,
     pub operation: uuid::Uuid,
     pub repeated: bool,
@@ -103,19 +126,7 @@ pub(crate) fn prepare(
     attribution: Attribution,
 ) -> Result<Receipt> {
     assertions.validate()?;
-    for (name, text, limit) in [
-        ("actor", Some(attribution.actor_id.as_str()), 1024),
-        ("session", Some(attribution.session_id.as_str()), 1024),
-        ("actor context", attribution.actor_context.as_deref(), 4096),
-        ("source skill", attribution.source_skill.as_deref(), 1024),
-    ] {
-        ensure!(
-            text.is_none_or(|text| !text.trim().is_empty()
-                && text.len() <= limit
-                && !text.chars().any(char::is_control)),
-            "{name} must be nonblank bounded text without control characters"
-        );
-    }
+    attribution.validate()?;
     let basis = repository::inspect(selected_marker, project, repository, branch, assertions)?;
     intent::record(basis, attribution)
 }

@@ -3,6 +3,9 @@
 #[path = "../src/test_support.rs"]
 mod test_support;
 
+#[path = "common/task_sync_opt_in.rs"]
+mod task_sync_opt_in;
+
 use serde_json::Value;
 use std::{
     fs,
@@ -109,6 +112,7 @@ impl Fixture {
             ],
         );
         let home = owned.path().join("store-home");
+        task_sync_opt_in::enable(&home, "fixture-project");
         Self {
             owned,
             root,
@@ -182,7 +186,7 @@ impl Fixture {
         assert!(error.contains(expected), "{error}");
         assert!(!self.intent_path().exists());
         assert!(!self.admin.join("engram-task-sync-setup.lock").exists());
-        assert!(!self.home.exists());
+        task_sync_opt_in::assert_no_database(&self.home);
     }
 }
 
@@ -370,7 +374,7 @@ fn setup_checks_selected_custom_marker_with_literal_pathspecs() {
         }
         assert!(!fixture.root.join("filter-sentinel.txt").exists());
         assert_eq!(fs::read(fixture.admin.join("index")).unwrap(), index);
-        assert!(!fixture.home.exists());
+        task_sync_opt_in::assert_no_database(&fixture.home);
     }
 }
 
@@ -614,7 +618,7 @@ fn setup_default_process_attribution_can_repeat_and_retains_first_provenance() {
     );
     assert_eq!(attribution["actor_context"], "fixture-context");
     assert_eq!(attribution["source_skill"], "fixture-skill");
-    assert!(!fixture.home.exists());
+    task_sync_opt_in::assert_no_database(&fixture.home);
 }
 
 #[test]
@@ -728,7 +732,7 @@ fn setup_prepares_private_raw_edits_and_exact_repeat_without_mutating_local_stat
     );
     assert!(!fixture.root.join(".engram/project.json").exists());
     assert!(!fixture.root.join(".engram/tasks").exists());
-    assert!(!fixture.home.exists());
+    task_sync_opt_in::assert_no_database(&fixture.home);
 }
 
 #[test]
@@ -752,7 +756,7 @@ fn setup_supports_actual_separate_git_directory_and_alias_without_notes() {
     );
     assert_eq!(intent["basis"]["assertions"]["include_notes"], false);
     assert!(fixture.root.join(".git").is_file());
-    assert!(!fixture.home.exists());
+    task_sync_opt_in::assert_no_database(&fixture.home);
 }
 
 #[test]
@@ -779,7 +783,7 @@ fn setup_resolves_relative_git_directory_from_outside_repository() {
     let intent = fixture.intent();
     assert_eq!(intent["basis"]["branch"], "ordinary");
     assert!(fixture.admin.join("config").is_file());
-    assert!(!fixture.home.exists());
+    task_sync_opt_in::assert_no_database(&fixture.home);
 }
 
 #[test]
@@ -1003,7 +1007,7 @@ fn setup_proposed_attributes_preserve_text_diffs_and_merge_conflict_markers() {
         assert!(conflict.contains("\"other\""), "{conflict}");
         assert!(!fixture.root.join("named-text-sentinel.txt").exists());
         assert!(!fixture.root.join("default-merge-sentinel.txt").exists());
-        assert!(!fixture.home.exists());
+        task_sync_opt_in::assert_no_database(&fixture.home);
     }
 }
 
@@ -1255,6 +1259,6 @@ fn setup_rejects_junction_ancestors_without_touching_their_targets() {
     assert!(error.contains("linked path refused"), "{error}");
     assert!(!fixture.intent_path().exists());
     assert!(!fixture.admin.join("engram-task-sync-setup.lock").exists());
-    assert!(!fixture.home.exists());
+    task_sync_opt_in::assert_no_database(&fixture.home);
     assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"private");
 }

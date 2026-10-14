@@ -1,6 +1,9 @@
 #[path = "../src/test_support.rs"]
 mod test_support;
 
+#[path = "common/task_sync_opt_in.rs"]
+mod task_sync_opt_in;
+
 use engram::task_sync::directory;
 use serde_json::Value;
 use std::{fs, path::Path, process::Command};
@@ -22,6 +25,7 @@ fn task_prepare_cli_complete_candidates_profiles_and_process_lock() {
     let marker = fixture.path().join(".engram-project");
     fs::write(&marker, "prepare-cli\n").unwrap();
     let home = fixture.path().join("home");
+    task_sync_opt_in::enable(&home, "prepare-cli");
     let policy = if cfg!(windows) {
         "case_fold"
     } else {

@@ -2,10 +2,11 @@
 
 use super::attribution::resolve_shell_work_attribution;
 use anyhow::Result;
-use engram::{LocalWorkService, ProjectId, SessionId, task_sync::directory};
+use engram::{
+    LocalWorkService, ProjectId, SessionId,
+    task_sync::{directory, setup},
+};
 use std::path::{Path, PathBuf};
-
-mod setup;
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct TaskSyncArgs {
@@ -67,6 +68,18 @@ enum TaskSyncCommand {
         include_notes: bool,
         #[arg(long)]
         origin_machine: Option<String>,
+    },
+    /// Materialize selected preparation bytes in the main checkout; no commit or network.
+    SetupMaterialize {
+        repository: PathBuf,
+        #[arg(long)]
+        setup_operation: uuid::Uuid,
+        #[arg(long)]
+        prepared_operation: uuid::Uuid,
+        #[arg(long)]
+        progress_directory: PathBuf,
+        #[arg(long)]
+        candidate_directory: PathBuf,
     },
     /// Write deterministic project.json and tasks/<uuid>.json into an explicit directory.
     Export {
@@ -203,6 +216,15 @@ pub(crate) fn run(
         return run_settings(database, project, &args);
     }
     let attribution = resolve_shell_work_attribution(args.actor_id, args.session_id)?;
+    let service = LocalWorkService::new_with_attribution(
+        database,
+        project,
+        attribution.actor_id.clone(),
+        SessionId(attribution.session_id.clone()),
+        args.source_skill.clone(),
+        args.actor_context.clone(),
+        attribution.defaults,
+    );
     if let TaskSyncCommand::SetupPrepare {
         repository,
         branch,
@@ -212,9 +234,8 @@ pub(crate) fn run(
         origin_machine,
     } = args.operation
     {
-        let receipt = setup::prepare(
+        let receipt = service.prepare_task_sync_setup(
             project_file,
-            &project,
             &repository,
             &branch,
             setup::Assertions {
@@ -224,26 +245,11 @@ pub(crate) fn run(
                 origin_machine,
                 profile: engram::task_sync::FORMAT.into(),
             },
-            setup::Attribution {
-                actor_id: attribution.actor_id.clone(),
-                session_id: attribution.session_id.clone(),
-                actor_context: args.actor_context,
-                source_skill: args.source_skill,
-            },
         )?;
         attribution.print_notices();
         println!("{}", serde_json::to_string_pretty(&receipt)?);
         return Ok(true);
     }
-    let service = LocalWorkService::new_with_attribution(
-        database,
-        project,
-        attribution.actor_id.clone(),
-        SessionId(attribution.session_id.clone()),
-        args.source_skill,
-        args.actor_context,
-        attribution.defaults,
-    );
     match args.operation {
         TaskSyncCommand::Status { .. }
         | TaskSyncCommand::Enable { .. }
@@ -271,7 +277,27 @@ pub(crate) fn run(
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
         TaskSyncCommand::SetupPrepare { .. } => {
-            unreachable!("setup handled before service creation")
+            unreachable!("setup preparation handled before exchange dispatch")
+        }
+        TaskSyncCommand::SetupMaterialize {
+            repository,
+            setup_operation,
+            prepared_operation,
+            progress_directory,
+            candidate_directory,
+        } => {
+            let receipt = service.materialize_task_sync_setup(
+                project_file,
+                &setup::MaterializeSelection {
+                    repository: materialization_path(repository)?,
+                    setup_operation,
+                    prepared_operation,
+                    progress_directory: materialization_path(progress_directory)?,
+                    candidate_directory: materialization_path(candidate_directory)?,
+                },
+            )?;
+            attribution.print_notices();
+            println!("{}", serde_json::to_string_pretty(&receipt)?);
         }
         TaskSyncCommand::Export {
             directory: path,
@@ -307,6 +333,7 @@ pub(crate) fn run(
             directory: path,
             dry_run,
         } => {
+            service.require_task_sync_enabled()?;
             let tree = directory::read(&path)?;
             let result = service.import_task_tree(&tree, dry_run, chrono::Utc::now())?;
             attribution.print_notices();
@@ -314,4 +341,14 @@ pub(crate) fn run(
         }
     }
     Ok(true)
+}
+
+fn materialization_path(path: std::path::PathBuf) -> Result<std::path::PathBuf> {
+    anyhow::ensure!(
+        !path
+            .components()
+            .any(|component| component == std::path::Component::ParentDir),
+        "materialization selection paths must not contain '..'; use the original absolute paths without parent components"
+    );
+    Ok(std::path::absolute(path)?)
 }

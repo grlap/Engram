@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-mod files;
+pub(super) mod files;
 use files::Directory;
 
 const MAX_FILE: usize = 1024 * 1024;
@@ -62,6 +62,14 @@ pub struct PreparedCandidate {
 /// Refuses pending/unknown entries, unsafe paths, malformed or divergent bytes,
 /// missing generations and mismatched operation/project/profile/destination.
 pub fn read_prepared(progress: &Path, selection: &PreparedSelection) -> Result<PreparedCandidate> {
+    read_selected(progress, selection, false)
+}
+
+pub(super) fn read_selected(
+    progress: &Path,
+    selection: &PreparedSelection,
+    pending: bool,
+) -> Result<PreparedCandidate> {
     selection.profile.validate()?;
     let progress = Directory::open(progress)?;
     let names = progress.names(3)?;
@@ -85,9 +93,23 @@ pub fn read_prepared(progress: &Path, selection: &PreparedSelection) -> Result<P
             "noncanonical prepared generation name"
         );
         let directory = progress.child(Path::new(name))?;
-        let entries = directory.names(3)?;
+        let entries = directory.names(if pending { 16 } else { 3 })?;
+        let declared: Vec<_> = entries
+            .iter()
+            .filter(|name| {
+                !pending
+                    || !name
+                        .to_str()
+                        .is_some_and(|name| name.starts_with(".complete-"))
+            })
+            .cloned()
+            .collect();
+        let completed =
+            declared == ["candidate", "complete", "state.json"].map(std::ffi::OsString::from);
         ensure!(
-            entries == ["candidate", "complete", "state.json"].map(std::ffi::OsString::from),
+            completed
+                || (pending
+                    && declared == ["candidate", "state.json"].map(std::ffi::OsString::from)),
             "incomplete or unknown prepared generation entries; preserve them"
         );
         let state = directory.read(Path::new("state.json"), MAX_FILE)?;
@@ -102,14 +124,61 @@ pub fn read_prepared(progress: &Path, selection: &PreparedSelection) -> Result<P
             "invalid prepared journal binding"
         );
         metadata.profile.validate()?;
-        let complete = directory.read(Path::new("complete"), 64)?;
+        if pending {
+            for name in entries.iter().filter(|name| {
+                name.to_str()
+                    .is_some_and(|name| name.starts_with(".complete-"))
+            }) {
+                let name_text = name
+                    .to_str()
+                    .context("non-UTF8 completion temporary name")?;
+                let suffix = name_text
+                    .strip_prefix(".complete-")
+                    .expect("filtered completion prefix");
+                ensure!(
+                    !suffix.is_empty()
+                        && suffix.len() <= 64
+                        && suffix
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-'),
+                    "unknown completion temporary entry; preserve it"
+                );
+                let bytes = directory.read(Path::new(name), 64)?;
+                ensure!(
+                    metadata
+                        .operation
+                        .to_string()
+                        .as_bytes()
+                        .starts_with(&bytes),
+                    "completion temporary differs from admitted operation; preserve it"
+                );
+            }
+        }
+        let complete = if completed {
+            directory.read(Path::new("complete"), 64)?
+        } else {
+            Vec::new()
+        };
         ensure!(
-            complete == operation.to_string().as_bytes(),
+            !completed || complete == operation.to_string().as_bytes(),
             "invalid prepared completion marker"
         );
         generations.push((metadata, directory, entries, state, complete));
     }
     generations.sort_by_key(|generation| generation.0.sequence);
+    if pending {
+        ensure!(
+            generations
+                .last()
+                .is_some_and(|generation| generation.0.operation == selection.operation
+                    && generation.4.is_empty())
+                && generations
+                    .iter()
+                    .take(generations.len().saturating_sub(1))
+                    .all(|generation| !generation.4.is_empty()),
+            "only the latest admitted pending preparation can recover after opt-out"
+        );
+    }
     ensure!(
         !generations.is_empty() && generations.len() <= 2,
         "selected preparation missing or journal exceeds retained generations"
@@ -139,12 +208,21 @@ pub fn read_prepared(progress: &Path, selection: &PreparedSelection) -> Result<P
         metadata.project == selection.project && metadata.profile == selection.profile,
         "prepared project or profile differs from selection"
     );
-    let destination = Directory::open(&selection.destination)?;
-    let recorded_destination = Directory::open(&metadata.destination)?;
-    ensure!(
-        destination.same_directory(&recorded_destination)?,
-        "prepared destination differs from selection"
-    );
+    let destination = if pending {
+        ensure!(
+            super::resolved_child(&selection.destination)? == metadata.destination,
+            "pending destination differs from selection"
+        );
+        None
+    } else {
+        let destination = Directory::open(&selection.destination)?;
+        let recorded_destination = Directory::open(&metadata.destination)?;
+        ensure!(
+            destination.same_directory(&recorded_destination)?,
+            "prepared destination differs from selection"
+        );
+        Some(destination)
+    };
     let documents = read_documents(&directory.child(Path::new("candidate"))?)?;
     let tree = TaskTree::from_stored_documents(&documents)?;
     ensure!(
@@ -160,15 +238,21 @@ pub fn read_prepared(progress: &Path, selection: &PreparedSelection) -> Result<P
         documents_fingerprint(&documents) == metadata.documents_fingerprint,
         "prepared bytes differ from recorded basis"
     );
-    ensure!(
-        read_documents(&destination)? == documents,
-        "prepared destination bytes differ from retained generation"
-    );
+    if let Some(destination) = &destination {
+        ensure!(
+            read_documents(destination)? == documents,
+            "prepared destination bytes differ from retained generation"
+        );
+    }
     ensure!(
         progress.names(3)? == names
-            && directory.names(3)? == entries
+            && directory.names(if pending { 16 } else { 3 })? == entries
             && directory.read(Path::new("state.json"), MAX_FILE)? == state
-            && directory.read(Path::new("complete"), 64)? == complete,
+            && (if complete.is_empty() {
+                directory.names(if pending { 16 } else { 3 })? == entries
+            } else {
+                directory.read(Path::new("complete"), 64)? == complete
+            }),
         "prepared journal changed during read"
     );
     Ok(PreparedCandidate {

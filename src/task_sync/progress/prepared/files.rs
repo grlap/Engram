@@ -9,10 +9,10 @@ use std::{
     path::{Component, Path},
 };
 
-pub(super) struct Directory(Vec<Dir>);
+pub(in crate::task_sync::progress) struct Directory(Vec<Dir>);
 
 impl Directory {
-    pub(super) fn open(path: &Path) -> Result<Self> {
+    pub(in crate::task_sync::progress) fn open(path: &Path) -> Result<Self> {
         let absolute = std::path::absolute(path)?;
         let mut anchor = std::path::PathBuf::new();
         let mut directories = Vec::new();
@@ -50,11 +50,11 @@ impl Directory {
         Ok(Self(directories))
     }
 
-    fn dir(&self) -> &Dir {
+    pub(in crate::task_sync::progress) fn dir(&self) -> &Dir {
         self.0.last().expect("retained directory")
     }
 
-    pub(super) fn child(&self, name: &Path) -> Result<Self> {
+    pub(in crate::task_sync::progress) fn child(&self, name: &Path) -> Result<Self> {
         ensure!(
             matches!(
                 name.components().collect::<Vec<_>>().as_slice(),
@@ -80,7 +80,7 @@ impl Directory {
         Ok(left == right)
     }
 
-    pub(super) fn names(&self, limit: usize) -> Result<Vec<OsString>> {
+    pub(in crate::task_sync::progress) fn names(&self, limit: usize) -> Result<Vec<OsString>> {
         let mut names = Vec::new();
         for entry in self.dir().entries()? {
             ensure!(
@@ -97,7 +97,11 @@ impl Directory {
         self.open_file(name, limit).map(drop)
     }
 
-    pub(super) fn read(&self, name: &Path, limit: usize) -> Result<Vec<u8>> {
+    pub(in crate::task_sync::progress) fn read(
+        &self,
+        name: &Path,
+        limit: usize,
+    ) -> Result<Vec<u8>> {
         let file = self.open_file(name, limit)?;
         let mut bytes = Vec::new();
         file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
