@@ -206,6 +206,133 @@ mod citable {
         assert_eq!(again, reason, "same snapshot gives deterministic ordering");
     }
 
+    /// A host may keep only the first 512 bytes of a refusal. The ids of
+    /// records stored before ids became random UUIDs are 64 hex digits, the
+    /// widest an id can be. The refusal the store returns, and the message an
+    /// agent receives for it by CLI or MCP, must still show all four of them
+    /// whole.
+    #[test]
+    fn full_historical_id_widths_fit_the_host_refusal_excerpt() {
+        const EXCERPT: usize = 512;
+        // Derive the ids at runtime from the same code that made them, never
+        // a pinned digest.
+        let records = crate::domain::CitableVerificationRecords {
+            records: (0_u8..4)
+                .map(|seed| ObjectId::from_canonical_bytes(&[seed]))
+                .collect(),
+            more: true,
+        };
+        for record in &records.records {
+            let id = record.as_str();
+            assert_eq!(id.len(), 64, "{id}");
+            assert!(
+                id.bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+                "{id}"
+            );
+        }
+        let distinct = records
+            .records
+            .iter()
+            .map(ObjectId::as_str)
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(distinct.len(), 4, "{:?}", records.records);
+
+        // Built as the store builds a wrong-source refusal: the discovery
+        // prefix ahead of a rejection long enough to be cut short.
+        let original = format!(
+            "the cited check ran on another source; {}run the check on the current source",
+            "the cited check's workspace was a long path. ".repeat(20)
+        );
+        let reason = format!(
+            "{}{original}",
+            super::super::super::citable::prefix(&records)
+        );
+        let cause = crate::domain::CitationAdmissionCause {
+            mismatch: EvaluationCitationMismatch::WrongSource,
+            criterion: 1,
+            citation: "0".repeat(32),
+            run_id: crate::domain::WorkRunId::new(),
+            evaluated_cut: 7,
+            citation_position: None,
+            requirement: None,
+            checked_revision: None,
+            judged_revision: None,
+            producer_observation: None,
+            citable_records: Some(records.clone()),
+            remedy: Remedy::RunCurrentCheckAndEvaluate,
+        };
+        let work = crate::domain::WorkId::new();
+        let error = super::super::super::admission::refusal(
+            work,
+            reason,
+            AcceptanceEvaluationAdmissionCause::Citation(Box::new(cause)),
+        );
+        assert!(matches!(
+            error,
+            StoreError::AcceptanceEvaluationAdmissionRefused { .. }
+        ));
+
+        // The core envelope host core consumers keep carries the Display.
+        let display = error.to_string();
+        let shared = crate::verbs::store_error_value(&error);
+        assert_eq!(shared["error"]["message"].as_str(), Some(display.as_str()));
+        // An agent, by CLI or MCP, receives the agent projection instead: the
+        // item named by short reference and arguments spelled for the caller.
+        // Rendering it opens no store; the path lies in this test's own
+        // fixture, so a service that ever opened it eagerly would only create
+        // a throwaway file there.
+        let error = crate::verbs::VerbError::from(error);
+        let home = crate::test_support::temp_home().expect("test fixture directory");
+        let agent = || {
+            crate::verbs::AgentVerbs::new(
+                home.path().join("never-opened.db"),
+                crate::domain::ProjectId("historical-id-excerpt".into()),
+                "agent".into(),
+                crate::domain::SessionId("historical-id-excerpt".into()),
+                None,
+            )
+        };
+        let mut surfaces = vec![("Display", display)];
+        for (surface, verbs) in [
+            ("CLI agent message", agent()),
+            ("MCP agent message", agent().with_mcp_argument_names()),
+        ] {
+            let message = verbs.error_message(&error);
+            let projected = verbs.project_error(&error, shared.clone());
+            assert_eq!(
+                projected["error"]["message"].as_str(),
+                Some(message.as_str()),
+                "{surface}"
+            );
+            assert!(
+                message.starts_with("acceptance evaluation for w-")
+                    && !message.contains(&format!("{work:?}")),
+                "{surface} names the item by short reference: {message}"
+            );
+            surfaces.push((surface, message));
+        }
+        for (surface, text) in &surfaces {
+            assert!(text.is_ascii(), "{surface}: {text}");
+            assert!(text.len() > EXCERPT, "{surface} must be cut short: {text}");
+            let excerpt = &text[..EXCERPT];
+            for record in &records.records {
+                assert!(excerpt.contains(record.as_str()), "{surface}: {text}");
+            }
+            assert!(excerpt.contains("more=true"), "{surface}: {text}");
+            let discovery = text
+                .find("Citable verification records")
+                .unwrap_or_else(|| panic!("{surface} carries the discovery: {text}"));
+            let rejection = text
+                .find("the cited check ran on another source")
+                .unwrap_or_else(|| panic!("{surface} carries the rejection: {text}"));
+            assert!(
+                discovery < rejection,
+                "{surface}: the discovery precedes the rejection: {text}"
+            );
+        }
+    }
+
     #[test]
     fn citable_records_do_not_use_a_check_beyond_the_evaluated_cut() {
         let (mut fixture, work, _claim, mut host) = bound_fixture("citable-cut", false);

@@ -2069,32 +2069,6 @@ mod citable {
             records.more
         )
     }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn full_historical_id_widths_fit_the_host_refusal_excerpt() {
-            // Derive full-width historical keys at runtime, never pin a digest.
-            let records = CitableVerificationRecords {
-                records: (0_u8..4)
-                    .map(|seed| ObjectId::from_canonical_bytes(&[seed]))
-                    .collect(),
-                more: true,
-            };
-            let message = format!(
-                "acceptance evaluation refused for work {:?}: {}{}",
-                crate::domain::WorkId(uuid::Uuid::new_v4()),
-                prefix(&records),
-                "long rejection ".repeat(50)
-            );
-            for record in &records.records {
-                assert!(message[..512].contains(record.as_str()), "{message}");
-            }
-            assert!(message[..512].contains("more=true"));
-        }
-    }
 }
 mod citations;
 use citations::{
