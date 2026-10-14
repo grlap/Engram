@@ -165,15 +165,18 @@ receipt supplies presence facts, never permission to clear recovery state.
    context, not authentication.
 3. **One MCP child per session.** Start
    `engram mcp --actor-id … --session-id … [--actor-context …]` on stdio; it
-   exposes the fourteen words plus `search`. For a child that must not
-   write, add `--read-only`: the server then lists only the read words and
-   refuses every other call, and every writing form of a read word, as a
-   tool error with a stable code (see
-   [read-only mode](features/cli-and-mcp.md#read-only-mode)). Stateful calls reuse a cached
-   store connection; each read that records nothing (`next --peek`, `ls`,
-   `search`, `show`, and every `memories` form) opens a separate transient
+   exposes the fourteen work words and `search`, plus the separate
+   `task_sync_settings` configuration tool — sixteen tools total. For a child
+   that must not write, add `--read-only`: the server lists six tools, `next`,
+   `ls`, `search`, `show`, `memories`, and `task_sync_settings`. The configuration
+   tool is admitted only with `action: status`. Every other call and writing
+   form is refused as a tool error with a stable code (see
+   [read-only mode](features/cli-and-mcp.md#read-only-mode)). Stateful work calls
+   reuse a cached store connection; each work read that records nothing
+   (`next --peek`, `ls`, `search`, `show`, and every `memories` form) opens a separate transient
    read-only connection, needs no write access to the database or WAL file,
-   and refuses `store_not_initialized` instead of creating a store. Only the
+   and refuses `store_not_initialized` instead of creating a store. Settings
+   status opens no SQLite and creates no setting path. Only the
    first page of an unfiltered `memories` listing that carries
    `context_generation` then records the listing through the cached
    connection. A failed operation rolls back before the next call.

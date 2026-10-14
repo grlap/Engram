@@ -1271,8 +1271,9 @@ are unchanged. See the [compact contract](cli-and-mcp.md#using-engram-as-an-agen
 
 This six-operation slice is shipped through one `LocalWorkService` used by
 both CLI and MCP. The long-lived MCP server retains one service instance for
-the process lifetime and shares it across the fifteen MCP tools. That instance
-lazily retains one SQLite connection; cloning a
+the process lifetime and shares it across the fifteen work tools and the
+separate `task_sync_settings` configuration tool. Work operations lazily retain
+one SQLite connection; settings operations do not open SQLite. Cloning a
 service explicitly creates an independent connection so concurrent delivery
 and CAS behavior remains real rather than process-local serialization. The
 serial scale benchmark samples that same retained-service lifecycle. The

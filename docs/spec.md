@@ -1065,7 +1065,7 @@ designed.
 
 ### 8.2 Agent-facing MCP server
 
-Agent-facing MCP exposes exactly `next`, `ls`, `show`, `add`, `claim`,
+The agent-facing MCP work tools are exactly `next`, `ls`, `show`, `add`, `claim`,
 `update`, `gate`, `evaluate`, `note`, `done`, `search`, `handoff`, `remember`, `memories`,
 and `forget`. The ordinary lifecycle work tools translate into the
 six-operation work core: `work_next`, `work_focus`, `work_propose`,
@@ -1077,11 +1077,14 @@ They require the live holder on open work. After completion, any project-bound
 session may append either as attributed, provenance-marked late evidence after
 the immutable completion cut; this does not checkpoint, reopen, reseal, or add
 a completion barrier, and the existing `CompletionSeal` never absorbs it.
-Optional generic memory capture, import, publication, and administrative
-queries remain separate tools rather than expanding every model turn.
+Optional generic memory capture, import, publication, and additional
+administrative queries remain outside the work-word surface. The shipped
+`task_sync_settings` configuration tool is separate from the fourteen work words
+and `search`; see [project opt-in](features/task-planning-text.md#project-opt-in-setting).
 
-The agent surface is fourteen words plus `search` — fifteen MCP tools. The
-six-operation work core is unchanged: `gate` already wraps the existing
+The work surface is fourteen words and `search` — fifteen work tools. Ordinary
+MCP registers the separate configuration tool as well, for sixteen tools total.
+The six-operation work core is unchanged: `gate` already wraps the existing
 evidence path, `remember`, `memories`, and `forget` are a thin project-memory
 surface outside it — no focus mutation, no claim renewal — and `evaluate` is
 the service's separate evaluation entry, not a core operation and not exposed
