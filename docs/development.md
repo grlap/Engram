@@ -466,7 +466,18 @@ line in stage order. The log locator is derived from the run directory and
 validated stage name; no log contents or saved diagnostic text are copied.
 An invalid name yields `unknown-stage: unknown exit=unknown log=unknown`.
 Missing or unsafe integer exits are `unknown`; states use the closed summary
-vocabulary. An unrun stage's locator may name a log that does not exist yet.
+vocabulary. A saved stage marked `passed` needs a zero exit, no error and no
+counted test failures to retain that state. A safe nonzero exit, error or positive
+`tests.failed` or `tests.failures` makes it `failed`; a missing, invalid or
+unsafe exit makes it `unknown`. A signal still takes precedence as
+`interrupted`, followed by an unknown outcome and an unrun stage.
+This classification is a read-only projection; it does not rewrite `results.json`.
+An unrun stage's locator may name a log that does not exist yet.
+A stage's success describes that stage alone. Its `passed` line can appear
+beneath an overall `FAIL` when the input changed after the command succeeded.
+The overall verdict decides whether the run passed; no successful stage
+overrides it. Host validation of source identity and test credit is a separate
+requirement, not a property established by the printed stage line.
 The supported focused (one stage) and full (twelve stages) modes put every
 stage within the first 32 physical lines. Larger saved runs retain every
 stage in order, without that placement guarantee. TermAl's text recognizer
@@ -517,8 +528,9 @@ A terminal passed result with an unverified input comparison stays `UNKNOWN`
 with reason `input-unverified`. Its blocker uses `no-terminal-result` with
 `basis: "input-unverified"`: there is no verified terminal verdict to act on,
 even though a result file exists. It does not report a runner failure.
-An inconsistent saved success stays `FAIL`: its `runner-failed` blocker carries
-`basis: "input-changed"` for conflicting fingerprints or
+An inconsistent saved success stays `FAIL`. A stage with definite failure
+evidence selects a `stage-failed` blocker. Otherwise its `runner-failed`
+blocker carries `basis: "input-changed"` for conflicting fingerprints or
 `basis: "contradictory-result"` for a contradictory result, even with exit zero.
 
 When `--notify` is supplied, the launcher sends the same frozen body to its target and also to
@@ -547,8 +559,9 @@ node scripts/test-launcher.mjs summary RUN_DIRECTORY --stage preflight:cargo-ver
 
 The excerpt comes from saved diagnostic/error fields, not a fresh test run.
 Its text is bounded by `--max-chars` (1–6000 characters, default 2400), with
-results and log locators; a missing excerpt is stated explicitly. Successful
-or unrun stages cannot be inspected this way. Inspection changes no file and
+results and log locators; a missing excerpt is stated explicitly. A saved stage
+whose contradictions project as failed can also be inspected. Stages that remain
+successful or unrun cannot be inspected this way. Inspection changes no file and
 emits no machine record. Excerpts are not redacted. Do not put secrets in gate
 output.
 

@@ -937,9 +937,18 @@ export function runLiveness(result, now = Date.now()) {
 
 const completionReasons = new Set(["input-capture-failed", "request-publication-failed", "input-changed", "fingerprint-check-failed", "preflight-failed",
   "spawn-failed", "stage-failed", "launcher-error"]);
-const stageState = (entry) => entry.signal ? "interrupted" : entry.outcome === "unknown" ? "unknown"
-  : entry.state === "skipped" ? "unrun"
-    : ["passed", "failed", "running", "unrun"].includes(entry.state) ? entry.state : "unknown";
+const stageHasFailures = (entry) => entry.tests?.failures > 0 || entry.tests?.failed > 0;
+function stageState(entry) {
+  if (entry.signal) return "interrupted";
+  if (entry.outcome === "unknown") return "unknown";
+  if (entry.state === "skipped") return "unrun";
+  if (entry.state === "passed") {
+    if (entry.error || stageHasFailures(entry)) return "failed";
+    if (!Number.isSafeInteger(entry.code)) return "unknown";
+    return entry.code === 0 ? "passed" : "failed";
+  }
+  return ["failed", "running", "unrun"].includes(entry.state) ? entry.state : "unknown";
+}
 function stateCounts(entries, state) {
   const counts = { total: entries.length, passed: 0, failed: 0, interrupted: 0, running: 0, unrun: 0, unknown: 0 };
   for (const entry of entries) counts[state(entry)] += 1;
@@ -966,7 +975,7 @@ export function completionMetadata(request, result, now = Date.now()) {
   const interrupted = result.interrupted === true || stages.some((entry) => Boolean(entry.signal)) || liveness === "interrupted";
   const contradictory = result.exitCode !== 0 || Boolean(result.error) || stages.length === 0
     || stages.some((entry) => entry.state !== "passed" || entry.code !== 0 || entry.error || entry.signal || entry.outcome
-      || entry.tests?.failures > 0)
+      || stageHasFailures(entry))
     || preflight.some((entry) => entry.code !== 0 || entry.error || entry.signal);
   const verdict = interrupted ? "INTERRUPTED" : liveness === "passed"
     ? input.comparison === "mismatch" || contradictory ? "FAIL" : input.comparison === "matched" ? "PASS" : "UNKNOWN"
@@ -1056,7 +1065,7 @@ export async function inspectFailure(runDir, selector, maxChars = diagnosticLimi
   const entry = (preflight ? result.preflight : result.stages)?.find((candidate) => candidate.name === name);
   if (!entry) throw usageFailure("inspection selector is unavailable");
   const failed = preflight ? entry.code !== 0 || Boolean(entry.error) || Boolean(entry.signal)
-    : entry.state === "failed" || Boolean(entry.signal);
+    : entry.state === "failed" || stageState(entry) === "failed" || Boolean(entry.signal);
   if (!failed) throw usageFailure("inspection requires a failed stage or preflight probe");
   const lines = [`inspection: ${quote(selector)} max-chars=${maxChars}`, `results: ${join(runDir, "results.json")}`];
   // Only this opt-in path reads the selected saved diagnostic prose. Full logs
