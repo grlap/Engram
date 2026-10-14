@@ -61,7 +61,7 @@ pub(crate) fn resume_pending(
         })
         .context("task sync is not enabled and no admitted pending preparation is available")?;
     let generation = progress.child(Path::new(name))?;
-    let state = generation.read(Path::new("state.json"), 1024 * 1024)?;
+    let state = generation.read(Path::new("state.json"), journal::STATE_LIMIT)?;
     let meta: journal::Metadata = crate::task_sync::parse(&state)?;
     let candidate = prepared::read_selected(
         &progress_path,
@@ -79,7 +79,7 @@ pub(crate) fn resume_pending(
     );
     // Recheck the pinned metadata immediately before the only output write.
     ensure!(
-        generation.read(Path::new("state.json"), 1024 * 1024)? == state
+        generation.read(Path::new("state.json"), journal::STATE_LIMIT)? == state
             && progress.names(3)? == names,
         "pending preparation changed during recovery"
     );

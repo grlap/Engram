@@ -112,7 +112,7 @@ pub(super) fn read_selected(
                     && declared == ["candidate", "state.json"].map(std::ffi::OsString::from)),
             "incomplete or unknown prepared generation entries; preserve them"
         );
-        let state = directory.read(Path::new("state.json"), MAX_FILE)?;
+        let state = directory.read(Path::new("state.json"), journal::STATE_LIMIT)?;
         let metadata: journal::Metadata = crate::task_sync::parse(&state)?;
         ensure!(
             metadata.sequence == sequence
@@ -247,7 +247,7 @@ pub(super) fn read_selected(
     ensure!(
         progress.names(3)? == names
             && directory.names(if pending { 16 } else { 3 })? == entries
-            && directory.read(Path::new("state.json"), MAX_FILE)? == state
+            && directory.read(Path::new("state.json"), journal::STATE_LIMIT)? == state
             && (if complete.is_empty() {
                 directory.names(if pending { 16 } else { 3 })? == entries
             } else {

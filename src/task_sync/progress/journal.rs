@@ -9,6 +9,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// The largest `state.json` a generation may hold. Every reader refuses a
+/// larger one, so a writer must never publish it.
+pub(super) const STATE_LIMIT: usize = 1024 * 1024;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Metadata {
@@ -170,7 +174,7 @@ fn read_generation(path: &Path, sequence: u64, operation: uuid::Uuid) -> Result<
         return Err(invalid("journal generation must be an ordinary directory").into());
     }
     let meta: Metadata =
-        serde_json::from_slice(&read_bounded(&path.join("state.json"), 1024 * 1024)?)?;
+        serde_json::from_slice(&read_bounded(&path.join("state.json"), STATE_LIMIT as u64)?)?;
     if meta.sequence != sequence
         || meta.operation != operation
         || !meta.store.is_absolute()
@@ -226,6 +230,17 @@ pub(super) fn publish(
     meta: Metadata,
     documents: BTreeMap<String, Vec<u8>>,
 ) -> Result<Generation> {
+    // A generation no reader admits must never be published: check its state
+    // before pruning, staging or writing anything.
+    let state_bytes = serde_json::to_vec(&meta)?;
+    if state_bytes.len() > STATE_LIMIT {
+        return Err(invalid(format!(
+            "task-sync progress state is {} bytes, over the {} byte limit; shorten the capture reason or reduce the omitted entries",
+            state_bytes.len(),
+            STATE_LIMIT
+        ))
+        .into());
+    }
     let entries = generations(directory)?;
     // Keep the current generation as predecessor before publishing its successor.
     for (_, _, path) in entries.iter().take(entries.len().saturating_sub(1)) {
@@ -236,7 +251,7 @@ pub(super) fn publish(
     let candidate = staging.join("candidate");
     directory::write_documents(&candidate, &documents)?;
     let mut state = fs::File::create(staging.join("state.json"))?;
-    state.write_all(&serde_json::to_vec(&meta)?)?;
+    state.write_all(&state_bytes)?;
     state.sync_all()?;
     drop(state);
     let path = directory.join(format!(
