@@ -1,6 +1,6 @@
 ---
 name: review-changes
-description: Run Engram quality gates, freeze the worktree, and obtain two independent reviews from different vendors (Codex and Claude, with Kimi standing in for an unavailable Codex).
+description: Run Engram quality gates, freeze the worktree, and obtain two independent reviews from different vendors (Codex and Claude, with at most one Kimi stand-in, for an unavailable Codex or Claude).
 metadata:
   termal:
     title:
@@ -23,12 +23,13 @@ standing approval in AGENTS.md "Authority and Git".
 
 This workflow requires TermAl MCP delegation tools. Obtain the review pair —
 at most two reviews that count, from different vendors: spawn one Codex and
-one Claude; when Codex is unavailable (a usage limit or outage met in this
-round, with its refusal text recorded on the item), spawn Kimi in its place
-with the title `Kimi /review-code`. The stand-in replaces the Codex reviewer,
-whether its spawn was refused or its result was lost to Codex's usage limit or
-outage, so a round never has more than two reviews that count. An unavailable
-Claude reviewer is reported as unavailable; no stand-in replaces it. A round
+one Claude, with at most one Kimi stand-in, for an unavailable Codex or Claude.
+When Codex or Claude is unavailable (a usage limit or outage met in this round,
+with its refusal text recorded on the item), spawn Kimi in its place with the
+title `Kimi /review-code`. The stand-in replaces the unavailable reviewer,
+whether its spawn was refused or its result was lost to a usage limit or
+outage, so a round never has more than two reviews that count. Kimi never
+stands in for both reviewers of the same round. A round
 that ends with fewer than two reviews that count reports the missing reviewer
 as unavailable, spawns no further reviewer, and does not satisfy the standing
 approval's review condition. Do not substitute platform subagents, shell
@@ -291,10 +292,11 @@ with mode `reviewer` and `writePolicy: readOnly`:
 1. Codex, title `Codex /review-code`.
 2. Claude, title `Claude /review-code`.
 
-When Codex is unavailable (a usage limit or outage met in this round, with
-its refusal text recorded on the item), spawn Kimi in its place with the
-title `Kimi /review-code`. The optional third review, when commissioned, is
-spawned the same way, with its own title, and gets the same prompt.
+Use at most one Kimi stand-in, for an unavailable Codex or Claude. When Codex
+or Claude is unavailable (a usage limit or outage met in this round, with its
+refusal text recorded on the item), spawn Kimi in its place with the title
+`Kimi /review-code`. The optional third review, when commissioned, is spawned
+the same way, with its own title, and gets the same prompt.
 
 Give each a multi-line prompt. Its first line tells the reviewer to read
 `.claude/commands/review-code.md` in the worktree and follow it. The rest
@@ -309,10 +311,11 @@ into a High). The brief may point at the change since the previous freeze,
 but both reviewers review the whole input.
 
 If one spawn fails after the other succeeds, continue waiting for the created
-reviewer. When the failure is Codex's unavailability (a usage limit or
-outage), record the refusal text on the item and spawn Kimi in its place on
-the same freeze. For any other failure, Claude's included, or when the
-stand-in fails too, report the missing reviewer as unavailable.
+reviewer. When the failure is Codex's or Claude's unavailability (a usage limit
+or outage), record the refusal text on the item and, if no stand-in has been
+spawned this round, spawn Kimi in its place on the same freeze. For any other
+failure, or when the stand-in fails too or was already used for the other
+reviewer, report the missing reviewer as unavailable.
 
 ## 5. Wait through TermAl fan-in
 
@@ -357,8 +360,9 @@ to accept an earlier review.
 Fetch both structured result packets using `termal_get_session_result`, and
 the optional third review's once it has returned. Validated structured
 submissions are authoritative. If a submission is missing or failed, report
-that reviewer as unavailable; when the cause is Codex's unavailability met in
-this round, record the refusal text on the item and, if no stand-in has been
+that reviewer as unavailable; when the cause is Codex's or Claude's
+unavailability met in this round, record the refusal text on the item and,
+if no stand-in has been
 spawned this round, spawn Kimi in its place on the same freeze, as section 4
 describes, then wait for it through section 5 and fetch its result before
 presenting; otherwise report the reviewer as unavailable. When the stand-in's

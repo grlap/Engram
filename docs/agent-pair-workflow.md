@@ -11,8 +11,8 @@ to document, distribute, and confirm their durable recovery. This section is
 adopted guidance; the pilot proposal below remains a proposal. Current user
 instructions and each project's applicable quality requirements govern execution.
 This decision does not grant commit, push, installation, or restart authority.
-Rule 2's reviewer pair was amended on 2026-09-29, on Greg's word of that date,
-to let Kimi stand in for an unavailable Codex.
+Rule 2's reviewer pair permits at most one Kimi stand-in, for an unavailable
+Codex or Claude, as the standing approval describes.
 
 1. **The host owns validation of its safeguards.** TermAl owns tests proving
    denied writes, interpreter restrictions, and other host security behavior.
@@ -25,7 +25,7 @@ to let Kimi stand in for an unavailable Codex.
 2. **One parent owns each review input.** For Engram: implement corrections,
    run required project tests, freeze the current input, obtain exactly two
    independent read-only reviews from different vendors — Codex and Claude,
-   with Kimi standing in for an unavailable Codex as the
+   with at most one Kimi stand-in, for an unavailable Codex or Claude, as the
    [standing approval](../AGENTS.md#authority-and-git) describes — then
    consolidate findings. The parent
    owns gates, reviewer lifecycle, and acceptance; leaves inspect and report.
@@ -221,8 +221,9 @@ actually defines and verifies that boundary.
 
 For Engram, the parent follows the existing `/review-changes` contract: the
 gates and exactly two `/review-code` children from different vendors, one
-Codex and one Claude, with Kimi standing in for an unavailable Codex, plus the
-optional third review when the parent commissions it, through TermAl with
+Codex and one Claude, with at most one Kimi stand-in, for an unavailable Codex
+or Claude, plus the optional third review when the parent commissions it,
+through TermAl with
 `writePolicy: readOnly` run in parallel on one frozen input (Greg,
 2026-09-26), then freeze verification and consolidated results once the gate
 has passed. Only `/review-code` is delegated as review. The parent owns

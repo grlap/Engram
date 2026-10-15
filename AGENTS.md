@@ -73,10 +73,11 @@ their presence in a file alone does not prove delivery.
     tree, has no outstanding in-scope finding of Medium or higher, and every
     in-scope finding of Medium or higher from earlier rounds was fixed and
     reviewed again; a Low or a Note need not be fixed before the landing,
-    and a Low left unfixed is filed as its own item; while Codex is
+    and a Low left unfixed is filed as its own item; while Codex or Claude is
     unavailable (a usage limit or outage, recorded on the item with the
-    refusal text), Kimi stands in for it, and every other condition is
-    unchanged; any out-of-scope finding was filed as an
+    refusal text), Kimi stands in for the unavailable reviewer, Kimi never
+    stands in for both reviewers of the same round, and every other condition
+    is unchanged; any out-of-scope finding was filed as an
     independent root with provenance. An in-scope finding of Medium or
     higher left unfixed, even one rejected on evidence, goes to Greg;
   - the changeset delivers its items' acceptance criteria, and a
@@ -422,8 +423,8 @@ authority.
 2. **One parent owns each review input.** For Engram: implement corrections,
    run required project tests, freeze the current input, obtain exactly two
    independent read-only reviews from different vendors — Codex and Claude,
-   with Kimi standing in for an unavailable Codex as the standing approval
-   describes — then consolidate findings. The parent
+   with at most one Kimi stand-in, for an unavailable Codex or Claude, as the
+   standing approval describes — then consolidate findings. The parent
    owns gates, reviewer lifecycle, and acceptance; leaves inspect and report.
    Use supported host tools for required checks. Keep host-security acceptance
    separate from product review, with no competing owners or duplicate proof
@@ -459,9 +460,9 @@ waiting to integrate its documentation does not postpone it.
 
 - `/review-changes` runs parent-owned quality gates, freezes the worktree, and
   delegates exactly two `/review-code` reviewers from different vendors, one
-  Codex and one Claude, through TermAl with `writePolicy: readOnly`; Kimi
-  stands in for an unavailable Codex as the standing approval describes; the
-  parent may add the optional third review below.
+  Codex and one Claude, through TermAl with `writePolicy: readOnly`; at most
+  one Kimi stand-in, for an unavailable Codex or Claude, as the standing
+  approval describes; the parent may add the optional third review below.
 - Kimi may give an optional third read-only review. The parent may
   commission it beside the pair on a round's frozen input; it is recommended
   for the first round of a changeset touching authority text,
