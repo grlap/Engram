@@ -83,7 +83,7 @@ async fn encoded_url_cases(fixture: &Fixture, selection: &TargetSelection) {
     workload::case_finished();
 }
 
-async fn helper_policy_cases(fixture: &Fixture, selection: &TargetSelection) {
+async fn helper_order_and_drift_cases(fixture: &Fixture, selection: &TargetSelection) {
     let limits = RunLimits::default();
     let cancel = Cancellation::default();
     fixture.git(&["config", "--add", "credential.helper", "manager-core"]);
@@ -103,7 +103,11 @@ async fn helper_policy_cases(fixture: &Fixture, selection: &TargetSelection) {
         RunError::TargetChanged
     );
     workload::case_finished();
-    fixture.git(&["config", "--unset-all", "credential.helper"]);
+}
+
+async fn helper_refusal_cases(fixture: &Fixture, selection: &TargetSelection) {
+    let limits = RunLimits::default();
+    let cancel = Cancellation::default();
     fixture.git(&[
         "config",
         "--add",
@@ -176,8 +180,12 @@ async fn task_exchange_windows_policy_groups_have_bounded_launch_workloads() {
             .lines()
             .filter(|line| line.starts_with("policy-workload "))
             .collect();
-        let expected = group.report();
-        assert_eq!(reports, [expected.as_str()], "{output}");
+        assert_eq!(reports.len(), 1, "{output}");
+        let expected = format!("{} elapsed_ms=", group.report());
+        let _: u128 = reports[0]
+            .strip_prefix(&expected)
+            .and_then(|value| value.parse().ok())
+            .expect("one exact workload report with measured elapsed milliseconds");
         eprintln!("{} supervisor=1", reports[0]);
     }
 }
@@ -211,7 +219,8 @@ async fn policy_configuration_fixture() {
         "url-1-7" => malformed_url_cases(&fixture, &selection, &MALFORMED_URLS[..7]).await,
         "url-8-14" => malformed_url_cases(&fixture, &selection, &MALFORMED_URLS[7..]).await,
         "encoded-fabricated" => encoded_url_cases(&fixture, &selection).await,
-        "helper" => helper_policy_cases(&fixture, &selection).await,
+        "helper-order-drift" => helper_order_and_drift_cases(&fixture, &selection).await,
+        "helper-refusals" => helper_refusal_cases(&fixture, &selection).await,
         _ => panic!("unknown owned fixture group"),
     }
     println!("\n{}", workload::finish());

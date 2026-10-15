@@ -3,6 +3,7 @@
 use std::{
     cell::Cell,
     process::{Command, Output},
+    time::Instant,
 };
 
 #[derive(Clone, Copy)]
@@ -15,7 +16,7 @@ pub(super) struct Group {
 
 // Counts include repository initialization (two direct Git launches). Each
 // malformed capture launches three queries; a complete capture launches seven.
-pub(super) const GROUPS: [Group; 4] = [
+pub(super) const GROUPS: [Group; 5] = [
     Group {
         name: "url-1-7",
         cases: 7,
@@ -35,14 +36,29 @@ pub(super) const GROUPS: [Group; 4] = [
         product: 7,
     },
     Group {
-        name: "helper",
-        cases: 4,
-        direct: 14,
-        product: 28,
+        name: "helper-order-drift",
+        cases: 2,
+        direct: 7,
+        product: 14,
+    },
+    Group {
+        name: "helper-refusals",
+        cases: 2,
+        direct: 8,
+        product: 14,
     },
 ];
 
 impl Group {
+    pub(super) fn assert_bounded(self) {
+        assert!(
+            self.direct + self.product <= 30,
+            "group={} has {} launches; split groups above the 30-launch ceiling",
+            self.name,
+            self.direct + self.product,
+        );
+    }
+
     pub fn report(self) -> String {
         format!(
             "policy-workload group={} cases={} direct={} product={} bound={} used={} fabricated-build=0",
@@ -59,6 +75,7 @@ impl Group {
 #[derive(Clone, Copy)]
 struct State {
     group: Group,
+    started: Instant,
     product_start: usize,
     direct: usize,
     cases: usize,
@@ -73,15 +90,24 @@ fn product_launches() -> usize {
 }
 
 pub(super) fn begin(group: Group) {
+    group.assert_bounded();
     STATE.with(|state| {
         assert!(state.get().is_none(), "one group per owned child");
         state.set(Some(State {
             group,
+            started: Instant::now(),
             product_start: product_launches(),
             direct: 0,
             cases: 0,
         }));
     });
+}
+
+#[test]
+fn task_exchange_policy_groups_fit_supervisor_launch_budget() {
+    for group in GROUPS {
+        group.assert_bounded();
+    }
 }
 
 pub(super) fn counts() -> (usize, usize) {
@@ -139,5 +165,9 @@ pub(super) fn finish() -> String {
         "group={} must exercise every declared case and launch",
         state.group.name,
     );
-    state.group.report()
+    format!(
+        "{} elapsed_ms={}",
+        state.group.report(),
+        state.started.elapsed().as_millis(),
+    )
 }
