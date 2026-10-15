@@ -125,44 +125,132 @@ fn task_materialize_owned_fresh_shared_tree_preserves_private_sibling_on_recover
 
 #[test]
 fn task_materialize_reserves_directory_capacity_before_publication_and_repeat() {
-    for existing in [false, true] {
-        let fixture = Fixture::with_setup(existing, &tree(1), existing);
-        let (path, published) = if existing {
-            (fixture.root.join(".engram"), vec!["project.json", "tasks"])
-        } else {
-            (
-                fixture.root.clone(),
-                vec![".engram", ".gitignore", ".gitattributes"],
-            )
-        };
-        let directory = Directory::open(&path).unwrap();
-        // Each declared entry is absent here. Exercise the production helper
-        // with small private test limits instead of creating 100,000 files.
-        let final_count = directory.names(100_000).unwrap().len() + published.len();
-        let before = snapshot(fixture.owned.path());
-        assert!(
-            directory
-                .names_with_room(final_count - 1, &published)
-                .unwrap_err()
-                .to_string()
-                .contains("no room")
+    let ignore = &b"/.engram/\n/target/\n"[..];
+    let attributes = &b"*.md text eol=lf\n"[..];
+    // Each reserved root name is independently missing. All-absent alone
+    // cannot distinguish a duplicate reservation from the intended names.
+    for (existing, setup) in [
+        (false, [Some(ignore), Some(attributes)]),
+        (true, [None, Some(attributes)]),
+        (true, [Some(ignore), None]),
+        (false, [None, None]),
+    ] {
+        let fixture = Fixture::with_setup_entries(existing, &tree(1), setup);
+        assert!(!fixture.private().exists());
+        assert_capacity_boundary(
+            &fixture,
+            &fixture.root,
+            &[".engram", ".gitignore", ".gitattributes"],
+            false,
         );
-        assert_eq!(snapshot(fixture.owned.path()), before);
-        directory.names_with_room(final_count, &published).unwrap();
-        assert_eq!(snapshot(fixture.owned.path()), before);
-        fixture.run();
-        fixture.assert_output();
-        assert_eq!(
-            directory
-                .names_with_room(final_count, &published)
-                .unwrap()
-                .len(),
-            final_count
-        );
-        let completed = snapshot(fixture.owned.path());
-        assert!(fixture.run().repeated);
-        assert_eq!(snapshot(fixture.owned.path()), completed);
     }
+
+    let fixture = Fixture::new(true, 1);
+    assert!(!fixture.private().exists());
+    assert_capacity_boundary(
+        &fixture,
+        &fixture.root.join(".engram"),
+        &["project.json", "tasks"],
+        true,
+    );
+}
+
+#[test]
+fn task_materialize_reserves_shared_capacity_during_empty_tasks_recovery_and_repeat() {
+    let fixture = Fixture::new(true, 0);
+    fixture.interrupt("journal-published");
+    let tasks = fixture.root.join(".engram/tasks");
+    fs::create_dir(&tasks).unwrap();
+    let identity = Directory::open(&tasks).unwrap().identity().unwrap();
+    assert!(fixture.private().exists());
+    let receipt = assert_capacity_boundary(
+        &fixture,
+        &fixture.root.join(".engram"),
+        &["project.json", "tasks"],
+        true,
+    );
+    assert!(receipt.recovered);
+    assert!(receipt.equal_unowned_empty_tasks);
+    assert_eq!(
+        Directory::open(&tasks).unwrap().identity().unwrap(),
+        identity
+    );
+}
+
+fn assert_capacity_boundary(
+    fixture: &Fixture,
+    path: &Path,
+    published: &[&str],
+    shared: bool,
+) -> MaterializeReceipt {
+    let directory = Directory::open(path).unwrap();
+    let names = directory.names(100_000).unwrap();
+    // Expected names are declared by the test, independently of the production
+    // reservation lists. Tight bounds exercise the common run, not the helper.
+    let missing = published
+        .iter()
+        .filter(|expected| {
+            !names
+                .iter()
+                .any(|name| name.as_os_str() == std::ffi::OsStr::new(**expected))
+        })
+        .count();
+    assert!(missing > 0);
+    let final_count = names.len() + missing;
+    let limits = |limit| DirectoryCapacity {
+        root: if shared { 100_000 } else { limit },
+        shared: if shared { limit } else { 100_000 },
+    };
+    let private_existed = fixture.private().exists();
+    let before = snapshot(fixture.owned.path());
+    let store = fs::read(&fixture.store).unwrap();
+    let mut checkpoints = Vec::new();
+    let error = super::super::super::super::run_with_capacity(
+        &fixture.marker,
+        &ProjectId("materialize/fixture".into()),
+        &fixture.selection,
+        true,
+        attribution(),
+        limits(final_count - 1),
+        &mut |point| {
+            checkpoints.push(point.to_owned());
+            Ok(())
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "materialization directory has no room for declared publication within entry bound"
+    );
+    assert!(checkpoints.is_empty(), "{checkpoints:?}");
+    assert_eq!(fixture.private().exists(), private_existed);
+    assert_eq!(snapshot(fixture.owned.path()), before);
+    assert_eq!(fs::read(&fixture.store).unwrap(), store);
+
+    let run = || {
+        super::super::super::super::run_with_capacity(
+            &fixture.marker,
+            &ProjectId("materialize/fixture".into()),
+            &fixture.selection,
+            true,
+            attribution(),
+            limits(final_count),
+            &mut |_| Ok(()),
+        )
+        .unwrap()
+    };
+    let receipt = run();
+    assert!(!receipt.repeated);
+    assert_eq!(receipt.recovered, private_existed);
+    fixture.assert_output();
+    assert_eq!(directory.names(100_000).unwrap().len(), final_count);
+    let completed = snapshot(fixture.owned.path());
+    let repeated = run();
+    assert!(repeated.repeated);
+    assert_eq!(repeated.operation, receipt.operation);
+    assert_eq!(snapshot(fixture.owned.path()), completed);
+    assert_eq!(fs::read(&fixture.store).unwrap(), store);
+    receipt
 }
 
 #[test]

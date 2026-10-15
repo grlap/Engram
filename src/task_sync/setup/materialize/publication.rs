@@ -15,6 +15,7 @@ pub(super) fn apply(
     record: &Record,
     documents: &Documents,
     completed: bool,
+    capacity: usize,
     checkpoint: &mut impl FnMut(&str) -> Result<()>,
 ) -> Result<bool> {
     let pins = private.child(Path::new("pins"))?;
@@ -51,7 +52,7 @@ pub(super) fn apply(
         );
         // Only the staged source has an exact two-entry inventory. Once public,
         // unrelated private siblings may coexist with the owned shared paths.
-        check_reserved_names(&public)?;
+        check_reserved_names(&public, capacity)?;
         check_owned_tree(&public, &pins, documents)?;
         return Ok(false);
     }
@@ -60,7 +61,7 @@ pub(super) fn apply(
         Some(public.identity()?) == record.existing_engram,
         "existing private .engram directory changed; preserve it"
     );
-    check_reserved_names(&public)?;
+    check_reserved_names(&public, capacity)?;
     let stage = private.child(Path::new("stage"))?;
     ensure!(
         stage.identity()? == record.stage,
@@ -123,8 +124,8 @@ pub(super) fn apply(
     Ok(equal_empty)
 }
 
-pub(super) fn check_reserved_names(public: &Directory) -> Result<()> {
-    for name in public.names_with_room(100_000, &["project.json", "tasks"])? {
+pub(super) fn check_reserved_names(public: &Directory, capacity: usize) -> Result<()> {
+    for name in public.names_with_room(capacity, &["project.json", "tasks"])? {
         if let Some(name) = name.to_str()
             && let Some(expected) = ["project.json", "tasks"]
                 .iter()

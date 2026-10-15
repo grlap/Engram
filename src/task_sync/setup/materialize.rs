@@ -73,6 +73,36 @@ fn run(
     attribution: Attribution,
     checkpoint: &mut impl FnMut(&str) -> Result<()>,
 ) -> Result<MaterializeReceipt> {
+    run_with_capacity(
+        marker,
+        project,
+        selection,
+        enabled,
+        attribution,
+        DirectoryCapacity {
+            root: 100_000,
+            shared: 100_000,
+        },
+        checkpoint,
+    )
+}
+
+/// Private per-invocation bounds let tests exercise the production admission path.
+#[derive(Clone, Copy)]
+struct DirectoryCapacity {
+    root: usize,
+    shared: usize,
+}
+
+fn run_with_capacity(
+    marker: &Path,
+    project: &ProjectId,
+    selection: &MaterializeSelection,
+    enabled: bool,
+    attribution: Attribution,
+    capacity: DirectoryCapacity,
+    checkpoint: &mut impl FnMut(&str) -> Result<()>,
+) -> Result<MaterializeReceipt> {
     attribution.validate()?;
     let admin_path = repository::administration(&selection.repository)?;
     let admin = Directory::open(&admin_path)?;
@@ -87,7 +117,7 @@ fn run(
         "selected setup project, marker or repository differs"
     );
     let root = Directory::open(&setup.basis.repository)?;
-    check_disk_names(&root, &setup.basis.project_file)?;
+    check_disk_names(&root, &setup.basis.project_file, capacity)?;
     ensure!(
         root.identity()?.same_device(admin.identity()?),
         "materialization requires repository and Git administration on the same filesystem"
@@ -121,8 +151,15 @@ fn run(
     }
     super::attributes::materialized(&record.basis, &documents)?;
     checkpoint("setup-checked")?;
-    let equal_empty =
-        publication::apply(&root, &private, &record, &documents, complete, checkpoint)?;
+    let equal_empty = publication::apply(
+        &root,
+        &private,
+        &record,
+        &documents,
+        complete,
+        capacity.shared,
+        checkpoint,
+    )?;
     repository::recheck(&record.basis, &record.index)?;
     super::attributes::materialized(&record.basis, &documents)?;
     checkpoint("public-checked")?;
@@ -158,13 +195,13 @@ fn receipt(
     }
 }
 
-fn check_disk_names(root: &Directory, marker: &Path) -> Result<()> {
+fn check_disk_names(root: &Directory, marker: &Path, capacity: DirectoryCapacity) -> Result<()> {
     let marker = marker
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| anyhow::anyhow!("selected marker has no UTF-8 name"))?;
     let selected = [".engram", ".gitignore", ".gitattributes", marker];
-    for name in root.names_with_room(100_000, &selected[..3])? {
+    for name in root.names_with_room(capacity.root, &selected[..3])? {
         if let Some(name) = name.to_str()
             && let Some(expected) = selected
                 .iter()
@@ -177,7 +214,9 @@ fn check_disk_names(root: &Directory, marker: &Path) -> Result<()> {
         }
     }
     match root.dir().symlink_metadata(".engram") {
-        Ok(_) => publication::check_reserved_names(&root.child(Path::new(".engram"))?)?,
+        Ok(_) => {
+            publication::check_reserved_names(&root.child(Path::new(".engram"))?, capacity.shared)?;
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
         Err(error) => return Err(error.into()),
     }

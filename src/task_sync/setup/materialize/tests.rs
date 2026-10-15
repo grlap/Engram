@@ -128,6 +128,18 @@ impl Fixture {
         tree: &TaskTree,
         setup: Option<[&[u8]; 2]>,
     ) -> Self {
+        Self::with_setup_entries(
+            existing_private,
+            tree,
+            setup.map_or([None, None], |bytes| bytes.map(Some)),
+        )
+    }
+
+    fn with_setup_entries(
+        existing_private: bool,
+        tree: &TaskTree,
+        setup: [Option<&[u8]>; 2],
+    ) -> Self {
         let include_notes = tree.project.notes_included;
         let origin_machine = include_notes.then(|| "fixture-machine".to_owned());
         let owned = crate::test_support::temp_home().unwrap();
@@ -167,9 +179,10 @@ impl Fixture {
         .unwrap();
         let marker = root.join(".engram-project");
         fs::write(&marker, "materialize/fixture\n").unwrap();
-        if let Some(bytes) = setup {
-            fs::write(root.join(".gitignore"), bytes[0]).unwrap();
-            fs::write(root.join(".gitattributes"), bytes[1]).unwrap();
+        for (name, bytes) in [".gitignore", ".gitattributes"].into_iter().zip(setup) {
+            if let Some(bytes) = bytes {
+                fs::write(root.join(name), bytes).unwrap();
+            }
         }
         fs::write(root.join("code.txt"), b"ordinary code\n").unwrap();
         git(&root, &["add", "."]);
