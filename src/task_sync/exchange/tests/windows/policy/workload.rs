@@ -1,0 +1,143 @@
+//! Fixed launch budgets for owned policy fixtures, separate from request timeouts.
+
+use std::{
+    cell::Cell,
+    process::{Command, Output},
+};
+
+#[derive(Clone, Copy)]
+pub(super) struct Group {
+    pub name: &'static str,
+    cases: usize,
+    direct: usize,
+    product: usize,
+}
+
+// Counts include repository initialization (two direct Git launches). Each
+// malformed capture launches three queries; a complete capture launches seven.
+pub(super) const GROUPS: [Group; 4] = [
+    Group {
+        name: "url-1-7",
+        cases: 7,
+        direct: 9,
+        product: 21,
+    },
+    Group {
+        name: "url-8-14",
+        cases: 7,
+        direct: 9,
+        product: 21,
+    },
+    Group {
+        name: "encoded-fabricated",
+        cases: 2,
+        direct: 9,
+        product: 7,
+    },
+    Group {
+        name: "helper",
+        cases: 4,
+        direct: 14,
+        product: 28,
+    },
+];
+
+impl Group {
+    pub fn report(self) -> String {
+        format!(
+            "policy-workload group={} cases={} direct={} product={} bound={} used={} fabricated-build=0",
+            self.name,
+            self.cases,
+            self.direct,
+            self.product,
+            self.direct + self.product,
+            self.direct + self.product,
+        )
+    }
+}
+
+#[derive(Clone, Copy)]
+struct State {
+    group: Group,
+    product_start: usize,
+    direct: usize,
+    cases: usize,
+}
+
+std::thread_local! {
+    static STATE: Cell<Option<State>> = const { Cell::new(None) };
+}
+
+fn product_launches() -> usize {
+    super::super::super::super::test_support::LAUNCHES.with(Cell::get)
+}
+
+pub(super) fn begin(group: Group) {
+    STATE.with(|state| {
+        assert!(state.get().is_none(), "one group per owned child");
+        state.set(Some(State {
+            group,
+            product_start: product_launches(),
+            direct: 0,
+            cases: 0,
+        }));
+    });
+}
+
+pub(super) fn counts() -> (usize, usize) {
+    let state = STATE.with(Cell::get).expect("owned policy group is active");
+    (state.direct, product_launches() - state.product_start)
+}
+
+fn check(state: State) {
+    let product = product_launches() - state.product_start;
+    assert!(
+        state.direct <= state.group.direct && product <= state.group.product,
+        "group={} direct={}/{} product={}/{}; add a group instead of increasing deadlines",
+        state.group.name,
+        state.direct,
+        state.group.direct,
+        product,
+        state.group.product,
+    );
+}
+
+// Fixture::git and assert_config bypass the product runner, so count them here.
+// Other Windows fixture tests use this wrapper without an active policy group.
+pub(in super::super) fn output(command: &mut Command) -> Output {
+    STATE.with(|slot| {
+        if let Some(mut state) = slot.get() {
+            state.direct += 1;
+            check(state);
+            slot.set(Some(state));
+        }
+    });
+    command.output().unwrap()
+}
+
+pub(super) fn case_finished() {
+    STATE.with(|slot| {
+        let mut state = slot.get().expect("owned policy group is active");
+        check(state);
+        state.cases += 1;
+        assert!(
+            state.cases <= state.group.cases,
+            "unexpected extra policy case"
+        );
+        slot.set(Some(state));
+    });
+}
+
+pub(super) fn finish() -> String {
+    let state = STATE
+        .with(|slot| slot.replace(None))
+        .expect("owned policy group is active");
+    let product = product_launches() - state.product_start;
+    assert_eq!(
+        (state.direct, product, state.cases),
+        (state.group.direct, state.group.product, state.group.cases),
+        "group={} must exercise every declared case and launch",
+        state.group.name,
+    );
+    state.group.report()
+}

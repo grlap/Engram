@@ -56,14 +56,14 @@ impl Fixture {
         }
     }
     fn git(&self, args: &[&str]) {
-        let output = Command::new("git")
+        let mut command = Command::new("git");
+        command
             .current_dir(&self.0)
             .args(args)
             .env("GIT_CONFIG_GLOBAL", self.0.join("global.config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .unwrap();
+            .env("GIT_TERMINAL_PROMPT", "0");
+        let output = policy::workload::output(&mut command);
         assert!(
             output.status.success(),
             "fixture Git failed: {}",
