@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { devNull } from "node:os";
 import { once } from "node:events";
-import { basename, delimiter, dirname, isAbsolute, join, relative } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import test, { after, describe } from "node:test";
 import { fileURLToPath } from "node:url";
 import { fingerprintLimitations, NORMALIZATION_LIMITATION, WINDOWS_LIMITATION } from "./review-freeze-fingerprint.mjs";
 import {
-  commandKind, completionMetadata, countTests, createRun, diagnostics, executeRun, inspectFailure, machineRecord, notifyRun, processHost, processIdentity,
-  recoverRun, renameWithRetry, requiredStages, sameCreation, selectsTests, startDetached, summarize,
+  commandKind, completionMetadata, countTests, createRun, diagnostics, executable, executeRun, fileProbes, inspectFailure, machineRecord, notifyRun,
+  processHost, processIdentity, recoverRun, renameWithRetry, requiredStages, sameCreation, selectsTests, startDetached, summarize,
   systemProbes, wellFormedCreated, wmiFileTime,
 } from "./test-launcher.mjs";
 import { fixtureHome, fixtureRoot, removeFixtureHomes, removeFixturePath, tempSnapshot, assertTempClean } from "./test-temp.mjs";
@@ -938,6 +938,46 @@ test("bare executable names resolve through PATH and Windows shims refuse", asyn
       assert.ok(refused.error.includes(binary));
     }
   });
+});
+
+test("a Windows app execution alias that stat refuses resolves, and other stat refusals stand", () => {
+  // The calls are replaced, so no real alias, file or platform is needed, and
+  // the fixture directory is never created.
+  const directory = join(fixtureRoot, "never-created-aliases");
+  const candidate = `${resolve(process.cwd(), directory, "pwsh")}.exe`;
+  const pathEnv = { PATH: directory };
+  const refusal = (code) => () => { throw Object.assign(new Error(`${code}: refused, stat '${candidate}'`), { code }); };
+  const file = (isFile) => () => ({ isFile: () => isFile });
+  const link = (isLink) => () => ({ isSymbolicLink: () => isLink });
+  const accessed = [];
+  const probes = (overrides) => ({ ...fileProbes, access: (path, mode) => accessed.push([path, mode]), ...overrides });
+  const find = (platform, overrides) => executable("pwsh", process.cwd(), pathEnv, { platform, probes: probes(overrides) });
+  const refused = (platform, overrides, lastError) => {
+    assert.throws(() => find(platform, overrides), (error) => {
+      assert.match(error.message, /^executable not found: pwsh/u);
+      if (lastError) assert.match(error.message, new RegExp(`last error: ${lastError}`, "u"));
+      else assert.doesNotMatch(error.message, /last error/u);
+      return true;
+    });
+  };
+  // A Store-installed pwsh.exe: stat refuses with EACCES, the entry is a
+  // reparse point, and an existence check passes.
+  assert.equal(find("win32", { stat: refusal("EACCES"), lstat: link(true) }), candidate);
+  assert.deepEqual(accessed, [[candidate, constants.F_OK]]);
+  // An ordinary file still resolves as before.
+  assert.equal(find("win32", { stat: file(true) }), candidate);
+  // Absence, a non-file, a refused entry that is no link, and a link gone
+  // between the two calls are each still refused with the existing message.
+  refused("win32", { stat: refusal("ENOENT") });
+  refused("win32", { stat: file(false) });
+  refused("win32", { stat: refusal("EACCES"), lstat: link(false) }, "EACCES");
+  refused("win32", { stat: refusal("EACCES"), lstat: refusal("ENOENT") }, "EACCES");
+  // A recognized alias still has to pass the existence check.
+  refused("win32", { stat: refusal("EACCES"), lstat: link(true), access: refusal("EACCES") }, "EACCES");
+  // Other stat errors are not read as an alias.
+  refused("win32", { stat: refusal("EPERM"), lstat: link(true) }, "EPERM");
+  // Off Windows there are no app aliases, so the same answers are refused.
+  refused("linux", { stat: refusal("EACCES"), lstat: link(true) }, "EACCES");
 });
 
 test("input capture failure reports once before detached admission or notification", async () => {

@@ -2,7 +2,7 @@
 // One execution, durable logs, one completion. Notification retries never run tests.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { constants, accessSync, closeSync, createReadStream, existsSync, linkSync, mkdirSync,
+import { constants, accessSync, closeSync, createReadStream, existsSync, linkSync, lstatSync, mkdirSync,
   openSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
@@ -448,21 +448,40 @@ export function machineRecord(request, result) {
   ].join("\n").concat("\n");
 }
 
-function executable(command, cwd, env) {
+// The file-system calls executable makes; tests replace them.
+export const fileProbes = { stat: statSync, lstat: lstatSync, access: accessSync };
+
+// A Windows app execution alias, such as a Store-installed pwsh.exe under
+// WindowsApps, is a reparse point that stat refuses with EACCES although the
+// entry is present and starting it works. Only that case counts as a file
+// stat could not read; every other stat failure stands.
+function isFile(candidate, platform, probes) {
+  try {
+    return probes.stat(candidate).isFile();
+  } catch (error) {
+    if (platform !== "win32" || error.code !== "EACCES") throw error;
+    let alias = false;
+    try { alias = probes.lstat(candidate).isSymbolicLink(); } catch { /* the stat refusal is the diagnostic */ }
+    if (alias) return true;
+    throw error;
+  }
+}
+
+export function executable(command, cwd, env, { platform = process.platform, probes = fileProbes } = {}) {
   let lastError;
   const path = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
   const bases = /[\\/]/u.test(command) || isAbsolute(command)
     ? [resolve(cwd, command)] : path.split(delimiter).map((part) => {
-      if (process.platform === "win32" && part.startsWith('"') && part.endsWith('"')) part = part.slice(1, -1);
+      if (platform === "win32" && part.startsWith('"') && part.endsWith('"')) part = part.slice(1, -1);
       return resolve(cwd, part, command);
     });
   // .cmd/.bat require a shell: callers must name that shell explicitly.
   for (const base of bases) {
-    for (const candidate of process.platform === "win32" ? [base, `${base}.exe`] : [base]) {
+    for (const candidate of platform === "win32" ? [base, `${base}.exe`] : [base]) {
       try {
-        if (process.platform === "win32" && !/\.exe$/iu.test(candidate)) continue;
-        if (!statSync(candidate).isFile()) continue;
-        accessSync(candidate, process.platform === "win32" ? constants.F_OK : constants.X_OK);
+        if (platform === "win32" && !/\.exe$/iu.test(candidate)) continue;
+        if (!isFile(candidate, platform, probes)) continue;
+        probes.access(candidate, platform === "win32" ? constants.F_OK : constants.X_OK);
         return candidate;
       } catch (error) {
         if (error.code !== "ENOENT") lastError = error;
