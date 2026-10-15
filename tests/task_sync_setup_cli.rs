@@ -1214,6 +1214,47 @@ fn setup_preserves_divergent_and_unowned_private_records_and_refuses_busy_lock()
 }
 
 #[test]
+fn setup_refuses_an_intent_whose_head_an_unrelated_commit_moved_and_keeps_its_bytes() {
+    let fixture = Fixture::new(false);
+    let head = |fixture: &Fixture| {
+        String::from_utf8(git(&fixture.root, &["rev-parse", "HEAD"]))
+            .unwrap()
+            .trim()
+            .to_owned()
+    };
+    let prepared_head = head(&fixture);
+    fixture.success();
+    assert_eq!(fixture.intent()["basis"]["head"], prepared_head.as_str());
+    let intent = fs::read(fixture.intent_path()).unwrap();
+    let lock_path = fixture.admin.join("engram-task-sync-setup.lock");
+    let lock = fs::read(&lock_path).unwrap();
+    // The commit touches no setup or reserved path, so HEAD is the only part
+    // of the recorded basis it changes.
+    fs::write(
+        fixture.root.join("unrelated.txt"),
+        "ordinary code, revised\n",
+    )
+    .unwrap();
+    git(&fixture.root, &["add", "unrelated.txt"]);
+    commit_fixture(&fixture);
+    assert_ne!(head(&fixture), prepared_head);
+    let output = fixture.prepare();
+    assert_refused(
+        &output,
+        "existing setup intent has a different basis or assertion",
+    );
+    assert_eq!(fs::read(fixture.intent_path()).unwrap(), intent);
+    assert_eq!(fs::read(&lock_path).unwrap(), lock);
+    let pending: Vec<_> = fs::read_dir(&fixture.admin)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("engram-task-sync-setup-") && name.ends_with(".pending"))
+        .collect();
+    assert!(pending.is_empty(), "{pending:?}");
+    task_sync_opt_in::assert_no_database(&fixture.home);
+}
+
+#[test]
 fn setup_proposals_handle_missing_files_and_preserve_unterminated_unrelated_bytes() {
     let fixture = Fixture::new(false);
     fs::remove_file(fixture.root.join(".gitignore")).unwrap();
