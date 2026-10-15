@@ -5,9 +5,29 @@ use crate::{
 };
 use std::{cell::Cell, fs};
 
+mod candidate_limit;
 mod prepared;
 mod recovery;
 mod state_limit;
+
+/// Every entry under `root` with its bytes; directories carry none.
+fn listing(root: &Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
+    fn walk(root: &Path, directory: &Path, entries: &mut BTreeMap<PathBuf, Option<Vec<u8>>>) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            let relative = path.strip_prefix(root).unwrap().to_path_buf();
+            if fs::symlink_metadata(&path).unwrap().is_dir() {
+                entries.insert(relative, None);
+                walk(root, &path, entries);
+            } else {
+                entries.insert(relative, Some(fs::read(&path).unwrap()));
+            }
+        }
+    }
+    let mut entries = BTreeMap::new();
+    walk(root, root, &mut entries);
+    entries
+}
 
 fn tree(count: usize) -> TaskTree {
     let mut tasks = (0..count)

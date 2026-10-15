@@ -242,6 +242,9 @@ pub(super) fn publish(
             STATE_LIMIT
         );
     }
+    // Refuse a candidate the writer below would refuse before pruning the
+    // predecessor or staging, so that refusal leaves every generation intact.
+    directory::admit_documents(&documents)?;
     let entries = generations(directory)?;
     // Keep the current generation as predecessor before publishing its successor.
     for (_, _, path) in entries.iter().take(entries.len().saturating_sub(1)) {

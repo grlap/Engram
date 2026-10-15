@@ -84,8 +84,9 @@ pub(crate) fn matching_destination(
     }
 }
 
-/// Publish already selected documents, preserving exact bytes on retry.
-pub(crate) fn write_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+/// Refuse documents that `write_documents` could never publish. It reads
+/// nothing from disk, so a caller can check it before changing anything.
+pub(crate) fn admit_documents(documents: &BTreeMap<String, Vec<u8>>) -> Result<()> {
     let tree = TaskTree::from_stored_documents(documents)?;
     if tree.project.notes_included && tree.tasks.is_empty() {
         return Err(invalid("notes_included requires at least one task").into());
@@ -98,6 +99,12 @@ pub(crate) fn write_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>
     {
         return Err(invalid("export exceeds the supported task candidate limits").into());
     }
+    Ok(())
+}
+
+/// Publish already selected documents, preserving exact bytes on retry.
+pub(crate) fn write_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+    admit_documents(documents)?;
     let absolute = std::path::absolute(path)?;
     let path = absolute.as_path();
     if matching_destination(path, documents)? {
