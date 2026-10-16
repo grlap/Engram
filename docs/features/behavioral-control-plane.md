@@ -1364,6 +1364,19 @@ pass.
   tombstone exists. A designed `expired_request` answer for a key whose
   result was pruned is not built. Stored operation receipts keep their
   durable retry semantics; per-action and publication receipts are not built.
+- `control_store_busy` from bind, evaluate, begin or checkpoint certifies
+  no new changes committed by this invocation, after failed immediate
+  admission or a successful explicit rollback before commit. It is transient
+  under SQLite's configured busy policy; `SQLITE_LOCKED` may return without
+  waiting. Commit and rollback failures remain `storage_error`, whose
+  outcome is unresolved. Retry the exact operation and payload with its
+  original key on the same control connection, preserving the still-valid
+  binding and exact grant or report. Even a replay takes immediate writer
+  admission, so busy proves nothing about an earlier same-key invocation.
+  Retain its existing replay or reconciliation uncertainty. Busy never
+  authorizes rebinding, a fresh evaluation or begin, prompt delivery, or
+  release of stale authority. See the
+  [shipped channel contract](cli-and-mcp.md#shipped-host-private-turn-channel).
 - A replacement host process recovers from the durable session and grant
   rows: opening a new connection reads the stored session and its grants, as
   above. Binding a session emits no event, and the checkpoint change index is

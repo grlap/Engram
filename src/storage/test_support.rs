@@ -111,6 +111,10 @@ pub(super) fn note_request(
 }
 
 impl SqliteStore {
+    pub(crate) fn test_set_busy_timeout(&self, timeout: Duration) -> rusqlite::Result<()> {
+        self.connection.busy_timeout(timeout)
+    }
+
     pub(crate) fn bind_test_control_scope(
         &mut self,
         project: &ProjectId,

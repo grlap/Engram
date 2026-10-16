@@ -22,6 +22,9 @@ use super::{
 
 #[cfg(test)]
 mod tests;
+mod transaction;
+
+use transaction::control_transaction;
 
 impl SqliteStore {
     /// Records the host's explicit source-root selection for the exact live
@@ -407,70 +410,67 @@ impl SqliteStore {
             idempotency_key,
         })?;
 
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let existing = Self::load_control_session_on(&transaction, session_id)?;
-        if let Some(existing) = &existing
-            && existing.bind_key == idempotency_key
-        {
-            if existing.bind_intent_hash != bind_intent.key().as_str() {
-                return Err(StoreError::ControlSessionBindConflict(
-                    idempotency_key.into(),
+        control_transaction(&mut self.connection, |transaction| {
+            Self::verify_control_connection(transaction, session_id, connection_token)?;
+            let existing = Self::load_control_session_on(transaction, session_id)?;
+            if let Some(existing) = &existing
+                && existing.bind_key == idempotency_key
+            {
+                if existing.bind_intent_hash != bind_intent.key().as_str() {
+                    return Err(StoreError::ControlSessionBindConflict(
+                        idempotency_key.into(),
+                    ));
+                }
+                let binding = ControlSessionBinding {
+                    routing_token: existing.routing_token.clone(),
+                    effective_mediated_effects: effective_mediated_effects(
+                        existing.assurance,
+                        &existing.mediated_effects,
+                    ),
+                    status: Self::control_session_status_on(transaction, existing)?,
+                };
+                return Ok(binding);
+            }
+            if let Some(work_binding) = work_binding {
+                work::validate_control_work_binding_on(
+                    transaction,
+                    project_id,
+                    session_id,
+                    work_binding,
+                    now,
+                )?;
+            }
+            if let Some(existing) = &existing
+                && matches!(existing.phase, SessionPhase::TurnOpen)
+                && Self::session_has_begun_turn(transaction, session_id)?
+            {
+                return Err(StoreError::InvalidControlSession(
+                    "a begun turn must be checkpointed before rebinding".into(),
                 ));
             }
-            let binding = ControlSessionBinding {
-                routing_token: existing.routing_token.clone(),
-                effective_mediated_effects: effective_mediated_effects(
-                    existing.assurance,
-                    &existing.mediated_effects,
-                ),
-                status: Self::control_session_status_on(&transaction, existing)?,
-            };
-            transaction.commit()?;
-            return Ok(binding);
-        }
-        if let Some(work_binding) = work_binding {
-            work::validate_control_work_binding_on(
-                &transaction,
-                project_id,
-                session_id,
-                work_binding,
-                now,
-            )?;
-        }
-        if let Some(existing) = &existing
-            && matches!(existing.phase, SessionPhase::TurnOpen)
-            && Self::session_has_begun_turn(&transaction, session_id)?
-        {
-            return Err(StoreError::InvalidControlSession(
-                "a begun turn must be checkpointed before rebinding".into(),
-            ));
-        }
 
-        let task_id = Self::bind_control_anchor(&transaction, project_id, external_ref, title)?;
-        let policy = Self::load_active_control_policy(&transaction)?;
-        let admission_epoch = transaction.query_row(
-            "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
-            [task_id.0.to_string()],
-            |row| row.get::<_, i64>(0),
-        )?;
-        let previous_revision = existing.as_ref().map_or(0, |session| session.revision);
-        let routing_token = uuid::Uuid::now_v7().to_string();
-        transaction.execute(
-            "UPDATE control_turn_grants SET state = 'expired'
+            let task_id = Self::bind_control_anchor(transaction, project_id, external_ref, title)?;
+            let policy = Self::load_active_control_policy(transaction)?;
+            let admission_epoch = transaction.query_row(
+                "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
+                [task_id.0.to_string()],
+                |row| row.get::<_, i64>(0),
+            )?;
+            let previous_revision = existing.as_ref().map_or(0, |session| session.revision);
+            let routing_token = uuid::Uuid::now_v7().to_string();
+            transaction.execute(
+                "UPDATE control_turn_grants SET state = 'expired'
              WHERE session_id = ?1 AND state = 'issued'",
-            [session_id.0.as_str()],
-        )?;
-        // `confirmed_cursor`, `tentative_cursor` and `blocking_watermark` are
-        // retained columns: grants no longer carry a delivery page, so no
-        // decision reads them. Only this bind writes them, as zero or null, so
-        // a row written earlier keeps its last values until it is rebound.
-        // They stay only so the schema is unchanged until the next planned
-        // migration drops them.
-        transaction.execute(
-            "INSERT INTO control_sessions (
+                [session_id.0.as_str()],
+            )?;
+            // `confirmed_cursor`, `tentative_cursor` and `blocking_watermark` are
+            // retained columns: grants no longer carry a delivery page, so no
+            // decision reads them. Only this bind writes them, as zero or null, so
+            // a row written earlier keeps its last values until it is rebound.
+            // They stay only so the schema is unchanged until the next planned
+            // migration drops them.
+            transaction.execute(
+                "INSERT INTO control_sessions (
                  session_id, project_id, task_id, root_execution_id, work_id,
                  run_id, work_revision, claim_id, claim_fence, routing_token,
                  actor_json, bind_key, bind_intent_hash, bind_intent_json, phase,
@@ -507,42 +507,42 @@ impl SqliteStore {
                  capability_map_revision = excluded.capability_map_revision,
                  revision = excluded.revision,
                  updated_at_ms = excluded.updated_at_ms",
-            params![
-                session_id.0,
-                project_id.0,
-                task_id.0.to_string(),
-                work_binding.map(|binding| binding.root_execution_id.0.to_string()),
-                work_binding.map(|binding| binding.work_id.0.to_string()),
-                work_binding.map(|binding| binding.run_id.0.to_string()),
-                work_binding.map(|binding| binding.work_revision),
-                work_binding.map(|binding| binding.claim_id.0.to_string()),
-                work_binding.map(|binding| binding.claim_fence),
-                routing_token,
-                serde_json::to_vec(actor)?,
-                idempotency_key,
-                bind_intent.key().as_str(),
-                bind_intent.bytes(),
-                enum_name(assurance)?,
-                serde_json::to_string(mediated_effects)?,
-                policy.epoch.0,
-                admission_epoch,
-                capability_map_revision,
-                previous_revision + 1,
-                now.timestamp_millis(),
-            ],
-        )?;
-        let stored = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        let binding = ControlSessionBinding {
-            routing_token: stored.routing_token.clone(),
-            effective_mediated_effects: effective_mediated_effects(
-                stored.assurance,
-                &stored.mediated_effects,
-            ),
-            status: Self::control_session_status_on(&transaction, &stored)?,
-        };
-        transaction.commit()?;
-        Ok(binding)
+                params![
+                    session_id.0,
+                    project_id.0,
+                    task_id.0.to_string(),
+                    work_binding.map(|binding| binding.root_execution_id.0.to_string()),
+                    work_binding.map(|binding| binding.work_id.0.to_string()),
+                    work_binding.map(|binding| binding.run_id.0.to_string()),
+                    work_binding.map(|binding| binding.work_revision),
+                    work_binding.map(|binding| binding.claim_id.0.to_string()),
+                    work_binding.map(|binding| binding.claim_fence),
+                    routing_token,
+                    serde_json::to_vec(actor)?,
+                    idempotency_key,
+                    bind_intent.key().as_str(),
+                    bind_intent.bytes(),
+                    enum_name(assurance)?,
+                    serde_json::to_string(mediated_effects)?,
+                    policy.epoch.0,
+                    admission_epoch,
+                    capability_map_revision,
+                    previous_revision + 1,
+                    now.timestamp_millis(),
+                ],
+            )?;
+            let stored = Self::load_control_session_on(transaction, session_id)?
+                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+            let binding = ControlSessionBinding {
+                routing_token: stored.routing_token.clone(),
+                effective_mediated_effects: effective_mediated_effects(
+                    stored.assurance,
+                    &stored.mediated_effects,
+                ),
+                status: Self::control_session_status_on(transaction, &stored)?,
+            };
+            Ok(binding)
+        })
     }
 
     /// Returns current host-control state after validating the routing token.
@@ -665,197 +665,195 @@ impl SqliteStore {
                     "turn resource intent is invalid or belongs to another project".into(),
                 )
             })?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let mut session = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        Self::verify_control_session(&session, project_id, routing_token)?;
-        let intent_object = CanonicalObject::freeze(&TurnIntentFingerprint {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            session_id,
-            task_id: Some(session.task_id),
-            intent: &intent,
-        })?;
-        if let Some((stored_intent_hash, decision_hash, decision_json)) = transaction
-            .query_row(
-                "SELECT intent_hash, decision_hash, decision_json
+        control_transaction(&mut self.connection, |transaction| {
+            Self::verify_control_connection(transaction, session_id, connection_token)?;
+            let mut session = Self::load_control_session_on(transaction, session_id)?
+                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+            Self::verify_control_session(&session, project_id, routing_token)?;
+            let intent_object = CanonicalObject::freeze(&TurnIntentFingerprint {
+                control_schema_version: CONTROL_SCHEMA_VERSION,
+                session_id,
+                task_id: Some(session.task_id),
+                intent: &intent,
+            })?;
+            if let Some((stored_intent_hash, decision_hash, decision_json)) = transaction
+                .query_row(
+                    "SELECT intent_hash, decision_hash, decision_json
                  FROM control_turn_results
                  WHERE session_id = ?1 AND idempotency_key = ?2",
-                params![session_id.0, intent.idempotency_key],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Vec<u8>>(2)?,
-                    ))
-                },
-            )
-            .optional()?
-        {
-            if stored_intent_hash != intent_object.key().as_str() {
-                return Err(StoreError::ControlTurnIdempotencyConflict(
-                    intent.idempotency_key.clone(),
-                ));
+                    params![session_id.0, intent.idempotency_key],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Vec<u8>>(2)?,
+                        ))
+                    },
+                )
+                .optional()?
+            {
+                if stored_intent_hash != intent_object.key().as_str() {
+                    return Err(StoreError::ControlTurnIdempotencyConflict(
+                        intent.idempotency_key.clone(),
+                    ));
+                }
+                let decision = Self::decode_canonical_projection(&decision_hash, decision_json)?;
+                return Ok(decision);
             }
-            let decision = Self::decode_canonical_projection(&decision_hash, decision_json)?;
-            transaction.commit()?;
-            return Ok(decision);
-        }
 
-        let superseded_grant = Self::supersede_issued_turn(&transaction, &session, now)?;
-        if superseded_grant.is_some() {
-            session = Self::load_control_session_on(&transaction, session_id)?
-                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        }
-        let policy = Self::load_active_control_policy(&transaction)?;
-        let anchor_exists = Self::control_anchor_exists(&transaction, project_id, session.task_id)?;
-        let membership = Self::session_is_current_participant(
-            &transaction,
-            project_id,
-            session.task_id,
-            session_id,
-        )?;
-        let task_admission_epoch = transaction.query_row(
-            "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
-            [session.task_id.0.to_string()],
-            |row| row.get::<_, i64>(0),
-        )?;
-        let work_binding_current = Self::control_work_binding_is_current(
-            &transaction,
-            project_id,
-            session_id,
-            session.work_binding.as_ref(),
-            now,
-        )?;
-        let input = TurnEvaluationInput {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            session_id: session_id.clone(),
-            task_id: Some(session.task_id),
-            work_binding: session.work_binding.clone(),
-            work_binding_current,
-            participant_membership: if membership {
-                ParticipantMembership::Member
-            } else {
-                ParticipantMembership::NotMember
-            },
-            anchor_exists,
-            phase: session.phase,
-            host_assurance: session.assurance,
-            required_assurance: policy.required_assurance,
-            policy_effects: policy.supported_effects,
-            mediated_effects: session.mediated_effects.clone(),
-            current_epochs: ControlEpochs {
-                project_policy: policy.epoch,
-                task_admission: TaskAdmissionEpoch(task_admission_epoch),
-            },
-            session_epochs: session.epochs,
-            capability_map_revision: session.capability_map_revision,
-            intent: intent.clone(),
-            evaluated_at: now,
-            grant_ttl_seconds: policy.grant_ttl_seconds,
-        };
-        let observed = crate::control::observe_turn(&input);
-        let decision = match observed.decision {
-            TurnDecision::Grant { basis } => {
-                let grant = IssuedTurnGrant {
-                    control_schema_version: CONTROL_SCHEMA_VERSION,
-                    grant_id: uuid::Uuid::now_v7().to_string(),
-                    request_key: intent.idempotency_key.clone(),
-                    basis: *basis,
-                    delivery: None,
-                    issued_at: now,
-                };
-                let grant_json = crate::canonical::canonical_bytes(&grant)?;
-                transaction.execute(
-                    "INSERT INTO control_turn_grants (
+            let superseded_grant = Self::supersede_issued_turn(transaction, &session, now)?;
+            if superseded_grant.is_some() {
+                session = Self::load_control_session_on(transaction, session_id)?
+                    .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+            }
+            let policy = Self::load_active_control_policy(transaction)?;
+            let anchor_exists =
+                Self::control_anchor_exists(transaction, project_id, session.task_id)?;
+            let membership = Self::session_is_current_participant(
+                transaction,
+                project_id,
+                session.task_id,
+                session_id,
+            )?;
+            let task_admission_epoch = transaction.query_row(
+                "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
+                [session.task_id.0.to_string()],
+                |row| row.get::<_, i64>(0),
+            )?;
+            let work_binding_current = Self::control_work_binding_is_current(
+                transaction,
+                project_id,
+                session_id,
+                session.work_binding.as_ref(),
+                now,
+            )?;
+            let input = TurnEvaluationInput {
+                control_schema_version: CONTROL_SCHEMA_VERSION,
+                session_id: session_id.clone(),
+                task_id: Some(session.task_id),
+                work_binding: session.work_binding.clone(),
+                work_binding_current,
+                participant_membership: if membership {
+                    ParticipantMembership::Member
+                } else {
+                    ParticipantMembership::NotMember
+                },
+                anchor_exists,
+                phase: session.phase,
+                host_assurance: session.assurance,
+                required_assurance: policy.required_assurance,
+                policy_effects: policy.supported_effects,
+                mediated_effects: session.mediated_effects.clone(),
+                current_epochs: ControlEpochs {
+                    project_policy: policy.epoch,
+                    task_admission: TaskAdmissionEpoch(task_admission_epoch),
+                },
+                session_epochs: session.epochs,
+                capability_map_revision: session.capability_map_revision,
+                intent: intent.clone(),
+                evaluated_at: now,
+                grant_ttl_seconds: policy.grant_ttl_seconds,
+            };
+            let observed = crate::control::observe_turn(&input);
+            let decision = match observed.decision {
+                TurnDecision::Grant { basis } => {
+                    let grant = IssuedTurnGrant {
+                        control_schema_version: CONTROL_SCHEMA_VERSION,
+                        grant_id: uuid::Uuid::now_v7().to_string(),
+                        request_key: intent.idempotency_key.clone(),
+                        basis: *basis,
+                        delivery: None,
+                        issued_at: now,
+                    };
+                    let grant_json = crate::canonical::canonical_bytes(&grant)?;
+                    transaction.execute(
+                        "INSERT INTO control_turn_grants (
                          grant_id, session_id, task_id, request_key,
                          grant_json, state, issued_at_ms, expires_at_ms
                      ) VALUES (?1, ?2, ?3, ?4, ?5, 'issued', ?6, ?7)",
-                    params![
-                        grant.grant_id,
-                        session_id.0,
-                        session.task_id.0.to_string(),
-                        intent.idempotency_key,
-                        grant_json,
-                        now.timestamp_millis(),
-                        grant.basis.expires_at.timestamp_millis(),
-                    ],
-                )?;
-                transaction.execute(
-                    "UPDATE control_sessions SET
+                        params![
+                            grant.grant_id,
+                            session_id.0,
+                            session.task_id.0.to_string(),
+                            intent.idempotency_key,
+                            grant_json,
+                            now.timestamp_millis(),
+                            grant.basis.expires_at.timestamp_millis(),
+                        ],
+                    )?;
+                    transaction.execute(
+                        "UPDATE control_sessions SET
                          phase = 'turn_open',
                          revision = revision + 1, updated_at_ms = ?2
                      WHERE session_id = ?1",
-                    params![session_id.0, now.timestamp_millis()],
-                )?;
-                ControlTurnDecision::Grant {
-                    grant: Box::new(grant),
+                        params![session_id.0, now.timestamp_millis()],
+                    )?;
+                    ControlTurnDecision::Grant {
+                        grant: Box::new(grant),
+                    }
                 }
-            }
-            TurnDecision::Refuse { directive } => {
-                if directive.code == crate::domain::ControlRefusalCode::PolicyEpochChanged {
-                    transaction.execute(
-                        "UPDATE control_sessions SET
+                TurnDecision::Refuse { directive } => {
+                    if directive.code == crate::domain::ControlRefusalCode::PolicyEpochChanged {
+                        transaction.execute(
+                            "UPDATE control_sessions SET
                              project_policy_epoch = ?2,
                              revision = revision + 1, updated_at_ms = ?3
                          WHERE session_id = ?1",
-                        params![session_id.0, policy.epoch.0, now.timestamp_millis()],
-                    )?;
+                            params![session_id.0, policy.epoch.0, now.timestamp_millis()],
+                        )?;
+                    }
+                    ControlTurnDecision::Refuse { directive }
                 }
-                ControlTurnDecision::Refuse { directive }
-            }
-        };
-        let decision_object = CanonicalObject::freeze(&decision)?;
-        transaction.execute(
-            "INSERT INTO control_turn_results (
+            };
+            let decision_object = CanonicalObject::freeze(&decision)?;
+            transaction.execute(
+                "INSERT INTO control_turn_results (
                  session_id, task_id, idempotency_key, intent_hash, intent_json,
                  decision_hash, decision_json, created_at_ms
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                session_id.0,
-                session.task_id.0.to_string(),
-                intent.idempotency_key,
-                intent_object.key().as_str(),
-                intent_object.bytes(),
-                decision_object.key().as_str(),
-                decision_object.bytes(),
-                now.timestamp_millis(),
-            ],
-        )?;
-        if let Some(superseded) = superseded_grant {
-            let transition = TurnGrantSupersession {
-                control_schema_version: CONTROL_SCHEMA_VERSION,
-                session_id: session_id.clone(),
-                task_id: session.task_id,
-                superseded_grant_id: superseded.grant_id,
-                superseded_request_key: superseded.request_key,
-                replacement_request_key: intent.idempotency_key.clone(),
-                replacement_decision: decision_object.key().clone(),
-                reason: TurnGrantSupersessionReason::FreshEvaluation,
-                superseded_at: now,
-            };
-            let transition_json = crate::canonical::canonical_bytes(&transition)?;
-            transaction.execute(
-                "INSERT INTO control_turn_grant_supersessions (
+                params![
+                    session_id.0,
+                    session.task_id.0.to_string(),
+                    intent.idempotency_key,
+                    intent_object.key().as_str(),
+                    intent_object.bytes(),
+                    decision_object.key().as_str(),
+                    decision_object.bytes(),
+                    now.timestamp_millis(),
+                ],
+            )?;
+            if let Some(superseded) = superseded_grant {
+                let transition = TurnGrantSupersession {
+                    control_schema_version: CONTROL_SCHEMA_VERSION,
+                    session_id: session_id.clone(),
+                    task_id: session.task_id,
+                    superseded_grant_id: superseded.grant_id,
+                    superseded_request_key: superseded.request_key,
+                    replacement_request_key: intent.idempotency_key.clone(),
+                    replacement_decision: decision_object.key().clone(),
+                    reason: TurnGrantSupersessionReason::FreshEvaluation,
+                    superseded_at: now,
+                };
+                let transition_json = crate::canonical::canonical_bytes(&transition)?;
+                transaction.execute(
+                    "INSERT INTO control_turn_grant_supersessions (
                      superseded_grant_id, session_id, task_id,
                      replacement_request_key, replacement_decision_hash,
                      supersession_json, superseded_at_ms
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    transition.superseded_grant_id,
-                    transition.session_id.0,
-                    transition.task_id.0.to_string(),
-                    transition.replacement_request_key,
-                    transition.replacement_decision.as_str(),
-                    transition_json,
-                    transition.superseded_at.timestamp_millis(),
-                ],
-            )?;
-        }
-        transaction.commit()?;
-        Ok(decision)
+                    params![
+                        transition.superseded_grant_id,
+                        transition.session_id.0,
+                        transition.task_id.0.to_string(),
+                        transition.replacement_request_key,
+                        transition.replacement_decision.as_str(),
+                        transition_json,
+                        transition.superseded_at.timestamp_millis(),
+                    ],
+                )?;
+            }
+            Ok(decision)
+        })
     }
 
     /// Atomically rechecks and begins one issued turn grant.
@@ -887,172 +885,168 @@ impl SqliteStore {
             delivery_tokens,
             idempotency_key,
         })?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let session = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        Self::verify_control_session(&session, project_id, routing_token)?;
-        // An opener that could not resolve the project root's filesystem
-        // identity must not begin, or replay the beginning of, a turn whose
-        // basis names paths, even one issued earlier by a resolved opener.
-        if self.host_path_policy.is_none()
-            && Self::load_turn_grant(&transaction, session_id, grant_id)?.is_some_and(|grant| {
-                grant
-                    .grant
-                    .basis
-                    .resource_intents
-                    .iter()
-                    .any(|subject| matches!(subject, crate::domain::ResourceSubject::Path { .. }))
-            })
-        {
-            return Err(StoreError::HostPathIdentityUnresolved);
-        }
-        if let Some(replay) = Self::replay_control_operation(
-            &transaction,
-            session_id,
-            "turn_begin",
-            idempotency_key,
-            intent_object.key(),
-        )? {
-            transaction.commit()?;
-            return Ok(replay);
-        }
-        let grant = Self::load_turn_grant(&transaction, session_id, grant_id)?
-            .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
-        let policy = Self::load_active_control_policy(&transaction)?;
-        let task_admission_epoch = transaction.query_row(
-            "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
-            [session.task_id.0.to_string()],
-            |row| row.get::<_, i64>(0),
-        )?;
-        let anchor_exists = Self::control_anchor_exists(&transaction, project_id, session.task_id)?;
-        let membership = Self::session_is_current_participant(
-            &transaction,
-            project_id,
-            session.task_id,
-            session_id,
-        )?;
-        let work_binding_current = Self::control_work_binding_is_current(
-            &transaction,
-            project_id,
-            session_id,
-            session.work_binding.as_ref(),
-            now,
-        )?;
-        let snapshot = TurnBeginSnapshot {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            session_id: session_id.clone(),
-            task_id: session.task_id,
-            work_binding: session.work_binding.clone(),
-            work_binding_current,
-            phase: session.phase,
-            participant_membership: if membership {
-                ParticipantMembership::Member
-            } else {
-                ParticipantMembership::NotMember
-            },
-            anchor_exists,
-            grant_state: grant.state,
-            current_epochs: ControlEpochs {
-                project_policy: policy.epoch,
-                task_admission: TaskAdmissionEpoch(task_admission_epoch),
-            },
-            capability_map_revision: session.capability_map_revision,
-            delivery_tokens: delivery_tokens.to_vec(),
-            observed_at: now,
-        };
-        let decision = match crate::control::evaluate_turn_begin(&grant.grant, &snapshot) {
-            TurnBeginDecision::Begin => {
-                let changed = transaction.execute(
-                    "UPDATE control_turn_grants SET state = 'begun', begun_at_ms = ?2
+        let unresolved_paths = self.host_path_policy.is_none();
+        control_transaction(&mut self.connection, |transaction| {
+            Self::verify_control_connection(transaction, session_id, connection_token)?;
+            let session = Self::load_control_session_on(transaction, session_id)?
+                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+            Self::verify_control_session(&session, project_id, routing_token)?;
+            // An opener that could not resolve the project root's filesystem
+            // identity must not begin, or replay the beginning of, a turn whose
+            // basis names paths, even one issued earlier by a resolved opener.
+            if unresolved_paths
+                && Self::load_turn_grant(transaction, session_id, grant_id)?.is_some_and(|grant| {
+                    grant.grant.basis.resource_intents.iter().any(|subject| {
+                        matches!(subject, crate::domain::ResourceSubject::Path { .. })
+                    })
+                })
+            {
+                return Err(StoreError::HostPathIdentityUnresolved);
+            }
+            if let Some(replay) = Self::replay_control_operation(
+                transaction,
+                session_id,
+                "turn_begin",
+                idempotency_key,
+                intent_object.key(),
+            )? {
+                return Ok(replay);
+            }
+            let grant = Self::load_turn_grant(transaction, session_id, grant_id)?
+                .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
+            let policy = Self::load_active_control_policy(transaction)?;
+            let task_admission_epoch = transaction.query_row(
+                "SELECT admission_epoch FROM control_anchors WHERE task_id = ?1",
+                [session.task_id.0.to_string()],
+                |row| row.get::<_, i64>(0),
+            )?;
+            let anchor_exists =
+                Self::control_anchor_exists(transaction, project_id, session.task_id)?;
+            let membership = Self::session_is_current_participant(
+                transaction,
+                project_id,
+                session.task_id,
+                session_id,
+            )?;
+            let work_binding_current = Self::control_work_binding_is_current(
+                transaction,
+                project_id,
+                session_id,
+                session.work_binding.as_ref(),
+                now,
+            )?;
+            let snapshot = TurnBeginSnapshot {
+                control_schema_version: CONTROL_SCHEMA_VERSION,
+                session_id: session_id.clone(),
+                task_id: session.task_id,
+                work_binding: session.work_binding.clone(),
+                work_binding_current,
+                phase: session.phase,
+                participant_membership: if membership {
+                    ParticipantMembership::Member
+                } else {
+                    ParticipantMembership::NotMember
+                },
+                anchor_exists,
+                grant_state: grant.state,
+                current_epochs: ControlEpochs {
+                    project_policy: policy.epoch,
+                    task_admission: TaskAdmissionEpoch(task_admission_epoch),
+                },
+                capability_map_revision: session.capability_map_revision,
+                delivery_tokens: delivery_tokens.to_vec(),
+                observed_at: now,
+            };
+            let decision = match crate::control::evaluate_turn_begin(&grant.grant, &snapshot) {
+                TurnBeginDecision::Begin => {
+                    let changed = transaction.execute(
+                        "UPDATE control_turn_grants SET state = 'begun', begun_at_ms = ?2
                      WHERE grant_id = ?1 AND state = 'issued'",
-                    params![grant_id, now.timestamp_millis()],
-                )?;
-                if changed != 1 {
-                    return Err(StoreError::InvalidControlProjection(format!(
-                        "turn grant {grant_id:?} was not issued during begin"
-                    )));
-                }
-                let revision = transaction.query_row(
-                    "UPDATE control_sessions SET
+                        params![grant_id, now.timestamp_millis()],
+                    )?;
+                    if changed != 1 {
+                        return Err(StoreError::InvalidControlProjection(format!(
+                            "turn grant {grant_id:?} was not issued during begin"
+                        )));
+                    }
+                    let revision = transaction.query_row(
+                        "UPDATE control_sessions SET
                          revision = revision + 1, updated_at_ms = ?2
                      WHERE session_id = ?1
                      RETURNING revision",
-                    params![session_id.0, now.timestamp_millis()],
-                    |row| row.get::<_, i64>(0),
-                )?;
-                let named_root = session
-                    .work_binding
-                    .as_ref()
-                    .map(|binding| {
-                        work::named_root_state_on(
-                            &transaction,
-                            binding.run_id,
-                            binding.claim_id,
-                            i64::MAX,
-                        )
-                    })
-                    .transpose()?;
-                ControlTurnBeginDecision::Begin {
-                    receipt: TurnBeginReceipt {
-                        grant_id: grant_id.into(),
-                        session_id: session_id.clone(),
-                        task_id: session.task_id,
-                        phase: SessionPhase::TurnOpen,
-                        tentative_cursor: None,
-                        session_revision: revision,
-                        begun_at: now,
-                        named_root,
-                    },
-                }
-            }
-            TurnBeginDecision::Refuse { code } => {
-                if matches!(
-                    code,
-                    crate::domain::ControlRefusalCode::GrantExpired
-                        | crate::domain::ControlRefusalCode::PolicyEpochChanged
-                        | crate::domain::ControlRefusalCode::TaskAdmissionEpochChanged
-                        | crate::domain::ControlRefusalCode::StaleFence
-                        | crate::domain::ControlRefusalCode::TaskUnbound
-                        | crate::domain::ControlRefusalCode::TaskAccessDenied
-                ) && matches!(grant.state, TurnGrantState::Issued)
-                {
-                    transaction.execute(
-                        "UPDATE control_turn_grants SET state = 'expired'
-                         WHERE grant_id = ?1 AND state = 'issued'",
-                        [grant_id],
+                        params![session_id.0, now.timestamp_millis()],
+                        |row| row.get::<_, i64>(0),
                     )?;
-                    transaction.execute(
-                        "UPDATE control_sessions SET
+                    let named_root = session
+                        .work_binding
+                        .as_ref()
+                        .map(|binding| {
+                            work::named_root_state_on(
+                                transaction,
+                                binding.run_id,
+                                binding.claim_id,
+                                i64::MAX,
+                            )
+                        })
+                        .transpose()?;
+                    ControlTurnBeginDecision::Begin {
+                        receipt: TurnBeginReceipt {
+                            grant_id: grant_id.into(),
+                            session_id: session_id.clone(),
+                            task_id: session.task_id,
+                            phase: SessionPhase::TurnOpen,
+                            tentative_cursor: None,
+                            session_revision: revision,
+                            begun_at: now,
+                            named_root,
+                        },
+                    }
+                }
+                TurnBeginDecision::Refuse { code } => {
+                    if matches!(
+                        code,
+                        crate::domain::ControlRefusalCode::GrantExpired
+                            | crate::domain::ControlRefusalCode::PolicyEpochChanged
+                            | crate::domain::ControlRefusalCode::TaskAdmissionEpochChanged
+                            | crate::domain::ControlRefusalCode::StaleFence
+                            | crate::domain::ControlRefusalCode::TaskUnbound
+                            | crate::domain::ControlRefusalCode::TaskAccessDenied
+                    ) && matches!(grant.state, TurnGrantState::Issued)
+                    {
+                        transaction.execute(
+                            "UPDATE control_turn_grants SET state = 'expired'
+                         WHERE grant_id = ?1 AND state = 'issued'",
+                            [grant_id],
+                        )?;
+                        transaction.execute(
+                            "UPDATE control_sessions SET
                              phase = 'ready',
                              revision = revision + 1, updated_at_ms = ?2
                          WHERE session_id = ?1",
-                        params![session_id.0, now.timestamp_millis()],
-                    )?;
-                    if matches!(code, crate::domain::ControlRefusalCode::PolicyEpochChanged) {
-                        transaction.execute(
-                            "UPDATE control_sessions SET project_policy_epoch = ?2
-                             WHERE session_id = ?1",
-                            params![session_id.0, policy.epoch.0],
+                            params![session_id.0, now.timestamp_millis()],
                         )?;
+                        if matches!(code, crate::domain::ControlRefusalCode::PolicyEpochChanged) {
+                            transaction.execute(
+                                "UPDATE control_sessions SET project_policy_epoch = ?2
+                             WHERE session_id = ?1",
+                                params![session_id.0, policy.epoch.0],
+                            )?;
+                        }
                     }
+                    ControlTurnBeginDecision::Refuse { code }
                 }
-                ControlTurnBeginDecision::Refuse { code }
-            }
-        };
-        Self::persist_control_operation(
-            &transaction,
-            session_id,
-            "turn_begin",
-            idempotency_key,
-            &intent_object,
-            &decision,
-            now,
-        )?;
-        transaction.commit()?;
-        Ok(decision)
+            };
+            Self::persist_control_operation(
+                transaction,
+                session_id,
+                "turn_begin",
+                idempotency_key,
+                &intent_object,
+                &decision,
+                now,
+            )?;
+            Ok(decision)
+        })
     }
 
     /// Checkpoints a begun turn, returns the session to `ready` (or `exited`),
@@ -1177,318 +1171,321 @@ impl SqliteStore {
             environment_evidence,
             idempotency_key,
         })?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if !observations.is_empty()
-            || !verification_evidence.is_empty()
-            || !environment_evidence.is_empty()
-        {
-            work::require_work_schema_version(&transaction, self.work_schema_version)?;
-        }
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let session = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        Self::verify_control_session(&session, project_id, routing_token)?;
-        crate::domain::validate_status_capture_actor(&session.actor)
-            .map_err(StoreError::InvalidWork)?;
-        if let Some(replay) = Self::replay_control_operation(
-            &transaction,
-            session_id,
-            "turn_checkpoint",
-            idempotency_key,
-            intent_object.key(),
-        )? {
-            transaction.commit()?;
-            return Ok(replay);
-        }
-        // Checked after replay, so an exact retry of a checkpoint admitted
-        // before this rule still replays; the whole request is refused and
-        // the host resends what it can without the refused basis.
-        refuse_unsafe_checkpoint_source_text(observations, environment_evidence)?;
-        let grant = Self::load_turn_grant(&transaction, session_id, grant_id)?
-            .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
-        let snapshot = TurnCheckpointSnapshot {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            session_id: session_id.clone(),
-            task_id: session.task_id,
-            work_binding: session.work_binding.clone(),
-            phase: session.phase,
-            grant_state: grant.state,
-        };
-        let decision = match crate::control::evaluate_turn_checkpoint(&grant.grant, &snapshot) {
-            TurnCheckpointDecision::Checkpoint => {
-                let records_work_evidence = !observations.is_empty()
-                    || !verification_evidence.is_empty()
-                    || !environment_evidence.is_empty();
-                let binding = if records_work_evidence {
-                    let binding = session.work_binding.clone().ok_or_else(|| {
-                        StoreError::InvalidControlSession(
-                            "host evidence requires an exact local-work binding".into(),
-                        )
-                    })?;
-                    if grant.grant.basis.work_binding.as_ref() != Some(&binding) {
-                        return Err(StoreError::WorkClaimMismatch {
-                            work: binding.work_id,
-                        });
-                    }
-                    Some(binding)
-                } else {
-                    None
-                };
-                let (obligation_rule_set, _) = Self::obligation_rule_set_for_policy_epoch_on(
-                    &transaction,
-                    grant.grant.basis.project_policy_epoch,
-                )?;
-                let mut observation_records = HashMap::new();
-                let mut execution_observations = Vec::with_capacity(observations.len());
-                for input in observations {
-                    if !grant.grant.basis.requested_effects.contains(&input.effect) {
-                        return Err(StoreError::ControlObservationScopeMismatch {
-                            observation_id: input.observation_id.clone(),
-                        });
-                    }
-                    let observation_binding = binding.clone().ok_or_else(|| {
-                        StoreError::InvalidControlSession(
-                            "execution observation lost its work binding".into(),
-                        )
-                    })?;
-                    if let Some(source_basis) = input.source_basis.as_ref() {
-                        validate_source_root_basis_on(
-                            &transaction,
-                            &observation_binding,
-                            source_basis,
-                        )?;
-                    }
-                    // The revision decides a source change: a reported change
-                    // that leaves the revision where this run last saw it is
-                    // not one, so it opens no tests obligation. Evaluation
-                    // freshness still compares the revision it carries.
-                    let source_changed = input.source_changed
-                        && !work::source_revision_repeats_on(
-                            &transaction,
-                            observation_binding.run_id,
-                            observation_binding.claim_id,
-                            input.source_basis.as_ref(),
-                        )?;
-                    let observation = ExecutionObservation {
-                        schema_version: SCHEMA_VERSION,
-                        project_id: project_id.clone(),
-                        binding: observation_binding,
-                        session_id: session_id.clone(),
-                        grant_id: grant_id.into(),
-                        observation_id: input.observation_id.trim().into(),
-                        action_fingerprint: input.action_fingerprint.clone(),
-                        effect: input.effect,
-                        outcome: input.outcome,
-                        source_changed,
-                        reported_source_change: input.reported_source_change,
-                        obligation_rule_set: obligation_rule_set.clone(),
-                        source_basis: input.source_basis.clone(),
-                        observed_at: input.observed_at,
-                        actor: session.actor.clone(),
-                        recorded_at: now,
+        let work_schema_version = self.work_schema_version;
+        control_transaction(&mut self.connection, |transaction| {
+            if !observations.is_empty()
+                || !verification_evidence.is_empty()
+                || !environment_evidence.is_empty()
+            {
+                work::require_work_schema_version(transaction, work_schema_version)?;
+            }
+            Self::verify_control_connection(transaction, session_id, connection_token)?;
+            let session = Self::load_control_session_on(transaction, session_id)?
+                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+            Self::verify_control_session(&session, project_id, routing_token)?;
+            crate::domain::validate_status_capture_actor(&session.actor)
+                .map_err(StoreError::InvalidWork)?;
+            if let Some(replay) = Self::replay_control_operation(
+                transaction,
+                session_id,
+                "turn_checkpoint",
+                idempotency_key,
+                intent_object.key(),
+            )? {
+                return Ok(replay);
+            }
+            // Checked after replay, so an exact retry of a checkpoint admitted
+            // before this rule still replays; the whole request is refused and
+            // the host resends what it can without the refused basis.
+            refuse_unsafe_checkpoint_source_text(observations, environment_evidence)?;
+            let grant = Self::load_turn_grant(transaction, session_id, grant_id)?
+                .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
+            let snapshot = TurnCheckpointSnapshot {
+                control_schema_version: CONTROL_SCHEMA_VERSION,
+                session_id: session_id.clone(),
+                task_id: session.task_id,
+                work_binding: session.work_binding.clone(),
+                phase: session.phase,
+                grant_state: grant.state,
+            };
+            let decision = match crate::control::evaluate_turn_checkpoint(&grant.grant, &snapshot) {
+                TurnCheckpointDecision::Checkpoint => {
+                    let records_work_evidence = !observations.is_empty()
+                        || !verification_evidence.is_empty()
+                        || !environment_evidence.is_empty();
+                    let binding = if records_work_evidence {
+                        let binding = session.work_binding.clone().ok_or_else(|| {
+                            StoreError::InvalidControlSession(
+                                "host evidence requires an exact local-work binding".into(),
+                            )
+                        })?;
+                        if grant.grant.basis.work_binding.as_ref() != Some(&binding) {
+                            return Err(StoreError::WorkClaimMismatch {
+                                work: binding.work_id,
+                            });
+                        }
+                        Some(binding)
+                    } else {
+                        None
                     };
-                    let hash =
-                        work::append_control_execution_observation_on(&transaction, &observation)?;
-                    observation_records.insert(
-                        observation.observation_id.clone(),
-                        (hash.clone(), observation),
-                    );
-                    execution_observations.push(hash);
-                }
-                let binding = binding.as_ref();
-                let mut environment_hashes = Vec::with_capacity(environment_evidence.len());
-                let mut environment_records = Vec::with_capacity(environment_evidence.len());
-                for input in environment_evidence {
-                    let binding = binding.ok_or_else(|| {
-                        StoreError::InvalidControlSession(
-                            "environment evidence lost its work binding".into(),
-                        )
-                    })?;
-                    validate_source_root_basis_on(&transaction, binding, &input.source_basis)?;
-                    if input.components.as_ref().is_some_and(|components| {
-                        components.capability_map_revision != session.capability_map_revision
-                    }) {
-                        return Err(StoreError::EnvironmentBasisMismatch(
-                            input.environment_fingerprint.to_string(),
-                        ));
+                    let (obligation_rule_set, _) = Self::obligation_rule_set_for_policy_epoch_on(
+                        transaction,
+                        grant.grant.basis.project_policy_epoch,
+                    )?;
+                    let mut observation_records = HashMap::new();
+                    let mut execution_observations = Vec::with_capacity(observations.len());
+                    for input in observations {
+                        if !grant.grant.basis.requested_effects.contains(&input.effect) {
+                            return Err(StoreError::ControlObservationScopeMismatch {
+                                observation_id: input.observation_id.clone(),
+                            });
+                        }
+                        let observation_binding = binding.clone().ok_or_else(|| {
+                            StoreError::InvalidControlSession(
+                                "execution observation lost its work binding".into(),
+                            )
+                        })?;
+                        if let Some(source_basis) = input.source_basis.as_ref() {
+                            validate_source_root_basis_on(
+                                transaction,
+                                &observation_binding,
+                                source_basis,
+                            )?;
+                        }
+                        // The revision decides a source change: a reported change
+                        // that leaves the revision where this run last saw it is
+                        // not one, so it opens no tests obligation. Evaluation
+                        // freshness still compares the revision it carries.
+                        let source_changed = input.source_changed
+                            && !work::source_revision_repeats_on(
+                                transaction,
+                                observation_binding.run_id,
+                                observation_binding.claim_id,
+                                input.source_basis.as_ref(),
+                            )?;
+                        let observation = ExecutionObservation {
+                            schema_version: SCHEMA_VERSION,
+                            project_id: project_id.clone(),
+                            binding: observation_binding,
+                            session_id: session_id.clone(),
+                            grant_id: grant_id.into(),
+                            observation_id: input.observation_id.trim().into(),
+                            action_fingerprint: input.action_fingerprint.clone(),
+                            effect: input.effect,
+                            outcome: input.outcome,
+                            source_changed,
+                            reported_source_change: input.reported_source_change,
+                            obligation_rule_set: obligation_rule_set.clone(),
+                            source_basis: input.source_basis.clone(),
+                            observed_at: input.observed_at,
+                            actor: session.actor.clone(),
+                            recorded_at: now,
+                        };
+                        let hash = work::append_control_execution_observation_on(
+                            transaction,
+                            &observation,
+                        )?;
+                        observation_records.insert(
+                            observation.observation_id.clone(),
+                            (hash.clone(), observation),
+                        );
+                        execution_observations.push(hash);
                     }
-                    let evidence = EnvironmentEvidence {
-                        schema_version: SCHEMA_VERSION,
-                        project_id: project_id.clone(),
-                        binding: binding.clone(),
-                        session_id: session_id.clone(),
-                        source_basis: input.source_basis.clone(),
-                        environment_fingerprint: input.environment_fingerprint.clone(),
-                        components: input.components.clone(),
-                        observed_at: input.observed_at,
-                        actor: session.actor.clone(),
-                        recorded_at: now,
-                    };
-                    let hash =
-                        work::append_control_environment_evidence_on(&transaction, &evidence)?;
-                    environment_hashes.push(hash.clone());
-                    environment_records.push((hash, evidence));
-                }
-                let mut verification_hashes = Vec::with_capacity(verification_evidence.len());
-                for input in verification_evidence {
-                    let (producer_hash, producer) = match &input.producer_observation {
-                        ExecutionObservationReference::ObjectId { object_id } => (
-                            object_id.clone(),
-                            work::load_control_execution_observation_on(&transaction, object_id)?
-                                .ok_or_else(|| {
-                                StoreError::VerificationProducerObservationNotFound(
-                                    object_id.to_string(),
-                                )
-                            })?,
-                        ),
-                        ExecutionObservationReference::ObservationId { observation_id } => {
-                            observation_records
-                                .get(observation_id)
-                                .cloned()
+                    let binding = binding.as_ref();
+                    let mut environment_hashes = Vec::with_capacity(environment_evidence.len());
+                    let mut environment_records = Vec::with_capacity(environment_evidence.len());
+                    for input in environment_evidence {
+                        let binding = binding.ok_or_else(|| {
+                            StoreError::InvalidControlSession(
+                                "environment evidence lost its work binding".into(),
+                            )
+                        })?;
+                        validate_source_root_basis_on(transaction, binding, &input.source_basis)?;
+                        if input.components.as_ref().is_some_and(|components| {
+                            components.capability_map_revision != session.capability_map_revision
+                        }) {
+                            return Err(StoreError::EnvironmentBasisMismatch(
+                                input.environment_fingerprint.to_string(),
+                            ));
+                        }
+                        let evidence = EnvironmentEvidence {
+                            schema_version: SCHEMA_VERSION,
+                            project_id: project_id.clone(),
+                            binding: binding.clone(),
+                            session_id: session_id.clone(),
+                            source_basis: input.source_basis.clone(),
+                            environment_fingerprint: input.environment_fingerprint.clone(),
+                            components: input.components.clone(),
+                            observed_at: input.observed_at,
+                            actor: session.actor.clone(),
+                            recorded_at: now,
+                        };
+                        let hash =
+                            work::append_control_environment_evidence_on(transaction, &evidence)?;
+                        environment_hashes.push(hash.clone());
+                        environment_records.push((hash, evidence));
+                    }
+                    let mut verification_hashes = Vec::with_capacity(verification_evidence.len());
+                    for input in verification_evidence {
+                        let (producer_hash, producer) = match &input.producer_observation {
+                            ExecutionObservationReference::ObjectId { object_id } => (
+                                object_id.clone(),
+                                work::load_control_execution_observation_on(
+                                    transaction,
+                                    object_id,
+                                )?
                                 .ok_or_else(|| {
                                     StoreError::VerificationProducerObservationNotFound(
-                                        observation_id.clone(),
+                                        object_id.to_string(),
                                     )
-                                })?
-                        }
-                    };
-                    let binding = binding.ok_or_else(|| {
-                        StoreError::InvalidControlSession(
-                            "verification evidence lost its work binding".into(),
-                        )
-                    })?;
-                    validate_verification_producer(
-                        &producer, project_id, session_id, binding, now,
-                    )?;
-                    let completed_at = producer.observed_at.ok_or_else(|| {
-                        StoreError::InvalidControlSession(
-                            "verification producer has no observed_at timestamp".into(),
-                        )
-                    })?;
-                    let source_basis = producer.source_basis.clone().ok_or_else(|| {
-                        StoreError::InvalidControlSession(
-                            "verification producer has no source content basis".into(),
-                        )
-                    })?;
-                    let environment = resolve_verification_environment_on(
-                        &transaction,
-                        input.environment.as_ref(),
-                        &environment_records,
-                        project_id,
-                        binding,
-                        &source_basis,
-                    )?;
-                    let evidence = VerificationEvidence {
+                                })?,
+                            ),
+                            ExecutionObservationReference::ObservationId { observation_id } => {
+                                observation_records
+                                    .get(observation_id)
+                                    .cloned()
+                                    .ok_or_else(|| {
+                                        StoreError::VerificationProducerObservationNotFound(
+                                            observation_id.clone(),
+                                        )
+                                    })?
+                            }
+                        };
+                        let binding = binding.ok_or_else(|| {
+                            StoreError::InvalidControlSession(
+                                "verification evidence lost its work binding".into(),
+                            )
+                        })?;
+                        validate_verification_producer(
+                            &producer, project_id, session_id, binding, now,
+                        )?;
+                        let completed_at = producer.observed_at.ok_or_else(|| {
+                            StoreError::InvalidControlSession(
+                                "verification producer has no observed_at timestamp".into(),
+                            )
+                        })?;
+                        let source_basis = producer.source_basis.clone().ok_or_else(|| {
+                            StoreError::InvalidControlSession(
+                                "verification producer has no source content basis".into(),
+                            )
+                        })?;
+                        let environment = resolve_verification_environment_on(
+                            transaction,
+                            input.environment.as_ref(),
+                            &environment_records,
+                            project_id,
+                            binding,
+                            &source_basis,
+                        )?;
+                        let evidence = VerificationEvidence {
+                            schema_version: SCHEMA_VERSION,
+                            project_id: project_id.clone(),
+                            binding: binding.clone(),
+                            session_id: session_id.clone(),
+                            producer_observation: producer_hash,
+                            source_basis,
+                            environment,
+                            check_kind: input.check_kind,
+                            check_fingerprint: producer.action_fingerprint.clone(),
+                            result: verification_result(producer.outcome),
+                            completed_at,
+                            summary: normalize_verification_summary(input),
+                            refs: normalize_typed_evidence_refs(&input.refs),
+                            actor: session.actor.clone(),
+                            recorded_at: now,
+                            bound_from: None,
+                        };
+                        verification_hashes.push(work::append_control_verification_evidence_on(
+                            transaction,
+                            &evidence,
+                        )?);
+                    }
+                    let event = TurnCheckpointEvent {
                         schema_version: SCHEMA_VERSION,
-                        project_id: project_id.clone(),
-                        binding: binding.clone(),
+                        task_id: session.task_id,
                         session_id: session_id.clone(),
-                        producer_observation: producer_hash,
-                        source_basis,
-                        environment,
-                        check_kind: input.check_kind,
-                        check_fingerprint: producer.action_fingerprint.clone(),
-                        result: verification_result(producer.outcome),
-                        completed_at,
-                        summary: normalize_verification_summary(input),
-                        refs: normalize_typed_evidence_refs(&input.refs),
+                        grant_id: grant_id.into(),
+                        delivered_cursor: grant.grant.basis.delivery_cursor,
+                        next_intent,
+                        execution_observations: execution_observations.clone(),
+                        verification_evidence: verification_hashes.clone(),
+                        environment_evidence: environment_hashes.clone(),
                         actor: session.actor.clone(),
-                        recorded_at: now,
-                        bound_from: None,
+                        created_at: now,
                     };
-                    verification_hashes.push(work::append_control_verification_evidence_on(
-                        &transaction,
-                        &evidence,
-                    )?);
-                }
-                let event = TurnCheckpointEvent {
-                    schema_version: SCHEMA_VERSION,
-                    task_id: session.task_id,
-                    session_id: session_id.clone(),
-                    grant_id: grant_id.into(),
-                    delivered_cursor: grant.grant.basis.delivery_cursor,
-                    next_intent,
-                    execution_observations: execution_observations.clone(),
-                    verification_evidence: verification_hashes.clone(),
-                    environment_evidence: environment_hashes.clone(),
-                    actor: session.actor.clone(),
-                    created_at: now,
-                };
-                let event_object = CanonicalObject::mint(&event)?;
-                Self::insert_object(&transaction, "turn_checkpoint_event", &event_object)?;
-                // The task's change index is a write-only audit trail: no
-                // grant delivers it any more, and no decision reads it.
-                let cursor = Self::insert_task_change(
-                    &transaction,
-                    session.task_id,
-                    "turn_checkpoint_event",
-                    &event_object,
-                )?;
-                let phase = if matches!(next_intent, TurnNextIntent::Exit) {
-                    SessionPhase::Exited
-                } else {
-                    SessionPhase::Ready
-                };
-                let changed = transaction.execute(
-                    "UPDATE control_turn_grants SET
+                    let event_object = CanonicalObject::mint(&event)?;
+                    Self::insert_object(transaction, "turn_checkpoint_event", &event_object)?;
+                    // The task's change index is a write-only audit trail: no
+                    // grant delivers it any more, and no decision reads it.
+                    let cursor = Self::insert_task_change(
+                        transaction,
+                        session.task_id,
+                        "turn_checkpoint_event",
+                        &event_object,
+                    )?;
+                    let phase = if matches!(next_intent, TurnNextIntent::Exit) {
+                        SessionPhase::Exited
+                    } else {
+                        SessionPhase::Ready
+                    };
+                    let changed = transaction.execute(
+                        "UPDATE control_turn_grants SET
                          state = 'completed', completed_at_ms = ?2
                       WHERE grant_id = ?1 AND state = 'begun'",
-                    params![grant_id, now.timestamp_millis()],
-                )?;
-                if changed != 1 {
-                    return Err(StoreError::InvalidControlProjection(format!(
-                        "turn grant {grant_id:?} was not begun during checkpoint"
-                    )));
-                }
-                let revision = transaction.query_row(
-                    "UPDATE control_sessions SET
+                        params![grant_id, now.timestamp_millis()],
+                    )?;
+                    if changed != 1 {
+                        return Err(StoreError::InvalidControlProjection(format!(
+                            "turn grant {grant_id:?} was not begun during checkpoint"
+                        )));
+                    }
+                    let revision = transaction.query_row(
+                        "UPDATE control_sessions SET
                          phase = ?2,
                          revision = revision + 1, updated_at_ms = ?3
                      WHERE session_id = ?1
                      RETURNING revision",
-                    params![session_id.0, enum_name(phase)?, now.timestamp_millis()],
-                    |row| row.get::<_, i64>(0),
-                )?;
-                ControlTurnCheckpointDecision::Checkpointed {
-                    receipt: TurnCheckpointReceipt {
-                        grant_id: grant_id.into(),
-                        checkpoint: event_object.key().clone(),
-                        execution_observations,
-                        verification_evidence: verification_hashes,
-                        environment_evidence: environment_hashes,
-                        cursor,
-                        confirmed_cursor: cursor,
-                        phase,
-                        session_revision: revision,
-                        checkpointed_at: now,
-                    },
+                        params![session_id.0, enum_name(phase)?, now.timestamp_millis()],
+                        |row| row.get::<_, i64>(0),
+                    )?;
+                    ControlTurnCheckpointDecision::Checkpointed {
+                        receipt: TurnCheckpointReceipt {
+                            grant_id: grant_id.into(),
+                            checkpoint: event_object.key().clone(),
+                            execution_observations,
+                            verification_evidence: verification_hashes,
+                            environment_evidence: environment_hashes,
+                            cursor,
+                            confirmed_cursor: cursor,
+                            phase,
+                            session_revision: revision,
+                            checkpointed_at: now,
+                        },
+                    }
                 }
-            }
-            TurnCheckpointDecision::Refuse { code } => ControlTurnCheckpointDecision::Refuse {
-                code,
-                directive: Some(crate::control::control_directive(
-                    &format!("turn_checkpoint:{idempotency_key}"),
+                TurnCheckpointDecision::Refuse { code } => ControlTurnCheckpointDecision::Refuse {
                     code,
-                    None,
-                    None,
-                    None,
-                    None,
-                )),
-            },
-        };
-        Self::persist_control_operation(
-            &transaction,
-            session_id,
-            "turn_checkpoint",
-            idempotency_key,
-            &intent_object,
-            &decision,
-            now,
-        )?;
-        transaction.commit()?;
-        Ok(decision)
+                    directive: Some(crate::control::control_directive(
+                        &format!("turn_checkpoint:{idempotency_key}"),
+                        code,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )),
+                },
+            };
+            Self::persist_control_operation(
+                transaction,
+                session_id,
+                "turn_checkpoint",
+                idempotency_key,
+                &intent_object,
+                &decision,
+                now,
+            )?;
+            Ok(decision)
+        })
     }
 }
 

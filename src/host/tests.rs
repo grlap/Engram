@@ -2,6 +2,7 @@ use std::io::Cursor;
 
 use super::*;
 mod diagnostics;
+mod store_busy;
 
 #[test]
 fn pending_handoff_preserves_host_and_agent_error_classifications() {

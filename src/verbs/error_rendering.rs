@@ -430,6 +430,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::GraphDifferentBuild => "different_build",
         StoreError::InvalidGraphSnapshot(_) => "graph_snapshot_corrupt",
         StoreError::Json(_)
+        | StoreError::ControlStoreBusy { .. }
         | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::Sqlite(_)
         | StoreError::SqlitePath { .. }

@@ -278,6 +278,46 @@ fn real_sqlite_contention_preserves_typed_codes_without_logging_sql() {
 }
 
 #[test]
+fn control_store_busy_diagnostics_preserve_extended_codes_without_statement_prose() {
+    let home = crate::test_support::temp_home().unwrap();
+    let marker = uuid::Uuid::new_v4().to_string();
+    assert!(!home.path().to_string_lossy().contains(&marker));
+    let sink = Diagnostics::start(home.path(), "control-busy", Surface::Control);
+    for code in [
+        rusqlite::ffi::SQLITE_BUSY_SNAPSHOT,
+        rusqlite::ffi::SQLITE_LOCKED_SHAREDCACHE,
+    ] {
+        let error = crate::StoreError::ControlStoreBusy {
+            source: Box::new(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(code),
+                Some(marker.clone()),
+            )),
+        };
+        sink.emit(Event::failure(
+            "turn_begin",
+            Correlation::default(),
+            Duration::ZERO,
+            Fault::store(&error),
+        ));
+    }
+    drain(&sink);
+    let rows = records(home.path());
+    let codes = rows
+        .iter()
+        .filter(|row| row["event"]["code"] == "control_store_busy")
+        .map(|row| row["event"]["sqlite_code"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        codes,
+        [
+            i64::from(rusqlite::ffi::SQLITE_BUSY_SNAPSHOT),
+            i64::from(rusqlite::ffi::SQLITE_LOCKED_SHAREDCACHE)
+        ]
+    );
+    assert!(!serde_json::to_string(&rows).unwrap().contains(&marker));
+}
+
+#[test]
 fn diagnostic_ring_process_worker() {
     let Some(root) = std::env::var_os("ENGRAM_DIAGNOSTICS_TEST_HOME") else {
         return;

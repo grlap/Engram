@@ -110,8 +110,21 @@ impl Fault {
                 }),
             };
         }
-        if let crate::StoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _)) = error {
-            let code = match error.code {
+        let sqlite = match error {
+            crate::StoreError::Sqlite(source) => Some(source),
+            crate::StoreError::ControlStoreBusy { source } => Some(source.as_ref()),
+            _ => None,
+        };
+        if let Some(rusqlite::Error::SqliteFailure(sqlite, _)) = sqlite {
+            if matches!(error, crate::StoreError::ControlStoreBusy { .. }) {
+                return Self {
+                    code: "control_store_busy",
+                    reason: crate::storage::CONTROL_STORE_BUSY_MESSAGE,
+                    sqlite_code: Some(sqlite.extended_code),
+                    writer_admission: None,
+                };
+            }
+            let code = match sqlite.code {
                 rusqlite::ErrorCode::DatabaseBusy => "sqlite_busy",
                 rusqlite::ErrorCode::DatabaseLocked => "sqlite_locked",
                 _ => "sqlite_error",
@@ -119,7 +132,7 @@ impl Fault {
             return Self {
                 code,
                 reason: "Inspect concurrent writer admission and store availability.",
-                sqlite_code: Some(error.extended_code),
+                sqlite_code: Some(sqlite.extended_code),
                 writer_admission: None,
             };
         }

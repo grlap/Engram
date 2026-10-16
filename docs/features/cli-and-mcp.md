@@ -3364,6 +3364,26 @@ and rebind. The same movement after bind refuses evaluation or begin with
 `stale_fence`. Omitting `work_binding` binds only the shared control scope,
 without a work-claim binding; that session cannot append run execution observations.
 
+For `session_bind`, `turn_evaluate`, `turn_begin` and `turn_checkpoint`,
+`control_store_busy` is a transient error under the configured SQLite busy
+policy. It certifies that this invocation committed no changes: either
+`BEGIN IMMEDIATE` returned `SQLITE_BUSY` or `SQLITE_LOCKED` without starting
+a transaction, or a statement before `COMMIT` returned one of those codes
+and an explicit rollback succeeded. `COMMIT` failures, rollback failures and
+other SQLite errors remain `storage_error`, with no such guarantee. A
+`SQLITE_LOCKED` error need not wait for the busy timeout.
+
+Retry the exact retained operation, unchanged payload and original
+idempotency key on the same control connection, preserving its still-valid
+binding. A bind retries its original request even when no binding exists
+yet. A begin retains its exact grant, tokens and durable preparation; a
+checkpoint retains its exact report, grant and intent. Busy alone never
+invalidates a binding or authorizes a fresh bind, evaluation, begin or
+provider delivery. These operations take the write lock even for an
+idempotent replay, so a busy reply does not prove that an earlier invocation
+with that key failed to commit or that its turn never began. Preserve prior
+uncertainty and exact replay or reconciliation; stale authority stays held.
+
 `turn_checkpoint.observations` accepts at most 64 host facts containing
 `observation_id`, `action_fingerprint`, `effect`, `outcome`, and
 `source_changed`. An observation may also carry

@@ -1216,6 +1216,12 @@ pub struct MissingMemorySection {
     pub sections: Vec<String>,
 }
 
+pub(crate) const CONTROL_STORE_BUSY_MESSAGE: &str = concat!(
+    "transient control store contention; this attempt committed no changes; ",
+    "retry the exact same request with the same idempotency key on the same control connection; ",
+    "preserve the still-valid binding and prior replay or reconciliation uncertainty"
+);
+
 /// Errors at the immutable storage boundary.
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -1243,6 +1249,11 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("{CONTROL_STORE_BUSY_MESSAGE}")]
+    ControlStoreBusy {
+        #[source]
+        source: Box<rusqlite::Error>,
+    },
     #[error("SQLite writer admission refused ({reason}): {source}")]
     WorkWriterAdmissionRefused {
         reason: WorkWriterAdmissionReason,

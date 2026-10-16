@@ -995,6 +995,7 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
 #[must_use]
 pub fn store_error_code(error: &StoreError) -> &'static str {
     match error {
+        StoreError::ControlStoreBusy { .. } => "control_store_busy",
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::InvalidControlSession(_) => "invalid_control_session",
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",
