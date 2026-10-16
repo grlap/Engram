@@ -2,11 +2,49 @@
 
 use super::{
     Connection, FORMAT, ImportOrigin, ORIGIN_KIND, ObjectId, ProjectDocument, SqliteStore,
-    StoreError, TaskTree, WorkItem, history, invalid,
+    StoreError, TaskSyncRefusal, TaskTree, WorkItem, history, invalid,
 };
 use crate::RestoredRecord;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+// Refusals that a task's import origin binding does not hold. The shared
+// validators return them as plain invalid input to every caller; task
+// export and import classify them as origin mismatches.
+pub(super) const ITEM_BINDING_DIFFERS: &str = "task import origin item binding differs";
+pub(super) const RECORD_BINDING_DIFFERS: &str = "task import origin record binding differs";
+pub(super) const PROJECTION_DIFFERS: &str = "task projection differs from canonical import origin";
+pub(super) const ORIGIN_ID_INVALID: &str = "invalid import origin id";
+pub(super) const ORIGIN_MISSING: &str = "task import origin missing";
+pub(super) const RECORD_MISSING: &str = "import origin restored record missing";
+pub(super) const BINDING_INVALID: &str = "invalid task import origin binding";
+pub(super) const TASK_MISSING: &str = "import origin task missing";
+pub(super) const REFERENCE_MISSING: &str = "task import origin reference missing";
+pub(super) const REFERENCE_INVALID: &str = "invalid task import origin reference";
+const BINDING_REFUSALS: [&str; 10] = [
+    ITEM_BINDING_DIFFERS,
+    RECORD_BINDING_DIFFERS,
+    PROJECTION_DIFFERS,
+    ORIGIN_ID_INVALID,
+    ORIGIN_MISSING,
+    RECORD_MISSING,
+    BINDING_INVALID,
+    TASK_MISSING,
+    REFERENCE_MISSING,
+    REFERENCE_INVALID,
+];
+
+/// Classify one of the origin binding refusals above as an origin mismatch
+/// at a task export or import boundary. Any other error, including the
+/// scope errors below, passes through unchanged.
+pub(super) fn classify_binding(error: StoreError) -> StoreError {
+    match &error {
+        StoreError::InvalidWork(message) if BINDING_REFUSALS.contains(&message.as_str()) => {
+            TaskSyncRefusal::OriginMismatch.classify(error)
+        }
+        _ => error,
+    }
+}
 
 struct OriginScope {
     owner: std::rc::Rc<()>,
@@ -121,7 +159,7 @@ pub(super) fn for_item(
         || origin.task.id != item.work_id
         || item.created_by != super::linked_actor(&origin.actor, &id)
     {
-        return Err(invalid("task import origin item binding differs"));
+        return Err(invalid(ITEM_BINDING_DIFFERS));
     }
     Ok(Some(origin))
 }
@@ -138,7 +176,7 @@ pub(in crate::storage::work) fn validate_item_origin(
     let id = super::origin_reference(&item.created_by)?;
     let origin = lookup(connection, &id)?;
     if &origin.record_id != record_id {
-        return Err(invalid("task import origin record binding differs"));
+        return Err(invalid(RECORD_BINDING_DIFFERS));
     }
     validate_record(connection, &origin)?;
     if origin.project_id != item.project_id
@@ -149,9 +187,7 @@ pub(in crate::storage::work) fn validate_item_origin(
         || item.acceptance_bindings != origin.task.acceptance_bindings
         || origin.task.snapshot_with_root(record.item.root_id) != record.item
     {
-        return Err(invalid(
-            "task projection differs from canonical import origin",
-        ));
+        return Err(invalid(PROJECTION_DIFFERS));
     }
     Ok(true)
 }
@@ -186,7 +222,7 @@ pub(in crate::storage) fn verify_origins(
                     != super::linked_actor(
                         &origin.actor,
                         &ObjectId::from_stored(id.clone())
-                            .ok_or_else(|| invalid("invalid import origin id"))?,
+                            .ok_or_else(|| invalid(ORIGIN_ID_INVALID))?,
                     )
             {
                 return Err(invalid("import origin projection reference differs"));
@@ -239,10 +275,9 @@ pub(in crate::storage) fn verify_origins(
 fn read_origin(connection: &Connection, id: &str) -> Result<ImportOrigin, StoreError> {
     #[cfg(test)]
     DECODES.with(|count| count.set(count.get() + 1));
-    let key =
-        ObjectId::from_stored(id.to_owned()).ok_or_else(|| invalid("invalid import origin id"))?;
+    let key = ObjectId::from_stored(id.to_owned()).ok_or_else(|| invalid(ORIGIN_ID_INVALID))?;
     SqliteStore::get_canonical_object_on(connection, &key, ORIGIN_KIND)?
-        .ok_or_else(|| invalid("task import origin missing"))?
+        .ok_or_else(|| invalid(ORIGIN_MISSING))?
         .decode()
 }
 
@@ -259,7 +294,7 @@ fn validate_record(
         &origin.record_id,
         "work_restored_record",
     )?
-    .ok_or_else(|| invalid("import origin restored record missing"))?
+    .ok_or_else(|| invalid(RECORD_MISSING))?
     .decode()?;
     if record.schema_version != crate::WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION
         || origin
@@ -284,7 +319,7 @@ fn validate_record(
             .as_ref()
             .is_none_or(|id| id.0.trim().is_empty())
     {
-        return Err(invalid("invalid task import origin binding"));
+        return Err(invalid(BINDING_INVALID));
     }
     let exists: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM work_items WHERE work_id = ?1 AND project_id = ?2)",
@@ -292,7 +327,7 @@ fn validate_record(
         |row| row.get(0),
     )?;
     if !exists {
-        return Err(invalid("import origin task missing"));
+        return Err(invalid(TASK_MISSING));
     }
     Ok(record.item.root_id)
 }

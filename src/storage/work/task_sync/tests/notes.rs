@@ -207,16 +207,19 @@ fn task_sync_notes_known_id_changes_and_disabled_removal_refuse_without_writes()
         }
         for dry_run in [false, true] {
             let before = state(&target);
-            assert!(
-                target
-                    .import_task_tree(
-                        &tree.project.project_id,
-                        &actor("importer"),
-                        &changed,
-                        dry_run,
-                        at(100)
-                    )
-                    .is_err(),
+            let error = target
+                .import_task_tree(
+                    &tree.project.project_id,
+                    &actor("importer"),
+                    &changed,
+                    dry_run,
+                    at(100),
+                )
+                .unwrap_err();
+            // Every change keeps the note's owning task, so it diverges.
+            assert_eq!(
+                crate::store_error_value(&error)["error"]["code"],
+                "task_sync_divergent_planning",
                 "{field}"
             );
             assert_eq!(state(&target), before, "{field}");
@@ -240,18 +243,20 @@ fn task_sync_notes_known_id_changes_and_disabled_removal_refuse_without_writes()
     foreign.tasks[0].id = WorkId::new();
     foreign.tasks[0].notes = tree.tasks[0].notes.clone();
     let before = state(&target);
-    assert!(
-        target
-            .import_task_tree(
-                &foreign.project.project_id,
-                &actor("importer"),
-                &foreign,
-                false,
-                at(100)
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("known shared note id")
+    let error = target
+        .import_task_tree(
+            &foreign.project.project_id,
+            &actor("importer"),
+            &foreign,
+            false,
+            at(100),
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("known shared note id"));
+    // The known note id is owned by another task and project, so it collides.
+    assert_eq!(
+        crate::store_error_value(&error)["error"]["code"],
+        "task_sync_id_collision"
     );
     assert_eq!(state(&target), before);
 }

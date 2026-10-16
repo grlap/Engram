@@ -99,6 +99,10 @@ fn import(store: &mut SqliteStore, tree: &TaskTree) -> TaskSyncImportResult {
         .unwrap()
 }
 
+fn refusal_code(error: &StoreError) -> serde_json::Value {
+    crate::store_error_value(error)["error"]["code"].clone()
+}
+
 fn state(store: &SqliteStore) -> crate::storage::TestDatabaseShapeSnapshot {
     crate::storage::test_database_shape_snapshot(&store.connection).unwrap()
 }
@@ -198,32 +202,38 @@ fn task_sync_dry_run_divergence_and_removal_preserve_every_row() {
     let before = state(&target);
     let mut divergent = tree.clone();
     divergent.tasks[0].title.push_str(" changed");
-    assert!(
-        target
-            .import_task_tree(
-                &tree.project.project_id,
-                &actor("importer"),
-                &divergent,
-                false,
-                at(5)
-            )
-            .is_err()
+    let error = target
+        .import_task_tree(
+            &tree.project.project_id,
+            &actor("importer"),
+            &divergent,
+            false,
+            at(5),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "local work input is invalid: task import refuses divergent or removed planning state"
     );
+    assert_eq!(refusal_code(&error), "task_sync_divergent_planning");
     let mut removed = tree.clone();
     removed
         .tasks
         .retain(|task| task.lifecycle != WorkLifecycle::Proposed);
-    assert!(
-        target
-            .import_task_tree(
-                &tree.project.project_id,
-                &actor("importer"),
-                &removed,
-                false,
-                at(5)
-            )
-            .is_err()
+    let error = target
+        .import_task_tree(
+            &tree.project.project_id,
+            &actor("importer"),
+            &removed,
+            false,
+            at(5),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "local work input is invalid: task import refuses divergent or removed planning state"
     );
+    assert_eq!(refusal_code(&error), "task_sync_removed_planning");
     assert_eq!(state(&target), before);
 }
 
@@ -260,17 +270,20 @@ fn task_sync_native_state_and_cross_project_id_collisions_are_refused() {
         )
         .unwrap();
     let before = state(&target);
-    assert!(
-        target
-            .import_task_tree(
-                &tree.project.project_id,
-                &actor("importer"),
-                &tree,
-                false,
-                at(5)
-            )
-            .is_err()
+    let error = target
+        .import_task_tree(
+            &tree.project.project_id,
+            &actor("importer"),
+            &tree,
+            false,
+            at(5),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "local work input is invalid: task import refuses existing native execution state"
     );
+    assert_eq!(refusal_code(&error), "task_sync_native_state");
     assert_eq!(state(&target), before);
     let mut foreign = tree;
     foreign.project.project_id = ProjectId("different-project".into());
@@ -292,6 +305,43 @@ fn task_sync_native_state_and_cross_project_id_collisions_are_refused() {
         )
         .unwrap_err();
     assert!(error.to_string().contains("already belongs"));
+    assert_eq!(refusal_code(&error), "task_sync_id_collision");
+    assert_eq!(state(&target), before);
+}
+
+#[test]
+fn task_sync_invalid_graph_and_project_mismatch_carry_their_codes() {
+    let tree = candidate();
+    let mut target = SqliteStore::open_in_memory().unwrap();
+    let before = state(&target);
+    let mut dangling = tree.clone();
+    dangling.tasks[0].prerequisites = vec![WorkId(uuid::Uuid::new_v4())];
+    let unclassified = dangling.validate().unwrap_err().to_string();
+    let error = target
+        .import_task_tree(
+            &tree.project.project_id,
+            &actor("importer"),
+            &dangling,
+            false,
+            at(5),
+        )
+        .unwrap_err();
+    assert_eq!(error.to_string(), unclassified);
+    assert_eq!(refusal_code(&error), "task_sync_invalid_graph");
+    let error = target
+        .import_task_tree(
+            &ProjectId("another-project".into()),
+            &actor("importer"),
+            &tree,
+            false,
+            at(5),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "local work input is invalid: task candidate project mismatch"
+    );
+    assert_eq!(refusal_code(&error), "task_sync_origin_mismatch");
     assert_eq!(state(&target), before);
 }
 

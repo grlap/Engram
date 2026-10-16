@@ -20,6 +20,22 @@ fn pending_handoff_preserves_host_and_agent_error_classifications() {
 }
 
 #[test]
+fn task_sync_refusals_keep_their_unclassified_host_wire_code() {
+    for refusal in crate::task_sync::TaskSyncRefusal::ALL {
+        let old = StoreError::InvalidWork("task import refuses this candidate".into());
+        let new = refusal.invalid("task import refuses this candidate");
+        assert_eq!(store_error_code(&new), store_error_code(&old));
+        assert_eq!(store_error_code(&new), "storage_error");
+        assert_eq!(new.to_string(), old.to_string());
+        let graph = StoreError::InvalidGraphSnapshot("duplicate task id".into());
+        let classified =
+            refusal.classify(StoreError::InvalidGraphSnapshot("duplicate task id".into()));
+        assert_eq!(store_error_code(&classified), store_error_code(&graph));
+        assert_eq!(classified.to_string(), graph.to_string());
+    }
+}
+
+#[test]
 fn turn_grant_read_round_trips_on_the_host_channel() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let session_id = SessionId("grant-read-host".into());

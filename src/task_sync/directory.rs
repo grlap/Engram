@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, fs, io::Read, path::Path};
 
-use crate::task_sync::{TaskTree, invalid};
+use crate::task_sync::{TaskSyncRefusal, TaskTree};
 use anyhow::{Context, Result};
 
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
@@ -15,12 +15,20 @@ const MAX_TASKS: usize = 100_000;
 /// Refuses partial, oversized, linked or malformed candidates.
 pub fn read(path: &Path) -> Result<TaskTree> {
     let tree = read_stored(path)?;
-    tree.validate()?;
+    tree.validate()
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     Ok(tree)
 }
 
 fn read_stored(path: &Path) -> Result<TaskTree> {
-    Ok(TaskTree::from_stored_documents(&read_documents(path)?)?)
+    Ok(stored_tree(&read_documents(path)?)?)
+}
+
+fn stored_tree(
+    documents: &BTreeMap<String, Vec<u8>>,
+) -> Result<TaskTree, crate::storage::StoreError> {
+    TaskTree::from_stored_documents(documents)
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))
 }
 
 /// Read retained bytes without applying today's note disclosure admission.
@@ -45,13 +53,14 @@ pub(crate) fn read_documents(path: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
             regular_directory(&entry.path())?;
             for task in fs::read_dir(entry.path())? {
                 let task = task?;
-                let name = task
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| invalid("non-UTF8 task filename"))?;
+                let name = task.file_name().into_string().map_err(|_| {
+                    TaskSyncRefusal::DestinationNonUtf8Name.invalid("non-UTF8 task filename")
+                })?;
                 task_count += 1;
                 if task_count > MAX_TASKS {
-                    return Err(invalid("task candidate count limit exceeded").into());
+                    return Err(TaskSyncRefusal::DestinationTaskLimit
+                        .invalid("task candidate count limit exceeded")
+                        .into());
                 }
                 add_document(
                     &mut documents,
@@ -61,13 +70,17 @@ pub(crate) fn read_documents(path: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
                 )?;
             }
         } else {
-            return Err(invalid("unknown task directory entry").into());
+            return Err(TaskSyncRefusal::DestinationUnknownEntry
+                .invalid("unknown task directory entry")
+                .into());
         }
     }
     if !has_tasks {
-        return Err(invalid("tasks directory missing").into());
+        return Err(TaskSyncRefusal::DestinationMissingTasks
+            .invalid("tasks directory missing")
+            .into());
     }
-    TaskTree::from_stored_documents(&documents)?;
+    stored_tree(&documents)?;
     Ok(documents)
 }
 
@@ -78,7 +91,7 @@ pub(crate) fn matching_destination(
 ) -> Result<bool> {
     match fs::symlink_metadata(path) {
         Ok(_) if read_documents(path)? == *documents => Ok(true),
-        Ok(_) => Err(invalid("export destination already contains a different candidate").into()),
+        Ok(_) => Err(occupied().into()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.into()),
     }
@@ -87,19 +100,41 @@ pub(crate) fn matching_destination(
 /// Refuse documents that `write_documents` could never publish. It reads
 /// nothing from disk, so a caller can check it before changing anything.
 pub(crate) fn admit_documents(documents: &BTreeMap<String, Vec<u8>>) -> Result<()> {
-    let tree = TaskTree::from_stored_documents(documents)?;
+    let tree = stored_tree(documents)?;
     if tree.project.notes_included && tree.tasks.is_empty() {
-        return Err(invalid("notes_included requires at least one task").into());
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("notes_included requires at least one task")
+            .into());
     }
-    if documents.len().saturating_sub(1) > MAX_TASKS
-        || documents
-            .values()
-            .any(|bytes| bytes.len() as u64 > MAX_FILE_BYTES)
-        || documents.values().map(Vec::len).sum::<usize>() > MAX_TREE_BYTES
+    admit_limits(documents)
+}
+
+/// Refuse documents over a candidate limit, naming the first limit exceeded.
+fn admit_limits(documents: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+    let refusal = if documents.len().saturating_sub(1) > MAX_TASKS {
+        TaskSyncRefusal::DestinationTaskLimit
+    } else if documents
+        .values()
+        .any(|bytes| bytes.len() as u64 > MAX_FILE_BYTES)
     {
-        return Err(invalid("export exceeds the supported task candidate limits").into());
-    }
-    Ok(())
+        TaskSyncRefusal::DestinationFileLimit
+    } else if documents.values().map(Vec::len).sum::<usize>() > MAX_TREE_BYTES {
+        TaskSyncRefusal::DestinationTreeLimit
+    } else {
+        return Ok(());
+    };
+    Err(refusal
+        .invalid("export exceeds the supported task candidate limits")
+        .into())
+}
+
+fn occupied() -> crate::storage::StoreError {
+    TaskSyncRefusal::DestinationOccupied
+        .invalid("export destination already contains a different candidate")
+}
+
+fn no_parent() -> crate::storage::StoreError {
+    TaskSyncRefusal::DestinationNoParent.invalid("export directory has no parent")
 }
 
 /// Publish already selected documents, preserving exact bytes on retry.
@@ -110,9 +145,7 @@ pub(crate) fn write_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>
     if matching_destination(path, documents)? {
         return Ok(());
     }
-    let parent = path
-        .parent()
-        .ok_or_else(|| invalid("export directory has no parent"))?;
+    let parent = path.parent().ok_or_else(no_parent)?;
     regular_directory(parent)?;
     let staging = parent.join(format!(".engram-task-candidate-{}", uuid::Uuid::now_v7()));
     fs::create_dir(&staging)?;
@@ -147,7 +180,9 @@ fn add_document(
     let bytes = read_file(path).with_context(|| format!("reading {}", path.display()))?;
     *total += bytes.len();
     if *total > MAX_TREE_BYTES {
-        return Err(invalid("task candidate byte limit exceeded").into());
+        return Err(TaskSyncRefusal::DestinationTreeLimit
+            .invalid("task candidate byte limit exceeded")
+            .into());
     }
     documents.insert(name, bytes);
     Ok(())
@@ -160,24 +195,20 @@ fn add_document(
 pub fn write(path: &Path, tree: &TaskTree) -> Result<()> {
     let absolute = std::path::absolute(path)?;
     let path = absolute.as_path();
-    let documents = tree.documents()?;
-    if documents.len().saturating_sub(1) > MAX_TASKS
-        || documents
-            .values()
-            .any(|bytes| bytes.len() as u64 > MAX_FILE_BYTES)
-        || documents.values().map(Vec::len).sum::<usize>() > MAX_TREE_BYTES
-    {
-        return Err(invalid("export exceeds the supported task candidate limits").into());
-    }
+    let documents = tree
+        .documents()
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    admit_limits(&documents)?;
     if path.try_exists()? {
-        if read_stored(path)?.documents()? == documents {
+        let existing = read_stored(path)?
+            .documents()
+            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+        if existing == documents {
             return Ok(());
         }
-        return Err(invalid("export destination already contains a different candidate").into());
+        return Err(occupied().into());
     }
-    let parent = path
-        .parent()
-        .ok_or_else(|| invalid("export directory has no parent"))?;
+    let parent = path.parent().ok_or_else(no_parent)?;
     regular_directory(parent)?;
     let staging = parent.join(format!(".engram-task-candidate-{}", uuid::Uuid::now_v7()));
     fs::create_dir(&staging)?;
@@ -188,7 +219,9 @@ pub fn write(path: &Path, tree: &TaskTree) -> Result<()> {
         }
         // Never replace an existing directory, even one created after the first check.
         if path.try_exists()? {
-            return Err(invalid("export destination appeared during preparation").into());
+            return Err(TaskSyncRefusal::DestinationAppeared
+                .invalid("export destination appeared during preparation")
+                .into());
         }
         // Use the existing no-clobber publication primitive. Systems that
         // cannot rename a directory without replacement fail closed.
@@ -207,23 +240,42 @@ pub fn write(path: &Path, tree: &TaskTree) -> Result<()> {
 
 fn regular_directory(path: &Path) -> Result<()> {
     let meta = fs::symlink_metadata(path)?;
-    if meta.file_type().is_symlink() || !meta.is_dir() {
-        return Err(invalid("task candidate directory must be an ordinary directory").into());
-    }
-    Ok(())
+    let refusal = if meta.file_type().is_symlink() {
+        TaskSyncRefusal::DestinationLink
+    } else if !meta.is_dir() {
+        TaskSyncRefusal::DestinationNotDirectory
+    } else {
+        return Ok(());
+    };
+    Err(refusal
+        .invalid("task candidate directory must be an ordinary directory")
+        .into())
 }
 
 fn read_file(path: &Path) -> Result<Vec<u8>> {
     let meta = fs::symlink_metadata(path)?;
-    if meta.file_type().is_symlink() || !meta.is_file() || meta.len() > MAX_FILE_BYTES {
-        return Err(invalid("task candidate file must be an ordinary bounded file").into());
+    let refusal = if meta.file_type().is_symlink() {
+        Some(TaskSyncRefusal::DestinationLink)
+    } else if !meta.is_file() {
+        Some(TaskSyncRefusal::DestinationNotFile)
+    } else if meta.len() > MAX_FILE_BYTES {
+        Some(TaskSyncRefusal::DestinationFileLimit)
+    } else {
+        None
+    };
+    if let Some(refusal) = refusal {
+        return Err(refusal
+            .invalid("task candidate file must be an ordinary bounded file")
+            .into());
     }
     let mut bytes = Vec::new();
     fs::File::open(path)?
         .take(MAX_FILE_BYTES + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_FILE_BYTES {
-        return Err(invalid("task candidate file grew beyond byte limit").into());
+        return Err(TaskSyncRefusal::DestinationFileGrew
+            .invalid("task candidate file grew beyond byte limit")
+            .into());
     }
     Ok(bytes)
 }

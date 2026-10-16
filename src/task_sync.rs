@@ -373,6 +373,126 @@ pub(crate) fn invalid(message: impl Into<String>) -> StoreError {
     StoreError::InvalidWork(message.into())
 }
 
+/// The family of a task export or import refusal. Each one has a stable
+/// machine-readable code; its human text is unchanged by the classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskSyncRefusal {
+    /// The target store already holds native work or execution state.
+    NativeState,
+    /// The candidate changes planning state the store already holds.
+    DivergentPlanning,
+    /// The candidate omits a task the store already holds.
+    RemovedPlanning,
+    /// A candidate id already belongs to another record, task or project.
+    IdCollision,
+    /// The candidate is not a valid task graph.
+    InvalidGraph,
+    /// The candidate's project or an import origin binding does not match.
+    OriginMismatch,
+    /// The export destination already holds a different candidate.
+    DestinationOccupied,
+    /// The export destination appeared while the export was being prepared.
+    DestinationAppeared,
+    /// The export destination has no parent directory.
+    DestinationNoParent,
+    /// A candidate path is a symbolic link.
+    DestinationLink,
+    /// A candidate directory is not an ordinary directory.
+    DestinationNotDirectory,
+    /// A candidate file is not an ordinary file.
+    DestinationNotFile,
+    /// A candidate file is larger than the per-file limit.
+    DestinationFileLimit,
+    /// A candidate file grew past the per-file limit while it was read.
+    DestinationFileGrew,
+    /// The candidate holds more tasks than the task count limit.
+    DestinationTaskLimit,
+    /// The candidate is larger than the tree byte limit.
+    DestinationTreeLimit,
+    /// A task filename is not valid UTF-8.
+    DestinationNonUtf8Name,
+    /// The candidate directory holds an entry the format does not define.
+    DestinationUnknownEntry,
+    /// The candidate directory has no tasks directory.
+    DestinationMissingTasks,
+}
+
+impl TaskSyncRefusal {
+    /// Every refusal family, in documentation order.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 19] = [
+        Self::NativeState,
+        Self::DivergentPlanning,
+        Self::RemovedPlanning,
+        Self::IdCollision,
+        Self::InvalidGraph,
+        Self::OriginMismatch,
+        Self::DestinationOccupied,
+        Self::DestinationAppeared,
+        Self::DestinationNoParent,
+        Self::DestinationLink,
+        Self::DestinationNotDirectory,
+        Self::DestinationNotFile,
+        Self::DestinationFileLimit,
+        Self::DestinationFileGrew,
+        Self::DestinationTaskLimit,
+        Self::DestinationTreeLimit,
+        Self::DestinationNonUtf8Name,
+        Self::DestinationUnknownEntry,
+        Self::DestinationMissingTasks,
+    ];
+
+    /// The stable machine-readable code of this refusal.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::NativeState => "task_sync_native_state",
+            Self::DivergentPlanning => "task_sync_divergent_planning",
+            Self::RemovedPlanning => "task_sync_removed_planning",
+            Self::IdCollision => "task_sync_id_collision",
+            Self::InvalidGraph => "task_sync_invalid_graph",
+            Self::OriginMismatch => "task_sync_origin_mismatch",
+            Self::DestinationOccupied => "task_sync_destination_occupied",
+            Self::DestinationAppeared => "task_sync_destination_appeared",
+            Self::DestinationNoParent => "task_sync_destination_no_parent",
+            Self::DestinationLink => "task_sync_destination_link",
+            Self::DestinationNotDirectory => "task_sync_destination_not_directory",
+            Self::DestinationNotFile => "task_sync_destination_not_file",
+            Self::DestinationFileLimit => "task_sync_destination_file_limit",
+            Self::DestinationFileGrew => "task_sync_destination_file_grew",
+            Self::DestinationTaskLimit => "task_sync_destination_task_limit",
+            Self::DestinationTreeLimit => "task_sync_destination_tree_limit",
+            Self::DestinationNonUtf8Name => "task_sync_destination_non_utf8_name",
+            Self::DestinationUnknownEntry => "task_sync_destination_unknown_entry",
+            Self::DestinationMissingTasks => "task_sync_destination_missing_tasks",
+        }
+    }
+
+    /// Refuse with this family, keeping the invalid-input text unchanged.
+    pub(crate) fn invalid(self, reason: impl Into<String>) -> StoreError {
+        self.wrap(invalid(reason))
+    }
+
+    /// Classify an invalid-input, invalid-graph or oversized-note refusal
+    /// from shared validation. Any other error, including one already
+    /// classified, passes through unchanged.
+    pub(crate) fn classify(self, error: StoreError) -> StoreError {
+        match error {
+            StoreError::InvalidWork(_)
+            | StoreError::InvalidGraphSnapshot(_)
+            | StoreError::WorkNoteTooLarge { .. } => self.wrap(error),
+            other => other,
+        }
+    }
+
+    fn wrap(self, error: StoreError) -> StoreError {
+        StoreError::TaskSyncRefused {
+            refusal: self,
+            inner: Box::new(error),
+        }
+    }
+}
+
 fn validate_shared_actor(actor: &SharedActor) -> Result<(), StoreError> {
     if [&actor.actor_id, &actor.actor_kind]
         .iter()
@@ -422,3 +542,6 @@ fn strict_bindings<'de, D: serde::Deserializer<'de>>(
         })
         .collect())
 }
+
+#[cfg(test)]
+mod refusal_tests;

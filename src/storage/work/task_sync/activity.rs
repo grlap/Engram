@@ -1,8 +1,8 @@
 //! Same-snapshot activity projection; no notice is restored into runtime state.
 
 use super::{
-    Connection, ImportOrigin, ORIGIN_KIND, ObjectId, SqliteStore, StoreError, TaskTree, WorkItem,
-    invalid, origin,
+    Connection, ImportOrigin, ORIGIN_KIND, ObjectId, SqliteStore, StoreError, TaskSyncRefusal,
+    TaskTree, WorkItem, invalid, origin,
 };
 use crate::task_sync::{
     SharedActor,
@@ -28,9 +28,8 @@ pub(super) fn capture(
                 if let Some(retained) = entries.get(&id)
                     && retained != &notice
                 {
-                    return Err(invalid(
-                        "native activity conflicts with retained origin entry",
-                    ));
+                    return Err(TaskSyncRefusal::DivergentPlanning
+                        .invalid("native activity conflicts with retained origin entry"));
                 }
                 entries.insert(id, notice);
             }
@@ -190,19 +189,30 @@ pub(super) fn refuse_known_changes(
         .query_map([ORIGIN_KIND], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     for id in ids {
-        let id = ObjectId::from_stored(id).ok_or_else(|| invalid("invalid import origin id"))?;
+        let id = ObjectId::from_stored(id)
+            .ok_or_else(|| TaskSyncRefusal::OriginMismatch.invalid(origin::ORIGIN_ID_INVALID))?;
         let origin: ImportOrigin =
             SqliteStore::get_canonical_object_on(connection, &id, ORIGIN_KIND)?
-                .ok_or_else(|| invalid("task import origin missing"))?
+                .ok_or_else(|| TaskSyncRefusal::OriginMismatch.invalid(origin::ORIGIN_MISSING))?
                 .decode()?;
         for (machine, entries) in &origin.task.activity {
             for (id, notice) in entries {
                 if let Some(candidate) = incoming.get(&(machine, id))
                     && (origin.project_id != tree.project.project_id || *candidate != notice)
                 {
-                    return Err(invalid(
-                        "known activity differs from its project or shared fields",
-                    ));
+                    // A known identity owned by another task or project
+                    // collides; one with the same owner but other shared
+                    // fields diverges.
+                    let refusal = if origin.project_id != tree.project.project_id
+                        || candidate.task_id != origin.task.id
+                    {
+                        TaskSyncRefusal::IdCollision
+                    } else {
+                        TaskSyncRefusal::DivergentPlanning
+                    };
+                    return Err(
+                        refusal.invalid("known activity differs from its project or shared fields")
+                    );
                 }
             }
         }

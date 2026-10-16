@@ -411,6 +411,10 @@ fn task_sync_dry_run_and_apply_refuse_foreign_blocker_identity() {
             )
             .unwrap_err();
         assert!(error.to_string().contains("blocker id already belongs"));
+        assert_eq!(
+            crate::store_error_value(&error)["error"]["code"],
+            "task_sync_id_collision"
+        );
         assert_eq!(state(&store), before);
     }
 }

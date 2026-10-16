@@ -21,6 +21,7 @@ engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync expor
 engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY --include-notes --origin-machine host-A
 engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --dry-run
 engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY
+engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --json
 ```
 
 The two homes contain isolated stores for the same stable project id. Export
@@ -539,6 +540,43 @@ Changes to an existing graph await later reconciliation slices.
 The profile contains no original disposal actor or time. Its local history
 labels disposal as `disposal_reported`, attributed to the importing actor as a
 report at import time, rather than claiming they performed the original act.
+
+## Refusal codes
+
+With `--json`, `task-sync export` and `task-sync import` print a refusal on
+stderr as `{"error": {"code", "message", "details"}}` and exit 1; export also
+prints its success receipt as JSON. The message keeps the refusal's human
+text unchanged; the plain form prints the same text, after the file path it
+was reading when the refusal concerns one candidate file. An invalid-input
+refusal repeats its reason as `details.reason`; a graph refusal from graph
+validation has `details: null`. Each code below is stable. A refusal outside
+these families, such as a project without the
+[host-local opt-in](#project-opt-in-setting) or an invalid export alias, keeps
+its generic code; no `--json` refusal of these commands carries a work-item
+remedy. An I/O failure, such as a missing directory, is not a refusal and is
+reported as before.
+
+| Code | Refusal |
+| --- | --- |
+| `task_sync_native_state` | The target already holds native work or execution state. |
+| `task_sync_divergent_planning` | The candidate changes or adds to the planning, notes or activity the store already holds without removing a task, or export meets native activity that conflicts with a retained entry. |
+| `task_sync_removed_planning` | The candidate omits a task the store already holds. |
+| `task_sync_id_collision` | A candidate task, blocker, note or activity id already belongs to another record, task or project. |
+| `task_sync_invalid_graph` | The candidate is malformed, or fails its graph, reference or disclosure admission. |
+| `task_sync_origin_mismatch` | The candidate names another project, an import origin binding differs, or export meets an externally imported item. |
+| `task_sync_destination_occupied` | The export destination already contains a different candidate. |
+| `task_sync_destination_appeared` | The export destination appeared while the export was prepared. |
+| `task_sync_destination_no_parent` | The export destination has no parent directory. |
+| `task_sync_destination_link` | A candidate directory or file is a symbolic link. |
+| `task_sync_destination_not_directory` | A candidate directory is not an ordinary directory. |
+| `task_sync_destination_not_file` | A candidate file is not an ordinary file. |
+| `task_sync_destination_file_limit` | A candidate file exceeds the 1 MiB limit. |
+| `task_sync_destination_file_grew` | A candidate file grew past the 1 MiB limit while it was read. |
+| `task_sync_destination_task_limit` | The candidate exceeds the 100,000-task limit. |
+| `task_sync_destination_tree_limit` | The candidate exceeds the 128 MiB limit. |
+| `task_sync_destination_non_utf8_name` | A task filename is not valid UTF-8. |
+| `task_sync_destination_unknown_entry` | The candidate directory holds an entry the format does not define. |
+| `task_sync_destination_missing_tasks` | The candidate directory has no `tasks` directory. |
 
 ## Local incremental preparation
 

@@ -1471,6 +1471,13 @@ pub enum StoreError {
     WorkNotFound(crate::domain::WorkId),
     #[error("local work input is invalid: {0}")]
     InvalidWork(String),
+    /// A task export or import refusal with its stable family; the text is
+    /// the classified refusal's own, unchanged.
+    #[error("{inner}")]
+    TaskSyncRefused {
+        refusal: crate::task_sync::TaskSyncRefusal,
+        inner: Box<StoreError>,
+    },
     /// Pending-offer context without changing the existing refusal message.
     #[error("local work input is invalid: {}", PENDING_HANDOFF_REFUSAL)]
     WorkHandoffPending {

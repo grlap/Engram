@@ -38,6 +38,14 @@ fn candidate() -> TaskTree {
     }
 }
 
+/// The structured code of a store refusal, through any added context.
+fn refusal_code(error: &anyhow::Error) -> serde_json::Value {
+    let error = error
+        .downcast_ref::<crate::storage::StoreError>()
+        .unwrap_or_else(|| panic!("not a store refusal: {error:#}"));
+    crate::store_error_value(error)["error"]["code"].clone()
+}
+
 #[test]
 fn task_sync_directory_preserves_crlf_string_content_and_existing_bytes() {
     let fixture = crate::test_support::temp_home().unwrap();
@@ -75,15 +83,17 @@ fn task_sync_directory_refuses_partial_unknown_and_oversized_input() {
         tree.documents().unwrap()["project.json"].clone(),
     )
     .unwrap();
-    assert!(
-        read(&path)
-            .unwrap_err()
-            .to_string()
-            .contains("tasks directory missing")
-    );
+    let error = read(&path).unwrap_err();
+    assert!(error.to_string().contains("tasks directory missing"));
+    assert_eq!(refusal_code(&error), "task_sync_destination_missing_tasks");
     fs::create_dir(path.join("tasks")).unwrap();
     fs::write(path.join("unexpected"), b"not ignored").unwrap();
-    assert!(read(&path).is_err());
+    let error = read(&path).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "local work input is invalid: unknown task directory entry"
+    );
+    assert_eq!(refusal_code(&error), "task_sync_destination_unknown_entry");
     fs::remove_file(path.join("unexpected")).unwrap();
     let task_path = path.join(format!("tasks/{}.json", tree.tasks[0].id.0));
     fs::write(
@@ -91,7 +101,12 @@ fn task_sync_directory_refuses_partial_unknown_and_oversized_input() {
         vec![b' '; usize::try_from(MAX_FILE_BYTES).unwrap() + 1],
     )
     .unwrap();
-    assert!(read(&path).is_err());
+    let error = read(&path).unwrap_err();
+    assert_eq!(
+        error.root_cause().to_string(),
+        "local work input is invalid: task candidate file must be an ordinary bounded file"
+    );
+    assert_eq!(refusal_code(&error), "task_sync_destination_file_limit");
     fs::write(&task_path, b"<<<<<<< unresolved conflict").unwrap();
     assert!(read(&path).is_err());
     fs::write(
@@ -108,10 +123,44 @@ fn task_sync_directory_refuses_non_directory_destination_without_overwriting() {
     let fixture = crate::test_support::temp_home().unwrap();
     let path = fixture.path().join("candidate");
     fs::write(&path, b"owned existing file").unwrap();
-    assert!(write(&path, &candidate()).is_err());
+    let error = write(&path, &candidate()).unwrap_err();
+    assert_eq!(refusal_code(&error), "task_sync_destination_not_directory");
     assert_eq!(fs::read(&path).unwrap(), b"owned existing file");
     assert!(write(&fixture.path().join("missing/candidate"), &candidate()).is_err());
     assert!(!fixture.path().join("missing").exists());
+}
+
+#[test]
+fn task_sync_directory_refuses_a_linked_tasks_directory_and_a_task_that_is_not_a_file() {
+    let fixture = crate::test_support::temp_home().unwrap();
+    let tree = candidate();
+    let documents = tree.documents().unwrap();
+
+    // A tasks directory that is a link is refused without being followed.
+    let real = fixture.path().join("real-tasks");
+    fs::create_dir(&real).unwrap();
+    let linked = fixture.path().join("linked");
+    fs::create_dir(&linked).unwrap();
+    fs::write(linked.join("project.json"), &documents["project.json"]).unwrap();
+    crate::test_support::make_dir_link(&real, &linked.join("tasks"));
+    let error = read(&linked).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "local work input is invalid: task candidate directory must be an ordinary directory"
+    );
+    assert_eq!(refusal_code(&error), "task_sync_destination_link");
+
+    // A task entry that is a directory, not a file, is refused.
+    let entry = fixture.path().join("entry");
+    fs::create_dir_all(entry.join("tasks")).unwrap();
+    fs::write(entry.join("project.json"), &documents["project.json"]).unwrap();
+    fs::create_dir(entry.join(format!("tasks/{}.json", tree.tasks[0].id.0))).unwrap();
+    let error = read(&entry).unwrap_err();
+    assert_eq!(
+        error.root_cause().to_string(),
+        "local work input is invalid: task candidate file must be an ordinary bounded file"
+    );
+    assert_eq!(refusal_code(&error), "task_sync_destination_not_file");
 }
 
 #[test]
@@ -145,7 +194,9 @@ fn task_sync_directory_refuses_inline_note_overflow_without_publishing_or_stagin
         .sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
     let task_file = format!("tasks/{}.json", tree.tasks[0].id.0);
     assert!(tree.documents().unwrap()[&task_file].len() > usize::try_from(MAX_FILE_BYTES).unwrap());
-    let error = write(&path, &tree).unwrap_err().to_string();
+    let error = write(&path, &tree).unwrap_err();
+    assert_eq!(refusal_code(&error), "task_sync_destination_file_limit");
+    let error = error.to_string();
     assert!(error.contains("supported task candidate limits"), "{error}");
     assert!(!path.exists());
     assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 0);
@@ -158,19 +209,25 @@ fn task_sync_directory_refuses_empty_notes_profile_before_publication_and_admiss
     let mut tree = candidate();
     tree.tasks.clear();
     tree.project.notes_included = true;
-    let error = write(&path, &tree).unwrap_err().to_string();
-    assert!(error.contains("notes_included requires at least one task"));
+    let error = write(&path, &tree).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("notes_included requires at least one task")
+    );
+    assert_eq!(refusal_code(&error), "task_sync_invalid_graph");
     assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 0);
     fs::create_dir(&path).unwrap();
     fs::create_dir(path.join("tasks")).unwrap();
     let bytes = super::super::pretty(&tree.project).unwrap();
     fs::write(path.join("project.json"), &bytes).unwrap();
+    let error = read(&path).unwrap_err();
     assert!(
-        read(&path)
-            .unwrap_err()
+        error
             .to_string()
             .contains("notes_included requires at least one task")
     );
+    assert_eq!(refusal_code(&error), "task_sync_invalid_graph");
     assert_eq!(fs::read(path.join("project.json")).unwrap(), bytes);
     tree.project.notes_included = false;
     fs::write(

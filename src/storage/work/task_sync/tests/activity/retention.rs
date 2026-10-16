@@ -154,10 +154,55 @@ fn task_sync_activity_changed_rollback_deletion_and_cross_project_collision_refu
                 .unwrap_err();
             if known_change {
                 assert!(error.to_string().contains("known activity differs"));
+                assert_eq!(
+                    crate::store_error_value(&error)["error"]["code"],
+                    "task_sync_divergent_planning"
+                );
             }
             assert_eq!(state(&store), before);
         }
     }
+    // The same known activity identity moved onto another task of the same
+    // project collides instead of diverging.
+    let mut moved = original.clone();
+    let entries = moved.tasks[0].activity.get_mut("machine-A").unwrap();
+    let entry = entries.remove(&notice.activity_id).unwrap();
+    if entries.is_empty() {
+        moved.tasks[0].activity.remove("machine-A");
+    }
+    let mut other_task = moved.tasks[0].clone();
+    other_task.id = WorkId(uuid::Uuid::new_v4());
+    other_task.external_ref = None;
+    other_task.activity = std::collections::BTreeMap::default();
+    other_task
+        .activity
+        .entry("machine-A".into())
+        .or_default()
+        .insert(
+            entry.activity_id.clone(),
+            ActivityNotice {
+                task_id: other_task.id,
+                ..entry
+            },
+        );
+    moved.tasks.push(other_task);
+    moved.tasks.sort_by_key(|task| task.id.0);
+    moved.validate().unwrap();
+    let error = store
+        .import_task_tree(
+            &original.project.project_id,
+            &actor("importer"),
+            &moved,
+            false,
+            at(9),
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("known activity differs"));
+    assert_eq!(
+        crate::store_error_value(&error)["error"]["code"],
+        "task_sync_id_collision"
+    );
+    assert_eq!(state(&store), before);
     let mut other = original;
     other.project.project_id = ProjectId("different-project".into());
     let error = store
@@ -170,6 +215,10 @@ fn task_sync_activity_changed_rollback_deletion_and_cross_project_collision_refu
         )
         .unwrap_err();
     assert!(error.to_string().contains("known activity differs"));
+    assert_eq!(
+        crate::store_error_value(&error)["error"]["code"],
+        "task_sync_id_collision"
+    );
     assert_eq!(state(&store), before);
 }
 

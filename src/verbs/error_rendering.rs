@@ -185,6 +185,18 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "reason": message,
             "remedy": "run next, then show the affected item and follow next",
         }),
+        // The classified refusal keeps the details it had before its family
+        // was known, such as its reason; only the code names the family. The
+        // work-item remedy those details carry does not apply to a task-sync
+        // candidate, so it is left out.
+        StoreError::TaskSyncRefused { inner, .. } => {
+            let mut classified = store_error_value(inner);
+            let mut details = classified["error"]["details"].take();
+            if let Some(fields) = details.as_object_mut() {
+                fields.remove("remedy");
+            }
+            details
+        }
         StoreError::WorkRevisionConflict {
             work,
             expected,
@@ -398,6 +410,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkHandoffPending { .. }
         | StoreError::WorkAncestorNotOpen { .. } => "work_invalid",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
+        StoreError::TaskSyncRefused { refusal, .. } => refusal.code(),
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",
         StoreError::WorkOperationIdempotencyConflict { .. } => "work_idempotency_conflict",
         StoreError::WorkDecompositionRetryConflict { .. } => "work_decomposition_retry_conflict",

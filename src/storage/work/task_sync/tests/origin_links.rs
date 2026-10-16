@@ -95,6 +95,16 @@ fn task_sync_primary_key_lookup_refuses_wrong_missing_and_duplicate_links() {
             )
             .unwrap();
         assert!(store.get_work_item(item.work_id).is_err(), "{case}");
+        // Export reaches the same binding refusal through its origin checks
+        // and reports it as an origin mismatch.
+        let error = store
+            .export_task_tree(&tree.project.project_id)
+            .unwrap_err();
+        assert_eq!(
+            crate::store_error_value(&error)["error"]["code"],
+            "task_sync_origin_mismatch",
+            "{case}: {error}"
+        );
         assert!(!store.verify_all().unwrap().is_healthy(), "{case}");
         store
             .connection
@@ -157,6 +167,11 @@ fn task_sync_global_audit_refuses_duplicate_and_incomplete_origin_graphs_on_impo
             assert!(
                 error.to_string().contains("origin audit failed"),
                 "{case}: {error}"
+            );
+            assert_eq!(
+                crate::store_error_value(&error)["error"]["code"],
+                "task_sync_origin_mismatch",
+                "{case}"
             );
             assert_eq!(state(&store), before);
         }

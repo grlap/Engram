@@ -1065,6 +1065,9 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkNoteReferenceInvalid { .. } => "work_note_reference_invalid",
         StoreError::WorkCriterionLinkInvalid { .. } => "work_criterion_link_invalid",
         StoreError::WorkNoteTooLarge { .. } => "work_note_too_large",
+        // The host wire keeps the classified refusal's own code; the family
+        // is reported only by the CLI's structured --json rendering.
+        StoreError::TaskSyncRefused { inner, .. } => store_error_code(inner),
         StoreError::Json(_)
         | StoreError::Sqlite(_)
         | StoreError::WorkWriterAdmissionRefused { .. }

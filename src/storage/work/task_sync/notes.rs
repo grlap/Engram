@@ -2,7 +2,7 @@
 
 use super::{
     Connection, ImportOrigin, ORIGIN_KIND, ObjectId, RestoredRecord, SharedActor, SqliteStore,
-    StoreError, TaskTree, WorkItem, invalid, origin,
+    StoreError, TaskSyncRefusal, TaskTree, WorkItem, invalid, origin,
 };
 use crate::task_sync::notes::{
     NoteOmissions, SharedNote, SharedNoteKind, author_exclusion, prose_exclusion, restricted,
@@ -92,7 +92,8 @@ pub(super) fn capture(
             continue;
         }
         let machine = machine.ok_or_else(|| {
-            invalid("task import refuses divergent shared notes from local native notes")
+            TaskSyncRefusal::DivergentPlanning
+                .invalid("task import refuses divergent shared notes from local native notes")
         })?;
         notes.push(SharedNote {
             id,
@@ -151,9 +152,8 @@ pub(super) fn refuse_known_changes(
                 |row| row.get(0),
             )?;
             if local {
-                return Err(invalid(
-                    "shared note id collides with a local canonical record",
-                ));
+                return Err(TaskSyncRefusal::IdCollision
+                    .invalid("shared note id collides with a local canonical record"));
             }
             candidate.insert(&note.id, (task.id, note));
         }
@@ -166,10 +166,11 @@ pub(super) fn refuse_known_changes(
         .query_map([ORIGIN_KIND], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     for id in ids {
-        let id = ObjectId::from_stored(id).ok_or_else(|| invalid("invalid import origin id"))?;
+        let id = ObjectId::from_stored(id)
+            .ok_or_else(|| TaskSyncRefusal::OriginMismatch.invalid(origin::ORIGIN_ID_INVALID))?;
         let origin: ImportOrigin =
             SqliteStore::get_canonical_object_on(connection, &id, ORIGIN_KIND)?
-                .ok_or_else(|| invalid("task import origin missing"))?
+                .ok_or_else(|| TaskSyncRefusal::OriginMismatch.invalid(origin::ORIGIN_MISSING))?
                 .decode()?;
         for note in &origin.task.notes {
             if let Some((task, incoming)) = candidate.get(&note.id)
@@ -177,9 +178,17 @@ pub(super) fn refuse_known_changes(
                     || *task != origin.task.id
                     || *incoming != note)
             {
-                return Err(invalid(
-                    "known shared note id differs from its task or shared fields",
-                ));
+                // A known id owned by another task or project collides; one
+                // with the same owner but other shared fields diverges.
+                let refusal =
+                    if origin.project_id != tree.project.project_id || *task != origin.task.id {
+                        TaskSyncRefusal::IdCollision
+                    } else {
+                        TaskSyncRefusal::DivergentPlanning
+                    };
+                return Err(
+                    refusal.invalid("known shared note id differs from its task or shared fields")
+                );
             }
         }
     }

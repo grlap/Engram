@@ -91,12 +91,18 @@ enum TaskSyncCommand {
         /// Imported notes and activity retain their original aliases.
         #[arg(long)]
         origin_machine: Option<String>,
+        /// Print the receipt as JSON, and a refusal as a JSON error with its code on stderr.
+        #[arg(long)]
+        json: bool,
     },
     /// Import a complete candidate into an empty task graph; exact repeats are no-ops.
     Import {
         directory: PathBuf,
         #[arg(long)]
         dry_run: bool,
+        /// Print a refusal as a JSON error with its code on stderr.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -303,44 +309,77 @@ pub(crate) fn run(
             directory: path,
             include_notes,
             origin_machine,
+            json,
         } => {
-            let exported = service.export_task_tree_with_options(
-                &engram::task_sync::TaskSyncExportOptions {
-                    include_notes,
-                    origin_machine: origin_machine.clone(),
-                },
-                chrono::Utc::now(),
-            )?;
-            directory::write(&path, &exported.tree)?;
-            attribution.print_notices();
-            eprintln!("REDACTOR: development no-op; task planning fields are shared text");
-            if include_notes
-                || origin_machine.is_some()
-                || !exported.activity_omissions.counts.is_empty()
-            {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&serde_json::json!({
-                        "directory": path, "notes_included": exported.tree.project.notes_included,
-                        "omissions": exported.omissions, "activity_omissions": exported.activity_omissions,
-                    }))?
-                );
-            } else {
-                println!("{}", path.display());
-            }
+            let outcome = (|| -> Result<()> {
+                let exported = service.export_task_tree_with_options(
+                    &engram::task_sync::TaskSyncExportOptions {
+                        include_notes,
+                        origin_machine: origin_machine.clone(),
+                    },
+                    chrono::Utc::now(),
+                )?;
+                directory::write(&path, &exported.tree)?;
+                attribution.print_notices();
+                eprintln!("REDACTOR: development no-op; task planning fields are shared text");
+                if json
+                    || include_notes
+                    || origin_machine.is_some()
+                    || !exported.activity_omissions.counts.is_empty()
+                {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "directory": path, "notes_included": exported.tree.project.notes_included,
+                            "omissions": exported.omissions, "activity_omissions": exported.activity_omissions,
+                        }))?
+                    );
+                } else {
+                    println!("{}", path.display());
+                }
+                Ok(())
+            })();
+            return refusal_outcome(outcome, json);
         }
         TaskSyncCommand::Import {
             directory: path,
             dry_run,
+            json,
         } => {
-            service.require_task_sync_enabled()?;
-            let tree = directory::read(&path)?;
-            let result = service.import_task_tree(&tree, dry_run, chrono::Utc::now())?;
-            attribution.print_notices();
-            println!("{}", serde_json::to_string_pretty(&result)?);
+            let outcome = (|| -> Result<()> {
+                service.require_task_sync_enabled()?;
+                let tree = directory::read(&path)?;
+                let result = service.import_task_tree(&tree, dry_run, chrono::Utc::now())?;
+                attribution.print_notices();
+                println!("{}", serde_json::to_string_pretty(&result)?);
+                Ok(())
+            })();
+            return refusal_outcome(outcome, json);
         }
     }
     Ok(true)
+}
+
+/// With `--json`, a store refusal is printed on stderr as the structured
+/// error, carrying its stable code, and the command fails. A work-item
+/// remedy never applies to these commands, so it is left out. Any other
+/// error, and every error without `--json`, propagates as before.
+fn refusal_outcome(outcome: Result<()>, json: bool) -> Result<bool> {
+    match outcome {
+        Ok(()) => Ok(true),
+        Err(error) if json => {
+            let Some(refusal) = error.downcast_ref::<engram::StoreError>() else {
+                return Err(error);
+            };
+            let mut value = engram::store_error_value(refusal);
+            if let Some(details) = value["error"]["details"].as_object_mut() {
+                details.remove("remedy");
+            }
+            eprintln!("{}", serde_json::to_string_pretty(&value)?);
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn materialization_path(path: std::path::PathBuf) -> Result<std::path::PathBuf> {

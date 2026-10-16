@@ -12,7 +12,7 @@ use crate::{
     WorkId, WorkItem,
     task_sync::{
         FORMAT, ProjectDocument, SharedActor, SharedBlocker, SharedCompletion, TaskDocument,
-        TaskTree, invalid,
+        TaskSyncRefusal, TaskTree, invalid,
     },
 };
 
@@ -49,14 +49,14 @@ fn origin_reference(actor: &ActorContext) -> Result<ObjectId, StoreError> {
         .filter(|link| link.source == ORIGIN_KIND);
     let link = links
         .next()
-        .ok_or_else(|| invalid("task import origin reference missing"))?;
+        .ok_or_else(|| invalid(origin::REFERENCE_MISSING))?;
     if links.next().is_some() || link.relation != crate::domain::ProvenanceRelation::DerivedFrom {
-        return Err(invalid("invalid task import origin reference"));
+        return Err(invalid(origin::REFERENCE_INVALID));
     }
     link.reference
         .as_ref()
         .and_then(|id| ObjectId::from_stored(id.clone()))
-        .ok_or_else(|| invalid("invalid task import origin reference"))
+        .ok_or_else(|| invalid(origin::REFERENCE_INVALID))
 }
 
 /// Import attribution and complete policy supplement a plain inert restored record.
@@ -158,11 +158,12 @@ impl SqliteStore {
         dry_run: bool,
         now: DateTime<Utc>,
     ) -> Result<TaskSyncImportResult, StoreError> {
-        tree.validate()?;
+        tree.validate()
+            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
         crate::storage::admit_live_actor_session(actor)?;
         actor.validate_attribution_context().map_err(invalid)?;
         if &tree.project.project_id != project {
-            return Err(invalid("task candidate project mismatch"));
+            return Err(TaskSyncRefusal::OriginMismatch.invalid("task candidate project mismatch"));
         }
         if actor.actor_id.trim().is_empty()
             || actor
@@ -188,9 +189,8 @@ impl SqliteStore {
             |row| row.get(0),
         )?;
         if native {
-            return Err(invalid(
-                "task import refuses existing native execution state",
-            ));
+            return Err(TaskSyncRefusal::NativeState
+                .invalid("task import refuses existing native execution state"));
         }
         admit_origins(&transaction)?;
         notes::refuse_known_changes(&transaction, tree)?;
@@ -214,9 +214,21 @@ impl SqliteStore {
             });
         }
         if !current.tasks.is_empty() {
-            return Err(invalid(
-                "task import refuses divergent or removed planning state",
-            ));
+            let candidate = tree
+                .tasks
+                .iter()
+                .map(|task| task.id)
+                .collect::<std::collections::HashSet<_>>();
+            let removed = current
+                .tasks
+                .iter()
+                .any(|held| !candidate.contains(&held.id));
+            let refusal = if removed {
+                TaskSyncRefusal::RemovedPlanning
+            } else {
+                TaskSyncRefusal::DivergentPlanning
+            };
+            return Err(refusal.invalid("task import refuses divergent or removed planning state"));
         }
         // UUIDs are store-wide identities, even when another project owns them.
         for task in &tree.tasks {
@@ -226,7 +238,9 @@ impl SqliteStore {
                 |row| row.get(0),
             )?;
             if exists {
-                return Err(invalid("task id already belongs to this store"));
+                return Err(
+                    TaskSyncRefusal::IdCollision.invalid("task id already belongs to this store")
+                );
             }
             for blocker in &task.blockers {
                 let exists: bool = transaction.query_row(
@@ -235,13 +249,15 @@ impl SqliteStore {
                     |row| row.get(0),
                 )?;
                 if exists {
-                    return Err(invalid("blocker id already belongs to this store"));
+                    return Err(TaskSyncRefusal::IdCollision
+                        .invalid("blocker id already belongs to this store"));
                 }
             }
         }
         transaction.execute_batch("PRAGMA defer_foreign_keys = ON")?;
         for (task, snapshot) in tree.tasks.iter().zip(tree.snapshots()?) {
-            super::planning::refuse_record_id_pins_on(&transaction, &task.acceptance_bindings)?;
+            super::planning::refuse_record_id_pins_on(&transaction, &task.acceptance_bindings)
+                .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
             insert_task(&transaction, tree, task, snapshot, actor, now)?;
         }
         if transaction
@@ -250,7 +266,9 @@ impl SqliteStore {
             .next()?
             .is_some()
         {
-            return Err(invalid("task import foreign key admission failed"));
+            return Err(
+                TaskSyncRefusal::InvalidGraph.invalid("task import foreign key admission failed")
+            );
         }
         admit_origins(&transaction)?;
         if !dry_run {
@@ -271,7 +289,7 @@ fn admit_origins(connection: &Connection) -> Result<(), StoreError> {
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(invalid(format!(
+        Err(TaskSyncRefusal::OriginMismatch.invalid(format!(
             "task import origin audit failed: {}",
             failures.join(", ")
         )))
@@ -309,9 +327,11 @@ fn export_on_snapshot(
     let mut notes_included = include_notes && !comparison;
     for id in ids {
         let id = WorkId(uuid::Uuid::parse_str(&id).map_err(|error| invalid(error.to_string()))?);
-        let item = query::load_work_item(connection, id)?;
+        // Loading, notes and activity read the task's import origin through the
+        // shared validators; their binding refusals are origin mismatches here.
+        let item = query::load_work_item(connection, id).map_err(origin::classify_binding)?;
         if item.origin == crate::WorkOrigin::Imported || item.source_snapshot_id.is_some() {
-            return Err(invalid(
+            return Err(TaskSyncRefusal::OriginMismatch.invalid(
                 "task export refuses external imported origin and source snapshot; use graph export to retain that provenance",
             ));
         }
@@ -323,7 +343,8 @@ fn export_on_snapshot(
             machine,
             comparison,
             activity_omissions,
-        )?;
+        )
+        .map_err(origin::classify_binding)?;
         let events = event_records
             .into_iter()
             .map(|(_, event)| event)
@@ -359,7 +380,8 @@ fn export_on_snapshot(
                 include_notes,
                 comparison,
                 omissions,
-            )?;
+            )
+            .map_err(origin::classify_binding)?;
             notes_included |= stored_inclusion;
             notes
         } else {
@@ -398,7 +420,10 @@ fn export_on_snapshot(
         },
         tasks,
     };
-    tree.validate_stored()?;
+    // A retained note can exceed today's write limit; the candidate it would
+    // make is refused as an invalid graph like any other.
+    tree.validate_stored()
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     Ok(tree)
 }
 
