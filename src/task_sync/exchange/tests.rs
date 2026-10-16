@@ -159,4 +159,4 @@ fn task_exchange_limits_and_ref_validation_refuse_before_launch() {
 }
 
 #[cfg(windows)]
-mod windows;
+pub(super) mod windows;

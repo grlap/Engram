@@ -6,6 +6,8 @@ use std::{
 mod admission;
 mod configuration;
 mod policy;
+pub(in crate::task_sync::exchange) mod readiness;
+use readiness::descendant_holds_lock;
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -17,7 +19,8 @@ impl Fixture {
             .unwrap()
             .join("target/tmp")
             .join(format!("exchange-{}", uuid::Uuid::new_v4()));
-        fs::create_dir_all(&path).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::create_dir(&path).unwrap();
         Self(path)
     }
     fn command(&self, mode: &str) -> Command {
@@ -120,82 +123,10 @@ impl Fixture {
     }
 }
 
-async fn ready(root: &Path) {
-    let start = Instant::now();
-    while !descendant_holds_lock(root, "grandchild") {
-        assert!(
-            start.elapsed() < Duration::from_secs(8),
-            "fixture never became ready"
-        );
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-}
-
-// Readiness and death observe the same held handle. A second marker file adds
-// an unrelated filesystem create/close after the handle is already acquired.
-fn descendant_holds_lock(root: &Path, name: &str) -> bool {
-    match fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .share_mode(0)
-        .open(root.join(format!("{name}.lock")))
-    {
-        Err(error) => error.raw_os_error() == Some(32), // ERROR_SHARING_VIOLATION
-        Ok(_) => false,
-    }
-}
-
 #[test]
 #[ignore = "subprocess entry; exercised by owned exchange tests"]
-// Descendants deliberately outlive their parent; the controller tests assert job termination.
-#[allow(clippy::zombie_processes)]
 fn process_fixture() {
-    let mode = std::env::var("ENGRAM_EXCHANGE_FIXTURE").unwrap();
-    let root = PathBuf::from(std::env::var_os("ENGRAM_EXCHANGE_FIXTURE_ROOT").unwrap());
-    if matches!(mode.as_str(), "child" | "grandchild") {
-        let _locked = fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .share_mode(0)
-            .open(root.join(format!("{mode}.lock")))
-            .unwrap();
-        if mode == "child" {
-            Fixture(root.clone())
-                .command("grandchild")
-                .stdin(Stdio::null())
-                .spawn()
-                .unwrap();
-        }
-        loop {
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    }
-    Fixture(root.clone())
-        .command("child")
-        .stdin(Stdio::null())
-        .spawn()
-        .unwrap();
-    let start = Instant::now();
-    while !descendant_holds_lock(&root, "grandchild") {
-        assert!(start.elapsed() < Duration::from_secs(8));
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    match mode.as_str() {
-        "root-exits" => std::process::exit(0),
-        "flood" => loop {
-            std::io::stdout().write_all(&[b'x'; 4096]).unwrap();
-        },
-        "stderr-flood" => loop {
-            std::io::stderr().write_all(&[b'x'; 4096]).unwrap();
-        },
-        "secret-error" => {
-            eprintln!("https://operator:secret-token@example.invalid/private");
-            std::process::exit(2);
-        }
-        _ => loop {
-            std::thread::sleep(Duration::from_secs(1));
-        },
-    }
+    readiness::process_fixture();
 }
 
 #[tokio::test]
@@ -208,11 +139,14 @@ async fn task_exchange_windows_cancellation_kills_descendants_and_inherited_pipe
     };
     let command = fixture.command("block");
     let run = super::super::execute(command, limits, &cancel);
-    let stop = async {
-        ready(&fixture.0).await;
-        cancel.cancel();
-    };
-    let (result, ()) = tokio::join!(run, stop);
+    tokio::pin!(run);
+    // The existing 15s execution watchdog bounds startup and cancellation.
+    readiness::while_running(&fixture.0, run.as_mut())
+        .await
+        .unwrap();
+    cancel.cancel();
+    let result = run.await;
+    readiness::finished(&fixture.0, &result);
     assert_eq!(result.unwrap_err(), RunError::Cancelled);
     fixture.assert_released();
 }
@@ -228,6 +162,7 @@ async fn task_exchange_windows_root_exit_and_output_failure_reap_helpers() {
         };
         let cancel = Cancellation::default();
         let result = super::super::execute(fixture.command(mode), limits, &cancel).await;
+        readiness::finished(&fixture.0, &result);
         match mode {
             "root-exits" => {
                 result.unwrap();
@@ -251,12 +186,9 @@ async fn task_exchange_windows_deadline_and_dropped_future_close_the_job() {
         deadline: Duration::from_secs(12),
         ..RunLimits::default()
     };
-    assert_eq!(
-        super::super::execute(fixture.command("block"), limits, &cancel)
-            .await
-            .unwrap_err(),
-        RunError::Deadline
-    );
+    let result = super::super::execute(fixture.command("block"), limits, &cancel).await;
+    readiness::finished(&fixture.0, &result);
+    assert_eq!(result.unwrap_err(), RunError::Deadline);
     fixture.assert_released();
     let fixture = Fixture::new();
     let command = fixture.command("block");
@@ -267,7 +199,9 @@ async fn task_exchange_windows_deadline_and_dropped_future_close_the_job() {
     {
         let run = super::super::execute(command, limits, &cancel);
         tokio::pin!(run);
-        tokio::select! { result = &mut run => panic!("fixture ended early: {result:?}"), () = ready(&fixture.0) => {} }
+        readiness::while_running(&fixture.0, run.as_mut())
+            .await
+            .unwrap();
     }
     fixture.assert_released();
     let missing = Command::new(fixture.0.join("absent.exe"));

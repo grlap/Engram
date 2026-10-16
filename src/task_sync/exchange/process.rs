@@ -30,12 +30,27 @@ pub(super) async fn execute(
     allow_missing_config: bool,
 ) -> Result<RunOutput, RunError> {
     let started = Instant::now();
+    #[cfg(test)]
+    let mut trace = super::tests::windows::readiness::Trace::for_command(&command);
     let mut wrapped = confined_command(command);
     // Native spawn itself is synchronous. Check the same deadline immediately
     // after it returns; no native-kernel preemption is claimed.
     #[cfg(test)]
     super::test_support::LAUNCHES.with(|count| count.set(count.get() + 1));
-    let mut child = wrapped.spawn().map_err(|_| RunError::Spawn)?;
+    #[cfg(test)]
+    if let Some(trace) = &mut trace {
+        trace.stage("before-native-spawn");
+    }
+    let spawned = wrapped.spawn();
+    #[cfg(test)]
+    if let Some(trace) = &mut trace {
+        trace.stage(if spawned.is_ok() {
+            "after-native-spawn"
+        } else {
+            "native-spawn-failed"
+        });
+    }
+    let mut child = spawned.map_err(|_| RunError::Spawn)?;
     let stdout = child.stdout().take().ok_or(RunError::Process)?;
     let stderr = child.stderr().take().ok_or(RunError::Process)?;
     let stdout = bounded_read(stdout, limits.stdout_bytes);
