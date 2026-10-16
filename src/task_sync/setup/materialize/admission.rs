@@ -21,7 +21,7 @@ pub(super) fn select(
     match admin.dir().symlink_metadata(&private_name) {
         Ok(_) => {
             let private = admin.child(Path::new(&private_name))?;
-            let record = journal::read(&private)?;
+            let record = journal::read(&private, &setup.basis.git_directory.join(&private_name))?;
             ensure!(
                 record.selection == *selection && record.basis == setup.basis,
                 "materialization selection differs from admitted operation"

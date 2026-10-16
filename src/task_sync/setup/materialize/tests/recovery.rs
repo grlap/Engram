@@ -204,7 +204,7 @@ fn task_materialize_operator_can_restore_managed_bytes_after_policy_refusal() {
     .unwrap_err();
     assert!(error.to_string().contains("shared task path is ignored"));
     let private = Directory::open(&fixture.private()).unwrap();
-    let record = super::super::journal::read(&private).unwrap();
+    let record = super::super::journal::read(&private, &fixture.private()).unwrap();
     for edit in &record.basis.edits {
         fs::write(fixture.root.join(&edit.path), &edit.after).unwrap();
     }

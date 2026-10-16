@@ -67,6 +67,80 @@ fn task_materialize_process_preserves_unadmitted_partial_replacement_plans() {
 }
 
 #[test]
+fn task_materialize_process_preserves_relocates_and_freshly_admits_unowned_attempts() {
+    for existing_private in [false, true] {
+        for boundary in ["private-created", "replace-created-0", "replace-created-1"] {
+            let fixture = Fixture::new(existing_private, 1);
+            let ordinary_code = fs::read(fixture.root.join("code.txt")).unwrap();
+            let retained_private = existing_private
+                .then(|| fs::read(fixture.root.join(".engram/private.db")).unwrap());
+            let source_store = fs::read(&fixture.store).unwrap();
+            assert_eq!(
+                child(&fixture, Some(boundary), true).status.code(),
+                Some(77),
+                "{existing_private}/{boundary}"
+            );
+            let attempt = fixture.private();
+            let attempt_before = snapshot(&attempt);
+            let public_before_refusal = snapshot(&fixture.root);
+
+            assert!(child(&fixture, None, true).status.success());
+            let refusal: serde_json::Value = serde_json::from_slice(
+                &fs::read(fixture.owned.path().join("process-finish-response.json")).unwrap(),
+            )
+            .unwrap();
+            let error = refusal["error"]
+                .as_str()
+                .expect("incomplete-attempt refusal");
+            assert!(
+                error.contains("incomplete private materialization attempt"),
+                "{error}"
+            );
+            assert!(error.contains(&attempt.display().to_string()), "{error}");
+            assert_eq!(snapshot(&attempt), attempt_before);
+            assert_eq!(snapshot(&fixture.root), public_before_refusal);
+
+            let preserved = fixture
+                .owned
+                .path()
+                .join(format!("preserved-incomplete-{boundary}"));
+            fs::rename(&attempt, &preserved).unwrap();
+            let preserved_before = snapshot(&preserved);
+
+            assert!(child(&fixture, None, true).status.success());
+            let fresh: serde_json::Value = serde_json::from_slice(
+                &fs::read(fixture.owned.path().join("process-finish-response.json")).unwrap(),
+            )
+            .unwrap();
+            assert!(fresh.get("error").is_none(), "{fresh}");
+            assert_eq!(fresh["receipt"]["recovered"], false, "{fresh}");
+            fixture.assert_output();
+            assert_eq!(
+                fs::read(fixture.root.join("code.txt")).unwrap(),
+                ordinary_code
+            );
+            assert_eq!(fs::read(&fixture.store).unwrap(), source_store);
+            if let Some(retained_private) = &retained_private {
+                assert_eq!(
+                    fs::read(fixture.root.join(".engram/private.db")).unwrap(),
+                    *retained_private
+                );
+            }
+            assert_eq!(snapshot(&preserved), preserved_before);
+
+            assert!(child(&fixture, None, true).status.success());
+            let repeated: serde_json::Value = serde_json::from_slice(
+                &fs::read(fixture.owned.path().join("process-finish-response.json")).unwrap(),
+            )
+            .unwrap();
+            assert!(repeated.get("error").is_none(), "{repeated}");
+            assert_eq!(repeated["receipt"]["repeated"], true, "{repeated}");
+            assert_eq!(snapshot(&preserved), preserved_before);
+        }
+    }
+}
+
+#[test]
 fn task_materialize_process_preserves_compensation_across_restart() {
     for boundary in ["before-restore-0", "restore-checked-0"] {
         let fixture = Fixture::new(false, 1);

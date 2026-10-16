@@ -336,16 +336,21 @@ incomplete operation or infers ownership from an empty directory.
 
 If an interruption or refusal occurred before `journal.json` was published,
 including during replacement-plan preparation, automatic recovery refuses that
-incomplete private attempt.
-Examples include setup-byte drift during admission, unavailable hard links,
-or a failed Git admission query after private initialization began. After
-preserving it, restore the original root setup files described by the setup
-intent, preserving any displaced originals and unrelated public edits. Move the
-incomplete operation directory aside within Git administration, then run setup
-preparation and materialization again. This is an explicit operator repair,
-not an automatic retry or a retire command. Do not remove an unfamiliar entry
-to make a refusal disappear; a changed index, branch or shared tree still needs
-its own reconciliation.
+incomplete private attempt. The refusal prints the full operation path, of the
+form `GIT_DIR/engram-task-sync-materialize-<setup-operation>-<prepared-operation>`,
+and directs the operator to preserve it, relocate the whole directory within
+Git administration, rerun setup preparation, then materialize a fresh attempt.
+This is an explicit operator repair, not an automatic retry or a retire command.
+Do not delete or adopt an unfamiliar entry to make a refusal disappear.
+
+At `private-created`, `replace-created-0`, and `replace-created-1`, no public
+setup replacement has occurred: retain unrelated public files exactly as they
+are. At a later pre-journal refusal, inspect the actual retained state before
+repairing it. Preserve any displaced originals and unrelated public edits
+separately; never blindly restore recorded bytes over a new public occupant.
+Examples include setup-byte drift during admission, unavailable hard links, or
+a failed Git admission query after private initialization began. A changed
+index, branch or shared tree still needs its own reconciliation.
 
 After setup edits are published, `.gitignore` and `.gitattributes` are hard links
 to the operation's retained `after` sources. To fix an attribute-policy refusal,
