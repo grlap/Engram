@@ -9,6 +9,7 @@ use std::{collections::BTreeMap, fs, process::Command};
 
 mod admission;
 mod aliases;
+mod capacity_recheck;
 mod ownership;
 mod recovery;
 
