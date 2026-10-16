@@ -27,6 +27,8 @@ use crate::{DevelopmentNoopRedactor, ObjectId};
 const ROOT: &str = "workspace-root";
 const HOLDER: &str = "runner";
 
+mod during_check;
+
 fn basis(revision: &str, generation: i64) -> ExecutionSourceBasis {
     ExecutionSourceBasis {
         workspace_id: ROOT.into(),
@@ -1545,11 +1547,6 @@ fn unadmitted_change(
     to: &str,
     second: i64,
 ) -> (ObjectId, Vec<ObjectId>) {
-    use crate::domain::{
-        ExecutionObserveInput, MeasuredBaseline, MeasuredSighting, NamedRootState,
-        ObservationCausality, ObservationPolicyBasis, ObservationRootBasis, ObservedInterval,
-        ObservedOccurrence, ObservedSourceChange,
-    };
     let host = bind_control_for(
         store,
         HOLDER,
@@ -1557,6 +1554,24 @@ fn unadmitted_change(
         &[EffectClass::Observe],
         at(second - 3),
     );
+    let receipt = unadmitted_change_through_host(store, held, &host, from, to, second);
+    (receipt.observation, receipt.opened_obligations)
+}
+
+/// Report another held item's source without rebinding an active host turn.
+fn unadmitted_change_through_host(
+    store: &mut SqliteStore,
+    held: &Held,
+    host: &crate::storage::test_support::TestControlBinding,
+    from: &str,
+    to: &str,
+    second: i64,
+) -> crate::domain::ExecutionObservationReceipt {
+    use crate::domain::{
+        ExecutionObserveInput, MeasuredBaseline, MeasuredSighting, NamedRootState,
+        ObservationCausality, ObservationPolicyBasis, ObservationRootBasis, ObservedInterval,
+        ObservedOccurrence, ObservedSourceChange,
+    };
     let policy = SqliteStore::load_active_control_policy(&store.connection).expect("policy");
     let input = ExecutionObserveInput {
         idempotency_key: format!("observed-{second}"),
@@ -1598,7 +1613,7 @@ fn unadmitted_change(
     let mut observer = actor(HOLDER);
     observer.actor_kind = crate::work_service::WORD_ACTOR_KIND.into();
     observer.run_id = Some(held.claim.run_id.0.to_string());
-    let receipt = store
+    store
         .record_unadmitted_execution_observation(
             &held.work.project_id,
             &host.status.session_id,
@@ -1608,8 +1623,7 @@ fn unadmitted_change(
             input,
             at(second),
         )
-        .expect("accounted unadmitted change");
-    (receipt.observation, receipt.opened_obligations)
+        .expect("accounted unadmitted change")
 }
 
 /// The original must still stand on its own run as an evaluation citing it
