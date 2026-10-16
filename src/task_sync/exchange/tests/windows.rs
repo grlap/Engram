@@ -4,6 +4,7 @@ use std::{
 };
 
 mod admission;
+mod configuration;
 mod policy;
 
 struct Fixture(PathBuf);
@@ -63,17 +64,13 @@ impl Fixture {
             .env("GIT_CONFIG_GLOBAL", self.0.join("global.config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_TERMINAL_PROMPT", "0");
+        configuration::record_direct_launch();
         let output = policy::workload::output(&mut command);
         assert!(
             output.status.success(),
             "fixture Git failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-    }
-    fn isolated_config_command(&self) -> Command {
-        self.isolated_config_command_for(
-            "task_sync::exchange::tests::windows::configuration_fixture",
-        )
     }
     fn isolated_config_command_for(&self, test: &str) -> Command {
         let mut command = Command::new(std::env::current_exe().unwrap());
@@ -313,122 +310,7 @@ async fn task_exchange_windows_cancelled_or_invalid_requests_create_no_process()
 
 #[tokio::test]
 async fn task_exchange_windows_config_capture_and_drift_never_run_unsupported_helpers() {
-    let fixture = Fixture::new();
-    fs::write(
-        fixture.0.join("global.config"),
-        b"[credential]\nhelper = manager\n",
-    )
-    .unwrap();
-    // All product Git queries inherit this child's owned configuration, without
-    // mutating the test runner's process-global environment.
-    let result = super::super::execute(
-        fixture.isolated_config_command(),
-        RunLimits::default(),
-        &Cancellation::default(),
-    )
-    .await;
-    assert!(
-        result.is_ok(),
-        "isolated configuration fixture failed at {}: {result:?}",
-        fs::read_to_string(fixture.0.join("phase")).unwrap_or_default()
-    );
-}
-
-#[tokio::test]
-#[ignore = "isolated subprocess entry; exercised by configuration test"]
-async fn configuration_fixture() {
-    let fixture = Fixture(PathBuf::from(
-        std::env::var_os("ENGRAM_EXCHANGE_FIXTURE_ROOT").unwrap(),
-    ));
-    fixture.phase("initialize");
-    fixture.git(&["init", "-q"]);
-    fixture.git(&[
-        "remote",
-        "add",
-        "origin",
-        "https://example.invalid/repo.git",
-    ]);
-    let selection = TargetSelection {
-        repository: fixture.0.clone(),
-        remote: "origin".into(),
-        reference: "refs/heads/main".into(),
-    };
-    let limits = RunLimits::default();
-    let cancel = Cancellation::default();
-    let before = fixture.snapshot();
-    let target = ExchangeTarget::capture(&selection, limits, &cancel)
-        .await
-        .unwrap();
-    assert_eq!(target.url, "https://example.invalid/repo.git");
-    assert_eq!(target.helpers, ["manager"]);
-    assert_eq!(fixture.snapshot(), before);
-    fixture.phase("unsupported helper");
-    fixture.git(&[
-        "config",
-        "credential.helper",
-        "!echo invoked > helper-invoked",
-    ]);
-    let before = fixture.snapshot();
-    let error = super::super::run(&target, &ExchangeOperation::Observe, limits, &cancel)
-        .await
-        .unwrap_err();
-    assert_eq!(error, RunError::UnsupportedHelper);
-    assert!(!fixture.0.join("helper-invoked").exists());
-    assert_eq!(fixture.snapshot(), before);
-    fixture.phase("helper drift");
-    fixture.git(&["config", "credential.helper", "wincred"]);
-    let before = fixture.snapshot();
-    assert_eq!(
-        super::super::run(&target, &ExchangeOperation::Observe, limits, &cancel)
-            .await
-            .unwrap_err(),
-        RunError::TargetChanged
-    );
-    assert_eq!(fixture.snapshot(), before);
-    fixture.git(&[
-        "remote",
-        "set-url",
-        "origin",
-        "git@example.invalid:repo.git",
-    ]);
-    fixture.phase("unsupported SSH");
-    assert_eq!(
-        ExchangeTarget::capture(&selection, limits, &cancel)
-            .await
-            .unwrap_err(),
-        RunError::UnsupportedTarget
-    );
-    fixture.git(&[
-        "remote",
-        "set-url",
-        "origin",
-        "https://example.invalid/repo.git",
-    ]);
-    for key in ["fetch.bundleURI", "push.pushOption"] {
-        fixture.phase(key);
-        fixture.git(&["config", key, "not-admitted"]);
-        let before = fixture.snapshot();
-        assert_eq!(
-            ExchangeTarget::capture(&selection, limits, &cancel)
-                .await
-                .unwrap_err(),
-            RunError::UnsupportedConfiguration
-        );
-        assert_eq!(fixture.snapshot(), before);
-        fixture.git(&["config", "--unset", key]);
-    }
-    fixture.git(&[
-        "config",
-        "url.https://other.invalid/.insteadOf",
-        "https://example.invalid/",
-    ]);
-    fixture.phase("URL rewrite");
-    assert_eq!(
-        ExchangeTarget::capture(&selection, limits, &cancel)
-            .await
-            .unwrap_err(),
-        RunError::UnsupportedRewrite
-    );
+    configuration::run_groups().await;
 }
 
 #[tokio::test]
