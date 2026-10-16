@@ -198,7 +198,15 @@ relay, sparse enrollment, commit or network operation.
 A matching disclosure assertion and repository basis returns the original
 operation and unchanged intent bytes. The first caller's attribution (including
 actor context and source skill) is recorded separately; a new process session
-does not change retry identity. A different or unowned record refuses without
+does not change retry identity. Setup preparation and materialization preserve
+actor context verbatim, including whitespace and text longer than 256 bytes.
+When present, it must be nonblank, at most 4096 UTF-8 bytes, and contain no
+control characters. Invalid context refuses before creating setup or
+materialization state; it is never silently normalized. Both CLI
+`--actor-context` and `ENGRAM_ACTOR_CONTEXT` use this contract. An exactly empty
+actor context is absent; whitespace-only context is refused. These commands
+have no MCP tool. Previously recorded attribution remains unchanged on retry.
+A different or unowned record refuses without
 replacement. Moving HEAD makes the recorded basis stale; this preparation slice
 does not replace or retire it.
 An immediately contended private lock refuses; it is not retried or reclaimed

@@ -6,6 +6,9 @@ mod test_support;
 #[path = "common/task_sync_opt_in.rs"]
 mod task_sync_opt_in;
 
+#[path = "task_sync_setup_cli/attribution.rs"]
+mod attribution;
+
 use serde_json::Value;
 use std::{
     fs,
@@ -130,6 +133,7 @@ impl Fixture {
         let mut command = Command::new(env!("CARGO_BIN_EXE_engram"));
         isolate_git(&mut command, &self.global_config);
         command
+            .env_remove("ENGRAM_ACTOR_CONTEXT")
             .current_dir(&self.root)
             .arg("--home")
             .arg(&self.home)

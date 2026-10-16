@@ -5,6 +5,9 @@ mod task_sync_opt_in;
 #[path = "../src/test_support.rs"]
 mod test_support;
 
+#[path = "task_sync_materialize_cli/attribution.rs"]
+mod attribution;
+
 use engram::{
     ProjectId, project_database_path,
     task_sync::{
@@ -187,7 +190,12 @@ impl Fixture {
     }
 
     fn materialize(&self) -> Output {
-        self.command()
+        self.materialize_command().output().unwrap()
+    }
+
+    fn materialize_command(&self) -> Command {
+        let mut command = self.command();
+        command
             .arg("setup-materialize")
             .arg(&self.root)
             .arg("--setup-operation")
@@ -197,9 +205,8 @@ impl Fixture {
             .arg("--progress-directory")
             .arg(&self.progress)
             .arg("--candidate-directory")
-            .arg(&self.candidate)
-            .output()
-            .unwrap()
+            .arg(&self.candidate);
+        command
     }
 }
 

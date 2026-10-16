@@ -52,7 +52,7 @@ impl LocalWorkService {
             setup::Attribution {
                 actor_id: self.actor_id.clone(),
                 session_id: self.session_id.0.clone(),
-                actor_context: self.actor_context.clone(),
+                actor_context: self.setup_actor_context.clone(),
                 source_skill: self.source_skill.clone(),
             },
         )
@@ -80,7 +80,7 @@ impl LocalWorkService {
             setup::Attribution {
                 actor_id: self.actor_id.clone(),
                 session_id: self.session_id.0.clone(),
-                actor_context: self.actor_context.clone(),
+                actor_context: self.setup_actor_context.clone(),
                 source_skill: self.source_skill.clone(),
             },
         )

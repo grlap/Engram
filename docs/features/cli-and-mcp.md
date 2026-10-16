@@ -148,13 +148,22 @@ audited OS-user-environment or synthetic-actor and process-session defaults.
 Actor context may contain bounded free text such as
 `model=opus-4.1;reasoning=high`. Actor context is
 attribution, not a principal: assignment, `--mine`, handoff, and claim/session
-authority continue to use the unchanged actor and session ids. Context never
-refuses the session: Engram replaces each unsafe-control run with one space,
+authority continue to use the unchanged actor and session ids. For work and
+control operations, context never refuses the session: Engram replaces each
+unsafe-control run with one space,
 trims the value, and cuts it at a UTF-8 boundary to 256 bytes; altered input
 receives an explicit `actor_context:normalized` provenance marker, and an
 empty result is absent. It is excluded from retry/idempotency identity, so a
 replay retains the original operation's attribution instead of duplicating or
 refusing it.
+
+Task-sync setup preparation and materialization preserve the asserted actor
+context verbatim under their separate validation contract: when present, it
+must be nonblank, at most 4096 UTF-8 bytes, and contain no control characters.
+An exactly empty context is absent; whitespace-only context is refused.
+Invalid context refuses the setup operation before creating state. Their
+immutable private records retain the first caller's attribution on retry;
+see [setup preparation](task-planning-text.md#private-git-setup-preparation).
 A local shell that omits either principal value remains usable: actor derives
 from the first nonblank conventional OS-user environment variable and session
 defaults to one stable id for that `engram` process. The actor derivation is

@@ -47,6 +47,69 @@ fn entries(path: &Path) -> Vec<(std::path::PathBuf, Option<Vec<u8>>)> {
 }
 
 #[test]
+fn setup_actor_context_service_clone_refuses_raw_controls_before_repository_state() {
+    let owned = crate::test_support::temp_home().unwrap();
+    let project = ProjectId("service/opt-in".into());
+    let database = crate::project_database_path(&owned.path().join("home"), &project);
+    let service = LocalWorkService::new_with_attribution(
+        database.clone(),
+        project,
+        "fixture-operator".into(),
+        SessionId("fixture-service".into()),
+        None,
+        Some("model\tsecret-context".into()),
+        crate::WorkAttributionDefaults::default(),
+    );
+    service
+        .task_sync_settings(
+            &task_sync::settings::Request {
+                action: task_sync::settings::Action::Enable,
+                user_instruction: Some("Enable Git task sync for this test fixture.".into()),
+            },
+            chrono::Utc::now(),
+        )
+        .unwrap();
+    let before = entries(owned.path());
+    let selection = setup::MaterializeSelection {
+        repository: owned.path().join("missing-repository"),
+        setup_operation: uuid::Uuid::now_v7(),
+        prepared_operation: uuid::Uuid::now_v7(),
+        progress_directory: owned.path().join("progress"),
+        candidate_directory: owned.path().join("candidate"),
+    };
+    for service in [&service, &service.clone()] {
+        let prepare = service
+            .prepare_task_sync_setup(
+                &owned.path().join("marker"),
+                &selection.repository,
+                "ordinary",
+                setup::Assertions {
+                    visibility: "private".into(),
+                    readership: "fixture maintainers".into(),
+                    profile: task_sync::FORMAT.into(),
+                    include_notes: false,
+                    origin_machine: None,
+                },
+            )
+            .err()
+            .unwrap();
+        let materialize = service
+            .materialize_task_sync_setup(&owned.path().join("marker"), &selection)
+            .unwrap_err();
+        for error in [prepare, materialize] {
+            assert!(
+                error.to_string().contains(
+                    "actor context must be nonblank bounded text without control characters"
+                ),
+                "{error}"
+            );
+        }
+        assert_eq!(entries(owned.path()), before);
+        assert!(!database.exists());
+    }
+}
+
+#[test]
 fn task_sync_all_service_exchange_routes_refuse_without_opt_in_before_opening_sqlite() {
     for state in ["absent", "disabled", "malformed", "oversized"] {
         let owned = crate::test_support::temp_home().unwrap();

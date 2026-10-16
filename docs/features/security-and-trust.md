@@ -56,6 +56,14 @@ project-memory replay identity: an identical retry through those surfaces
 returns the originally attributed result. Core storage request fingerprints still
 bind the complete asserted actor context supplied to that request.
 
+Task-sync setup preparation and materialization use a separate attribution
+contract: they retain actor context verbatim in their private immutable intent
+and journal, and in the materialization receipt. Present context must be
+nonblank, at most 4096 UTF-8 bytes, and contain no control characters; invalid
+context refuses the setup operation before creating state. They never silently
+normalize this assertion, and an exact retry retains the first attribution.
+An exactly empty actor context is absent; whitespace-only context is refused.
+
 When a project-bound session records a `note` or `gate` after work completes,
 its current asserted identity remains the evidence actor. A
 `work_evidence:post_completion` / `post_completion` link in the same provenance

@@ -531,6 +531,8 @@ pub struct LocalWorkService {
     actor_id: String,
     actor_context: Option<String>,
     actor_context_normalized: bool,
+    /// Setup preserves this assertion under its own bounded validation contract.
+    setup_actor_context: Option<String>,
     session_id: SessionId,
     attribution_defaults: WorkAttributionDefaults,
     source_skill: Option<String>,
@@ -556,6 +558,7 @@ impl Clone for LocalWorkService {
             actor_id: self.actor_id.clone(),
             actor_context: self.actor_context.clone(),
             actor_context_normalized: self.actor_context_normalized,
+            setup_actor_context: self.setup_actor_context.clone(),
             session_id: self.session_id.clone(),
             attribution_defaults: self.attribution_defaults,
             source_skill: self.source_skill.clone(),

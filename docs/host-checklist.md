@@ -157,7 +157,11 @@ receipt supplies presence facts, never permission to clear recovery state.
 2. **Inject identity into every agent process and shell.** Set
    `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, `ENGRAM_SESSION_ID`, and optionally
    `ENGRAM_ACTOR_CONTEXT` (free text such as `model=…;reasoning=…`,
-   bounded and normalized by Engram, never refused). Use the developer name
+   bounded and normalized by Engram for work and control operations, never
+   refused by those operations). Task-sync setup preparation and materialization
+   use their [strict attribution contract](features/task-planning-text.md#private-git-setup-preparation):
+   an exactly empty context is absent, while nonempty context must be nonblank,
+   at most 4096 UTF-8 bytes, and contain no control characters. Use the developer name
    alone for the human seat (`alice`) and `<developer>/<agent kind>` for
    agent seats (`alice/claude`, `alice/codex`), with the context carrying
    `agent=<kind>;model=<exact model id>;reasoning=<level>`; both injection

@@ -237,6 +237,7 @@ impl LocalWorkService {
         actor_context: Option<String>,
         attribution_defaults: WorkAttributionDefaults,
     ) -> Self {
+        let setup_actor_context = actor_context.clone().filter(|context| !context.is_empty());
         let (actor_context, actor_context_normalized) = normalize_actor_context(actor_context);
         Self {
             database,
@@ -244,6 +245,7 @@ impl LocalWorkService {
             actor_id,
             actor_context,
             actor_context_normalized,
+            setup_actor_context,
             session_id,
             attribution_defaults,
             source_skill,
