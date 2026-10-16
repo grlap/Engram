@@ -964,8 +964,38 @@ impl AgentVerbs {
         })
     }
 
-    // Production always uses the protocol budget; tests can exercise the
-    // zero-row boundary without bypassing the bounded item projection.
+    /// `ls` for a program reading its JSON: each page fits `page_bytes`
+    /// instead of the agent protocol budget. Rows, order, cursors and
+    /// continuation are those of `ls`; only how many rows fit a page differs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VerbError`] when `page_bytes` is outside the protocol budget
+    /// through [`crate::work_service::MAX_LS_PAGE_BYTES`], or the catalog
+    /// cannot be read.
+    pub fn ls_with_page_bytes(
+        &self,
+        input: &LsInput,
+        now: DateTime<Utc>,
+        page_bytes: usize,
+    ) -> Result<Receipt, VerbError> {
+        if !(MAX_AGENT_WORK_RESPONSE_BYTES..=crate::work_service::MAX_LS_PAGE_BYTES)
+            .contains(&page_bytes)
+        {
+            return Err(StoreError::InvalidWork(format!(
+                "page bytes {page_bytes} is outside {MAX_AGENT_WORK_RESPONSE_BYTES}..={}; choose a budget in that range",
+                crate::work_service::MAX_LS_PAGE_BYTES
+            ))
+            .into());
+        }
+        self.with_claim_lapse(now, page_bytes, |budget| {
+            self.ls_with_budget(input, now, budget)
+        })
+    }
+
+    // Agent surfaces use the protocol budget; a JSON-reading program may ask
+    // for a larger one, and tests can exercise the zero-row boundary without
+    // bypassing the bounded item projection.
     pub(super) fn ls_with_budget(
         &self,
         input: &LsInput,

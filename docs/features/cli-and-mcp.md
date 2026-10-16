@@ -366,6 +366,7 @@ delivered. Every other word, and ordinary `next`, is stateful.
 engram work next --peek [--verbose]  # orientation without advancing delivery
 engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
+engram work ls --all --verbose --json --limit 200 --page-bytes 1048576  # a program's larger JSON pages
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note ID[:INDEX | :event-INDEX | :completion]  # complete immutable note or inherited member detail
 engram work show REF --evaluations [--after CURSOR]  # the run's evaluation records, oldest to newest
@@ -541,7 +542,8 @@ application-receipt JSON (`serde_json::to_vec`), including guidance (and the
 LF. Both that terminal measure and compact JSON must stay strictly under
 12288 bytes; pretty JSON is not a production or acceptance measure. Compact
 JSON stays payload-only and does not charge that LF. The same
-pair binds verbose `next`, `ls`, and note/history windows. `done` refits its
+pair binds verbose `next`, `ls`, and note/history windows; only CLI
+`ls --json --page-bytes` may choose a larger listing budget, described with `ls` below. `done` refits its
 post-completion envelope after attaching a process-default
 `effective_session_id`. Ordinary mutation receipts
 are compact and have no receipt fitter; `add` may still refuse after commit
@@ -1067,7 +1069,16 @@ Rules that matter:
   (explicit limits clamp to 1–1000). The complete text and JSON receipts,
   including footer and continuation, fit 12 KiB. The footer names the active
   `limit` and `byte_budget` (12288 bytes, less the bytes reserved for a read
-  reminder such as a lapsed own claim when one is carried). A continuation is refused only
+  reminder such as a lapsed own claim when one is carried). A program reading
+  the CLI JSON may pass `--page-bytes BYTES`, from 12288 through 1048576, to fit
+  each page to that budget instead, so a `--limit 200` page can hold 200 rows;
+  `byte_budget` then reports it, less the same read-reminder reserve. Rows keep
+  their usual projection, so a larger budget fits more rows but does not
+  guarantee every requested one. It is accepted only with `--json` and refused
+  out of range; MCP `ls` has no such option. Rows, order, `after` tokens and
+  continuation are unchanged, and a token from either budget continues with
+  either. The printed `next` command does not repeat `--page-bytes`, so pass it
+  again on each page. A continuation is refused only
   when the listing's membership or order changed since its page
   ([local work](local-work-system.md)), and the refusal states its reason
   once. Nonempty truncated pages include an

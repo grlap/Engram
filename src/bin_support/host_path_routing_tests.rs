@@ -152,6 +152,7 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
                 after: None,
                 limit: 20,
                 verbose: false,
+                page_bytes: None,
             }),
         ),
         ("work core next", false, work(core_next())),

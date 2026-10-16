@@ -564,6 +564,9 @@ enum WorkCommand {
         /// Return the full structured projection instead of compact rows.
         #[arg(long)]
         verbose: bool,
+        /// With --json only: fit each page to this many bytes instead of the 12288-byte agent budget, up to 1048576; cursors and continuation are unchanged.
+        #[arg(long, value_name = "BYTES", value_parser = clap::value_parser!(u32).range(bin_support::work_listing::PAGE_BYTES_RANGE))]
+        page_bytes: Option<u32>,
     },
     /// One item: outcome, acceptance, holder, blockers, reminders.
     Show {
@@ -1672,7 +1675,9 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             after,
             limit,
             verbose,
-        } => verbs.ls(
+            page_bytes,
+        } => bin_support::work_listing::ls(
+            &verbs,
             &LsInput {
                 search,
                 blocked,
@@ -1688,7 +1693,9 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 verbose,
             },
             now,
-        ),
+            json,
+            page_bytes,
+        )?,
         WorkCommand::Show {
             work_ref,
             notes,

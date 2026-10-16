@@ -149,6 +149,10 @@ pub use views::*;
 /// note/history windows remain bounded.
 pub const MAX_AGENT_WORK_RESPONSE_BYTES: usize = 12 * 1024;
 
+/// Largest per-page byte budget a program reading `ls` JSON may request in
+/// place of the agent protocol budget, which is also the smallest.
+pub const MAX_LS_PAGE_BYTES: usize = 1024 * 1024;
+
 const MAX_PROJECT_MEMORY_FULL_BYTES: usize = 12 * 1024;
 const _: () = assert!(MAX_PROJECT_MEMORY_FULL_BYTES <= MAX_AGENT_WORK_RESPONSE_BYTES);
 

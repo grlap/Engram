@@ -334,3 +334,28 @@ fn listing_zero_row_hint_names_the_first_remaining_oversized_row() {
         json!([format!("engram work show {second}")])
     );
 }
+
+#[test]
+fn listing_page_bytes_outside_its_range_is_refused_by_name() {
+    let (_directory, verbs, _, _) = fixture();
+    add(&verbs, "Listed", None, false, 0);
+    let input = LsInput::default();
+    for page_bytes in [0, 12_287, 1_048_577] {
+        let error = verbs
+            .ls_with_page_bytes(&input, at(1), page_bytes)
+            .unwrap_err();
+        assert!(
+            matches!(&error.error, StoreError::InvalidWork(_)),
+            "{error}"
+        );
+        let message = error.to_string();
+        assert!(
+            message.contains(&format!("page bytes {page_bytes}")),
+            "{message}"
+        );
+        assert!(message.contains("12288..=1048576"), "{message}");
+    }
+    for page_bytes in [12_288, 1_048_576] {
+        verbs.ls_with_page_bytes(&input, at(1), page_bytes).unwrap();
+    }
+}

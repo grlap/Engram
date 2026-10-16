@@ -1413,3 +1413,15 @@ fn explicit_and_single_claim_done_and_evaluate_act_over_mcp() {
     let completed = acted(server.done(Parameters(done_args(None))), "bare done");
     assert_eq!(completed["work"]["short_ref"], json!(other), "{completed}");
 }
+
+#[test]
+fn mcp_ls_does_not_accept_the_cli_page_byte_budget() {
+    let refused = serde_json::from_value::<super::arguments::LsArgs>(
+        json!({"all": true, "page_bytes": 1_048_576}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(refused.contains("page_bytes"), "{refused}");
+    let schema = serde_json::to_value(schemars::schema_for!(super::arguments::LsArgs)).unwrap();
+    assert!(schema["properties"].get("page_bytes").is_none(), "{schema}");
+}
