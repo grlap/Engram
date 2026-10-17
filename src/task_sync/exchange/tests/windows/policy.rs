@@ -176,6 +176,7 @@ async fn task_exchange_windows_policy_groups_have_bounded_launch_workloads() {
             "one owned supervisor per group"
         );
         let output = String::from_utf8(result.unwrap().stdout).unwrap();
+        group.assert_trace(output.as_bytes());
         let reports: Vec<_> = output
             .lines()
             .filter(|line| line.starts_with("policy-workload "))

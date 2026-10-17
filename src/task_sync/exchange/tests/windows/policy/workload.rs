@@ -50,6 +50,10 @@ pub(super) const GROUPS: [Group; 5] = [
 ];
 
 impl Group {
+    pub(super) fn assert_trace(self, stdout: &[u8]) {
+        super::super::diagnostics::assert_complete_trace(stdout, self.direct, self.product);
+    }
+
     pub(super) fn assert_bounded(self) {
         assert!(
             self.direct + self.product <= 30,

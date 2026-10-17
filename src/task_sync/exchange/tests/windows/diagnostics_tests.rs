@@ -52,6 +52,7 @@ async fn task_exchange_deadline_diagnostics_keep_partial_output_and_name_active_
     assert!(report.contains("completed launch=1 kind=direct label=version elapsed_us="));
     assert!(report.contains("completed launch=2 kind=product label=version elapsed_us="));
     assert!(report.contains("active launch=3 kind=product label=fixture began_at_group_us="));
+    assert!(report.contains("last captured open BEGIN, END may be unread"));
     assert!(report.contains(OUT_MARKER));
     assert!(report.contains(ERR_MARKER));
     fixture.assert_released();
@@ -102,8 +103,10 @@ async fn task_exchange_deadline_diagnostics_capture_stays_bounded_on_both_pipes(
         assert!(output.stderr.len() <= limits.stderr_bytes);
         if mode == "flood" {
             assert_eq!(output.stdout.len(), limits.stdout_bytes);
+            assert_eq!(output.stdout.last(), Some(&b'x'));
         } else {
             assert_eq!(output.stderr.len(), limits.stderr_bytes);
+            assert_eq!(output.stderr.last(), Some(&b'x'));
         }
         fixture.assert_released();
     }

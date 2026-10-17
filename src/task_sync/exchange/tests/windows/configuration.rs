@@ -155,6 +155,7 @@ pub(super) async fn run_groups() {
             "one supervisor per group"
         );
         let output = String::from_utf8(result.unwrap().stdout).unwrap();
+        diagnostics::assert_complete_trace(output.as_bytes(), group.direct, group.product);
         let reports: Vec<_> = output
             .lines()
             .filter(|line| line.starts_with("configuration-workload "))

@@ -245,6 +245,25 @@ pub(super) fn parse(stdout: &[u8]) -> Trace {
     trace
 }
 
+pub(super) fn assert_complete_trace(stdout: &[u8], direct: usize, product: usize) {
+    let trace = parse(stdout);
+    assert!(!trace.incomplete, "{trace:?}");
+    assert_eq!(trace.entries.len(), direct + product, "{trace:?}");
+    assert_eq!(
+        trace
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == "direct")
+            .count(),
+        direct,
+        "{trace:?}"
+    );
+    assert!(
+        trace.entries.iter().all(|entry| entry.end.is_some()),
+        "{trace:?}"
+    );
+}
+
 pub(super) fn report(output: &process::DiagnosticOutput) -> String {
     let trace = parse(&output.stdout);
     let mut text = format!(
@@ -267,7 +286,7 @@ pub(super) fn report(output: &process::DiagnosticOutput) -> String {
             .unwrap(),
             None => writeln!(
                 text,
-                "active launch={} kind={} label={} began_at_group_us={}",
+                "active launch={} kind={} label={} began_at_group_us={}; last captured open BEGIN, END may be unread",
                 entry.id, entry.kind, entry.label, entry.since_us
             )
             .unwrap(),
