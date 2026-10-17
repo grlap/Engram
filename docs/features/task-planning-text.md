@@ -571,13 +571,25 @@ remedy. An I/O failure, such as a missing directory, is not a refusal and is
 reported as before. SQLite lock failures retain their generic storage code;
 they are not classified as task-sync refusals.
 
-Export requires an already-existing ordinary destination parent directory.
+Publishing a new export requires an already-existing ordinary destination
+parent directory. Relative destinations are resolved to absolute paths before
+the parent is looked up. After content admission, both writers inspect an
+existing destination first: a matching candidate succeeds without checking
+its parent, while an invalid or divergent candidate is refused (or its
+inspection fails with I/O). Parent admission applies only when publication
+must continue, so it does not replace an existing-destination error.
+
 `task_sync_destination_no_parent` is the defensive parent-lookup refusal for
 a resolved path with no parent component; it does not mean that a named
 parent is absent on disk. Missing or inaccessible parents produce ordinary
-I/O errors. Both writers inspect an existing destination before that lookup,
-so an ordinary existing filesystem root is inspected and refused earlier;
-it is not an end-to-end route to the `no_parent` code.
+I/O errors at the first failing filesystem operation, even with `--json`;
+they do not acquire a task-sync refusal code. An existing filesystem root is
+inspected before parent lookup and may be refused as a candidate or fail with
+I/O. It is therefore not a reliable end-to-end route to the `no_parent` code.
+This ordering also preserves retries through a linked parent when the
+existing candidate matches; a new publication still refuses a parent that
+is itself a link. It does not protect against every concurrent ancestor
+replacement.
 
 | Code | Refusal |
 | --- | --- |

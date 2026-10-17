@@ -4,6 +4,7 @@ use crate::{
     task_sync::{FORMAT, ProjectDocument, TaskDocument},
 };
 
+mod parent_precedence;
 mod refusals;
 
 fn candidate() -> TaskTree {

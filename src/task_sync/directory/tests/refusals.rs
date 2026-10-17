@@ -1,9 +1,9 @@
 use super::*;
 
 #[test]
-fn task_sync_directory_parent_lookup_distinguishes_missing_component_from_missing_disk_parent() {
+fn task_sync_directory_parent_lookup_only_checks_the_lexical_component() {
     // Both writers use this helper after resolving and inspecting the destination.
-    // This is helper coverage: an existing filesystem root refuses earlier there.
+    // This is helper coverage; existing-root inspection may refuse or fail with I/O.
     let root = Path::new(std::path::MAIN_SEPARATOR_STR);
     let error = destination_parent(root).unwrap_err();
     assert_eq!(refusal_code(&error), "task_sync_destination_no_parent");
@@ -11,11 +11,6 @@ fn task_sync_directory_parent_lookup_distinguishes_missing_component_from_missin
         destination_parent(Path::new("parent/candidate")).unwrap(),
         Path::new("parent")
     );
-    let fixture = crate::test_support::temp_home().unwrap();
-    let error = write(&fixture.path().join("missing/candidate"), &candidate()).unwrap_err();
-    assert!(error.downcast_ref::<std::io::Error>().is_some());
-    assert!(error.downcast_ref::<crate::storage::StoreError>().is_none());
-    assert!(!fixture.path().join("missing").exists());
 }
 
 #[test]

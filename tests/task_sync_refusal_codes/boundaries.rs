@@ -2,6 +2,48 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn task_sync_export_missing_parent_keeps_io_even_with_json() {
+    let fixture = Fixture::new();
+    let source = fixture.store("source");
+    fixture.add(&source, "shared task");
+    let relative = Path::new("missing/candidate");
+    for json in [false, true] {
+        let output = fixture
+            .sync_command(&source, "export", relative, json)
+            .current_dir(&fixture.root)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert_eq!(output.stdout.as_slice(), b"");
+        let error = stderr(&output);
+        assert_ne!(error, "");
+        assert!(!error.contains("task_sync_"), "{error}");
+        assert!(
+            !error.contains("{\n"),
+            "unexpected structured refusal: {error}"
+        );
+        assert!(!fixture.root.join("missing").exists());
+    }
+
+    // The same relative spelling works once its ordinary parent exists.
+    fs::create_dir(fixture.root.join("missing")).unwrap();
+    for _ in 0..2 {
+        let output = fixture
+            .sync_command(&source, "export", relative, true)
+            .current_dir(&fixture.root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", stderr(&output));
+        let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(receipt["directory"], "missing/candidate");
+    }
+    assert_eq!(
+        fs::read_dir(fixture.root.join("missing")).unwrap().count(),
+        1
+    );
+}
+
+#[test]
 fn task_sync_json_oversized_note_keeps_byte_details_without_a_work_remedy() {
     let fixture = Fixture::new();
     let candidate = fixture.candidate("notes");
