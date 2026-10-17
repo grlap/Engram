@@ -21,6 +21,7 @@ struct Fixture {
     admin: PathBuf,
     service: LocalWorkService,
     selection: MaterializeSelection,
+    assertions: super::super::Assertions,
     documents: BTreeMap<String, Vec<u8>>,
 }
 
@@ -222,19 +223,15 @@ impl Fixture {
             )
             .unwrap();
         fs::write(&store, b"not SQLite; source changes independently").unwrap();
+        let assertions = super::super::Assertions {
+            visibility: "private".into(),
+            readership: "fixture maintainers".into(),
+            profile: crate::task_sync::FORMAT.into(),
+            include_notes,
+            origin_machine: origin_machine.clone(),
+        };
         let setup = service
-            .prepare_task_sync_setup(
-                &marker,
-                &root,
-                "ordinary",
-                super::super::Assertions {
-                    visibility: "private".into(),
-                    readership: "fixture maintainers".into(),
-                    profile: crate::task_sync::FORMAT.into(),
-                    include_notes,
-                    origin_machine: origin_machine.clone(),
-                },
-            )
+            .prepare_task_sync_setup(&marker, &root, "ordinary", assertions.clone())
             .unwrap();
         let progress_directory = owned.path().join("progress");
         let candidate_directory = owned.path().join("candidate");
@@ -282,6 +279,7 @@ impl Fixture {
             store,
             service,
             selection,
+            assertions,
             documents,
         }
     }
@@ -289,6 +287,17 @@ impl Fixture {
     fn run(&self) -> MaterializeReceipt {
         self.service
             .materialize_task_sync_setup(&self.marker, &self.selection)
+            .unwrap()
+    }
+
+    fn reprepare(&self) -> super::super::Receipt {
+        self.service
+            .prepare_task_sync_setup(
+                &self.marker,
+                &self.root,
+                "ordinary",
+                self.assertions.clone(),
+            )
             .unwrap()
     }
 

@@ -340,6 +340,8 @@ incomplete private attempt. The refusal prints the full operation path, of the
 form `GIT_DIR/engram-task-sync-materialize-<setup-operation>-<prepared-operation>`,
 and directs the operator to preserve it, relocate the whole directory within
 Git administration, rerun setup preparation, then materialize a fresh attempt.
+With an unchanged repository basis, that preparation repeats the existing setup
+intent before fresh materialization; it does not create a second setup intent.
 This is an explicit operator repair, not an automatic retry or a retire command.
 Do not delete or adopt an unfamiliar entry to make a refusal disappear.
 
@@ -350,7 +352,8 @@ repairing it. Preserve any displaced originals and unrelated public edits
 separately; never blindly restore recorded bytes over a new public occupant.
 Examples include setup-byte drift during admission, unavailable hard links, or
 a failed Git admission query after private initialization began. A changed
-index, branch or shared tree still needs its own reconciliation.
+index, branch or shared tree needs reconciliation before a new preparation;
+repeating preparation does not normalize that drift.
 
 After setup edits are published, `.gitignore` and `.gitattributes` are hard links
 to the operation's retained `after` sources. To fix an attribute-policy refusal,

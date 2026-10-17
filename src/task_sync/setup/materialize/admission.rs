@@ -4,6 +4,7 @@ use super::{
     Attribution, Directory, MaterializeSelection, Path, Result, candidate, ensure, journal,
     progress, repository,
 };
+use anyhow::Context;
 
 pub(super) fn select(
     root: &Directory,
@@ -60,6 +61,7 @@ pub(super) fn select(
             let index = repository::index_basis(&setup.basis)?;
             repository::recheck(&setup.basis, &index)?;
             checkpoint("admitted-before-private")?;
+            let private_path = setup.basis.git_directory.join(&private_name);
             let private = admin.create_child(Path::new(&private_name))?;
             checkpoint("private-created")?;
             let record = journal::initialize(
@@ -72,7 +74,8 @@ pub(super) fn select(
                 prepared,
                 index,
                 checkpoint,
-            )?;
+            )
+            .with_context(|| journal::incomplete_attempt_guidance(&private_path))?;
             checkpoint("journal-published")?;
             Ok((private, record, false))
         }

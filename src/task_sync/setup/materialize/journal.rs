@@ -174,16 +174,18 @@ pub(super) fn initialize(
     Ok(record)
 }
 
+pub(super) fn incomplete_attempt_guidance(private_path: &Path) -> String {
+    format!(
+        "incomplete private materialization attempt at {}; preserve the whole attempt, retain and reconcile unrelated public edits separately, move this attempt aside within Git administration, then rerun setup preparation and materialization; do not delete or adopt it",
+        private_path.display()
+    )
+}
+
 pub(super) fn read(private: &Directory, private_path: &Path) -> Result<Record> {
     check_inventory(private)?;
     let bytes = private
         .read(Path::new("journal.json"))?
-        .with_context(|| {
-            format!(
-                "incomplete private materialization attempt at {}; preserve the whole attempt, retain and reconcile unrelated public edits separately, move this attempt aside within Git administration, then rerun setup preparation and materialization; do not delete or adopt it",
-                private_path.display()
-            )
-        })?;
+        .with_context(|| incomplete_attempt_guidance(private_path))?;
     let pending = private.open_file(Path::new(".journal.json.pending"), false, false)?;
     let final_file = private.open_file(Path::new("journal.json"), false, false)?;
     ensure!(

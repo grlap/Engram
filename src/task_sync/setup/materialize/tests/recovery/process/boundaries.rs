@@ -96,16 +96,24 @@ fn task_materialize_process_preserves_relocates_and_freshly_admits_unowned_attem
                 error.contains("incomplete private materialization attempt"),
                 "{error}"
             );
-            assert!(error.contains(&attempt.display().to_string()), "{error}");
+            let printed_attempt = error
+                .strip_prefix("incomplete private materialization attempt at ")
+                .and_then(|message| message.split_once("; preserve"))
+                .map(|(path, _)| Path::new(path))
+                .expect("refusal prints the retained attempt path");
+            assert!(same_file::is_same_file(&attempt, printed_attempt).unwrap());
             assert_eq!(snapshot(&attempt), attempt_before);
             assert_eq!(snapshot(&fixture.root), public_before_refusal);
 
             let preserved = fixture
-                .owned
-                .path()
+                .admin
                 .join(format!("preserved-incomplete-{boundary}"));
             fs::rename(&attempt, &preserved).unwrap();
             let preserved_before = snapshot(&preserved);
+
+            let reprepare = fixture.reprepare();
+            assert!(reprepare.repeated, "{existing_private}/{boundary}");
+            assert_eq!(reprepare.operation, fixture.selection.setup_operation);
 
             assert!(child(&fixture, None, true).status.success());
             let fresh: serde_json::Value = serde_json::from_slice(

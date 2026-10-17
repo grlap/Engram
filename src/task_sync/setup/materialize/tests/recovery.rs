@@ -156,28 +156,71 @@ fn task_materialize_preserves_incomplete_private_attempts_without_adopting_them(
 }
 
 #[test]
+fn task_materialize_first_private_attempt_failure_names_the_retained_recovery_path() {
+    let fixture = Fixture::new(false, 1);
+    let ordinary_code = fs::read(fixture.root.join("code.txt")).unwrap();
+    let error = super::super::run(
+        &fixture.marker,
+        &ProjectId("materialize/fixture".into()),
+        &fixture.selection,
+        true,
+        attribution(),
+        &mut |point| {
+            if point == "private-created" {
+                fs::write(
+                    fixture.root.join(".gitignore"),
+                    b"concurrent ordinary public edit\n",
+                )?;
+            }
+            Ok(())
+        },
+    )
+    .unwrap_err();
+    let message = format!("{error:#}");
+    let private = fixture.private();
+    assert!(
+        message.contains("incomplete private materialization attempt at"),
+        "{message}"
+    );
+    let printed_attempt = message
+        .strip_prefix("incomplete private materialization attempt at ")
+        .and_then(|message| message.split_once("; preserve"))
+        .map(|(path, _)| Path::new(path))
+        .expect("first refusal prints the retained attempt path");
+    assert!(same_file::is_same_file(&private, printed_attempt).unwrap());
+    assert!(message.contains("move this attempt aside within Git administration"));
+    assert!(message.contains("rerun setup preparation and materialization"));
+    assert_eq!(
+        fs::read(fixture.root.join("code.txt")).unwrap(),
+        ordinary_code
+    );
+    assert_eq!(
+        fs::read(fixture.root.join(".gitignore")).unwrap(),
+        b"concurrent ordinary public edit\n"
+    );
+    assert!(private.is_dir());
+}
+
+#[test]
 fn task_materialize_operator_can_preserve_and_reprepare_incomplete_private_attempts() {
     for boundary in ["private-created", "replace-created-0", "replace-created-1"] {
         let fixture = Fixture::new(false, 1);
         fixture.interrupt(boundary);
         let private = fixture.private();
         let before = snapshot(&private);
-        // The fixture operator preserves the applied after-link, then restores
-        // the retained original by a no-replace link. The command does neither.
-        let displaced = private.join("replace-0/displaced");
-        if displaced.exists() {
-            fs::rename(
-                fixture.root.join(".gitignore"),
-                fixture.owned.path().join("preserved-managed-ignore"),
-            )
-            .unwrap();
-            fs::hard_link(displaced, fixture.root.join(".gitignore")).unwrap();
-        }
         let preserved = fixture.admin.join("preserved-incomplete-materialization");
         fs::rename(&private, &preserved).unwrap();
         assert_eq!(snapshot(&preserved), before);
-        fixture.run();
+        let reprepare = fixture.reprepare();
+        assert!(reprepare.repeated, "{boundary}");
+        assert_eq!(reprepare.operation, fixture.selection.setup_operation);
+        let fresh = fixture.run();
+        assert!(!fresh.recovered, "{boundary}");
         fixture.assert_output();
+        assert_eq!(snapshot(&preserved), before);
+        let repeated = fixture.run();
+        assert!(repeated.repeated, "{boundary}");
+        assert_eq!(repeated.operation, fresh.operation);
         assert_eq!(snapshot(&preserved), before);
     }
 }
