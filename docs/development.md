@@ -95,6 +95,13 @@ gate. The shell entry point also raises the Unix
 file-descriptor soft limit when the host permits it; that step is not
 applicable on Windows.
 
+The Windows task-sync refusal tests create a real file symbolic link. Their
+host must have Developer Mode enabled or grant the test process symbolic-link
+creation privilege. A directory junction cannot substitute for this file
+fixture; unavailable privilege fails setup explicitly. The non-Unicode
+filename producer fixture runs on Windows and non-Apple Unix targets; APFS
+requires valid UTF-8 filenames, so that fixture is not built on Apple targets.
+
 The default is eight test threads, or the number of available processors on a
 host with fewer, or four on a host that reports no usable count. It comes from
 one measurement, of the unit-test binary on a

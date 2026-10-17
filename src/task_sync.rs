@@ -393,7 +393,7 @@ pub enum TaskSyncRefusal {
     DestinationOccupied,
     /// The export destination appeared while the export was being prepared.
     DestinationAppeared,
-    /// The export destination has no parent directory.
+    /// The resolved export destination has no parent path component.
     DestinationNoParent,
     /// A candidate path is a symbolic link.
     DestinationLink,
@@ -417,57 +417,47 @@ pub enum TaskSyncRefusal {
     DestinationMissingTasks,
 }
 
-impl TaskSyncRefusal {
-    /// Every refusal family, in documentation order.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 19] = [
-        Self::NativeState,
-        Self::DivergentPlanning,
-        Self::RemovedPlanning,
-        Self::IdCollision,
-        Self::InvalidGraph,
-        Self::OriginMismatch,
-        Self::DestinationOccupied,
-        Self::DestinationAppeared,
-        Self::DestinationNoParent,
-        Self::DestinationLink,
-        Self::DestinationNotDirectory,
-        Self::DestinationNotFile,
-        Self::DestinationFileLimit,
-        Self::DestinationFileGrew,
-        Self::DestinationTaskLimit,
-        Self::DestinationTreeLimit,
-        Self::DestinationNonUtf8Name,
-        Self::DestinationUnknownEntry,
-        Self::DestinationMissingTasks,
-    ];
+// One mapping generates both the exhaustive match and the test inventory.
+// A new enum variant cannot compile until it also joins that inventory.
+macro_rules! task_sync_refusal_codes {
+    ($($variant:ident => $code:literal),+ $(,)?) => {
+        impl TaskSyncRefusal {
+            /// Every refusal family, in documentation order.
+            #[cfg(test)]
+            pub(crate) const ALL: &'static [Self] = &[$(Self::$variant),+];
 
-    /// The stable machine-readable code of this refusal.
-    #[must_use]
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::NativeState => "task_sync_native_state",
-            Self::DivergentPlanning => "task_sync_divergent_planning",
-            Self::RemovedPlanning => "task_sync_removed_planning",
-            Self::IdCollision => "task_sync_id_collision",
-            Self::InvalidGraph => "task_sync_invalid_graph",
-            Self::OriginMismatch => "task_sync_origin_mismatch",
-            Self::DestinationOccupied => "task_sync_destination_occupied",
-            Self::DestinationAppeared => "task_sync_destination_appeared",
-            Self::DestinationNoParent => "task_sync_destination_no_parent",
-            Self::DestinationLink => "task_sync_destination_link",
-            Self::DestinationNotDirectory => "task_sync_destination_not_directory",
-            Self::DestinationNotFile => "task_sync_destination_not_file",
-            Self::DestinationFileLimit => "task_sync_destination_file_limit",
-            Self::DestinationFileGrew => "task_sync_destination_file_grew",
-            Self::DestinationTaskLimit => "task_sync_destination_task_limit",
-            Self::DestinationTreeLimit => "task_sync_destination_tree_limit",
-            Self::DestinationNonUtf8Name => "task_sync_destination_non_utf8_name",
-            Self::DestinationUnknownEntry => "task_sync_destination_unknown_entry",
-            Self::DestinationMissingTasks => "task_sync_destination_missing_tasks",
+            /// The stable machine-readable code of this refusal.
+            #[must_use]
+            pub const fn code(self) -> &'static str {
+                match self { $(Self::$variant => $code),+ }
+            }
         }
-    }
+    };
+}
 
+task_sync_refusal_codes! {
+    NativeState => "task_sync_native_state",
+    DivergentPlanning => "task_sync_divergent_planning",
+    RemovedPlanning => "task_sync_removed_planning",
+    IdCollision => "task_sync_id_collision",
+    InvalidGraph => "task_sync_invalid_graph",
+    OriginMismatch => "task_sync_origin_mismatch",
+    DestinationOccupied => "task_sync_destination_occupied",
+    DestinationAppeared => "task_sync_destination_appeared",
+    DestinationNoParent => "task_sync_destination_no_parent",
+    DestinationLink => "task_sync_destination_link",
+    DestinationNotDirectory => "task_sync_destination_not_directory",
+    DestinationNotFile => "task_sync_destination_not_file",
+    DestinationFileLimit => "task_sync_destination_file_limit",
+    DestinationFileGrew => "task_sync_destination_file_grew",
+    DestinationTaskLimit => "task_sync_destination_task_limit",
+    DestinationTreeLimit => "task_sync_destination_tree_limit",
+    DestinationNonUtf8Name => "task_sync_destination_non_utf8_name",
+    DestinationUnknownEntry => "task_sync_destination_unknown_entry",
+    DestinationMissingTasks => "task_sync_destination_missing_tasks",
+}
+
+impl TaskSyncRefusal {
     /// Refuse with this family, keeping the invalid-input text unchanged.
     pub(crate) fn invalid(self, reason: impl Into<String>) -> StoreError {
         self.wrap(invalid(reason))

@@ -13,6 +13,7 @@ mod incremental;
 mod native;
 mod notes;
 mod origin_links;
+mod refusals;
 mod regressions;
 
 fn candidate() -> TaskTree {

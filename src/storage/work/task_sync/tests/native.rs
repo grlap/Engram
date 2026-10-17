@@ -178,6 +178,7 @@ fn task_sync_external_imported_origin_is_refused_without_side_effects() {
             .to_string()
             .contains("external imported origin and source snapshot")
     );
+    assert_eq!(refusal_code(&error), "task_sync_origin_mismatch");
     assert_eq!(state(&source), before);
     let mut tree = candidate();
     tree.project.project_id = project.clone();

@@ -189,12 +189,9 @@ fn task_sync_notes_repeat_after_local_peer_or_late_note_respects_candidate_profi
                     at(30),
                 );
                 if included {
-                    assert!(
-                        result
-                            .unwrap_err()
-                            .to_string()
-                            .contains("divergent shared notes")
-                    );
+                    let error = result.unwrap_err();
+                    assert!(error.to_string().contains("divergent shared notes"));
+                    assert_eq!(refusal_code(&error), "task_sync_divergent_planning");
                 } else {
                     let result = result.unwrap();
                     assert!(!result.changed);

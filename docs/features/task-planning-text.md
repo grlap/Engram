@@ -554,12 +554,27 @@ prints its success receipt as JSON. The message keeps the refusal's human
 text unchanged; the plain form prints the same text, after the file path it
 was reading when the refusal concerns one candidate file. An invalid-input
 refusal repeats its reason as `details.reason`; a graph refusal from graph
-validation has `details: null`. Each code below is stable. A refusal outside
+validation has `details: null`. An oversized shared note has
+`details: {"bytes": N, "limit": 65536, "reason": "note body exceeds the UTF-8 byte limit"}`:
+the counts concern the body's UTF-8 bytes, rather than the serialized task
+file's separate 1 MiB limit. Structured refusals carry neither the outer
+`reading PATH` context nor an automatic per-file path field; the export
+success receipt's `directory` names the destination, not individual files.
+Each code below is stable. A refusal outside
 these families, such as a project without the
 [host-local opt-in](#project-opt-in-setting) or an invalid export alias, keeps
 its generic code; no `--json` refusal of these commands carries a work-item
 remedy. An I/O failure, such as a missing directory, is not a refusal and is
-reported as before.
+reported as before. SQLite lock failures retain their generic storage code;
+they are not classified as task-sync refusals.
+
+Export requires an already-existing ordinary destination parent directory.
+`task_sync_destination_no_parent` is the defensive parent-lookup refusal for
+a resolved path with no parent component; it does not mean that a named
+parent is absent on disk. Missing or inaccessible parents produce ordinary
+I/O errors. Both writers inspect an existing destination before that lookup,
+so an ordinary existing filesystem root is inspected and refused earlier;
+it is not an end-to-end route to the `no_parent` code.
 
 | Code | Refusal |
 | --- | --- |
@@ -571,7 +586,7 @@ reported as before.
 | `task_sync_origin_mismatch` | The candidate names another project, an import origin binding differs, or export meets an externally imported item. |
 | `task_sync_destination_occupied` | The export destination already contains a different candidate. |
 | `task_sync_destination_appeared` | The export destination appeared while the export was prepared. |
-| `task_sync_destination_no_parent` | The export destination has no parent directory. |
+| `task_sync_destination_no_parent` | The resolved export destination has no parent component at the parent-lookup step. |
 | `task_sync_destination_link` | A candidate directory or file is a symbolic link. |
 | `task_sync_destination_not_directory` | A candidate directory is not an ordinary directory. |
 | `task_sync_destination_not_file` | A candidate file is not an ordinary file. |

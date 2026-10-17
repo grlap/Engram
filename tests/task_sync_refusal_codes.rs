@@ -17,6 +17,9 @@ use serde_json::Value;
 
 const PROJECT: &str = "task-sync-refusal-codes";
 
+#[path = "task_sync_refusal_codes/boundaries.rs"]
+mod boundaries;
+
 struct Fixture {
     _home: test_support::TempHome,
     root: PathBuf,
@@ -57,6 +60,12 @@ impl Fixture {
     }
 
     fn sync(&self, home: &Path, operation: &str, path: &Path, json: bool) -> Output {
+        self.sync_command(home, operation, path, json)
+            .output()
+            .unwrap()
+    }
+
+    fn sync_command(&self, home: &Path, operation: &str, path: &Path, json: bool) -> Command {
         let mut command = self.engram(home);
         command
             .args([
@@ -71,7 +80,7 @@ impl Fixture {
         if json {
             command.arg("--json");
         }
-        command.output().unwrap()
+        command
     }
 
     fn add(&self, home: &Path, title: &str) {
