@@ -5,8 +5,10 @@ use std::{
 
 mod admission;
 mod configuration;
+mod diagnostics_tests;
 mod policy;
 pub(in crate::task_sync::exchange) mod readiness;
+use super::super::fixture_diagnostics as diagnostics;
 use readiness::descendant_holds_lock;
 
 struct Fixture(PathBuf);

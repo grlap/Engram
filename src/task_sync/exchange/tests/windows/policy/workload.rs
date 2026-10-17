@@ -138,7 +138,15 @@ pub(in super::super) fn output(command: &mut Command) -> Output {
             slot.set(Some(state));
         }
     });
-    command.output().unwrap()
+    let trace = crate::task_sync::exchange::fixture_diagnostics::direct(command);
+    let output = command.output();
+    let error = match &output {
+        Ok(output) if output.status.success() => None,
+        Ok(_) => Some(crate::task_sync::exchange::RunError::Git),
+        Err(_) => Some(crate::task_sync::exchange::RunError::Spawn),
+    };
+    trace.finish(error.as_ref());
+    output.unwrap()
 }
 
 pub(super) fn case_finished() {

@@ -7,6 +7,9 @@
 //! is not atomic confinement. After assignment, dropping the job kills its tree.
 
 mod command;
+#[cfg(all(test, windows))]
+#[path = "tests/windows/diagnostics.rs"]
+mod fixture_diagnostics;
 #[cfg(windows)]
 mod process;
 mod target;

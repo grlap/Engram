@@ -140,15 +140,15 @@ pub(super) async fn run_groups() {
         let supervisor_before = launches().1;
         let started = Instant::now();
         let result =
-            super::super::super::execute(command, RunLimits::default(), &Cancellation::default())
-                .await;
+            diagnostics::supervise(command, RunLimits::default(), &Cancellation::default()).await;
         let supervisor_ms = started.elapsed().as_millis();
-        assert!(
-            result.is_ok(),
-            "{} isolated configuration fixture failed at {}: {result:?}",
-            group.name,
-            fs::read_to_string(fixture.0.join("phase")).unwrap_or_default()
-        );
+        if let Err(report) = &result {
+            panic!(
+                "{} isolated configuration fixture failed at {}:\n{report}",
+                group.name,
+                fs::read_to_string(fixture.0.join("phase")).unwrap_or_default()
+            );
+        }
         assert_eq!(
             launches().1,
             supervisor_before + 1,
@@ -181,6 +181,7 @@ async fn configuration_fixture() {
         .find(|group| group.name == name)
         .expect("unknown owned configuration group");
     let mut budget = Budget::new(group);
+    let _trace = diagnostics::begin();
     let fixture = Fixture(PathBuf::from(
         std::env::var_os("ENGRAM_EXCHANGE_FIXTURE_ROOT").unwrap(),
     ));
