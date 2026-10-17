@@ -12,6 +12,7 @@ mod evidence_page;
 mod gate_evidence;
 mod next_ready;
 mod sessions;
+mod stale_binding;
 mod status;
 
 #[test]

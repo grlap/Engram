@@ -1785,6 +1785,9 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     assert.equal(stale.decision, "refuse");
     assert.equal(stale.directive.code, "stale_fence");
+    assert.equal(stale.directive.target, "host");
+    assert.equal(stale.directive.satisfaction, "host_transition");
+    assert.deepEqual(stale.directive.recovery_effects, ["observe"]);
 
     const reclaimed = cliWork(engramHome, actor, "update", {
       kind: "claim",
@@ -1806,6 +1809,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
     });
     assert.equal(staleBind.status, "error");
     assert.equal(staleBind.error.code, "stale_fence");
+    assert.match(staleBind.error.message, /reread the live claim and rebind/);
     const rebound = ok(
       await client.request({
         operation: "session_bind",
