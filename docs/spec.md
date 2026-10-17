@@ -732,27 +732,35 @@ task tree is fetched and reconciled first, never overwritten by force. A new
 machine imports the full committed tree once; subsequent transfers use changed
 task ids/paths. Initial export does not require an agent to read every task.
 
-TermAl remote collaboration can use this exchange: the remote agent claims
-locally, exports/pushes, and after confirmed publication notifies its peer with
-project, configured branch, commit and task id. The local peer pulls, merges
-and imports through its main checkout. Shared work-activity notices make the
-remote started/released/finished state visible even when notes are not exported;
-actual claims/fences/grants never travel. Each activity has a stable identity
-and origin-machine/actor provenance; its successive states use source-local
-ordering, not cross-machine timestamps. Imported notices are scheduling context,
-not local claims or fresh evidence. Concurrent/stale activity remains visible
-for agent reconciliation. Notifications trigger only explicitly authorized or
-deliberately configured collaboration actions, never implicit remote authority,
-and duplicate/delayed delivery cannot roll back newer imported state.
-The concrete configured remote-session/control notification route must be
-verified. TermAl's SSH remote sessions already exist, but remote agent mailbox
-access depends on its planned control-plane relay implementation. That design
-covers SSH executors attached to one control plane, not mailbox federation
-between two independent control-plane hosts.
-With Git alone, discover activity on the next explicit fetch, never by polling.
-The notified commit must belong to the fetched configured branch history.
-Route exchange to the main-checkout sync session under the existing gate/turn
-serialization. Renewals or unrecorded expiry do not create activity exports.
+TermAl remote collaboration can use this exchange: an agent claims locally,
+exports/pushes, and peers fetch, merge and import through their own main
+checkouts. Git task sync works independently of TermAl mailbox availability
+or implementation. Ordinary peer messages may coordinate this work, but
+carry no task-sync protocol: a message about a commit neither triggers an
+automatic import nor acknowledges task application. Publication and import
+recover from their own retained intents and the local atomic ImportReceipt;
+mailbox append, wake or acknowledgement receipts prove neither.
+
+Shared work-activity notices make remote started/released/finished state
+visible through Git even when notes are not exported; actual claims, fences
+and grants never travel. Each activity has a stable identity and
+origin-machine/actor provenance; its successive states use source-local
+ordering, not cross-machine timestamps. Imported notices are scheduling
+context, not local claims or fresh evidence. Concurrent/stale activity
+remains visible for agent reconciliation. Renewals or unrecorded expiry
+do not create activity exports.
+
+TermAl separately owns central session/mailbox coordination: one explicitly
+configured central TermAl host per coordination domain owns its mailboxes;
+satellite hosts use its API over OpenSSH. This does not centralize Engram
+or establish a task-sync notification route or dependency. Mailbox content
+grants no Git, import or execution authority.
+
+With Git alone, discover activity on the next explicit fetch, never by
+polling. A commit mentioned by a peer must be verified against the fetched
+configured branch history; ancestry alone does not prove that its changes
+were applied. Route exchange to the main-checkout sync session under the
+existing gate/turn serialization.
 
 Import validates the exact supported schema, stable identities, reference
 closure, graph invariants, missing-document refusal and lifecycle admission. It checks

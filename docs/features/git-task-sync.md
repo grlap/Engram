@@ -16,6 +16,12 @@ push proposals are not prerequisites for this feature. Local SQLite remains
 canonical on each machine. Divergent work is allowed; an external coding
 agent merges task text alongside code. Engram never calls a model.
 
+The model is host-neutral: N independently writable hosts on Windows, macOS or
+Linux reconcile through the same configured Git remote and ordinary code branch,
+then import locally. The shared Git remote is their meeting point, not an Engram authority;
+Engram has no hub. Platform transport/subprocess support must be verified per OS
+but does not change this model or transfer claims/runtime authority.
+
 ## User contract and Git layout
 
 Sync is optional and explicitly configured. Without configured export/sync,
@@ -27,6 +33,16 @@ Disabling sync stops exchange and leaves the local database usable and writable.
 It does not delete remote history. No release, ownership transfer, startup
 remote check or online lease is required. Separate machines may execute the
 same task; merging records cannot undo duplicate external effects.
+
+A joining host configures its own origin/store identity, stable project binding,
+authorized remote and branch, and explicit local opt-in/payload profile. It fetches
+published planning in the main checkout, validates project/profile, and performs
+an empty-target import preserving shared IDs and provenance. Its own origin stays
+local; the import receipt and applied commit/tree establish its comparison basis.
+Existing local tasks require reconciliation rather than replacement. No claim,
+grant, private scratch or native runtime authority transfers. Exact configuration
+syntax follows the implementing surface; this paragraph introduces no new shipped
+command. A TermAl enrollment/display association is not required for Git task sync.
 
 Use the same ordinary branch as code, not a separate data branch or plumbing
 ref. The proposed versioned interchange layout is:
@@ -184,23 +200,25 @@ agent; the importer applies the chosen result only through the above rules.
 
 ## Remote-agent collaboration through TermAl
 
-The selected workflow also supports a cooperating remote agent. An explicitly
-configured remote-session/control route coordinates agents; Git carries the
-task projection. TermAl already has SSH remote sessions and routes ordinary
-operator prompts to them. Agent mailbox participation by remote-backed sessions
-is a separate planned host capability: its remote-access design keeps mailboxes
-on one control-plane host and relays calls and wakes for that host's SSH
-executor remotes. That eligibility/relay implementation must land and the actual
-sender/receiver route must be verified before enabling these notifications.
-It does not provide peer-to-peer mailbox federation between two independent
-control-plane hosts; such hosts need a separately supported notification route.
-With Git alone, remote activity becomes visible on the next explicit fetch,
-not through polling or an assumed immediate message. The remote agent
-claims a task in its own machine's Engram, explicitly syncs its task data, then
-sends the local peer a notification naming project, configured branch,
-published commit and task id. The local peer fetches, merges its pending task
-and code changes, and imports the resolved tree in its main checkout. Neither
-notification receipt nor fetch alone means import succeeded.
+The selected workflow supports a cooperating remote agent with an independently
+writable Engram store on each host. The remote agent claims locally, exports
+activity and task changes, and pushes the ordinary code branch. The local peer
+fetches/pulls, merges code and task text, and imports the resolved tree in its
+main checkout. Remote activity becomes visible through explicit Git exchange.
+Fetch alone does not mean import succeeded; the ImportReceipt stays local.
+
+The [cross-host design](cross-host-task-sync.md) separates this Git workflow from
+TermAl coordination. One explicitly configured central TermAl host per
+coordination domain owns session coordination and all mailbox authority.
+Each satellite host runs native sessions through the central host's API over
+OpenSSH. The central TermAl host is the hub and satellite hosts are spokes.
+Each host's Engram remains
+independently writable. TermAl mailboxes carry ordinary coordination only; they
+carry no task-sync protocol. There are no typed publication hints, application
+responses or Engram mailbox-sync adapter. Prose such as "pushed commit X" may
+coordinate agents but has no protocol meaning. Git sync needs no mailbox step,
+and the two implementation workstreams are independent. Planned host routes
+require their own verification; this brief does not claim they are shipped.
 
 Actual claim ids/fences, grants, session bindings and execution authority remain
 local. To make the remote claim visible, include a dedicated informational
@@ -221,7 +239,7 @@ eligible for incremental export. Every activity has its own stable identity;
 a release/finish refers to that activity rather than clearing every actor's
 activity on the task. Preserve source-local ordering/provenance for successive
 states of that activity; do not order different machines by wall clocks.
-Concurrent activity on two machines remains visible for agent reconciliation.
+Concurrent activity on multiple machines remains visible for agent reconciliation.
 Imported notices never become new local claim events or re-export as a fresh
 activity from the importing machine.
 Claim renewal without a shared activity-state change produces no activity
@@ -238,23 +256,18 @@ Stale or competing activity requires peer/user reconciliation; do not silently
 expire it into a claimed global ownership guarantee. Shared task completion
 still uses the lifecycle mapping above, not the activity notice as evidence.
 
-Notify after publication is confirmed; an unknown push is not a published-state
-notification. Duplicate or delayed notifications cannot roll the local tree
-backward: require the notified commit to be reachable from the fetched tip of
-the already configured remote branch; otherwise ignore/report that notification
-as outside the current authorized branch history. Reconcile against the retained
-base/current tip and acknowledge
-application only after a successful import receipt. A notification is a hint
-to fetch from an already configured authorized target, never permission to
-trust an arbitrary URL, command or task-body instruction in a message. A local
-agent may perform the pull/merge under an explicit user action or a deliberately
-enabled bounded remote-collaboration workflow. No polling/background network
+An unknown push is not confirmed publication. Preserve its exact commit and
+reconcile against the retained base and fetched authorized branch history.
+Ordinary peer prose never authorizes an arbitrary URL, command or task-body
+instruction. A local agent may perform pull/merge under an explicit user action
+or a deliberately enabled bounded Git workflow. No polling/background network
 is introduced for projects that have not enabled it, and the sender does not
-grant the receiver new Git or host authority.
-The peer routes exchange to the main-checkout sync session; a coding session
-in a linked worktree does not import there. Notifications cannot bypass the
-existing main-checkout gate/turn serialization, and activity notices are tracked
-task bytes subject to the same frozen-input rules as every task-file update.
+grant the receiver new Git or host authority. Mailbox delivery and acknowledgement
+prove neither task application nor local runtime settlement.
+Exchange runs in the main-checkout sync session; a coding session in a linked
+worktree does not import there. The existing main-checkout gate/turn serialization
+still applies. Informational activity is tracked task text subject to the same
+frozen-input rules as every task-file update.
 
 ## Main checkout and linked worktrees
 
@@ -496,7 +509,7 @@ host release/acquire or TermAl restart is inherent in this selected design.
 
 Required implementation cases cover: initial 1,000-task export/import;
 incremental repeated edits and no-op re-export; every field/note/activity/relation
-change family; two independent offline writers; agent-resolved same-task and
+change family; multiple independent offline writers; agent-resolved same-task and
 terminal/open conflicts; graph validation and completion provenance; concurrent
 local edits during merge; interrupted commit/import/push with exact retry;
 non-fast-forward remote changes; clean committed incoming edits followed by
@@ -508,12 +521,28 @@ Also cover restricted omission, explicit widening and re-baselining;
 and Windows `core.autocrlf` checkout with no-op re-export. Restricted
 required-field omission is refused without clearing the local value;
 escaped CR/LF is preserved through the Windows no-op round-trip.
-Also cover remote claim → confirmed push → notification → local fetch/merge/import,
+Also cover remote claim → activity export → confirmed push → local fetch/merge/import,
 release/finish updates with notes disabled, concurrent remote/local claims,
-stale and out-of-order notices, unknown push, notification commits outside the
-configured branch history, unchanged renewals, source-separated activity maps,
-and no transfer of live authority. Verify the configured host notification route
-and its supported topology separately; Git-only discovery remains available.
+repeated fetch/import, unknown push, commits outside the configured branch
+history, unchanged renewals, source-separated activity maps, and no transfer of
+live authority. This Git pilot has no mailbox step or mailbox implementation
+dependency; TermAl verifies its ordinary coordination route separately.
+
+The minimum cross-host pilot uses at least three hosts. For example, A is Windows,
+B macOS, and C Linux or a second Windows host; the roles are OS-independent.
+After initial publish and empty-target imports, C goes offline while A and B make
+concurrent disjoint/overlapping edits and reconcile through Git. C also retains
+local edits, rejoins, fetches and merges its base/local/incoming task trees, then
+publishes/imports the resolved result. A and B fetch/merge/import that result.
+Verify shared projection convergence once all edits are reconciled, stable repeat
+imports, visible origin-qualified duplicate work, and no foreign authority.
+There is no mailbox step. Onboarding each satellite host verifies its Engram
+binary and automated Git transport/subprocess support on macOS, Linux or Windows.
+The current Mac endpoint is the first instance, not a special case. Once platform
+support exists, another satellite host joins through configuration and verification.
+Authorized manual Git is a bounded pilot route, not proof of automated platform
+support. Additional Engram peers join by the same process.
+A future capability/capacity cluster scheduler is separate deferred scope.
 
 The acceptance comparison must establish that an initial import followed by
 incremental export produces the same task projection, without feedback-loop
