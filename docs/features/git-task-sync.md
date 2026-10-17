@@ -211,7 +211,8 @@ The [cross-host design](cross-host-task-sync.md) separates this Git workflow fro
 TermAl coordination. One explicitly configured central TermAl host per
 coordination domain owns session coordination and all mailbox authority.
 Each satellite host runs native sessions through the central host's API over
-OpenSSH. The central TermAl host is the hub and satellite hosts are spokes.
+OpenSSH. The central TermAl host is TermAl's hub for sessions and mailboxes;
+satellite hosts are spokes.
 Each host's Engram remains
 independently writable. TermAl mailboxes carry ordinary coordination only; they
 carry no task-sync protocol. There are no typed publication hints, application
@@ -264,6 +265,9 @@ or a deliberately enabled bounded Git workflow. No polling/background network
 is introduced for projects that have not enabled it, and the sender does not
 grant the receiver new Git or host authority. Mailbox delivery and acknowledgement
 prove neither task application nor local runtime settlement.
+This describes target behavior. Automatic or background fetch and its bounded
+receive-and-import workflow remain deferred; the pilot uses explicit, authorized
+`git fetch` followed by import and reconciliation.
 Exchange runs in the main-checkout sync session; a coding session in a linked
 worktree does not import there. The existing main-checkout gate/turn serialization
 still applies. Informational activity is tracked task text subject to the same
@@ -536,10 +540,10 @@ local edits, rejoins, fetches and merges its base/local/incoming task trees, the
 publishes/imports the resolved result. A and B fetch/merge/import that result.
 Verify shared projection convergence once all edits are reconciled, stable repeat
 imports, visible origin-qualified duplicate work, and no foreign authority.
-There is no mailbox step. Onboarding each satellite host verifies its Engram
+There is no mailbox step. Onboarding each participating Engram host verifies its Engram
 binary and automated Git transport/subprocess support on macOS, Linux or Windows.
 The current Mac endpoint is the first instance, not a special case. Once platform
-support exists, another satellite host joins through configuration and verification.
+support exists, another Engram host joins through configuration and verification.
 Authorized manual Git is a bounded pilot route, not proof of automated platform
 support. Additional Engram peers join by the same process.
 A future capability/capacity cluster scheduler is separate deferred scope.

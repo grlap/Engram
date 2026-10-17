@@ -5,16 +5,20 @@
 > [acceptance evaluation](acceptance-evaluation.md), and
 > [shipped capabilities](../shipped.md).
 
-Status: design revised for Greg's accepted Q6 and separation of decentralized
-Engram task sync from central TermAl coordination, with a host-neutral N-host model.
-The revised wording awaits
-joint confirmation; remaining implementation and rollout decisions stay explicit.
-This brief defines the selected independent-writer boundary for first-class
-remote collaboration. It does not activate new implementation slices, remote
-configuration, migration, or a pilot. The breakdown below is a proposal for
-review; no new implementation items are filed or activated before the accepted
-decision's exact joint changes are confirmed and its slices authorized.
-Separately authorized work retains its existing scope.
+Status: design wording jointly confirmed by the Engram and TermAl coordinators
+on 2026-10-17 for decentralized Engram task sync and central TermAl coordination,
+with a host-neutral N-host model and the accepted
+[disconnected-work decision (Q6)](#recorded-decision-and-remaining-decisions).
+Greg authorized implementation of explicit Git exchange slices within their
+reviewed scopes on 2026-10-17. The planned pilot uses explicit, authorized
+`git fetch` followed by import and reconciliation. Automatic or background fetch,
+including the bounded receive-and-import workflow proposed to support it,
+remains deferred by Greg's direction of the same date.
+This brief records those decisions and the selected independent-writer boundary;
+it grants no authorization. Pilot activation, remote configuration, migration
+cutover and each implementation or rollout step retain their separate scope and
+authorization requirements. Separately authorized work retains its existing scope.
+[Remaining decisions](#recorded-decision-and-remaining-decisions) stay explicit.
 
 ## Product model and relationship to the earlier portable design
 
@@ -37,7 +41,7 @@ The model supports N independently writable hosts, including Windows, macOS and
 Linux. Each host has its own canonical SQLite store. All reconcile through the
 same explicitly configured Git remote and ordinary code branch, then local import.
 The shared Git remote is a meeting point, not an Engram authority: Engram has no hub.
-The central TermAl host is its hub for sessions and mailboxes;
+The central TermAl host is TermAl's hub for sessions and mailboxes;
 each satellite host is a spoke. This topology does not make their
 Engram stores subordinate or turn Git into a claim service.
 
@@ -112,7 +116,7 @@ The minimal per-host configuration is its own Engram origin/store identity, the
 stable project binding, the authorized Git remote and branch, and explicit local
 task-sync opt-in with the selected payload profile. Git access uses that host's
 authorized credentials; task text cannot provide enrollment or permission.
-Display association with a satellite host is optional and is not required to sync.
+Display association with a TermAl host is optional and is not required to sync.
 Exact configuration/API syntax belongs to the implementation; this is the required
 configuration contract, not a claim that new commands are shipped.
 
@@ -158,23 +162,63 @@ creating a fresh execution generation with no automatic claim. Neither an import
 completion nor a mailbox report imports report-publication authority or sends a report:
 publication remains a separate approved immutable payload/target/idempotency intent.
 
-Import into an existing native run follows approved model A, not the additive
-exchange-progress ledger. Model A has SharedImportVersion, ImportReceipt, candidate-bound
-ReconciliationHold, non-success SupersededByImport and durable heads/holds. Preserve its
-approved migration requirement and separate cutover decision. A completed native seal is
-immutable; incompatible subsequent planning is a later version/reconciliation, not rewritten
-proof.
+Import into an existing native run follows the approved existing-run import design
+(model A), separately from the additive exchange-progress ledger. Its records are:
+
+- `SharedImportVersion`: an immutable changed-task shared baseline and origin.
+- `ImportReceipt`: an immutable receipt bound to the exact operation key,
+  candidate, binding, base, resolved commit/tree, readset and result.
+- `ReconciliationHold`: an immutable candidate-bound hold denying new affected
+  claim, handoff, evaluation and admission, while permitting settlement,
+  checkpoint, evidence and holder-only release.
+- `SupersededByImport`: an audited non-success retirement retaining the old run's
+  evidence, never a completion seal.
+
+Imported-baseline heads and holds are durable. Preserve model A's full-store
+migration requirement and separate cutover decision. A completed native seal is
+immutable; incompatible subsequent planning is a later version/reconciliation,
+not rewritten proof.
+
+### Local host prerequisites
+
+The following labels name design prerequisites, not shipped host APIs:
+
+- **G1, host-proven responsibility and settlement:** a persisted,
+  candidate/hold/run-bound inventory and attestation of affected local host
+  execution, requests, checks and observations, renewed at final apply. Missing
+  or unreachable responsibility information remains pending; an empty Engram
+  query does not prove no responsibility.
+- **G2, hold-aware admission:** an enforced durable fence denying new affected
+  execution across queued admission, explicit prompts, boot reconstruction,
+  retry workers and late dispatch, while retaining queued requests.
+- **G3, original-operation recovery without first execution:** TermAl's half
+  retains the exact uncertain Evaluate/Begin intent and fences dispatch/recovery.
+  Engram's half serializes original application against retirement and outcome
+  recovery; every first-application path checks the authoritative terminal result.
+  A positively unsent request may be retired by its exact owner under the fence.
+  A possibly sent request requires serialized authoritative terminal settlement;
+  a missing outcome alone remains pending and cannot justify deletion or replay
+  that first executes work.
+
+Both G3 halves are required. Existing `turn_grant_read` alone cannot resolve a
+lost Evaluate without a grant id or prevent late first application. A fresh ready
+acknowledgement does not guarantee continuing process liveness: persistent
+fencing must survive crashes, orphan processes and late dispatch.
 
 G1/G2/G3 protect admission and settlement of affected local execution; they do not
 elect a cross-host writer, synchronize claims or require unrelated remote peers
 to surrender independently held work. A local admission hold is not a distributed
 task lock.
 
-Stage 1 refusal is candidate/scope-local: affected native-run changes requiring TermAl
+Stage 1 is the model-A delivery limited to
+[independently admissible planning](#admissible-divergent-import).
+Its refusal is candidate/scope-local: affected native-run changes requiring TermAl
 responsibility/settlement stay retained/refused. Missing positive knowledge of complete
 responsibility is pending, never proof of no responsible host. Unchanged compatible
 planning, independent notes and disjoint work remain admissible only where their own local
-basis permits. Stage 2 requires G1/G2 plus BOTH G3 halves: hold -> settle exact original
+basis permits. Stage 2 is the [active-reconciliation delivery](#active-reconciliation).
+It requires G1/G2
+plus both G3 halves: hold -> settle exact original
 requests under persistent fencing -> holders release their own claims -> settle
 release-induced cleanup -> fresh scope/readset barrier -> atomic apply. Missing Begin
 outcome, elapsed time, crash, a mailbox ACK or “peer ready” do not prove settlement.
@@ -305,11 +349,11 @@ inferred. There is no mailbox step or mailbox implementation prerequisite.
 Unaffected planning can sync; incompatible active cases remain visibly retained
 or refused until active reconciliation is delivered.
 
-Onboarding each satellite host requires an Engram binary and automated Git
+Onboarding each participating Engram host requires an Engram binary and automated Git
 exchange transport/subprocess support verified on that host's platform: macOS,
 Linux or Windows. The current Mac endpoint is the first instance, not a special
 case. Platform lanes provide this support without changing the model; once the
-platform is supported, adding a satellite host is configuration plus verification.
+platform is supported, adding another Engram host is configuration plus verification.
 Explicitly authorized manual Git
 can carry a bounded pilot in the meantime; it is not proof of automated exchange.
 A fake transport success never establishes a supported real platform.
@@ -344,8 +388,9 @@ model-A and host G3 work.
 ## Recorded decision and remaining decisions
 
 Independent-writer task sync is the selected first-class planning model; portable
-store-handoff remains separate and inactive. Greg accepted Q6. Recorded Advisor
-relay, 2026-10-17:
+store-handoff remains separate and inactive. The disconnected-work decision (Q6)
+means that Greg accepts duplicate task work while hosts are disconnected.
+Recorded Advisor relay, 2026-10-17:
 
 > Greg accepted Q6 YES: disconnected hosts may duplicate task work.
 
@@ -364,7 +409,8 @@ task-sync protocol or dependency on mailbox delivery.
 Confirm staged pilot can first coordinate/admit supported planning while retaining active
 conflicts, without calling that full active reconciliation.
 
-Existing P0 landing rules remain: data-only commits have no new exemption; mixed task/code
+The [current source-landing rules](git-task-sync.md#data-commits-and-source-landing-policy)
+remain: data-only commits have no new exemption; mixed task/code
 input is frozen/gated together. Remote merger authority and per-platform validation are
 separate reviewed decisions. New scope has no reliable calendar estimate until the
 Engram origin, integration and platform decomposition settle; the earlier 12–20 Engram
