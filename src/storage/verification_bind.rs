@@ -2,8 +2,8 @@
 //! session holds. Routing, replay and the control-operation record live
 //! here; the validation and the writes live in the work store.
 
+use super::control_runtime::control_lifecycle_transaction;
 use chrono::{DateTime, Utc};
-use rusqlite::TransactionBehavior;
 use serde::{Deserialize, Serialize};
 
 use super::{SqliteStore, StoreError, work};
@@ -115,43 +115,46 @@ impl SqliteStore {
     ) -> Result<VerificationBindReceipt, StoreError> {
         let intent =
             CanonicalObject::freeze(&VerificationBindIntent::new(project_id, session_id, input))?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let session = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        Self::verify_control_session(&session, project_id, routing_token)?;
-        if let Some(mut replay) = Self::replay_control_operation::<VerificationBindReceipt>(
-            &transaction,
-            session_id,
-            VERIFICATION_BIND_OPERATION,
-            &input.idempotency_key,
-            intent.key(),
-        )? {
-            transaction.commit()?;
-            replay.replayed = true;
-            return Ok(replay);
-        }
-        match work::bind_verification_on(&transaction, project_id, session_id, binder, input, now)?
-        {
-            work::VerificationBindOutcome::Bound(receipt) => {
-                Self::persist_control_operation(
-                    &transaction,
-                    session_id,
-                    VERIFICATION_BIND_OPERATION,
-                    &input.idempotency_key,
-                    &intent,
-                    &receipt,
-                    now,
-                )?;
-                transaction.commit()?;
-                Ok(receipt)
+        control_lifecycle_transaction(&mut self.connection, |transaction| {
+            Self::verify_control_connection(transaction, session_id, connection_token)?;
+            let session = Self::load_control_session_on(transaction, session_id)?
+                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+            Self::verify_control_session(&session, project_id, routing_token)?;
+            if let Some(mut replay) = Self::replay_control_operation::<VerificationBindReceipt>(
+                transaction,
+                session_id,
+                VERIFICATION_BIND_OPERATION,
+                &input.idempotency_key,
+                intent.key(),
+            )? {
+                replay.replayed = true;
+                return Ok(replay);
             }
-            // Dropping the transaction rolls back; nothing was written.
-            work::VerificationBindOutcome::Refused(refusal) => {
-                Err(StoreError::VerificationBindRefused(Box::new(refusal)))
+            match work::bind_verification_on(
+                transaction,
+                project_id,
+                session_id,
+                binder,
+                input,
+                now,
+            )? {
+                work::VerificationBindOutcome::Bound(receipt) => {
+                    Self::persist_control_operation(
+                        transaction,
+                        session_id,
+                        VERIFICATION_BIND_OPERATION,
+                        &input.idempotency_key,
+                        &intent,
+                        &receipt,
+                        now,
+                    )?;
+                    Ok(receipt)
+                }
+                // The wrapper drops the transaction on refusal; nothing was written.
+                work::VerificationBindOutcome::Refused(refusal) => {
+                    Err(StoreError::VerificationBindRefused(Box::new(refusal)))
+                }
             }
-        }
+        })
     }
 }

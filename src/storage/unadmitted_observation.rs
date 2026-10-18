@@ -3,8 +3,8 @@
 //! grant, a begin or a turn result. An identical retry under the same
 //! observing session and key returns the original receipt.
 
+use super::control_runtime::control_lifecycle_transaction;
 use chrono::{DateTime, Utc};
-use rusqlite::TransactionBehavior;
 use serde::Serialize;
 
 use super::{CONTROL_SCHEMA_VERSION, SessionId, SqliteStore, StoreError, work};
@@ -198,137 +198,134 @@ impl SqliteStore {
         now: DateTime<Utc>,
     ) -> Result<ExecutionObservationReceipt, StoreError> {
         let intent = CanonicalObject::freeze(&ExecutionObserveIntent::of(session_id, &input))?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::verify_control_connection(&transaction, session_id, connection_token)?;
-        let session = Self::load_control_session_on(&transaction, session_id)?
-            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
-        Self::verify_control_session(&session, project_id, routing_token)?;
-        // A committed record replays before anything mutable is consulted.
-        if let Some(replay) = Self::replay_control_operation(
-            &transaction,
-            session_id,
-            EXECUTION_OBSERVE_OPERATION,
-            &input.idempotency_key,
-            intent.key(),
-        )? {
-            transaction.commit()?;
-            return Ok(replay);
-        }
-        input
-            .validate_shape(now)
-            .map_err(StoreError::ExecutionObservationInvalid)?;
-        // New host source text only: a stored record re-validates its shape
-        // without this rule and keeps reading as stored. The endpoint's own
-        // invalid-request code is kept, which the host already handles.
-        for (field, text) in input.source_texts() {
-            if crate::domain::holds_refused_source_text(text) {
-                return Err(StoreError::ExecutionObservationInvalid(format!(
-                    "{field} holds a control or bidirectional formatting character"
-                )));
+        control_lifecycle_transaction(&mut self.connection, |transaction| {
+            Self::verify_control_connection(transaction, session_id, connection_token)?;
+            let session = Self::load_control_session_on(transaction, session_id)?
+                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+            Self::verify_control_session(&session, project_id, routing_token)?;
+            // A committed record replays before anything mutable is consulted.
+            if let Some(replay) = Self::replay_control_operation(
+                transaction,
+                session_id,
+                EXECUTION_OBSERVE_OPERATION,
+                &input.idempotency_key,
+                intent.key(),
+            )? {
+                return Ok(replay);
             }
-        }
-        let idempotency_key = input.idempotency_key.clone();
-        if let ObservationPolicyBasis::AccountIfEligible {
-            project_policy_epoch,
-            policy,
-            obligation_rule_set,
-        } = &input.policy_basis
-        {
-            let active = Self::load_active_control_policy(&transaction)?;
-            if active.epoch != *project_policy_epoch
-                || active.policy_id != *policy
-                || active.obligation_rule_set != *obligation_rule_set
+            input
+                .validate_shape(now)
+                .map_err(StoreError::ExecutionObservationInvalid)?;
+            // New host source text only: a stored record re-validates its shape
+            // without this rule and keeps reading as stored. The endpoint's own
+            // invalid-request code is kept, which the host already handles.
+            for (field, text) in input.source_texts() {
+                if crate::domain::holds_refused_source_text(text) {
+                    return Err(StoreError::ExecutionObservationInvalid(format!(
+                        "{field} holds a control or bidirectional formatting character"
+                    )));
+                }
+            }
+            let idempotency_key = input.idempotency_key.clone();
+            if let ObservationPolicyBasis::AccountIfEligible {
+                project_policy_epoch,
+                policy,
+                obligation_rule_set,
+            } = &input.policy_basis
             {
-                return Err(StoreError::ExecutionObservationPolicyBasisMismatch(
-                    format!(
-                        "the project's current policy is epoch {} policy {} with obligation rule set {}",
-                        active.epoch.0, active.policy_id, active.obligation_rule_set
-                    ),
-                ));
+                let active = Self::load_active_control_policy(transaction)?;
+                if active.epoch != *project_policy_epoch
+                    || active.policy_id != *policy
+                    || active.obligation_rule_set != *obligation_rule_set
+                {
+                    return Err(StoreError::ExecutionObservationPolicyBasisMismatch(
+                        format!(
+                            "the project's current policy is epoch {} policy {} with obligation rule set {}",
+                            active.epoch.0, active.policy_id, active.obligation_rule_set
+                        ),
+                    ));
+                }
             }
-        }
-        let cut = input.root_basis.capture_run_cut;
-        let claim_epoch_event =
-            work::historical_claim_epoch_on(&transaction, project_id, &input.binding, cut)?;
-        work::check_root_basis_on(&transaction, &input.binding, &input.root_basis)?;
-        let occurrence = RecordedOccurrence::record(input.occurrence);
-        if let Some(sighting) = occurrence
-            .source_change()
-            .and_then(|change| change.sighting())
-        {
-            work::check_sighting_matches_root_basis_on(
-                &transaction,
-                &input.binding,
-                &input.root_basis,
-                &sighting.source_basis,
-            )?;
-        }
-        for check in occurrence.checks() {
-            if let Some(basis) = &check.check.source_basis {
-                work::check_source_root_at_cut_on(
-                    &transaction,
+            let cut = input.root_basis.capture_run_cut;
+            let claim_epoch_event =
+                work::historical_claim_epoch_on(transaction, project_id, &input.binding, cut)?;
+            work::check_root_basis_on(transaction, &input.binding, &input.root_basis)?;
+            let occurrence = RecordedOccurrence::record(input.occurrence);
+            if let Some(sighting) = occurrence
+                .source_change()
+                .and_then(|change| change.sighting())
+            {
+                work::check_sighting_matches_root_basis_on(
+                    transaction,
                     &input.binding,
-                    basis,
-                    cut,
-                    &format!("observed check {:?}", check.check.host_check_id),
+                    &input.root_basis,
+                    &sighting.source_basis,
                 )?;
             }
-        }
-        let accounting = match &input.policy_basis {
-            ObservationPolicyBasis::AuditOnly {} => ObservationAccounting::AuditOnly {
-                reason: ObservationAuditReason::ExplicitAudit,
-            },
-            ObservationPolicyBasis::AccountIfEligible { .. } => work::decide_accounting_on(
-                &transaction,
-                &input.binding,
-                &input.root_basis,
-                occurrence.source_change(),
-                work::current_run_feed_cut_on(&transaction, input.binding.run_id)?.position,
-            )?,
-        };
-        let observation = UnadmittedExecutionObservation {
-            schema_version: UNADMITTED_EXECUTION_OBSERVATION_SCHEMA_VERSION,
-            project_id: project_id.clone(),
-            observing_session: session_id.clone(),
-            observer: observer.clone(),
-            binding: input.binding,
-            claim_epoch_event,
-            root_basis: input.root_basis,
-            observed_interval: input.observed_interval,
-            occurrence,
-            causality: input.causality,
-            policy_basis: input.policy_basis,
-            admission: ObservationAdmission::Unadmitted,
-            accounting,
-            recorded_at: now,
-        };
-        let (observation_id, position) =
-            work::append_unadmitted_observation_on(&transaction, &observation)?;
-        let opened = work::open_unadmitted_obligations_on(
-            &transaction,
-            &observation_id,
-            &observation,
-            &position,
-        )?;
-        let receipt = receipt_of(&observation, observation_id, position, opened);
-        let receipt_bytes = crate::canonical::canonical_bytes(&receipt)?;
-        if receipt_bytes.len() > MAX_EXECUTION_OBSERVE_RESULT_BYTES {
-            return Err(StoreError::ExecutionObservationInvalid(format!(
-                "the receipt would exceed {MAX_EXECUTION_OBSERVE_RESULT_BYTES} bytes; nothing was recorded"
-            )));
-        }
-        Self::persist_control_operation(
-            &transaction,
-            session_id,
-            EXECUTION_OBSERVE_OPERATION,
-            &idempotency_key,
-            &intent,
-            &receipt,
-            now,
-        )?;
-        transaction.commit()?;
-        Ok(receipt)
+            for check in occurrence.checks() {
+                if let Some(basis) = &check.check.source_basis {
+                    work::check_source_root_at_cut_on(
+                        transaction,
+                        &input.binding,
+                        basis,
+                        cut,
+                        &format!("observed check {:?}", check.check.host_check_id),
+                    )?;
+                }
+            }
+            let accounting = match &input.policy_basis {
+                ObservationPolicyBasis::AuditOnly {} => ObservationAccounting::AuditOnly {
+                    reason: ObservationAuditReason::ExplicitAudit,
+                },
+                ObservationPolicyBasis::AccountIfEligible { .. } => work::decide_accounting_on(
+                    transaction,
+                    &input.binding,
+                    &input.root_basis,
+                    occurrence.source_change(),
+                    work::current_run_feed_cut_on(transaction, input.binding.run_id)?.position,
+                )?,
+            };
+            let observation = UnadmittedExecutionObservation {
+                schema_version: UNADMITTED_EXECUTION_OBSERVATION_SCHEMA_VERSION,
+                project_id: project_id.clone(),
+                observing_session: session_id.clone(),
+                observer: observer.clone(),
+                binding: input.binding,
+                claim_epoch_event,
+                root_basis: input.root_basis,
+                observed_interval: input.observed_interval,
+                occurrence,
+                causality: input.causality,
+                policy_basis: input.policy_basis,
+                admission: ObservationAdmission::Unadmitted,
+                accounting,
+                recorded_at: now,
+            };
+            let (observation_id, position) =
+                work::append_unadmitted_observation_on(transaction, &observation)?;
+            let opened = work::open_unadmitted_obligations_on(
+                transaction,
+                &observation_id,
+                &observation,
+                &position,
+            )?;
+            let receipt = receipt_of(&observation, observation_id, position, opened);
+            let receipt_bytes = crate::canonical::canonical_bytes(&receipt)?;
+            if receipt_bytes.len() > MAX_EXECUTION_OBSERVE_RESULT_BYTES {
+                return Err(StoreError::ExecutionObservationInvalid(format!(
+                    "the receipt would exceed {MAX_EXECUTION_OBSERVE_RESULT_BYTES} bytes; nothing was recorded"
+                )));
+            }
+            Self::persist_control_operation(
+                transaction,
+                session_id,
+                EXECUTION_OBSERVE_OPERATION,
+                &idempotency_key,
+                &intent,
+                &receipt,
+                now,
+            )?;
+            Ok(receipt)
+        })
     }
 }

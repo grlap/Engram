@@ -1676,6 +1676,46 @@ host-control alpha can authorize only a declared local-mutation *turn*; it
 cannot authorize an individual tool action, shared/external effects, lifecycle
 transitions, or finalization.
 
+### Control request allowance
+
+The control producer gives each input frame a fixed 15,000-millisecond
+cooperative allowance, measured from its first available byte. It takes no
+new request field. Admission checks the same monotonic allowance before
+dispatch, before `BEGIN IMMEDIATE`, after acquisition, and before `COMMIT`.
+The connection's current SQLite busy timeout is capped by the remaining
+allowance and restored after the attempt; this does not make a native wait
+or filesystem call preemptible.
+
+`control_request_expired` certifies that this invocation committed no changes:
+the transaction was not entered, or explicit rollback succeeded before
+`COMMIT`. Its message says to retry only the same retained request and
+idempotency key on the current connection with a still-valid binding. It
+does not clear uncertainty about an earlier attempt with that key, prove
+that the request was unsent, or certify that no process started.
+The existing `control_store_busy` classification remains distinct. Failed
+rollback and failed `COMMIT` retain `storage_error`.
+
+An exact retry can expire again: the operation's own work may exceed the
+allowance, so retrying cannot be assumed to make progress. Hosts must bound
+their automatic retries. If expiry repeats within that bound, retain the
+request, its original key if any, the report and any earlier uncertainty,
+then escalate for diagnosis instead of retrying without limit. Repeated
+expiry alone does not identify a slow phase; it authorizes neither a
+changed payload or key nor a fresh grant or binding. An exhausted retry
+bound does not discard the report or settle an earlier attempt.
+
+Once `COMMIT` starts, the producer lets it settle and returns that result
+even when the allowance elapsed. A storage stall inside `COMMIT` or response
+flush cannot be preempted. If the host deadline expires without a reply, the
+outcome remains unknown until exact-key reconciliation succeeds; the host
+must never infer `control_request_expired` from its own timeout. A late or
+lost successful response is recovered from the original stored operation
+result, without applying a duplicate Begin or checkpoint. Process replacement
+and expired bindings still follow their existing reconciliation rules.
+This is a cooperative pre-commit bound and eventual settlement contract,
+not a promise of delivery within 15 seconds under arbitrary OS or I/O stalls.
+Startup before the first frame is outside this allowance.
+
 ### Opt-in control phase trace
 
 `ENGRAM_MCP_PHASE_TRACE=1` in the environment of `engram control` when it

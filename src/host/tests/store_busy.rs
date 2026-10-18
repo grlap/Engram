@@ -4,6 +4,8 @@ use rusqlite::Connection;
 
 use super::*;
 
+mod request_budget;
+
 struct Fixture {
     server: HostControlServer,
     observer: Connection,

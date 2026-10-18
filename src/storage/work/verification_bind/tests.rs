@@ -24,6 +24,8 @@ use crate::storage::test_support::bind_control_for;
 use crate::storage::{SqliteStore, StoreError};
 use crate::{DevelopmentNoopRedactor, ObjectId};
 
+mod request_budget;
+
 const ROOT: &str = "workspace-root";
 const HOLDER: &str = "runner";
 

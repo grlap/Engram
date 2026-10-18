@@ -5,6 +5,7 @@ mod acceptance_verification_read;
 mod control_grant_read;
 mod control_inspection;
 mod control_runtime;
+pub(crate) use control_runtime::request_budget::ControlRequestScope;
 mod control_support;
 mod doctor;
 mod fts_verification;
@@ -1254,6 +1255,10 @@ pub enum StoreError {
         #[source]
         source: Box<rusqlite::Error>,
     },
+    #[error(
+        "Control request allowance expired before commit; this attempt committed no changes. Retry only the same retained request and idempotency key on the current connection with a still-valid binding. Earlier uncertain attempts remain unresolved."
+    )]
+    ControlRequestExpired,
     #[error("SQLite writer admission refused ({reason}): {source}")]
     WorkWriterAdmissionRefused {
         reason: WorkWriterAdmissionReason,

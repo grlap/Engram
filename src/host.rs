@@ -327,6 +327,7 @@ impl HostControlServer {
         reason = "the tagged host protocol stays auditable as one exhaustive dispatch"
     )]
     pub fn handle(&mut self, request: HostControlRequest) -> Result<Value, StoreError> {
+        let _budget = crate::storage::ControlRequestScope::ensure()?;
         let now = Utc::now();
         match request {
             HostControlRequest::SessionBind {
@@ -692,6 +693,9 @@ impl HostControlServer {
                 return Ok(());
             }
             self.diagnostic_sequence = self.diagnostic_sequence.saturating_add(1);
+            // The first byte is available. Keep parsing and all transaction
+            // admission on this frame's allowance; do not reset it at dispatch.
+            let _budget = crate::storage::ControlRequestScope::frame();
             self.diagnostic_frame = self
                 .diagnostics
                 .as_ref()
@@ -996,6 +1000,7 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
 pub fn store_error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::ControlStoreBusy { .. } => "control_store_busy",
+        StoreError::ControlRequestExpired => "control_request_expired",
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::InvalidControlSession(_) => "invalid_control_session",
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",

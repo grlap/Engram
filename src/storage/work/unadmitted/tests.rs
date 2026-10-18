@@ -21,6 +21,7 @@ mod doctor;
 mod matching;
 mod readers;
 mod refusals;
+mod request_budget;
 
 pub(super) struct Fixture {
     pub(super) store: SqliteStore,

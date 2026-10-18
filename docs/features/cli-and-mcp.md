@@ -3404,6 +3404,24 @@ idempotent replay, so a busy reply does not prove that an earlier invocation
 with that key failed to commit or that its turn never began. Preserve prior
 uncertainty and exact replay or reconciliation; stale authority stays held.
 
+`control_request_expired` can be returned by every control operation:
+`session_bind`, `session_status`, `turn_evaluate`, `turn_begin`,
+`turn_checkpoint`, `named_root_bind`, `execution_observe`, `verification_bind`
+and the read operations. Reads check the allowance only before dispatch.
+The code certifies only that this invocation committed no changes, because
+no transaction started or explicit rollback succeeded before `COMMIT`.
+Retry only the exact retained operation and unchanged payload, with its
+original idempotency key if it has one, on the current connection with a
+still-valid binding. A bind retains its original request even when no
+binding exists yet. Preserve the exact grant, tokens, report and intent;
+the refusal neither closes a grant nor authorizes a fresh bind, evaluation,
+begin or provider delivery. It does not resolve an earlier uncertain
+attempt, prove the request was unsent or mean that no process started.
+A host timeout without this response remains unknown. For the cooperative
+15-second allowance, late commit settlement and bounded escalation after
+repeated expiry, see
+[Control request allowance](behavioral-control-plane.md#control-request-allowance).
+
 `turn_checkpoint.observations` accepts at most 64 host facts containing
 `observation_id`, `action_fingerprint`, `effect`, `outcome`, and
 `source_changed`. An observation may also carry

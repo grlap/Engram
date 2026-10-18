@@ -180,6 +180,9 @@ impl Fault {
             "stale_fence" => "Recover the current claim before retrying.",
             "grant_expired" | "grant_not_begun" => "Evaluate and begin a fresh turn.",
             "grant_scope_mismatch" => "Recover the current grant and its declared scope.",
+            "control_request_expired" => {
+                "Retry the exact retained control request with a still-valid binding; preserve earlier uncertainty."
+            }
             "send_failed" | "transport_failed" => "Inspect the host transport and connection.",
             "shutdown_overrun" => "Inspect the last observed shutdown milestone.",
             "slow_call" => "Compare server timing with host-side observations.",
