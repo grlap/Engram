@@ -77,17 +77,21 @@ impl Fixture {
 
     fn blocked_attempt(&mut self, request: &Value) {
         let before = self.snapshot();
+        assert!(self.server.store.test_is_autocommit());
         self.observer.execute_batch("BEGIN IMMEDIATE").unwrap();
         let reply = self.wire(request);
+        assert!(self.server.store.test_is_autocommit());
         self.observer.execute_batch("ROLLBACK").unwrap();
         assert_eq!(self.snapshot(), before);
         assert_eq!(reply["status"], "error", "{reply}");
         assert_eq!(reply["error"]["code"], "control_store_busy", "{reply}");
         let message = reply["error"]["message"].as_str().unwrap();
         assert!(message.contains("this attempt committed no changes"));
-        assert!(message.contains("the same idempotency key"));
+        assert!(message.contains("the same idempotency key if the request has one"));
         assert!(message.contains("the same control connection"));
         assert!(message.contains("prior replay or reconciliation uncertainty"));
+        assert!(!message.contains("SQLite"));
+        assert!(!message.contains("database is locked"));
     }
 
     fn blocked_then_exact_retry(&mut self, request: &Value) {
@@ -124,6 +128,104 @@ fn begin_frame(routing: &str, grant: &str) -> Value {
     })
 }
 
+fn status_frame(routing: &str) -> Value {
+    serde_json::json!({"operation": "session_status", "routing_token": routing})
+}
+
+#[test]
+fn control_store_busy_status_preserves_ready_issued_and_begun_states() {
+    let mut fixture = Fixture::new();
+    let routing = fixture.bind();
+    let request = status_frame(&routing);
+    let ready = fixture.success(&request);
+    fixture.blocked_attempt(&request);
+    assert_eq!(fixture.success(&request), ready);
+
+    let grant = fixture.issue(&routing);
+    for begun in [false, true] {
+        if begun {
+            fixture.success(&begin_frame(&routing, &grant));
+        }
+        let before = fixture.snapshot();
+        fixture.blocked_attempt(&request);
+        let status = fixture.success(&request);
+        assert_eq!(status["phase"], "turn_open");
+        assert_eq!(status["open_grant_id"], grant);
+        assert_eq!(
+            status["open_grant_state"],
+            if begun { "begun" } else { "issued" }
+        );
+        assert_eq!(fixture.success(&request), status);
+        assert_eq!(fixture.snapshot(), before);
+    }
+}
+
+#[test]
+fn control_store_busy_status_expires_unbegun_grant_only_after_unlock() {
+    let mut fixture = Fixture::new();
+    // Seed valid historical records through the store's explicit clock. The
+    // wire status call uses real time; no sleeps or edited grant rows are needed.
+    let issued_at = Utc::now() - chrono::TimeDelta::days(1);
+    let actor = fixture
+        .server
+        .actor("session_bind", "bind an expiry fixture");
+    let bound = fixture
+        .server
+        .store
+        .bind_control_session(
+            &fixture.server.project_id,
+            "busy-anchor",
+            "busy",
+            &fixture.server.session_id,
+            &fixture.server.connection_token,
+            &actor,
+            ControlAssurance::TurnGated,
+            &[EffectClass::Observe],
+            1,
+            "bind",
+            issued_at,
+        )
+        .unwrap();
+    let intent = TurnIntent {
+        idempotency_key: "expired".into(),
+        intent_fingerprint: ObjectId::from_canonical_bytes(b"expired"),
+        purpose: None,
+        requested_effects: vec![EffectClass::Observe],
+        resource_intents: vec![],
+    };
+    let decision = fixture
+        .server
+        .store
+        .evaluate_control_turn(
+            &fixture.server.project_id,
+            &fixture.server.session_id,
+            &fixture.server.connection_token,
+            &bound.routing_token,
+            &intent,
+            issued_at,
+        )
+        .unwrap();
+    let crate::domain::ControlTurnDecision::Grant { grant } = decision else {
+        panic!("expected an issued historical grant");
+    };
+    assert!(grant.basis.expires_at < Utc::now());
+    let read_grant = serde_json::json!({
+        "operation": "turn_grant_read", "routing_token": bound.routing_token,
+        "grant_id": grant.grant_id
+    });
+    assert_eq!(fixture.success(&read_grant)["state"], "issued");
+    let request = status_frame(&bound.routing_token);
+    fixture.blocked_attempt(&request);
+    assert_eq!(fixture.success(&read_grant)["state"], "issued");
+    let status = fixture.success(&request);
+    assert_eq!(status["phase"], "ready");
+    assert!(status["open_grant_id"].is_null());
+    assert_eq!(fixture.success(&read_grant)["state"], "expired");
+    let applied = fixture.snapshot();
+    assert_eq!(fixture.success(&request), status);
+    assert_eq!(fixture.snapshot(), applied);
+}
+
 #[test]
 fn control_store_busy_session_bind_preserves_unbound_and_existing_grants() {
     let mut fixture = Fixture::new();
@@ -154,15 +256,17 @@ fn control_store_busy_begin_preserves_the_exact_grant() {
 
 #[test]
 fn control_store_busy_checkpoint_preserves_the_begun_turn() {
-    let mut fixture = Fixture::new();
-    let routing = fixture.bind();
-    let grant = fixture.issue(&routing);
-    fixture.success(&begin_frame(&routing, &grant));
-    let request = serde_json::json!({
-        "operation": "turn_checkpoint", "routing_token": routing, "grant_id": grant,
-        "next_intent": "continue", "idempotency_key": "checkpoint"
-    });
-    fixture.blocked_then_exact_retry(&request);
+    for next_intent in ["continue", "exit"] {
+        let mut fixture = Fixture::new();
+        let routing = fixture.bind();
+        let grant = fixture.issue(&routing);
+        fixture.success(&begin_frame(&routing, &grant));
+        let request = serde_json::json!({
+            "operation": "turn_checkpoint", "routing_token": routing, "grant_id": grant,
+            "next_intent": next_intent, "idempotency_key": "checkpoint"
+        });
+        fixture.blocked_then_exact_retry(&request);
+    }
 }
 
 #[test]
@@ -186,6 +290,7 @@ fn control_store_busy_does_not_reclassify_other_sqlite_errors() {
         rusqlite::ffi::SQLITE_LOCKED,
         rusqlite::ffi::SQLITE_LOCKED_SHAREDCACHE,
         rusqlite::ffi::SQLITE_IOERR,
+        rusqlite::ffi::SQLITE_CORRUPT,
         rusqlite::ffi::SQLITE_CONSTRAINT,
         rusqlite::ffi::SQLITE_READONLY,
     ] {

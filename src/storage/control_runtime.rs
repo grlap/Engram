@@ -563,7 +563,7 @@ impl SqliteStore {
         routing_token: &str,
         now: DateTime<Utc>,
     ) -> Result<ControlSessionStatus, StoreError> {
-        control_lifecycle_transaction(&mut self.connection, |transaction| {
+        control_transaction(&mut self.connection, |transaction| {
             Self::verify_control_connection(transaction, session_id, connection_token)?;
             let mut stored = Self::load_control_session_on(transaction, session_id)?
                 .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
@@ -572,8 +572,7 @@ impl SqliteStore {
                 stored = Self::load_control_session_on(transaction, session_id)?
                     .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
             }
-            let status = Self::control_session_status_on(transaction, &stored)?;
-            Ok(status)
+            Self::control_session_status_on(transaction, &stored)
         })
     }
     /// Invalidates authority that was issued but never begun when a new

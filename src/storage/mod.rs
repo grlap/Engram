@@ -1219,7 +1219,8 @@ pub struct MissingMemorySection {
 
 pub(crate) const CONTROL_STORE_BUSY_MESSAGE: &str = concat!(
     "transient control store contention; this attempt committed no changes; ",
-    "retry the exact same request with the same idempotency key on the same control connection; ",
+    "retry the exact same request on the same control connection, ",
+    "with the same idempotency key if the request has one; ",
     "preserve the still-valid binding and prior replay or reconciliation uncertainty"
 );
 
