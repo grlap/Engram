@@ -14,6 +14,7 @@ struct Record {
     began: Instant,
     steps: Vec<String>,
     busy: Busy,
+    admissions: u64,
 }
 
 /// Fixed-size observations; callback iterations never append to `steps`.
@@ -23,6 +24,7 @@ struct Busy {
     first_entry: Option<Duration>,
     last_entry: Option<Duration>,
     last_return: Option<Duration>,
+    /// Largest gap between callbacks in one SQLite busy-handler counter sequence.
     max_outside: Duration,
     sleeps: u64,
     max_sleep: Duration,
@@ -30,11 +32,13 @@ struct Busy {
 }
 
 impl Busy {
-    fn enter(&mut self, at: Duration) {
+    fn enter(&mut self, count: i32, at: Duration) {
         self.calls = self.calls.saturating_add(1);
         self.first_entry.get_or_insert(at);
         self.last_entry = Some(at);
-        if let Some(previous) = self.last_return {
+        if count > 0
+            && let Some(previous) = self.last_return
+        {
             self.max_outside = self.max_outside.max(at.saturating_sub(previous));
         }
     }
@@ -63,6 +67,7 @@ pub(crate) fn start() {
             began: Instant::now(),
             steps: Vec::new(),
             busy: Busy::default(),
+            admissions: 0,
         });
     });
 }
@@ -80,6 +85,19 @@ pub(crate) fn mark(step: impl FnOnce() -> String) {
 
 pub(crate) fn recording() -> bool {
     RECORD.with(|record| record.borrow().is_some())
+}
+
+/// Counts admission entries independently of progress callbacks and step text.
+pub(crate) fn admission_entered() {
+    RECORD.with(|record| {
+        if let Some(record) = record.borrow_mut().as_mut() {
+            record.admissions = record.admissions.saturating_add(1);
+        }
+    });
+}
+
+pub(crate) fn admission_count() -> Option<u64> {
+    RECORD.with(|record| record.borrow().as_ref().map(|record| record.admissions))
 }
 
 /// Stops recording on this thread and returns the marks in order.
@@ -101,12 +119,12 @@ pub(crate) fn take() -> Vec<String> {
 }
 
 /// Records a callback entry without allocating or writing a log.
-pub(crate) fn busy_enter(now: Instant) {
+pub(crate) fn busy_enter(count: i32, now: Instant) {
     RECORD.with(|record| {
         if let Some(record) = record.borrow_mut().as_mut() {
             record
                 .busy
-                .enter(now.saturating_duration_since(record.began));
+                .enter(count, now.saturating_duration_since(record.began));
         }
     });
 }

@@ -33,6 +33,8 @@ pub(crate) enum CopyProbePoint {
     Admit,
     /// A progress check while the live store is being copied.
     Copy,
+    /// Immediately after the staged copy's raw connection opens.
+    SettleOpened,
     /// A progress check while the staged copy's journal is settled.
     Settle,
     /// A progress check during the full check of the staged copy.
@@ -305,7 +307,7 @@ impl SqliteStore {
         // its journal mode and initializes nothing. Closing it folds its log;
         // that last checkpoint is checked only after it returns.
         let connection = super::super::open_sqlite_file(path, rusqlite::OpenFlags::default())?;
-        interrupt.checked()?;
+        interrupt.checked_at(CopyProbePoint::SettleOpened)?;
         interrupt.install(&connection, CopyProbePoint::Settle)?;
         drop(Self::from_connection_with_lock_wait(
             connection,

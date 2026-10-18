@@ -878,6 +878,8 @@ impl SqliteStore {
         lock_wait: LockWait,
         retry: ProtocolRetry,
     ) -> Result<Self, StoreError> {
+        #[cfg(test)]
+        super::copy_trace::admission_entered();
         let mut restarted = false;
         // Where the refusal ended the first attempt, once the open retried.
         let mut retried_after: Option<OpenPhase> = None;

@@ -1,6 +1,150 @@
 use super::*;
 use crate::storage::copy_trace;
 
+fn capture_source_with_memory() -> (crate::test_support::TempHome, ProjectId, std::path::PathBuf) {
+    let home = crate::test_support::temp_home().unwrap();
+    let project = ProjectId("settle-opened-expiry".into());
+    let source = crate::project_database_path(home.path(), &project);
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    let mut store = SqliteStore::open(&source).unwrap();
+    let actor = crate::storage::test_support::actor("settle-opened-expiry");
+    store
+        .remember_project_memory(
+            &crate::RememberProjectMemoryRequest {
+                project_id: project.clone(),
+                session_id: actor.session_id.clone().unwrap(),
+                key: Some("retained-memory".into()),
+                revise: false,
+                expected_revision: None,
+                body: "the capture must preserve this source".into(),
+                retiring_target: crate::domain::ProjectMemoryRetiringTargetChange::Keep,
+                actor,
+                created_at: chrono::Utc::now(),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    drop(store);
+    (home, project, source)
+}
+
+#[test]
+fn settle_opened_expiry_refuses_before_admission_and_releases_its_stage() {
+    use std::cell::Cell;
+    use std::sync::Mutex;
+
+    use crate::backup::{
+        BackupError, CaptureOptions, CapturePhase, STAGE_DIRECTORY, capture_store,
+    };
+
+    let (home, project, source) = capture_source_with_memory();
+    let source_bytes = std::fs::read(&source).unwrap();
+    let stage_root = home
+        .path()
+        .join(STAGE_DIRECTORY)
+        .join(crate::project_digest(&project));
+    let sibling = stage_root.join("another-attempt");
+    std::fs::create_dir_all(&sibling).unwrap();
+    let sentinel = sibling.join("store.db");
+    std::fs::write(&sentinel, b"another capture owns this").unwrap();
+
+    let opened_attempt = Arc::new(Mutex::new(None));
+    let seen_points = Arc::new(Mutex::new(Vec::new()));
+    let probe = {
+        let opened_attempt = opened_attempt.clone();
+        let seen_points = seen_points.clone();
+        let stage_root = stage_root.clone();
+        let sibling = sibling.clone();
+        Arc::new(move |point| {
+            seen_points.lock().unwrap().push(point);
+            if point != CopyProbePoint::SettleOpened {
+                return false;
+            }
+            assert!(super::super::lock_wait::in_copy_scope());
+            let attempts: Vec<_> = std::fs::read_dir(&stage_root)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path != &sibling)
+                .collect();
+            assert_eq!(attempts.len(), 1);
+            let staged = attempts[0].join("store.db");
+            assert!(staged.is_file());
+            // This positive control and subsequent cleanup prove handle release
+            // on Windows. Unix unlink would not establish that a handle closed.
+            #[cfg(windows)]
+            assert_eq!(
+                std::fs::remove_file(&staged).unwrap_err().raw_os_error(),
+                Some(32)
+            );
+            assert!(
+                opened_attempt
+                    .lock()
+                    .unwrap()
+                    .replace(attempts[0].clone())
+                    .is_none()
+            );
+            true
+        })
+    };
+    let verify_seen = Cell::new(false);
+    let observer = |phase| {
+        if phase == CapturePhase::Verify {
+            assert!(!verify_seen.replace(true));
+            // Exclude source-copy admission from the settlement observation.
+            copy_trace::start();
+        }
+    };
+    let options = CaptureOptions {
+        deadline: Duration::MAX,
+        compressed_in_stage: false,
+        host_name: None,
+        free_space: &|_| Ok(u64::MAX),
+        observer: Some(&observer),
+        same_as: None,
+        copy_probe: Some(probe),
+    };
+    let captured = capture_store(home.path(), &project, &options);
+    let admissions = copy_trace::admission_count();
+    let _ = copy_trace::take();
+    assert!(verify_seen.get());
+    let attempt = opened_attempt
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("settle opened");
+    assert!(matches!(
+        captured,
+        Err(BackupError::CaptureDeadline {
+            phase: CapturePhase::Verify
+        })
+    ));
+    assert_eq!(admissions, Some(0), "settlement must not start admission");
+    let points = seen_points.lock().unwrap();
+    assert_eq!(points.last(), Some(&CopyProbePoint::SettleOpened));
+    assert_eq!(
+        points
+            .iter()
+            .filter(|&&point| point == CopyProbePoint::SettleOpened)
+            .count(),
+        1
+    );
+    assert!(!super::super::lock_wait::in_copy_scope());
+    assert!(
+        !attempt.exists(),
+        "the opened handle must not prevent cleanup"
+    );
+    let remaining: Vec<_> = std::fs::read_dir(&stage_root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(remaining, [sibling]);
+    assert_eq!(
+        std::fs::read(&sentinel).unwrap(),
+        b"another capture owns this"
+    );
+    assert_eq!(std::fs::read(&source).unwrap(), source_bytes);
+}
+
 #[test]
 fn copy_boundary_expiry_releases_the_connection_without_starting_later_work() {
     for point in [

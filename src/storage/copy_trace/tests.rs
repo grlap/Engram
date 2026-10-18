@@ -9,10 +9,10 @@ fn busy_observations_are_bounded_and_distinguish_sleep_from_outside_time() {
     start();
     let began = RECORD.with(|record| record.borrow().as_ref().unwrap().began);
     mark(|| "first read begins".into());
-    busy_enter(began + ms(1));
+    busy_enter(0, began + ms(1));
     busy_sleep(ms(1200));
     busy_return(began + ms(1201), None);
-    busy_enter(began + ms(1205));
+    busy_enter(1, began + ms(1205));
     busy_sleep(ms(2));
     busy_return(began + ms(1207), Some("copy deadline"));
     RECORD.with(|record| {
@@ -35,15 +35,44 @@ fn busy_observations_are_bounded_and_distinguish_sleep_from_outside_time() {
 }
 
 #[test]
+fn busy_gaps_exclude_counter_resets_and_keep_the_largest_within_sequence_gap() {
+    for (later_gap, expected_max) in [(4, 7), (11, 11)] {
+        start();
+        let began = RECORD.with(|record| record.borrow().as_ref().unwrap().began);
+        mark(|| "first sequence begins".into());
+        for (count, entry) in [(0, 1), (1, 10), (0, 10_000), (1, 10_002 + later_gap)] {
+            busy_enter(count, began + ms(entry));
+            busy_sleep(ms(2));
+            busy_return(began + ms(entry + 2), None);
+        }
+        RECORD.with(|record| {
+            let record = record.borrow();
+            let record = record.as_ref().unwrap();
+            assert_eq!(record.busy.max_outside, ms(expected_max));
+            assert_eq!(record.busy.calls, 4);
+            assert_eq!(record.busy.sleeps, 4);
+            assert_eq!(record.busy.max_sleep, ms(2));
+            assert_eq!(record.busy.first_entry, Some(ms(1)));
+            assert_eq!(record.busy.last_entry, Some(ms(10_002 + later_gap)));
+            assert_eq!(record.busy.last_return, Some(ms(10_004 + later_gap)));
+            assert_eq!(record.steps.len(), 1, "no per-callback step allocation");
+        });
+        let trace = take();
+        assert_eq!(trace.len(), 2);
+        assert!(trace[1].starts_with("busy callbacks:"));
+    }
+}
+
+#[test]
 fn disabled_and_other_thread_callbacks_record_nothing() {
     take();
-    busy_enter(Instant::now());
+    busy_enter(0, Instant::now());
     busy_sleep(ms(5));
     busy_return(Instant::now(), Some("no copy scope"));
     assert_eq!(take(), Vec::<String>::new());
     start();
     std::thread::spawn(|| {
-        busy_enter(Instant::now());
+        busy_enter(0, Instant::now());
         busy_return(Instant::now(), Some("no copy scope"));
         assert_eq!(take(), Vec::<String>::new());
     })

@@ -131,6 +131,8 @@ impl Fixture {
 
     fn command_with_readership(&self, root: &Path, marker: &Path, readership: &str) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_engram"));
+        // Setup is synchronous; avoid a CPU-sized idle pool per concurrent child.
+        command.env("TOKIO_WORKER_THREADS", "1");
         isolate_git(&mut command, &self.global_config);
         command
             .env_remove("ENGRAM_ACTOR_CONTEXT")
@@ -558,6 +560,7 @@ fn setup_default_process_attribution_can_repeat_and_retains_first_provenance() {
     let fixture = Fixture::new(false);
     let run = || {
         let mut command = Command::new(env!("CARGO_BIN_EXE_engram"));
+        command.env("TOKIO_WORKER_THREADS", "1");
         isolate_git(&mut command, &fixture.global_config);
         for name in [
             "ENGRAM_ACTOR_ID",

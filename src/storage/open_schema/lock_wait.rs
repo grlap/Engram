@@ -151,7 +151,7 @@ fn decide(now: Instant, episode_start: Instant, deadline: Option<Instant>) -> De
 fn copy_busy(count: i32) -> bool {
     let now = Instant::now();
     #[cfg(test)]
-    super::super::copy_trace::busy_enter(now);
+    super::super::copy_trace::busy_enter(count, now);
     let Some(mut wait) = current() else {
         #[cfg(test)]
         super::super::copy_trace::busy_return(Instant::now(), Some("no copy scope"));
