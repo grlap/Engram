@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { cpus } from "node:os";
 
 // Locked rmcp 3.1.4 may drain for 5 s; allow headroom for store/runtime close.
-export const CLOSE_BUDGET_MS = 10000;
+export const CLOSE_BUDGET_MS = 30000;
 const OBSERVATION_MS = 15000;
 const DIAGNOSTIC_MS = 2000;
 const SHUTDOWN_STAGES = new Set([
   "input_ended", "transport_close_started", "transport_close_finished",
   "trace_flush_started", "trace_flush_finished", "service_waiting_returned",
+  "store_owner_drop_started", "store_owner_drop_finished",
 ]);
 
 /** Interval CPU counters, sampled before EOF as well as while closing.

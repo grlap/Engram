@@ -459,6 +459,12 @@ impl Observer {
                 crate::phase_trace::ShutdownStage::ServiceWaitingReturned => {
                     "service_waiting_returned"
                 }
+                crate::phase_trace::ShutdownStage::StoreOwnerDropStarted => {
+                    "store_owner_drop_started"
+                }
+                crate::phase_trace::ShutdownStage::StoreOwnerDropFinished => {
+                    "store_owner_drop_finished"
+                }
             };
         }
     }

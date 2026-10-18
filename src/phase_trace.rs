@@ -42,6 +42,8 @@ pub enum ShutdownStage {
     TraceFlushStarted,
     TraceFlushFinished,
     ServiceWaitingReturned,
+    StoreOwnerDropStarted,
+    StoreOwnerDropFinished,
 }
 
 impl ShutdownStage {
@@ -53,8 +55,32 @@ impl ShutdownStage {
             Self::TraceFlushStarted => "trace_flush_started",
             Self::TraceFlushFinished => "trace_flush_finished",
             Self::ServiceWaitingReturned => "service_waiting_returned",
+            Self::StoreOwnerDropStarted => "store_owner_drop_started",
+            Self::StoreOwnerDropFinished => "store_owner_drop_finished",
         }
     }
+}
+
+/// Waits for the service loop, then releases the retained store owner.
+///
+/// `RunningService::waiting` consumes its service. The caller keeps one
+/// independent owner of the work service so that this trace separates the
+/// completed service join from destruction of its cached SQLite connection.
+/// The drop stays synchronous and on the ordinary shutdown path.
+pub async fn wait_then_drop_store_owner<T, F>(
+    trace: &PhaseTrace,
+    store_owner: T,
+    waiting: F,
+) -> F::Output
+where
+    F: Future,
+{
+    let stopped = waiting.await;
+    trace.shutdown_stage(ShutdownStage::ServiceWaitingReturned);
+    trace.shutdown_stage(ShutdownStage::StoreOwnerDropStarted);
+    drop(store_owner);
+    trace.shutdown_stage(ShutdownStage::StoreOwnerDropFinished);
+    stopped
 }
 
 /// The most handler records kept while their responses are being sent.

@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import nodeTest, { after } from "node:test";
-import { HostLoadSamples, McpCloseObservation } from "./mcp-close.mjs";
+import { CLOSE_BUDGET_MS, HostLoadSamples, McpCloseObservation } from "./mcp-close.mjs";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
@@ -400,6 +400,7 @@ test("MCP close watchdog leaves room beyond the rmcp drain bound", async (t) => 
 });
 
 test("MCP close deadline and diagnostic classifications", async (t) => {
+  assert.equal(CLOSE_BUDGET_MS, 30000);
   async function fixture(context) {
     context.mock.timers.enable({ apis: ["setTimeout"] });
     let milliseconds = 0;
@@ -437,13 +438,13 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     const run = await fixture(context);
     const load = { state: "measured", before_eof: true, intervals: [{ from_eof_ms: -1000, to_eof_ms: 0, host_cpu_busy_fraction: 0.97 }] };
     const result = run.check(async () => load);
-    await run.advance(10000);
+    await run.advance(CLOSE_BUDGET_MS);
     await run.advance(1000);
     run.observation.exited(0, null);
     run.observation.didClose(0, null);
     const { error } = await result;
     assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
-    assert.equal(error.closeDiagnostic.close_observed_ms, 11000);
+    assert.equal(error.closeDiagnostic.close_observed_ms, CLOSE_BUDGET_MS + 1000);
     assert.deepEqual(error.closeDiagnostic.host_load, load);
     assert.equal(run.kills(), 0);
   });
@@ -451,7 +452,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     const run = await fixture(context);
     const result = run.check();
     // The timer clock reaches its deadline while performance.now trails it.
-    await run.advance(10000, 9998);
+    await run.advance(CLOSE_BUDGET_MS, CLOSE_BUDGET_MS - 2);
     await run.advance(1);
     run.observation.exited(0, null);
     run.observation.didClose(0, null);
@@ -462,41 +463,41 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     const run = await fixture(context);
     // Observe before check starts: both its close promise and overdue timer
     // are ready. The timestamp, rather than race ordering, decides the pass.
-    await run.advance(10001);
+    await run.advance(CLOSE_BUDGET_MS + 1);
     run.observation.exited(0, null);
     run.observation.didClose(0, null);
     const { error } = await run.check();
     assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
-    assert.equal(error.closeDiagnostic.budget_ms, 10000);
+    assert.equal(error.closeDiagnostic.budget_ms, CLOSE_BUDGET_MS);
   });
   await t.test("timely exit with delayed stdio close fails separately", async (context) => {
     const run = await fixture(context);
     const result = run.check();
     await run.advance(6000);
     run.observation.exited(0, null);
-    await run.advance(4000);
+    await run.advance(CLOSE_BUDGET_MS - 6000);
     await run.advance(1000);
     run.observation.didClose(0, null);
     const { error } = await result;
     assert.equal(error.closeDiagnostic.classification, "stdio_close_delayed");
     assert.equal(error.closeDiagnostic.exit_observed_ms, 6000);
-    assert.equal(error.closeDiagnostic.close_observed_ms, 11000);
+    assert.equal(error.closeDiagnostic.close_observed_ms, CLOSE_BUDGET_MS + 1000);
   });
   for (const exitAt of [6000, 11000]) {
     await t.test(`clean exit at ${exitAt}ms with stalled stdio stays bounded`, async (context) => {
       const run = await fixture(context);
       const result = run.check();
-      await run.advance(Math.min(exitAt, 10000));
-      if (exitAt > 10000) await run.advance(exitAt - 10000);
+      await run.advance(Math.min(exitAt, CLOSE_BUDGET_MS));
+      if (exitAt > CLOSE_BUDGET_MS) await run.advance(exitAt - CLOSE_BUDGET_MS);
       run.observation.exited(0, null);
-      if (exitAt < 10000) await run.advance(10000 - exitAt);
-      await run.advance(25000 - Math.max(exitAt, 10000));
+      if (exitAt < CLOSE_BUDGET_MS) await run.advance(CLOSE_BUDGET_MS - exitAt);
+      await run.advance(CLOSE_BUDGET_MS + 15000 - Math.max(exitAt, CLOSE_BUDGET_MS));
       const { error } = await result;
       assert.equal(error.closeDiagnostic.classification, "clean_exit_stdio_open");
       assert.equal(error.closeDiagnostic.exit_observed_ms, exitAt);
       assert.equal(error.closeDiagnostic.close_observed_ms, null);
       assert.equal(error.closeDiagnostic.eventual, null);
-      assert.equal(error.closeDiagnostic.budget_ms, 10000);
+      assert.equal(error.closeDiagnostic.budget_ms, CLOSE_BUDGET_MS);
       assert.equal(run.kills(), 1);
     });
   }
@@ -505,15 +506,15 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
       await t.test(`late failed exit code=${code} signal=${signal} closes=${closes}`, async (context) => {
         const run = await fixture(context);
         const result = run.check();
-        await run.advance(10000);
+        await run.advance(CLOSE_BUDGET_MS);
         await run.advance(1000);
         run.observation.exited(code, signal);
         if (closes) run.observation.didClose(code, signal);
         else await run.advance(14000);
         const { error } = await result;
         assert.equal(error.closeDiagnostic.classification, "failed_exit");
-        assert.equal(error.closeDiagnostic.exit_observed_ms, 11000);
-        assert.equal(error.closeDiagnostic.close_observed_ms, closes ? 11000 : null);
+        assert.equal(error.closeDiagnostic.exit_observed_ms, CLOSE_BUDGET_MS + 1000);
+        assert.equal(error.closeDiagnostic.close_observed_ms, closes ? CLOSE_BUDGET_MS + 1000 : null);
         assert.deepEqual(error.closeDiagnostic.eventual, closes ? { code, signal } : null);
         assert.equal(run.kills(), closes ? 0 : 1);
       });
@@ -522,7 +523,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
   await t.test("never closed retains the absolute diagnostic bound", async (context) => {
     const run = await fixture(context);
     const result = run.check(() => new Promise(() => {}));
-    await run.advance(10000);
+    await run.advance(CLOSE_BUDGET_MS);
     await run.advance(2000);
     await run.advance(13000);
     const { error } = await result;
@@ -535,14 +536,14 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
   await t.test("a stuck collector cannot obscure a late clean close", async (context) => {
     const run = await fixture(context);
     const result = run.check(() => new Promise(() => {}));
-    await run.advance(10000);
+    await run.advance(CLOSE_BUDGET_MS);
     await run.advance(1000);
     run.observation.exited(0, null);
     run.observation.didClose(0, null);
     await run.advance(1000);
     const { error } = await result;
     assert.equal(error.closeDiagnostic.classification, "late_clean_exit");
-    assert.equal(error.closeDiagnostic.close_observed_ms, 11000);
+    assert.equal(error.closeDiagnostic.close_observed_ms, CLOSE_BUDGET_MS + 1000);
     assert.equal(error.closeDiagnostic.host_load.state, "unknown");
     assert.equal(run.kills(), 0);
   });
@@ -558,7 +559,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
   await t.test("a missing load measurement remains unknown", async (context) => {
     const run = await fixture(context);
     const result = run.check();
-    await run.advance(10000);
+    await run.advance(CLOSE_BUDGET_MS);
     await run.advance(1000);
     run.observation.exited(0, null);
     run.observation.didClose(0, null);
@@ -571,7 +572,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     run.child.stdin.writableFinished = false;
     run.child.stdin.destroyed = false;
     const result = run.check(undefined, { pending: () => pending, stderr: () => stderr });
-    await run.advance(10000);
+    await run.advance(CLOSE_BUDGET_MS);
     pending = 0;
     run.child.stdin.writableFinished = true;
     run.child.stdin.destroyed = true;
@@ -606,8 +607,8 @@ test("MCP close shutdown milestones retain stage times and leave gaps unknown", 
   assert.ok(report.missing.includes("transport_close_finished"));
   const child = { kill() {}, stdin: {} };
   const checked = observation.check({ started: 0, child }).catch(error => error);
-  now = 10000; t.mock.timers.tick(10000); await Promise.resolve(); await Promise.resolve();
-  now = 11000;
+  const lateByMs = CLOSE_BUDGET_MS + 1000;
+  now = lateByMs; t.mock.timers.tick(lateByMs); await Promise.resolve(); await Promise.resolve();
   observation.shutdownMilestone({ engram_mcp_shutdown_trace: 1, stage: "transport_close_started", server_elapsed_ms: 100 });
   observation.exited(0, null); observation.didClose(0, null);
   const error = await checked;

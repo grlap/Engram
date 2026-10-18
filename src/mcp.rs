@@ -143,6 +143,12 @@ impl McpServer {
         self
     }
 
+    /// Retains the service's cached store until the MCP loop has joined.
+    #[must_use]
+    pub fn shutdown_store_owner(&self) -> Arc<LocalWorkService> {
+        Arc::clone(&self.work_service)
+    }
+
     /// One tool call: the read-only admission, then the routed tool.
     async fn call_tool_untraced(
         &self,

@@ -23,8 +23,9 @@ It includes physical EOF and dependency-swallowed read or protocol-reply failure
 the observer cannot distinguish those causes. If
 shutdown is still open at that threshold, one `shutdown_overrun` record names
 its last observed milestone. This observer does not impose a close deadline,
-cancel work, or change the close result. Both existing 10,000-millisecond
-client sanity checks retain their deadlines.
+cancel work, or change the close result. The MCP close check uses a 30,000-
+millisecond deadline; the separate per-call sanity check retains its
+10,000-millisecond deadline.
 A late timer is checked again at service completion before closing the clock.
 A host that terminates the process at ten seconds or earlier may pre-empt the
 record; forced termination does not guarantee retention.

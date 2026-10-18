@@ -675,6 +675,71 @@ fn shutdown_milestones_distinguish_input_end_and_a_pending_transport_close() {
     );
 }
 
+#[test]
+fn retained_store_owner_is_released_only_after_the_service_join() {
+    struct HeldOwner {
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+
+    impl Drop for HeldOwner {
+        fn drop(&mut self) {
+            self.entered.send(()).expect("report store-owner drop");
+            self.release.recv().expect("release store-owner drop");
+        }
+    }
+
+    let (trace, captured) = captured_trace();
+    let trace = Arc::new(trace);
+    let (entered_sender, entered) = std::sync::mpsc::channel();
+    let (release, release_receiver) = std::sync::mpsc::channel();
+    let (finished_sender, finished) = std::sync::mpsc::channel();
+    let runner = std::thread::spawn({
+        let trace = Arc::clone(&trace);
+        move || {
+            block_on(wait_then_drop_store_owner(
+                trace.as_ref(),
+                HeldOwner {
+                    entered: entered_sender,
+                    release: release_receiver,
+                },
+                std::future::ready(()),
+            ));
+            finished_sender
+                .send(())
+                .expect("report shutdown completion");
+        }
+    });
+
+    entered
+        .recv_timeout(Duration::from_secs(1))
+        .expect("service join reached the retained owner drop");
+    assert!(
+        finished.try_recv().is_err(),
+        "shutdown returned before the retained store owner released"
+    );
+    release.send(()).expect("release retained owner");
+    finished
+        .recv_timeout(Duration::from_secs(1))
+        .expect("shutdown completed after retained owner release");
+    runner.join().expect("shutdown runner");
+
+    trace.flush(Duration::from_secs(5));
+    let stages: Vec<_> = captured
+        .lines()
+        .into_iter()
+        .map(|line| line["stage"].as_str().expect("stage").to_owned())
+        .collect();
+    assert_eq!(
+        stages,
+        [
+            "service_waiting_returned",
+            "store_owner_drop_started",
+            "store_owner_drop_finished",
+        ]
+    );
+}
+
 // The transport passes messages through and completes the record of the call
 // its response answers, timing the send; a failed send returns its error
 // unchanged and is recorded as failed; close flushes what was never sent.

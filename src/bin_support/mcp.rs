@@ -6,7 +6,7 @@ use engram::{
         Correlation, Diagnostics, Event, Fault, Surface,
         mcp::{DiagnosticTransport, Observer},
     },
-    phase_trace::{PhaseTrace, ShutdownStage, TracingTransport},
+    phase_trace::{PhaseTrace, TracingTransport, wait_then_drop_store_owner},
 };
 use rmcp::{ServiceExt, transport::stdio};
 use std::{path::Path, sync::Arc, time::Duration};
@@ -29,8 +29,9 @@ pub(crate) async fn serve(server: McpServer, home: &Path, session: &str) -> Resu
             .await;
         match result {
             Ok(server) => {
-                let stopped = server.waiting().await;
-                trace.shutdown_stage(ShutdownStage::ServiceWaitingReturned);
+                let store_owner = server.service().shutdown_store_owner();
+                let stopped =
+                    wait_then_drop_store_owner(&trace, store_owner, server.waiting()).await;
                 stopped
                     .map(|_| ())
                     .context("Engram MCP stdio server stopped with an error")
