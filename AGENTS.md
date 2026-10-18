@@ -37,10 +37,22 @@ their presence in a file alone does not prove delivery.
 
 - Create, change, move and delete files only inside this repository's folder
   and its worktrees. This covers every shell command and script an agent
-  writes. Scratch files, throwaway stores, test homes and logs go under
-  `target/` (ignored by Git), never in the system temp folder, `C:\tmp`, the
-  user profile or another project, even when a harness names a scratchpad
-  there.
+  writes. Scratch files, throwaway stores and test homes go under `target/`;
+  logs an agent keeps go under `.logs/`, and raw evidence that must outlive a
+  worktree under `.evidence/`, both at the main checkout's root. Git ignores
+  all three. Nothing goes in the system temp folder, `C:\tmp`, the user
+  profile or another project, even when a harness names a scratchpad there.
+- Use Git-ignored .logs/ and .evidence/ at the root of each project
+  repository. Remove artifacts after the associated task closes, unless agents
+  record a concrete need for a different retention policy. A file there is
+  removed once every task it serves has closed. The agent that closes the last
+  such task removes it, or the coordinator's regular sweep does, in either case
+  after the path check below, and records what it removed. To keep it longer,
+  an agent records on an open task the concrete need and when it ends; the
+  file goes when that need ends. Removal touches only `.logs/` and
+  `.evidence/`, never a live worktree's run files, which leave only when that
+  worktree is removed. Engram's notes, gates and seals stay the lasting record:
+  what a decision rests on is quoted there, never left only in a raw file.
 - Outside the repository only tools write, as part of their own work: Engram
   to its store home, TermAl through its tools, Cargo to its caches. Installing
   a build as Authority and Git describes is the one write an agent makes

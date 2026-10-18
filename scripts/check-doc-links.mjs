@@ -5,10 +5,15 @@ import { dirname, extname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const claudeWorktrees = resolve(root, ".claude", "worktrees");
+// Directories whose Markdown is not this repository's documentation: Git's
+// own data, linked worktrees, build output, dependencies, and the retained
+// logs and evidence archives, whose copied documents may hold stale links.
 const SKIPPED_DIRECTORIES = new Set([
   ".git",
   ".beads",
   ".worktrees",
+  ".logs",
+  ".evidence",
   "target",
   "target-verify",
   "node_modules",

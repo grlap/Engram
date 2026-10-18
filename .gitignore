@@ -4,6 +4,11 @@
 /target/
 /target-verify/
 
+# Logs an agent keeps, and raw evidence that must outlive a worktree, at the
+# main checkout's root; removed once every task they serve has closed.
+/.logs/
+/.evidence/
+
 # Local Engram state. Exports intended for sharing must be written elsewhere.
 /.engram/
 # SQLite stores anywhere in the checkout stay local.

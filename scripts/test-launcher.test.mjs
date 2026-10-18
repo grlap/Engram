@@ -74,7 +74,24 @@ describe("documentation link checker", () => {
     assert.equal(result.stderr, "");
   });
 
+  // Retained archives may contain copied Markdown whose original links no
+  // longer resolve. Run the copied real checker on each nested fixture.
   for (const sourceParts of [
+    [".evidence", "abc123", "wt", "review-runs", "run-1", "notes.md"],
+    [".evidence", "provisional", "run-2", "wt", "seed.md"],
+    [".logs", "session", "day.md"],
+    [".worktrees", "other", "README.md"],
+  ]) {
+    test(`skips retained dead links under ${sourceParts.slice(0, -1).join("/")}`, (t) => {
+      const result = checkFixture(t, sourceParts);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, "Documentation links are valid.\n");
+      assert.equal(result.stderr, "");
+    });
+  }
+
+  for (const sourceParts of [
+    ["docs", "guide.md"],
     [".claude", "commands", "command.md"],
     ["worktrees", "document.md"],
     ["other", ".claude", "worktrees", "document.md"],

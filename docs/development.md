@@ -803,14 +803,21 @@ at least one of them has `executed` of one or more. Any `reason` means the
 run did not pass, and any `why` that there is no count. A record that does
 not parse means unknown.
 
-Run evidence is retained until explicitly removed by the operator; there is no
-automatic pruning. After a run has terminal results, its outcome has been
-recovered and recorded, and any pending notification or review use is resolved,
-the operator may archive or delete that exact run directory if its full logs
-are no longer needed. Preserve referenced evidence before removal. Never delete
-running, unrecovered, or still-needed runs; inspect their state first. Deleting
-a run also removes its notification-retry data. Do not remove the whole
-`review-runs` directory as a shortcut.
+A run directory is a live worktree's file: it stays in that worktree's Git
+admin directory and leaves only when the worktree is removed; nothing prunes
+it, and no sweep touches it. Before the worktree goes, a run must have
+terminal results, its outcome must have been recovered and recorded, and any
+pending notification or review use must be resolved. A run that an open task
+still needs is copied first, into the main checkout's Git-ignored
+`.evidence/<landed commit>/<worktree name>/review-runs/<run id>/`, with its
+bytes verified; that retained copy is governed by the repository rule in
+AGENTS.md ("Work only in the repository folder"): it is removed once every
+task it serves has closed, unless an open task records a concrete need and
+its end. Never remove a worktree with a running or unrecovered run, pending
+notification or review use, or still-needed evidence that has not been
+copied and verified; inspect these conditions first. A run's
+notification-retry data lives in its directory and goes with it. Do not
+remove the whole `review-runs` directory as a shortcut.
 
 ### Test temporary files
 
