@@ -282,6 +282,43 @@ fn control_store_busy_replay_does_not_disprove_an_earlier_begin() {
     assert_eq!(fixture.snapshot(), before);
 }
 
+/// Operations outside the certified busy set keep the generic storage error:
+/// a busy BEGIN on the lifecycle `named_root_bind` makes no no-change claim
+/// and applies nothing.
+#[test]
+fn lifecycle_begin_busy_keeps_the_generic_storage_error() {
+    let mut fixture = Fixture::new();
+    let routing = fixture.bind();
+    let name = serde_json::json!({
+        "operation": "named_root_bind", "routing_token": routing,
+        "claim_id": uuid::Uuid::new_v4(), "claim_fence": 1,
+        "workspace_id": "busy-workspace", "generation": 1,
+        "named_at": "2026-01-01T00:00:00Z", "kind": "bound",
+        "idempotency_key": "name"
+    });
+    let before = fixture.snapshot();
+    assert!(fixture.server.store.test_is_autocommit());
+    fixture.observer.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let reply = fixture.wire(&name);
+    assert!(fixture.server.store.test_is_autocommit());
+    fixture.observer.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(fixture.snapshot(), before);
+    assert_eq!(reply["status"], "error", "{reply}");
+    assert_eq!(reply["error"]["code"], "storage_error", "{reply}");
+    let message = reply["error"]["message"].as_str().unwrap();
+    // The generic error is the contended BEGIN itself, not some other failure.
+    assert!(message.contains("database is locked"), "{message}");
+    assert!(
+        !message.contains("this attempt committed no changes"),
+        "{message}"
+    );
+    assert_eq!(
+        fixture.wire(&name)["error"]["code"],
+        "named_root_binding_refused"
+    );
+    assert_eq!(fixture.snapshot(), before);
+}
+
 #[test]
 fn control_store_busy_does_not_reclassify_other_sqlite_errors() {
     for code in [

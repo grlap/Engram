@@ -103,6 +103,97 @@ fn expired_control_frame_applies_nothing_and_exact_retry_preserves_authority() {
     }
 }
 
+/// Serves one frame whose input stalls past the allowance after its first byte.
+fn serve_expired(fixture: &mut Fixture, request: &Value) -> Value {
+    let mut bytes = serde_json::to_vec(request).unwrap();
+    bytes.push(b'\n');
+    let reader = DelayedFrame {
+        input: Cursor::new(bytes),
+        first_byte_seen: false,
+        delayed: false,
+    };
+    let mut output = Vec::new();
+    let started = now();
+    fixture.server.serve(reader, &mut output).unwrap();
+    assert_eq!(now().duration_since(started), Duration::from_millis(15_001));
+    serde_json::from_slice(&output).unwrap()
+}
+
+/// Lifecycle and read operations take the same frame allowance as turn
+/// operations. An expired frame gets the typed expiry refusal and leaves the
+/// store unchanged; in time, the same frame reaches its operation.
+///
+/// `named_root_bind` and `turn_grant_read` show the refusal comes before
+/// dispatch: the bind frame fails validation that runs before any
+/// transaction, and the grant read takes no allowance of its own, so only
+/// the frame check can answer them with an expiry. `session_status` runs
+/// nothing before its transaction, so for it the test shows the refusal
+/// comes before that transaction opens and applies nothing.
+#[test]
+fn expired_lifecycle_and_read_frames_are_refused_before_dispatch() {
+    for operation in ["named_root_bind", "session_status", "turn_grant_read"] {
+        CLOCK.with(|clock| clock.set(Instant::now()));
+        let _clock = ControlRequestScope::with_clock(now);
+        let mut fixture = Fixture::new();
+        let routing = fixture.bind();
+        let request = match operation {
+            "named_root_bind" => serde_json::json!({
+                "operation": "named_root_bind", "routing_token": routing,
+                "claim_id": uuid::Uuid::new_v4(), "claim_fence": 1,
+                "workspace_id": "expiry-workspace", "generation": 0,
+                "named_at": "2026-01-01T00:00:00Z", "kind": "bound",
+                "idempotency_key": "name"
+            }),
+            "session_status" => {
+                serde_json::json!({"operation": "session_status", "routing_token": routing})
+            }
+            _ => {
+                let grant = fixture.issue(&routing);
+                serde_json::json!({
+                    "operation": "turn_grant_read", "routing_token": routing, "grant_id": grant
+                })
+            }
+        };
+        let before = fixture.snapshot();
+        let refusal = serve_expired(&mut fixture, &request);
+        assert_eq!(
+            refusal["error"]["code"], "control_request_expired",
+            "{operation}: {refusal}"
+        );
+        let message = refusal["error"]["message"].as_str().unwrap();
+        assert!(message.contains("this attempt committed no changes"));
+        assert!(message.contains("Earlier uncertain attempts remain unresolved"));
+        assert_eq!(fixture.snapshot(), before, "{operation}");
+
+        // In time, the same frame reaches the operation and gets its own answer.
+        let reply = fixture.wire(&request);
+        match operation {
+            "named_root_bind" => {
+                assert_eq!(
+                    reply["error"]["code"], "named_root_binding_refused",
+                    "{reply}"
+                );
+                let message = reply["error"]["message"].as_str().unwrap();
+                assert!(
+                    message.contains("positive generation and fence"),
+                    "{message}"
+                );
+            }
+            "session_status" => {
+                assert_eq!(reply["status"], "ok", "{reply}");
+                assert_eq!(reply["result"]["phase"], "ready", "{reply}");
+                assert!(reply["result"]["open_grant_id"].is_null(), "{reply}");
+            }
+            _ => {
+                assert_eq!(reply["status"], "ok", "{reply}");
+                assert_eq!(reply["result"]["status"], "found", "{reply}");
+                assert_eq!(reply["result"]["state"], "issued", "{reply}");
+            }
+        }
+        assert_eq!(fixture.snapshot(), before, "{operation}");
+    }
+}
+
 #[derive(Default)]
 struct LostFlush {
     bytes: Vec<u8>,
