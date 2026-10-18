@@ -589,6 +589,36 @@ fn capture_past_its_deadline_at_any_step_fails_typed_and_removes_its_stage() {
 }
 
 #[test]
+fn capture_boundary_expiry_keeps_the_copy_phase_and_removes_only_its_attempt() {
+    for point in [
+        CopyProbePoint::Opened,
+        CopyProbePoint::BeforeAdmission,
+        CopyProbePoint::BeforeCopy,
+    ] {
+        let (home, project, _) = fixture(1, 16);
+        let mut options = options(&plenty);
+        options.deadline = Duration::MAX;
+        options.copy_probe = Some(Arc::new(move |at| at == point));
+        let error = capture_store(home.path(), &project, &options).unwrap_err();
+        assert_eq!(
+            error.code(),
+            "backup_capture_deadline",
+            "{point:?}: {error}"
+        );
+        assert!(
+            matches!(
+                error,
+                BackupError::CaptureDeadline {
+                    phase: CapturePhase::Copy
+                }
+            ),
+            "{point:?}: {error}"
+        );
+        assert_eq!(stage_entries(home.path(), &project), Vec::<PathBuf>::new());
+    }
+}
+
+#[test]
 fn capture_deadline_bounds_a_wait_for_a_locked_store() {
     let (home, project, database) = fixture(3, 64);
     // A connection in exclusive locking mode that has written keeps every
@@ -618,6 +648,7 @@ fn capture_deadline_bounds_a_wait_for_a_locked_store() {
     options.observer = Some(&observer);
     let error = capture_store(home.path(), &project, &options).unwrap_err();
     let took = began.elapsed();
+    crate::storage::copy_trace::mark(|| format!("capture: returned {}", error.code()));
     let trace = crate::storage::copy_trace::take();
     drop(holder);
     println!("capture took {took:?}; copy sub-steps: {trace:?}");

@@ -883,13 +883,23 @@ impl SqliteStore {
         let mut retried_after: Option<OpenPhase> = None;
         loop {
             let mut phase = OpenPhase::ProbeSnapshot;
-            match Self::open_attempt(
+            let attempt = Self::open_attempt(
                 &mut connection,
                 &mut phase,
                 host_path_policy,
                 initial_control_policy,
                 lock_wait,
-            ) {
+            );
+            #[cfg(test)]
+            if let Err(error) = &attempt {
+                super::copy_trace::mark(|| {
+                    format!(
+                        "open: admission error produced: {}",
+                        super::copy_trace::store_error(error)
+                    )
+                });
+            }
+            match attempt {
                 Ok(OpenAttempt::Opened {
                     work_schema_version,
                 }) => {
@@ -907,6 +917,8 @@ impl SqliteStore {
                 Err(error) if protocol_retry::is_locking_protocol(&error) => {
                     protocol_retry::end_attempt(&connection, phase)?;
                     if retried_after.is_some() || retry == ProtocolRetry::Never {
+                        #[cfg(test)]
+                        super::copy_trace::dispose(connection, "open admission failure");
                         return Err(protocol_retry::locking_protocol_refusal(
                             phase,
                             retried_after,
@@ -916,7 +928,11 @@ impl SqliteStore {
                 }
                 // Dropping the connection ends any transaction the attempt
                 // began.
-                Err(error) => return Err(error),
+                Err(error) => {
+                    #[cfg(test)]
+                    super::copy_trace::dispose(connection, "open admission failure");
+                    return Err(error);
+                }
             }
         }
     }

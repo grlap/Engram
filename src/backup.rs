@@ -442,7 +442,12 @@ fn capture_into(
     let classified = |phase: CapturePhase| {
         move |error: StoreError| {
             #[cfg(test)]
-            crate::storage::copy_trace::mark(|| format!("capture: {phase:?} store error: {error}"));
+            crate::storage::copy_trace::mark(|| {
+                format!(
+                    "capture: {phase:?} store error: {}",
+                    crate::storage::copy_trace::store_error(&error)
+                )
+            });
             // A failure once the deadline has passed is the deadline's, even
             // when it surfaced as another error, such as a lock wait that
             // the time left cut short.
@@ -548,7 +553,18 @@ fn remove_attempt(attempt: &Path) -> Result<(), (PathBuf, io::Error)> {
     let mut first_failure = None;
     let sidecars = crate::storage::store_sidecars(&staged);
     for path in std::iter::once(staged).chain(sidecars) {
-        match std::fs::remove_file(&path) {
+        #[cfg(test)]
+        crate::storage::copy_trace::mark(|| format!("cleanup: {} removal begins", path.display()));
+        let removed = std::fs::remove_file(&path);
+        #[cfg(test)]
+        crate::storage::copy_trace::mark(|| {
+            format!(
+                "cleanup: {} removal {}",
+                path.display(),
+                crate::storage::copy_trace::outcome(&removed)
+            )
+        });
+        match removed {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
@@ -559,7 +575,17 @@ fn remove_attempt(attempt: &Path) -> Result<(), (PathBuf, io::Error)> {
     if let Some(failure) = first_failure {
         return Err(failure);
     }
-    match std::fs::remove_dir(attempt) {
+    #[cfg(test)]
+    crate::storage::copy_trace::mark(|| "cleanup: attempt directory removal begins".into());
+    let removed = std::fs::remove_dir(attempt);
+    #[cfg(test)]
+    crate::storage::copy_trace::mark(|| {
+        format!(
+            "cleanup: attempt directory removal {}",
+            crate::storage::copy_trace::outcome(&removed)
+        )
+    });
+    match removed {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err((attempt.to_path_buf(), error)),

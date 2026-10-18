@@ -23,6 +23,12 @@ const PROGRESS_STEPS: std::ffi::c_int = 1000;
 /// runs; a test may fire the interrupt at one of them on purpose.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CopyProbePoint {
+    /// Immediately after the live store's raw connection opens.
+    Opened,
+    /// Before the live store's admission can execute a statement.
+    BeforeAdmission,
+    /// Before the copy statement can create the staged file.
+    BeforeCopy,
     /// A progress check while a store or the staged copy is admitted.
     Admit,
     /// A progress check while the live store is being copied.
@@ -148,7 +154,15 @@ impl CopyInterrupt {
     }
 
     fn checked(&self) -> Result<(), StoreError> {
-        if self.expired() {
+        Self::check_expired(self.expired())
+    }
+
+    fn checked_at(&self, point: CopyProbePoint) -> Result<(), StoreError> {
+        Self::check_expired(self.probed(point))
+    }
+
+    fn check_expired(expired: bool) -> Result<(), StoreError> {
+        if expired {
             Err(StoreError::InvalidWork(
                 "the copy passed its deadline".into(),
             ))
@@ -215,7 +229,19 @@ impl SqliteStore {
         #[cfg(test)]
         mark(|| format!("copy: open {}", outcome(&connection)));
         let connection = connection?;
-        interrupt.install(&connection, CopyProbePoint::Admit)?;
+        let prepared = (|| {
+            interrupt.checked_at(CopyProbePoint::Opened)?;
+            interrupt.install(&connection, CopyProbePoint::Admit)?;
+            interrupt.checked_at(CopyProbePoint::BeforeAdmission)
+        })();
+        let connection = match prepared {
+            Ok(()) => connection,
+            Err(error) => {
+                #[cfg(test)]
+                crate::storage::copy_trace::dispose(connection, "copy before admission");
+                return Err(error);
+            }
+        };
         #[cfg(test)]
         mark(|| "copy: admission begins".into());
         let store = Self::from_connection_with_lock_wait(
@@ -229,24 +255,35 @@ impl SqliteStore {
         #[cfg(test)]
         mark(|| format!("copy: admission {}", outcome(&store)));
         let store = store?;
-        interrupt.checked()?;
-        LockWait::CopyDeadline.install(&store.connection)?;
-        interrupt.install(&store.connection, CopyProbePoint::Copy)?;
+        let copied = (|| {
+            interrupt.checked()?;
+            LockWait::CopyDeadline.install(&store.connection)?;
+            interrupt.install(&store.connection, CopyProbePoint::Copy)?;
+            interrupt.checked_at(CopyProbePoint::BeforeCopy)?;
+            #[cfg(test)]
+            if crate::storage::copy_trace::recording() {
+                // Do not hold the recorder's borrow across a SQLite call:
+                // a busy callback may itself update the recorder.
+                let timeout = store
+                    .connection
+                    .query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))
+                    .map_or_else(|error| format!("error: {error}"), |ms| format!("{ms} ms"));
+                mark(|| format!("copy: vacuum begins, busy timeout {timeout}"));
+            }
+            // The test-only diagnostic above executes a PRAGMA. Do not let
+            // its own I/O start a copy after the deadline has passed.
+            #[cfg(test)]
+            interrupt.checked()?;
+            let copied = super::super::sqlite_path::vacuum_into(&store.connection, target);
+            #[cfg(test)]
+            mark(|| format!("copy: vacuum {}", outcome(&copied)));
+            copied
+        })();
         #[cfg(test)]
-        mark(|| {
-            let timeout = store
-                .connection
-                .query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))
-                .map_or_else(|error| format!("error: {error}"), |ms| format!("{ms} ms"));
-            format!("copy: vacuum begins, busy timeout {timeout}")
-        });
-        let copied = super::super::sqlite_path::vacuum_into(&store.connection, target);
-        #[cfg(test)]
-        mark(|| format!("copy: vacuum {}", outcome(&copied)));
-        copied?;
+        crate::storage::copy_trace::dispose(store, "copy");
+        #[cfg(not(test))]
         drop(store);
-        #[cfg(test)]
-        mark(|| "copy: closed".into());
+        copied?;
         interrupt.checked()
     }
 
@@ -268,6 +305,7 @@ impl SqliteStore {
         // its journal mode and initializes nothing. Closing it folds its log;
         // that last checkpoint is checked only after it returns.
         let connection = super::super::open_sqlite_file(path, rusqlite::OpenFlags::default())?;
+        interrupt.checked()?;
         interrupt.install(&connection, CopyProbePoint::Settle)?;
         drop(Self::from_connection_with_lock_wait(
             connection,

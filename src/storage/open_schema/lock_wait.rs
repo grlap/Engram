@@ -150,20 +150,38 @@ fn decide(now: Instant, episode_start: Instant, deadline: Option<Instant>) -> De
 /// the lock once the wait has ended. Without a scope it refuses at once.
 fn copy_busy(count: i32) -> bool {
     let now = Instant::now();
+    #[cfg(test)]
+    super::super::copy_trace::busy_enter(now);
     let Some(mut wait) = current() else {
+        #[cfg(test)]
+        super::super::copy_trace::busy_return(Instant::now(), Some("no copy scope"));
         return false;
     };
     if count == 0 {
         wait.episode_start = now;
         replace(Some(wait));
     }
-    match decide(now, wait.episode_start, wait.deadline) {
+    let retry = match decide(now, wait.episode_start, wait.deadline) {
         Decision::Refuse => false,
         Decision::Wait(pause) => {
+            #[cfg(test)]
+            let sleep_began = Instant::now();
             std::thread::sleep(pause);
+            #[cfg(test)]
+            super::super::copy_trace::busy_sleep(sleep_began.elapsed());
             decide(Instant::now(), wait.episode_start, wait.deadline) != Decision::Refuse
         }
-    }
+    };
+    #[cfg(test)]
+    super::super::copy_trace::busy_return(
+        Instant::now(),
+        (!retry).then_some(if wait.deadline.is_some_and(|end| Instant::now() >= end) {
+            "copy deadline"
+        } else {
+            "lock wait limit"
+        }),
+    );
+    retry
 }
 
 /// Whether this thread is inside a copy's scope.
