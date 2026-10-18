@@ -363,6 +363,20 @@ the exact-current SQLite store: current writers validate their canonical and
 relational bindings, but `--repair-projections` never reconstructs them from
 `objects`. Damage there requires restoring a verified current backup.
 
+Ordinary existing-item catalog refresh locates FTS rows with a quoted MATCH on
+the item's immutable short reference, filters by exact work UUID, and deletes
+the matching rowids before inserting the replacement. This is index-assisted
+lookup, O(H) in rows mentioning the ref, not a constant-time or bounded locator:
+other items may mention the same ref. If no matching UUID row is found, the
+existing UUID-scan deletion remains the fallback, O(N) in the catalog size.
+That includes missing rows and a row whose text lost its short reference.
+Creating a root or decomposing children mints fresh work UUIDs and inserts their
+FTS rows directly, without looking up or deleting prior FTS rows.
+Duplicate or orphan rows remain covered by doctor's exhaustive checks; a
+partially damaged duplicate that lacks the reference may survive an indexed
+refresh and require explicit repair. Neither schema nor projection derivation
+changes for this lookup optimization.
+
 Current work projections are checked by `engram doctor` against canonical typed
 work events: exact item/run/root/claim/handoff/blocker snapshots, prerequisite
 and blocker-event bindings, evidence/run bindings, completion seals, dense feed

@@ -42,6 +42,7 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+mod catalog_fts;
 mod detach;
 mod plan;
 mod relations;
@@ -238,7 +239,7 @@ fn create_root_with_validation_on<R: Redactor>(
             serde_json::to_vec(&item)?
         ],
     )?;
-    refresh_work_catalog_projection(transaction, &item)?;
+    initialize_work_catalog_projection(transaction, &item)?;
     super::root_state::initialize(transaction, &root_execution)?;
     let run = WorkRun {
         schema_version: SCHEMA_VERSION,
@@ -1074,7 +1075,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
                 serde_json::to_vec(&item)?
             ],
         )?;
-        refresh_work_catalog_projection(transaction, &item)?;
+        initialize_work_catalog_projection(transaction, &item)?;
         let run = WorkRun {
             schema_version: SCHEMA_VERSION,
             run_id,
@@ -1828,6 +1829,22 @@ pub(in crate::storage) fn refresh_work_catalog_projection(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<(), StoreError> {
+    write_work_catalog_projection(connection, item, true)
+}
+
+fn initialize_work_catalog_projection(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<(), StoreError> {
+    // Creation has just minted this UUID and inserted its work item.
+    write_work_catalog_projection(connection, item, false)
+}
+
+fn write_work_catalog_projection(
+    connection: &Connection,
+    item: &WorkItem,
+    replace_existing: bool,
+) -> Result<(), StoreError> {
     let assigned_to_key = item.assigned_to.as_deref().map(normalize_work_catalog_key);
     let search_text_key = work_catalog_search_text(connection, item)?;
     let changed = connection.execute(
@@ -1859,10 +1876,9 @@ pub(in crate::storage) fn refresh_work_catalog_projection(
             params![item.work_id.0.to_string(), label_key],
         )?;
     }
-    connection.execute(
-        "DELETE FROM work_catalog_fts WHERE work_id = ?1",
-        [item.work_id.0.to_string()],
-    )?;
+    if replace_existing {
+        catalog_fts::remove_prior_rows(connection, item)?;
+    }
     connection.execute(
         "INSERT INTO work_catalog_fts (work_id, search_text) VALUES (?1, ?2)",
         params![item.work_id.0.to_string(), search_text_key],
