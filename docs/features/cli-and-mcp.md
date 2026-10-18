@@ -2578,13 +2578,25 @@ The same opt-in trace also writes a separate `engram_mcp_shutdown_trace: 1`
 record at each observed shutdown boundary: `input_ended` (the transport
 returned no next message), `transport_close_started`,
 `transport_close_finished`, `trace_flush_started`, `trace_flush_finished`,
-and `service_waiting_returned`. These contain only the fixed `stage`,
+`service_waiting_returned`, `store_owner_drop_started`, and
+`store_owner_drop_finished`. These contain only the fixed `stage`,
 `server_elapsed_ms` from trace creation, and `dropped_lines`. A reached stage
-does not assert success. The records use the existing bounded queue and add
-no flush wait; the final two are best effort after the existing close flush.
+does not assert success.
+
+`service_waiting_returned` is recorded after the service wait returns and
+before the retained work-service owner is released. `store_owner_drop_started`
+and `store_owner_drop_finished` bracket that synchronous release and any
+resulting destruction of its cached SQLite connection. They do not establish
+completion of all process cleanup or a durability guarantee.
+
+The records use the existing bounded queue and add no flush wait. The final
+four stages are best effort after the existing close-flush attempt;
+`trace_flush_finished` records that the bounded attempt returned, not that
+every line was written.
 The dogfood close diagnostic retains server times and client receipt times
-relative to stdin EOF separately. Missing records, and cleanup after the
-service returns, remain unknown. With tracing off, stderr tracing is absent;
+relative to stdin EOF separately. Missing records and uninstrumented cleanup
+remain unknown. With tracing off, stderr tracing and the retained-owner
+tracing wrapper are absent;
 the default [bounded operational diagnostics](diagnostics.md) observer retains
 observed failures and overruns without changing rmcp close behavior, then adds
 a bounded diagnostic exit flush of at most one second.

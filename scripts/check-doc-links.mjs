@@ -5,6 +5,7 @@ import { dirname, extname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const claudeWorktrees = resolve(root, ".claude", "worktrees");
+const rootArchives = new Set([resolve(root, ".logs"), resolve(root, ".evidence")]);
 // Directories whose Markdown is not this repository's documentation: Git's
 // own data, linked worktrees, build output, dependencies, and the retained
 // logs and evidence archives, whose copied documents may hold stale links.
@@ -12,8 +13,6 @@ const SKIPPED_DIRECTORIES = new Set([
   ".git",
   ".beads",
   ".worktrees",
-  ".logs",
-  ".evidence",
   "target",
   "target-verify",
   "node_modules",
@@ -23,7 +22,7 @@ function markdownFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) {
-      if (SKIPPED_DIRECTORIES.has(entry.name) || path === claudeWorktrees) return [];
+      if (SKIPPED_DIRECTORIES.has(entry.name) || path === claudeWorktrees || rootArchives.has(path)) return [];
       return markdownFiles(path);
     }
     return entry.isFile() && extname(entry.name) === ".md" ? [path] : [];

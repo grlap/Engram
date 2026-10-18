@@ -77,6 +77,8 @@ describe("documentation link checker", () => {
   // Retained archives may contain copied Markdown whose original links no
   // longer resolve. Run the copied real checker on each nested fixture.
   for (const sourceParts of [
+    [".evidence", "notes.md"],
+    [".logs", "day.md"],
     [".evidence", "abc123", "wt", "review-runs", "run-1", "notes.md"],
     [".evidence", "provisional", "run-2", "wt", "seed.md"],
     [".logs", "session", "day.md"],
@@ -92,6 +94,10 @@ describe("documentation link checker", () => {
 
   for (const sourceParts of [
     ["docs", "guide.md"],
+    ["docs", ".evidence", "notes.md"],
+    ["docs", ".logs", "day.md"],
+    ["docs", ".evidence", "nested", "notes.md"],
+    ["docs", ".logs", "nested", "day.md"],
     [".claude", "commands", "command.md"],
     ["worktrees", "document.md"],
     ["other", ".claude", "worktrees", "document.md"],
