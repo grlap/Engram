@@ -129,6 +129,14 @@ async fn task_exchange_unsupported_platform_never_launches_the_command() {
             .unwrap_err(),
         RunError::UnsupportedPlatform
     );
+    let mut command = std::process::Command::new("must-not-be-launched");
+    command.arg("untrusted-input");
+    assert_eq!(
+        execute_config(command, RunLimits::default(), &Cancellation::default())
+            .await
+            .unwrap_err(),
+        RunError::UnsupportedPlatform
+    );
 }
 
 #[test]

@@ -12,6 +12,22 @@ mod command;
 mod fixture_diagnostics;
 #[cfg(windows)]
 mod process;
+/// Confined process control exists only on Windows. Elsewhere every launch is
+/// refused before spawn, behind the same awaited interface.
+#[cfg(not(windows))]
+mod process {
+    use super::{Cancellation, RunError, RunLimits, RunOutput};
+
+    pub(super) fn execute(
+        command: std::process::Command,
+        _limits: RunLimits,
+        _cancel: &Cancellation,
+        _allow_missing_config: bool,
+    ) -> std::future::Ready<Result<RunOutput, RunError>> {
+        drop(command);
+        std::future::ready(Err(RunError::UnsupportedPlatform))
+    }
+}
 mod target;
 #[cfg(test)]
 mod tests;
@@ -201,15 +217,7 @@ async fn execute(
     if cancel.is_cancelled() {
         return Err(RunError::Cancelled);
     }
-    #[cfg(windows)]
-    {
-        process::execute(command, limits, cancel, false).await
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = command;
-        Err(RunError::UnsupportedPlatform)
-    }
+    process::execute(command, limits, cancel, false).await
 }
 
 async fn execute_config(
@@ -221,15 +229,7 @@ async fn execute_config(
     if cancel.is_cancelled() {
         return Err(RunError::Cancelled);
     }
-    #[cfg(windows)]
-    {
-        Ok(process::execute(command, limits, cancel, true)
-            .await?
-            .stdout)
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = command;
-        Err(RunError::UnsupportedPlatform)
-    }
+    Ok(process::execute(command, limits, cancel, true)
+        .await?
+        .stdout)
 }
