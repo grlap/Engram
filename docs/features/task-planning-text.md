@@ -84,7 +84,43 @@ reports `dry_run: true`; a dry run of an already committed import replays
 that import's receipt, as the real repeat would.
 
 A later export keeps the note selection its baseline was recorded with; an
-export under another note selection refuses. Candidates written by `task-sync prepare` or
+export under another note selection refuses.
+
+### Edits on an enrolled destination
+
+Once a destination holds an exchange baseline, import compares the folder with
+the destination's current planning, task by task. A task the destination
+holds outside the last applied exchange, which the folder omits, is
+host-local: it stays as it is and does not join the exchange. Only edits of
+a task's title, outcome or priority apply. Each one is recorded as an ordinary
+planning revision under project authority, attributed to the importing actor,
+and the task then exports exactly as the folder carries it. Every other
+requested change refuses the whole folder with `task_sync_import_conflict`,
+naming each task and its reason: a task the folder adds (`task_added`), a
+task of the last exchange the folder omits (`task_deleted`), and a change to
+any other field (`unsupported_fields`, with the field names). A note
+selection that differs from the baseline's refuses earlier, as for every
+folder import: with `task_sync_divergent_planning`, or with
+`task_sync_invalid_graph` when the folder's `project.json` and the requested
+selection disagree.
+
+A task takes an edit only when nothing binds its current revision: it was
+restored by a task-sync import, it is Open, it has no run, and its history
+holds only run-free planning revisions, so a second edit after a first one
+applies. A task with a run (`active_run`, kept after a release), a task whose
+history records execution (`execution_history`), a task whose history holds
+another planning change, such as a prerequisite or blocker added and later
+removed (`planning_history`), a completed task (`restored_completion`), a
+task in another lifecycle state (`lifecycle`), and work created on this host
+(`unsupported_origin`) refuse. Execution of another task, such as a claimed
+parent, child or sibling, does not block an edit. The refusal names every
+refused task, unsupported changes and blocked edits alike, in task-id order.
+When any task refuses, nothing is written: no revision, baseline or receipt. A completed task the folder leaves unchanged gains no
+event. The baseline records the folder whenever its inventory differs from
+the last one, even when no task changes, so a host-local task the folder now
+carries joins the exchange and its later omission is a refused deletion.
+
+Candidates written by `task-sync prepare` or
 setup materialization carry no exchange envelope, so `task-sync import`
 refuses them; the plain-candidate library calls remain for tests only.
 Import requires `project.json`, rejects unknown entries and symbolic links,
@@ -601,7 +637,9 @@ an attributed restored completion, stay out of ready work and can satisfy an
 ordinary prerequisite. Cancelled and superseded tasks retain explicit disposal
 state and reasons. No local completion seal, acceptance pass or host proof is
 manufactured; native execution still uses its ordinary admission and policy.
-Changes to an existing graph await later reconciliation slices.
+An enrolled destination applies title, outcome and priority edits, as the
+[folder exchange](#edits-on-an-enrolled-destination) describes; other changes
+to an existing graph await later reconciliation slices.
 The profile contains no original disposal actor or time. Its local history
 labels disposal as `disposal_reported`, attributed to the importing actor as a
 report at import time, rather than claiming they performed the original act.
@@ -669,6 +707,7 @@ replacement.
 | `task_sync_destination_non_utf8_name` | A task filename is not valid UTF-8. |
 | `task_sync_destination_unknown_entry` | The candidate directory holds an entry the format does not define. |
 | `task_sync_destination_missing_tasks` | A plain candidate directory, as read by preparation and setup materialization, has no `tasks` directory. A folder import accepts a folder without one. |
+| `task_sync_import_conflict` | A folder imported into an enrolled destination asks for a change this exchange does not apply (an added or deleted task, or a changed field other than title, outcome and priority), or a task it would edit is not free to take the edit. The message names every such task with its reason, in task-id order. A changed note selection refuses earlier, as `task_sync_divergent_planning` or `task_sync_invalid_graph`. |
 
 ## Local incremental preparation
 

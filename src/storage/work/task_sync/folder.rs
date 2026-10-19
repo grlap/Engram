@@ -14,6 +14,7 @@ use crate::{
     storage::{SqliteStore, StoreError},
     task_sync::{
         TaskSyncRefusal, TaskTree,
+        folder_plan::{self, DeltaPlan, FolderPlan},
         progress::{ExportProfile, documents_fingerprint},
     },
 };
@@ -176,6 +177,29 @@ pub(super) fn apply_task_sync_folder_on(
         return Err(TaskSyncRefusal::DivergentPlanning
             .invalid("task folder import refuses a locally changed planning inventory"));
     }
+    // An enrolled destination reconciles the folder against its own planning.
+    // The empty-graph import below serves only a destination with no
+    // exchange baseline or no shared planning left.
+    if let Some(baseline) = &baseline {
+        let membership = baseline
+            .tree
+            .tasks
+            .iter()
+            .map(|task| task.id)
+            .collect::<HashSet<_>>();
+        if let FolderPlan::Deltas(plan) =
+            folder_plan::plan(&current.tree, request.tree, &membership)?
+        {
+            return apply_planned_changes(
+                transaction,
+                request,
+                &plan,
+                baseline,
+                idempotency_key,
+                &request_object,
+            );
+        }
+    }
     let mut result = import_task_tree_on_with_profile(
         transaction,
         request.project,
@@ -187,22 +211,7 @@ pub(super) fn apply_task_sync_folder_on(
     )?;
     let records_planning = result.changed || baseline.is_none();
     if records_planning {
-        let planning = TaskSyncImportPlanning {
-            project_id: request.project.clone(),
-            tree: request.tree.clone(),
-            inventory_fingerprint: documents_fingerprint(&request.tree.folder_documents()?),
-            export_basis: request.export_basis.into(),
-            profile: request.profile.clone(),
-            created_at: request.now,
-        };
-        let planning_object = CanonicalObject::mint(&planning)?;
-        SqliteStore::insert_object(transaction, IMPORT_PLANNING_KIND, &planning_object)?;
-        super::super::feeds::append_to_project_feed(
-            transaction,
-            request.project,
-            IMPORT_PLANNING_KIND,
-            &planning_object,
-        )?;
+        record_planning(transaction, request)?;
         result.changed = true;
     }
     super::super::planning::persist_operation_result(
@@ -213,6 +222,83 @@ pub(super) fn apply_task_sync_folder_on(
         &result,
     )?;
     Ok(result)
+}
+
+/// Applies a classified folder to an enrolled destination: every requested
+/// delta is an admitted scalar edit, or the whole folder refuses with each
+/// reason and nothing is written. The baseline records the folder whenever its
+/// inventory differs from the latest baseline, even when no task changes, so a
+/// host-local task the folder now carries joins the exchange.
+fn apply_planned_changes(
+    transaction: &rusqlite::Transaction<'_>,
+    request: TaskSyncFolderApply<'_>,
+    plan: &DeltaPlan,
+    baseline: &TaskSyncImportPlanning,
+    idempotency_key: &str,
+    request_object: &CanonicalObject,
+) -> Result<TaskSyncImportResult, StoreError> {
+    super::folder_scalar::apply_plan(transaction, plan, request.actor, request.now)?;
+    let edited = plan
+        .scalar_changes()
+        .map(|(id, _)| id)
+        .collect::<HashSet<_>>();
+    if !edited.is_empty() {
+        // Each edited task now exports exactly as the folder carries it.
+        let applied = folder_export_on(transaction, request.project, request.profile)?;
+        let resolved = request
+            .tree
+            .tasks
+            .iter()
+            .filter(|task| edited.contains(&task.id));
+        for task in resolved {
+            if applied.tree.tasks.iter().find(|held| held.id == task.id) != Some(task) {
+                return Err(StoreError::InvalidWorkProjection(
+                    "a folder scalar edit does not export as the folder carries it".into(),
+                ));
+            }
+        }
+    }
+    let result = TaskSyncImportResult {
+        task_count: request.tree.tasks.len(),
+        changed: !edited.is_empty()
+            || baseline.tree.folder_documents()? != request.tree.folder_documents()?,
+        dry_run: false,
+    };
+    if result.changed {
+        record_planning(transaction, request)?;
+    }
+    super::super::planning::persist_operation_result(
+        transaction,
+        APPLY_OPERATION,
+        idempotency_key,
+        request_object.key(),
+        &result,
+    )?;
+    Ok(result)
+}
+
+/// Records the applied folder as the latest exchange baseline.
+fn record_planning(
+    transaction: &rusqlite::Transaction<'_>,
+    request: TaskSyncFolderApply<'_>,
+) -> Result<(), StoreError> {
+    let planning = TaskSyncImportPlanning {
+        project_id: request.project.clone(),
+        tree: request.tree.clone(),
+        inventory_fingerprint: documents_fingerprint(&request.tree.folder_documents()?),
+        export_basis: request.export_basis.into(),
+        profile: request.profile.clone(),
+        created_at: request.now,
+    };
+    let planning_object = CanonicalObject::mint(&planning)?;
+    SqliteStore::insert_object(transaction, IMPORT_PLANNING_KIND, &planning_object)?;
+    super::super::feeds::append_to_project_feed(
+        transaction,
+        request.project,
+        IMPORT_PLANNING_KIND,
+        &planning_object,
+    )?;
+    Ok(())
 }
 
 fn folder_export_on(

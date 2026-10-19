@@ -557,28 +557,18 @@ impl SqliteStore {
         persist_work_item(&transaction, &item)?;
         let (claim_snapshot, rebased_run) =
             rebase_planning_claim(&transaction, &item, &request.authority, request.updated_at)?;
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id: item.work_id,
-            run_id: item.active_run_id,
-            revision: item.revision,
-            work: item.clone(),
-            run: match rebased_run {
-                Some(run) => Some(run),
-                None => active_run_snapshot(&transaction, &item)?,
-            },
-            root_execution: None,
-            claim: claim_snapshot,
-            handoff_offer: None,
-            blocker: None,
-            transition: WorkTransition::Revised {
-                authority: request.authority.clone(),
-            },
-            actor: request.actor.clone(),
-            created_at: request.updated_at,
+        let run = match rebased_run {
+            Some(run) => Some(run),
+            None => active_run_snapshot(&transaction, &item)?,
         };
+        let event = revised_event(
+            &item,
+            run,
+            claim_snapshot,
+            request.authority.clone(),
+            request.actor.clone(),
+            request.updated_at,
+        );
         let (event_id, positions) = append_work_event(&transaction, &event)?;
         if let Some(run_id) = item.active_run_id {
             // A binding the revision removed retires its obligation in the
@@ -1270,6 +1260,80 @@ fn validate_child_inputs(children: &[crate::domain::ChildWorkDraft]) -> Result<(
         validate_priority(child.priority, "child priority")?;
     }
     Ok(())
+}
+
+/// The `Revised` event of a planning revision already persisted in the
+/// current transaction. `run` and `claim` are the run and claim the revision
+/// leaves on the item; a revision never carries a root execution, handoff
+/// offer or blocker.
+pub(super) fn revised_event(
+    item: &WorkItem,
+    run: Option<WorkRun>,
+    claim: Option<WorkClaim>,
+    authority: WorkPlanningAuthority,
+    actor: crate::domain::ActorContext,
+    created_at: DateTime<Utc>,
+) -> WorkEventDraft {
+    WorkEventDraft {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id: item.work_id,
+        run_id: item.active_run_id,
+        revision: item.revision,
+        work: item.clone(),
+        run,
+        root_execution: None,
+        claim,
+        handoff_offer: None,
+        blocker: None,
+        transition: WorkTransition::Revised { authority },
+        actor,
+        created_at,
+    }
+}
+
+/// Applies an admitted scalar edit from a resolved task folder as an ordinary
+/// planning revision under project authority, on the caller's transaction.
+/// The caller admitted the item as restored, Open and run-free, so there is no
+/// claim to rebase and no obligation to open or waive; its origin, restored
+/// record and history stay as they are.
+pub(super) fn apply_folder_scalar_revision_on(
+    transaction: &Transaction<'_>,
+    work_id: WorkId,
+    change: &crate::task_sync::folder_plan::ScalarChange,
+    actor: &crate::domain::ActorContext,
+    at: DateTime<Utc>,
+) -> Result<WorkItem, StoreError> {
+    let mut item = load_work_item(transaction, work_id)?;
+    if item.active_run_id.is_some() || item.lifecycle != WorkLifecycle::Open {
+        return Err(StoreError::InvalidWorkProjection(
+            "a folder scalar revision requires an admitted run-free Open item".into(),
+        ));
+    }
+    if let Some(title) = change.title.as_deref() {
+        item.title = normalize_text(title, crate::storage::refusal_labels::TITLE)?;
+    }
+    if let Some(outcome) = change.outcome.as_deref() {
+        item.outcome = normalize_text(outcome, crate::storage::refusal_labels::OUTCOME)?;
+    }
+    if let Some(priority) = change.priority {
+        validate_priority(priority, crate::storage::refusal_labels::PRIORITY)?;
+        item.priority = priority;
+    }
+    item.revision += 1;
+    item.updated_at = at;
+    persist_work_item(transaction, &item)?;
+    let event = revised_event(
+        &item,
+        None,
+        None,
+        WorkPlanningAuthority::Project,
+        actor.clone(),
+        at,
+    );
+    append_work_event(transaction, &event)?;
+    Ok(item)
 }
 
 pub(super) fn persist_operation_result<T: Serialize>(

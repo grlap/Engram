@@ -15,6 +15,7 @@ use crate::{
 pub mod activity;
 pub mod directory;
 pub mod exchange;
+pub mod folder_plan;
 pub mod notes;
 pub use activity::TaskSyncExportOptions;
 pub mod git;
@@ -430,6 +431,9 @@ pub enum TaskSyncRefusal {
     DestinationUnknownEntry,
     /// The candidate directory has no tasks directory.
     DestinationMissingTasks,
+    /// A resolved folder asks for a change this import cannot apply, or a
+    /// task it would change is not free to take it.
+    ImportConflict,
 }
 
 // One mapping generates both the exhaustive match and the test inventory.
@@ -470,6 +474,7 @@ task_sync_refusal_codes! {
     DestinationNonUtf8Name => "task_sync_destination_non_utf8_name",
     DestinationUnknownEntry => "task_sync_destination_unknown_entry",
     DestinationMissingTasks => "task_sync_destination_missing_tasks",
+    ImportConflict => "task_sync_import_conflict",
 }
 
 impl TaskSyncRefusal {

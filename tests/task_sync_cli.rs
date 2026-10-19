@@ -405,6 +405,65 @@ fn task_sync_hosts_with_distinct_aliases_exchange_folders() {
         let result = sync(home, &marker, "import", folder, &["--basis", &basis(own)]);
         assert_eq!(result["changed"], false);
     }
+
+    // A renames the shared task and exports again; B takes the rename from
+    // that folder against its own basis. A second rename follows on top of
+    // the first, on a store that S1's empty-graph import would now refuse as
+    // holding native state.
+    let task = directory::read_folder(&folder_b).unwrap().tree.tasks[0].id;
+    let mut own = folder_b.clone();
+    for (round, title) in ["Renamed on host A", "Renamed twice on host A"]
+        .into_iter()
+        .enumerate()
+    {
+        let output = command(&host_a, &marker)
+            .args([
+                "work",
+                "--actor-id",
+                "author",
+                "--session-id",
+                "author-session",
+                "update",
+                &task.0.to_string(),
+                "--title",
+                title,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let renamed = fixture.path().join(format!("folder-a-round-{round}"));
+        sync(
+            &host_a,
+            &marker,
+            "export",
+            &renamed,
+            &["--origin-machine", "host-A"],
+        );
+        let applied = sync(
+            &host_b,
+            &marker,
+            "import",
+            &renamed,
+            &["--basis", &basis(&own)],
+        );
+        assert_eq!(applied["changed"], true, "{round}");
+        own = fixture.path().join(format!("folder-b-round-{round}"));
+        sync(
+            &host_b,
+            &marker,
+            "export",
+            &own,
+            &["--origin-machine", "host-B"],
+        );
+        assert_eq!(
+            directory::read_folder(&own).unwrap().tree.tasks[0].title,
+            title
+        );
+    }
 }
 
 #[test]

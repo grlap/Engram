@@ -385,7 +385,13 @@ fn task_sync_resolved_folder_edits_import_while_lost_task_files_refuse() {
     )
     .unwrap();
     let refused = refusal(&fixture.import_with_basis(&target, &lost, &target_basis, true));
-    assert_eq!(refused["error"]["code"], "task_sync_removed_planning");
+    assert_eq!(refused["error"]["code"], "task_sync_import_conflict");
+    let lost_id = imported.tree.tasks[0].id.0.to_string();
+    let message = refused["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains(&format!("{lost_id}: task_deleted")),
+        "{message}"
+    );
     let after = fixture.root.join("after");
     let output = fixture.sync(&target, "export", &after, false);
     assert!(output.status.success(), "{}", stderr(&output));

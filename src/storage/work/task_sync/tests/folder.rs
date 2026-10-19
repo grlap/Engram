@@ -817,9 +817,14 @@ fn task_sync_folder_export_captures_a_local_edit_without_self_applying() {
         "Local edit captured before export"
     );
 
-    // Applying the local store's own export is refused as a native-state import.
-    let before = state(&store);
-    let error = store
+    // An enrolled store reconciles its own export as a folder that changes no
+    // task: the edited task gains no event, and the baseline now carries the
+    // local edit, so the next exchange compares against it.
+    let events_before =
+        query::canonical_work_event_records_for_item(&store.connection, item.work_id)
+            .unwrap()
+            .len();
+    let result = store
         .apply_task_sync_folder(
             folder_apply_request(
                 &tree.project.project_id,
@@ -832,14 +837,22 @@ fn task_sync_folder_export_captures_a_local_edit_without_self_applying() {
             ),
             "folder-import-pre-export-edit",
         )
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("existing native execution state"),
-        "{error:#}"
+        .unwrap();
+    assert!(result.changed);
+    assert_eq!(
+        query::canonical_work_event_records_for_item(&store.connection, item.work_id)
+            .unwrap()
+            .len(),
+        events_before
     );
-    assert_eq!(state(&store), before);
+    assert_eq!(
+        store
+            .export_task_sync_folder(&tree.project.project_id, &profile())
+            .unwrap()
+            .tree,
+        export.tree
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -964,7 +977,9 @@ fn task_sync_folder_apply_refuses_a_partial_baseline_without_deleting_local_work
             "folder-import-2",
         )
         .unwrap_err();
-    assert!(error.to_string().contains("removed"), "{error:#}");
-    assert_eq!(refusal_code(&error), "task_sync_removed_planning");
+    // An enrolled store sees the omitted members as deletions, which this
+    // exchange refuses by name rather than applying the rest.
+    assert!(error.to_string().contains("task_deleted"), "{error:#}");
+    assert_eq!(refusal_code(&error), "task_sync_import_conflict");
     assert_eq!(state(&store), before);
 }
