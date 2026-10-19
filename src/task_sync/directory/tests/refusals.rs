@@ -86,7 +86,7 @@ fn task_sync_directory_read_and_export_enforce_task_and_tree_limits_at_the_bound
     };
     write_with(&path, &tree, limits, &mut |_, _| Ok(())).unwrap();
     assert_eq!(
-        read_documents_with(&path, limits, &mut |_, _| Ok(())).unwrap(),
+        read_documents_with(&path, limits, true, &mut |_, _| Ok(())).unwrap(),
         documents
     );
     for (limits, code) in [
@@ -102,7 +102,7 @@ fn task_sync_directory_read_and_export_enforce_task_and_tree_limits_at_the_bound
             "task_sync_destination_tree_limit",
         ),
     ] {
-        let error = read_documents_with(&path, limits, &mut |_, _| Ok(())).unwrap_err();
+        let error = read_documents_with(&path, limits, true, &mut |_, _| Ok(())).unwrap_err();
         assert_eq!(refusal_code(&error), code);
         let destination = fixture.path().join("refused");
         let error = write_with(&destination, &tree, limits, &mut |_, _| Ok(())).unwrap_err();

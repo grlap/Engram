@@ -18,6 +18,7 @@ use super::{
     AcceptanceEvaluationReceipt, CompletionSeal, ObjectId, WorkBlocker, WorkClaim,
     WorkHandoffOffer, WorkItem, WorkNoteCapture, WorkObligationResolutionEvent, WorkRun,
 };
+use crate::storage::TaskSyncImportResult;
 use crate::{
     domain::{
         NextReadyChildClaim, RejectRequiredChildReceipt, RequiredChildWaiver, WorkDecomposition,
@@ -58,6 +59,10 @@ const CORE_RECEIPTS: &[(&str, Receipt)] = &[
     (
         "add_work_prerequisite",
         Receipt::Decoded(decode::<WorkItem>),
+    ),
+    (
+        "apply_task_sync_folder",
+        Receipt::Decoded(decode::<TaskSyncImportResult>),
     ),
     (
         "cancel_work_handoff",

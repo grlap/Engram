@@ -1,9 +1,18 @@
 //! Directory candidates are explicit, immutable inputs, never Git or store backups.
 
-use std::{collections::BTreeMap, fs, io::Read, path::Path};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{Read, Write},
+    path::Path,
+};
 
-use crate::task_sync::{TaskSyncRefusal, TaskTree};
+use crate::task_sync::{
+    ProjectDocument, TaskSyncRefusal, TaskTree, pretty,
+    progress::{ExportProfile, documents_fingerprint},
+};
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_TREE_BYTES: usize = 128 * 1024 * 1024;
@@ -24,6 +33,37 @@ const LIMITS: Limits = Limits {
 
 type Checkpoint<'a> = dyn FnMut(&str, &Path) -> Result<()> + 'a;
 
+/// A complete folder candidate together with the inventory observed when its
+/// destination host exported it. The basis is a caller-selected content
+/// comparison, not authentication; import callers must select their own copy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FolderExchange {
+    pub tree: TaskTree,
+    pub export_basis: String,
+    pub profile: ExportProfile,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct FolderProjectDocument {
+    project: ProjectDocument,
+    profile: ExportProfile,
+    folder_exchange: FolderExchangeDocument,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct FolderExchangeDocument {
+    complete: bool,
+    export_basis: FolderExportBasis,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct FolderExportBasis {
+    inventory_fingerprint: String,
+}
+
 /// Read one complete directory without following links or ignoring unknown entries.
 ///
 /// # Errors
@@ -33,6 +73,61 @@ pub fn read(path: &Path) -> Result<TaskTree> {
     tree.validate()
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     Ok(tree)
+}
+
+/// Reads the Git-folder envelope.  Its embedded basis proves only that the
+/// folder is self-consistent; the destination's caller supplies the retained
+/// local basis when applying a merged folder.
+///
+/// # Errors
+///
+/// Refuses malformed, incomplete, or self-inconsistent folder data.
+pub fn read_folder(path: &Path) -> Result<FolderExchange> {
+    let exchange = read_folder_stored(path)?;
+    exchange
+        .tree
+        .validate_folder()
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    Ok(exchange)
+}
+
+/// Reads a folder envelope and verifies its structural tree and inventory
+/// fingerprint without applying current note-disclosure admission.
+fn read_folder_stored(path: &Path) -> Result<FolderExchange> {
+    let mut documents = read_raw_documents_with_tasks(path, false)?;
+    let project = documents
+        .remove("project.json")
+        .ok_or_else(|| TaskSyncRefusal::InvalidGraph.invalid("project.json missing"))?;
+    let envelope: FolderProjectDocument = crate::task_sync::parse(&project)
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    if !envelope.folder_exchange.complete {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder exchange must be complete")
+            .into());
+    }
+    envelope.profile.options().validate()?;
+    if envelope.project.notes_included != envelope.profile.include_notes {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder profile and tree disclosure differ")
+            .into());
+    }
+    documents.insert(
+        "project.json".into(),
+        pretty(&envelope.project).map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?,
+    );
+    let tree = TaskTree::from_stored_documents(&documents)
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    let fingerprint = documents_fingerprint(&tree.folder_documents()?);
+    if envelope.folder_exchange.export_basis.inventory_fingerprint != fingerprint {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder exchange inventory fingerprint is inconsistent")
+            .into());
+    }
+    Ok(FolderExchange {
+        tree,
+        export_basis: fingerprint,
+        profile: envelope.profile,
+    })
 }
 
 fn read_stored(path: &Path) -> Result<TaskTree> {
@@ -48,12 +143,26 @@ fn stored_tree(
 
 /// Read retained bytes without applying today's note disclosure admission.
 pub(crate) fn read_documents(path: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
-    read_documents_with(path, LIMITS, &mut |_, _| Ok(()))
+    let documents = read_raw_documents(path)?;
+    stored_tree(&documents)?;
+    Ok(documents)
+}
+
+fn read_raw_documents(path: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    read_raw_documents_with_tasks(path, true)
+}
+
+fn read_raw_documents_with_tasks(
+    path: &Path,
+    require_tasks: bool,
+) -> Result<BTreeMap<String, Vec<u8>>> {
+    read_documents_with(path, LIMITS, require_tasks, &mut |_, _| Ok(()))
 }
 
 fn read_documents_with(
     path: &Path,
     limits: Limits,
+    require_tasks: bool,
     checkpoint: &mut Checkpoint<'_>,
 ) -> Result<BTreeMap<String, Vec<u8>>> {
     regular_directory(path)?;
@@ -102,12 +211,11 @@ fn read_documents_with(
                 .into());
         }
     }
-    if !has_tasks {
+    if require_tasks && !has_tasks {
         return Err(TaskSyncRefusal::DestinationMissingTasks
             .invalid("tasks directory missing")
             .into());
     }
-    stored_tree(&documents)?;
     Ok(documents)
 }
 
@@ -232,6 +340,89 @@ fn add_document(
 /// Refuses overwrite, links, invalid data, or an I/O failure.
 pub fn write(path: &Path, tree: &TaskTree) -> Result<()> {
     write_with(path, tree, LIMITS, &mut |_, _| Ok(()))
+}
+
+/// Publishes a complete Git folder with its deterministic exchange envelope.
+/// The destination must be absent, or must already contain the exact same
+/// bytes from an earlier attempt.
+///
+/// # Errors
+///
+/// Refuses an invalid profile, mismatched disclosure, unsafe destination, or
+/// I/O failure.
+pub fn write_folder(
+    path: &Path,
+    tree: &TaskTree,
+    profile: &ExportProfile,
+) -> Result<FolderExchange> {
+    profile.options().validate()?;
+    if tree.project.notes_included != profile.include_notes {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder profile and tree disclosure differ")
+            .into());
+    }
+    let mut documents = tree
+        .folder_documents()
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    let export_basis = documents_fingerprint(&documents);
+    let envelope = FolderProjectDocument {
+        project: tree.project.clone(),
+        profile: profile.clone(),
+        folder_exchange: FolderExchangeDocument {
+            complete: true,
+            export_basis: FolderExportBasis {
+                inventory_fingerprint: export_basis.clone(),
+            },
+        },
+    };
+    documents.insert(
+        "project.json".into(),
+        pretty(&envelope).map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?,
+    );
+    write_folder_documents(path, &documents)?;
+    Ok(FolderExchange {
+        tree: tree.clone(),
+        export_basis,
+        profile: profile.clone(),
+    })
+}
+
+fn write_folder_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+    admit_limits(documents)?;
+    let absolute = std::path::absolute(path)?;
+    let path = absolute.as_path();
+    match fs::symlink_metadata(path) {
+        Ok(_) if read_raw_documents_with_tasks(path, false)? == *documents => return Ok(()),
+        Ok(_) => return Err(occupied().into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let parent = destination_parent(path)?;
+    regular_directory(parent)?;
+    let pending = parent.join(format!(".engram-task-candidate-{}", uuid::Uuid::now_v7()));
+    fs::create_dir(&pending)?;
+    let result = (|| {
+        fs::create_dir(pending.join("tasks"))?;
+        for (relative, bytes) in documents {
+            let mut file = fs::File::create(pending.join(relative))?;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+        }
+        // Re-parse before publication with structural validation and the
+        // envelope fingerprint. Retained historical notes need not satisfy
+        // today's public disclosure admission until a consumer reads them.
+        read_folder_stored(&pending)?;
+        let mut pending_path = tempfile::TempPath::try_from_path(&pending)?;
+        pending_path.disable_cleanup(true);
+        pending_path
+            .persist_noclobber(path)
+            .map_err(|error| error.error)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&pending);
+    }
+    result
 }
 
 fn write_with(

@@ -13,6 +13,10 @@ pub(crate) mod graph_snapshot;
 pub(crate) use work::task_sync::OriginScopeGuard as WorkReadOriginScope;
 pub use work::task_sync::TaskSyncImportResult;
 pub use work::task_sync::TaskSyncNoteExport;
+pub(crate) use work::task_sync::folder::folder_apply_projection;
+#[cfg(test)]
+pub(crate) use work::task_sync::folder::folder_apply_summary;
+pub use work::task_sync::folder::{TaskSyncFolderApply, TaskSyncFolderExport};
 pub mod migration;
 mod named_root_read;
 mod named_root_sighting_read;
@@ -241,6 +245,8 @@ pub(crate) fn parent_not_open_remedy(lifecycle: crate::domain::WorkLifecycle) ->
     }
 }
 
+#[cfg(test)]
+mod task_sync_folder_facade_tests;
 #[cfg(test)]
 mod test_support;
 

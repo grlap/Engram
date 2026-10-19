@@ -9,6 +9,7 @@ use crate::{
 
 mod activity;
 mod exclusion;
+mod folder;
 mod incremental;
 mod native;
 mod notes;

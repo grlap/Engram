@@ -17,6 +17,7 @@ use crate::{
 };
 
 mod activity;
+pub(crate) mod folder;
 mod incremental;
 mod notes;
 mod origin;
@@ -80,7 +81,7 @@ pub struct TaskSyncNoteExport {
     pub activity_omissions: crate::task_sync::notes::NoteOmissions,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaskSyncImportResult {
     pub task_count: usize,
     pub changed: bool,
@@ -158,128 +159,245 @@ impl SqliteStore {
         dry_run: bool,
         now: DateTime<Utc>,
     ) -> Result<TaskSyncImportResult, StoreError> {
-        tree.validate()
-            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-        crate::storage::admit_live_actor_session(actor)?;
-        actor.validate_attribution_context().map_err(invalid)?;
-        if &tree.project.project_id != project {
-            return Err(TaskSyncRefusal::OriginMismatch.invalid("task candidate project mismatch"));
-        }
-        if actor.actor_id.trim().is_empty()
-            || actor
-                .provenance_chain
-                .iter()
-                .any(|link| link.source == ORIGIN_KIND)
-            || actor.actor_id.trim() != actor.actor_id
-            || actor.actor_kind.trim().is_empty()
-            || actor.actor_kind.trim() != actor.actor_kind
-            || actor
-                .session_id
-                .as_ref()
-                .is_none_or(|id| id.0.trim().is_empty())
-        {
-            return Err(invalid("import attribution is required"));
-        }
+        validate_task_import(project, actor, tree, false)?;
         let transaction = self.begin_work_mutation()?;
-        let native: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM work_items WHERE project_id = ?1
+        let result = import_task_tree_on(&transaction, project, actor, tree, dry_run, now)?;
+        if !dry_run && result.changed {
+            transaction.commit()?;
+        }
+        Ok(result)
+    }
+}
+
+/// Stages an existing empty-graph import in the caller's write transaction.
+/// The caller either commits its own receipt with these writes or rolls all of
+/// them back, so no planning basis can outlive a failed admission.
+pub(super) fn import_task_tree_on(
+    transaction: &rusqlite::Transaction<'_>,
+    project: &ProjectId,
+    actor: &ActorContext,
+    tree: &TaskTree,
+    dry_run: bool,
+    now: DateTime<Utc>,
+) -> Result<TaskSyncImportResult, StoreError> {
+    import_task_tree_on_with_scope(
+        transaction,
+        project,
+        actor,
+        tree,
+        ImportScope::legacy(),
+        dry_run,
+        now,
+    )
+}
+
+/// Folder import supplies the full disclosure profile used to form its
+/// destination-local basis.  The machine alias is comparison input only; it
+/// is not an authority claim or persistent host identity.
+pub(super) fn import_task_tree_on_with_profile(
+    transaction: &rusqlite::Transaction<'_>,
+    project: &ProjectId,
+    actor: &ActorContext,
+    tree: &TaskTree,
+    profile: &crate::task_sync::progress::ExportProfile,
+    dry_run: bool,
+    now: DateTime<Utc>,
+) -> Result<TaskSyncImportResult, StoreError> {
+    profile.options().validate()?;
+    if tree.project.notes_included != profile.include_notes {
+        return Err(
+            TaskSyncRefusal::InvalidGraph.invalid("task folder profile and tree disclosure differ")
+        );
+    }
+    import_task_tree_on_with_scope(
+        transaction,
+        project,
+        actor,
+        tree,
+        ImportScope::folder(profile.origin_machine.as_deref()),
+        dry_run,
+        now,
+    )
+}
+
+#[derive(Clone, Copy)]
+struct ImportScope<'a> {
+    machine: Option<&'a str>,
+    allow_empty_notes_profile: bool,
+}
+
+impl<'a> ImportScope<'a> {
+    const fn legacy() -> Self {
+        Self {
+            machine: None,
+            allow_empty_notes_profile: false,
+        }
+    }
+
+    const fn folder(machine: Option<&'a str>) -> Self {
+        Self {
+            machine,
+            allow_empty_notes_profile: true,
+        }
+    }
+
+    fn documents(
+        self,
+        tree: &TaskTree,
+    ) -> Result<std::collections::BTreeMap<String, Vec<u8>>, StoreError> {
+        if self.allow_empty_notes_profile {
+            tree.folder_documents()
+        } else {
+            tree.documents()
+        }
+    }
+}
+
+fn import_task_tree_on_with_scope(
+    transaction: &rusqlite::Transaction<'_>,
+    project: &ProjectId,
+    actor: &ActorContext,
+    tree: &TaskTree,
+    scope: ImportScope<'_>,
+    dry_run: bool,
+    now: DateTime<Utc>,
+) -> Result<TaskSyncImportResult, StoreError> {
+    validate_task_import(project, actor, tree, scope.allow_empty_notes_profile)?;
+    let native: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM work_items WHERE project_id = ?1
              AND (json_extract(item_json, '$.restored') = 0 OR latest_event_id IS NOT NULL
                   OR active_run_id IS NOT NULL))",
-            [project.0.as_str()],
+        [project.0.as_str()],
+        |row| row.get(0),
+    )?;
+    if native {
+        return Err(TaskSyncRefusal::NativeState
+            .invalid("task import refuses existing native execution state"));
+    }
+    admit_origins(transaction)?;
+    notes::refuse_known_changes(transaction, tree)?;
+    activity::refuse_known_changes(transaction, tree)?;
+    let current = with_origin_scope(transaction, || {
+        export_on_snapshot(
+            transaction,
+            project,
+            tree.project.notes_included,
+            scope.machine,
+            true,
+            &mut crate::task_sync::notes::NoteOmissions::default(),
+            &mut crate::task_sync::notes::NoteOmissions::default(),
+        )
+    })?;
+    if scope.documents(&current)? == scope.documents(tree)? {
+        return Ok(TaskSyncImportResult {
+            task_count: tree.tasks.len(),
+            changed: false,
+            dry_run,
+        });
+    }
+    if !current.tasks.is_empty() {
+        let candidate = tree
+            .tasks
+            .iter()
+            .map(|task| task.id)
+            .collect::<std::collections::HashSet<_>>();
+        let removed = current
+            .tasks
+            .iter()
+            .any(|held| !candidate.contains(&held.id));
+        let refusal = if removed {
+            TaskSyncRefusal::RemovedPlanning
+        } else {
+            TaskSyncRefusal::DivergentPlanning
+        };
+        return Err(refusal.invalid("task import refuses divergent or removed planning state"));
+    }
+    // UUIDs are store-wide identities, even when another project owns them.
+    for task in &tree.tasks {
+        let exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_items WHERE work_id = ?1)",
+            [task.id.0.to_string()],
             |row| row.get(0),
         )?;
-        if native {
-            return Err(TaskSyncRefusal::NativeState
-                .invalid("task import refuses existing native execution state"));
+        if exists {
+            return Err(
+                TaskSyncRefusal::IdCollision.invalid("task id already belongs to this store")
+            );
         }
-        admit_origins(&transaction)?;
-        notes::refuse_known_changes(&transaction, tree)?;
-        activity::refuse_known_changes(&transaction, tree)?;
-        let current = with_origin_scope(&transaction, || {
-            export_on_snapshot(
-                &transaction,
-                project,
-                tree.project.notes_included,
-                None,
-                true,
-                &mut crate::task_sync::notes::NoteOmissions::default(),
-                &mut crate::task_sync::notes::NoteOmissions::default(),
-            )
-        })?;
-        if current.documents()? == tree.documents()? {
-            return Ok(TaskSyncImportResult {
-                task_count: tree.tasks.len(),
-                changed: false,
-                dry_run,
-            });
-        }
-        if !current.tasks.is_empty() {
-            let candidate = tree
-                .tasks
-                .iter()
-                .map(|task| task.id)
-                .collect::<std::collections::HashSet<_>>();
-            let removed = current
-                .tasks
-                .iter()
-                .any(|held| !candidate.contains(&held.id));
-            let refusal = if removed {
-                TaskSyncRefusal::RemovedPlanning
-            } else {
-                TaskSyncRefusal::DivergentPlanning
-            };
-            return Err(refusal.invalid("task import refuses divergent or removed planning state"));
-        }
-        // UUIDs are store-wide identities, even when another project owns them.
-        for task in &tree.tasks {
+        for blocker in &task.blockers {
             let exists: bool = transaction.query_row(
-                "SELECT EXISTS(SELECT 1 FROM work_items WHERE work_id = ?1)",
-                [task.id.0.to_string()],
+                "SELECT EXISTS(SELECT 1 FROM work_blockers WHERE blocker_id = ?1)",
+                [&blocker.blocker_id],
                 |row| row.get(0),
             )?;
             if exists {
-                return Err(
-                    TaskSyncRefusal::IdCollision.invalid("task id already belongs to this store")
-                );
-            }
-            for blocker in &task.blockers {
-                let exists: bool = transaction.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM work_blockers WHERE blocker_id = ?1)",
-                    [&blocker.blocker_id],
-                    |row| row.get(0),
-                )?;
-                if exists {
-                    return Err(TaskSyncRefusal::IdCollision
-                        .invalid("blocker id already belongs to this store"));
-                }
+                return Err(TaskSyncRefusal::IdCollision
+                    .invalid("blocker id already belongs to this store"));
             }
         }
-        transaction.execute_batch("PRAGMA defer_foreign_keys = ON")?;
-        for (task, snapshot) in tree.tasks.iter().zip(tree.snapshots()?) {
-            super::planning::refuse_record_id_pins_on(&transaction, &task.acceptance_bindings)
-                .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-            insert_task(&transaction, tree, task, snapshot, actor, now)?;
-        }
-        if transaction
-            .prepare("PRAGMA foreign_key_check")?
-            .query([])?
-            .next()?
-            .is_some()
-        {
-            return Err(
-                TaskSyncRefusal::InvalidGraph.invalid("task import foreign key admission failed")
-            );
-        }
-        admit_origins(&transaction)?;
-        if !dry_run {
-            transaction.commit()?;
-        }
-        Ok(TaskSyncImportResult {
-            task_count: tree.tasks.len(),
-            changed: true,
-            dry_run,
-        })
     }
+    transaction.execute_batch("PRAGMA defer_foreign_keys = ON")?;
+    for (task, snapshot) in tree.tasks.iter().zip(tree.snapshots()?) {
+        super::planning::refuse_record_id_pins_on(transaction, &task.acceptance_bindings)
+            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+        insert_task(transaction, tree, task, snapshot, actor, now)?;
+    }
+    if transaction
+        .prepare("PRAGMA foreign_key_check")?
+        .query([])?
+        .next()?
+        .is_some()
+    {
+        return Err(
+            TaskSyncRefusal::InvalidGraph.invalid("task import foreign key admission failed")
+        );
+    }
+    admit_origins(transaction)?;
+    Ok(TaskSyncImportResult {
+        task_count: tree.tasks.len(),
+        changed: true,
+        dry_run,
+    })
+}
+
+fn validate_task_import(
+    project: &ProjectId,
+    actor: &ActorContext,
+    tree: &TaskTree,
+    allow_empty_notes_profile: bool,
+) -> Result<(), StoreError> {
+    if allow_empty_notes_profile {
+        tree.validate_folder()
+    } else {
+        tree.validate()
+    }
+    .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    validate_task_sync_actor(actor)?;
+    if &tree.project.project_id != project {
+        return Err(TaskSyncRefusal::OriginMismatch.invalid("task candidate project mismatch"));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_task_sync_actor(actor: &ActorContext) -> Result<(), StoreError> {
+    crate::storage::admit_live_actor_session(actor)?;
+    actor.validate_attribution_context().map_err(invalid)?;
+    if actor.actor_id.trim().is_empty()
+        || actor
+            .provenance_chain
+            .iter()
+            .any(|link| link.source == ORIGIN_KIND)
+        || actor.actor_id.trim() != actor.actor_id
+        || actor.actor_kind.trim().is_empty()
+        || actor.actor_kind.trim() != actor.actor_kind
+        || actor
+            .session_id
+            .as_ref()
+            .is_none_or(|id| id.0.trim().is_empty())
+    {
+        return Err(invalid("import attribution is required"));
+    }
+    Ok(())
 }
 
 fn admit_origins(connection: &Connection) -> Result<(), StoreError> {
@@ -310,6 +428,32 @@ fn export_on(connection: &Connection, project: &ProjectId) -> Result<TaskTree, S
     })
 }
 
+pub(super) fn export_on_with_profile(
+    connection: &Connection,
+    project: &ProjectId,
+    profile: &crate::task_sync::progress::ExportProfile,
+) -> Result<TaskSyncNoteExport, StoreError> {
+    profile.options().validate()?;
+    with_origin_scope(connection, || {
+        let mut omissions = crate::task_sync::notes::NoteOmissions::default();
+        let mut activity_omissions = crate::task_sync::notes::NoteOmissions::default();
+        let tree = export_on_snapshot(
+            connection,
+            project,
+            profile.include_notes,
+            profile.origin_machine.as_deref(),
+            false,
+            &mut omissions,
+            &mut activity_omissions,
+        )?;
+        Ok(TaskSyncNoteExport {
+            tree,
+            omissions,
+            activity_omissions,
+        })
+    })
+}
+
 fn export_on_snapshot(
     connection: &Connection,
     project: &ProjectId,
@@ -324,6 +468,11 @@ fn export_on_snapshot(
         .query_map([&project.0], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     let mut tasks = Vec::new();
+    // A comparison reports only the retained disclosure profile.  In
+    // particular, an empty legacy destination has no note-bearing task from
+    // which to recover that profile; do not synthesize a zero-task
+    // notes-enabled legacy tree here.  Folder envelopes use their distinct
+    // folder-only validation path for that representation.
     let mut notes_included = include_notes && !comparison;
     for id in ids {
         let id = WorkId(uuid::Uuid::parse_str(&id).map_err(|error| invalid(error.to_string()))?);

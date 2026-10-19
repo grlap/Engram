@@ -131,8 +131,15 @@ impl TaskTree {
     /// # Errors
     /// Refuses unsupported profiles, malformed policy, incomplete graphs or collisions.
     pub fn validate(&self) -> Result<(), StoreError> {
-        self.validate_stored()?;
+        self.validate_folder()?;
         self.validate_note_profile()?;
+        Ok(())
+    }
+
+    /// Validates the complete folder payload while permitting the one folder-
+    /// exchange case where a complete notes profile has no task documents.
+    pub(crate) fn validate_folder(&self) -> Result<(), StoreError> {
+        self.validate_stored()?;
         for task in &self.tasks {
             notes::validate_notes(&task.notes, &task.labels)?;
             activity::validate_disclosure(&task.activity, &task.labels)?;
@@ -241,6 +248,14 @@ impl TaskTree {
     pub fn documents(&self) -> Result<BTreeMap<String, Vec<u8>>, StoreError> {
         self.validate_stored()?;
         self.validate_note_profile()?;
+        self.folder_documents()
+    }
+
+    /// Deterministic documents for a complete folder envelope. This is the
+    /// sole encoding path that permits an empty notes-enabled exchange while
+    /// retaining historical records without reapplying current admission.
+    pub(crate) fn folder_documents(&self) -> Result<BTreeMap<String, Vec<u8>>, StoreError> {
+        self.validate_stored()?;
         let mut result = BTreeMap::new();
         result.insert("project.json".into(), pretty(&self.project)?);
         for task in &self.tasks {
@@ -499,7 +514,7 @@ pub(crate) fn pretty(value: &impl Serialize) -> Result<Vec<u8>, StoreError> {
     Ok(bytes)
 }
 
-fn parse<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, StoreError> {
+pub(crate) fn parse<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, StoreError> {
     let value = crate::graph_snapshot::json_input::parse(bytes)
         .map_err(|error| invalid(error.to_string()))?;
     serde_json::from_value(value).map_err(|error| invalid(error.to_string()))

@@ -1235,6 +1235,11 @@ pub(super) fn verify_work_feed_integrity(
                 })
                 .transpose()?
                 .flatten(),
+            super::task_sync::folder::IMPORT_PLANNING_KIND => {
+                super::task_sync::folder::planning_project(&object).map(|project| {
+                    std::collections::HashSet::from([format!("project:{}", project.0)])
+                })
+            }
             _ => None,
         };
         let Some(expected) = expected else {
@@ -1319,7 +1324,8 @@ pub(super) fn verify_work_feed_integrity(
          WHERE object.object_kind IN (
              'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
               'verification_evidence', 'environment_evidence', 'named_root_binding',
-             'work_obligation', 'work_obligation_resolution', 'unadmitted_execution_observation'
+             'work_obligation', 'work_obligation_resolution', 'unadmitted_execution_observation',
+             'task_sync_import_planning'
          )
            AND entry.object_id IS NULL
          ORDER BY object.object_id",

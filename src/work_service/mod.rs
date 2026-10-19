@@ -1498,6 +1498,22 @@ fn agent_change_object(
                 store, &event, position,
             )?))
         }
+        "task_sync_import_planning" => {
+            let (summary, created_at) =
+                crate::storage::folder_apply_projection(object, project_id)?;
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: SCHEMA_VERSION,
+                object_kind: object_kind.into(),
+                work_id: None,
+                work_ref: None,
+                revision: None,
+                change_kind: "task_sync_folder_apply".into(),
+                summary: compact_text(&summary),
+                actor_id: None,
+                actor_context: None,
+                created_at,
+            }))
+        }
         "work_checkpoint" => {
             let checkpoint = serde_json::from_value::<WorkCheckpoint>(object)?;
             let item = store.get_work_item(checkpoint.work_id)?;

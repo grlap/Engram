@@ -7,6 +7,13 @@ use crate::{
 mod parent_precedence;
 mod refusals;
 
+fn profile() -> crate::task_sync::progress::ExportProfile {
+    crate::task_sync::progress::ExportProfile {
+        include_notes: false,
+        origin_machine: None,
+    }
+}
+
 fn candidate() -> TaskTree {
     TaskTree {
         project: ProjectDocument {
@@ -73,6 +80,94 @@ fn task_sync_directory_preserves_crlf_string_content_and_existing_bytes() {
     assert!(write(&path, &divergent).is_err());
     assert_eq!(fs::read(&task_path).unwrap(), task_before);
     assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn folder_exchange_writes_a_complete_envelope_without_overwriting() {
+    let fixture = crate::test_support::temp_home().unwrap();
+    let path = fixture.path().join("candidate");
+    let tree = candidate();
+    let exported = write_folder(&path, &tree, &profile()).unwrap();
+    let read_back = read_folder(&path).unwrap();
+    assert_eq!(read_back, exported);
+    assert_eq!(read_back.tree, tree);
+    assert_eq!(
+        read_back.export_basis,
+        crate::task_sync::progress::documents_fingerprint(&tree.documents().unwrap())
+    );
+    let before = fs::read(path.join("project.json")).unwrap();
+    write_folder(&path, &tree, &profile()).unwrap();
+    assert_eq!(fs::read(path.join("project.json")).unwrap(), before);
+    let mut divergent = tree;
+    divergent.tasks[0].title = "different".into();
+    assert!(write_folder(&path, &divergent, &profile()).is_err());
+    assert_eq!(fs::read(path.join("project.json")).unwrap(), before);
+}
+
+#[test]
+fn folder_exchange_writes_retained_historical_notes_without_reapplying_admission() {
+    use crate::task_sync::{
+        SharedActor,
+        notes::{SharedNote, SharedNoteKind},
+    };
+
+    let fixture = crate::test_support::temp_home().unwrap();
+    let path = fixture.path().join("candidate");
+    let mut tree = candidate();
+    tree.project.notes_included = true;
+    tree.tasks[0].labels.push("SeCrEt".into());
+    tree.tasks[0].notes.push(SharedNote {
+        id: crate::ObjectId::mint(),
+        kind: SharedNoteKind::Generic,
+        body: "root=/private".into(),
+        author: SharedActor {
+            actor_id: "fixture".into(),
+            actor_kind: "agent".into(),
+        },
+        recorded_at: chrono::Utc::now(),
+        origin_machine: "fixture-host".into(),
+    });
+    let profile = crate::task_sync::progress::ExportProfile {
+        include_notes: true,
+        origin_machine: Some("fixture-host".into()),
+    };
+
+    let exported = write_folder(&path, &tree, &profile).unwrap();
+    assert_eq!(exported.tree, tree);
+    assert!(read_folder(&path).is_err());
+}
+
+#[test]
+fn folder_exchange_reads_a_complete_zero_task_envelope_without_a_tasks_directory() {
+    let fixture = crate::test_support::temp_home().unwrap();
+    let path = fixture.path().join("candidate");
+    let mut tree = candidate();
+    tree.tasks.clear();
+    tree.project.notes_included = true;
+    let notes_profile = crate::task_sync::progress::ExportProfile {
+        include_notes: true,
+        origin_machine: Some("directory-test".into()),
+    };
+    let exported = write_folder(&path, &tree, &notes_profile).unwrap();
+    fs::remove_dir(path.join("tasks")).unwrap();
+    assert_eq!(read_folder(&path).unwrap(), exported);
+}
+
+#[test]
+fn folder_exchange_refuses_missing_or_inconsistent_basis() {
+    let fixture = crate::test_support::temp_home().unwrap();
+    let path = fixture.path().join("candidate");
+    let tree = candidate();
+    write_folder(&path, &tree, &profile()).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&fs::read(path.join("project.json")).unwrap()).unwrap();
+    value["folder_exchange"]["complete"] = serde_json::Value::Bool(false);
+    fs::write(
+        path.join("project.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+    assert!(read_folder(&path).is_err());
 }
 
 #[test]

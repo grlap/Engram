@@ -179,6 +179,19 @@ pub(super) fn append_to_work_feeds(
         .collect()
 }
 
+/// Appends a project-scoped planning batch without inventing a root or run
+/// association for a multi-item import.
+pub(super) fn append_to_project_feed(
+    transaction: &Transaction<'_>,
+    project_id: &crate::domain::ProjectId,
+    object_kind: &str,
+    object: &CanonicalObject,
+) -> Result<FeedPosition, StoreError> {
+    let position = reserve_feed_position(transaction, &FeedId::Project(project_id.clone()))?;
+    insert_reserved_feed_entry(transaction, &position, object_kind, object, None)?;
+    Ok(position)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::too_many_arguments,

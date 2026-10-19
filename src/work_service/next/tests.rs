@@ -6,6 +6,99 @@ mod delivery_snapshot;
 mod recovery;
 
 #[test]
+fn folder_apply_is_visible_to_next_and_peek() {
+    use crate::{
+        ActorContext,
+        storage::{SqliteStore, TaskSyncFolderApply, folder_apply_summary},
+        task_sync::{
+            FORMAT, ProjectDocument, TaskTree,
+            progress::{ExportProfile, documents_fingerprint},
+        },
+        work_service::AssuranceLevel,
+    };
+
+    let directory = crate::test_support::temp_home().expect("temp directory");
+    let database = directory.path().join("work.db");
+    let project = ProjectId("folder-next".into());
+    let tree = TaskTree {
+        project: ProjectDocument {
+            format: FORMAT.into(),
+            project_id: project.clone(),
+            notes_included: false,
+        },
+        tasks: Vec::new(),
+    };
+    let profile = ExportProfile {
+        include_notes: false,
+        origin_machine: None,
+    };
+    let actor = ActorContext {
+        actor_id: "folder-writer".into(),
+        actor_kind: "agent".into(),
+        assurance: AssuranceLevel::Asserted,
+        run_id: None,
+        session_id: Some(SessionId("folder-writer".into())),
+        source_tool: Some("test".into()),
+        source_skill: None,
+        provenance_chain: Vec::new(),
+        reason: "exercise folder delivery".into(),
+    };
+    let basis = documents_fingerprint(&tree.documents().expect("empty documents"));
+    let mut store = SqliteStore::open(&database).expect("store");
+    store
+        .apply_task_sync_folder(
+            TaskSyncFolderApply {
+                project: &project,
+                actor: &actor,
+                tree: &tree,
+                export_basis: &basis,
+                profile: &profile,
+                complete: true,
+                now: at(1),
+            },
+            "folder-next-apply",
+        )
+        .expect("folder apply");
+    drop(store);
+
+    let service = LocalWorkService::new(
+        database,
+        project,
+        "reader".into(),
+        SessionId("folder-reader".into()),
+        None,
+    );
+    let query = WorkNextQuery {
+        sections: vec![WorkNextSection::Changes],
+        ..WorkNextQuery::default()
+    };
+    let normal = service.work_next(20, query.clone(), at(2)).expect("next");
+    let is_folder_apply = |change: &WorkChange| {
+        matches!(
+            &change.delivery,
+            WorkChangeProjection::Visible(summary)
+                if summary.change_kind == "task_sync_folder_apply"
+                    && summary.summary == folder_apply_summary(0)
+        )
+    };
+    assert!(
+        normal
+            .changes
+            .as_ref()
+            .is_some_and(|changes| changes.iter().any(is_folder_apply))
+    );
+
+    let peek = service
+        .work_next_peek_for_agent(20, 20, true, query, at(3), |_| true)
+        .expect("peek");
+    assert!(
+        peek.changes
+            .as_ref()
+            .is_some_and(|changes| changes.iter().any(is_folder_apply))
+    );
+}
+
+#[test]
 fn source_notice_actor_fallback_requires_proposal_kind() {
     let nested = serde_json::json!({"notice": {"actor": {
         "actor_id": "external", "actor_kind": "agent", "session_id": "source-session"
