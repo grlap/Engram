@@ -9,6 +9,7 @@ use crate::domain::{
     NamedRootRead, NamedRootSightingRead, NamedRootSightingReadRefusal, NamedRootState,
     WorkClaimId, WorkClaimState, WorkRunState,
 };
+use crate::storage::NamedRootReadRefusal;
 
 /// The control credentials a read presents.
 #[derive(Clone)]
@@ -89,6 +90,20 @@ fn assert_consistent(
     assert_eq!(read.work_id, work.work_id);
     assert_eq!(read.run_id, claim.run_id);
     assert_eq!(read.claim_id, claim.claim_id);
+    let stored_claim =
+        crate::storage::work::load_work_claim_optional(&store.connection, claim.run_id)
+            .expect("stored claim")
+            .expect("claim exists");
+    assert_eq!(
+        serde_json::to_value(&read.claim).expect("claim wire shape"),
+        serde_json::json!({
+            "state": stored_claim.state,
+            "holder": stored_claim.holder,
+            "expires_at": stored_claim.expires_at,
+            "revision": stored_claim.revision,
+            "fence": stored_claim.fence,
+        })
+    );
     let run = store.get_work_run(claim.run_id).expect("run");
     assert_eq!(read.root_execution_id, run.root_execution_id);
     assert_eq!(read.run.state, run.state);
@@ -404,7 +419,7 @@ fn a_claim_that_does_not_belong_to_the_run_is_refused() {
             claim.run_id,
             other_claim.claim_id
         )),
-        "the claim does not belong to the run"
+        NamedRootReadRefusal::ClaimNotCurrentForRun
     );
     assert_eq!(
         refused(read(
@@ -413,7 +428,7 @@ fn a_claim_that_does_not_belong_to_the_run_is_refused() {
             other_claim.run_id,
             claim.claim_id
         )),
-        "the claim does not belong to the run"
+        NamedRootReadRefusal::ClaimNotCurrentForRun
     );
     assert_eq!(
         refused(read(
@@ -422,7 +437,7 @@ fn a_claim_that_does_not_belong_to_the_run_is_refused() {
             WorkRunId(uuid::Uuid::from_u128(7)),
             claim.claim_id
         )),
-        "the run is unknown in this store"
+        NamedRootReadRefusal::RunUnknown
     );
     assert_eq!(
         refused(read(
@@ -431,7 +446,7 @@ fn a_claim_that_does_not_belong_to_the_run_is_refused() {
             claim.run_id,
             WorkClaimId(uuid::Uuid::from_u128(7))
         )),
-        "the claim does not belong to the run"
+        NamedRootReadRefusal::ClaimNotCurrentForRun
     );
     // The session's own credentials keep their refusals.
     let mut wrong = Credentials::of(&host);
@@ -665,7 +680,7 @@ fn a_run_of_another_project_is_refused() {
         foreign_claim.claim_id,
     ) {
         Err(StoreError::NamedRootReadRefused(reason)) => {
-            assert_eq!(reason, "the run belongs to another project");
+            assert_eq!(reason, NamedRootReadRefusal::OtherProject);
         }
         other => panic!("expected a named-root read refusal, got {other:?}"),
     }

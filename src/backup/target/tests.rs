@@ -443,6 +443,157 @@ fn target_words_refuse_while_another_process_holds_the_push_lock() {
     assert!(clear_target(home.path(), &project(), CopyKind::Store).unwrap());
 }
 
+#[test]
+fn target_reads_without_records_create_no_directory_or_lock() {
+    let home = temp_home().unwrap();
+    assert_eq!(show_targets(home.path(), &project()).unwrap(), []);
+    assert!(!clear_target(home.path(), &project(), CopyKind::Store).unwrap());
+    assert!(!home.path().join(RECORDS_DIRECTORY).exists());
+}
+
+#[test]
+fn target_words_recheck_an_identity_mismatch_without_misdiagnosing_an_active_set() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let first = set_target(home.path(), &project(), &request(), at(0)).unwrap();
+    let mut next_config = first.config.clone();
+    next_config.disclosure_authorized.at = at(1);
+    let next_identity = next_config.identity().unwrap();
+    assert_ne!(next_identity, first.identity);
+    let lock = PushLock::try_acquire(&paths).unwrap();
+
+    // Set's real intermediate pairing: state B is published while config A
+    // remains. Keep the actual writer lock through both public reads.
+    write_state(&paths, &lock, &TargetState::empty(next_identity.clone())).unwrap();
+    let records = || {
+        (
+            std::fs::read(&paths.config).unwrap(),
+            std::fs::read(&paths.state).unwrap(),
+        )
+    };
+    let before = records();
+    for error in [
+        show_targets(home.path(), &project()).unwrap_err(),
+        clear_target(home.path(), &project(), CopyKind::Store).unwrap_err(),
+    ] {
+        assert_eq!(error.code(), "backup_push_running", "{error}");
+        assert!(!error.to_string().contains("engram backup target set"));
+        assert_eq!(records(), before);
+    }
+    // A caller already holding the lock must not contend against itself.
+    let error = read_for_push(&paths, &project(), CopyKind::Store, &lock).unwrap_err();
+    assert_eq!(error.code(), "backup_record_unreadable", "{error}");
+    assert_eq!(records(), before);
+
+    write_record(&paths.config, &next_config).unwrap();
+    let expected = TargetView {
+        config: next_config,
+        identity: next_identity,
+        state_recorded: true,
+    };
+    assert_eq!(
+        show_targets(home.path(), &project()).unwrap(),
+        std::slice::from_ref(&expected)
+    );
+    let published = records();
+    let error = clear_target(home.path(), &project(), CopyKind::Store).unwrap_err();
+    assert_eq!(error.code(), "backup_push_running", "{error}");
+    assert_eq!(records(), published);
+    drop(lock);
+    assert_eq!(show_targets(home.path(), &project()).unwrap(), [expected]);
+    assert!(clear_target(home.path(), &project(), CopyKind::Store).unwrap());
+}
+
+#[test]
+fn a_set_completed_between_record_reads_reloads_both_records_under_the_lock() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let first = set_target(home.path(), &project(), &request(), at(0)).unwrap();
+    let second = set_target(home.path(), &project(), &request(), at(1)).unwrap();
+    let state = read_record::<TargetState>(&paths.state).unwrap();
+    let before = (
+        std::fs::read(&paths.config).unwrap(),
+        std::fs::read(&paths.state).unwrap(),
+    );
+    // Inject the read boundary deterministically: a reader retained config A
+    // before set completed, then read state B after the writer released.
+    let error = validate_records(
+        &paths,
+        &project(),
+        CopyKind::Store,
+        Some(first.config.clone()),
+        state.clone(),
+        ReadConsistency::Strict,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "backup_record_unreadable", "{error}");
+    let actual = validate_records(
+        &paths,
+        &project(),
+        CopyKind::Store,
+        Some(first.config),
+        state.clone(),
+        ReadConsistency::RecheckMismatch,
+    )
+    .unwrap();
+    assert_eq!(actual.0, Some((second.config, second.identity)));
+    assert_eq!(actual.1, state);
+    assert_eq!(
+        (
+            std::fs::read(&paths.config).unwrap(),
+            std::fs::read(&paths.state).unwrap(),
+        ),
+        before
+    );
+}
+
+#[test]
+fn an_unusable_reread_lock_preserves_the_mismatched_record_diagnosis() {
+    let home = temp_home().unwrap();
+    let paths = RecordPaths::new(home.path(), &project(), CopyKind::Store);
+    let view = set_target(home.path(), &project(), &request(), at(0)).unwrap();
+    let mut other_config = view.config;
+    other_config.disclosure_authorized.at = at(1);
+    let lock = PushLock::try_acquire(&paths).unwrap();
+    write_state(
+        &paths,
+        &lock,
+        &TargetState::empty(other_config.identity().unwrap()),
+    )
+    .unwrap();
+    drop(lock);
+    // A directory refuses a writable lock-file open on every platform,
+    // without relying on the test user's permissions or elevated privileges.
+    std::fs::remove_file(&paths.lock).unwrap();
+    std::fs::create_dir(&paths.lock).unwrap();
+    assert!(matches!(
+        PushLock::try_acquire(&paths),
+        Err(TargetError::Io { .. })
+    ));
+    let before = (
+        std::fs::read(&paths.config).unwrap(),
+        std::fs::read(&paths.state).unwrap(),
+    );
+    for error in [
+        show_targets(home.path(), &project()).unwrap_err(),
+        clear_target(home.path(), &project(), CopyKind::Store).unwrap_err(),
+    ] {
+        assert_eq!(error.code(), "backup_record_unreadable", "{error}");
+        assert!(matches!(
+            &error,
+            TargetError::Unreadable { path, .. } if path == &paths.state
+        ));
+        assert!(error.to_string().contains("recorded for another target"));
+        assert_eq!(
+            (
+                std::fs::read(&paths.config).unwrap(),
+                std::fs::read(&paths.state).unwrap(),
+            ),
+            before
+        );
+    }
+}
+
 fn stored_manifest(identity: &ObjectId, second: i64) -> StoredManifest {
     StoredManifest {
         format_version: STORED_FORMAT_VERSION,
@@ -703,13 +854,24 @@ fn a_state_for_another_target_is_refused_while_earlier_identities_inside_it_are_
     let foreign = full_state(&earlier, &view.identity);
     let lock = PushLock::try_acquire(&paths).unwrap();
     write_state(&paths, &lock, &foreign).unwrap();
-    let before = std::fs::read(&paths.state).unwrap();
+    let before = (
+        std::fs::read(&paths.config).unwrap(),
+        std::fs::read(&paths.state).unwrap(),
+    );
     let error = read_for_push(&paths, &project(), CopyKind::Store, &lock).unwrap_err();
     assert_eq!(error.code(), "backup_record_unreadable", "{error}");
     drop(lock);
     let error = show_targets(home.path(), &project()).unwrap_err();
     assert_eq!(error.code(), "backup_record_unreadable", "{error}");
-    assert_eq!(std::fs::read(&paths.state).unwrap(), before);
+    let error = clear_target(home.path(), &project(), CopyKind::Store).unwrap_err();
+    assert_eq!(error.code(), "backup_record_unreadable", "{error}");
+    assert_eq!(
+        (
+            std::fs::read(&paths.config).unwrap(),
+            std::fs::read(&paths.state).unwrap(),
+        ),
+        before
+    );
 }
 
 #[test]

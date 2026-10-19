@@ -584,7 +584,11 @@ The read writes nothing: it records no event, expires no grant, changes no
 revision and consumes no idempotency key, so a host may repeat it freely. A
 still-bound root whose holder is gone reads `bound`. An unknown run, a claim
 that is not the run's, or a run of another project returns
-`named_root_read_refused`; wrong credentials keep their codes; a record that
+`named_root_read_refused`, with `error.reason` respectively `run_unknown`,
+`claim_not_current_for_run` or `other_project`. The existing message text is
+unchanged; hosts match the code and reason without parsing that text. The
+reason identifies a refusal, not a named-root state, and adds nothing to the
+successful read's claim block. Wrong credentials keep their codes; a record that
 fails its canonical association returns a storage error. A refused or failed
 read is never a `none` state.
 

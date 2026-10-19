@@ -131,6 +131,57 @@ fn different_build_refusal_preserves_host_wire_code() {
 }
 
 #[test]
+fn named_root_read_refusals_preserve_messages_and_expose_stable_reasons() {
+    use crate::storage::NamedRootReadRefusal;
+
+    for (reason, wire_reason, message) in [
+        (
+            NamedRootReadRefusal::RunUnknown,
+            "run_unknown",
+            "named-root read refused: the run is unknown in this store",
+        ),
+        (
+            NamedRootReadRefusal::ClaimNotCurrentForRun,
+            "claim_not_current_for_run",
+            "named-root read refused: the claim does not belong to the run",
+        ),
+        (
+            NamedRootReadRefusal::OtherProject,
+            "other_project",
+            "named-root read refused: the run belongs to another project",
+        ),
+    ] {
+        let error = StoreError::NamedRootReadRefused(reason);
+        let response = HostControlResponse::Error {
+            error: HostControlErrorBody {
+                code: store_error_code(&error),
+                message: error.to_string(),
+                reason: store_error_reason(&error),
+                details: store_error_details(&error),
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(response).expect("host response"),
+            serde_json::json!({
+                "status": "error",
+                "error": {
+                    "code": "named_root_read_refused",
+                    "reason": wire_reason,
+                    "message": message,
+                },
+            })
+        );
+    }
+    assert!(store_error_reason(&StoreError::DifferentBuildSchema).is_none());
+    let invalid = parse_frame(Ok(b"{}".to_vec())).expect_err("invalid request");
+    assert!(
+        serde_json::to_value(invalid).expect("invalid request response")["error"]
+            .get("reason")
+            .is_none()
+    );
+}
+
+#[test]
 fn moved_evaluation_basis_preserves_both_host_wire_codes() {
     for (moved, expected) in [
         (
@@ -152,6 +203,7 @@ fn moved_evaluation_basis_preserves_both_host_wire_codes() {
             error: HostControlErrorBody {
                 code: store_error_code(&error),
                 message: error.to_string(),
+                reason: store_error_reason(&error),
                 details: store_error_details(&error),
             },
         };
@@ -214,6 +266,7 @@ fn verification_bind_request_and_refusal_wire_shape() {
             error: HostControlErrorBody {
                 code: store_error_code(error),
                 message: error.to_string(),
+                reason: store_error_reason(error),
                 details: store_error_details(error),
             },
         })
@@ -227,6 +280,7 @@ fn verification_bind_request_and_refusal_wire_shape() {
     );
     let other = wire(&StoreError::DifferentBuildSchema);
     assert!(other["error"].get("details").is_none(), "{other}");
+    assert!(other["error"].get("reason").is_none(), "{other}");
 }
 
 #[test]

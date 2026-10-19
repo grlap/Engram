@@ -194,6 +194,101 @@ fn expired_lifecycle_and_read_frames_are_refused_before_dispatch() {
     }
 }
 
+#[test]
+fn expired_status_frame_preserves_due_grant_until_in_time_retry() {
+    CLOCK.with(|clock| clock.set(Instant::now()));
+    let _clock = ControlRequestScope::with_clock(now);
+    let mut fixture = Fixture::new();
+
+    // Seed through the store's UTC clock; only the frame clock is delayed.
+    let issued_at = Utc::now() - chrono::TimeDelta::days(1);
+    let actor = fixture
+        .server
+        .actor("session_bind", "bind an expiry fixture");
+    let bound = fixture
+        .server
+        .store
+        .bind_control_session(
+            &fixture.server.project_id,
+            "busy-anchor",
+            "busy",
+            &fixture.server.session_id,
+            &fixture.server.connection_token,
+            &actor,
+            ControlAssurance::TurnGated,
+            &[EffectClass::Observe],
+            1,
+            "bind",
+            issued_at,
+        )
+        .unwrap();
+    let intent = TurnIntent {
+        idempotency_key: "expired".into(),
+        intent_fingerprint: ObjectId::from_canonical_bytes(b"expired"),
+        purpose: None,
+        requested_effects: vec![EffectClass::Observe],
+        resource_intents: vec![],
+    };
+    let decision = fixture
+        .server
+        .store
+        .evaluate_control_turn(
+            &fixture.server.project_id,
+            &fixture.server.session_id,
+            &fixture.server.connection_token,
+            &bound.routing_token,
+            &intent,
+            issued_at,
+        )
+        .unwrap();
+    let crate::domain::ControlTurnDecision::Grant { grant } = decision else {
+        panic!("expected an issued historical grant");
+    };
+    assert!(grant.basis.expires_at < Utc::now());
+
+    let read_grant = serde_json::json!({
+        "operation": "turn_grant_read", "routing_token": bound.routing_token,
+        "grant_id": grant.grant_id
+    });
+    let issued = fixture.success(&read_grant);
+    assert_eq!(issued["status"], "found");
+    assert_eq!(issued["state"], "issued");
+    assert!(issued["begun_at"].is_null());
+    assert!(issued["completed_at"].is_null());
+
+    let request = status_frame(&bound.routing_token);
+    let before = fixture.snapshot();
+    let refusal = serve_expired(&mut fixture, &request);
+    assert_eq!(refusal["status"], "error", "{refusal}");
+    assert_eq!(
+        refusal["error"]["code"], "control_request_expired",
+        "{refusal}"
+    );
+    let message = refusal["error"]["message"].as_str().unwrap();
+    assert!(message.contains("this attempt committed no changes"));
+    assert!(message.contains("Earlier uncertain attempts remain unresolved"));
+    assert_eq!(fixture.snapshot(), before);
+    assert_eq!(fixture.success(&read_grant), issued);
+    assert_eq!(fixture.snapshot(), before);
+
+    let status = fixture.success(&request);
+    assert_eq!(status["phase"], "ready", "{status}");
+    assert!(status["open_grant_id"].is_null(), "{status}");
+    assert!(status["open_grant_state"].is_null(), "{status}");
+    let applied = fixture.snapshot();
+    assert_ne!(applied, before);
+
+    let expired = fixture.success(&read_grant);
+    assert_eq!(expired["status"], "found");
+    assert_eq!(expired["state"], "expired");
+    assert!(expired["begun_at"].is_null());
+    assert!(expired["completed_at"].is_null());
+    assert_eq!(fixture.snapshot(), applied);
+
+    assert_eq!(fixture.success(&request), status);
+    assert_eq!(fixture.snapshot(), applied);
+}
+
 #[derive(Default)]
 struct LostFlush {
     bytes: Vec<u8>,

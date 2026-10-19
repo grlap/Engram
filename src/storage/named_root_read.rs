@@ -9,6 +9,22 @@ use crate::domain::{
     NamedRootReadRun, ProjectId, WorkClaimId, WorkRunId,
 };
 
+/// Why a named-root read cannot identify the requested run and claim.
+/// These reasons describe a refused read, never a named-root lifecycle state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, thiserror::Error)]
+#[serde(rename_all = "snake_case")]
+pub enum NamedRootReadRefusal {
+    /// No run with this id exists in the store.
+    #[error("the run is unknown in this store")]
+    RunUnknown,
+    /// The requested claim is not the claim currently recorded for this run.
+    #[error("the claim does not belong to the run")]
+    ClaimNotCurrentForRun,
+    /// The run belongs to a project other than the requesting session's.
+    #[error("the run belongs to another project")]
+    OtherProject,
+}
+
 impl SqliteStore {
     /// Reads `claim_id`'s named-root lifecycle on `run_id` for the bound host
     /// session. The session's own work binding plays no part: any run and
@@ -48,7 +64,7 @@ fn read_named_root_on(
     run_id: WorkRunId,
     claim_id: WorkClaimId,
 ) -> Result<NamedRootRead, StoreError> {
-    let refused = |reason: &str| StoreError::NamedRootReadRefused(reason.into());
+    let refused = StoreError::NamedRootReadRefused;
     // An unknown run is the caller's mistake; a run whose feed exists without
     // its row is a damaged store, and says so.
     let (run_row, run_feed): (bool, bool) = connection.query_row(
@@ -64,12 +80,12 @@ fn read_named_root_on(
                 "run {run_id:?} has a run feed but no run row"
             )));
         }
-        return Err(refused("the run is unknown in this store"));
+        return Err(refused(NamedRootReadRefusal::RunUnknown));
     }
     let run = work::load_work_run(connection, run_id)?;
     let claim = work::load_work_claim_optional(connection, run_id)?
         .filter(|claim| claim.claim_id == claim_id)
-        .ok_or_else(|| refused("the claim does not belong to the run"))?;
+        .ok_or_else(|| refused(NamedRootReadRefusal::ClaimNotCurrentForRun))?;
     if claim.run_id != run.run_id || claim.work_id != run.work_id {
         return Err(StoreError::InvalidWorkProjection(
             "a claim crosses its canonical run".into(),
@@ -77,7 +93,7 @@ fn read_named_root_on(
     }
     let item = work::load_work_item(connection, run.work_id)?;
     if item.project_id != *project_id {
-        return Err(refused("the run belongs to another project"));
+        return Err(refused(NamedRootReadRefusal::OtherProject));
     }
     let read_cut = work::current_run_feed_cut_on(connection, run_id)?;
     let named_root = work::named_root_state_on(connection, run_id, claim_id, read_cut.position)?;

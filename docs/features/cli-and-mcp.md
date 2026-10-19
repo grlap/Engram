@@ -1933,11 +1933,20 @@ lock, an operating-system lock that its holder's exit releases, and refuse
 with `backup_push_running` while another process holds it. The CLI parser
 refuses a missing required flag or an unknown kind or adapter before any
 code applies; a request it accepts but Engram refuses is
-`backup_target_invalid`. A `set` whose state was written but whose
+`backup_target_invalid`. On a configuration/state identity mismatch, `show`
+and `clear` also try that lock to reread both records: a concurrent `set`
+may be between writing its state and configuration. A held lock returns
+`backup_push_running`; a mismatch that remains after the locked reread is
+`backup_record_unreadable`. A `show` briefly holding the lock can make a
+concurrent `set`, `clear` or restore refuse
+busy. If acquiring the reread lock fails for another reason, the original
+`backup_record_unreadable` diagnosis is kept. A consistent `show` takes no
+lock. A `set` whose state was written but whose
 configuration was not reports `backup_record_partial` and is repeated. A
 record that exists but cannot be read is `backup_record_unreadable` like any
 other record this build cannot use; a record that cannot be written or
-removed, and a lock file that cannot be opened or locked, is `backup_io`.
+removed, and a writer's lock file that cannot be opened or locked, is
+`backup_io`.
 `show` on a clean home prints that no target is configured. See
 [off-host backup](off-host-backup.md#configuration).
 
@@ -3341,7 +3350,7 @@ principal. The shipped operations are:
 | `turn_begin` | Recheck the grant's basis, then consume the issued grant; for a work-bound session the receipt carries the claim's `named_root` state |
 | `turn_checkpoint` | Atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
 | `named_root_bind` | Append a claim's named source-root event, `bound` or `ended`, to the project, root and run feeds |
-| `named_root_read` | None. Read one claim's named root on its run, for any run and claim of the project: identities, run and claim lifecycle, the derived `named_root` state, the newest root event by its real id, and the run-feed cut, from one snapshot |
+| `named_root_read` | None. Read one claim's named root on its run, for any run and claim of the project: identities, run and claim lifecycle, the derived `named_root` state, the newest root event by its real id, and the run-feed cut, from one snapshot. A `named_root_read_refused` error carries `reason`: `run_unknown`, `claim_not_current_for_run` or `other_project`; its message and the successful claim block are unchanged |
 | `named_root_sighting_read` | None. Read, for an item's run at a cut (the head by default), the named root recording an evaluation would select there and whether it has the initial sighting recording requires, with the binding event, the sighting record and whether the binding moved since the cut, from one snapshot; it needs no routing token or live holder; see [Reading a root's initial sighting before an evaluation](behavioral-control-plane.md#reading-a-roots-initial-sighting-before-an-evaluation) |
 | `execution_observe` | Append one record of execution the host observed without admission (a turn seen after it started, a change between turns, or a check inside such a turn) to the project, root and run feeds. It creates no grant, begin or turn status, renews no claim and credits no check. Under `account_if_eligible`, naming the project's current policy, an eligible reported change accounts at its own position and opens the selected rule set's obligations; an ineligible one is kept as `audit_only` with its reason; see [Record execution observed without admission](behavioral-control-plane.md#5b-record-execution-observed-without-admission) |
 | `acceptance_binding_read` | None. Read, for one item on its active run, what satisfied each bound criterion: the obligation completion selects, its recorded resolution, and the original verification with its producer, in pages pinned to the run-feed cut the first page captures; see [Reading what satisfied a bound criterion](acceptance-evaluation.md#reading-what-satisfied-a-bound-criterion) |

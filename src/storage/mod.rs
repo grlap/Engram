@@ -19,6 +19,7 @@ pub(crate) use work::task_sync::folder::folder_apply_summary;
 pub use work::task_sync::folder::{TaskSyncFolderApply, TaskSyncFolderExport};
 pub mod migration;
 mod named_root_read;
+pub use named_root_read::NamedRootReadRefusal;
 mod named_root_sighting_read;
 mod objects_tasks;
 mod open_schema;
@@ -1354,7 +1355,7 @@ pub enum StoreError {
     /// The requested run and claim are unknown or do not belong together;
     /// never a named-root state.
     #[error("named-root read refused: {0}")]
-    NamedRootReadRefused(String),
+    NamedRootReadRefused(NamedRootReadRefusal),
     /// An `execution_observe` request is malformed or out of bounds; nothing
     /// was recorded.
     #[error("execution observation is invalid: {0}")]

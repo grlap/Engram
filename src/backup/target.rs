@@ -521,8 +521,8 @@ pub fn set_target(
         }
     };
     // The state goes first, so a new configuration never stands beside the
-    // state of the target it replaced; the opposite pairing is refused when
-    // read.
+    // state of the target it replaced; target words recheck the opposite
+    // pairing under this lock before diagnosing a persistent mismatch.
     write_record(&paths.state, &state).map_err(|source| TargetError::Io {
         path: paths.state.clone(),
         source,
@@ -544,12 +544,15 @@ pub fn set_target(
 /// # Errors
 ///
 /// Refuses with [`TargetError::Unreadable`] when a configuration or state file
-/// exists but this build cannot use it; nothing is changed.
+/// exists but this build cannot use it. An identity mismatch is reread under
+/// the push lock, refusing with [`TargetError::PushRunning`] if it is held.
+/// Records are never changed.
 pub fn show_targets(home: &Path, project: &ProjectId) -> Result<Vec<TargetView>, TargetError> {
     let mut views = Vec::new();
     for kind in CopyKind::ALL {
         let paths = RecordPaths::new(home, project, kind);
-        let (config, state) = read_records(&paths, project, kind)?;
+        let (config, state) =
+            read_records(&paths, project, kind, ReadConsistency::RecheckMismatch)?;
         if let Some((config, identity)) = config {
             views.push(TargetView {
                 config,
@@ -571,11 +574,13 @@ pub fn show_targets(home: &Path, project: &ProjectId) -> Result<Vec<TargetView>,
 pub fn clear_target(home: &Path, project: &ProjectId, kind: CopyKind) -> Result<bool, TargetError> {
     let paths = RecordPaths::new(home, project, kind);
     // A first read refuses a record that exists but cannot be read or used,
-    // whatever stands in the way of reading it. Only a missing file counts as
-    // absent. A kind with no records and no lock file has nothing to clear
-    // and nobody holding its lock, so nothing is created for it; otherwise
-    // the lock is taken, and a holder makes clear refuse even with no records.
-    let (config, state) = read_records(&paths, project, kind)?;
+    // whatever stands in the way of reading it. An identity mismatch is
+    // rechecked under the lock, or refuses its current holder. Only a missing
+    // file counts as absent. A kind with no records and no lock file has
+    // nothing to clear and nobody holding its lock, so nothing is created.
+    // Otherwise the lock is taken, and a holder makes clear refuse even with
+    // no records.
+    let (config, state) = read_records(&paths, project, kind, ReadConsistency::RecheckMismatch)?;
     if config.is_none() && state.is_none() {
         match fs::metadata(&paths.lock) {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
@@ -589,7 +594,7 @@ pub fn clear_target(home: &Path, project: &ProjectId, kind: CopyKind) -> Result<
         }
     }
     let _lock = PushLock::try_acquire(&paths)?;
-    let (config, _state) = read_records(&paths, project, kind)?;
+    let (config, _state) = read_records(&paths, project, kind, ReadConsistency::Strict)?;
     for path in [&paths.config, &paths.state] {
         match fs::remove_file(path) {
             Ok(()) => {}
@@ -622,7 +627,7 @@ pub fn read_for_push(
     lock: &PushLock,
 ) -> Result<Option<PushRecords>, TargetError> {
     held(paths, lock)?;
-    let (config, state) = read_records(paths, project, kind)?;
+    let (config, state) = read_records(paths, project, kind, ReadConsistency::Strict)?;
     Ok(config.map(|(config, identity)| PushRecords {
         state: state.unwrap_or_else(|| TargetState::empty(identity.clone())),
         config,
@@ -757,12 +762,18 @@ pub fn read_kind_records(
     project: &ProjectId,
     kind: CopyKind,
 ) -> Result<Option<(TargetConfig, ObjectId, Option<TargetState>)>, TargetError> {
-    let (config, state) = read_records(paths, project, kind)?;
+    let (config, state) = read_records(paths, project, kind, ReadConsistency::Strict)?;
     Ok(config.map(|(config, identity)| (config, identity, state)))
 }
 
 /// A kind's usable configuration with its derived identity, and its state.
 type Records = (Option<(TargetConfig, ObjectId)>, Option<TargetState>);
+
+#[derive(Clone, Copy)]
+enum ReadConsistency {
+    Strict,
+    RecheckMismatch,
+}
 
 /// Reads both records of one kind, refusing either when it exists but cannot
 /// be used: a configuration `set` would have refused, or a state recorded
@@ -771,9 +782,21 @@ fn read_records(
     paths: &RecordPaths,
     project: &ProjectId,
     kind: CopyKind,
+    consistency: ReadConsistency,
 ) -> Result<Records, TargetError> {
     let config = read_record::<TargetConfig>(&paths.config)?;
     let state = read_record::<TargetState>(&paths.state)?;
+    validate_records(paths, project, kind, config, state, consistency)
+}
+
+fn validate_records(
+    paths: &RecordPaths,
+    project: &ProjectId,
+    kind: CopyKind,
+    config: Option<TargetConfig>,
+    state: Option<TargetState>,
+    consistency: ReadConsistency,
+) -> Result<Records, TargetError> {
     let Some(config) = config else {
         return Ok((None, state));
     };
@@ -787,6 +810,21 @@ fn read_records(
     if let Some(state) = &state
         && state.target_identity != identity
     {
+        if matches!(consistency, ReadConsistency::RecheckMismatch) {
+            // Set publishes state before config. It may still hold the lock,
+            // or may have completed between our two reads. Discard BOTH old
+            // records and reread once under the lock; a lock probe alone would
+            // still misdiagnose the latter case. Held-lock callers stay strict.
+            match PushLock::try_acquire(paths) {
+                Ok(_lock) => {
+                    return read_records(paths, project, kind, ReadConsistency::Strict);
+                }
+                Err(error @ TargetError::PushRunning { .. }) => return Err(error),
+                // An unusable lock cannot resolve the mismatch. Keep the
+                // original record diagnosis instead of a lock-file I/O error.
+                Err(_) => {}
+            }
+        }
         return Err(TargetError::Unreadable {
             path: paths.state.clone(),
             reason: "it was recorded for another target than the configured one; `engram backup target set` writes both anew".into(),

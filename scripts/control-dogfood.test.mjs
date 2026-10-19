@@ -3323,6 +3323,7 @@ test("source recovery keeps a judgment through host confirmation and separates f
       run_id: "00000000-0000-0000-0000-000000000007", claim_id: binding.claim_id });
     assert.equal(unknownRun.status, "error", JSON.stringify(unknownRun));
     assert.equal(unknownRun.error.code, "named_root_read_refused");
+    assert.equal(unknownRun.error.reason, "run_unknown");
     // The host reads the root's initial sighting with no routing token: the
     // finished run still reads the root recording selected, sighted at R2.
     const sighting = ok(await client.request({ operation: "named_root_sighting_read", work_ref: ref,

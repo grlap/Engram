@@ -195,10 +195,20 @@ enum HostControlResponse {
 struct HostControlErrorBody {
     code: &'static str,
     message: String,
+    /// A stable named-root read refusal reason; absent for other errors.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<crate::storage::NamedRootReadRefusal>,
     /// The typed parts of a refusal that names several, when it has them;
     /// absent for every other error.
     #[serde(skip_serializing_if = "Option::is_none")]
     details: Option<Value>,
+}
+
+fn store_error_reason(error: &StoreError) -> Option<crate::storage::NamedRootReadRefusal> {
+    match error {
+        StoreError::NamedRootReadRefused(reason) => Some(*reason),
+        _ => None,
+    }
 }
 
 /// The typed parts of `error` a host reads as data, when it has them.
@@ -796,6 +806,7 @@ impl HostControlServer {
                     error: HostControlErrorBody {
                         code: store_error_code(&error),
                         message: error.to_string(),
+                        reason: store_error_reason(&error),
                         details: store_error_details(&error),
                     },
                 }
@@ -856,6 +867,7 @@ fn parse_frame(frame: Result<Vec<u8>, ()>) -> Result<HostControlRequest, HostCon
         error: HostControlErrorBody {
             code: "invalid_request",
             message,
+            reason: None,
             details: None,
         },
     };

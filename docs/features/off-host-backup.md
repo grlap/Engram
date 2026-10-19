@@ -246,6 +246,15 @@ kept per project and kind, under one contract:
   check records its result only under the lock and only when the newest
   receipt is still the one it checked; otherwise it reports the result
   without recording it.
+- When `target show` or `target clear` reads a configuration/state identity
+  mismatch, it tries the same push lock and rereads both files under it. A
+  concurrent `target set` may be between its state and configuration writes;
+  a held lock returns `backup_push_running`. This brief reader lock can also
+  make a concurrent `target set`, `target clear` or `backup restore` refuse
+  busy. A mismatch that remains under the lock
+  is still `backup_record_unreadable`. If the reread lock cannot be opened or
+  locked for another reason, the original record diagnosis is kept. A
+  consistent `show`, including one on a clean home, takes no lock.
 - They hold no secret. They are operational records of this host: not
   canonical work state, not part of any copy, and never authority for a
   restore.
