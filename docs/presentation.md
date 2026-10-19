@@ -52,8 +52,8 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
   canonical ledger and ordinary work stay on the machine. An optional,
   operator-configured off-host backup can export copies.
 - Fourteen core work commands, listed in the appendix; agents learn them from
-  one skill file. Search is MCP `search` or CLI `ls --search`; host-local
-  task-sync settings are available from both surfaces.
+  one skill file. Search is MCP `search` or CLI `ls --search TEXT --all`;
+  host-local task-sync settings are available from both surfaces.
 - The record is append-only (notes, gates, verdicts, seals); live state such
   as who holds what is kept in current rows that recovery reads.
 
@@ -126,7 +126,8 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 - One session often holds several tasks. In a file, "done" lands on whatever
   was touched last.
 - Engram: a bare `done` or `evaluate` while more than one claim is live is
-  refused; it names every held item and records nothing.
+  refused; it names at most three held refs, counts any remaining items,
+  and records nothing.
 
 > Example: an agent held two items and a bare completion would have sealed
 > the one focused last. Engram refused and listed both. Separately, an
@@ -228,18 +229,28 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 ## Slide 14. What it is not, and what it costs
 
 - Not a scheduler: it says whether selected work is ready; the host runs it.
-- Not a shared team board yet: each host has its own SQLite store. A Git-based
-  task-text exchange is being built. Export and import can bootstrap an empty
-  store; merging several hosts' changes into an existing store is not shipped.
-  TermAl, the host, separately provides coordination mailboxes and is building
-  its remote session support; those mailboxes carry no Engram task state.
+- Not a shared team board: each host has its own SQLite store and its own
+  claims, and nothing locks a task across hosts. Agents coordinate through
+  TermAl's mailbox: it is the control channel where they agree who exports,
+  merges and imports, who owns which task, and handoffs, which prevents
+  duplicate work in normal operation. It carries agreements between agents,
+  not Engram task state, and its two-way delivery to remote hosts is still
+  being completed. Explicit, opt-in Git-folder export/import is shipped:
+  import a complete task graph into a store that has none, then apply title,
+  outcome and priority edits to eligible run-free imported Open tasks in
+  enrolled stores. Agents handle Git transport and text merges explicitly.
+  Automated exchange, reconciliation of divergent graphs and remote relay
+  remain planned.
 - Not a secrets store, not a transcript archive, not a RAG framework, and
   not an artifact store: evidence is recorded as pointers and summaries. Our
   workflow may retain raw artifacts under the repository while an open task
   needs them.
 - Prerelease: an upgrade can require a store migration; backups are the
-  operator's job. Day-to-day use and landing gates are on Windows; CI also
-  tests Linux and macOS, while some features remain Windows-only.
+  operator's job. Day-to-day use is on Windows. Under our landing rules,
+  a full gate on an exact, reviewed test ref can count equally from Mac or
+  Windows once recognized by the evaluating host and bound to the same tree.
+  Windows-only code or tests still need the relevant Windows gate; CI also
+  tests Linux and macOS.
 - Size, observed 2026-10-19 UTC: the Engram store is about 982 MB plus a
   173 MB WAL; the TermAl store is about 887 MB plus an observed 5 MB WAL.
   Views bound returned results; they do not make every query or maintenance
@@ -248,6 +259,24 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
   host workflow concepts. Claims can lapse while a worker waits for capacity.
 
 > Honesty here is what makes slide 6 credible.
+>
+> Folder import requires `--empty-basis` or this host's own pre-merge
+> `project.json` through `--basis FILE`. Local planning changed since that
+> export refuses the import. On a nonempty enrolled store, additions,
+> deletions and other field changes refuse the whole folder. Scalar edits
+> require imported Open tasks with no run and only run-free project revision
+> history. Claims and execution evidence stay local.
+>
+> Under the existing test-ref rules, required reviews and fresh focused
+> compilation/tests finish before the landing agent publishes the frozen
+> candidate.
+> The runner fetches into its own clone and worktree and runs the standard
+> launcher. Its tree must match the recorded input tree, its fingerprint
+> must remain unchanged through the run, and its result must be imported as
+> a recognized check bound to that tree on the evaluating and landing host.
+> Until then it is evidence only; a focused run does not replace the full
+> gate. A qualifying remote gate covers only a landing with that same tree.
+> Other review, evaluation, acceptance and installation conditions still apply.
 
 ---
 
@@ -256,8 +285,10 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 A Markdown TODO is a note. Engram is a ledger with rules. The note is cheaper
 until you have more than one writer, more than one session, or a need to show
 rather than say that work was finished. Today: local-first on each host, with
-Git task exchange in active development. TermAl separately provides the
-coordination mailbox.
+explicit Git-folder export/import and limited title, outcome and priority
+edits to eligible imported tasks in enrolled stores. Automated exchange and
+broader reconciliation remain planned. TermAl's coordination mailbox is
+where agents agree exports, imports and task ownership.
 
 > Close on this line, then take questions. Likely first question: "can I see
 > the history?" Answer: `engram work show REF --notes --gates`. A human
@@ -269,8 +300,9 @@ coordination mailbox.
 
 - Commands: `next`, `ls`, `show`, `add`, `claim`, `update`, `gate`,
   `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`, `forget`;
-  search is MCP `search` or CLI `ls --search`; host-local task-sync settings
-  are available from both CLI and MCP; see [CLI and MCP](features/cli-and-mcp.md).
+  search is MCP `search` or CLI `ls --search TEXT --all`; host-local
+  task-sync settings are available from both CLI and MCP;
+  see [CLI and MCP](features/cli-and-mcp.md).
 - Store: `ENGRAM_HOME/projects/<project>/engram.db`, plain SQLite; local
   backups with `engram backup`; `engram doctor` verifies; an optional
   off-host backup target is configured by the operator
