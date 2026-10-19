@@ -48,7 +48,10 @@ fn task_prepare_pending_source_changes_refuse_without_capture_or_progress_advanc
                 } else {
                     &snapshot.project.project_id
                 },
-                &profile(),
+                &ExportProfile {
+                    include_notes: false,
+                    origin_machine: Some("different-host".into()),
+                },
                 rebaseline,
                 &producer(),
                 |_| panic!("a pending binding refusal must not capture newer state"),

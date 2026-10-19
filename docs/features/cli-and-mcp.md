@@ -3483,7 +3483,13 @@ typed policies. Mismatched derived bytes, a missing reference, or a run/source/
 session basis mismatch return `environment_fingerprint_mismatch`,
 `environment_evidence_not_found`, or `environment_basis_mismatch`.
 
-The receipt returns all three typed record-id lists. Begin and checkpoint keys
+The receipt returns all three typed record-id lists. These lists
+preserve each corresponding request list's input order. Verification and
+environment evidence mint one fresh record id per input, including duplicate
+content; exact idempotent replay returns the same ordered ids without another
+append. Execution observations preserve input order for accepted requests;
+their observation ids must be unique, so duplicate observation inputs are not
+covered by the evidence duplication guarantee. Begin and checkpoint keys
 are each scoped to the exact grant and canonical request intent. An exact retry
 returns those ids without another feed append; changing any ordered list under
 the same checkpoint key fails with `control_operation_idempotency_conflict`.

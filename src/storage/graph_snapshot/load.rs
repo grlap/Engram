@@ -39,6 +39,11 @@ thread_local! {
     /// examines: exactly the snapshot's records, never items times records.
     pub(super) static NEWEST_RECORD_VISITS: std::cell::Cell<usize> =
         const { std::cell::Cell::new(0) };
+    /// Counts rows and relation endpoints visited in graph validation. The
+    /// bound excludes sorting comparisons, text bytes, parsing, canonical
+    /// encoding, source/memory validation, and payload/equality copies.
+    pub(super) static GRAPH_VALIDATION_WORK: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
 }
 
 fn count_hierarchy_pass_visit() {
@@ -58,55 +63,70 @@ fn count_newest_record_visit() {
     NEWEST_RECORD_VISITS.with(|visits| visits.set(visits.get() + 1));
 }
 
+fn count_graph_validation_work(units: usize) {
+    #[cfg(not(test))]
+    let _ = units;
+    #[cfg(test)]
+    GRAPH_VALIDATION_WORK.with(|work| work.set(work.get().saturating_add(units)));
+}
+
+fn validation_presence(present: bool) -> usize {
+    usize::from(present)
+}
+
 /// Each item's relation basis (prerequisites sorted by id, blockers in
 /// blocker-id order), built once on first demand from the item and blocker
 /// sections. A native record is minted from it, and the lifecycle check
 /// compares the item's newest record against it; a carried record keeps the
 /// relations it was recorded with.
 ///
-/// The item index and the blocker groups are pure constructions over the
-/// validated sections, so building them early moves no refusal; a basis is
-/// built only when a native record or the lifecycle check first asks for it,
-/// so each refusal fires at that call site and in that order, and only a
-/// successful basis is kept. Blockers keep their document order before the
-/// stable sort, so the elements and their order do not depend on which call
-/// site built the basis.
-struct RelationBases<'a> {
+/// The item index and blocker groups are pure constructions over the input;
+/// building them before the checks moves no refusal. A basis is built only
+/// when a native record or lifecycle check first asks for it, so each refusal
+/// fires at that call site and in that order, and only a successful basis is
+/// kept. Blockers keep their document order before the stable sort, so basis
+/// contents do not depend on which call site first requested them.
+struct GraphValidationIndexes<'a> {
     items: HashMap<WorkId, &'a crate::WorkGraphSnapshotItem>,
     blockers_by_item: HashMap<WorkId, Vec<&'a crate::WorkGraphSnapshotBlocker>>,
-    computed: HashMap<WorkId, RestoredRelationBasis>,
+    relation_bases: HashMap<WorkId, RestoredRelationBasis>,
+    newest_records: HashMap<WorkId, (usize, usize)>,
 }
 
-impl<'a> RelationBases<'a> {
-    fn index(document: &'a WorkGraphSnapshotDocument) -> Self {
-        let items = document
-            .body
-            .items
+impl<'a> GraphValidationIndexes<'a> {
+    fn new(
+        items: &'a [crate::WorkGraphSnapshotItem],
+        blockers: &'a [crate::WorkGraphSnapshotBlocker],
+    ) -> Self {
+        let items = items
             .iter()
             .map(|item| (item.work_id, item))
             .collect::<HashMap<_, _>>();
-        count_relation_basis_work(document.body.items.len());
+        count_relation_basis_work(items.len());
+        count_graph_validation_work(items.len());
         let mut blockers_by_item = HashMap::<WorkId, Vec<_>>::new();
-        for blocker in &document.body.blockers {
+        for blocker in blockers {
             blockers_by_item
                 .entry(blocker.work_id)
                 .or_default()
                 .push(blocker);
         }
-        count_relation_basis_work(document.body.blockers.len());
+        count_relation_basis_work(blockers.len());
+        count_graph_validation_work(blockers.len());
         Self {
             items,
             blockers_by_item,
-            computed: HashMap::new(),
+            relation_bases: HashMap::new(),
+            newest_records: HashMap::new(),
         }
     }
 
     fn basis(&mut self, work_id: WorkId) -> Result<&RestoredRelationBasis, StoreError> {
-        if !self.computed.contains_key(&work_id) {
+        if !self.relation_bases.contains_key(&work_id) {
             let basis = self.build(work_id)?;
-            self.computed.insert(work_id, basis);
+            self.relation_bases.insert(work_id, basis);
         }
-        Ok(&self.computed[&work_id])
+        Ok(&self.relation_bases[&work_id])
     }
 
     fn build(&self, work_id: WorkId) -> Result<RestoredRelationBasis, StoreError> {
@@ -116,6 +136,7 @@ impl<'a> RelationBases<'a> {
             .get(&work_id)
             .ok_or_else(|| corrupt("restored record names an unknown work item"))?;
         let mut prerequisites = item.prerequisites.clone();
+        count_graph_validation_work(prerequisites.len());
         prerequisites.sort_by_key(|id| id.0);
         prerequisites.dedup();
         if prerequisites.len() != item.prerequisites.len() {
@@ -126,6 +147,7 @@ impl<'a> RelationBases<'a> {
             .get(&work_id)
             .map(|group| group.iter().map(|blocker| (*blocker).clone()).collect())
             .unwrap_or_default();
+        count_graph_validation_work(blockers.len());
         blockers.sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
         if blockers
             .windows(2)
@@ -151,6 +173,14 @@ pub(super) fn validate_generated_snapshot_document(
     document: &WorkGraphSnapshotDocument,
 ) -> Result<(), StoreError> {
     prepare_load(document.clone(), &document.body.summary.project_id).map(drop)
+}
+
+#[cfg(test)]
+pub(super) fn prepare_snapshot_for_scale_test(
+    document: WorkGraphSnapshotDocument,
+    project_id: &ProjectId,
+) -> Result<(), StoreError> {
+    prepare_load(document, project_id).map(drop)
 }
 
 impl SqliteStore {
@@ -182,6 +212,7 @@ impl SqliteStore {
         let document = parse_work_graph_snapshot_document(bytes)
             .map_err(|error| StoreError::InvalidGraphSnapshot(error.to_string()))?;
         let prepared = prepare_load(document, project_id)?;
+        ensure_restore_catalog_slots_empty(&self.connection, &prepared)?;
         if dry_run {
             return Ok(WorkGraphSnapshotLoadResult {
                 loaded: false,
@@ -192,9 +223,6 @@ impl SqliteStore {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if !graph_destination_is_empty_on(&transaction, project_id)? {
-            return Err(StoreError::GraphDestinationNotEmpty);
-        }
         insert_prepared_load_on(&transaction, project_id, actor, loaded_at, &prepared)?;
         transaction.commit()?;
         Ok(WorkGraphSnapshotLoadResult {
@@ -241,13 +269,12 @@ fn prepare_load(
     {
         return Err(corrupt("manifest section counts differ from the body"));
     }
-    validate_section_order(&document)?;
-
-    validate_items_and_relations(&document)?;
-    let mut bases = RelationBases::index(&document);
-    let records = validate_and_materialize_records(&document, &mut bases)?;
-    validate_sources(&document, &records)?;
-    validate_lifecycle_proofs(&document, &records, &mut bases)?;
+    let mut indexes = GraphValidationIndexes::new(&document.body.items, &document.body.blockers);
+    validate_section_order(&document, &indexes)?;
+    validate_items_and_relations(&document, &mut indexes)?;
+    let records = validate_and_materialize_records(&document, &mut indexes)?;
+    validate_sources(&document, &records, &indexes)?;
+    validate_lifecycle_proofs(&document, &records, &mut indexes)?;
     validate_memories(&document)?;
 
     let mut lifecycle_counts = WorkGraphSnapshotLifecycleCounts::default();
@@ -365,7 +392,13 @@ fn validate_summary(document: &WorkGraphSnapshotDocument) -> Result<(), StoreErr
     Ok(())
 }
 
-fn validate_section_order(document: &WorkGraphSnapshotDocument) -> Result<(), StoreError> {
+fn validate_section_order(
+    document: &WorkGraphSnapshotDocument,
+    indexes: &GraphValidationIndexes<'_>,
+) -> Result<(), StoreError> {
+    count_graph_validation_work(
+        document.body.items.len() + document.body.blockers.len() + document.body.records.len(),
+    );
     if document
         .body
         .items
@@ -374,15 +407,14 @@ fn validate_section_order(document: &WorkGraphSnapshotDocument) -> Result<(), St
     {
         return Err(corrupt("work items are not strictly ordered by ref"));
     }
-    let refs = document
-        .body
-        .items
-        .iter()
-        .map(|item| (item.work_id, item.short_ref.as_str()))
-        .collect::<HashMap<_, _>>();
+    let refs = &indexes.items;
     if document.body.blockers.windows(2).any(|pair| {
-        let left_ref = refs.get(&pair[0].work_id).copied().unwrap_or("");
-        let right_ref = refs.get(&pair[1].work_id).copied().unwrap_or("");
+        let left_ref = refs
+            .get(&pair[0].work_id)
+            .map_or("", |item| item.short_ref.as_str());
+        let right_ref = refs
+            .get(&pair[1].work_id)
+            .map_or("", |item| item.short_ref.as_str());
         (left_ref, pair[0].blocker_id.as_str()) >= (right_ref, pair[1].blocker_id.as_str())
     }) {
         return Err(corrupt(
@@ -399,7 +431,8 @@ fn validate_section_order(document: &WorkGraphSnapshotDocument) -> Result<(), St
     }
     let record_key = |record: &crate::WorkGraphSnapshotRecord| {
         (
-            refs.get(&record.work_id).copied().unwrap_or(""),
+            refs.get(&record.work_id)
+                .map_or("", |item| item.short_ref.as_str()),
             record.generation_index,
         )
     };
@@ -424,17 +457,30 @@ fn validate_section_order(document: &WorkGraphSnapshotDocument) -> Result<(), St
     Ok(())
 }
 
-fn validate_items_and_relations(document: &WorkGraphSnapshotDocument) -> Result<(), StoreError> {
-    validate_planning_graph(&document.body.items, &document.body.blockers)
+fn validate_items_and_relations(
+    document: &WorkGraphSnapshotDocument,
+    indexes: &mut GraphValidationIndexes<'_>,
+) -> Result<(), StoreError> {
+    validate_planning_graph_indexed(&document.body.items, &document.body.blockers, indexes)
 }
 
 pub(crate) fn validate_planning_graph(
     items: &[crate::WorkGraphSnapshotItem],
     blockers: &[crate::WorkGraphSnapshotBlocker],
 ) -> Result<(), StoreError> {
+    let mut indexes = GraphValidationIndexes::new(items, blockers);
+    validate_planning_graph_indexed(items, blockers, &mut indexes)
+}
+
+fn validate_planning_graph_indexed(
+    items: &[crate::WorkGraphSnapshotItem],
+    blockers: &[crate::WorkGraphSnapshotBlocker],
+    indexes: &mut GraphValidationIndexes<'_>,
+) -> Result<(), StoreError> {
     let mut ids = HashSet::with_capacity(items.len());
     let mut refs = HashSet::with_capacity(items.len());
     for item in items {
+        count_graph_validation_work(1);
         if !ids.insert(item.work_id) {
             return Err(corrupt("duplicate work id"));
         }
@@ -443,14 +489,9 @@ pub(crate) fn validate_planning_graph(
         }
         validate_snapshot_item_shape(item)?;
     }
-    // Built only once every id is known to be unique, so a duplicate is
-    // refused above rather than collapsed by the map.
-    let by_id = items
-        .iter()
-        .map(|item| (item.work_id, item))
-        .collect::<HashMap<_, _>>();
     let mut blocker_ids = HashSet::new();
     for blocker in blockers {
+        count_graph_validation_work(1);
         if !ids.contains(&blocker.work_id) || !blocker_ids.insert(blocker.blocker_id.as_str()) {
             return Err(corrupt("duplicate or dangling blocker"));
         }
@@ -459,15 +500,29 @@ pub(crate) fn validate_planning_graph(
         validate_actor(&blocker.created_by)?;
     }
     for item in items {
-        if !ids.contains(&item.root_id)
-            || item.parent_id.is_some_and(|id| !ids.contains(&id))
-            || item.prerequisites.iter().any(|id| !ids.contains(id))
-            || item.superseded_by.is_some_and(|id| !ids.contains(&id))
+        count_graph_validation_work(
+            1 + item.prerequisites.len()
+                + 1
+                + validation_presence(item.parent_id.is_some())
+                + validation_presence(item.superseded_by.is_some()),
+        );
+        if !indexes.items.contains_key(&item.root_id)
+            || item
+                .parent_id
+                .is_some_and(|id| !indexes.items.contains_key(&id))
+            || item
+                .prerequisites
+                .iter()
+                .any(|id| !indexes.items.contains_key(id))
+            || item
+                .superseded_by
+                .is_some_and(|id| !indexes.items.contains_key(&id))
         {
             return Err(corrupt("dangling work relation"));
         }
         if let Some(parent) = item.parent_id {
-            let parent = by_id
+            let parent = indexes
+                .items
                 .get(&parent)
                 .ok_or_else(|| corrupt("dangling parent"))?;
             if parent.root_id != item.root_id {
@@ -475,7 +530,7 @@ pub(crate) fn validate_planning_graph(
             }
         }
     }
-    validate_hierarchy_limits(items, &by_id)?;
+    validate_hierarchy_limits(items, &indexes.items)?;
     validate_combined_graph(items)
 }
 
@@ -547,10 +602,12 @@ fn validate_hierarchy_limits(
     by_id: &HashMap<WorkId, &crate::WorkGraphSnapshotItem>,
 ) -> Result<(), StoreError> {
     for item in items {
+        count_graph_validation_work(1);
         let mut depth = 0_u32;
         let mut cursor = item.parent_id;
         let mut visited = HashSet::new();
         while let Some(parent) = cursor {
+            count_graph_validation_work(1);
             if !visited.insert(parent) {
                 return Err(corrupt("parent hierarchy contains a cycle"));
             }
@@ -564,6 +621,7 @@ fn validate_hierarchy_limits(
     let mut open_descendants = HashMap::<WorkId, usize>::new();
     for item in items {
         count_hierarchy_pass_visit();
+        count_graph_validation_work(1);
         if item.work_id != item.root_id
             && matches!(
                 item.lifecycle,
@@ -579,12 +637,21 @@ fn validate_hierarchy_limits(
     {
         return Err(corrupt("open descendant count exceeds the work limit"));
     }
+    count_graph_validation_work(open_descendants.len());
     Ok(())
 }
 
 fn validate_combined_graph(items: &[crate::WorkGraphSnapshotItem]) -> Result<(), StoreError> {
     let mut graph = HashMap::<WorkId, Vec<WorkId>>::new();
     for item in items {
+        count_graph_validation_work(
+            1 + item.prerequisites.len()
+                + validation_presence(
+                    item.child_requirement == crate::ChildRequirement::Required
+                        && item.parent_id.is_some(),
+                )
+                + validation_presence(item.superseded_by.is_some()),
+        );
         graph.entry(item.work_id).or_default();
         if item.child_requirement == crate::ChildRequirement::Required
             && let Some(parent) = item.parent_id
@@ -605,6 +672,7 @@ fn validate_combined_graph(items: &[crate::WorkGraphSnapshotItem]) -> Result<(),
         .map(|id| (id, 0_usize))
         .collect::<HashMap<_, _>>();
     for targets in graph.values() {
+        count_graph_validation_work(targets.len());
         for target in targets {
             *incoming.entry(*target).or_default() += 1;
         }
@@ -615,8 +683,10 @@ fn validate_combined_graph(items: &[crate::WorkGraphSnapshotItem]) -> Result<(),
         .collect::<Vec<_>>();
     let mut removed = 0;
     while let Some(id) = ready.pop() {
+        count_graph_validation_work(1);
         removed += 1;
         for target in graph.get(&id).into_iter().flatten() {
+            count_graph_validation_work(1);
             let count = incoming
                 .get_mut(target)
                 .ok_or_else(|| corrupt("graph target has no node"))?;
@@ -635,6 +705,7 @@ fn validate_combined_graph(items: &[crate::WorkGraphSnapshotItem]) -> Result<(),
 fn validate_sources(
     document: &WorkGraphSnapshotDocument,
     records: &[(RestoredRecord, CanonicalObject)],
+    indexes: &GraphValidationIndexes<'_>,
 ) -> Result<(), StoreError> {
     // Decode each source once and reuse the already materialized histories.
     // Hash and exact typed-byte checks still precede notice binding checks.
@@ -658,12 +729,6 @@ fn validate_sources(
         super::super::work::validate_work_source_snapshot_for_restore(&snapshot)?;
         sources.insert(&source.hash, snapshot);
     }
-    let items = document
-        .body
-        .items
-        .iter()
-        .map(|item| (item.work_id, item))
-        .collect::<HashMap<_, _>>();
     let mut expected = document
         .body
         .items
@@ -672,7 +737,8 @@ fn validate_sources(
         .collect::<HashSet<_>>();
     let mut notice_bindings = HashSet::new();
     for (record, _) in records {
-        let item = items
+        let item = indexes
+            .items
             .get(&record.work_id)
             .ok_or_else(|| corrupt("source notice has no work item"))?;
         for notice in &record.history.source_notices {
@@ -714,18 +780,13 @@ fn validate_sources(
 
 fn validate_and_materialize_records(
     document: &WorkGraphSnapshotDocument,
-    bases: &mut RelationBases<'_>,
+    indexes: &mut GraphValidationIndexes<'_>,
 ) -> Result<Vec<(RestoredRecord, CanonicalObject)>, StoreError> {
-    let item_ids = document
-        .body
-        .items
-        .iter()
-        .map(|item| item.work_id)
-        .collect::<HashSet<_>>();
     let mut keys = HashSet::new();
     let mut records = Vec::with_capacity(document.body.records.len());
     for record in &document.body.records {
-        if !item_ids.contains(&record.work_id)
+        count_graph_validation_work(1);
+        if !indexes.items.contains_key(&record.work_id)
             || !keys.insert((record.work_id, record.generation_index))
         {
             return Err(corrupt("duplicate or dangling restored record"));
@@ -748,17 +809,27 @@ fn validate_and_materialize_records(
                 (restored, object)
             }
             WorkGraphSnapshotRecordPayload::Native { history } => {
-                let item = bases
+                let item = indexes
                     .items
                     .get(&record.work_id)
+                    .copied()
+                    .cloned()
                     .ok_or_else(|| corrupt("restored record names an unknown work item"))?;
+                let relations = indexes.basis(record.work_id)?;
+                count_graph_validation_work(
+                    1 + validation_presence(item.parent_id.is_some())
+                        + validation_presence(item.superseded_by.is_some())
+                        + item.prerequisites.len()
+                        + relations.prerequisites.len()
+                        + relations.blockers.len(),
+                );
                 let restored = RestoredRecord {
                     schema_version: crate::WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION,
                     project_id: document.body.summary.project_id.clone(),
                     work_id: record.work_id,
                     generation_index: record.generation_index,
-                    item: (*item).clone(),
-                    relations: bases.basis(record.work_id)?.clone(),
+                    item,
+                    relations: relations.clone(),
                     history: (**history).clone(),
                 };
                 let object = CanonicalObject::mint(&restored)?;
@@ -775,21 +846,37 @@ fn validate_and_materialize_records(
                 "restored record disagrees with its section binding",
             ));
         }
-        validate_history(&restored.history, &item_ids)?;
-        validate_restored_relation_basis(&restored.relations, restored.work_id, &item_ids)?;
-        validate_inherited_record(&restored, &item_ids, &bases.items)?;
+        validate_history(&restored.history, &indexes.items)?;
+        validate_restored_relation_basis(&restored.relations, restored.work_id, &indexes.items)?;
+        validate_inherited_record(&restored, &indexes.items)?;
+        let record_index = records.len();
+        let generation_index = restored.generation_index;
         records.push((restored, object));
+        indexes
+            .newest_records
+            .entry(record.work_id)
+            .and_modify(|(current_generation, current_index)| {
+                if generation_index >= *current_generation {
+                    *current_generation = generation_index;
+                    *current_index = record_index;
+                }
+            })
+            .or_insert((generation_index, record_index));
+        count_newest_record_visit();
+        count_graph_validation_work(1);
     }
     let mut per_item = HashMap::<WorkId, Vec<usize>>::new();
     for (record, _) in &records {
+        count_graph_validation_work(1);
         per_item
             .entry(record.work_id)
             .or_default()
             .push(record.generation_index);
     }
-    for item_id in item_ids {
+    for item_id in indexes.items.keys() {
+        count_graph_validation_work(1);
         let generations = per_item
-            .get_mut(&item_id)
+            .get_mut(item_id)
             .ok_or_else(|| corrupt("work item has no restored history record"))?;
         generations.sort_unstable();
         if generations
@@ -802,15 +889,22 @@ fn validate_and_materialize_records(
                 "restored record generations are not dense from zero",
             ));
         }
+        count_graph_validation_work(generations.len());
     }
     Ok(records)
 }
 
 fn validate_inherited_record(
     record: &RestoredRecord,
-    item_ids: &HashSet<WorkId>,
     current_items: &HashMap<WorkId, &crate::WorkGraphSnapshotItem>,
 ) -> Result<(), StoreError> {
+    count_graph_validation_work(
+        1 + record.item.prerequisites.len()
+            + record.relations.prerequisites.len()
+            + 1
+            + validation_presence(record.item.parent_id.is_some())
+            + validation_presence(record.item.superseded_by.is_some()),
+    );
     validate_snapshot_item_shape(&record.item)?;
     let current = current_items
         .get(&record.work_id)
@@ -826,20 +920,20 @@ fn validate_inherited_record(
             "restored record changes immutable work planning identity",
         ));
     }
-    if !item_ids.contains(&record.item.root_id)
+    if !current_items.contains_key(&record.item.root_id)
         || record
             .item
             .parent_id
-            .is_some_and(|id| !item_ids.contains(&id))
+            .is_some_and(|id| !current_items.contains_key(&id))
         || record
             .item
             .prerequisites
             .iter()
-            .any(|id| !item_ids.contains(id))
+            .any(|id| !current_items.contains_key(id))
         || record
             .item
             .superseded_by
-            .is_some_and(|id| !item_ids.contains(&id))
+            .is_some_and(|id| !current_items.contains_key(&id))
     {
         return Err(corrupt("restored record item has a dangling relation"));
     }
@@ -910,12 +1004,13 @@ fn validate_disposal_proof(
 fn validate_restored_relation_basis(
     relations: &RestoredRelationBasis,
     work_id: WorkId,
-    item_ids: &HashSet<WorkId>,
+    items: &HashMap<WorkId, &crate::WorkGraphSnapshotItem>,
 ) -> Result<(), StoreError> {
     let mut prerequisites = HashSet::new();
     for prerequisite in &relations.prerequisites {
+        count_graph_validation_work(1);
         if prerequisite == &work_id
-            || !item_ids.contains(prerequisite)
+            || !items.contains_key(prerequisite)
             || !prerequisites.insert(*prerequisite)
         {
             return Err(corrupt(
@@ -925,6 +1020,7 @@ fn validate_restored_relation_basis(
     }
     let mut blocker_ids = HashSet::new();
     for blocker in &relations.blockers {
+        count_graph_validation_work(1);
         if blocker.work_id != work_id || !blocker_ids.insert(blocker.blocker_id.as_str()) {
             return Err(corrupt(
                 "restored relation basis has a duplicate or cross-item blocker",
@@ -939,7 +1035,7 @@ fn validate_restored_relation_basis(
 
 fn validate_history(
     history: &WorkGraphSnapshotHistory,
-    item_ids: &HashSet<WorkId>,
+    items: &HashMap<WorkId, &crate::WorkGraphSnapshotItem>,
 ) -> Result<(), StoreError> {
     for notice in &history.source_notices {
         validate_actor(&notice.actor)?;
@@ -982,6 +1078,10 @@ fn validate_history(
         }
     }
     for event in &history.events {
+        count_graph_validation_work(
+            1 + validation_presence(event.related_work_id.is_some())
+                + validation_presence(event.related_work_revision.is_some()),
+        );
         if event.work_revision <= 0 {
             return Err(corrupt("history event revision must be positive"));
         }
@@ -990,7 +1090,7 @@ fn validate_history(
         }
         if event
             .related_work_id
-            .is_some_and(|id| !item_ids.contains(&id))
+            .is_some_and(|id| !items.contains_key(&id))
             || event
                 .related_work_revision
                 .is_some_and(|revision| revision <= 0)
@@ -1059,36 +1159,28 @@ fn validate_event_shape(event: &crate::WorkGraphSnapshotEvent) -> Result<(), Sto
     }
 }
 
-/// Checks every item against its newest restored record. The newest record
-/// per item is found in one pass over the records (a later record of the
-/// same generation replaces an earlier one, as the previous per-item search
-/// chose); the items are then checked in their own order, so each refusal
-/// keeps its place.
+/// Checks every item against the newest restored record indexed while the
+/// records were validated and materialized. Items remain in their original
+/// order so each refusal keeps its place.
 fn validate_lifecycle_proofs(
     document: &WorkGraphSnapshotDocument,
     records: &[(RestoredRecord, CanonicalObject)],
-    bases: &mut RelationBases<'_>,
+    indexes: &mut GraphValidationIndexes<'_>,
 ) -> Result<(), StoreError> {
-    let mut newest_by_item = HashMap::<WorkId, &RestoredRecord>::new();
-    for (record, _) in records {
-        count_newest_record_visit();
-        let newest = newest_by_item.entry(record.work_id).or_insert(record);
-        if record.generation_index >= newest.generation_index {
-            *newest = record;
-        }
-    }
     for item in &document.body.items {
-        let newest = newest_by_item
+        count_graph_validation_work(1);
+        let (_, newest_index) = indexes
+            .newest_records
             .get(&item.work_id)
-            .copied()
             .ok_or_else(|| corrupt("work item has no newest restored record"))?;
+        let newest = &records[*newest_index].0;
         let completed = newest.history.completion.is_some();
         if completed != (item.lifecycle == WorkLifecycle::Completed) {
             return Err(corrupt(
                 "work lifecycle disagrees with restored completion proof",
             ));
         }
-        if newest.relations != *bases.basis(item.work_id)? {
+        if newest.relations != *indexes.basis(item.work_id)? {
             return Err(corrupt(
                 "work relations disagree with the newest restored record",
             ));
@@ -1098,6 +1190,9 @@ fn validate_lifecycle_proofs(
                 "work item planning state disagrees with the newest restored record",
             ));
         }
+        count_graph_validation_work(
+            newest.relations.prerequisites.len() + newest.relations.blockers.len(),
+        );
     }
     Ok(())
 }
@@ -1304,6 +1399,10 @@ fn insert_prepared_load_on(
     loaded_at: DateTime<Utc>,
     prepared: &PreparedLoad,
 ) -> Result<(), StoreError> {
+    if !graph_destination_is_empty_on(transaction, project_id)? {
+        return Err(StoreError::GraphDestinationNotEmpty);
+    }
+    ensure_restore_catalog_slots_empty(transaction, prepared)?;
     transaction.execute_batch("PRAGMA defer_foreign_keys = ON")?;
     for source in &prepared.document.body.sources {
         let object = CanonicalObject::identified(&source.hash, &source.canonical_json)?;
@@ -1369,14 +1468,6 @@ fn insert_prepared_load_on(
             ],
         )?;
     }
-    for snapshot in &prepared.document.body.items {
-        let item = super::super::work::load_work_item_projection_for_restore(
-            transaction,
-            snapshot.work_id,
-        )?;
-        super::super::work::refresh_work_catalog_for_restore(transaction, &item)?;
-    }
-
     let mut newest_record = HashMap::<WorkId, ObjectId>::new();
     for (record, object) in &prepared.records {
         SqliteStore::insert_object(transaction, "work_restored_record", object)?;
@@ -1438,7 +1529,7 @@ fn insert_prepared_load_on(
             transaction,
             snapshot.work_id,
         )?;
-        super::super::work::refresh_work_catalog_for_restore(transaction, &item)?;
+        super::super::work::initialize_work_catalog_for_restore(transaction, &item)?;
     }
 
     for memory in &prepared.document.body.memories {
@@ -1470,6 +1561,33 @@ fn insert_prepared_load_on(
     };
     let object = CanonicalObject::mint(&loaded)?;
     SqliteStore::insert_object(transaction, "work_graph_snapshot_loaded", &object)?;
+    Ok(())
+}
+
+/// A destination may contain other projects, so check the incoming work ids
+/// against the FTS content in one pass. `work_id` is UNINDEXED in FTS5; a
+/// per-item existence query here would reintroduce quadratic restore work.
+fn ensure_restore_catalog_slots_empty(
+    connection: &Connection,
+    prepared: &PreparedLoad,
+) -> Result<(), StoreError> {
+    let incoming = prepared
+        .document
+        .body
+        .items
+        .iter()
+        .map(|item| item.work_id.0.to_string())
+        .collect::<HashSet<_>>();
+    let mut statement = connection.prepare("SELECT work_id FROM work_catalog_fts")?;
+    let mut rows = statement.query([])?;
+    while let Some(row) = rows.next()? {
+        let work_id: String = row.get(0)?;
+        if incoming.contains(&work_id) {
+            return Err(corrupt(
+                "snapshot work item already has a catalog FTS row in the destination",
+            ));
+        }
+    }
     Ok(())
 }
 

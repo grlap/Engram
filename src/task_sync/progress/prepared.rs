@@ -206,7 +206,15 @@ pub(super) fn read_selected(
         .context("selected prepared operation is not retained")?;
     ensure!(
         metadata.project == selection.project && metadata.profile == selection.profile,
-        "prepared project or profile differs from selection"
+        "{}",
+        if pending {
+            format!(
+                "prepared project or profile differs from selection; {}",
+                super::PENDING_PROFILE_GUIDANCE
+            )
+        } else {
+            "prepared project or profile differs from selection".into()
+        }
     );
     let destination = if pending {
         ensure!(

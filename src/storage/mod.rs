@@ -43,6 +43,8 @@ pub(crate) use work::WriterAdmissionWindow;
 pub(crate) use work::before_refused_retirement;
 #[cfg(test)]
 pub(crate) use work::last_writer_admission_allowance;
+#[cfg(test)]
+pub(crate) use work::take_work_catalog_fts_delete_statements;
 pub(crate) use work::validate_work_import_input;
 #[cfg(test)]
 pub(crate) use work::with_writer_admission_test_policy;

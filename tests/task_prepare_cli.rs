@@ -4,6 +4,9 @@ mod test_support;
 #[path = "common/task_sync_opt_in.rs"]
 mod task_sync_opt_in;
 
+#[path = "task_prepare_cli/pending_profile.rs"]
+mod pending_profile;
+
 use engram::task_sync::directory;
 use serde_json::Value;
 use std::{

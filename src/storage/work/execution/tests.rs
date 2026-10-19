@@ -390,7 +390,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             observed_at: Some(at(9)),
         },
     ];
-    let verification_inputs = vec![VerificationEvidenceInput {
+    let mut verification_inputs = vec![VerificationEvidenceInput {
         producer_observation: ExecutionObservationReference::ObservationId {
             observation_id: "verification-command-1".into(),
         },
@@ -409,7 +409,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         .expect("freeze environment components")
         .key()
         .clone();
-    let environment_inputs = vec![EnvironmentEvidenceInput {
+    let mut environment_inputs = vec![EnvironmentEvidenceInput {
         source_basis: ExecutionSourceBasis {
             workspace_id: "workspace-b".into(),
             source_revision: "content-revision-1".into(),
@@ -420,6 +420,43 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         components: Some(environment_components.clone()),
         observed_at: at(9),
     }];
+    // Non-sorted markers expose reordering; equal entries must still mint
+    // separate identities. Keep entry zero for the obligation checks below.
+    let original_environment = environment_inputs[0].clone();
+    for (index, toolchain) in ["z-toolchain", "duplicate", "a-toolchain"]
+        .into_iter()
+        .enumerate()
+    {
+        if index == 1 {
+            environment_inputs.push(original_environment.clone());
+        } else {
+            let components = EnvironmentComponents {
+                toolchain: toolchain.into(),
+                ..environment_components.clone()
+            };
+            environment_inputs.push(EnvironmentEvidenceInput {
+                environment_fingerprint: CanonicalObject::freeze(&components)
+                    .expect("freeze ordered environment components")
+                    .key()
+                    .clone(),
+                components: Some(components),
+                ..original_environment.clone()
+            });
+        }
+    }
+    let original_verification = verification_inputs[0].clone();
+    verification_inputs.extend([
+        VerificationEvidenceInput {
+            summary: Some("z-requested-check".into()),
+            ..original_verification.clone()
+        },
+        original_verification.clone(),
+        VerificationEvidenceInput {
+            summary: Some("a-requested-check".into()),
+            environment: Some(EnvironmentEvidenceReference::Index { index: 2 }),
+            ..original_verification
+        },
+    ]);
     let missing_producer = VerificationEvidenceInput {
         producer_observation: ExecutionObservationReference::ObjectId {
             object_id: ObjectId::from_canonical_bytes(b"missing producer"),
@@ -528,8 +565,101 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         panic!("bound work turn must checkpoint");
     };
     assert_eq!(receipt.execution_observations.len(), 2);
-    assert_eq!(receipt.verification_evidence.len(), 1);
-    assert_eq!(receipt.environment_evidence.len(), 1);
+    assert_eq!(
+        receipt.verification_evidence.len(),
+        verification_inputs.len()
+    );
+    assert_eq!(receipt.environment_evidence.len(), environment_inputs.len());
+    for ids in [
+        &receipt.verification_evidence,
+        &receipt.environment_evidence,
+    ] {
+        assert_eq!(
+            ids.iter().collect::<std::collections::HashSet<_>>().len(),
+            ids.len(),
+            "each input, including equal content, gets its own minted id"
+        );
+        let positions = ids
+            .iter()
+            .map(|id| {
+                store
+                    .connection
+                    .query_row(
+                        "SELECT position FROM work_feed_entries
+                         WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_id = ?2",
+                        params![run.run_id.0.to_string(), id.as_str()],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .expect("evidence append position")
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "receipt order is append order, including duplicate-content entries"
+        );
+        let bytes = |id: &ObjectId| {
+            store
+                .connection
+                .query_row(
+                    "SELECT canonical_json FROM objects WHERE object_id = ?1",
+                    [id.as_str()],
+                    |row| row.get::<_, Vec<u8>>(0),
+                )
+                .expect("canonical evidence bytes")
+        };
+        assert_ne!(ids[0], ids[2]);
+        assert_eq!(bytes(&ids[0]), bytes(&ids[2]));
+    }
+    let stored_environments = receipt
+        .environment_evidence
+        .iter()
+        .zip(&environment_inputs)
+        .map(|(id, input)| {
+            let evidence = store
+                .load_environment_evidence(id)
+                .expect("environment in receipt order");
+            assert_eq!(evidence.source_basis, input.source_basis);
+            assert_eq!(
+                evidence.environment_fingerprint,
+                input.environment_fingerprint
+            );
+            assert_eq!(evidence.components, input.components);
+            assert_eq!(evidence.observed_at, input.observed_at);
+            evidence
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(stored_environments[0], stored_environments[2]);
+    let stored_verifications = receipt
+        .verification_evidence
+        .iter()
+        .zip(&verification_inputs)
+        .map(|(id, input)| {
+            let evidence = store
+                .load_verification_evidence(id)
+                .expect("verification in receipt order");
+            assert_eq!(
+                evidence.producer_observation,
+                receipt.execution_observations[1]
+            );
+            assert_eq!(evidence.check_kind, input.check_kind);
+            assert_eq!(Some(evidence.summary.as_str()), input.summary.as_deref());
+            assert_eq!(evidence.refs, input.refs);
+            let Some(EnvironmentEvidenceReference::Index { index }) = &input.environment else {
+                panic!("fixture must reference an environment input index");
+            };
+            assert_eq!(
+                evidence.environment.as_ref(),
+                Some(&receipt.environment_evidence[*index])
+            );
+            evidence
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(stored_verifications[0], stored_verifications[2]);
+    assert_eq!(
+        stored_verifications[3].environment.as_ref(),
+        Some(&receipt.environment_evidence[2]),
+        "an explicit index selects that minted id, not an equal-content environment"
+    );
     let observation_id = &receipt.execution_observations[0];
     let observation = load_typed_work_object::<ExecutionObservation>(
         &store.connection,
@@ -883,6 +1013,24 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     assert_eq!(objects_after_attach, objects_before_attach);
     assert_eq!(feeds_after_attach, feeds_before_attach);
 
+    let persisted_counts = |store: &SqliteStore| {
+        [
+            "objects",
+            "work_run_evidence",
+            "work_feed_entries",
+            "control_changes",
+            "control_operation_results",
+        ]
+        .map(|table| {
+            store
+                .connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("persisted checkpoint row count")
+        })
+    };
+    let before_replay = persisted_counts(&store);
     let replay = store
         .checkpoint_control_turn_with_evidence(
             &work.project_id,
@@ -899,6 +1047,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         )
         .expect("replay checkpoint exactly");
     assert_eq!(replay, checkpointed);
+    assert_eq!(persisted_counts(&store), before_replay);
     let replay_feed_count = store
         .connection
         .query_row(

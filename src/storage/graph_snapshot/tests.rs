@@ -5,11 +5,13 @@ mod hierarchy_limits;
 mod input_validation;
 mod memory_revisions;
 mod persisted_text;
+mod planning_scale;
 mod redaction;
 mod relation_bases;
 mod restored_identity;
 mod restored_repair;
 
+use super::load::GRAPH_VALIDATION_WORK;
 use super::*;
 use crate::storage::test_support::{
     ascii65_session, assert_oversized_session_refusal, exact_64_ascii_session,
@@ -135,6 +137,213 @@ fn snapshot_carries_the_pinned_evaluation_mode() {
         None
     );
     assert!(destination.verify_all().expect("verify").is_healthy());
+}
+
+#[test]
+fn restore_initializes_catalog_once_after_relations_without_fts_deletes() {
+    let directory = crate::test_support::temp_home().expect("tempdir");
+    let project = ProjectId("snapshot-catalog-insert-only".into());
+    let mut source =
+        SqliteStore::open(directory.path().join("catalog-source.db")).expect("source store");
+    let item = create_root(
+        &mut source,
+        &project,
+        "Distinctive restored title fragment",
+        "catalog-restore-item",
+    );
+    source
+        .add_work_blocker(
+            &AddWorkBlockerRequest {
+                work_id: item.work_id,
+                expected_work_revision: item.revision,
+                kind: WorkBlockerKind::Manual,
+                detail: "distinctive relation blocker fragment".into(),
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("catalog-blocker"),
+                idempotency_key: "catalog-blocker".into(),
+                blocked_at: at(2),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("add blocker");
+    let snapshot = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("catalog-save"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save snapshot");
+
+    let mut destination = SqliteStore::open_in_memory().expect("destination");
+    let other_project = ProjectId("snapshot-catalog-other-project".into());
+    let other_item = create_root(
+        &mut destination,
+        &other_project,
+        "Existing other-project catalog row",
+        "catalog-other-item",
+    );
+    destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor("catalog-dry-run"),
+            &snapshot_bytes(&snapshot.document),
+            true,
+            at(4),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("unrelated project FTS row does not collide in dry run");
+    crate::storage::take_work_catalog_fts_delete_statements();
+    destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor("catalog-load"),
+            &snapshot_bytes(&snapshot.document),
+            false,
+            at(4),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("load snapshot");
+
+    assert_eq!(
+        crate::storage::take_work_catalog_fts_delete_statements(),
+        0,
+        "restoring new items should not issue FTS deletes"
+    );
+    let item_count = i64::try_from(snapshot.document.body.items.len()).expect("small item count");
+    let project_fts_count: i64 = destination
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_catalog_fts
+             WHERE work_id IN (SELECT work_id FROM work_items WHERE project_id = ?1)",
+            [&project.0],
+            |row| row.get(0),
+        )
+        .expect("count FTS rows");
+    assert_eq!(
+        project_fts_count, item_count,
+        "one FTS row per restored item"
+    );
+    let other_fts_count: i64 = destination
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_catalog_fts WHERE work_id = ?1",
+            [other_item.work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .expect("count other-project FTS row");
+    assert_eq!(other_fts_count, 1, "other-project row remains intact");
+    let page = destination
+        .query_work_catalog(
+            &project,
+            at(5),
+            &crate::WorkCatalogQuery {
+                search: Some("distinctive restored title fragment".into()),
+                limit: 10,
+                ..crate::WorkCatalogQuery::default()
+            },
+        )
+        .expect("search restored title");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].work.work_id, item.work_id);
+    let blocker_page = destination
+        .query_work_catalog(
+            &project,
+            at(5),
+            &crate::WorkCatalogQuery {
+                search: Some("distinctive relation blocker fragment".into()),
+                limit: 10,
+                ..crate::WorkCatalogQuery::default()
+            },
+        )
+        .expect("search restored blocker detail");
+    assert_eq!(blocker_page.items.len(), 1);
+    assert_eq!(blocker_page.items[0].work.work_id, item.work_id);
+    let search_text: String = destination
+        .connection
+        .query_row(
+            "SELECT search_text FROM work_catalog_fts WHERE work_id = ?1",
+            [item.work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .expect("read restored FTS text");
+    assert!(search_text.contains("distinctive relation blocker fragment"));
+}
+
+#[test]
+fn restore_refuses_an_existing_fts_row_for_an_incoming_work_id() {
+    let directory = crate::test_support::temp_home().expect("tempdir");
+    let project = ProjectId("snapshot-catalog-collision".into());
+    let mut source =
+        SqliteStore::open(directory.path().join("collision-source.db")).expect("source store");
+    let item = create_root(
+        &mut source,
+        &project,
+        "Incoming catalog collision",
+        "catalog-collision-item",
+    );
+    let snapshot = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("collision-save"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save snapshot");
+    let mut destination = SqliteStore::open_in_memory().expect("destination");
+    destination
+        .connection
+        .execute(
+            "INSERT INTO work_catalog_fts (work_id, search_text) VALUES (?1, 'orphaned catalog row')",
+            [item.work_id.0.to_string()],
+        )
+        .expect("seed conflicting orphan row");
+
+    let dry_run_error = destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor("collision-dry-run"),
+            &snapshot_bytes(&snapshot.document),
+            true,
+            at(4),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("dry run must reject an incoming id already present in FTS");
+    assert!(
+        matches!(dry_run_error, StoreError::InvalidGraphSnapshot(ref detail) if detail.contains("already has a catalog FTS row")),
+        "{dry_run_error:?}"
+    );
+
+    let error = destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor("collision-load"),
+            &snapshot_bytes(&snapshot.document),
+            false,
+            at(4),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("must reject an incoming id already present in FTS");
+    assert!(
+        matches!(error, StoreError::InvalidGraphSnapshot(ref detail) if detail.contains("already has a catalog FTS row")),
+        "{error:?}"
+    );
+    let work_count: i64 = destination
+        .connection
+        .query_row("SELECT COUNT(*) FROM work_items", [], |row| row.get(0))
+        .expect("count work items");
+    let fts_count: i64 = destination
+        .connection
+        .query_row("SELECT COUNT(*) FROM work_catalog_fts", [], |row| {
+            row.get(0)
+        })
+        .expect("count FTS rows");
+    assert_eq!(work_count, 0, "refusal leaves catalog empty");
+    assert_eq!(fts_count, 1, "refusal preserves the preexisting row");
 }
 
 // Criteria keep the order typed: a snapshot saves and loads a list that does
@@ -1771,7 +1980,9 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         "terminal-replacement",
     );
     let mut child_count = 0_usize;
-    for batch in 0..=super::super::work::MAX_OPEN_WORK_DESCENDANTS / 16 {
+    let mut open_child_count = 0_usize;
+    let final_batch = super::super::work::MAX_OPEN_WORK_DESCENDANTS / 16 + 1;
+    for batch in 0..=final_batch {
         let parent = source.get_work_item(root.work_id).expect("current parent");
         let children = (0..16)
             .map(|index| ChildWorkDraft {
@@ -1806,7 +2017,11 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
                 &DevelopmentNoopRedactor,
             )
             .expect("decompose terminal batch");
-        for child in decomposition.children {
+        for (index, child) in decomposition.children.into_iter().enumerate() {
+            if batch == final_batch && index >= 12 {
+                open_child_count += 1;
+                continue;
+            }
             let superseded = child_count == 0;
             source
                 .dispose_work(
@@ -1831,6 +2046,8 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         }
     }
     assert!(child_count > super::super::work::MAX_OPEN_WORK_DESCENDANTS as usize);
+    assert!(open_child_count > 0);
+    assert!(open_child_count <= super::super::work::MAX_OPEN_WORK_DESCENDANTS as usize);
     let saved = source
         .save_work_graph_snapshot(
             &project,
@@ -1848,8 +2065,18 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         .iter()
         .filter(|item| item.parent_id == Some(root.work_id))
         .collect();
-    assert_eq!(exported_children.len(), child_count);
-    for child in exported_children {
+    assert_eq!(exported_children.len(), child_count + open_child_count);
+    let terminal_children = exported_children
+        .into_iter()
+        .filter(|child| {
+            matches!(
+                child.lifecycle,
+                WorkLifecycle::Cancelled | WorkLifecycle::Superseded
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(terminal_children.len(), child_count);
+    for child in terminal_children {
         assert!(matches!(
             child.lifecycle,
             WorkLifecycle::Cancelled | WorkLifecycle::Superseded
@@ -1875,6 +2102,8 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
     let bytes = snapshot_bytes(&saved.document);
     let mut destination = SqliteStore::open(directory.path().join("terminal-destination.db"))
         .expect("destination store");
+    let structural_size = relation_bases::graph_validation_size(&saved.document);
+    GRAPH_VALIDATION_WORK.with(|work| work.set(0));
     destination
         .load_work_graph_snapshot(
             &project,
@@ -1885,10 +2114,16 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
             &DevelopmentNoopRedactor,
         )
         .expect("load terminal fanout");
+    let validation_work = GRAPH_VALIDATION_WORK.with(std::cell::Cell::get);
+    let bound = structural_size.saturating_mul(20).saturating_add(64);
+    assert!(
+        validation_work <= bound,
+        "terminal fanout validation work {validation_work} exceeds {bound} for structural size {structural_size}"
+    );
     let children = destination
         .work_children(root.work_id)
         .expect("restored terminal children");
-    assert_eq!(children.len(), child_count);
+    assert_eq!(children.len(), child_count + open_child_count);
     assert_eq!(
         children
             .iter()
@@ -1902,6 +2137,13 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
             .filter(|child| child.lifecycle == WorkLifecycle::Cancelled)
             .count(),
         child_count - 1
+    );
+    assert_eq!(
+        children
+            .iter()
+            .filter(|child| child.lifecycle == WorkLifecycle::Open)
+            .count(),
+        open_child_count
     );
     assert!(children.iter().any(|child| {
         child.lifecycle == WorkLifecycle::Superseded

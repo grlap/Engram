@@ -483,7 +483,7 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
     assert.equal(error.closeDiagnostic.exit_observed_ms, 6000);
     assert.equal(error.closeDiagnostic.close_observed_ms, CLOSE_BUDGET_MS + 1000);
   });
-  for (const exitAt of [6000, 11000]) {
+  for (const exitAt of [6000, 11000, CLOSE_BUDGET_MS + 1000]) {
     await t.test(`clean exit at ${exitAt}ms with stalled stdio stays bounded`, async (context) => {
       const run = await fixture(context);
       const result = run.check();
@@ -495,6 +495,9 @@ test("MCP close deadline and diagnostic classifications", async (t) => {
       const { error } = await result;
       assert.equal(error.closeDiagnostic.classification, "clean_exit_stdio_open");
       assert.equal(error.closeDiagnostic.exit_observed_ms, exitAt);
+      if (exitAt > CLOSE_BUDGET_MS) {
+        assert.ok(error.closeDiagnostic.exit_observed_ms > error.closeDiagnostic.budget_ms);
+      }
       assert.equal(error.closeDiagnostic.close_observed_ms, null);
       assert.equal(error.closeDiagnostic.eventual, null);
       assert.equal(error.closeDiagnostic.budget_ms, CLOSE_BUDGET_MS);

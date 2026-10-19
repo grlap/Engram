@@ -1,4 +1,4 @@
-use super::super::load::{NEWEST_RECORD_VISITS, RELATION_BASIS_WORK};
+use super::super::load::{GRAPH_VALIDATION_WORK, NEWEST_RECORD_VISITS, RELATION_BASIS_WORK};
 use super::*;
 use crate::{
     RestoredRelationBasis, ReviseWorkRequest, WorkGraphSnapshotBlocker,
@@ -106,6 +106,7 @@ struct Measured {
     result: Result<WorkGraphSnapshotLoadResult, StoreError>,
     basis_work: usize,
     newest_visits: usize,
+    validation_work: usize,
     destination: SqliteStore,
 }
 
@@ -115,6 +116,7 @@ fn load_measured(project: &ProjectId, document: &WorkGraphSnapshotDocument) -> M
     let mut destination = SqliteStore::open_in_memory().expect("destination");
     RELATION_BASIS_WORK.with(|work| work.set(0));
     NEWEST_RECORD_VISITS.with(|visits| visits.set(0));
+    GRAPH_VALIDATION_WORK.with(|work| work.set(0));
     let result = destination.load_work_graph_snapshot(
         project,
         &actor("load-session"),
@@ -127,8 +129,94 @@ fn load_measured(project: &ProjectId, document: &WorkGraphSnapshotDocument) -> M
         result,
         basis_work: RELATION_BASIS_WORK.with(std::cell::Cell::get),
         newest_visits: NEWEST_RECORD_VISITS.with(std::cell::Cell::get),
+        validation_work: GRAPH_VALIDATION_WORK.with(std::cell::Cell::get),
         destination,
     }
+}
+
+/// Counts the independent structural inputs and materialized outputs named
+/// by the graph-validation budget: I is input items, R is input records, B is
+/// input blockers plus blockers in materialized records, E is record history
+/// events, and P is root/parent/successor/prerequisite references plus history
+/// event relations. Parsing, sorting comparisons, text bytes, source/memory
+/// work, and payload/equality copies are outside this element-visit bound.
+pub(super) fn graph_validation_size(document: &WorkGraphSnapshotDocument) -> usize {
+    let present = usize::from;
+    let items = document.body.items.len();
+    let records = document.body.records.len();
+    let items_by_id = document
+        .body
+        .items
+        .iter()
+        .map(|item| (item.work_id, item))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut blocker_counts = std::collections::HashMap::<WorkId, usize>::new();
+    for blocker in &document.body.blockers {
+        *blocker_counts.entry(blocker.work_id).or_default() += 1;
+    }
+    let mut blockers = document.body.blockers.len();
+    let mut events = 0;
+    let mut relations = document
+        .body
+        .items
+        .iter()
+        .map(|item| {
+            1 + present(item.parent_id.is_some())
+                + present(item.superseded_by.is_some())
+                + item.prerequisites.len()
+        })
+        .sum::<usize>();
+
+    for snapshot_record in &document.body.records {
+        match &snapshot_record.payload {
+            WorkGraphSnapshotRecordPayload::Native { history } => {
+                events += history.events.len();
+                let item = items_by_id
+                    .get(&snapshot_record.work_id)
+                    .expect("native record item");
+                let item_blockers = blocker_counts
+                    .get(&snapshot_record.work_id)
+                    .copied()
+                    .unwrap_or_default();
+                blockers += item_blockers;
+                relations += 1
+                    + present(item.parent_id.is_some())
+                    + present(item.superseded_by.is_some())
+                    + item.prerequisites.len()
+                    + item.prerequisites.len()
+                    + history
+                        .events
+                        .iter()
+                        .map(|event| {
+                            present(event.related_work_id.is_some())
+                                + present(event.related_work_revision.is_some())
+                        })
+                        .sum::<usize>();
+            }
+            WorkGraphSnapshotRecordPayload::Restored { canonical_json, .. } => {
+                let restored: crate::RestoredRecord =
+                    serde_json::from_value(canonical_json.clone())
+                        .expect("restored record payload");
+                events += restored.history.events.len();
+                blockers += restored.relations.blockers.len();
+                relations += 1
+                    + present(restored.item.parent_id.is_some())
+                    + present(restored.item.superseded_by.is_some())
+                    + restored.item.prerequisites.len()
+                    + restored.relations.prerequisites.len()
+                    + restored
+                        .history
+                        .events
+                        .iter()
+                        .map(|event| {
+                            present(event.related_work_id.is_some())
+                                + present(event.related_work_revision.is_some())
+                        })
+                        .sum::<usize>();
+            }
+        }
+    }
+    items + records + blockers + events + relations
 }
 
 fn record_counts(document: &WorkGraphSnapshotDocument) -> (usize, usize) {
@@ -140,6 +228,31 @@ fn record_counts(document: &WorkGraphSnapshotDocument) -> (usize, usize) {
             WorkGraphSnapshotRecordPayload::Native { .. } => (native + 1, restored),
             WorkGraphSnapshotRecordPayload::Restored { .. } => (native, restored + 1),
         })
+}
+
+#[test]
+fn aggregate_graph_validation_work_is_bounded_by_structural_input_and_output() {
+    let project = ProjectId("snapshot-validation-work-bound".into());
+    let mut source = SqliteStore::open_in_memory().expect("source store");
+    let shape = Shape {
+        name: "aggregate-bound",
+        items: 12,
+        blockers_per_item: 2,
+    };
+    build(&mut source, &project, &shape);
+    let first = save(&mut source, &project, 10);
+    revise_every_item(&mut source, &first, 1);
+    let document = save(&mut source, &project, 20);
+
+    let measured = load_measured(&project, &document);
+    measured.result.expect("graph snapshot loads");
+    let structural_size = graph_validation_size(&document);
+    let bound = structural_size.saturating_mul(20).saturating_add(64);
+    assert!(
+        measured.validation_work <= bound,
+        "validation work {} exceeds 20*(I+R+B+E+P)+64 with structural size {structural_size}",
+        measured.validation_work,
+    );
 }
 
 fn destination_work_count(store: &SqliteStore) -> i64 {

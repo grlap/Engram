@@ -251,6 +251,33 @@ fn task_sync_pending_preparation_finishes_after_opt_out_without_capture() {
         &receipt.operation.to_string().as_bytes()[..7],
     )
     .unwrap();
+    let before = entries(owned.path());
+    for include_notes in [false, true] {
+        for rebaseline in [false, true] {
+            let changed = ExportProfile {
+                include_notes,
+                origin_machine: Some("other-host".into()),
+            };
+            let error = service
+                .prepare_task_tree(
+                    &destination,
+                    &progress,
+                    &changed,
+                    rebaseline,
+                    chrono::Utc::now(),
+                )
+                .unwrap_err();
+            let message = error.to_string();
+            assert!(message.contains("original destination"), "{message}");
+            assert!(
+                message.contains("original include-notes setting"),
+                "{message}"
+            );
+            assert!(message.contains("without --rebaseline"), "{message}");
+            assert!(!message.contains("use --rebaseline to change it"));
+            assert_eq!(entries(owned.path()), before);
+        }
+    }
     let recovered = service
         .prepare_task_tree(&destination, &progress, &profile, false, chrono::Utc::now())
         .unwrap();

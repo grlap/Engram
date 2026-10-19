@@ -87,6 +87,13 @@ struct PlanRelationBasis {
 thread_local! {
     static DESCENDANT_SCAN_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static DESCENDANT_SCAN_VM_STEPS: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
+    static WORK_CATALOG_FTS_DELETE_STATEMENTS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn take_work_catalog_fts_delete_statements() -> usize {
+    WORK_CATALOG_FTS_DELETE_STATEMENTS.with(|count| count.replace(0))
 }
 
 #[cfg(test)]
@@ -239,7 +246,7 @@ fn create_root_with_validation_on<R: Redactor>(
             serde_json::to_vec(&item)?
         ],
     )?;
-    initialize_work_catalog_projection(transaction, &item)?;
+    initialize_new_work_catalog_projection(transaction, &item)?;
     super::root_state::initialize(transaction, &root_execution)?;
     let run = WorkRun {
         schema_version: SCHEMA_VERSION,
@@ -1075,7 +1082,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
                 serde_json::to_vec(&item)?
             ],
         )?;
-        initialize_work_catalog_projection(transaction, &item)?;
+        initialize_new_work_catalog_projection(transaction, &item)?;
         let run = WorkRun {
             schema_version: SCHEMA_VERSION,
             run_id,
@@ -1832,7 +1839,7 @@ pub(in crate::storage) fn refresh_work_catalog_projection(
     write_work_catalog_projection(connection, item, true)
 }
 
-fn initialize_work_catalog_projection(
+fn initialize_new_work_catalog_projection(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<(), StoreError> {
@@ -1877,7 +1884,51 @@ fn write_work_catalog_projection(
         )?;
     }
     if replace_existing {
+        #[cfg(test)]
+        WORK_CATALOG_FTS_DELETE_STATEMENTS.with(|count| count.set(count.get().saturating_add(1)));
         catalog_fts::remove_prior_rows(connection, item)?;
+    }
+    connection.execute(
+        "INSERT INTO work_catalog_fts (work_id, search_text) VALUES (?1, ?2)",
+        params![item.work_id.0.to_string(), search_text_key],
+    )?;
+    Ok(())
+}
+
+/// Initializes the catalog for a newly restored item. Snapshot loading has
+/// already established an empty destination and checked incoming ids against
+/// existing FTS rows, so replacing an FTS row here would perform an
+/// unnecessary full scan of the unindexed `work_id` column.
+pub(in crate::storage) fn initialize_work_catalog_projection(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<(), StoreError> {
+    let assigned_to_key = item.assigned_to.as_deref().map(normalize_work_catalog_key);
+    let search_text_key = work_catalog_search_text(connection, item)?;
+    let changed = connection.execute(
+        "UPDATE work_items
+         SET assigned_to_key = ?2, search_text_key = ?3
+         WHERE work_id = ?1",
+        params![item.work_id.0.to_string(), assigned_to_key, search_text_key],
+    )?;
+    if changed != 1 {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "work catalog initialization lost item {:?}",
+            item.work_id
+        )));
+    }
+    let mut label_keys = item
+        .labels
+        .iter()
+        .map(|label| normalize_work_catalog_key(label))
+        .collect::<Vec<_>>();
+    label_keys.sort();
+    label_keys.dedup();
+    for label_key in label_keys {
+        connection.execute(
+            "INSERT INTO work_item_labels (work_id, label_key) VALUES (?1, ?2)",
+            params![item.work_id.0.to_string(), label_key],
+        )?;
     }
     connection.execute(
         "INSERT INTO work_catalog_fts (work_id, search_text) VALUES (?1, ?2)",

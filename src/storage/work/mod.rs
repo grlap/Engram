@@ -193,6 +193,18 @@ pub(in crate::storage) fn refresh_work_catalog_for_restore(
     planning::refresh_work_catalog_projection(connection, item)
 }
 
+pub(in crate::storage) fn initialize_work_catalog_for_restore(
+    connection: &rusqlite::Connection,
+    item: &WorkItem,
+) -> Result<(), super::StoreError> {
+    planning::initialize_work_catalog_projection(connection, item)
+}
+
+#[cfg(test)]
+pub(crate) fn take_work_catalog_fts_delete_statements() -> usize {
+    planning::take_work_catalog_fts_delete_statements()
+}
+
 pub(in crate::storage) fn validate_work_source_snapshot_for_restore(
     snapshot: &crate::WorkSourceSnapshot,
 ) -> Result<(), super::StoreError> {

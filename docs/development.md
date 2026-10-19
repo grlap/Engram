@@ -457,6 +457,58 @@ still apply. If the coordinator launches its own command, use foreground mode
 and the host's supported process-completion wait; do not pretend self-mailbox
 notifications work. Where no completion wake exists, disclose that limitation.
 
+Stop a superseded detached full gate from the worktree that launched it:
+
+```bash
+node scripts/test-launcher.mjs stop RUN_ID --actor SESSION_ID --reason "input superseded"
+```
+
+Stop support currently requires Windows and a newly launched gate whose request
+declares `windows-job-v1`. Each command starts suspended, joins an owned Windows
+Job Object without breakaway permission, then runs. The supervisor retains the
+job through parent exit and confirms that no members remain before returning.
+POSIX, legacy and focused runs refuse stop requests: a process group alone
+cannot contain the detached descendants that the launcher tests create.
+Ordinary runs on those platforms remain available.
+
+The stop command accepts a run id, never a PID or directory. It retains the
+first actor, reason and request time. These are asserted attribution, not
+authenticated identity. A receipt means **requested**, not stopped. Only the
+owning worker stops its current command, including preflight commands; it waits
+for tree cleanup and saves a nonpassing terminal result through its ordinary
+completion and notification path. No later stage starts. Completed stages and
+logs remain intact. A stop accepted before the final terminal save wins even
+if the final command just exited zero. A completed run is a no-op with a clear
+message, and a repeated pending request returns its original intent.
+
+The existing wire classification is retained: `state: "failed"`,
+`interrupted: true`, `reason: "stopped"`, a nonzero integer `exitCode`, and
+`ended`, with attribution in `stop`. The summary begins `INTERRUPTED`; the v1
+machine record reports `overall=interrupted reason=stopped`, never a pass. The
+stop command emits no execution record. If cleanup cannot be confirmed, the
+result instead reports a cleanup failure and makes no successful-stop claim.
+The reason is `process-cleanup-unconfirmed` in the result, summary and
+notification. Cleanup membership polling has a 30-second confirmation allowance;
+expiry reports the residual count rather than waiting forever. This does not
+promise that an OS call itself can be interrupted. A helper startup failure
+before any workload launch attempt instead reports `helper-start-failed`.
+The inbox PowerShell helper uses fixed inline command text, with paths and
+arguments passed as data, so loading it does not require changing execution
+policy for script files. A policy that forbids compilation can still refuse
+startup. Compiler scratch uses the worktree's `target/tmp/launcher-jobs/` and
+is removed after helper exit; the workload receives the original stage
+environment, including its TEMP, TMP and PSModulePath.
+
+Stop-lock removal retries transient file-sharing refusals. A worker that cannot
+acquire the stop lock within five seconds rechecks the latest retained intent
+and saves its terminal result with a warning; a leftover caller lock cannot
+silently discard completion or notification. It never deletes that lock on a
+guess about its owner. This fallback does not certify an intent that another
+caller has not yet published.
+A dead worker is not killed or declared stopped from stale disk PIDs; use the
+existing recovery procedure. Synchronous fingerprint or identity reads may
+delay stop consumption, so there is no immediate-stop latency promise.
+
 Recover an existing run at completion, without rerunning its tests:
 
 ```bash

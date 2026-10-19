@@ -25,7 +25,8 @@ pub(crate) fn resume_pending(
 ) -> Result<PrepareReceipt> {
     ensure!(
         !rebaseline,
-        "task sync is not enabled; a new baseline cannot start"
+        "task sync is not enabled; a new baseline cannot start; {}",
+        super::PENDING_PROFILE_GUIDANCE
     );
     let supplied_progress = progress;
     let progress =

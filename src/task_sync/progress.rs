@@ -16,6 +16,11 @@ mod lock;
 mod prepared;
 mod resume;
 
+const PENDING_PROFILE_GUIDANCE: &str = concat!(
+    "resume at the original destination with the original include-notes setting ",
+    "and original origin-machine selection (including no origin-machine), without --rebaseline"
+);
+
 pub(crate) use resume::resume_pending;
 
 pub use prepared::{PreparedCandidate, PreparedProvenance, PreparedSelection, read_prepared};
@@ -158,14 +163,22 @@ fn prepare_with_producer(
             full_reason = Some("store or project binding changed".into());
         } else {
             if !rebaseline && previous.meta.profile != *profile {
-                return Err(invalid(
-                    "prepared profile or origin-machine is pinned; use --rebaseline to change it",
-                )
+                let remedy = if previous.complete {
+                    "use --rebaseline to change it"
+                } else {
+                    PENDING_PROFILE_GUIDANCE
+                };
+                return Err(invalid(format!(
+                    "prepared profile or origin-machine is pinned; {remedy}"
+                ))
                 .into());
             }
             if !previous.complete {
                 if rebaseline {
-                    return Err(invalid("pending preparation must finish before rebaseline").into());
+                    return Err(invalid(format!(
+                        "pending preparation must finish before rebaseline; {PENDING_PROFILE_GUIDANCE}"
+                    ))
+                    .into());
                 }
                 if previous.meta.destination != destination {
                     return Err(invalid(format!(

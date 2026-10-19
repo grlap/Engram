@@ -9,6 +9,7 @@ import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:pa
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { captureFingerprint, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
+import { requestStop, runJobCommand, stopController, stopProtocol, withStopLock } from "./launcher-stop.mjs";
 
 const script = fileURLToPath(import.meta.url);
 const repository = resolve(dirname(script), "..");
@@ -436,11 +437,11 @@ export function machineRecord(request, result) {
     }
     return { state, line };
   });
-  const interrupted = described.some(({ state }) => state === "interrupted");
+  const interrupted = result.interrupted === true || described.some(({ state }) => state === "interrupted");
   const passed = !interrupted && result.state === "passed" && described.every(({ state }) => state === "passed");
   const overall = interrupted ? "interrupted" : passed ? "passed" : "failed";
   const recorded = recordToken.test(result.reason ?? "") ? result.reason : undefined;
-  const reason = interrupted ? "stage-interrupted"
+  const reason = result.reason === "stopped" ? "stopped" : interrupted ? "stage-interrupted"
     : recorded ?? (stages.some(({ error }) => error) ? "spawn-failed"
       : described.some(({ state }) => state === "failed") ? "stage-failed" : "launcher-error");
   return [...described.map(({ line }) => line),
@@ -664,6 +665,7 @@ export function createRun({ root = repository, stages, notifyTo, requiredBinaryE
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const request = { runId, root: resolve(root), stages, notifyTo, requiredBinaryEnv, full, detached,
     owner: env.TERMAL_SESSION_ID ?? null, started: new Date().toISOString(),
+    ...(full && detached && process.platform === "win32" ? { stopProtocol } : {}),
     ...(item !== undefined ? { item } : {}), ...(nextTransition !== undefined ? { nextTransition: { ...nextTransition } } : {}) };
   // A worker that never starts leaves this first heartbeat to go stale.
   save(join(runDir, "results.json"), { runId, state: "running", started: request.started,
@@ -808,9 +810,28 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   catch (error) {
     throw because(error.code === "EEXIST" ? "execution-lock-held" : "execution-admission-failed", error);
   }
-  let request, heartbeat;
+  let request, heartbeat, control;
   let result = { runId: basename(runDir), started: null, stages: [], limitations: fingerprintLimitations() };
   const resultPath = join(runDir, "results.json");
+  let cleanupUnconfirmed = false;
+  const commandRun = async (binary, args, log) => {
+    control?.check();
+    let outcome;
+    try {
+      outcome = control
+        ? await runJobCommand(binary, args, { cwd: request.root, env: childEnv, log, runDir, control,
+          powerShell: executable(systemPowerShell(childEnv), request.root, childEnv) })
+        : await runCommand(binary, args, { cwd: request.root, env: childEnv, log });
+    } catch (error) {
+      if (error.cleanupUnconfirmed === true) cleanupUnconfirmed = true;
+      else if (control && !error.reason) error.reason = "helper-start-failed";
+      throw error;
+    }
+    if (outcome.cleanup) (result.processCleanup ??= []).push(outcome.cleanup);
+    // runJobCommand returns only after the job has no remaining members.
+    control?.check();
+    return outcome;
+  };
   // Let Rustup read the repository's toolchain file, not an inherited override.
   const childEnv = { ...env };
   const clearedToolchainOverrides = [];
@@ -821,8 +842,8 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   const probe = async (name, command, args) => {
     const log = join(runDir, `preflight-${name}.log`);
     let outcome;
-    try { outcome = await runCommand(command, args, { cwd: request.root, env: childEnv, log }); }
-    catch (error) { throw because("preflight-failed", error); }
+    try { outcome = await commandRun(command, args, log); }
+    catch (error) { if (["stopped", "helper-start-failed"].includes(error.reason)) throw error; throw because("preflight-failed", error); }
     result.preflight.push({ name, ...outcome, log,
       diagnostics: await diagnostics(log, outcome.code !== 0 || Boolean(outcome.error)) });
     save(resultPath, result);
@@ -830,6 +851,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   };
   try {
     request = readJson(join(runDir, "request.json"));
+    if (request.stopProtocol === stopProtocol) control = stopController(runDir, request);
     // What the record says of each stage is what was read here, before any
     // stage ran: a stage can write to the run directory.
     const plan = { full: request.full === true, stages: (request.stages ?? []).map(({ kind, selects, command, args }) =>
@@ -840,7 +862,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     if (!saved || !Array.isArray(saved.stages)) throw new Error("invalid initial results: stages missing");
     result = saved;
     result.plan = plan;
-    if (result.state === "failed") return result;
+    if (result.state === "failed") { control?.close(); return result; }
     // The cadence createRun recorded, held to the same bounds as the setting;
     // anything else falls back to this worker's own setting.
     const recorded = result.heartbeat?.everyMs;
@@ -864,6 +886,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
     }, everyMs);
     heartbeat.unref();
     await ready();
+    control?.check();
     if (!Array.isArray(request.stages) || request.stages.length === 0) throw new Error("at least one stage is required");
     const names = new Set();
     for (const stage of request.stages) {
@@ -903,7 +926,7 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       const entry = result.stages[index];
       Object.assign(entry, { state: "running", cwd: request.root, started: new Date().toISOString(), command: [stage.command, ...stage.args], log: join(runDir, `${stage.name}.log`) });
       save(resultPath, result);
-      const outcome = await runCommand(stage.command, stage.args, { cwd: request.root, env: childEnv, log: entry.log });
+      const outcome = await commandRun(stage.command, stage.args, entry.log);
       Object.assign(entry, outcome, { ended: new Date().toISOString(), state: outcome.code === 0 && !outcome.error ? "passed" : "failed" });
       if (stage.kind === "test") {
         entry.tests = await countTests(entry.log, { cargoFrames: cargoPhase(stage) });
@@ -931,11 +954,46 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   } catch (error) {
     result.state = "failed"; result.exitCode = 1; result.error = error.message;
     result.reason = error.reason ?? "launcher-error";
+    if (error.reason === "stopped") Object.assign(result, { interrupted: true, stop: error.stop });
     for (const stage of result.stages) if (stage.state === "running") { stage.state = "failed"; stage.error = error.message; }
   }
   clearInterval(heartbeat);
-  result.ended = new Date().toISOString();
-  save(resultPath, result);
+  // The same lock orders stop acceptance against this final terminal save.
+  // No process is launched or waited on while the lock is held.
+  const commit = () => {
+    if (control && !cleanupUnconfirmed) {
+      try { control.check(); }
+      catch (error) {
+        Object.assign(result, { state: "failed", exitCode: 1, reason: error.reason ?? "launcher-error", error: error.message });
+        if (error.reason === "stopped") Object.assign(result, { interrupted: true, stop: error.stop });
+      }
+    }
+    if (cleanupUnconfirmed) {
+      Object.assign(result, { state: "failed", exitCode: 1, reason: "process-cleanup-unconfirmed" });
+      delete result.interrupted;
+      delete result.stop;
+    }
+    result.ended = new Date().toISOString();
+    save(resultPath, result);
+  };
+  try {
+    if (control) {
+      try {
+        await withStopLock(runDir, commit, { onReleaseError: (error) => {
+          result.stopLockWarning = `stop lock removal failed: ${error.code ?? "unknown"}`;
+          try { save(resultPath, result); } catch { /* terminal result was already saved */ }
+        } });
+      } catch (error) {
+        if (!error.stopLockTimeout) throw error;
+        // A dead CLI may have left the lock. No process is running here; do
+        // not lose terminal delivery or guess that it is safe to remove it.
+        // commit inspects the retained intent again immediately before saving.
+        result.stopLockWarning = "stop lock timed out; terminal save used the latest retained intent";
+        commit();
+      }
+    } else commit();
+  }
+  finally { control?.close(); }
   return result;
 }
 
@@ -955,7 +1013,7 @@ export function runLiveness(result, now = Date.now()) {
 }
 
 const completionReasons = new Set(["input-capture-failed", "request-publication-failed", "input-changed", "fingerprint-check-failed", "preflight-failed",
-  "spawn-failed", "stage-failed", "launcher-error"]);
+  "spawn-failed", "stage-failed", "launcher-error", "stopped", "helper-start-failed", "process-cleanup-unconfirmed"]);
 const stageHasFailures = (entry) => entry.tests?.failures > 0 || entry.tests?.failed > 0;
 function stageState(entry) {
   if (entry.signal) return "interrupted";
@@ -1015,7 +1073,7 @@ export function completionMetadata(request, result, now = Date.now()) {
   const inputUnverified = verdict === "UNKNOWN" && terminal && liveness === "passed" && input.comparison === "unknown";
   const reason = input.comparison === "mismatch" ? "input-changed"
     : inputUnverified ? "input-unverified"
-      : inferredInterruption ? "heartbeat-stale" : interrupted ? "interrupted" : completionReasons.has(result.reason) ? result.reason
+      : result.reason === "stopped" ? "stopped" : inferredInterruption ? "heartbeat-stale" : interrupted ? "interrupted" : completionReasons.has(result.reason) ? result.reason
       : verdict === "PASS" ? "completed" : !terminal ? "no-terminal-result" : failed ? "stage-failed" : "launcher-error";
   const blocker = interrupted ? { reason: "interrupted", stage: recoveredStage }
     : inputUnverified ? { reason: "no-terminal-result", basis: "input-unverified" }
@@ -1051,6 +1109,9 @@ function renderCompletion(runDir, request, result, now) {
     const stage = typeof result.recovered.stage === "string" && recordToken.test(result.recovered.stage)
       ? result.recovered.stage : null;
     lines.push(`recovery: phase=${result.recovered.phase} stage=${quote(stage)}`);
+  }
+  if (result.reason === "stopped" && result.stop) {
+    lines.push(`stop: actor=${quote(result.stop.actor)} reason=${quote(result.stop.reason)} requestedAt=${quote(result.stop.requestedAt)}`);
   }
   if (request.item !== undefined) lines.push(`ITEM ${quote(request.item)}`);
   else lines.push("item: undeclared");
@@ -1341,6 +1402,20 @@ function workerFailure(runDir, error) {
 
 async function main(args) {
   const mode = args.shift();
+  if (mode === "stop") {
+    const runId = args.shift();
+    let actor, reason;
+    while (args.length) {
+      const flag = args.shift(), value = args.shift();
+      if (flag === "--actor" && actor === undefined) actor = value;
+      else if (flag === "--reason" && reason === undefined) reason = value;
+      else throw usageFailure("stop requires RUN_ID --reason TEXT --actor TEXT, each once");
+    }
+    const stopped = await requestStop(runId, { root: repository, actor, reason });
+    process.stdout.write(stopped.terminal ? `Already terminal; nothing stopped. ${runId}\n`
+      : `Stop requested; cleanup and terminal notification are pending. ${runId}\nrequest: ${join(stopped.runDir, "stop.request.json")}\n`);
+    return;
+  }
   if (["summary", "notify", "recover", "_run"].includes(mode)) {
     if (mode === "summary" && args.length > 1) {
       const runDir = resolve(args.shift());
@@ -1384,7 +1459,7 @@ async function main(args) {
     catch (error) { throw workerFailure(runDir, error); }
     return;
   }
-  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR");
+  if (!["full", "focused"].includes(mode)) throw usageFailure("usage: test-launcher.mjs full|focused [--notify SESSION] [--detach] [--item TEXT] [--next-owner SESSION --next-action TEXT] [--require-binary-env NAME] [-- COMMAND ARGS...] | summary RUN_DIR [--stage NAME --max-chars N] | notify|recover RUN_DIR | stop RUN_ID --reason TEXT --actor TEXT");
   let notifyTo, detach = false, item, nextOwner, nextAction;
   const metadataFlags = new Set();
   const requiredBinaryEnv = [];

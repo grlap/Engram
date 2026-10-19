@@ -695,6 +695,13 @@ session, and times from that observation; a missing producer is a named
 environment object by id or by same-request index. That object must name the
 same run and source revision.
 
+The checkpoint receipt preserves request input order in each record-id list.
+Verification and environment evidence mint one fresh id per input even when
+content repeats; exact idempotent replay returns the same ordered ids without
+another append. Execution observations preserve input order for accepted
+requests, which require unique observation ids; the duplicate-content evidence
+guarantee does not apply to duplicate observation inputs.
+
 Environment evidence may use the opaque fingerprint form. The structured
 form supplies a closed, bounded component identity: `toolchain`, optional
 `sandbox` or image label, `workspace_id`, and the session's

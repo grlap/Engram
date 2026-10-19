@@ -6,6 +6,7 @@ use crate::{
 use std::{cell::Cell, fs};
 
 mod candidate_limit;
+mod pending_profile;
 mod prepared;
 mod recovery;
 mod state_limit;
