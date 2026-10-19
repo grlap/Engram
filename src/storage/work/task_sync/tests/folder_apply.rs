@@ -1,9 +1,10 @@
 use super::super::folder::TaskSyncFolderApply;
+use super::super::folder_scalar::{Conflict, NAMED_CONFLICT_LIMIT, conflict_message};
 use super::*;
 use crate::{
     ClaimWorkRequest, ReleaseWorkRequest, SessionId, WorkClaim,
     domain::{WorkPlanningAuthority, WorkTransition},
-    task_sync::progress::ExportProfile,
+    task_sync::{folder_plan::ProjectChange, progress::ExportProfile},
 };
 
 const PROJECT: &str = "folder-apply";
@@ -661,4 +662,150 @@ fn projection_repair_after_an_edit_preserves_every_durable_row() {
         .unwrap();
     assert_eq!(after, rows);
     assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn a_required_child_waiver_on_the_parent_refuses_its_edit_as_execution_history() {
+    // A waiver accounts for the root's execution: with only a child claimed,
+    // the parent records it without a run of its own.
+    let (mut store, fixture) = enrolled();
+    claim_restored(&mut store, fixture.first, "worker", 6);
+    let child = query::load_work_item(&store.connection, fixture.second).unwrap();
+    let parent = query::load_work_item(&store.connection, fixture.parent).unwrap();
+    store
+        .reject_required_child(
+            &crate::domain::RejectRequiredChildRequest {
+                work_id: fixture.second,
+                expected_work_revision: child.revision,
+                expected_parent_revision: Some(parent.revision),
+                reason: "No longer needed".into(),
+                actor: actor("planner"),
+                idempotency_key: "reject-second".into(),
+                rejected_at: at(7),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let parent = query::load_work_item(&store.connection, fixture.parent).unwrap();
+    assert_eq!(parent.active_run_id, None);
+
+    let before = state(&store);
+    let resolved = edited(&exported(&store), fixture.parent, |task| {
+        task.title = "Renamed parent".into();
+    });
+    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 8).unwrap_err());
+    assert!(
+        message.contains(&format!("{}: execution_history (event ", fixture.parent.0)),
+        "{message}"
+    );
+    assert_eq!(state(&store), before);
+}
+
+fn deleted_conflicts(count: usize) -> Vec<Conflict> {
+    (1_u128..)
+        .take(count)
+        .map(|value| Conflict {
+            id: WorkId(uuid::Uuid::from_u128(value)),
+            reason: "task_deleted",
+            detail: "omitted from the folder".into(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_refusal_names_at_most_the_limit_and_counts_the_rest_exactly() {
+    let named = |message: &str| message.matches(": task_deleted").count();
+
+    let at_limit = conflict_message(&[], &deleted_conflicts(NAMED_CONFLICT_LIMIT));
+    assert_eq!(named(&at_limit), NAMED_CONFLICT_LIMIT, "{at_limit}");
+    assert!(!at_limit.contains("more refused"), "{at_limit}");
+    assert!(!at_limit.ends_with(';'), "{at_limit}");
+
+    let one_over = conflict_message(&[], &deleted_conflicts(NAMED_CONFLICT_LIMIT + 1));
+    assert_eq!(named(&one_over), NAMED_CONFLICT_LIMIT, "{one_over}");
+    assert!(
+        one_over.ends_with("; and 1 more refused task"),
+        "{one_over}"
+    );
+
+    let conflicts = deleted_conflicts(NAMED_CONFLICT_LIMIT + 3);
+    let with_project = conflict_message(&[ProjectChange::NotesProfile], &conflicts);
+    assert!(
+        with_project.starts_with(
+            "task folder import refuses the selected changes: project: notes_profile; "
+        ),
+        "{with_project}"
+    );
+    assert_eq!(named(&with_project), NAMED_CONFLICT_LIMIT, "{with_project}");
+    assert!(
+        with_project.contains(&conflicts[NAMED_CONFLICT_LIMIT - 1].id.0.to_string())
+            && !with_project.contains(&conflicts[NAMED_CONFLICT_LIMIT].id.0.to_string()),
+        "{with_project}"
+    );
+    assert!(
+        with_project.ends_with("; and 3 more refused tasks"),
+        "{with_project}"
+    );
+}
+
+#[test]
+fn a_refusal_beyond_the_limit_names_the_lowest_ids_and_counts_the_rest() {
+    let mut tasks = (0..NAMED_CONFLICT_LIMIT + 5)
+        .map(|index| document(&format!("root {index}"), None))
+        .collect::<Vec<_>>();
+    tasks.sort_by_key(|task| task.id.0);
+    let ids = tasks.iter().map(|task| task.id).collect::<Vec<_>>();
+    let project_document = ProjectDocument {
+        format: FORMAT.into(),
+        project_id: project(),
+        notes_included: false,
+    };
+    let enrolled = TaskTree {
+        project: project_document.clone(),
+        tasks,
+    };
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &enrolled, "enrol", 5).unwrap();
+
+    // An empty folder against a destination that holds the exchange is a
+    // deletion of every enrolled task, not a bootstrap.
+    let empty = TaskTree {
+        project: project_document,
+        tasks: Vec::new(),
+    };
+    let basis = basis(&store);
+    let project = project();
+    let importer = actor("folder-importer");
+    let profile = profile();
+    let request = TaskSyncFolderApply {
+        project: &project,
+        actor: &importer,
+        tree: &empty,
+        export_basis: &basis,
+        profile: &profile,
+        complete: true,
+        now: at(6),
+    };
+    let before = state(&store);
+    let dry = store
+        .dry_run_task_sync_folder(request, "empty")
+        .unwrap_err();
+    let real = store.apply_task_sync_folder(request, "empty").unwrap_err();
+    assert_eq!(dry.to_string(), real.to_string());
+    assert_eq!(state(&store), before);
+
+    let message = conflict(&real);
+    let mut previous = 0;
+    for id in &ids[..NAMED_CONFLICT_LIMIT] {
+        let entry = format!("{}: task_deleted", id.0);
+        let position = message
+            .find(&entry)
+            .unwrap_or_else(|| panic!("{entry} is named: {message}"));
+        assert!(position > previous, "{message}");
+        previous = position;
+    }
+    for id in &ids[NAMED_CONFLICT_LIMIT..] {
+        assert!(!message.contains(&id.0.to_string()), "{message}");
+    }
+    assert!(message.ends_with("; and 5 more refused tasks"), "{message}");
 }

@@ -1,7 +1,5 @@
 //! Admission and application of the scalar edits a resolved folder asks for.
 
-use std::fmt::Write as _;
-
 use super::{origin, query};
 use crate::{
     ActorContext, WorkId, WorkLifecycle, WorkOrigin,
@@ -9,21 +7,24 @@ use crate::{
     storage::StoreError,
     task_sync::{
         TaskSyncRefusal,
-        folder_plan::{DeltaPlan, TaskDelta, TaskField, UnsupportedChange},
+        folder_plan::{DeltaPlan, ProjectChange, TaskDelta, TaskField, UnsupportedChange},
     },
 };
 
+/// How many refused tasks a refusal names before it counts the rest.
+pub(super) const NAMED_CONFLICT_LIMIT: usize = 20;
+
 /// Why one task the folder would change cannot take that change here.
-struct Conflict {
-    id: WorkId,
-    reason: &'static str,
-    detail: String,
+pub(super) struct Conflict {
+    pub(super) id: WorkId,
+    pub(super) reason: &'static str,
+    pub(super) detail: String,
 }
 
 /// Applies a classified folder whole, or refuses it before any write. Every
 /// requested delta is judged first: an unsupported delta and an edit its task
-/// cannot take are both conflicts, and the refusal names each one in task-id
-/// order, so a single correction of the folder can address them all.
+/// cannot take are both conflicts. The refusal names the first ones in
+/// task-id order, up to a fixed limit, and gives the exact count of the rest.
 pub(super) fn apply_plan(
     transaction: &rusqlite::Transaction<'_>,
     plan: &DeltaPlan,
@@ -131,34 +132,61 @@ fn admit(
     Ok(None)
 }
 
-/// Whether a transition changes only planning, never execution.
+/// Whether a transition changes only planning, never execution. Every
+/// variant is named, so a new one cannot compile until it is classified.
 const fn is_planning(transition: &WorkTransition) -> bool {
-    matches!(
-        transition,
+    match transition {
         WorkTransition::Created { .. }
-            | WorkTransition::Decomposed { .. }
-            | WorkTransition::Revised { .. }
-            | WorkTransition::PrerequisiteAdded { .. }
-            | WorkTransition::PrerequisiteRemoved { .. }
-            | WorkTransition::Blocked { .. }
-            | WorkTransition::Unblocked { .. }
-            | WorkTransition::Disposed { .. }
-            | WorkTransition::RequiredChildWaived { .. }
-    )
+        | WorkTransition::Decomposed { .. }
+        | WorkTransition::Revised { .. }
+        | WorkTransition::PrerequisiteAdded { .. }
+        | WorkTransition::PrerequisiteRemoved { .. }
+        | WorkTransition::Blocked { .. }
+        | WorkTransition::Unblocked { .. }
+        | WorkTransition::Disposed { .. } => true,
+        // Execution, including a required-child waiver: it accounts for the
+        // root's execution and can be recorded without a run of its own.
+        WorkTransition::Claimed { .. }
+        | WorkTransition::ClaimRenewed { .. }
+        | WorkTransition::Released { .. }
+        | WorkTransition::Checkpointed { .. }
+        | WorkTransition::HandoffOffered { .. }
+        | WorkTransition::HandoffExpired { .. }
+        | WorkTransition::HandoffCancelled { .. }
+        | WorkTransition::HandedOff { .. }
+        | WorkTransition::EvidenceAdded { .. }
+        | WorkTransition::MemoryCaptured { .. }
+        | WorkTransition::TypedEvidenceAdded { .. }
+        | WorkTransition::Completed { .. }
+        | WorkTransition::RequiredChildWaived { .. }
+        | WorkTransition::Reopened { .. } => false,
+    }
 }
 
 fn refusal(plan: &DeltaPlan, conflicts: &[Conflict]) -> StoreError {
-    let mut message = String::from("task folder import refuses the selected changes:");
-    for change in &plan.project {
-        let _ = write!(message, " project: {};", change.code());
+    TaskSyncRefusal::ImportConflict.invalid(conflict_message(&plan.project, conflicts))
+}
+
+/// The refusal text: every project change, then the first refused tasks in
+/// the order given, up to the limit, then the exact count of the rest.
+pub(super) fn conflict_message(project: &[ProjectChange], conflicts: &[Conflict]) -> String {
+    let mut entries = project
+        .iter()
+        .map(|change| format!("project: {}", change.code()))
+        .chain(conflicts.iter().take(NAMED_CONFLICT_LIMIT).map(|conflict| {
+            format!(
+                "{}: {} ({})",
+                conflict.id.0, conflict.reason, conflict.detail
+            )
+        }))
+        .collect::<Vec<_>>();
+    match conflicts.len().saturating_sub(NAMED_CONFLICT_LIMIT) {
+        0 => {}
+        1 => entries.push("and 1 more refused task".into()),
+        rest => entries.push(format!("and {rest} more refused tasks")),
     }
-    for conflict in conflicts {
-        let _ = write!(
-            message,
-            " {}: {} ({});",
-            conflict.id.0, conflict.reason, conflict.detail
-        );
-    }
-    message.pop();
-    TaskSyncRefusal::ImportConflict.invalid(message)
+    format!(
+        "task folder import refuses the selected changes: {}",
+        entries.join("; ")
+    )
 }

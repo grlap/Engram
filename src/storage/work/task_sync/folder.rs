@@ -225,10 +225,10 @@ pub(super) fn apply_task_sync_folder_on(
 }
 
 /// Applies a classified folder to an enrolled destination: every requested
-/// delta is an admitted scalar edit, or the whole folder refuses with each
-/// reason and nothing is written. The baseline records the folder whenever its
-/// inventory differs from the latest baseline, even when no task changes, so a
-/// host-local task the folder now carries joins the exchange.
+/// delta is an admitted scalar edit, or the whole folder refuses, naming its
+/// refused tasks, and nothing is written. The baseline records the folder
+/// whenever its inventory differs from the latest baseline, even when no task
+/// changes, so a host-local task the folder now carries joins the exchange.
 fn apply_planned_changes(
     transaction: &rusqlite::Transaction<'_>,
     request: TaskSyncFolderApply<'_>,
