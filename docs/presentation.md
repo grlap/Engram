@@ -3,9 +3,9 @@
 A presentation on what Engram is and why a Markdown file is not enough, for
 a mixed audience of engineers and managers, 15 to 20 minutes. Each slide
 gives its text first and speaker notes after `>`. Sources: the README,
-[vision](vision.md), [shipped capabilities](shipped.md), and one month of
-real use by the Engram and TermAl agent teams; drafted by an Engram agent
-with feedback from six Engram and TermAl agents folded in.
+[vision](vision.md), [shipped capabilities](shipped.md), and operational
+feedback from the Engram and TermAl agent teams. Drafted 2026-10-05 and
+refreshed 2026-10-19.
 
 ---
 
@@ -28,16 +28,17 @@ with feedback from six Engram and TermAl agents folded in.
 
 ## Slide 2. What it changes for a team
 
-- Less duplicated work: one holder per task, visible to every session.
+- Less duplicated work: one holder per task, visible to sessions using the
+  same local project store.
 - Recoverable handoffs: an interrupted agent's task, evidence and next action
   are there for the next one.
 - Trustworthy completion: a task closes against its criteria and recorded
   evidence, not against the word "done".
 - A readable history of outcomes for the humans, instead of chat scrollback.
 
-> For managers this is the slide; the internals come next and can be
-> skimmed. The readable board of what happened belongs here, not in the
-> appendix.
+> For managers this is the slide; the internals come next and can be skimmed.
+> The actual history is available from the task record; a human-facing board
+> is outside the shipped product.
 
 ---
 
@@ -50,8 +51,9 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 - Written in Rust. No required cloud service and no external tracker; the
   canonical ledger and ordinary work stay on the machine. An optional,
   operator-configured off-host backup can export copies.
-- Fourteen agent commands, listed in the appendix; agents learn them from one
-  skill file.
+- Fourteen core work commands, listed in the appendix; agents learn them from
+  one skill file. Search is MCP `search` or CLI `ls --search`; host-local
+  task-sync settings are available from both surfaces.
 - The record is append-only (notes, gates, verdicts, seals); live state such
   as who holds what is kept in current rows that recovery reads.
 
@@ -135,7 +137,8 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 
 ## Slide 8. Break point 5: who decided this, and when?
 
-- A file has git blame at best, and only for what survived editing.
+- Git can recover deleted history, but a plain file does not make each decision
+  or check a typed, queryable event.
 - Engram: every note, claim, gate, verdict and completion is an attributed,
   append-only event. The audit trail is the data, not a separate log.
 - Project memory holds durable decisions by key and revision, with the
@@ -152,8 +155,8 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 - Engram: with a measuring host, evidence is bound to a source fingerprint
   the host takes for recognised test runners. Change the code and the old
   pass is recorded as stale; the stock rule records the untested change
-  rather than blocking, and the evaluation is redone on the exact tree that
-  lands.
+  rather than blocking. Our landing workflow gates and reviews the exact
+  frozen tree that lands.
 - Division of labour: the host measures the source and runs the evaluator;
   Engram enforces what was recorded.
 
@@ -167,11 +170,13 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 
 - Agents time out and retry. Appending to a file twice gives two entries and
   no way to tell.
-- Engram: mutations carry an idempotency key, and a replay is bound to its
-  target. The same key with the same intent returns the same result; the same
-  key aimed at a different item is refused, not replayed onto it.
+- Engram: a completion mutation carries an idempotency key, and a replay is
+  bound to its target. The same key with the same intent returns the same
+  result; the same key aimed at a different item is refused, not replayed onto
+  it.
 - Retry semantics are per operation, not universal: a same-holder claim
-  renews, a late gate on completed work appends.
+  renews, a late gate on completed work appends, and evaluation attempts use a
+  per-item, per-run key scope.
 
 > Small point, but it is what makes unattended agents safe to retry.
 
@@ -179,8 +184,9 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 
 ## Slide 11. Handoff, and what happens when a worker fails
 
-- Handoff is explicit: the holder offers, the next session accepts, and both
-  events are on the record with the task's evidence.
+- Handoff is explicit: the holder can offer, the next session can accept, and
+  both events are on the record with the task's evidence. In day-to-day
+  recovery, a released claim followed by a new claim is also a common transfer.
 - A failure is carried, not hidden: a worker that cannot finish leaves the
   failed check and its diagnosis on the item, and the next worker starts
   from them.
@@ -206,34 +212,40 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 
 ## Slide 13. In use today
 
-- Engram is the only writable tracker for two live projects: Engram itself
-  (three implementers, one coordinator, one advisor) and TermAl, the agent
-  host (five implementers, two architects, a coordinator).
-- Gates, reviews, evaluations and landings are recorded in Engram; the team
-  coordinates them through its own process (mailboxes, serial landings,
-  two-vendor reviews) on top of it.
+- Engram is the writable tracker for the Engram and TermAl projects. The
+  number of active agents varies by the available coding and validation slots.
+- Gates, evaluations and landings are recorded in Engram; the session that
+  commissioned a review records its findings and disposition on the item.
+  Mailboxes, serial landings and two-vendor reviews are process on top of it.
 - The humans read outcomes from the record, not from the chat.
 
-> Do not present the team's ceremony as the product: serial gates, "LAUNCH
-> NOW" and two-vendor reviews are our process choices. Engram records them.
+> Do not present the team's ceremony as the product: serial gates, limited
+> validation capacity and two-vendor reviews are process choices. Engram
+> records their evidence and decisions.
 
 ---
 
 ## Slide 14. What it is not, and what it costs
 
 - Not a scheduler: it says whether selected work is ready; the host runs it.
-- Not a shared team board yet: one store per developer's machine; shared
-  multi-machine use is deliberately not offered.
+- Not a shared team board yet: each host has its own SQLite store. A Git-based
+  task-text exchange is being built. Export and import can bootstrap an empty
+  store; merging several hosts' changes into an existing store is not shipped.
+  TermAl, the host, separately provides coordination mailboxes and is building
+  its remote session support; those mailboxes carry no Engram task state.
 - Not a secrets store, not a transcript archive, not a RAG framework, and
-  not an artifact store: evidence is recorded as pointers and summaries, so a
-  removed worktree takes its raw fixtures with it.
+  not an artifact store: evidence is recorded as pointers and summaries. Our
+  workflow may retain raw artifacts under the repository while an open task
+  needs them.
 - Prerelease: an upgrade can require a store migration; backups are the
-  operator's job; only Windows is validated today.
-- Size: the ledger keeps everything. Engram's own project store is about
-  540 MB and TermAl's about 410 MB after a month of heavy multi-agent use;
-  reads stay bounded because views are computed, not because the file is
-  small.
-- A learning curve: fourteen commands, learned from one skill file.
+  operator's job. Day-to-day use and landing gates are on Windows; CI also
+  tests Linux and macOS, while some features remain Windows-only.
+- Size, observed 2026-10-19 UTC: the Engram store is about 982 MB plus a
+  173 MB WAL; the TermAl store is about 887 MB plus an observed 5 MB WAL.
+  Views bound returned results; they do not make every query or maintenance
+  operation cheap.
+- A learning curve: fourteen core commands, plus locators, revisions and
+  host workflow concepts. Claims can lapse while a worker waits for capacity.
 
 > Honesty here is what makes slide 6 credible.
 
@@ -243,11 +255,13 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 
 A Markdown TODO is a note. Engram is a ledger with rules. The note is cheaper
 until you have more than one writer, more than one session, or a need to show
-rather than say that work was finished. Today: a local Windows pilot.
+rather than say that work was finished. Today: local-first on each host, with
+Git task exchange in active development. TermAl separately provides the
+coordination mailbox.
 
 > Close on this line, then take questions. Likely first question: "can I see
-> the history?" Answer: `engram work show REF --notes --gates`, plus a static
-> board for humans.
+> the history?" Answer: `engram work show REF --notes --gates`. A human
+> dashboard is outside the shipped product.
 
 ---
 
@@ -255,7 +269,8 @@ rather than say that work was finished. Today: a local Windows pilot.
 
 - Commands: `next`, `ls`, `show`, `add`, `claim`, `update`, `gate`,
   `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`, `forget`;
-  see [CLI and MCP](features/cli-and-mcp.md).
+  search is MCP `search` or CLI `ls --search`; host-local task-sync settings
+  are available from both CLI and MCP; see [CLI and MCP](features/cli-and-mcp.md).
 - Store: `ENGRAM_HOME/projects/<project>/engram.db`, plain SQLite; local
   backups with `engram backup`; `engram doctor` verifies; an optional
   off-host backup target is configured by the operator
