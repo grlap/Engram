@@ -152,6 +152,7 @@ pub(super) struct CompactSectionOmission {
 
 #[derive(Clone)]
 pub(super) struct CompactNextReceipt {
+    pub(super) focus_sealed_source: Option<super::sealed_source::SourceDiagnostic>,
     pub(super) recovery: Option<super::next_recovery::Recovery>,
     pub(super) ready_navigation: Option<crate::work_service::WorkReadyNavigation>,
     pub(super) peek: Option<crate::work_service::WorkNextPeek>,
@@ -1081,6 +1082,14 @@ pub(super) fn compact_next_receipt(
     ready_navigation: Option<crate::work_service::WorkReadyNavigation>,
 ) -> Result<CompactNextReceipt, VerbError> {
     let mut compact = CompactNextReceipt {
+        focus_sealed_source: view.focus.as_ref().and_then(|focus| {
+            focus.sealed_source.as_ref().map(|diagnostic| {
+                super::sealed_source::SourceDiagnostic::terse(
+                    diagnostic,
+                    &focus.status.work.short_ref,
+                )
+            })
+        }),
         recovery: view
             .peek
             .as_ref()
@@ -1224,6 +1233,13 @@ pub(super) fn fit_compact_next_to(
             // larger than the value being removed.
             continue;
         }
+        if compact
+            .focus_sealed_source
+            .as_mut()
+            .is_some_and(super::sealed_source::SourceDiagnostic::omit_details)
+        {
+            continue;
+        }
         if compact.changes.pop().is_some() {
             if let Some(peek) = &mut compact.peek {
                 peek.more_changes_available = true;
@@ -1273,6 +1289,7 @@ pub(super) fn fit_compact_next_to(
             continue;
         }
         compact.focus_evaluation = None;
+        compact.focus_sealed_source = None;
         if compact.focus.take().is_some() {
             compact.recovery = None;
             compact.evaluation_obligations = None;
@@ -1359,6 +1376,9 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
     });
     if let (Some(evaluation), true) = (&compact.focus_evaluation, compact.focus.is_some()) {
         value["focus"]["evaluation"] = evaluation.value.clone();
+    }
+    if let (Some(diagnostic), true) = (&compact.focus_sealed_source, compact.focus.is_some()) {
+        value["focus"]["sealed_source"] = diagnostic.value.clone();
     }
     if let Some(advisory) = &compact.evaluation_obligations {
         value["evaluation_obligations"] = json!(advisory);
@@ -1453,6 +1473,9 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
             }
             if let Some(evaluation) = &compact.focus_evaluation {
                 lines.push(format!("  evaluation: {}", evaluation.summary));
+            }
+            if let Some(diagnostic) = &compact.focus_sealed_source {
+                lines.extend(diagnostic.lines.clone());
             }
         }
         None if compact_omitted(compact, "focus") > 0 => {

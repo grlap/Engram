@@ -19,6 +19,8 @@ pub(super) struct CompactChange {
     pub(super) attribution: String,
     /// Work reference and verified immutable capture identity, never body text.
     pub(super) note: Option<(String, WorkRecordAddress)>,
+    /// Exact source-detail navigation appended after summary clipping.
+    pub(super) source_detail: Option<String>,
 }
 
 impl From<String> for CompactChange {
@@ -28,6 +30,7 @@ impl From<String> for CompactChange {
             subject: None,
             attribution: String::new(),
             note: None,
+            source_detail: None,
         }
     }
 }
@@ -125,6 +128,10 @@ impl Context {
                 change.line.clone()
             };
             let mut line = super::short(&line);
+            if let Some(command) = &change.source_detail {
+                line.push_str("; ");
+                line.push_str(command);
+            }
             if compact.peek.is_some()
                 && let Some((reference, identity)) = &change.note
             {

@@ -8,6 +8,8 @@ use crate::storage::test_support::bind_control_for;
 mod characterization;
 mod deciding;
 mod read;
+mod sealed_source;
+pub(crate) use sealed_source::{SealedSourceTransportFixture, sealed_source_transport_fixture};
 mod state;
 
 fn source(workspace: &str, generation: i64) -> ExecutionSourceBasis {

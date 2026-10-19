@@ -1389,6 +1389,17 @@ Rules that matter:
   `child_obligations_error_class`, and parent navigation retain the successful
   outcome without pretending the remaining count is zero. The diagnostic
   class never contains the underlying error body, path, record id, or actor text.
+- Completed `show` and `next` also expose the derived
+  [sealed source diagnostic](acceptance-evaluation.md#later-source-observations-after-completion).
+  A later matching host sighting can differ from the evaluated source even
+  when its `source_changed` flag is false. Later endpoint agreement never
+  hides an earlier discrepancy. Terse views carry status, counts, and an exact
+  observation detail command, with no raw record ids or source fingerprints.
+  The explicit observation window retains the compared source, record ids,
+  and evaluation detail command. Its historical observation
+  cursor stays with the original seal/run across appends and reopen.
+  Unadmitted/audit-only labels remain, and recording after the seal's cut
+  does not establish a write after completion or the source at `done`.
 - `done --landed … --installed-build FINGERPRINT` records the build installed
   from the landing as the agent asserts it. Take the full value from the
   installed executable itself: run `readiness --json` or `doctor --json` by its

@@ -152,8 +152,8 @@ const recordToken = /^[a-z0-9][a-z0-9-]*$/u;
 // Either separator ends a directory on every host: a record names the runner
 // the same way wherever it was produced.
 const runnerName = (command) => command.split(/[\\/]/u).at(-1).toLowerCase().replace(/\.(?:exe|cmd|bat)$/u, "");
-// These repository wrappers run Cargo's test binaries serially. A name or
-// Cargo-looking log alone does not establish that ownership contract.
+// These repository wrappers run Cargo's test binaries serially. Direct Cargo
+// tests have the same framing contract; other wrappers' logs do not establish it.
 const cargoPhase = ({ command, args }) => ["win32", "linux"].some((platform) =>
   requiredStages(platform).slice(3, 7).some((stage) => runnerName(command) === runnerName(stage.command)
     && args.length === stage.args.length && args.every((arg, index) => arg === stage.args[index])));
@@ -266,9 +266,9 @@ async function eachLine(log, accept) {
 // A summary is known by its shape, so text of that shape which a test prints
 // at the start of a line is counted as one. `failures` is the failed count
 // of every complete summary whose failed count reads, whatever became of the
-// executed count. For the repository's serial Cargo phases, explicit Cargo
-// Running frames own the first announcement and one outer summary. Unequal
-// child announcements without summaries do not replace it or add tests.
+// executed count. For direct Cargo tests and the repository's serial Cargo
+// phases, Running frames own the first announcement and one outer summary.
+// Unequal child announcements without summaries do not replace it or add tests.
 // Doc-tests frames accept sequential complete announcement/summary pairs;
 // overlapping announcements invalidate the whole frame. Text alone cannot
 // distinguish a byte-identical forwarded transcript from rustdoc's output.
@@ -929,7 +929,8 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
       const outcome = await commandRun(stage.command, stage.args, entry.log);
       Object.assign(entry, outcome, { ended: new Date().toISOString(), state: outcome.code === 0 && !outcome.error ? "passed" : "failed" });
       if (stage.kind === "test") {
-        entry.tests = await countTests(entry.log, { cargoFrames: cargoPhase(stage) });
+        entry.tests = await countTests(entry.log, { cargoFrames: cargoPhase(stage)
+          || (runnerName(stage.command) === "cargo" && commandKind(stage.command, stage.args) === "test") });
         // Attribute known focused counts to the runner we started, never to
         // the shape of its output. Full gates keep their stage-kind contract.
         if (!request.full && entry.tests.executed !== "unknown"
@@ -960,9 +961,9 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
   clearInterval(heartbeat);
   // The same lock orders stop acceptance against this final terminal save.
   // No process is launched or waited on while the lock is held.
-  const commit = () => {
+  const commit = async () => {
     if (control && !cleanupUnconfirmed) {
-      try { control.check(); }
+      try { await control.settle(); }
       catch (error) {
         Object.assign(result, { state: "failed", exitCode: 1, reason: error.reason ?? "launcher-error", error: error.message });
         if (error.reason === "stopped") Object.assign(result, { interrupted: true, stop: error.stop });
@@ -989,9 +990,9 @@ export async function executeRun(runDir, env = process.env, ready = () => {}) {
         // not lose terminal delivery or guess that it is safe to remove it.
         // commit inspects the retained intent again immediately before saving.
         result.stopLockWarning = "stop lock timed out; terminal save used the latest retained intent";
-        commit();
+        await commit();
       }
-    } else commit();
+    } else await commit();
   }
   finally { control?.close(); }
   return result;
@@ -1013,7 +1014,8 @@ export function runLiveness(result, now = Date.now()) {
 }
 
 const completionReasons = new Set(["input-capture-failed", "request-publication-failed", "input-changed", "fingerprint-check-failed", "preflight-failed",
-  "spawn-failed", "stage-failed", "launcher-error", "stopped", "helper-start-failed", "process-cleanup-unconfirmed"]);
+  "spawn-failed", "stage-failed", "launcher-error", "stopped", "helper-start-failed", "process-cleanup-unconfirmed",
+  "stop-request-invalid", "stop-request-unreadable"]);
 const stageHasFailures = (entry) => entry.tests?.failures > 0 || entry.tests?.failed > 0;
 function stageState(entry) {
   if (entry.signal) return "interrupted";
@@ -1413,7 +1415,7 @@ async function main(args) {
     }
     const stopped = await requestStop(runId, { root: repository, actor, reason });
     process.stdout.write(stopped.terminal ? `Already terminal; nothing stopped. ${runId}\n`
-      : `Stop requested; cleanup and terminal notification are pending. ${runId}\nrequest: ${join(stopped.runDir, "stop.request.json")}\n`);
+      : `Stop requested; cleanup and terminal notification are pending. ${runId}\nrequest: ${join(stopped.runDir, "stop.request.json")}\n${stopped.warning ? `warning: ${stopped.warning}\n` : ""}`);
     return;
   }
   if (["summary", "notify", "recover", "_run"].includes(mode)) {

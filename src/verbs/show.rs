@@ -141,6 +141,16 @@ fn fit_acceptance_prefix(
 }
 
 pub(super) fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
+    if let Some(source) = &mut view.sealed_source
+        && !source.details_omitted
+        && source
+            .diagnostic
+            .as_ref()
+            .is_some_and(|facts| facts.evaluation.is_some())
+    {
+        source.details_omitted = true;
+        return true;
+    }
     if crate::work_service::shorten_status_previews(
         &mut view.status.work.current_status,
         &mut view.status.work.status_observation,
@@ -790,6 +800,8 @@ fn evaluation_lines(
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) sealed_source: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) source: Option<ShowSource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) source_error_class: Option<&'static str>,
@@ -1237,6 +1249,11 @@ pub(super) fn show_lines(
     // A completed item says where its sealed acceptance came from, and names
     // the error class when that read failed.
     if work.lifecycle == WorkLifecycle::Completed {
+        if let Some(diagnostic) = &view.sealed_source {
+            lines.extend(
+                super::sealed_source::SourceDiagnostic::terse(diagnostic, &work.short_ref).lines,
+            );
+        }
         lines.push(acceptance_provenance_line(
             view.acceptance_provenance.as_ref(),
             identity,
@@ -1593,6 +1610,9 @@ pub(super) fn show_receipt_value(
                 )
             })
             .flatten(),
+        sealed_source: view.sealed_source.as_ref().map(|diagnostic| {
+            super::sealed_source::SourceDiagnostic::terse(diagnostic, &work.short_ref).value
+        }),
         historical_open_obligations: historical_open_obligations(&view.obligation_page),
         // Completed items use one provenance shape. Missing or unreadable
         // completion evidence is unavailable, never inferred self-assertion.

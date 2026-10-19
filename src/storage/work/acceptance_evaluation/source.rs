@@ -178,6 +178,57 @@ pub(super) fn judged_source(
     })
 }
 
+/// Resolve the source of a sealed evaluation using its original claim and
+/// historical root event. Present-day claim projections cannot substitute.
+pub(in crate::storage::work) fn sealed_source_basis_on(
+    connection: &Connection,
+    seal: &crate::domain::CompletionSeal,
+    evaluation: &crate::domain::AcceptanceEvaluation,
+) -> Result<Option<ExecutionSourceBasis>, StoreError> {
+    let Some(expected) = evaluation.named_root_binding.as_ref() else {
+        // Two absent generation values do not identify a measured root.
+        return Ok(None);
+    };
+    let Some((position, event_id, event)) =
+        crate::storage::work::feeds::latest_named_root_event_record_on(
+            connection,
+            seal.run_id,
+            seal.claim_id,
+            evaluation.evaluated_cut.position,
+        )?
+    else {
+        return Ok(None);
+    };
+    if &event_id != expected
+        || event.kind != NamedRootBindingKind::Bound
+        || event.project_id != evaluation.project_id
+        || event.work_id != seal.work_id
+        || event.run_id != seal.run_id
+        || event.root_execution_id != seal.root_execution_id
+        || event.claim_id != seal.claim_id
+    {
+        return Ok(None);
+    }
+    let root = NamedEvaluationRoot {
+        position,
+        event_id,
+        event,
+    };
+    Ok(judged_source(
+        connection,
+        seal.run_id,
+        evaluation.evaluated_cut.position,
+        evaluation.source_basis.as_ref(),
+        Some(&root),
+    )?
+    .map(|judged| ExecutionSourceBasis {
+        workspace_id: root.event.workspace_id,
+        source_revision: judged.revision,
+        source_root_generation: Some(root.event.generation),
+        source_root_state: Some(SourceRootState::Named),
+    }))
+}
+
 /// Which reading of a named root's source an assessment makes, and so how
 /// far along the run feed it reads.
 #[derive(Clone, Copy, Debug)]

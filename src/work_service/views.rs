@@ -4,11 +4,100 @@
 use super::WorkCurrentStatus;
 use super::{
     ActorContext, ChildRequirement, ControlWorkBinding, DateTime, Deserialize, FromStr, JsonSchema,
-    ObjectId, ProjectId, ProjectMemoryAdvertisement, Sensitivity, Serialize, SessionId, Utc,
-    VerificationKind, VerificationResult, WorkAvailability, WorkBlockerKind, WorkClaim,
-    WorkEvidenceKind, WorkFeedEntry, WorkHandoffState, WorkId, WorkItemKind, WorkLifecycle,
-    WorkObligationState, WorkPrerequisiteState, WorkRunId, WorkRunState,
+    ObjectId, ProjectId, ProjectMemoryAdvertisement, ProjectMemoryFull, Sensitivity, Serialize,
+    SessionId, Utc, VerificationKind, VerificationResult, WorkAvailability, WorkBlockerKind,
+    WorkClaim, WorkEvidenceKind, WorkFeedEntry, WorkHandoffState, WorkId, WorkItemKind,
+    WorkLifecycle, WorkObligationState, WorkPrerequisiteState, WorkRunId, WorkRunState,
+    retiring_target_dropped_reminder, retiring_target_lines, terminal_safe_actor_label,
+    terminal_safe_data_block,
 };
+
+/// Exact structured agent response for one full project-memory read.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct ProjectMemoryFullResponse {
+    #[serde(flatten)]
+    pub memory: ProjectMemoryFull,
+    pub reminders: Vec<String>,
+    pub next: Vec<String>,
+}
+
+impl ProjectMemoryFullResponse {
+    #[must_use]
+    pub(crate) fn new(
+        memory: ProjectMemoryFull,
+        names: crate::argument_names::ArgumentNames,
+    ) -> Self {
+        let mut next = Vec::new();
+        let mut reminders = Vec::new();
+        if memory.revision > 1 {
+            next.push(format!(
+                "engram work memories {} --full --revision {}",
+                memory.key,
+                memory.revision - 1
+            ));
+        }
+        if memory.revision != memory.current_revision {
+            next.push(format!("engram work memories {} --full", memory.key));
+        }
+        if memory.revision == memory.current_revision
+            && memory
+                .retiring_state
+                .as_ref()
+                .is_some_and(|state| state.lifecycle == WorkLifecycle::Completed)
+        {
+            reminders.push(
+                "retirement item completed; this memory is a forget candidate after review".into(),
+            );
+            next.push(format!("engram work forget {}", memory.key));
+        }
+        if memory.revision == memory.current_revision
+            && let Some(dropped) = &memory.retiring_target_dropped
+        {
+            reminders.push(retiring_target_dropped_reminder(dropped, names));
+        }
+        next.push("engram work memories".into());
+        Self {
+            memory,
+            reminders,
+            next,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn terminal_lines(&self) -> Vec<String> {
+        let mut lines = vec![
+            format!(
+                "memory {} (revision {}; current {}):",
+                self.memory.key, self.memory.revision, self.memory.current_revision
+            ),
+            format!(
+                "by {}",
+                terminal_safe_actor_label(
+                    &self.memory.actor_id,
+                    self.memory.actor_context.as_deref()
+                )
+            ),
+            terminal_safe_data_block(&self.memory.body),
+        ];
+        lines.extend(retiring_target_lines(
+            self.memory.retiring_target.as_ref(),
+            self.memory.retiring_state.as_ref(),
+            self.memory.retiring_target_dropped.as_ref(),
+            self.memory.revision == self.memory.current_revision,
+        ));
+        lines
+    }
+}
+
+/// Transient source comparison for a sealed run; never serialized into delivery.
+#[derive(Clone, Debug)]
+pub(crate) struct SealedSourceView {
+    pub seal: ObjectId,
+    pub diagnostic: Option<crate::storage::SealedSourceDiagnostic>,
+    pub unavailable: Option<&'static str>,
+    pub continuation: Option<String>,
+    pub details_omitted: bool,
+}
 
 /// Bounded `work_next` response using an ambient per-session project cursor.
 /// Normally `changes` is one exact dense staged range. With `peek`, it is an
@@ -357,6 +446,8 @@ impl DisplayProducer {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkChange {
     #[serde(skip)]
+    pub(crate) sealed_source: Option<super::SealedSourceView>,
+    #[serde(skip)]
     pub(crate) history_display: Option<super::history_display::HistoryDisplay>,
     /// Read-side capture identity; never part of the frozen delivery bytes.
     #[serde(skip)]
@@ -687,6 +778,8 @@ pub(crate) enum SessionFocus {
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {
+    #[serde(skip)]
+    pub(crate) sealed_source: Option<super::SealedSourceView>,
     /// Agent `show` only: the reading session's selected navigation focus,
     /// read in the same cut. Selection, not execution ownership, which the
     /// holder states separately.

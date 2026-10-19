@@ -33,16 +33,23 @@ pub(crate) struct WorkObservationWindow {
     pub rows: Vec<WorkObservationRow>,
     pub total: usize,
     pub newer: usize,
-    project: ProjectId,
-    work: WorkId,
-    run: Option<WorkRunId>,
-    cut: WorkCatalogReadCut,
+    pub(super) project: ProjectId,
+    pub(super) work: WorkId,
+    pub(super) run: Option<WorkRunId>,
+    pub(super) cut: WorkCatalogReadCut,
+    pub(super) sealed: Option<(
+        super::sealed_source::SealedSourceCursor,
+        crate::storage::SealedSourceDiagnostic,
+    )>,
 }
 
 /// One source observation as the window lists it. `None` fields were not
 /// recorded.
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct WorkObservationRow {
+    pub sealed_comparison: Option<String>,
+    pub binding: crate::domain::ControlWorkBinding,
+    pub root_state: Option<crate::domain::SourceRootState>,
     pub observation: String,
     pub position: i64,
     /// `admitted` for a turn's own observation, `unadmitted` for one a host
@@ -88,7 +95,7 @@ pub(crate) struct ObservedCheckRow {
     pub evidence_ref: Option<String>,
 }
 
-fn observation_row(
+pub(super) fn observation_row(
     identity: &super::identity::DisplayIdentity,
     position: i64,
     hash: &ObjectId,
@@ -102,6 +109,9 @@ fn observation_row(
         crate::storage::SourceObservationRecord::Admitted(observation) => {
             let basis = observation.source_basis.as_ref();
             WorkObservationRow {
+                sealed_comparison: None,
+                binding: observation.binding.clone(),
+                root_state: basis.and_then(|basis| basis.source_root_state),
                 observation: hash.as_str().to_owned(),
                 position,
                 admission: "admitted",
@@ -137,6 +147,9 @@ fn observation_row(
                 })
                 .collect();
             WorkObservationRow {
+                sealed_comparison: None,
+                binding: observation.binding.clone(),
+                root_state: sighting.and_then(|sighting| sighting.source_basis.source_root_state),
                 observation: hash.as_str().to_owned(),
                 position,
                 admission: "unadmitted",
@@ -163,12 +176,18 @@ fn observation_row(
 }
 
 impl WorkObservationWindow {
+    pub(crate) fn sealed_diagnostic(&self) -> Option<&crate::storage::SealedSourceDiagnostic> {
+        self.sealed.as_ref().map(|(_, diagnostic)| diagnostic)
+    }
     /// The read cut this window was selected at.
     pub(crate) fn read_cut(&self) -> &WorkCatalogReadCut {
         &self.cut
     }
 
     pub(crate) fn continuation(&self, visible: usize) -> Result<Option<String>, StoreError> {
+        if let Some((cursor, _)) = &self.sealed {
+            return cursor.continuation(&self.rows, visible, self.total);
+        }
         let Some(run) = self.run else {
             return Ok(None);
         };
@@ -208,6 +227,9 @@ impl LocalWorkService {
         after: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<WorkObservationWindow, StoreError> {
+        if let Some(token) = after.filter(|token| token.starts_with("sd1-")) {
+            return self.sealed_source_window(work_ref, token, now);
+        }
         let cursor = after
             .map(|token| {
                 super::continuation::decode::<ObservationCursor>("o1-", token)
@@ -273,6 +295,7 @@ impl LocalWorkService {
                 .collect();
             let title = compact_text(&item.title);
             Ok(WorkObservationWindow {
+                sealed: None,
                 short_ref: item.short_ref,
                 title_truncated: title != item.title,
                 title_bytes: item.title.len(),

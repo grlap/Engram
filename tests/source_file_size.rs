@@ -315,10 +315,10 @@ fn exception_for<'a>(exceptions: &'a [Exception], path: &str) -> Option<&'a Exce
 fn report_line(path: &str, lines: usize, exceptions: &[Exception]) -> String {
     match exception_for(exceptions, path) {
         Some(exception) => format!(
-            "{path}: {lines} physical lines (known exception, ceiling {})",
+            "{path}: {lines} lines (known exception, ceiling {})",
             exception.max_lines
         ),
-        None => format!("{path}: {lines} physical lines (limit {LIMIT})"),
+        None => format!("{path}: {lines} lines (limit {LIMIT})"),
     }
 }
 
@@ -529,9 +529,9 @@ fn the_inventory_spans_families_in_path_order_and_names_every_oversized_file() {
     assert_eq!(
         report_lines(&counted, &[]),
         [
-            "a.rs: 2500 physical lines (limit 2499)",
-            "a/child.rs: 2600 physical lines (limit 2499)",
-            "b.rs: 1 physical lines (limit 2499)",
+            "a.rs: 2500 lines (limit 2499)",
+            "a/child.rs: 2600 lines (limit 2499)",
+            "b.rs: 1 lines (limit 2499)",
         ]
     );
     assert_eq!(
@@ -583,17 +583,17 @@ fn one_family_is_checked_and_reported_alone() {
     assert_eq!(
         report,
         [
-            "a.rs: 1 physical lines (limit 2499)",
-            "a/child.rs: 2 physical lines (limit 2499)",
+            "a.rs: 1 lines (limit 2499)",
+            "a/child.rs: 2 lines (limit 2499)",
         ]
     );
-    // Printed, the two lines take 35 and 41 bytes plus a line feed each. The
+    // Printed, the two lines take 26 and 32 bytes plus a line feed each. The
     // budget admits a report of exactly its size and refuses one byte less.
-    assert_eq!(report_bytes(&report), 78);
-    within_report_budget("a", &report, 78).expect("a report at the budget fits");
-    let over = within_report_budget("a", &report, 77).expect_err("one byte over the budget");
+    assert_eq!(report_bytes(&report), 60);
+    within_report_budget("a", &report, 60).expect("a report at the budget fits");
+    let over = within_report_budget("a", &report, 59).expect_err("one byte over the budget");
     assert!(
-        over.contains("a reports 78 bytes, over the 77-byte family report budget"),
+        over.contains("a reports 60 bytes, over the 59-byte family report budget"),
         "{over}"
     );
     let refused = family_report(root, &family("b"), &[]).expect_err("family b is over the limit");
@@ -735,8 +735,8 @@ fn every_file_under_src_is_counted_and_an_unlisted_one_over_the_limit_fails() {
     assert_eq!(
         whole_tree_report(root, &[]).expect("within the limit"),
         [
-            "src/deep/er/leaf.rs: 2499 physical lines (limit 2499)",
-            "src/lib.rs: 1 physical lines (limit 2499)",
+            "src/deep/er/leaf.rs: 2499 lines (limit 2499)",
+            "src/lib.rs: 1 lines (limit 2499)",
         ]
     );
 
@@ -761,7 +761,7 @@ fn a_known_exception_passes_at_its_ceiling_and_fails_one_line_over() {
     let report = whole_tree_report(root, &exceptions).expect("an exception at its ceiling");
     assert_eq!(
         report,
-        ["src/big.rs: 2600 physical lines (known exception, ceiling 2600)"]
+        ["src/big.rs: 2600 lines (known exception, ceiling 2600)"]
     );
     // The printed report never names the split item.
     assert!(report.iter().all(|line| !line.contains("split-it")));
@@ -799,7 +799,7 @@ fn a_known_exception_passes_at_its_ceiling_and_fails_one_line_over() {
     let lowered = [exception("src/big.rs", 2_599)];
     assert_eq!(
         whole_tree_report(root, &lowered).expect("the lowered ceiling"),
-        ["src/big.rs: 2599 physical lines (known exception, ceiling 2599)"]
+        ["src/big.rs: 2599 lines (known exception, ceiling 2599)"]
     );
 }
 
@@ -955,7 +955,7 @@ fn a_stale_exception_fails_the_whole_tree_but_not_another_family() {
     };
     assert_eq!(
         family_report(root, &family, &exceptions).expect("an unrelated family"),
-        ["src/other.rs: 1 physical lines (limit 2499)"]
+        ["src/other.rs: 1 lines (limit 2499)"]
     );
 }
 

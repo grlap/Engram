@@ -2094,6 +2094,7 @@ pub(in crate::storage::work) use source::check_moved_on;
 #[cfg(test)]
 use source::declared_not_contradicted;
 pub(in crate::storage) use source::read_named_root_sighting_on;
+pub(in crate::storage::work) use source::sealed_source_basis_on;
 use source::{
     NamedEvaluationRoot, RootBinding, RootPhase, RootSource, StaleCause, assess_named_root_binding,
     assess_named_root_source, judged_revision, judged_source, named_root_at_on, off_named_root,
@@ -2115,6 +2116,7 @@ mod tests;
 
 #[cfg(test)]
 pub(crate) use tests::{
-    AdmissionTransportFixture, SourceRecoveryTransportFixture, admission_transport_fixture,
-    long_declared_source, long_presented_source, source_recovery_transport_fixture,
+    AdmissionTransportFixture, SealedSourceTransportFixture, SourceRecoveryTransportFixture,
+    admission_transport_fixture, long_declared_source, long_presented_source,
+    sealed_source_transport_fixture, source_recovery_transport_fixture,
 };

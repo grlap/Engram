@@ -23,6 +23,7 @@ fn recovery_selects_structured_subjects_preserves_order_and_counts_overflow() {
         subject: Some("unrelated-subject".into()),
         attribution: "peer noted".into(),
         note: None,
+        source_detail: None,
     }];
     for (index, kind) in [
         "noted",
@@ -42,6 +43,7 @@ fn recovery_selects_structured_subjects_preserves_order_and_counts_overflow() {
                 subject: Some(reference.clone()),
                 attribution: format!("peer {kind}"),
                 note: (index == 0).then(|| (reference.clone(), capture.clone())),
+                source_detail: None,
             });
     }
     crate::verbs::next_recovery::prepare(&mut compact);
@@ -242,6 +244,7 @@ fn context_receipt() -> CompactNextReceipt {
         recovery: None,
         backup_reminder: None,
         claim_lapse_reminder: None,
+        focus_sealed_source: None,
         focus_evaluation: None,
         evaluation_obligations: None,
         ready_navigation: None,
@@ -283,6 +286,7 @@ fn peek_disclosures_survive_even_an_impossible_budget() {
             subject: None,
             attribution: "peer noted".into(),
             note: None,
+            source_detail: None,
         });
     let fitted = fit_compact_next_to(compact, 1).unwrap();
     let value = compact_next_value(&fitted);
@@ -490,6 +494,7 @@ fn pilot_context_references_follow_retained_rows_and_distinct_change_notes() {
                 subject: Some(reference.clone()),
                 attribution: format!("{reference} noted"),
                 note: Some((reference.clone(), delivered.clone())),
+                source_detail: None,
             });
     }
     let changed = compact_next_value(&compact);

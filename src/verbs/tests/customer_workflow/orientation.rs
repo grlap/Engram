@@ -475,6 +475,7 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
         recovery: None,
         backup_reminder: None,
         claim_lapse_reminder: None,
+        focus_sealed_source: None,
         focus_evaluation: None,
         evaluation_obligations: None,
         ready_navigation: lists.ready_navigation,

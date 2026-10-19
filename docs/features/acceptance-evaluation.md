@@ -46,8 +46,54 @@ model itself.
   guidance; the existing authorized criteria revision and cancellation paths
   remain the only ways forward. An explicit override authority, if ever wanted,
   is designed separately before it is implemented.
-- **Default unchanged.** Projects without an acceptance-evaluation policy keep
-  the existing path; its receipts now name it `self-asserted`.
+- **Default completion path unchanged.** Projects without an
+  acceptance-evaluation policy keep the existing completion path; its receipts
+  name it `self-asserted`. Completed views may additionally show a short
+  source-diagnostic status; a seal without an evaluation has no evaluated
+  source to compare.
+
+## Later source observations after completion
+
+Completion is final when `done` seals the evaluation. A later host report does
+not reopen that work, rewrite its seal, or open a new obligation on the finished
+run. The current completion fingerprint and policy checks still apply.
+
+Completed `show` and `next` derive a source diagnostic from the existing seal,
+its bound evaluation, historical named-root binding, and original run's host
+observations. Comparison requires the same project, work, run, root execution,
+original seal claim and fence, workspace, named-root generation and named state.
+Missing or unrelated context is not agreement; two absent generations alone do
+not establish a matching root. Unreadable records are disclosed as unavailable.
+
+A later matching closing sighting at a different revision says **“later source
+sighting differs from sealed evaluated source”**, even when the host reported
+`source_changed=false`. A later equal revision says only **“reported endpoint
+agreement”**. Agreement never erases an earlier differing observation, including
+one outside the displayed page. The diagnostic retains the original observation
+locators and the seal/evaluation/source basis; it creates no diagnostic record.
+Unadmitted reports retain their admission and accounting labels, including an
+audit-only report on a finished run; they gain no grant, check credit or cause.
+
+An observation describes the interval the host measured. Run-feed position
+relative to the seal's completion cut establishes recording order, not that a
+write happened after sealing, that the source was unchanged between endpoints,
+or what source existed at `done`. There is no exact done-turn inference from
+timestamps or labels. Such a claim would require retained explicit correlation
+between the seal and that host turn; these records do not provide it.
+
+Terse show and compact next supply status, counts, and an exact
+`show REF --observations --after TOKEN` command without raw record ids or
+source fingerprints. The explicit observation window retains the compared
+source and record ids, and supplies an evaluation-detail command for the
+judged declaration. Compact change rows keep a short status and append the
+exact observation command after summary clipping. Under byte pressure, show
+and next focus shed source detail before the outcome and acceptance, retaining
+the source status and observation command. A seal without a bound evaluation
+shows only a short status line. Its historical cursor pins the original run, seal and
+observation horizon, so later appends and reopening cannot redirect it to a
+new run. Child and parent seals remain separate; their recorded acceptance,
+evidence and accounting are unchanged. Reads use the existing run-local feed
+indexes, decode bounded selected records, and never scan or hash a workspace.
 
 ## Modes
 

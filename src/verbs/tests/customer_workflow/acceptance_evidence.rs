@@ -1046,6 +1046,8 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
             // A seal the run names but that cannot be read carries the
             // read's class, unlike an item with no seal at all.
             assert_eq!(readable.value["acceptance"]["error_class"], error_class);
+            assert_eq!(readable.value["sealed_source"]["status"], "unavailable");
+            assert_eq!(readable.value["sealed_source"]["error_class"], error_class);
             assert!(healthy.value["acceptance"].get("error_class").is_none());
             assert!(
                 readable
@@ -1083,7 +1085,7 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
             assert!(text.contains(&format!("landing: unavailable ({error_class})")));
             // All item, note/history rows, navigation and read-cut data survive;
             // only the seal's disclosures (acceptance provenance, its failed
-            // advisory disclosure, and the landing) change.
+            // advisory disclosure, source diagnostic, and the landing) change.
             let without_disclosure = |mut value: serde_json::Value| {
                 let fields = value.as_object_mut().unwrap();
                 fields.remove("acceptance");
@@ -1091,6 +1093,7 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
                 fields.remove("acceptance_evidence_unavailable");
                 fields.remove("acceptance_evidence_error_class");
                 fields.remove("landing");
+                fields.remove("sealed_source");
                 value
             };
             assert_eq!(

@@ -75,6 +75,7 @@ pub(crate) use work::{
     FOCUS_CHANGE_RESERVE, FocusChange, FocusJournal, MAX_DISCLOSED_WORKSPACE_JSON_BYTES,
     owned_control_work_binding,
 };
+pub(crate) use work::{SealedSourceDiagnostic, SealedSourceFact};
 pub(crate) use work::{criteria_without_evidence_link, unlinked_criteria_owe_bound_check};
 
 pub(crate) use project_memory::ProjectMemoryAdmission;
@@ -2342,6 +2343,7 @@ pub struct SqliteStore {
 
 #[cfg(test)]
 pub(crate) use work::{
-    AdmissionTransportFixture, SourceRecoveryTransportFixture, admission_transport_fixture,
-    long_declared_source, long_presented_source, source_recovery_transport_fixture,
+    AdmissionTransportFixture, SealedSourceTransportFixture, SourceRecoveryTransportFixture,
+    admission_transport_fixture, long_declared_source, long_presented_source,
+    sealed_source_transport_fixture, source_recovery_transport_fixture,
 };

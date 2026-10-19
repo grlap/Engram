@@ -16,6 +16,7 @@ mod host_checks;
 mod identity_shape;
 mod mark_author;
 mod named_root;
+pub(crate) use named_root::{SealedSourceTransportFixture, sealed_source_transport_fixture};
 mod policy;
 mod reroll;
 mod review;

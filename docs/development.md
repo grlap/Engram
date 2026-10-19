@@ -199,7 +199,7 @@ cargo test --test source_file_size -- --exact family::storage_work_query --nocap
 ```
 
 It prints one line per file of that family, in path order, as
-`PATH: N physical lines (limit 2499)`, or `(known exception, ceiling N)` for a
+`PATH: N lines (limit 2499)`, or `(known exception, ceiling N)` for a
 listed exception, and fails naming every file of the family over the limit or
 past its ceiling. A family run checks only its own files, so a stale entry for
 another file does not fail it. A family's report must stay within 3 KiB, so a
@@ -306,11 +306,12 @@ by the executor's closing record where applicable. Warnings, errors, stack
 traces and saved diagnostic excerpts stay in the artifacts. Failed-stage
 excerpts enter context only through explicit bounded failure inspection;
 warnings from successful stages are available in their saved logs.
-For the exact repository Rust phase commands, counts sum outer Cargo runners
-identified by `Running … (executable)` or `Doc-tests …` boundaries. A `Running`
-frame keeps its first libtest announcement; unequal child announcements without
-summaries are excluded from the total. It needs one matching outer summary;
-equal-count child announcements or extra summaries make attribution unknown.
+For directly launched `cargo test` and the exact repository Rust phase commands,
+counts sum outer Cargo runners identified by `Running … (executable)` or
+`Doc-tests …` boundaries. A `Running` frame keeps its first libtest announcement;
+unequal child announcements without summaries are excluded from the total.
+It needs one matching outer summary; equal-count child announcements or extra
+summaries make attribution unknown.
 A `Doc-tests` frame may contain sequential complete announcement/summary pairs,
 as edition-2024 rustdoc runs merged and standalone doctests separately. Each
 pair's total must match its own announcement, and no pair may open before the
@@ -487,6 +488,11 @@ The existing wire classification is retained: `state: "failed"`,
 machine record reports `overall=interrupted reason=stopped`, never a pass. The
 stop command emits no execution record. If cleanup cannot be confirmed, the
 result instead reports a cleanup failure and makes no successful-stop claim.
+An invalid stop request reports `stop-request-invalid`; one that remains
+unreadable after its bounded transient-read retries reports
+`stop-request-unreadable`. A requester whose post-publication temporary-file
+cleanup remains refused receives a `warning:` line, while the published stop
+intent remains available to the worker.
 The reason is `process-cleanup-unconfirmed` in the result, summary and
 notification. Cleanup membership polling has a 30-second confirmation allowance;
 expiry reports the residual count rather than waiting forever. This does not
@@ -719,16 +725,19 @@ failure. A summary is known by its shape alone. Text of that shape which a
 test prints at the start of a line, such as the forwarded output of a runner
 it started itself, cannot be told from the stage's own summary. The generic
 parser counts it with the stage: it can add to the counts and fail a stage.
-The repository Cargo phases use the attribution described above: an extra
-complete summary in a `Running` frame makes the numeric count unknown instead
-of adding to it. `Doc-tests` frames accept only complete sequential pairs and
-reject observable nesting or interleaving. Text parsing cannot prove that a
-byte-identical forwarded transcript is the frame's own output; Cargo markers
-and rustdoc's timing epilogue are printable text too. In either mode, a
-forwarded summary cannot hide a failure, because
-the stage's exit and every readable complete summary's failed count still
-count. Verbose Cargo output or test output resembling a Cargo boundary or
-libtest announcement can also leave a framed stage without a known count.
+Direct `cargo test` and the repository Cargo phases use the attribution
+described above: an extra complete summary in a `Running` frame makes the numeric
+count unknown instead of adding to it. `Doc-tests` frames accept only complete
+sequential pairs and reject observable nesting or interleaving. Text parsing
+cannot prove that a byte-identical forwarded transcript is the frame's own
+output; Cargo markers and rustdoc's timing epilogue are printable text too.
+In either mode, a forwarded summary cannot hide a failure, because the stage's
+exit and every readable complete summary's failed count still count. Verbose
+Cargo output or test output resembling a Cargo boundary or libtest announcement
+can also leave a framed stage without a known count.
+Quiet Cargo (`-q`, `--quiet`, or `CARGO_TERM_QUIET`)
+omits frame markers, so a direct `cargo test` stage has no known count and reports
+`incomplete-summary`. A framed refusal never falls back to generic parsing.
 Text that begins like a summary line but does not read as one makes the count
 unknown. Node's TAP reporter prints every line a test writes, and every
 diagnostic, behind `# `, and its default reporter prints a top-level

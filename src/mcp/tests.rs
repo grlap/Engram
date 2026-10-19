@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 
 mod agent_error_refs;
 mod criterion_links;
+mod sealed_source;
 mod task_sync_settings;
 mod verification_workspaces;
 

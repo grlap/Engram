@@ -1289,6 +1289,7 @@ impl LocalWorkService {
                 super::history_display::HistoryDisplay::load(store, &event, &entry.position)?;
             let summary = display.stored_summary();
             history.push(WorkChange {
+                sealed_source: None,
                 history_display: Some(display),
                 capture: None,
                 completion_checkpoint: None,
@@ -1567,6 +1568,18 @@ impl LocalWorkService {
             status.work.acceptance = acceptance;
         }
         let view = WorkFocusView {
+            sealed_source: (status.work.lifecycle == crate::WorkLifecycle::Completed
+                && !completed_by_record)
+                .then(|| run.as_ref().and_then(|run| run.completion_seal.as_ref()))
+                .flatten()
+                .map(|seal| {
+                    super::sealed_source::view(
+                        store,
+                        seal,
+                        &self.project_id,
+                        run.as_ref().map(|run| (work_id, run.run_id)),
+                    )
+                }),
             session_focus: None,
             source,
             source_error_class,

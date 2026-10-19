@@ -184,5 +184,6 @@ mod handlers;
 mod implicit_target;
 mod planning;
 mod receipts;
+mod sealed_source;
 mod shared;
 mod show;

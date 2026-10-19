@@ -200,6 +200,7 @@ fn next_stranded_children_have_exact_counts_and_current_detach_refusals() {
         context_generation: None,
         discovery,
         focus: None,
+        focus_sealed_source: None,
         focus_evaluation: None,
         evaluation_obligations: None,
         held: Vec::new(),

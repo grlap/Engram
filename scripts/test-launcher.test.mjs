@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { devNull } from "node:os";
 import { once } from "node:events";
@@ -2654,6 +2654,93 @@ const complete = (executed, passed, failed, ignored, runners, filteredOut) =>
   ({ executed, passed, failed, ignored, runners, filteredOut, failures: failed });
 const cargoFrame = (text, marker = "     Running unittests src/lib.rs (target/debug/deps/fixture)") => `${marker}\n${text}`;
 
+function directCargoFixture(root) {
+  const bin = join(root, ".git", "cargo fixture");
+  mkdirSync(bin);
+  const binary = join(bin, process.platform === "win32" ? "cargo.exe" : "cargo");
+  // A native process with Cargo's command shape emits a retained transcript.
+  // Selection, execution, log parsing and record generation remain unmodified.
+  copyFileSync(process.execPath, binary);
+  if (process.platform !== "win32") chmodSync(binary, 0o700);
+  for (const name of ["test", "+stable", "run", "nextest"]) writeFileSync(join(root, name),
+    "process.stdout.write(process.env.FIXTURE_TRANSCRIPT); process.exitCode = Number(process.env.FIXTURE_EXIT);\n");
+  const runnerEnv = { ...env };
+  for (const key of Object.keys(runnerEnv)) if (key.toLowerCase() === "path") delete runnerEnv[key];
+  runnerEnv.PATH = `${bin}${delimiter}${process.env.PATH ?? process.env.Path ?? ""}`;
+  return { binary, async run(text, { command = "cargo", args = ["test", "--lib", "fixture"], code = 0 } = {}) {
+    const runDir = createRun({ root, stages: [{ name: "rust", kind: "test", command, args }] }, runnerEnv);
+    const result = await executeRun(runDir, { ...runnerEnv, FIXTURE_TRANSCRIPT: text, FIXTURE_EXIT: String(code) });
+    return { result, record: parseRecord(machineRecord(result.plan, result)) };
+  } };
+}
+
+test("direct Cargo execution selects outer frames for filtered counts, not generic wrappers", async () => {
+  await repository(async (root) => {
+    const fixture = directCargoFixture(root);
+    const text = cargoFrame(libtest(17, 0, 0, 2471)
+      .replace("tests\n", "tests\nrunning 1 test\nrunning 1 test\n"),
+    "     Running unittests src\\lib.rs (target\\debug\\deps\\fixture.exe)");
+    for (const [command, args, framed] of [
+      ["cargo", ["test", "--lib", "backup::target::tests"], true],
+      [fixture.binary, ["test", "--lib", "backup::target::tests"], true],
+      ["cargo", ["+stable", "test", "--lib", "backup::target::tests"], true],
+      ["cargo", ["test", "--workspace", "--all-targets"], true],
+      ["cargo", ["run", "--", "test"], false],
+      ["cargo", ["nextest", "run"], false],
+      [process.execPath, ["test"], false],
+    ]) {
+      const { result, record } = await fixture.run(text, { command, args });
+      assert.equal(result.state, "passed");
+      assert.equal(record.stages[0].exit, "0");
+      if (framed) {
+        assert.deepEqual(result.stages[0].tests, complete(17, 17, 0, 0, 1, 2471));
+        assert.deepEqual([record.stages[0].executed, record.stages[0].passed, record.stages[0].ignored,
+          record.stages[0].runners, record.stages[0].filtered], ["17", "17", "0", "1", "yes"]);
+      } else {
+        assert.equal(record.stages[0].executed, "unknown");
+        assert.equal(record.stages[0].why, "incomplete-summary");
+      }
+    }
+  });
+});
+
+test("direct Cargo execution preserves frame refusals, doctests and failure outcomes", async () => {
+  await repository(async (root) => {
+    const fixture = directCargoFixture(root);
+    const outer = libtest(3, 0, 0, 7);
+    const frames = cargoFrame(outer) + cargoFrame(libtest(2, 0, 0, 4))
+      + cargoFrame(libtest(1, 0, 0, 0).repeat(2), "   Doc-tests fixture");
+    const summed = await fixture.run(frames, { args: ["test", "--workspace"] });
+    assert.deepEqual(summed.result.stages[0].tests, complete(7, 7, 0, 0, 4, 11));
+    // Quiet Cargo omits frame markers; a complete summary alone cannot own a frame.
+    for (const option of ["-q", "--quiet"]) {
+      const quiet = await fixture.run(outer, { args: ["test", option] });
+      assert.deepEqual([quiet.record.stages[0].state, quiet.record.stages[0].exit,
+        quiet.record.stages[0].executed, quiet.record.stages[0].why],
+      ["passed", "0", "unknown", "incomplete-summary"]);
+    }
+    for (const [text, code, state, why, failures] of [
+      [outer, 0, "passed", "incomplete-summary", 0],
+      [cargoFrame("running 3 tests\n"), 0, "passed", "incomplete-summary", 0],
+      [cargoFrame(outer.replace("tests\n", "tests\nrunning 3 tests\n")), 0, "passed", "ambiguous-summary", 0],
+      [cargoFrame(outer + outer), 0, "passed", "ambiguous-summary", 0],
+      [cargoFrame(outer.replace("3 passed", "2 passed")), 0, "passed", "ambiguous-summary", 0],
+      [cargoFrame(outer.replace("3 passed", "9007199254740992 passed")), 0, "passed", "malformed-summary", 0],
+      [cargoFrame("running 2 tests\n" + libtest(1, 0, 0, 0), "   Doc-tests fixture"), 0, "passed", "ambiguous-summary", 0],
+      [cargoFrame("running 3 tests\n" + libtest(0, 1, 0, 0) + outer.split("\n")[1] + "\n"),
+        0, "failed", "ambiguous-summary", 1],
+      [cargoFrame(outer), 101, "failed", undefined, 0],
+    ]) {
+      const { result, record } = await fixture.run(text, { code });
+      assert.deepEqual([result.stages[0].state, result.stages[0].code, result.stages[0].signal], [state, code, null]);
+      assert.deepEqual([record.stages[0].state, record.stages[0].exit, record.stages[0].why], [state, String(code), why]);
+      assert.equal(result.stages[0].tests.failures, failures);
+      if (why) assert.equal(record.stages[0].executed, "unknown");
+      else assert.equal(record.stages[0].executed, "3");
+    }
+  });
+});
+
 test("Cargo frames preserve outer counts beside killed children without summaries", async () => {
   await repository(async (root) => {
     const outer = libtest(5, 0, 1, 0).replace("tests\n", "tests\nrunning 1 test\nrunning 1 test\n");
@@ -4028,6 +4115,114 @@ test("stop addresses this worktree's run id, refuses unsupported runs, and retai
       assert.equal(result.requested, false);
       assert.deepEqual(directoryBytes(runDir), bytes, "terminal no-op changes no byte");
     }
+  });
+});
+
+for (const [caseName, malformed] of [
+  ["invalid-json", "{not json"],
+  ["wrong-run-id", JSON.stringify({ protocol: stopProtocol, runId: "wrong-run", id: "fixture", requestedAt: new Date().toISOString(), actor: "operator", reason: "bad" })],
+]) {
+  test(`malformed stop request ${caseName} has a named terminal completion reason`, async () => {
+    await repository(async (root) => {
+      const runDir = createRun({ root, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
+      const requestPath = join(runDir, "request.json");
+      writeFileSync(requestPath, JSON.stringify({ ...json(requestPath), stopProtocol }));
+      writeFileSync(join(runDir, "stop.request.json"), malformed);
+      const result = await executeRun(runDir, env);
+      assert.deepEqual([result.state, result.reason, result.interrupted], ["failed", "stop-request-invalid", undefined]);
+      assert.match(await summarize(runDir), /^reason: stop-request-invalid$/mu);
+      await notifyRun(runDir, env, async (_command, args) => {
+        const body = readFileSync(args[args.indexOf("--message-file") + 1], "utf8");
+        assert.match(body, /^reason: stop-request-invalid$/mu);
+        return { code: 0 };
+      });
+    });
+  });
+}
+
+test("unreadable stop requests have a named terminal completion reason", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, stages: [stage("never")], notifyTo: "fixture-parent" }, env);
+    const requestPath = join(runDir, "request.json");
+    writeFileSync(requestPath, JSON.stringify({ ...json(requestPath), stopProtocol }));
+    mkdirSync(join(runDir, "stop.request.json"));
+    const result = await executeRun(runDir, env);
+    assert.deepEqual([result.state, result.reason, result.interrupted], ["failed", "stop-request-unreadable", undefined]);
+    assert.match(await summarize(runDir), /^reason: stop-request-unreadable$/mu);
+    await notifyRun(runDir, env, async (_command, args) => {
+      const body = readFileSync(args[args.indexOf("--message-file") + 1], "utf8");
+      assert.match(body, /^reason: stop-request-unreadable$/mu);
+      return { code: 0 };
+    });
+  });
+});
+
+test("stop intent reads retry transient errors before stopping or latching failure", () => {
+  const request = { runId: `test-${randomUUID()}` };
+  let calls = 0, cancellations = 0;
+  const intent = { actor: "operator", reason: "superseded" };
+  const transient = () => Object.assign(new Error("scanner holds request"), { code: "EPERM" });
+  const control = stopController("fixture", request, { retryAttempts: 3, readIntent() {
+    calls += 1;
+    if (calls < 3) throw transient();
+    return intent;
+  } });
+  try {
+    control.register(() => { cancellations += 1; });
+    assert.doesNotThrow(() => control.check());
+    assert.throws(() => control.check(), (error) => error.reason === "stopped" && error.stop === intent);
+    assert.deepEqual([calls, cancellations], [3, 1]);
+  } finally { control.close(); }
+
+  let failedCalls = 0;
+  const unreadable = stopController("fixture", request, { retryAttempts: 3, readIntent() {
+    failedCalls += 1;
+    throw Object.assign(new Error("scanner holds request"), { code: "EBUSY" });
+  } });
+  try {
+    assert.doesNotThrow(() => unreadable.check());
+    assert.doesNotThrow(() => unreadable.check());
+    assert.throws(() => unreadable.check(), (error) => error.reason === "stop-request-unreadable");
+    assert.equal(failedCalls, 3);
+  } finally { unreadable.close(); }
+});
+
+test("final stop check settles a transient request before terminal commitment", async () => {
+  const request = { runId: `test-${randomUUID()}` };
+  const intent = { actor: "operator", reason: "superseded" };
+  let calls = 0;
+  const control = stopController("fixture", request, { retryAttempts: 3, retryDelayMs: 0, readIntent() {
+    calls += 1;
+    if (calls === 1) throw Object.assign(new Error("scanner holds request"), { code: "EPERM" });
+    return intent;
+  } });
+  try {
+    await assert.rejects(control.settle(), (error) => error.reason === "stopped" && error.stop === intent);
+    assert.equal(calls, 2);
+  } finally { control.close(); }
+});
+
+test("published stop intents warn after bounded temporary cleanup retries", async () => {
+  await repository(async (root) => {
+    const runDir = createRun({ root, full: true, detached: true, stages: [stage("unused")] }, env);
+    const requestPath = join(runDir, "request.json");
+    writeFileSync(requestPath, JSON.stringify({ ...json(requestPath), stopProtocol }));
+    let temporaryAttempts = 0;
+    const stopped = await requestStop(basename(runDir), {
+      root, actor: "operator", reason: "superseded", removeAttempts: 3, removeDelayMs: 0,
+      remove(path, options) {
+        if (basename(path).startsWith("stop-")) {
+          temporaryAttempts += 1;
+          throw Object.assign(new Error("scanner holds temporary"), { code: "EBUSY" });
+        }
+        rmSync(path, options);
+      },
+    });
+    assert.equal(stopped.requested, true);
+    assert.match(stopped.warning, /cleanup failed after publication: EBUSY/u);
+    assert.equal(temporaryAttempts, 3);
+    assert.deepEqual(json(join(runDir, "stop.request.json")), stopped.intent);
+    assert.deepEqual(readdirSync(runDir).filter((name) => name.startsWith("stop-")).sort(), [`stop-${stopped.intent.id}.tmp`]);
   });
 });
 

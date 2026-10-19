@@ -61,6 +61,8 @@ pub(crate) use query::{
 };
 mod receipts;
 mod record_windows;
+mod sealed_source;
+pub(crate) use sealed_source::{SealedSourceDiagnostic, SealedSourceFact};
 pub(crate) mod refusal_labels;
 mod verification_read;
 pub(crate) use verification_read::VerificationReadRequest;
@@ -585,6 +587,7 @@ pub(crate) struct CompletionRecoverySnapshot {
 
 #[cfg(test)]
 pub(crate) use acceptance_evaluation::{
-    AdmissionTransportFixture, SourceRecoveryTransportFixture, admission_transport_fixture,
-    long_declared_source, long_presented_source, source_recovery_transport_fixture,
+    AdmissionTransportFixture, SealedSourceTransportFixture, SourceRecoveryTransportFixture,
+    admission_transport_fixture, long_declared_source, long_presented_source,
+    sealed_source_transport_fixture, source_recovery_transport_fixture,
 };

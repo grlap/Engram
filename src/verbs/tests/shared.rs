@@ -94,6 +94,7 @@ fn only_identified_completion_checkpoints_collapse() {
     };
     let checkpoint_id = crate::ObjectId::mint();
     let change = |position, kind: &str, summary: &str| WorkChange {
+        sealed_source: None,
         history_display: None,
         display_producer: None,
         capture: (kind == "checkpoint").then(|| crate::storage::WorkRecordAddress {

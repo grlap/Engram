@@ -104,6 +104,7 @@ pub(crate) use next::own_claim_lapse_reminder;
 mod observation_windows;
 mod operations;
 mod projection;
+mod sealed_source;
 pub(crate) use deciding::{ShownDecidingObservation, bounded as bounded_shown_field};
 pub(crate) use projection::normalize_actor_context;
 mod propose;
@@ -194,83 +195,6 @@ pub(crate) const WORD_ACTOR_KIND: &str = "agent";
 /// another session: same-actor continuity, shown for navigation only.
 pub const SAME_ACTOR_OTHER_SESSION: &str = "same_actor_other_session";
 pub(crate) const COMPLETED_WORK_LATE_FINDING_REFUSAL: &str = "completed work cannot be mutated; use note or gate to record a late finding without reopening it";
-
-/// Exact structured agent response for one full project-memory read.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct ProjectMemoryFullResponse {
-    #[serde(flatten)]
-    pub memory: ProjectMemoryFull,
-    pub reminders: Vec<String>,
-    pub next: Vec<String>,
-}
-
-impl ProjectMemoryFullResponse {
-    #[must_use]
-    pub(crate) fn new(
-        memory: ProjectMemoryFull,
-        names: crate::argument_names::ArgumentNames,
-    ) -> Self {
-        let mut next = Vec::new();
-        let mut reminders = Vec::new();
-        if memory.revision > 1 {
-            next.push(format!(
-                "engram work memories {} --full --revision {}",
-                memory.key,
-                memory.revision - 1
-            ));
-        }
-        if memory.revision != memory.current_revision {
-            next.push(format!("engram work memories {} --full", memory.key));
-        }
-        if memory.revision == memory.current_revision
-            && memory
-                .retiring_state
-                .as_ref()
-                .is_some_and(|state| state.lifecycle == WorkLifecycle::Completed)
-        {
-            reminders.push(
-                "retirement item completed; this memory is a forget candidate after review".into(),
-            );
-            next.push(format!("engram work forget {}", memory.key));
-        }
-        if memory.revision == memory.current_revision
-            && let Some(dropped) = &memory.retiring_target_dropped
-        {
-            reminders.push(retiring_target_dropped_reminder(dropped, names));
-        }
-        next.push("engram work memories".into());
-        Self {
-            memory,
-            reminders,
-            next,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn terminal_lines(&self) -> Vec<String> {
-        let mut lines = vec![
-            format!(
-                "memory {} (revision {}; current {}):",
-                self.memory.key, self.memory.revision, self.memory.current_revision
-            ),
-            format!(
-                "by {}",
-                terminal_safe_actor_label(
-                    &self.memory.actor_id,
-                    self.memory.actor_context.as_deref()
-                )
-            ),
-            terminal_safe_data_block(&self.memory.body),
-        ];
-        lines.extend(retiring_target_lines(
-            self.memory.retiring_target.as_ref(),
-            self.memory.retiring_state.as_ref(),
-            self.memory.retiring_target_dropped.as_ref(),
-            self.memory.revision == self.memory.current_revision,
-        ));
-        lines
-    }
-}
 
 /// The reminder a full read of the current version gives when a revision
 /// dropped the retirement target without a clear, naming the arguments that
@@ -1191,6 +1115,7 @@ fn verified_bounded_work_changes(
 ) -> Result<Vec<WorkChange>, StoreError> {
     let has_entries = !entries.is_empty();
     let mut changes = Vec::new();
+    let mut sealed_sources = sealed_source::ViewCache::new();
     for (offset, entry) in entries.into_iter().enumerate() {
         let expected = confirmed_through
             + i64::try_from(offset).map_err(|_| {
@@ -1215,6 +1140,7 @@ fn verified_bounded_work_changes(
         let display_producer = source_display_producer(&entry.object_kind, &object);
         let (capture, completion_checkpoint) = change_context::hydrate(store, &entry, &object)?;
         let history_display = history_display::hydrate(store, &entry, &object)?;
+        let sealed_source = sealed_source::hydrate(store, &entry, project_id, &mut sealed_sources)?;
         // A work event's display and its delivered summary share one read of
         // its facts; every other kind is projected as before.
         let delivery = match &history_display {
@@ -1229,6 +1155,7 @@ fn verified_bounded_work_changes(
             )?,
         };
         changes.push(WorkChange {
+            sealed_source,
             history_display,
             capture,
             completion_checkpoint,
@@ -1324,6 +1251,7 @@ fn verify_staged_work_change_page(
             ));
         }
     }
+    let mut sealed_sources = sealed_source::ViewCache::new();
     for (entry, change) in entries.into_iter().zip(&mut page.changes) {
         let object = store
             .get::<serde_json::Value>(&entry.object_id)?
@@ -1341,6 +1269,8 @@ fn verify_staged_work_change_page(
             ));
         }
         change.history_display = history_display::hydrate(store, &entry, &object)?;
+        change.sealed_source =
+            sealed_source::hydrate_feed(store, &entry, feed, &mut sealed_sources)?;
         change.display_producer = source_display_producer(&entry.object_kind, &object);
         (change.capture, change.completion_checkpoint) =
             change_context::hydrate(store, &entry, &object)?;

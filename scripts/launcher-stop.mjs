@@ -10,6 +10,13 @@ const read = (path) => JSON.parse(readFileSync(path, "utf8"));
 const terminal = (result) => ["passed", "failed"].includes(result.state)
   && Boolean(result.ended) && Number.isInteger(result.exitCode);
 const refused = (message) => Object.assign(new Error(message), { reason: "stop-refused", safeCompletionText: message });
+const invalidStopRequest = (message) => Object.assign(new Error(message), {
+  reason: "stop-request-invalid", safeCompletionText: "stop-request-invalid",
+});
+const unreadableStopRequest = (error) => Object.assign(new Error(`cannot read stop request: ${error.code ?? "unknown"}`), {
+  reason: "stop-request-unreadable", safeCompletionText: "stop-request-unreadable", cause: error,
+});
+const transientReadError = (error) => ["EPERM", "EACCES", "EBUSY"].includes(error?.code);
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 function text(value, name, maximum) {
   if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value) > maximum || /[\x00-\x1f\x7f]/u.test(value)) {
@@ -19,11 +26,18 @@ function text(value, name, maximum) {
 }
 export function readStopIntent(runDir, runId) {
   const path = join(runDir, "stop.request.json");
-  if (!existsSync(path)) return null;
-  const intent = read(path);
-  if (intent.runId !== runId || intent.protocol !== stopProtocol || typeof intent.id !== "string"
-    || !Number.isFinite(Date.parse(intent.requestedAt))) throw refused("malformed stop request");
-  text(intent.actor, "actor", 256); text(intent.reason, "reason", 2000);
+  let intent;
+  try { intent = read(path); }
+  catch (error) {
+    if (error?.code === "ENOENT") return null;
+    if (error instanceof SyntaxError) throw invalidStopRequest("malformed stop request");
+    throw error;
+  }
+  if (intent === null || typeof intent !== "object" || Array.isArray(intent)
+    || intent.runId !== runId || intent.protocol !== stopProtocol || typeof intent.id !== "string"
+    || !Number.isFinite(Date.parse(intent.requestedAt))) throw invalidStopRequest("malformed stop request");
+  try { text(intent.actor, "actor", 256); text(intent.reason, "reason", 2000); }
+  catch { throw invalidStopRequest("malformed stop request"); }
   return intent;
 }
 export async function removeWithRetry(path, { remove = rmSync, attempts = 20, delayMs = 25, ...options } = {}) {
@@ -58,7 +72,9 @@ export async function withStopLock(runDir, action, { remove = rmSync, open = ope
 
 // Only publishes intent. A request receipt never asserts that a process ended.
 // There is deliberately no PID input or signal sent by this caller.
-export async function requestStop(runId, { root, actor, reason, now = () => new Date() }) {
+export async function requestStop(runId, {
+  root, actor, reason, now = () => new Date(), remove = rmSync, removeAttempts = 20, removeDelayMs = 25,
+}) {
   if (!runToken.test(runId ?? "")) throw refused("stop requires a test run id, not a path or PID");
   text(actor, "actor", 256); text(reason, "reason", 2000);
   const git = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "review-runs"],
@@ -66,7 +82,7 @@ export async function requestStop(runId, { root, actor, reason, now = () => new 
   if (git.error || git.status !== 0) throw refused("cannot resolve this worktree's run directory");
   const runDir = join(git.stdout.trim(), runId);
   if (!existsSync(runDir)) throw refused(`run does not exist in this worktree: ${runId}`);
-  return withStopLock(runDir, () => {
+  return withStopLock(runDir, async () => {
     const request = read(join(runDir, "request.json"));
     const result = read(join(runDir, "results.json"));
     if (request.runId !== runId || result.runId !== runId || resolve(request.root) !== resolve(root)) {
@@ -80,32 +96,60 @@ export async function requestStop(runId, { root, actor, reason, now = () => new 
     if (prior) return { requested: true, duplicate: true, intent: prior, runDir };
     const intent = { protocol: stopProtocol, runId, id: randomUUID(), actor, reason, requestedAt: now().toISOString() };
     const temporary = join(runDir, `stop-${intent.id}.tmp`);
+    let published = false, cleanupWarning;
     try {
       writeFileSync(temporary, `${JSON.stringify(intent)}\n`, { flag: "wx", mode: 0o600 });
       try { linkSync(temporary, join(runDir, "stop.request.json")); }
       catch (error) { throw refused(`cannot retain stop intent on this filesystem: ${error.code ?? "unknown"}`); }
-    } finally { rmSync(temporary, { force: true }); }
-    return { requested: true, duplicate: false, intent, runDir };
-  });
+      published = true;
+    } finally {
+      try { await removeWithRetry(temporary, { remove, attempts: removeAttempts, delayMs: removeDelayMs, force: true }); }
+      catch (error) {
+        if (published) cleanupWarning = `stop temporary cleanup failed after publication: ${error.code ?? "unknown"}`;
+      }
+    }
+    return { requested: true, duplicate: false, intent, runDir, ...(cleanupWarning ? { warning: cleanupWarning } : {}) };
+  }, { remove });
 }
 
-export function stopController(runDir, request) {
-  let intent = null, cancel = null, failure = null;
+export function stopController(runDir, request, { readIntent = readStopIntent, retryAttempts = 3, retryDelayMs = 100 } = {}) {
+  let intent = null, cancel = null, failure = null, readFailures = 0;
   const inspect = () => {
-    try { intent ??= readStopIntent(runDir, request.runId); }
-    catch (error) { failure ??= error; }
+    if (intent || failure) return intent;
+    try {
+      intent = readIntent(runDir, request.runId);
+      readFailures = 0;
+    } catch (error) {
+      readFailures += 1;
+      if (transientReadError(error)) {
+        if (readFailures >= retryAttempts) failure = unreadableStopRequest(error);
+      } else {
+        failure = error.reason ? error : unreadableStopRequest(error);
+      }
+    }
     if (intent || failure) cancel?.();
     return intent;
   };
   const timer = setInterval(inspect, 100);
   timer.unref();
+  const throwIfStopped = () => {
+    if (failure) throw failure;
+    if (intent) throw Object.assign(new Error(`stopped by operator: ${intent.actor}: ${intent.reason}`), { reason: "stopped", stop: intent });
+  };
   return {
     inspect,
     register(callback) { cancel = callback; inspect(); return () => { cancel = null; }; },
     check() {
       inspect();
-      if (failure) throw failure;
-      if (intent) throw Object.assign(new Error(`stopped by operator: ${intent.actor}: ${intent.reason}`), { reason: "stopped", stop: intent });
+      throwIfStopped();
+    },
+    async settle() {
+      inspect();
+      while (!intent && !failure && readFailures > 0 && readFailures < retryAttempts) {
+        await pause(retryDelayMs);
+        inspect();
+      }
+      throwIfStopped();
     },
     close() { clearInterval(timer); },
   };

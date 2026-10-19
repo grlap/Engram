@@ -95,7 +95,18 @@ fn render_window(
         lines.push("  no source observation is recorded on this item's run".into());
     }
     for row in &shown {
+        if let Some(comparison) = &row.sealed_comparison {
+            let root_state = match row.root_state {
+                Some(crate::domain::SourceRootState::Named) => "named",
+                Some(crate::domain::SourceRootState::Ended) => "ended",
+                None => "not recorded",
+            };
+            lines.push(format!("  sealed comparison: {}; recorded after seal cut; original observation binding run {}, claim {}, fence {}; root state {}", comparison, row.binding.run_id.0, row.binding.claim_id.0, row.binding.claim_fence, root_state));
+        }
         lines.push(row_line(row));
+    }
+    if let Some(diagnostic) = page.sealed_diagnostic() {
+        lines.push(format!("  historical sealed source: seal {}; evaluation {}; run {}; completion cut {}; fixed horizon {}. Observation intervals do not prove source-at-done or a write after seal.", diagnostic.seal, diagnostic.evaluation.as_ref().map_or("not recorded", |id| id.as_str()), diagnostic.run.0, diagnostic.completion_cut, diagnostic.horizon));
     }
     let mut work = json!({ "short_ref": work_ref, "title": page.title });
     if page.title_truncated {
@@ -104,6 +115,7 @@ fn render_window(
     }
     let value = json!({
         "work": work,
+        "sealed_source": page.sealed_diagnostic().map(|diagnostic| super::sealed_source::SourceDiagnostic::new(&crate::work_service::SealedSourceView { seal: diagnostic.seal.clone(), diagnostic: Some(diagnostic.clone()), unavailable: None, continuation: after.clone(), details_omitted: false }, work_ref).value),
         "observations": shown.iter().map(|row| row_value(row)).collect::<Vec<_>>(),
         "observations_window": {
             "selection": "newest_first",
@@ -219,6 +231,9 @@ fn row_value(row: &WorkObservationRow) -> Value {
     json!({
         "observation": row.observation,
         "run_position": row.position,
+        "sealed_comparison": row.sealed_comparison,
+        "observation_binding": row.binding,
+        "root_state": row.root_state,
         "admission": row.admission,
         "source_changed": row.source_changed,
         "workspace": row.workspace,

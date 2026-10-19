@@ -1,5 +1,6 @@
 use super::super::folder::TaskSyncFolderApply;
 use super::*;
+use crate::task_sync::notes::{SharedNote, SharedNoteKind};
 use crate::task_sync::progress::documents_fingerprint;
 
 fn profile() -> crate::task_sync::progress::ExportProfile {
@@ -204,6 +205,139 @@ fn task_sync_folder_fresh_key_noop_does_not_append_a_planning_baseline() {
         )
         .unwrap();
     assert_eq!(planning_after, planning_before);
+}
+
+#[test]
+fn task_sync_folder_notes_from_another_machine_round_trip_and_fresh_key_is_a_noop() {
+    let mut tree = candidate();
+    tree.project.notes_included = true;
+    tree.tasks[0].notes = vec![SharedNote {
+        id: CanonicalObject::mint(&"source-host status")
+            .unwrap()
+            .key()
+            .clone(),
+        kind: SharedNoteKind::Status,
+        body: "Source-host status".into(),
+        author: SharedActor::from_actor(&actor("source-author")),
+        recorded_at: at(1),
+        origin_machine: "source-host".into(),
+    }];
+    let profile = crate::task_sync::progress::ExportProfile {
+        include_notes: true,
+        origin_machine: Some("destination-host".into()),
+    };
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let basis = store
+        .export_task_sync_folder(&tree.project.project_id, &profile)
+        .unwrap()
+        .export_basis;
+    let first = store
+        .apply_task_sync_folder(
+            folder_apply_request(
+                &tree.project.project_id,
+                &actor("folder-importer"),
+                &tree,
+                &basis,
+                &profile,
+                true,
+                at(5),
+            ),
+            "folder-notes-origin-first",
+        )
+        .unwrap();
+    assert!(first.changed);
+
+    let exported = store
+        .export_task_sync_folder(&tree.project.project_id, &profile)
+        .unwrap();
+    assert_eq!(
+        exported.tree.folder_documents().unwrap(),
+        tree.folder_documents().unwrap()
+    );
+    assert_eq!(
+        exported.tree.tasks[0].notes[0].origin_machine,
+        "source-host"
+    );
+
+    let planning_before: i64 = store
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_feed_entries
+         WHERE feed_kind = 'project' AND feed_id = ?1 AND object_kind = ?2",
+            rusqlite::params![
+                tree.project.project_id.0,
+                super::super::folder::IMPORT_PLANNING_KIND
+            ],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let before = state(&store);
+    let operation_results_before: i64 = store
+        .connection
+        .query_row("SELECT COUNT(*) FROM work_operation_results", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let repeated = store
+        .apply_task_sync_folder(
+            folder_apply_request(
+                &tree.project.project_id,
+                &actor("folder-importer"),
+                &tree,
+                &basis,
+                &profile,
+                true,
+                at(6),
+            ),
+            "folder-notes-origin-second",
+        )
+        .unwrap();
+    assert!(!repeated.changed);
+    let receipt: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT result_json FROM work_operation_results
+             WHERE operation = ?1 AND idempotency_key = ?2",
+            rusqlite::params!["apply_task_sync_folder", "folder-notes-origin-second"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<TaskSyncImportResult>(&receipt).unwrap(),
+        repeated
+    );
+    let operation_results_after: i64 = store
+        .connection
+        .query_row("SELECT COUNT(*) FROM work_operation_results", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(operation_results_after, operation_results_before + 1);
+    let planning_after: i64 = store
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_feed_entries
+         WHERE feed_kind = 'project' AND feed_id = ?1 AND object_kind = ?2",
+            rusqlite::params![
+                tree.project.project_id.0,
+                super::super::folder::IMPORT_PLANNING_KIND
+            ],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(planning_after, planning_before);
+    assert_eq!(
+        store
+            .connection
+            .execute(
+                "DELETE FROM work_operation_results
+                 WHERE operation = ?1 AND idempotency_key = ?2",
+                rusqlite::params!["apply_task_sync_folder", "folder-notes-origin-second"],
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(state(&store), before);
 }
 
 #[test]

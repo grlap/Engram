@@ -62,6 +62,7 @@ mod obligation_reminders;
 mod observation_windows;
 mod receipts;
 mod record_windows;
+mod sealed_source;
 mod show;
 mod verification_assessment;
 
@@ -239,6 +240,7 @@ fn collapsed_changes(
     };
     let mut lines = Vec::new();
     let mut last_note: Option<crate::storage::WorkRecordAddress> = None;
+    let mut source_seals = std::collections::HashSet::new();
     for (index, change) in changes.iter().enumerate() {
         let Some((subject, kind, text, actor_id, actor_context)) = visible[index].as_ref() else {
             last_note = None;
@@ -248,6 +250,19 @@ fn collapsed_changes(
             }
             continue;
         };
+        if let Some(diagnostic) = &change.sealed_source {
+            let first = source_seals.insert(diagnostic.seal.clone());
+            if first {
+                let rendered = sealed_source::SourceDiagnostic::new(diagnostic, subject);
+                lines.push(next_context::CompactChange {
+                    line: format!("{subject} {}", rendered.summary),
+                    source_detail: rendered.detail,
+                    subject: Some(subject.clone()),
+                    attribution: format!("{subject} sealed source diagnostic"),
+                    note: None,
+                });
+            }
+        }
         // Your own actions are already in your receipts.
         if own(change) {
             last_note = None;
@@ -331,6 +346,7 @@ fn collapsed_changes(
                 .capture
                 .clone()
                 .map(|identity| (subject.clone(), identity)),
+            source_detail: None,
         });
     }
     lines
