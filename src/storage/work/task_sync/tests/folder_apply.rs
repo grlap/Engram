@@ -1,5 +1,5 @@
 use super::super::folder::TaskSyncFolderApply;
-use super::super::folder_scalar::{Conflict, NAMED_CONFLICT_LIMIT, conflict_message};
+use super::super::folder_admission::{Conflict, NAMED_CONFLICT_LIMIT, conflict_message};
 use super::*;
 use crate::{
     ClaimWorkRequest, ReleaseWorkRequest, SessionId, WorkClaim,
@@ -516,11 +516,16 @@ fn any_unsupported_delta_refuses_the_whole_folder_by_name() {
     );
     assert_eq!(state(&store), before);
 
-    let mut added = fixture.tree.clone();
-    added.tasks.push(document("added elsewhere", None));
+    // An admissible addition beside an unsupported change is not applied
+    // on its own: the whole folder refuses.
+    let mut added = resolved.clone();
+    let addition = document("added elsewhere", None);
+    let addition_id = addition.id;
+    added.tasks.push(addition);
     added.tasks.sort_by_key(|task| task.id.0);
     let message = conflict(&exchange(&mut store, &added, "edit-2", 7).unwrap_err());
-    assert!(message.contains("task_added"), "{message}");
+    assert!(message.contains("unsupported_fields"), "{message}");
+    assert!(!message.contains(&addition_id.0.to_string()), "{message}");
     assert_eq!(state(&store), before);
 }
 
@@ -809,3 +814,5 @@ fn a_refusal_beyond_the_limit_names_the_lowest_ids_and_counts_the_rest() {
     }
     assert!(message.ends_with("; and 5 more refused tasks"), "{message}");
 }
+
+mod adds;

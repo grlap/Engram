@@ -18,8 +18,8 @@ use crate::{
 
 mod activity;
 pub(crate) mod folder;
+mod folder_admission;
 mod folder_dry_run;
-mod folder_scalar;
 mod incremental;
 mod notes;
 mod origin;

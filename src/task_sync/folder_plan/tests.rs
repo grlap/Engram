@@ -2,10 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use chrono::{DateTime, Utc};
 
-use super::{
-    DeltaPlan, FolderPlan, ProjectChange, ScalarChange, TaskDelta, TaskField, UnsupportedChange,
-    plan,
-};
+use super::{DeltaPlan, ProjectChange, ScalarChange, TaskChange, TaskDelta, TaskField, plan};
 use crate::{
     ChildRequirement, ObjectId, ProjectId, WorkBlockerKind, WorkId, WorkItemKind, WorkLifecycle,
     domain::{
@@ -86,11 +83,23 @@ fn members(tasks: &[&TaskDocument]) -> HashSet<WorkId> {
     tasks.iter().map(|task| task.id).collect()
 }
 
-fn deltas(result: Result<FolderPlan, StoreError>) -> DeltaPlan {
-    match result.unwrap() {
-        FolderPlan::Deltas(plan) => plan,
-        FolderPlan::Bootstrap => panic!("expected deltas, got a bootstrap"),
-    }
+fn deltas(result: Result<DeltaPlan, StoreError>) -> DeltaPlan {
+    result.unwrap()
+}
+
+/// A change of only the named fields beyond the scalar ones.
+fn fields(unsupported: Vec<TaskField>) -> TaskDelta {
+    TaskDelta::Changed(TaskChange {
+        scalar: None,
+        unsupported,
+    })
+}
+
+fn scalar(change: ScalarChange) -> TaskDelta {
+    TaskDelta::Changed(TaskChange {
+        scalar: Some(change),
+        unsupported: Vec::new(),
+    })
 }
 
 fn delta(plan: &DeltaPlan, id: WorkId) -> &TaskDelta {
@@ -102,7 +111,7 @@ fn delta(plan: &DeltaPlan, id: WorkId) -> &TaskDelta {
         .delta
 }
 
-fn refusal(result: Result<FolderPlan, StoreError>) -> TaskSyncRefusal {
+fn refusal(result: Result<DeltaPlan, StoreError>) -> TaskSyncRefusal {
     match result {
         Err(StoreError::TaskSyncRefused { refusal, .. }) => refusal,
         other => panic!("expected a task sync refusal, got {other:?}"),
@@ -131,12 +140,19 @@ fn identical_trees_plan_no_change() {
 }
 
 #[test]
-fn empty_destination_with_tasks_is_a_bootstrap() {
-    let resolved = tree(&[task("a")]);
-    assert_eq!(
-        plan(&tree(&[]), &resolved, &HashSet::new()).unwrap(),
-        FolderPlan::Bootstrap
-    );
+fn an_empty_enrolled_destination_plans_every_task_as_an_addition() {
+    // An enrolled destination is compared task by task even when it holds
+    // nothing, so the folder's tasks are additions, never a bootstrap.
+    let a = task("a");
+    let b = task("b");
+    let resolved = tree(&[a.clone(), b.clone()]);
+    let plan = deltas(plan(&tree(&[]), &resolved, &HashSet::new()));
+    assert_eq!(delta(&plan, a.id), &TaskDelta::Added);
+    assert_eq!(delta(&plan, b.id), &TaskDelta::Added);
+    assert!(plan.is_applicable());
+    let mut expected = vec![a.id, b.id];
+    expected.sort_by_key(|id| id.0);
+    assert_eq!(plan.additions().collect::<Vec<_>>(), expected);
 }
 
 #[test]
@@ -161,7 +177,7 @@ fn title_change_is_a_scalar_edit() {
         outcome: None,
         priority: None,
     };
-    assert_eq!(delta(&plan, a.id), &TaskDelta::Scalar(expected.clone()));
+    assert_eq!(delta(&plan, a.id), &scalar(expected.clone()));
     assert!(plan.is_applicable());
     assert!(!plan.is_unchanged());
     assert_eq!(
@@ -194,7 +210,7 @@ fn outcome_and_priority_change_together() {
     ));
     assert_eq!(
         delta(&plan, a.id),
-        &TaskDelta::Scalar(ScalarChange {
+        &scalar(ScalarChange {
             title: None,
             outcome: Some("Deliver more".into()),
             priority: Some(3),
@@ -213,7 +229,13 @@ fn a_scalar_edit_of_a_completed_task_is_left_to_admission() {
         &resolved,
         &members(&[&b]),
     ));
-    assert!(matches!(delta(&plan, b.id), TaskDelta::Scalar(_)));
+    assert!(matches!(
+        delta(&plan, b.id),
+        TaskDelta::Changed(TaskChange {
+            scalar: Some(_),
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -272,7 +294,7 @@ fn every_other_field_change_is_unsupported_and_named() {
         ));
         assert_eq!(
             delta(&plan, a.id),
-            &TaskDelta::Unsupported(UnsupportedChange::Fields(vec![field])),
+            &fields(vec![field]),
             "{}",
             field.as_str()
         );
@@ -290,7 +312,7 @@ fn relation_changes_are_unsupported() {
     let plan_reparent = deltas(plan(&current, &reparented, &membership));
     assert_eq!(
         delta(&plan_reparent, b.id),
-        &TaskDelta::Unsupported(UnsupportedChange::Fields(vec![TaskField::ParentId]))
+        &fields(vec![TaskField::ParentId])
     );
     assert_eq!(delta(&plan_reparent, a.id), &TaskDelta::Unchanged);
     let ordered = tree(&[
@@ -300,7 +322,7 @@ fn relation_changes_are_unsupported() {
     let plan_ordered = deltas(plan(&current, &ordered, &membership));
     assert_eq!(
         delta(&plan_ordered, b.id),
-        &TaskDelta::Unsupported(UnsupportedChange::Fields(vec![TaskField::Prerequisites]))
+        &fields(vec![TaskField::Prerequisites])
     );
 }
 
@@ -341,10 +363,7 @@ fn disposal_and_completion_name_every_changed_field_in_document_order() {
     for (changed, fields) in cases {
         let resolved = tree(&[changed, b.clone()]);
         let plan = deltas(plan(&current, &resolved, &membership));
-        assert_eq!(
-            delta(&plan, a.id),
-            &TaskDelta::Unsupported(UnsupportedChange::Fields(fields))
-        );
+        assert_eq!(delta(&plan, a.id), &self::fields(fields));
     }
 }
 
@@ -366,10 +385,7 @@ fn a_note_change_is_unsupported() {
     resolved.project.notes_included = true;
     let plan = deltas(plan(&current, &resolved, &members(&[&a])));
     assert_eq!(plan.project, Vec::new());
-    assert_eq!(
-        delta(&plan, a.id),
-        &TaskDelta::Unsupported(UnsupportedChange::Fields(vec![TaskField::Notes]))
-    );
+    assert_eq!(delta(&plan, a.id), &fields(vec![TaskField::Notes]));
 }
 
 #[test]
@@ -384,11 +400,21 @@ fn scalar_and_other_changes_report_only_the_unsupported_fields() {
         &resolved,
         &members(&[&a]),
     ));
+    // Both parts are kept on the one change; the unsupported part makes it
+    // inapplicable, so no scalar edit is offered.
     assert_eq!(
         delta(&plan, a.id),
-        &TaskDelta::Unsupported(UnsupportedChange::Fields(vec![TaskField::Labels]))
+        &TaskDelta::Changed(TaskChange {
+            scalar: Some(ScalarChange {
+                title: Some("Renamed".into()),
+                outcome: None,
+                priority: None,
+            }),
+            unsupported: vec![TaskField::Labels],
+        })
     );
     assert_eq!(plan.scalar_changes().count(), 0);
+    assert!(!plan.is_applicable());
 }
 
 #[test]
@@ -432,20 +458,12 @@ fn an_omitted_exchanged_task_is_a_deletion() {
         &tree(std::slice::from_ref(&a)),
         &members(&[&a, &d]),
     ));
-    assert_eq!(
-        delta(&plan, d.id),
-        &TaskDelta::Unsupported(UnsupportedChange::Deleted)
-    );
+    assert_eq!(delta(&plan, d.id), &TaskDelta::Deleted);
     assert!(!plan.is_applicable());
-    assert_eq!(
-        plan.unsupported().collect::<Vec<_>>(),
-        [(d.id, &UnsupportedChange::Deleted)]
-    );
-    assert_eq!(UnsupportedChange::Deleted.code(), "task_deleted");
 }
 
 #[test]
-fn an_added_task_is_unsupported_whatever_the_membership() {
+fn an_added_task_is_applicable_whatever_the_membership() {
     let a = task("a");
     let n = task("n");
     let resolved = tree(&[a.clone(), n.clone()]);
@@ -455,13 +473,12 @@ fn an_added_task_is_unsupported_whatever_the_membership() {
             &resolved,
             &membership,
         ));
-        assert_eq!(
-            delta(&plan, n.id),
-            &TaskDelta::Unsupported(UnsupportedChange::Added)
-        );
-        assert!(!plan.is_applicable());
+        // Membership decides only deletions; whether the store may take
+        // the task is admission's question.
+        assert_eq!(delta(&plan, n.id), &TaskDelta::Added);
+        assert!(plan.is_applicable());
+        assert_eq!(plan.additions().collect::<Vec<_>>(), [n.id]);
     }
-    assert_eq!(UnsupportedChange::Added.code(), "task_added");
 }
 
 #[test]
@@ -482,21 +499,14 @@ fn a_mixed_folder_lists_every_delta_in_task_id_order() {
     sorted.sort();
     assert_eq!(ids, sorted);
     assert_eq!(ids.len(), 4);
-    assert_eq!(plan.scalar_changes().count(), 1);
-    let mut unsupported = plan
-        .unsupported()
-        .map(|(id, change)| (id.0, change.code()))
-        .collect::<Vec<_>>();
-    let expected_order = unsupported.clone();
-    unsupported.sort_unstable();
-    assert_eq!(unsupported, expected_order);
-    let mut expected = vec![
-        (b.id.0, "unsupported_fields"),
-        (d.id.0, "task_deleted"),
-        (n.id.0, "task_added"),
-    ];
-    expected.sort_unstable();
-    assert_eq!(unsupported, expected);
+    assert_eq!(
+        plan.scalar_changes().map(|(id, _)| id).collect::<Vec<_>>(),
+        [a.id]
+    );
+    assert_eq!(plan.additions().collect::<Vec<_>>(), [n.id]);
+    assert_eq!(delta(&plan, b.id), &fields(vec![TaskField::Labels]));
+    assert_eq!(delta(&plan, d.id), &TaskDelta::Deleted);
+    // The labels change and the deletion make the folder inapplicable.
     assert!(!plan.is_applicable());
 }
 

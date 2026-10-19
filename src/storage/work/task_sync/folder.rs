@@ -14,7 +14,7 @@ use crate::{
     storage::{SqliteStore, StoreError},
     task_sync::{
         TaskSyncRefusal, TaskTree,
-        folder_plan::{self, DeltaPlan, FolderPlan},
+        folder_plan::{self, DeltaPlan},
         progress::{ExportProfile, documents_fingerprint},
     },
 };
@@ -177,9 +177,10 @@ pub(super) fn apply_task_sync_folder_on(
         return Err(TaskSyncRefusal::DivergentPlanning
             .invalid("task folder import refuses a locally changed planning inventory"));
     }
-    // An enrolled destination reconciles the folder against its own planning.
-    // The empty-graph import below serves only a destination with no
-    // exchange baseline or no shared planning left.
+    // An enrolled destination always reconciles the folder against its own
+    // planning, even when that planning is empty, so its exchange history
+    // keeps judging every later folder. The empty-graph import below serves
+    // only a destination that holds no exchange baseline.
     if let Some(baseline) = &baseline {
         let membership = baseline
             .tree
@@ -187,18 +188,16 @@ pub(super) fn apply_task_sync_folder_on(
             .iter()
             .map(|task| task.id)
             .collect::<HashSet<_>>();
-        if let FolderPlan::Deltas(plan) =
-            folder_plan::plan(&current.tree, request.tree, &membership)?
-        {
-            return apply_planned_changes(
-                transaction,
-                request,
-                &plan,
-                baseline,
-                idempotency_key,
-                &request_object,
-            );
-        }
+        let plan = folder_plan::plan(&current.tree, request.tree, &membership)?;
+        return apply_planned_changes(
+            transaction,
+            request,
+            &plan,
+            &current.tree,
+            baseline,
+            idempotency_key,
+            &request_object,
+        );
     }
     let mut result = import_task_tree_on_with_profile(
         transaction,
@@ -209,11 +208,10 @@ pub(super) fn apply_task_sync_folder_on(
         false,
         request.now,
     )?;
-    let records_planning = result.changed || baseline.is_none();
-    if records_planning {
-        record_planning(transaction, request)?;
-        result.changed = true;
-    }
+    // Only a destination with no baseline reaches this import, and it always
+    // records the folder as its first one.
+    record_planning(transaction, request)?;
+    result.changed = true;
     super::super::planning::persist_operation_result(
         transaction,
         APPLY_OPERATION,
@@ -225,47 +223,80 @@ pub(super) fn apply_task_sync_folder_on(
 }
 
 /// Applies a classified folder to an enrolled destination: every requested
-/// delta is an admitted scalar edit, or the whole folder refuses, naming its
-/// refused tasks, and nothing is written. The baseline records the folder
-/// whenever its inventory differs from the latest baseline, even when no task
-/// changes, so a host-local task the folder now carries joins the exchange.
+/// delta is an admitted addition or scalar edit, or the whole folder refuses,
+/// naming its refused tasks, and nothing is written. The baseline records the
+/// folder whenever its inventory differs from the latest baseline, even when
+/// no task changes, so a host-local task the folder now carries joins the
+/// exchange. It is recorded before the final export check, which therefore
+/// reads the new exchange membership.
 fn apply_planned_changes(
     transaction: &rusqlite::Transaction<'_>,
     request: TaskSyncFolderApply<'_>,
     plan: &DeltaPlan,
+    current: &TaskTree,
     baseline: &TaskSyncImportPlanning,
     idempotency_key: &str,
     request_object: &CanonicalObject,
 ) -> Result<TaskSyncImportResult, StoreError> {
-    super::folder_scalar::apply_plan(transaction, plan, request.actor, request.now)?;
-    let edited = plan
+    super::folder_admission::apply_plan(
+        transaction,
+        plan,
+        current,
+        request.tree,
+        request.actor,
+        request.now,
+    )?;
+    let changed = plan
         .scalar_changes()
         .map(|(id, _)| id)
+        .chain(plan.additions())
         .collect::<HashSet<_>>();
-    if !edited.is_empty() {
-        // Each edited task now exports exactly as the folder carries it.
-        let applied = folder_export_on(transaction, request.project, request.profile)?;
-        let resolved = request
-            .tree
-            .tasks
-            .iter()
-            .filter(|task| edited.contains(&task.id));
-        for task in resolved {
-            if applied.tree.tasks.iter().find(|held| held.id == task.id) != Some(task) {
-                return Err(StoreError::InvalidWorkProjection(
-                    "a folder scalar edit does not export as the folder carries it".into(),
-                ));
-            }
+    if plan.additions().next().is_some() {
+        // Admission named every predictable conflict; these remain as the
+        // guards that roll the whole folder back.
+        if transaction
+            .prepare("PRAGMA foreign_key_check")?
+            .query([])?
+            .next()?
+            .is_some()
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                "a folder addition left a dangling reference".into(),
+            ));
         }
+        audit_origins(transaction)?;
     }
     let result = TaskSyncImportResult {
         task_count: request.tree.tasks.len(),
-        changed: !edited.is_empty()
+        changed: !changed.is_empty()
             || baseline.tree.folder_documents()? != request.tree.folder_documents()?,
         dry_run: false,
     };
     if result.changed {
         record_planning(transaction, request)?;
+    }
+    if !changed.is_empty() {
+        // Each added or edited task now exports exactly as the folder
+        // carries it, whole document by whole document.
+        let applied = folder_export_on(transaction, request.project, request.profile)?;
+        let applied = applied
+            .tree
+            .tasks
+            .iter()
+            .map(|task| (task.id, task))
+            .collect::<std::collections::HashMap<_, _>>();
+        let resolved = request
+            .tree
+            .tasks
+            .iter()
+            .filter(|task| changed.contains(&task.id));
+        for task in resolved {
+            if applied.get(&task.id).copied() != Some(task) {
+                return Err(StoreError::InvalidWorkProjection(
+                    "a folder change does not export as the folder carries it".into(),
+                ));
+            }
+        }
     }
     super::super::planning::persist_operation_result(
         transaction,
@@ -275,6 +306,24 @@ fn apply_planned_changes(
         &result,
     )?;
     Ok(result)
+}
+
+/// The final import-origin audit after a folder's additions. Admission
+/// already judged every addition against the whole origin history, so a
+/// failure here is a projection bug that rolls the folder back, never an
+/// input refusal.
+fn audit_origins(connection: &rusqlite::Connection) -> Result<(), StoreError> {
+    let mut checked = 0;
+    let mut failures = Vec::new();
+    super::origin::verify_origins(connection, &mut checked, &mut failures)?;
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(StoreError::InvalidWorkProjection(format!(
+            "a folder addition failed the import origin audit: {}",
+            failures.join(", ")
+        )))
+    }
 }
 
 /// Records the applied folder as the latest exchange baseline.

@@ -1,34 +1,23 @@
-//! Pure classification of a resolved task folder against the destination's
-//! current shared planning.
+//! Pure classification of a resolved task folder against an enrolled
+//! destination's current shared planning.
 //!
 //! The planner reads three inputs and touches no store: the destination's
 //! current export, the human-resolved tree, and the task ids of the last
 //! applied exchange baseline. It decides only what the resolved tree asks to
 //! change. Whether an admitted kind of change may apply to a given task here
-//! (claims, runs, completion, provenance) is a separate admission question,
-//! answered inside the applying transaction.
+//! (claims, runs, completion, provenance, identity) is a separate admission
+//! question, answered inside the applying transaction.
 //!
-//! Only scalar edits of a task both sides hold are applicable: its title,
-//! outcome and priority. Every other requested delta is classified with a
-//! named reason so that the whole folder can be refused, never applied in
-//! part or dropped in silence.
+//! Applicable deltas are a task the resolved tree adds, and a scalar edit of
+//! a task both sides hold: its title, outcome and priority. Every other
+//! requested delta is classified with a named reason so that the whole folder
+//! can be refused, never applied in part or dropped in silence.
 
 use std::collections::{BTreeMap, HashSet};
 use std::hash::BuildHasher;
 
 use super::{TaskDocument, TaskSyncRefusal, TaskTree};
 use crate::{WorkId, domain::WorkRevisionPatch, storage::StoreError};
-
-/// What applying a resolved tree asks of the destination.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum FolderPlan {
-    /// The destination shares no planning yet and the resolved tree holds
-    /// tasks. The empty-graph import admits that tree whole, so no task is
-    /// classified here.
-    Bootstrap,
-    /// The requested deltas against planning the destination already holds.
-    Deltas(DeltaPlan),
-}
 
 /// Every requested delta, classified.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -63,10 +52,33 @@ pub enum TaskDelta {
     /// which the resolved tree omits. Omission is not deletion: the task
     /// stays as it is and does not join the exchange.
     RetainedLocal,
-    /// Only the title, outcome or priority differ.
-    Scalar(ScalarChange),
-    /// A delta this exchange does not apply.
-    Unsupported(UnsupportedChange),
+    /// Both sides hold the task and its document differs.
+    Changed(TaskChange),
+    /// The resolved tree adds a task the destination does not hold.
+    Added,
+    /// The resolved tree omits a task of the last applied exchange. This
+    /// exchange does not apply deletions.
+    Deleted,
+}
+
+/// What a resolved document changes in a task both sides hold: its scalar
+/// fields, which apply as a planning revision, and every other changed field,
+/// which this exchange does not apply. The parts are kept together so that a
+/// change of several kinds is judged once, as one change to one task.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TaskChange {
+    /// The new title, outcome or priority, when any of them changes.
+    pub scalar: Option<ScalarChange>,
+    /// The other changed fields, in document order.
+    pub unsupported: Vec<TaskField>,
+}
+
+impl TaskChange {
+    /// Whether every changed field is one this exchange applies.
+    #[must_use]
+    pub fn is_applicable(&self) -> bool {
+        self.unsupported.is_empty()
+    }
 }
 
 /// The scalar fields a resolved task changes, each carrying its new value.
@@ -91,29 +103,6 @@ impl ScalarChange {
             outcome: self.outcome.clone(),
             priority: self.priority,
             ..WorkRevisionPatch::default()
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UnsupportedChange {
-    /// The resolved tree adds a task the destination does not hold.
-    Added,
-    /// The resolved tree omits a task of the last applied exchange.
-    Deleted,
-    /// The resolved tree changes these fields beyond the scalar ones,
-    /// in document order.
-    Fields(Vec<TaskField>),
-}
-
-impl UnsupportedChange {
-    /// A stable machine-readable name of the reason.
-    #[must_use]
-    pub const fn code(&self) -> &'static str {
-        match self {
-            Self::Added => "task_added",
-            Self::Deleted => "task_deleted",
-            Self::Fields(_) => "unsupported_fields",
         }
     }
 }
@@ -192,32 +181,46 @@ impl DeltaPlan {
         self.project.is_empty() && self.tasks.iter().all(PlannedTask::is_unchanged)
     }
 
-    /// Whether every requested delta is an applicable scalar edit.
+    /// Whether every requested delta is of a kind this exchange applies:
+    /// an added task or a scalar edit. Admission may still refuse it.
     #[must_use]
     pub fn is_applicable(&self) -> bool {
-        self.project.is_empty() && self.unsupported().next().is_none()
+        self.project.is_empty()
+            && self.tasks.iter().all(|task| match &task.delta {
+                TaskDelta::Unchanged | TaskDelta::RetainedLocal | TaskDelta::Added => true,
+                TaskDelta::Changed(change) => change.is_applicable(),
+                TaskDelta::Deleted => false,
+            })
     }
 
-    /// The scalar edits, in task-id order.
+    /// The applicable scalar edits, in task-id order.
     pub fn scalar_changes(&self) -> impl Iterator<Item = (WorkId, &ScalarChange)> {
         self.tasks.iter().filter_map(|task| match &task.delta {
-            TaskDelta::Scalar(change) => Some((task.id, change)),
+            TaskDelta::Changed(TaskChange {
+                scalar: Some(change),
+                unsupported,
+            }) if unsupported.is_empty() => Some((task.id, change)),
             _ => None,
         })
     }
 
-    /// The unsupported task deltas, in task-id order.
-    pub fn unsupported(&self) -> impl Iterator<Item = (WorkId, &UnsupportedChange)> {
-        self.tasks.iter().filter_map(|task| match &task.delta {
-            TaskDelta::Unsupported(change) => Some((task.id, change)),
-            _ => None,
-        })
+    /// The tasks the resolved tree adds, in task-id order.
+    pub fn additions(&self) -> impl Iterator<Item = WorkId> + '_ {
+        self.tasks
+            .iter()
+            .filter(|task| task.delta == TaskDelta::Added)
+            .map(|task| task.id)
     }
 }
 
-/// Classifies what `resolved` asks of a destination whose current shared
-/// planning export is `current`, given the task ids of the destination's
-/// last applied exchange baseline (empty before the first one).
+/// Classifies what `resolved` asks of an enrolled destination whose current
+/// shared planning export is `current`, given the task ids of the
+/// destination's last applied exchange baseline.
+///
+/// The destination holds a baseline, so even an empty current export is
+/// compared task by task: every task the resolved tree holds is then an
+/// addition. Only a destination with no baseline takes the empty-graph
+/// import, and it never reaches this planner.
 ///
 /// A destination task the resolved tree omits is a deletion only when the
 /// last applied exchange held it; otherwise it is a host-local task and is
@@ -235,16 +238,13 @@ pub fn plan<S: BuildHasher>(
     current: &TaskTree,
     resolved: &TaskTree,
     membership: &HashSet<WorkId, S>,
-) -> Result<FolderPlan, StoreError> {
+) -> Result<DeltaPlan, StoreError> {
     resolved
         .validate_stored()
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     if resolved.project.project_id != current.project.project_id {
         return Err(TaskSyncRefusal::OriginMismatch
             .invalid("task folder project does not match the destination"));
-    }
-    if current.tasks.is_empty() && !resolved.tasks.is_empty() {
-        return Ok(FolderPlan::Bootstrap);
     }
     let incoming = resolved
         .tasks
@@ -255,24 +255,20 @@ pub fn plan<S: BuildHasher>(
     for held in &current.tasks {
         let delta = match incoming.get(&held.id.0) {
             Some(incoming) => compare(held, incoming)?,
-            None if membership.contains(&held.id) => {
-                TaskDelta::Unsupported(UnsupportedChange::Deleted)
-            }
+            None if membership.contains(&held.id) => TaskDelta::Deleted,
             None => TaskDelta::RetainedLocal,
         };
         deltas.insert(held.id.0, delta);
     }
     for id in incoming.keys() {
-        deltas
-            .entry(*id)
-            .or_insert(TaskDelta::Unsupported(UnsupportedChange::Added));
+        deltas.entry(*id).or_insert(TaskDelta::Added);
     }
     let project = if current.project.notes_included == resolved.project.notes_included {
         Vec::new()
     } else {
         vec![ProjectChange::NotesProfile]
     };
-    Ok(FolderPlan::Deltas(DeltaPlan {
+    Ok(DeltaPlan {
         project,
         tasks: deltas
             .into_iter()
@@ -281,7 +277,7 @@ pub fn plan<S: BuildHasher>(
                 delta,
             })
             .collect(),
-    }))
+    })
 }
 
 fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, StoreError> {
@@ -316,7 +312,7 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         notes,
         activity,
     } = held;
-    let fields = changed_fields![
+    let unsupported = changed_fields![
         external_ref => ExternalRef,
         acceptance => Acceptance,
         acceptance_bindings => AcceptanceBindings,
@@ -339,21 +335,26 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
     .into_iter()
     .filter_map(|(field, changed)| changed.then_some(field))
     .collect::<Vec<_>>();
-    if !fields.is_empty() {
-        return Ok(TaskDelta::Unsupported(UnsupportedChange::Fields(fields)));
-    }
-    let change = ScalarChange {
+    let scalar = ScalarChange {
         title: (*title != incoming.title).then(|| incoming.title.clone()),
         outcome: (*outcome != incoming.outcome).then(|| incoming.outcome.clone()),
         priority: (*priority != incoming.priority).then_some(incoming.priority),
     };
-    if change.is_empty() {
+    if unsupported.is_empty() && scalar.is_empty() {
         return Ok(TaskDelta::Unchanged);
     }
-    // The ordinary revision rules, applied to exactly the values stored.
-    crate::storage::validate_revision_patch(&change.patch())
-        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
-    Ok(TaskDelta::Scalar(change))
+    let scalar = (!scalar.is_empty()).then_some(scalar);
+    if unsupported.is_empty()
+        && let Some(change) = &scalar
+    {
+        // The ordinary revision rules, applied to exactly the values stored.
+        crate::storage::validate_revision_patch(&change.patch())
+            .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    }
+    Ok(TaskDelta::Changed(TaskChange {
+        scalar,
+        unsupported,
+    }))
 }
 
 #[cfg(test)]

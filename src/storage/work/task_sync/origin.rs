@@ -272,6 +272,18 @@ pub(in crate::storage) fn verify_origins(
     Ok(())
 }
 
+/// Every import origin the store holds, in object-id order. Folder admission
+/// judges an addition against the whole origin history this audit validates.
+pub(super) fn all_origins(connection: &Connection) -> Result<Vec<ImportOrigin>, StoreError> {
+    connection
+        .prepare("SELECT object_id FROM objects WHERE object_kind = ?1 ORDER BY object_id")?
+        .query_map([ORIGIN_KIND], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|id| read_origin(connection, &id))
+        .collect()
+}
+
 fn read_origin(connection: &Connection, id: &str) -> Result<ImportOrigin, StoreError> {
     #[cfg(test)]
     DECODES.with(|count| count.set(count.get() + 1));

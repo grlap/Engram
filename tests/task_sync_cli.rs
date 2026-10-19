@@ -466,6 +466,154 @@ fn task_sync_hosts_with_distinct_aliases_exchange_folders() {
     }
 }
 
+fn work(home: &Path, marker: &Path, args: &[&str]) -> Output {
+    let output = command(home, marker)
+        .args([
+            "work",
+            "--actor-id",
+            "author",
+            "--session-id",
+            "author-session",
+        ])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+#[test]
+fn task_sync_enrolled_hosts_exchange_new_tasks_both_ways_with_notes_and_activity() {
+    let fixture = test_support::temp_home().unwrap();
+    let marker = fixture.path().join(".engram-project");
+    fs::write(&marker, "task-sync-adds\n").unwrap();
+    let [host_a, host_b] = ["host-a", "host-b"].map(|name| {
+        let home = fixture.path().join(format!("{name}-home"));
+        task_sync_opt_in::enable(&home, "task-sync-adds");
+        let output = command(&home, &marker).arg("init").output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        home
+    });
+    let notes_a = ["--include-notes", "--origin-machine", "host-A"];
+    let notes_b = ["--include-notes", "--origin-machine", "host-B"];
+
+    // Both hosts enrol on an empty folder that shares notes.
+    let empty = fixture.path().join("empty");
+    sync(&host_a, &marker, "export", &empty, &notes_a);
+    for home in [&host_a, &host_b] {
+        let enrolled = sync(home, &marker, "import", &empty, &["--empty-basis"]);
+        assert_eq!(enrolled["changed"], true);
+    }
+
+    // A creates a task natively, claims it and records a shared note.
+    work(&host_a, &marker, &["add", "native on A"]);
+    let probe = fixture.path().join("probe-a");
+    sync(&host_a, &marker, "export", &probe, &notes_a);
+    let native = directory::read_folder(&probe).unwrap().tree.tasks[0].id;
+    work(&host_a, &marker, &["claim", &native.0.to_string()]);
+    work(&host_a, &marker, &["note", "Found the cause"]);
+    let folder_a = fixture.path().join("folder-a");
+    sync(&host_a, &marker, "export", &folder_a, &notes_a);
+    let shared = directory::read_folder(&folder_a).unwrap().tree.tasks[0].clone();
+    assert_eq!(shared.id, native);
+    assert_eq!(shared.notes.len(), 1);
+    assert!(!shared.activity.is_empty());
+
+    // B adds it from A's folder, against its own basis.
+    let own_b = fixture.path().join("own-b");
+    sync(&host_b, &marker, "export", &own_b, &notes_b);
+    let added = sync(
+        &host_b,
+        &marker,
+        "import",
+        &folder_a,
+        &["--basis", &basis(&own_b)],
+    );
+    assert_eq!(added["changed"], true);
+
+    // B creates its own task and exports both.
+    work(&host_b, &marker, &["add", "native on B"]);
+    let folder_b = fixture.path().join("folder-b");
+    sync(&host_b, &marker, "export", &folder_b, &notes_b);
+    let from_b = directory::read_folder(&folder_b).unwrap().tree;
+    assert_eq!(
+        from_b.tasks.iter().find(|task| task.id == native),
+        Some(&shared)
+    );
+    let new_on_b = from_b
+        .tasks
+        .iter()
+        .find(|task| task.id != native)
+        .unwrap()
+        .clone();
+
+    // The return leg: A's own native task passes through unchanged, and B's
+    // new task is restored on A.
+    let returned = sync(
+        &host_a,
+        &marker,
+        "import",
+        &folder_b,
+        &["--basis", &basis(&folder_a)],
+    );
+    assert_eq!(returned["changed"], true);
+    let folder_a2 = fixture.path().join("folder-a-2");
+    sync(&host_a, &marker, "export", &folder_a2, &notes_a);
+    let on_a = directory::read_folder(&folder_a2).unwrap().tree;
+    assert_eq!(
+        on_a.tasks.iter().find(|task| task.id == native),
+        Some(&shared)
+    );
+    assert_eq!(
+        on_a.tasks.iter().find(|task| task.id == new_on_b.id),
+        Some(&new_on_b)
+    );
+    let store = SqliteStore::open(project_database_path(
+        &host_a,
+        &ProjectId("task-sync-adds".into()),
+    ))
+    .unwrap();
+    assert!(store.verify_all().unwrap().is_healthy());
+    drop(store);
+
+    // An edit of A's native task, made on B, still refuses on A as
+    // unsupported_origin: it was created on A, not restored by an import.
+    work(
+        &host_b,
+        &marker,
+        &["update", &native.0.to_string(), "--title", "Renamed on B"],
+    );
+    let renamed = fixture.path().join("folder-b-2");
+    sync(&host_b, &marker, "export", &renamed, &notes_b);
+    let output = sync_output(
+        &host_a,
+        &marker,
+        "import",
+        &renamed,
+        &["--basis", &basis(&folder_a2), "--json"],
+    );
+    assert!(!output.status.success());
+    let text = String::from_utf8_lossy(&output.stderr);
+    let start = text
+        .find("{\n")
+        .unwrap_or_else(|| panic!("no JSON refusal on stderr: {text}"));
+    let refused: Value = serde_json::from_str(&text[start..]).unwrap();
+    assert_eq!(refused["error"]["code"], "task_sync_import_conflict");
+    let message = refused["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains(&format!("{}: unsupported_origin", native.0)),
+        "{message}"
+    );
+}
+
 #[test]
 fn task_sync_import_requires_exactly_one_destination_basis() {
     let fixture = test_support::temp_home().unwrap();
