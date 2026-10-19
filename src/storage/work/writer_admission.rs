@@ -38,7 +38,6 @@ impl WorkMutation<'_> {
         transaction.commit()
     }
 
-    #[cfg(test)]
     pub(super) fn rollback(self) -> rusqlite::Result<()> {
         let Self {
             origin_scope,

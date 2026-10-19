@@ -3,6 +3,7 @@ use crate::{
     ProjectId, SessionId,
     task_sync::{
         ProjectDocument, TaskTree,
+        directory::{DestinationBasis, FolderExchange},
         notes::NoteOmissions,
         progress::{ExportCapture, ExportCut, ExportProfile},
     },
@@ -27,6 +28,17 @@ fn empty_tree() -> TaskTree {
             notes_included: false,
         },
         tasks: Vec::new(),
+    }
+}
+
+fn empty_folder() -> FolderExchange {
+    FolderExchange {
+        tree: empty_tree(),
+        export_basis: String::new(),
+        profile: ExportProfile {
+            include_notes: false,
+            origin_machine: None,
+        },
     }
 }
 
@@ -143,24 +155,28 @@ fn task_sync_all_service_exchange_routes_refuse_without_opt_in_before_opening_sq
             include_notes: false,
             origin_machine: None,
         };
-        assert!(service.export_task_tree(chrono::Utc::now()).is_err());
-        assert!(
-            service
-                .export_task_tree_with_notes("fixture-machine", chrono::Utc::now())
-                .is_err()
-        );
-        assert!(
-            service
-                .export_task_tree_with_options(
-                    &task_sync::TaskSyncExportOptions::default(),
-                    chrono::Utc::now()
-                )
-                .is_err()
-        );
+        for profile in [
+            profile.clone(),
+            ExportProfile {
+                include_notes: true,
+                origin_machine: Some("fixture-machine".into()),
+            },
+        ] {
+            assert!(
+                service
+                    .export_task_sync_folder(&profile, chrono::Utc::now())
+                    .is_err()
+            );
+        }
         for dry in [false, true] {
             assert!(
                 service
-                    .import_task_tree(&empty_tree(), dry, chrono::Utc::now())
+                    .import_task_sync_folder(
+                        &empty_folder(),
+                        &DestinationBasis::Empty,
+                        dry,
+                        chrono::Utc::now()
+                    )
                     .is_err()
             );
         }
@@ -332,7 +348,12 @@ fn task_sync_read_only_mutation_refusal_precedes_opt_in_and_repository_reads() {
         .unwrap_err();
     assert!(error.to_string().contains("read-only"));
     let error = service
-        .import_task_tree(&empty_tree(), false, chrono::Utc::now())
+        .import_task_sync_folder(
+            &empty_folder(),
+            &DestinationBasis::Empty,
+            false,
+            chrono::Utc::now(),
+        )
         .unwrap_err();
     assert!(error.to_string().contains("read-only"));
     assert_eq!(entries(owned.path()), before);

@@ -4,7 +4,11 @@ mod test_support;
 #[path = "common/task_sync_opt_in.rs"]
 mod task_sync_opt_in;
 
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    path::Path,
+    process::{Command, Output},
+};
 
 use engram::{ProjectId, SqliteStore, project_database_path, task_sync::directory};
 use serde_json::Value;
@@ -20,7 +24,7 @@ fn command(home: &Path, marker: &Path) -> Command {
     command
 }
 
-fn sync(home: &Path, marker: &Path, operation: &str, path: &Path, dry_run: bool) -> Value {
+fn sync_output(home: &Path, marker: &Path, operation: &str, path: &Path, extra: &[&str]) -> Output {
     let mut command = command(home, marker);
     command
         .env(
@@ -35,11 +39,13 @@ fn sync(home: &Path, marker: &Path, operation: &str, path: &Path, dry_run: bool)
             "sync-operator",
             operation,
         ])
-        .arg(path);
-    if dry_run {
-        command.arg("--dry-run");
-    }
-    let output = command.output().unwrap();
+        .arg(path)
+        .args(extra);
+    command.output().unwrap()
+}
+
+fn sync(home: &Path, marker: &Path, operation: &str, path: &Path, extra: &[&str]) -> Value {
+    let output = sync_output(home, marker, operation, path, extra);
     assert!(
         output.status.success(),
         "{}",
@@ -48,8 +54,36 @@ fn sync(home: &Path, marker: &Path, operation: &str, path: &Path, dry_run: bool)
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
+fn basis(folder: &Path) -> String {
+    folder.join("project.json").to_str().unwrap().to_owned()
+}
+
+fn feed_rows(database: &Path, planning: bool) -> i64 {
+    let connection = rusqlite::Connection::open(database).unwrap();
+    let operator = if planning { "=" } else { "!=" };
+    connection
+        .query_row(
+            &format!(
+                "SELECT count(*) FROM work_feed_entries
+                 WHERE object_kind {operator} 'task_sync_import_planning'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+fn receipts(database: &Path) -> i64 {
+    rusqlite::Connection::open(database)
+        .unwrap()
+        .query_row("SELECT count(*) FROM work_operation_results", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+}
+
 #[test]
-fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state() {
+fn task_sync_cli_round_trips_a_git_folder_without_creating_runtime_state() {
     let fixture = test_support::temp_home().unwrap();
     let marker = fixture.path().join(".engram-project");
     fs::write(&marker, "task-sync-cli\n").unwrap();
@@ -94,6 +128,7 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    // A source with no exchange history exports its whole planning.
     let output = command(&source, &marker)
         .current_dir(fixture.path())
         .args([
@@ -115,45 +150,95 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
     assert!(String::from_utf8_lossy(&output.stderr).contains("development no-op"));
     assert!(!fixture.path().join(".engram").exists());
     let path = fixture.path().join("candidate");
-    let original = directory::read(&path).unwrap().documents().unwrap();
+    let original = directory::read_folder(&path).unwrap();
+    assert_eq!(original.tree.tasks.len(), 1);
     assert_eq!(
-        sync(&target, &marker, "import", &path, true)["dry_run"],
-        true
+        directory::read_folder_basis(&path.join("project.json"))
+            .unwrap()
+            .export_basis,
+        original.export_basis
     );
+
+    // A dry run performs the import and leaves nothing behind.
     let database = project_database_path(&target, &project);
+    let no_receipts = receipts(&database);
+    let dry = sync(
+        &target,
+        &marker,
+        "import",
+        &path,
+        &["--empty-basis", "--dry-run"],
+    );
+    assert_eq!(
+        (&dry["dry_run"], &dry["changed"]),
+        (&Value::Bool(true), &Value::Bool(true))
+    );
     let store = SqliteStore::open(&database).unwrap();
     assert_eq!(store.export_task_tree(&project).unwrap().tasks, []);
     drop(store);
+    assert_eq!(feed_rows(&database, true), 0);
+    assert_eq!(receipts(&database), no_receipts);
+
+    let first = sync(&target, &marker, "import", &path, &["--empty-basis"]);
     assert_eq!(
-        sync(&target, &marker, "import", &path, false)["changed"],
-        true
+        (&first["dry_run"], &first["changed"]),
+        (&Value::Bool(false), &Value::Bool(true))
     );
+    // The exact repeat replays its first receipt and records nothing more;
+    // a dry run of it predicts that replay.
     assert_eq!(
-        sync(&target, &marker, "import", &path, false)["changed"],
-        false
+        sync(&target, &marker, "import", &path, &["--empty-basis"]),
+        first
     );
+    let committed = receipts(&database);
+    let mut predicted = first.clone();
+    predicted["dry_run"] = Value::Bool(true);
+    assert_eq!(
+        sync(
+            &target,
+            &marker,
+            "import",
+            &path,
+            &["--empty-basis", "--dry-run"]
+        ),
+        predicted
+    );
+    assert_eq!(feed_rows(&database, true), 1);
+    assert_eq!(receipts(&database), committed);
+
     let exported = fixture.path().join("reexport");
-    let output = command(&target, &marker)
-        .args([
-            "task-sync",
-            "--actor-id",
-            "operator",
-            "--session-id",
-            "sync-operator",
-            "export",
-        ])
-        .arg(&exported)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+    let receipt = sync(&target, &marker, "export", &exported, &["--json"]);
+    let reexport = directory::read_folder(&exported).unwrap();
+    assert_eq!(
+        reexport.tree.documents().unwrap(),
+        original.tree.documents().unwrap()
+    );
+    assert_eq!(receipt["export_basis"], reexport.export_basis.as_str());
+    // Against this host's own basis an unchanged folder changes nothing; a dry
+    // run on the enrolled store says so first and writes nothing.
+    let dry = sync(
+        &target,
+        &marker,
+        "import",
+        &path,
+        &["--basis", &basis(&exported), "--dry-run"],
     );
     assert_eq!(
-        directory::read(&exported).unwrap().documents().unwrap(),
-        original
+        (&dry["dry_run"], &dry["changed"]),
+        (&Value::Bool(true), &Value::Bool(false))
     );
+    assert_eq!(feed_rows(&database, true), 1);
+    assert_eq!(receipts(&database), committed);
+    let unchanged = sync(
+        &target,
+        &marker,
+        "import",
+        &path,
+        &["--basis", &basis(&exported)],
+    );
+    assert_eq!(unchanged["changed"], false);
+    assert_eq!(feed_rows(&database, true), 1);
+
     let notes_path = fixture.path().join("with-notes");
     let output = command(&source, &marker)
         .args(["task-sync", "export"])
@@ -178,20 +263,23 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
     let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(receipt["notes_included"], true);
     assert_eq!(receipt["omissions"]["counts"], serde_json::json!({}));
-    let notes_tree = directory::read(&notes_path).unwrap();
-    assert_eq!(notes_tree.tasks[0].notes.len(), 1);
-    assert_eq!(notes_tree.tasks[0].notes[0].body, "Shared progress");
-    assert_eq!(notes_tree.tasks[0].notes[0].origin_machine, "host-A");
+    let notes = directory::read_folder(&notes_path).unwrap();
+    assert_eq!(notes.profile.origin_machine.as_deref(), Some("host-A"));
+    assert_eq!(notes.tree.tasks[0].notes.len(), 1);
+    assert_eq!(notes.tree.tasks[0].notes[0].body, "Shared progress");
+    assert_eq!(notes.tree.tasks[0].notes[0].origin_machine, "host-A");
     assert!(
-        !notes_tree
+        !notes
+            .tree
             .documents()
             .unwrap()
             .values()
             .any(|b| String::from_utf8_lossy(b).contains("omissions"))
     );
-    let candidate_bytes = serde_json_canonicalizer::to_vec(&original).unwrap();
+    let candidate_bytes =
+        serde_json_canonicalizer::to_vec(&original.tree.documents().unwrap()).unwrap();
     eprintln!(
-        "task-sync round-trip: tasks=1 kinds=task repeat_changed=false directory_fingerprint={}",
+        "task-sync round-trip: tasks=1 kinds=task repeat_replayed=true directory_fingerprint={}",
         engram::ObjectId::from_canonical_bytes(&candidate_bytes)
     );
     let connection = rusqlite::Connection::open(&database).unwrap();
@@ -213,7 +301,6 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
         "work_session_state",
         "work_runs",
         "work_claims",
-        "work_feed_entries",
     ] {
         let count: i64 = connection
             .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
@@ -222,18 +309,116 @@ fn task_sync_cli_round_trips_relative_directories_without_creating_runtime_state
             .unwrap();
         assert_eq!(count, 0, "import/export creates no {table}");
     }
-    let output = command(&source, &marker)
-        .args([
-            "task-sync",
-            "--actor-id",
-            "operator",
-            "--session-id",
-            "sync-operator",
-            "import",
-        ])
-        .arg(&path)
-        .output()
-        .unwrap();
+    // The planning baseline is the only feed entry an import adds.
+    assert_eq!(feed_rows(&database, false), 0);
+
+    // The source's own basis still matches it, so its native work refuses.
+    let output = sync_output(
+        &source,
+        &marker,
+        "import",
+        &path,
+        &["--basis", &basis(&path)],
+    );
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("native execution"));
+}
+
+#[test]
+fn task_sync_hosts_with_distinct_aliases_exchange_folders() {
+    let fixture = test_support::temp_home().unwrap();
+    let marker = fixture.path().join(".engram-project");
+    fs::write(&marker, "task-sync-hosts\n").unwrap();
+    let [origin, host_a, host_b] = ["origin", "host-a", "host-b"].map(|name| {
+        let home = fixture.path().join(format!("{name}-home"));
+        task_sync_opt_in::enable(&home, "task-sync-hosts");
+        let output = command(&home, &marker).arg("init").output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        home
+    });
+    let output = command(&origin, &marker)
+        .args([
+            "work",
+            "--actor-id",
+            "author",
+            "--session-id",
+            "author-session",
+            "add",
+            "shared task",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let first = fixture.path().join("first");
+    sync(&origin, &marker, "export", &first, &["--json"]);
+
+    // Each host enrols, then exports under its own alias.
+    let folder_a = fixture.path().join("folder-a");
+    sync(&host_a, &marker, "import", &first, &["--empty-basis"]);
+    sync(
+        &host_a,
+        &marker,
+        "export",
+        &folder_a,
+        &["--origin-machine", "host-A"],
+    );
+    let folder_b = fixture.path().join("folder-b");
+    let enrolled = sync(&host_b, &marker, "import", &folder_a, &["--empty-basis"]);
+    assert_eq!(enrolled["changed"], true);
+    let receipt = sync(
+        &host_b,
+        &marker,
+        "export",
+        &folder_b,
+        &["--origin-machine", "host-B"],
+    );
+    assert_eq!(
+        directory::read_folder(&folder_b)
+            .unwrap()
+            .profile
+            .origin_machine
+            .as_deref(),
+        Some("host-B")
+    );
+    assert_eq!(
+        receipt["export_basis"],
+        directory::read_folder(&folder_b)
+            .unwrap()
+            .export_basis
+            .as_str()
+    );
+
+    // Each host imports the other's folder against its own basis, though the
+    // folder names the other host's alias.
+    for (home, folder, own) in [
+        (&host_a, &folder_b, &folder_a),
+        (&host_b, &folder_a, &folder_b),
+    ] {
+        let result = sync(home, &marker, "import", folder, &["--basis", &basis(own)]);
+        assert_eq!(result["changed"], false);
+    }
+}
+
+#[test]
+fn task_sync_import_requires_exactly_one_destination_basis() {
+    let fixture = test_support::temp_home().unwrap();
+    let marker = fixture.path().join(".engram-project");
+    fs::write(&marker, "task-sync-cli\n").unwrap();
+    let home = fixture.path().join("home");
+    let folder = fixture.path().join("folder");
+    for extra in [&[][..], &["--empty-basis", "--basis", "project.json"][..]] {
+        let output = sync_output(&home, &marker, "import", &folder, extra);
+        assert_eq!(output.status.code(), Some(2), "{extra:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("--basis"), "{stderr}");
+    }
+    assert!(!home.exists(), "a usage error opens no store");
 }

@@ -18,6 +18,7 @@ use crate::{
 
 mod activity;
 pub(crate) mod folder;
+mod folder_dry_run;
 mod incremental;
 mod notes;
 mod origin;
@@ -91,6 +92,10 @@ pub struct TaskSyncImportResult {
 impl SqliteStore {
     /// Capture shared planning state in one read snapshot, excluding live authority.
     ///
+    /// This plain candidate is not the exchange route: `task-sync export`
+    /// publishes the folder through [`Self::export_task_sync_folder`]. It
+    /// remains library API for tests and inspection.
+    ///
     /// # Errors
     /// Refuses invalid canonical/projection state or an incomplete project graph.
     pub fn export_task_tree(&self, project: &ProjectId) -> Result<TaskTree, StoreError> {
@@ -98,6 +103,8 @@ impl SqliteStore {
     }
 
     /// Opt-in shared prose with asserted origin-machine and visible exclusions.
+    ///
+    /// Not the exchange route; see [`Self::export_task_tree`].
     ///
     /// # Errors
     /// Refuses invalid aliases, note bindings or shared candidates.
@@ -116,6 +123,8 @@ impl SqliteStore {
     }
 
     /// Shared activity with an explicit native alias, independently of prose notes.
+    ///
+    /// Not the exchange route; see [`Self::export_task_tree`].
     ///
     /// # Errors
     /// Refuses invalid aliases, retained-entry conflicts or invalid shared state.
@@ -148,6 +157,11 @@ impl SqliteStore {
     }
 
     /// Admit an empty graph once; exact repeats have no durable side effects.
+    ///
+    /// This plain candidate import is not the exchange route: `task-sync
+    /// import` applies a resolved folder through
+    /// [`Self::apply_task_sync_folder`] against a selected destination basis.
+    /// It remains library API for tests.
     ///
     /// # Errors
     /// Refuses project mismatch, malformed graphs, drift, or existing native work.

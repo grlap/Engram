@@ -98,66 +98,6 @@ impl LocalWorkService {
         )
     }
 
-    /// Export only shared task planning; this does not register a process session.
-    ///
-    /// # Errors
-    /// Refuses invalid attribution, store state, or incomplete planning graphs.
-    pub fn export_task_tree(
-        &self,
-        now: DateTime<Utc>,
-    ) -> Result<crate::task_sync::TaskTree, StoreError> {
-        self.require_task_sync_enabled()?;
-        self.read_store_at(now)?.export_task_tree(&self.project_id)
-    }
-
-    /// Export opt-in reported notes with an operator-supplied machine alias.
-    ///
-    /// # Errors
-    /// Refuses invalid aliases, source state or note candidates.
-    pub fn export_task_tree_with_notes(
-        &self,
-        machine: &str,
-        now: DateTime<Utc>,
-    ) -> Result<crate::storage::TaskSyncNoteExport, StoreError> {
-        self.require_task_sync_enabled()?;
-        self.read_store_at(now)?
-            .export_task_tree_with_notes(&self.project_id, machine)
-    }
-
-    /// Export explicit shared disclosure options within one local read snapshot.
-    ///
-    /// # Errors
-    /// Refuses invalid aliases or shared state; it creates no session or claim.
-    pub fn export_task_tree_with_options(
-        &self,
-        options: &crate::task_sync::TaskSyncExportOptions,
-        now: DateTime<Utc>,
-    ) -> Result<crate::storage::TaskSyncNoteExport, StoreError> {
-        self.require_task_sync_enabled()?;
-        self.read_store_at(now)?
-            .export_task_tree_with_options(&self.project_id, options)
-    }
-
-    /// Import a complete inert candidate atomically, without focus or execution state.
-    ///
-    /// # Errors
-    /// Refuses malformed, divergent, or native target state.
-    pub fn import_task_tree(
-        &self,
-        tree: &crate::task_sync::TaskTree,
-        dry_run: bool,
-        now: DateTime<Utc>,
-    ) -> Result<crate::storage::TaskSyncImportResult, StoreError> {
-        self.require_task_sync_writer()?;
-        self.require_task_sync_enabled()?;
-        self.lock_store_at(now)?.import_task_tree(
-            &self.project_id,
-            &self.actor("task-sync:import", "import reported task planning state"),
-            tree,
-            dry_run,
-            now,
-        )
-    }
     /// Validates and optionally recreates a saved planning/history graph.
     ///
     /// # Errors

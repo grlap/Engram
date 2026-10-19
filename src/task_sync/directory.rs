@@ -43,6 +43,27 @@ pub struct FolderExchange {
     pub profile: ExportProfile,
 }
 
+/// The destination basis a caller selected from this host's own pre-merge
+/// folder export: its project document, kept before the Git merge. It is a
+/// content comparison, not an authenticated host identity, so selecting this
+/// host's own copy is the caller's obligation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FolderBasis {
+    pub project_id: crate::ProjectId,
+    pub profile: ExportProfile,
+    pub export_basis: String,
+}
+
+/// The destination basis selected for one folder import.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DestinationBasis {
+    /// This host's own pre-merge folder export.
+    Recorded(FolderBasis),
+    /// A first import into a destination with no shared planning. The
+    /// applying transaction checks that the destination is in fact empty.
+    Empty,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FolderProjectDocument {
@@ -83,7 +104,7 @@ pub fn read(path: &Path) -> Result<TaskTree> {
 ///
 /// Refuses malformed, incomplete, or self-inconsistent folder data.
 pub fn read_folder(path: &Path) -> Result<FolderExchange> {
-    let exchange = read_folder_stored(path)?;
+    let exchange = read_folder_stored(path, true)?;
     exchange
         .tree
         .validate_folder()
@@ -91,9 +112,29 @@ pub fn read_folder(path: &Path) -> Result<FolderExchange> {
     Ok(exchange)
 }
 
-/// Reads a folder envelope and verifies its structural tree and inventory
-/// fingerprint without applying current note-disclosure admission.
-fn read_folder_stored(path: &Path) -> Result<FolderExchange> {
+/// Reads a human-resolved Git folder for import. A merge that edits a task
+/// leaves the embedded inventory fingerprint stale, and Git cannot regenerate
+/// it, so the inventory is computed from the files instead. Every other check
+/// stays: the envelope, `complete`, the profile, the strict graph and the
+/// limits. What the destination compares is its own selected basis, never
+/// this folder's.
+///
+/// # Errors
+///
+/// Refuses malformed, incomplete or invalid folder data.
+pub fn read_resolved_folder(path: &Path) -> Result<FolderExchange> {
+    let exchange = read_folder_stored(path, false)?;
+    exchange
+        .tree
+        .validate_folder()
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    Ok(exchange)
+}
+
+/// Reads a folder envelope and verifies its structural tree, and with
+/// `verify_inventory` its embedded inventory fingerprint, without applying
+/// current note-disclosure admission.
+fn read_folder_stored(path: &Path, verify_inventory: bool) -> Result<FolderExchange> {
     let mut documents = read_raw_documents_with_tasks(path, false)?;
     let project = documents
         .remove("project.json")
@@ -118,7 +159,9 @@ fn read_folder_stored(path: &Path) -> Result<FolderExchange> {
     let tree = TaskTree::from_stored_documents(&documents)
         .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
     let fingerprint = documents_fingerprint(&tree.folder_documents()?);
-    if envelope.folder_exchange.export_basis.inventory_fingerprint != fingerprint {
+    if verify_inventory
+        && envelope.folder_exchange.export_basis.inventory_fingerprint != fingerprint
+    {
         return Err(TaskSyncRefusal::InvalidGraph
             .invalid("task folder exchange inventory fingerprint is inconsistent")
             .into());
@@ -127,6 +170,49 @@ fn read_folder_stored(path: &Path) -> Result<FolderExchange> {
         tree,
         export_basis: fingerprint,
         profile: envelope.profile,
+    })
+}
+
+/// Reads one folder project document as a destination basis, with the same
+/// file bounds as a folder read.
+///
+/// # Errors
+///
+/// Refuses a linked, irregular, oversized, malformed or incomplete document.
+pub fn read_folder_basis(path: &Path) -> Result<FolderBasis> {
+    let bytes = read_file_with(path, LIMITS, &mut |_, _| Ok(()))?;
+    let envelope: FolderProjectDocument = crate::task_sync::parse(&bytes)
+        .map_err(|error| TaskSyncRefusal::InvalidGraph.classify(error))?;
+    if envelope.project.format != crate::task_sync::FORMAT {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("unsupported task format")
+            .into());
+    }
+    if !envelope.folder_exchange.complete {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder basis must be complete")
+            .into());
+    }
+    envelope.profile.options().validate()?;
+    if envelope.project.notes_included != envelope.profile.include_notes {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder basis profile and disclosure differ")
+            .into());
+    }
+    let export_basis = envelope.folder_exchange.export_basis.inventory_fingerprint;
+    if export_basis.len() != 64
+        || !export_basis
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(TaskSyncRefusal::InvalidGraph
+            .invalid("task folder basis fingerprint is malformed")
+            .into());
+    }
+    Ok(FolderBasis {
+        project_id: envelope.project.project_id,
+        profile: envelope.profile,
+        export_basis,
     })
 }
 
@@ -411,7 +497,7 @@ fn write_folder_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>) ->
         // Re-parse before publication with structural validation and the
         // envelope fingerprint. Retained historical notes need not satisfy
         // today's public disclosure admission until a consumer reads them.
-        read_folder_stored(&pending)?;
+        read_folder_stored(&pending, true)?;
         let mut pending_path = tempfile::TempPath::try_from_path(&pending)?;
         pending_path.disable_cleanup(true);
         pending_path

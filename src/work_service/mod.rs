@@ -113,6 +113,7 @@ mod note_admission;
 mod service;
 mod status;
 mod task_sync_exchange;
+mod task_sync_folder;
 mod task_sync_settings;
 mod task_sync_setup;
 pub(crate) mod unadmitted;

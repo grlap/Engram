@@ -81,7 +81,8 @@ enum TaskSyncCommand {
         #[arg(long)]
         candidate_directory: PathBuf,
     },
-    /// Write deterministic project.json and tasks/<uuid>.json into an explicit directory.
+    /// Publish the Git folder (project.json with its export basis, and
+    /// tasks/<uuid>.json) into an absent directory, or one holding the same bytes.
     Export {
         directory: PathBuf,
         /// Include eligible generic/status notes and report omissions.
@@ -95,9 +96,23 @@ enum TaskSyncCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Import a complete candidate into an empty task graph; exact repeats are no-ops.
+    /// Apply a resolved Git folder against this host's own pre-merge basis;
+    /// an exact repeat replays its first receipt.
     Import {
         directory: PathBuf,
+        /// This host's own project.json from its export before the merge.
+        #[arg(
+            long,
+            value_name = "PROJECT_JSON",
+            conflicts_with = "empty_basis",
+            required_unless_present = "empty_basis"
+        )]
+        basis: Option<PathBuf>,
+        /// Import into a destination holding no shared planning yet; the import
+        /// checks that it is empty.
+        #[arg(long)]
+        empty_basis: bool,
+        /// Run the whole import, then roll it back.
         #[arg(long)]
         dry_run: bool,
         /// Print a refusal as a JSON error with its code on stderr.
@@ -312,14 +327,14 @@ pub(crate) fn run(
             json,
         } => {
             let outcome = (|| -> Result<()> {
-                let exported = service.export_task_tree_with_options(
-                    &engram::task_sync::TaskSyncExportOptions {
+                let exported = service.export_task_sync_folder(
+                    &engram::task_sync::progress::ExportProfile {
                         include_notes,
                         origin_machine: origin_machine.clone(),
                     },
                     chrono::Utc::now(),
                 )?;
-                directory::write(&path, &exported.tree)?;
+                let written = directory::write_folder(&path, &exported.tree, &exported.profile)?;
                 attribution.print_notices();
                 eprintln!("REDACTOR: development no-op; task planning fields are shared text");
                 if json
@@ -330,8 +345,11 @@ pub(crate) fn run(
                     println!(
                         "{}",
                         serde_json::to_string_pretty(&serde_json::json!({
-                            "directory": path, "notes_included": exported.tree.project.notes_included,
-                            "omissions": exported.omissions, "activity_omissions": exported.activity_omissions,
+                            "directory": path,
+                            "notes_included": written.tree.project.notes_included,
+                            "export_basis": written.export_basis,
+                            "omissions": exported.omissions,
+                            "activity_omissions": exported.activity_omissions,
                         }))?
                     );
                 } else {
@@ -343,13 +361,27 @@ pub(crate) fn run(
         }
         TaskSyncCommand::Import {
             directory: path,
+            basis,
+            empty_basis,
             dry_run,
             json,
         } => {
             let outcome = (|| -> Result<()> {
                 service.require_task_sync_enabled()?;
-                let tree = directory::read(&path)?;
-                let result = service.import_task_tree(&tree, dry_run, chrono::Utc::now())?;
+                let folder = directory::read_resolved_folder(&path)?;
+                let basis = match (basis, empty_basis) {
+                    (Some(file), false) => {
+                        directory::DestinationBasis::Recorded(directory::read_folder_basis(&file)?)
+                    }
+                    (None, true) => directory::DestinationBasis::Empty,
+                    _ => anyhow::bail!("select exactly one of --basis or --empty-basis"),
+                };
+                let result = service.import_task_sync_folder(
+                    &folder,
+                    &basis,
+                    dry_run,
+                    chrono::Utc::now(),
+                )?;
                 attribution.print_notices();
                 println!("{}", serde_json::to_string_pretty(&result)?);
                 Ok(())

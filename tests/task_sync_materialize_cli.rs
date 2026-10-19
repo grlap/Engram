@@ -434,7 +434,10 @@ fn task_sync_cli_start_guards_preserve_all_state_when_setting_is_not_enabled() {
         assert_eq!(export.status.code(), Some(1), "{state}");
         for dry in [false, true] {
             let mut command = fixture.command();
-            command.arg("import").arg(&fixture.candidate);
+            command
+                .arg("import")
+                .arg(&fixture.candidate)
+                .arg("--empty-basis");
             if dry {
                 command.arg("--dry-run");
             }

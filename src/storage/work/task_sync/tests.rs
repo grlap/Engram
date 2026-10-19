@@ -10,6 +10,7 @@ use crate::{
 mod activity;
 mod exclusion;
 mod folder;
+mod folder_dry_run;
 mod incremental;
 mod native;
 mod notes;

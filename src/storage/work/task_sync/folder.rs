@@ -144,12 +144,13 @@ pub(super) fn apply_task_sync_folder_on(
     }
     validate_task_sync_actor(request.actor)?;
     let baseline = latest_planning(transaction, request.project)?;
+    // Only the note selection is shared; each host keeps its own alias.
     if baseline
         .as_ref()
-        .is_some_and(|baseline| baseline.profile != *request.profile)
+        .is_some_and(|baseline| baseline.profile.include_notes != request.profile.include_notes)
     {
         return Err(TaskSyncRefusal::DivergentPlanning
-            .invalid("task folder import profile differs from its complete baseline"));
+            .invalid("task folder import note selection differs from its complete baseline"));
     }
     let current = folder_export_on(transaction, request.project, request.profile)?;
     if let Some(baseline) = &baseline
@@ -222,9 +223,11 @@ fn folder_export_on(
     profile.options().validate()?;
     let history = planning_history(connection, project)?;
     let retired = if let Some(planning) = history.last() {
-        if planning.profile != *profile {
+        // Only the note selection is shared; each host exports under its
+        // own origin-machine alias.
+        if planning.profile.include_notes != profile.include_notes {
             return Err(TaskSyncRefusal::DivergentPlanning
-                .invalid("task folder export profile differs from its complete baseline"));
+                .invalid("task folder export note selection differs from its complete baseline"));
         }
         history
             .iter()

@@ -45,31 +45,50 @@ fn task_sync_export_missing_parent_keeps_io_even_with_json() {
 
 #[test]
 fn task_sync_json_oversized_note_keeps_byte_details_without_a_work_remedy() {
+    use engram::task_sync::{
+        SharedActor,
+        notes::{SharedNote, SharedNoteKind},
+        progress::ExportProfile,
+    };
     let fixture = Fixture::new();
-    let candidate = fixture.candidate("notes");
-    let project_path = candidate.join("project.json");
-    let mut project: Value = serde_json::from_slice(&fs::read(&project_path).unwrap()).unwrap();
-    project["notes_included"] = json!(true);
-    fs::write(&project_path, serde_json::to_vec(&project).unwrap()).unwrap();
-    let task_path = fs::read_dir(candidate.join("tasks"))
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
-    let mut task: Value = serde_json::from_slice(&fs::read(&task_path).unwrap()).unwrap();
     let limit = 64 * 1024;
     let body = "Ω".repeat(limit / "Ω".len());
-    let id = engram::CanonicalObject::mint(&"shared note")
-        .unwrap()
-        .key()
-        .clone();
-    task["notes"] = json!([{
-        "id": id, "kind": "generic", "body": format!("{body}x"),
-        "author": { "actor_id": "writer", "actor_kind": "agent" },
-        "recorded_at": "1970-01-01T00:00:01Z", "origin_machine": "machine-A"
-    }]);
-    fs::write(&task_path, serde_json::to_vec(&task).unwrap()).unwrap();
+    // A self-consistent folder carrying a note at the limit.
+    let mut folder = directory::read_folder(&fixture.candidate("plain")).unwrap();
+    folder.profile = ExportProfile {
+        include_notes: true,
+        origin_machine: Some("machine-A".into()),
+    };
+    folder.tree.project.notes_included = true;
+    folder.tree.tasks[0].notes = vec![SharedNote {
+        id: engram::CanonicalObject::mint(&"shared note")
+            .unwrap()
+            .key()
+            .clone(),
+        kind: SharedNoteKind::Generic,
+        body: body.clone(),
+        author: SharedActor {
+            actor_id: "writer".into(),
+            actor_kind: "agent".into(),
+        },
+        recorded_at: "1970-01-01T00:00:01Z".parse().unwrap(),
+        origin_machine: "machine-A".into(),
+    }];
+    let valid = fixture.root.join("valid-notes");
+    directory::write_folder(&valid, &folder.tree, &folder.profile).unwrap();
+    // The same folder with one byte too many in the note body.
+    let candidate = fixture.root.join("notes");
+    fs::create_dir_all(candidate.join("tasks")).unwrap();
+    fs::copy(valid.join("project.json"), candidate.join("project.json")).unwrap();
+    let task_name = format!("{}.json", folder.tree.tasks[0].id.0);
+    let mut task: Value =
+        serde_json::from_slice(&fs::read(valid.join("tasks").join(&task_name)).unwrap()).unwrap();
+    task["notes"][0]["body"] = json!(format!("{body}x"));
+    fs::write(
+        candidate.join("tasks").join(&task_name),
+        serde_json::to_vec(&task).unwrap(),
+    )
+    .unwrap();
     let target = fixture.store("target");
     let refused = refusal(&fixture.sync(&target, "import", &candidate, true));
     assert_eq!(refused["error"]["code"], "task_sync_invalid_graph");
@@ -84,14 +103,18 @@ fn task_sync_json_oversized_note_keeps_byte_details_without_a_work_remedy() {
         &fixture.sync(&target, "import", &candidate, false),
         &refused,
     );
-    task["notes"][0]["body"] = json!(body);
-    fs::write(&task_path, serde_json::to_vec(&task).unwrap()).unwrap();
-    for changed in [true, false] {
-        let output = fixture.sync(&target, "import", &candidate, true);
+    assert_imports_once(&fixture, &target, &valid);
+}
+
+/// The folder lands, and its exact repeat replays the same receipt.
+fn assert_imports_once(fixture: &Fixture, target: &Path, folder: &Path) {
+    let receipts = [0, 1].map(|_| {
+        let output = fixture.sync(target, "import", folder, true);
         assert!(output.status.success(), "{}", stderr(&output));
-        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(result["changed"], changed);
-    }
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    });
+    assert_eq!(receipts[0]["changed"], true);
+    assert_eq!(receipts[1], receipts[0]);
 }
 
 #[test]
@@ -172,10 +195,5 @@ async fn task_sync_real_locked_store_failure_keeps_its_generic_storage_code() {
     );
     assert!(refused["error"]["details"].get("remedy").is_none());
     connection.execute_batch("ROLLBACK").unwrap();
-    for changed in [true, false] {
-        let output = fixture.sync(&target, "import", &candidate, true);
-        assert!(output.status.success(), "{}", stderr(&output));
-        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(result["changed"], changed);
-    }
+    assert_imports_once(&fixture, &target, &candidate);
 }

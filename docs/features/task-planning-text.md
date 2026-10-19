@@ -19,27 +19,81 @@ store with `engram init` before using these commands.
 engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY
 engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY --origin-machine host-A
 engram --home SOURCE_HOME --project-file PROJECT/.engram-project task-sync export DIRECTORY --include-notes --origin-machine host-A
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --dry-run
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY
-engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --json
+engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --empty-basis --dry-run
+engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --empty-basis
+engram --home TARGET_HOME --project-file PROJECT/.engram-project task-sync import DIRECTORY --basis OWN_EXPORT/project.json --json
 ```
 
 The two homes contain isolated stores for the same stable project id. Export
-publishes a new directory containing `project.json` and `tasks/<full-uuid>.json`.
-An existing equivalent candidate is left byte-for-byte unchanged; a different
-candidate is refused. Publication prepares a sibling staging directory and
-moves it without replacing an existing destination. An operating system that
-cannot perform that directory move without replacement refuses publication.
+publishes a new Git folder containing `project.json` and
+`tasks/<full-uuid>.json`. An existing equivalent folder is left byte-for-byte
+unchanged; a different one is refused. Publication prepares a sibling staging
+directory, reads it back, and moves it without replacing an existing
+destination. An operating system that cannot perform that directory move
+without replacement refuses publication.
 
-Planning-only `project.json` contains `format: "engram-task-planning-v1"` and
-`project_id`. Opt-in note export adds `notes_included: true`; otherwise the
-field and task note arrays are absent. Activity is independent of note selection;
-with neither notes nor activity, planning-only bytes remain unchanged.
-An absent `notes_included` and an explicit `false` are equivalent spellings of
-the planning-only profile; switching between them is an exact repeat.
-There is no inventory, store identity or runtime cursor.
-Import requires both `project.json` and the `tasks` directory, rejects unknown
-entries and symbolic links, and checks every task filename against its UUID.
+A folder's `project.json` holds three members. `project` is the planning
+document: `format: "engram-task-planning-v1"`, `project_id`, and
+`notes_included: true` for an opt-in note export (otherwise the field and task
+note arrays are absent). `profile` is the disclosure profile the export used:
+`include_notes`, which both hosts share, and the exporting host's own asserted
+`origin_machine` alias, or `null`.
+`folder_exchange` marks the folder `complete` and carries its
+`export_basis.inventory_fingerprint`, the content fingerprint of the planning
+documents it holds. Activity is independent of note selection. There is no
+store identity or runtime cursor.
+
+## Git folder exchange
+
+`task-sync export` and `task-sync import` are the folder route; no other
+command exchanges a folder. Export reads the store in one snapshot and
+publishes its shared planning together with that snapshot's export basis. The
+first export of a store with no exchange history publishes its whole planning.
+
+Import applies a resolved folder against a destination basis that the caller
+selects. Exactly one selection is required:
+
+- `--basis FILE` names this host's own `project.json` from its export before
+  the Git merge, for example as written by
+  `git show PINNED_COMMIT:PATH/project.json`. Engram runs no Git and does not
+  resolve `ORIG_HEAD` or any other ref.
+- `--empty-basis` imports into a destination that holds no shared planning yet.
+  The import checks inside its write transaction that the destination is empty.
+
+The folder's own embedded basis is never used for this comparison, and
+omitting both flags is a usage error, not a fallback. A basis must belong to
+this project and share the folder's note selection (`include_notes`). The
+origin-machine alias is host-local: each host exports under its own alias, so
+a folder from another host may carry a different one. Import compares the
+destination's current planning, exported under the basis's own profile, with
+the selected basis inside its write transaction; any local planning change
+since that export refuses as divergent planning, and nothing is written.
+
+The basis is a content comparison, not an authenticated host identity. Equal
+bytes from another host cannot be told apart from this host's own, so
+selecting this host's own copy is the caller's obligation. A basis with a
+different inventory, project or note selection refuses.
+
+A successful import records the applied folder as the exchange baseline. An
+exact repeat of the same import, by the same actor and session against the
+same basis, replays its first receipt and records nothing more. `--dry-run`
+performs the whole import under the same identity, with every check, replay
+and refusal, then rolls it back explicitly: no task, baseline, receipt or feed
+entry remains, and a later real import checks everything again. Its receipt
+reports `dry_run: true`; a dry run of an already committed import replays
+that import's receipt, as the real repeat would.
+
+A later export keeps the note selection its baseline was recorded with; an
+export under another note selection refuses. Candidates written by `task-sync prepare` or
+setup materialization carry no exchange envelope, so `task-sync import`
+refuses them; the plain-candidate library calls remain for tests only.
+Import requires `project.json`, rejects unknown entries and symbolic links,
+and checks every task filename against its UUID. A folder with no tasks may
+omit its `tasks` directory, since Git keeps no empty directories. Import reads
+the resolved folder's inventory from its files: a merge that edits a task
+leaves the embedded fingerprint stale, and Git cannot regenerate it. A task
+file missing from a resolved folder therefore reads as a deletion, which a
+destination holding that task refuses.
 The reader and exporter limit each file to 1 MiB, the tree to 128 MiB, and the
 task count to 100,000. Task graph limits also apply.
 
@@ -435,9 +489,11 @@ continue to check their structure.
 
 The empty-target/exact-repeat boundary still applies to the complete shared
 state, including the `notes_included` profile even with zero notes.
-The notes-included profile requires at least one task, where its selection is
-retained. Empty notes-included candidates refuse on import and export;
-an empty planning-only candidate remains a no-op on an empty target.
+A plain candidate's notes-included profile requires at least one task, where
+its selection is retained. A folder exchange carries the profile in its
+envelope instead, so an empty notes-included folder exports and imports; the
+first import of any folder, an empty one included, records the exchange
+baseline and reports a change.
 A changed body, author, kind, time, machine alias, owning task or project
 for a known note id refuses before writes. A changed id or omitted note also
 makes an existing candidate divergent. Disabling notes never deletes retained
@@ -526,12 +582,13 @@ inside one SQLite write transaction. Parent, prerequisite and replacement
 references must resolve; hierarchy/dependency cycles and ambiguous short refs
 refuse. A UUID already owned by another project in the store refuses.
 
-The initial target task graph must be empty. Exact repeat of the same imported
-planning state is a no-op, including when the importing actor or clock changes:
-no new records, events, receipts or timestamps. A different candidate or missing
-existing task refuses. Existing native work refuses even if its editable fields
-look equal. Dry-run executes the same inserts and constraint checks, then rolls
-back, retaining no task, origin or execution records. Store initialization is a separate
+The destination's planning must first equal its selected basis, as the
+[folder exchange](#git-folder-exchange) describes. The initial target task
+graph must then be empty, or already hold exactly the imported planning state,
+which changes nothing. A different candidate or missing existing task refuses.
+Existing native work refuses even if its editable fields look equal. Dry-run
+executes the same inserts and constraint checks, then rolls back, retaining no
+task, origin, baseline or execution records. Store initialization is a separate
 operator operation; a missing home is not silently configured by task import.
 
 Without an inventory or prior local state, an initial import cannot detect an
@@ -594,11 +651,11 @@ replacement.
 | Code | Refusal |
 | --- | --- |
 | `task_sync_native_state` | The target already holds native work or execution state. |
-| `task_sync_divergent_planning` | The candidate changes or adds to the planning, notes or activity the store already holds without removing a task, or export meets native activity that conflicts with a retained entry. |
+| `task_sync_divergent_planning` | The candidate changes or adds to the planning, notes or activity the store already holds without removing a task; the destination's planning differs from its selected basis; the basis or export note selection differs from the folder's or the baseline's; or export meets native activity that conflicts with a retained entry. |
 | `task_sync_removed_planning` | The candidate omits a task the store already holds. |
 | `task_sync_id_collision` | A candidate task, blocker, note or activity id already belongs to another record, task or project. |
-| `task_sync_invalid_graph` | The candidate is malformed, or fails its graph, reference or disclosure admission. |
-| `task_sync_origin_mismatch` | The candidate names another project, an import origin binding differs, or export meets an externally imported item. |
+| `task_sync_invalid_graph` | The candidate is malformed, or fails its graph, reference or disclosure admission; or a folder envelope or basis file is malformed, incomplete or inconsistent with its own fingerprint. |
+| `task_sync_origin_mismatch` | The candidate or the selected basis names another project, an import origin binding differs, or export meets an externally imported item. |
 | `task_sync_destination_occupied` | The export destination already contains a different candidate. |
 | `task_sync_destination_appeared` | The export destination appeared while the export was prepared. |
 | `task_sync_destination_no_parent` | The resolved export destination has no parent component at the parent-lookup step. |
@@ -611,7 +668,7 @@ replacement.
 | `task_sync_destination_tree_limit` | The candidate exceeds the 128 MiB limit. |
 | `task_sync_destination_non_utf8_name` | A task filename is not valid UTF-8. |
 | `task_sync_destination_unknown_entry` | The candidate directory holds an entry the format does not define. |
-| `task_sync_destination_missing_tasks` | The candidate directory has no `tasks` directory. |
+| `task_sync_destination_missing_tasks` | A plain candidate directory, as read by preparation and setup materialization, has no `tasks` directory. A folder import accepts a folder without one. |
 
 ## Local incremental preparation
 
