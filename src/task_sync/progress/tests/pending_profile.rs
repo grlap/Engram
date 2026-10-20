@@ -7,6 +7,12 @@ fn selected(include_notes: bool, origin_machine: Option<&str>) -> ExportProfile 
     }
 }
 
+const DISABLED_PREPARATION: &str = concat!(
+    "task sync is not enabled and no admitted pending preparation is available; ",
+    "to start a new preparation, enable task sync with an explicit user instruction ",
+    "(`engram task-sync enable --user-instruction \"<user's explicit request>\"`)"
+);
+
 fn assert_pending_guidance(message: &str) {
     for expected in [
         "original destination",
@@ -222,6 +228,94 @@ fn task_prepare_disabled_rebaseline_guides_enable_without_admitted_pending() {
             b"not SQLite; disabled rebaseline must not open it"
         );
     }
+}
+
+#[test]
+fn task_prepare_disabled_completed_history_without_rebaseline_guides_enable_without_mutation() {
+    let home = crate::test_support::temp_home().unwrap();
+    let store = home.path().join("store.db");
+    fs::write(&store, b"not SQLite; disabled recovery must not open it").unwrap();
+    let progress = home.path().join("progress");
+    let destination = home.path().join("candidate");
+    let snapshot = tree(1);
+    let project = snapshot.project.project_id.clone();
+    let profile = selected(false, Some("host-a"));
+    prepare_with_producer(
+        &destination,
+        &progress,
+        &store,
+        &project,
+        &profile,
+        false,
+        &producer(),
+        |_| Ok(capture(snapshot)),
+    )
+    .unwrap();
+
+    let before = listing(home.path());
+    let error =
+        resume_pending(&destination, &progress, &store, &project, &profile, false).unwrap_err();
+    assert_eq!(error.chain().count(), 1, "{error:#}");
+    let message = error.to_string();
+    assert_eq!(message, DISABLED_PREPARATION);
+    assert!(
+        !message.contains("only the latest admitted pending preparation"),
+        "{message}"
+    );
+    assert!(!message.contains("rerun without --rebaseline"), "{message}");
+    assert_eq!(listing(home.path()), before);
+    assert_eq!(
+        fs::read(&store).unwrap(),
+        b"not SQLite; disabled recovery must not open it"
+    );
+}
+
+#[test]
+fn task_prepare_disabled_pending_latest_with_pending_predecessor_keeps_recovery_refusal() {
+    let home = crate::test_support::temp_home().unwrap();
+    let store = home.path().join("store.db");
+    fs::write(&store, b"not SQLite; damaged recovery must not open it").unwrap();
+    let progress = home.path().join("progress");
+    let destination = home.path().join("candidate");
+    let snapshot = tree(1);
+    let project = snapshot.project.project_id.clone();
+    let profile = selected(false, Some("host-a"));
+    for _ in 0..2 {
+        prepare_with_producer(
+            &destination,
+            &progress,
+            &store,
+            &project,
+            &profile,
+            false,
+            &producer(),
+            |_| Ok(capture(snapshot.clone())),
+        )
+        .unwrap();
+    }
+    let generations: Vec<_> = fs::read_dir(&progress)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_dir())
+        .collect();
+    assert_eq!(generations.len(), 2);
+    for generation in generations {
+        fs::remove_file(generation.join("complete")).unwrap();
+    }
+
+    let before = listing(home.path());
+    let error =
+        resume_pending(&destination, &progress, &store, &project, &profile, false).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        super::super::prepared::PENDING_RECOVERY_REQUIRED,
+        "{error:#}"
+    );
+    assert_eq!(listing(home.path()), before);
+    assert_eq!(
+        fs::read(&store).unwrap(),
+        b"not SQLite; damaged recovery must not open it"
+    );
 }
 
 #[test]

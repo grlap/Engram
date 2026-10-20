@@ -5,11 +5,16 @@ use crate::{
     ObjectId, ProjectId,
     task_sync::{TaskTree, notes::NoteOmissions},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
+
+pub(super) const PENDING_RECOVERY_REQUIRED: &str =
+    "only the latest admitted pending preparation can recover after opt-out";
+pub(super) const COMPLETED_ONLY_RECOVERY_REQUIRED: &str =
+    "only completed preparation history remains after opt-out";
 
 pub(super) mod files;
 use files::Directory;
@@ -167,16 +172,23 @@ pub(super) fn read_selected(
     }
     generations.sort_by_key(|generation| generation.0.sequence);
     if pending {
+        let latest_is_completed = generations.last().is_some_and(|generation| {
+            generation.0.operation == selection.operation && !generation.4.is_empty()
+        });
+        let predecessors_are_completed = generations
+            .iter()
+            .take(generations.len().saturating_sub(1))
+            .all(|generation| !generation.4.is_empty());
+        if latest_is_completed && predecessors_are_completed {
+            bail!(COMPLETED_ONLY_RECOVERY_REQUIRED);
+        }
         ensure!(
             generations
                 .last()
                 .is_some_and(|generation| generation.0.operation == selection.operation
                     && generation.4.is_empty())
-                && generations
-                    .iter()
-                    .take(generations.len().saturating_sub(1))
-                    .all(|generation| !generation.4.is_empty()),
-            "only the latest admitted pending preparation can recover after opt-out"
+                && predecessors_are_completed,
+            PENDING_RECOVERY_REQUIRED
         );
     }
     ensure!(

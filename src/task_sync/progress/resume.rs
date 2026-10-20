@@ -85,7 +85,14 @@ pub(crate) fn resume_pending(
             profile: profile.clone(),
         },
         true,
-    )?;
+    )
+    .map_err(|error| {
+        if error.to_string() == prepared::COMPLETED_ONLY_RECOVERY_REQUIRED {
+            anyhow::anyhow!(DISABLED_PREPARATION)
+        } else {
+            error
+        }
+    })?;
     ensure!(
         candidate.provenance.store == std::fs::canonicalize(store)?,
         "pending preparation must retain its original store binding"
