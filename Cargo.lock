@@ -336,6 +336,7 @@ dependencies = [
  "process-wrap",
  "rmcp",
  "rusqlite",
+ "rustix",
  "same-file",
  "schemars",
  "serde",

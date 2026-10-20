@@ -8,6 +8,7 @@ use std::{cell::Cell, fs};
 mod candidate_limit;
 mod pending_profile;
 mod prepared;
+mod publication;
 mod recovery;
 mod state_limit;
 

@@ -386,11 +386,7 @@ pub(crate) fn write_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>
             file.write_all(bytes)?;
             file.sync_all()?;
         }
-        let mut pending = tempfile::TempPath::try_from_path(&staging)?;
-        pending.disable_cleanup(true);
-        pending
-            .persist_noclobber(path)
-            .map_err(|error| error.error)?;
+        super::publication::publish(&staging, path)?;
         Ok(())
     })();
     if result.is_err() {
@@ -498,11 +494,7 @@ fn write_folder_documents(path: &Path, documents: &BTreeMap<String, Vec<u8>>) ->
         // envelope fingerprint. Retained historical notes need not satisfy
         // today's public disclosure admission until a consumer reads them.
         read_folder_stored(&pending, true)?;
-        let mut pending_path = tempfile::TempPath::try_from_path(&pending)?;
-        pending_path.disable_cleanup(true);
-        pending_path
-            .persist_noclobber(path)
-            .map_err(|error| error.error)?;
+        super::publication::publish(&pending, path)?;
         Ok(())
     })();
     if result.is_err() {
@@ -548,13 +540,7 @@ fn write_with(
                 .invalid("export destination appeared during preparation")
                 .into());
         }
-        // Use the existing no-clobber publication primitive. Systems that
-        // cannot rename a directory without replacement fail closed.
-        let mut pending = tempfile::TempPath::try_from_path(&staging)?;
-        pending.disable_cleanup(true);
-        pending
-            .persist_noclobber(path)
-            .map_err(|error| error.error)?;
+        super::publication::publish(&staging, path)?;
         Ok(())
     })();
     if result.is_err() {

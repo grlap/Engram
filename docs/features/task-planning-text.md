@@ -853,6 +853,7 @@ replacement.
 | `task_sync_origin_mismatch` | The candidate or the selected basis names another project, an import origin binding differs, or export meets an externally imported item. |
 | `task_sync_destination_occupied` | The export destination already contains a different candidate. |
 | `task_sync_destination_appeared` | The export destination appeared while the export was prepared. |
+| `task_sync_publication_unsupported` | The filesystem cannot atomically move a staged directory without replacing an existing entry; nothing is published. |
 | `task_sync_destination_no_parent` | The resolved export destination has no parent component at the parent-lookup step. |
 | `task_sync_destination_link` | A candidate directory or file is a symbolic link. |
 | `task_sync_destination_not_directory` | A candidate directory is not an ordinary directory. |

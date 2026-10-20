@@ -5,6 +5,7 @@ use crate::{
 };
 
 mod parent_precedence;
+mod publication;
 mod refusals;
 
 fn profile() -> crate::task_sync::progress::ExportProfile {

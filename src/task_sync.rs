@@ -20,6 +20,7 @@ pub mod notes;
 pub use activity::TaskSyncExportOptions;
 pub mod git;
 pub mod progress;
+mod publication;
 pub mod settings;
 pub mod setup;
 
@@ -409,6 +410,8 @@ pub enum TaskSyncRefusal {
     DestinationOccupied,
     /// The export destination appeared while the export was being prepared.
     DestinationAppeared,
+    /// The filesystem cannot atomically publish a directory without replacement.
+    PublicationUnsupported,
     /// The resolved export destination has no parent path component.
     DestinationNoParent,
     /// A candidate path is a symbolic link.
@@ -463,6 +466,7 @@ task_sync_refusal_codes! {
     OriginMismatch => "task_sync_origin_mismatch",
     DestinationOccupied => "task_sync_destination_occupied",
     DestinationAppeared => "task_sync_destination_appeared",
+    PublicationUnsupported => "task_sync_publication_unsupported",
     DestinationNoParent => "task_sync_destination_no_parent",
     DestinationLink => "task_sync_destination_link",
     DestinationNotDirectory => "task_sync_destination_not_directory",

@@ -252,21 +252,27 @@ pub(super) fn publish(
     }
     let staging = directory.join(format!(".staging-{}", meta.operation));
     fs::create_dir(&staging)?;
-    let candidate = staging.join("candidate");
-    directory::write_documents(&candidate, &documents)?;
-    let mut state = fs::File::create(staging.join("state.json"))?;
-    state.write_all(&state_bytes)?;
-    state.sync_all()?;
-    drop(state);
     let path = directory.join(format!(
         "generation-{:020}-{}",
         meta.sequence, meta.operation
     ));
-    let mut pending = tempfile::TempPath::try_from_path(&staging)?;
-    pending.disable_cleanup(true);
-    pending
-        .persist_noclobber(&path)
-        .map_err(|error| error.error)?;
+    let result = (|| -> Result<()> {
+        directory::write_documents(&staging.join("candidate"), &documents)?;
+        let mut state = fs::File::create(staging.join("state.json"))?;
+        state.write_all(&state_bytes)?;
+        state.sync_all()?;
+        drop(state);
+        crate::task_sync::publication::publish(&staging, &path)
+    })();
+    if let Err(error) = result {
+        // Only this invocation's unpublished stage is removed. A published
+        // generation belongs to recovery even if later output publication fails.
+        if let Err(cleanup) = remove_owned(directory, &staging) {
+            let context = format!("removing unpublished journal stage: {cleanup:#}");
+            return Err(error.context(context));
+        }
+        return Err(error);
+    }
     Ok(Generation {
         directory: path,
         meta,
