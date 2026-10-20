@@ -4479,6 +4479,41 @@ if (process.platform === "win32") test("a stop accepted at the pre-spawn boundar
   });
 });
 
+if (process.platform === "win32") test("a transient final stop read under the commit lock surfaces the retained stop, not a pass", async () => {
+  await repository(async (root) => {
+    // Only the final read's boundary is injected: the copied worker's stop
+    // reads see no request until commit holds the stop lock. There the first
+    // read is refused as a scanner would refuse it, and the next one finds a
+    // retained request.
+    const anchor = "control = stopController(runDir, request);";
+    const { module, runDir } = await containedFixture(root, (source) => {
+      const changed = source.replace(anchor, `control = stopController(runDir, request, { retryDelayMs: 0, readIntent: (() => {
+      let finalReads = 0;
+      return (dir, runId) => {
+        if (!existsSync(join(dir, "stop.control.lock"))) return null;
+        finalReads += 1;
+        if (finalReads === 1) {
+          writeFileSync(join(dir, "final-read-eperm.marker"), "");
+          throw Object.assign(new Error("scanner holds request"), { code: "EPERM" });
+        }
+        return { protocol: stopProtocol, runId, id: "final-read-fixture", actor: "final-owner",
+          reason: "superseded at commit", requestedAt: new Date().toISOString() };
+      };
+    })() });`);
+      assert.notEqual(changed, source);
+      return changed;
+    });
+    const result = await module.executeRun(runDir, env);
+    assert.ok(existsSync(join(runDir, "final-read-eperm.marker")), "the final read was refused once under the lock");
+    assert.deepEqual([result.state, result.reason, result.interrupted], ["failed", "stopped", true]);
+    assert.deepEqual([result.stop.id, result.stop.actor], ["final-read-fixture", "final-owner"]);
+    assert.deepEqual(result.stages.map(({ state }) => state), ["passed"]);
+    assert.deepEqual([result.processCleanup?.[0]?.confirmed, result.processCleanup?.[0]?.activeProcesses], [true, 0]);
+    const saved = json(join(runDir, "results.json"));
+    assert.deepEqual([saved.state, saved.reason, saved.interrupted, saved.stop.id], ["failed", "stopped", true, "final-read-fixture"]);
+  });
+});
+
 if (process.platform === "win32") test("helper compilation failure is definite startup failure, not uncertain cleanup", async () => {
   await repository(async (root) => {
     const local = copyLauncher(root);

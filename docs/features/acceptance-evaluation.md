@@ -85,7 +85,9 @@ Terse show and compact next supply status, counts, and an exact
 `show REF --observations --after TOKEN` command without raw record ids or
 source fingerprints. The explicit observation window retains the compared
 source and record ids, and supplies an evaluation-detail command for the
-judged declaration. Compact change rows keep a short status and append the
+judged declaration. As the observation detail itself, the window names no
+observation-detail command; it pages through its own continuation and next
+commands. Compact change rows keep a short status and append the
 exact observation command after summary clipping. Under byte pressure, show
 and next focus shed source detail before the outcome and acceptance, retaining
 the source status and observation command. A seal without a bound evaluation

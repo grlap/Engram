@@ -167,6 +167,50 @@ fn sealed_source_show_and_next_share_bounded_wording_and_historical_navigation()
 }
 
 #[test]
+fn a_historical_observation_page_never_offers_its_continuation_as_the_detail_locator() {
+    // The page is the observation detail; only show and next point into it.
+    // Paging goes through the window's own continuation and next commands.
+    let fixture = sealed_source_transport_fixture("difference");
+    let words = verbs(&fixture);
+    let now = Utc::now();
+    let shown = words.show(&fixture.work.short_ref, now).unwrap();
+    let entry = shown.value["sealed_source"]["observations_detail"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut token = entry.split(" --after ").nth(1).unwrap().to_owned();
+    let mut pages = 0;
+    loop {
+        let page = words
+            .show_observations(&fixture.work.short_ref, Some(&token), now, 12_000)
+            .unwrap();
+        pages += 1;
+        assert!(pages <= 40, "each continuation makes progress");
+        let diagnostic = &page.value["sealed_source"];
+        assert_eq!(diagnostic["seal"], fixture.seal.as_str());
+        assert!(
+            diagnostic.get("observations_detail").is_none(),
+            "page {pages}: {diagnostic}"
+        );
+        let Some(after) = page.value["observations_window"]["after"].as_str() else {
+            break;
+        };
+        assert!(
+            page.value["next"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|command| command
+                    .as_str()
+                    .is_some_and(|command| command.ends_with(after))),
+            "page {pages} pages through its next command"
+        );
+        token = after.to_owned();
+    }
+    assert!(pages > 1, "the window has a last page after a first one");
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one replay scenario checks persisted bytes, transient hydration and own-action suppression"

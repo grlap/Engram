@@ -113,9 +113,29 @@ fn render_window(
         work["title_truncated"] = json!(true);
         work["title_bytes"] = json!(page.title_bytes);
     }
+    // This page is the observation detail that show and next point into, so
+    // its diagnostic names no observation-detail command; it pages through
+    // the window's own continuation and next commands.
+    let sealed_source = page.sealed_diagnostic().map(|diagnostic| {
+        let mut value = super::sealed_source::SourceDiagnostic::new(
+            &crate::work_service::SealedSourceView {
+                seal: diagnostic.seal.clone(),
+                diagnostic: Some(diagnostic.clone()),
+                unavailable: None,
+                continuation: None,
+                details_omitted: false,
+            },
+            work_ref,
+        )
+        .value;
+        if let Some(object) = value.as_object_mut() {
+            object.remove("observations_detail");
+        }
+        value
+    });
     let value = json!({
         "work": work,
-        "sealed_source": page.sealed_diagnostic().map(|diagnostic| super::sealed_source::SourceDiagnostic::new(&crate::work_service::SealedSourceView { seal: diagnostic.seal.clone(), diagnostic: Some(diagnostic.clone()), unavailable: None, continuation: after.clone(), details_omitted: false }, work_ref).value),
+        "sealed_source": sealed_source,
         "observations": shown.iter().map(|row| row_value(row)).collect::<Vec<_>>(),
         "observations_window": {
             "selection": "newest_first",
