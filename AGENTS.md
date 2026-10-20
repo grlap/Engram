@@ -216,6 +216,31 @@ their presence in a file alone does not prove delivery.
   and at the latest when the input's items close, and records the push and the
   deletion (commit id, tree id, fingerprint, times) on the item. This grants
   no other commit, push, install or restart.
+- S3 pilot folder exchange (Greg, 2026-10-20: option (c), "the private
+  bare repository under target/s3-pilot/folder.git over the existing
+  Windows↔Mac SSH path, never origin"). As an exception to the bullets
+  above, for the two-host Git-folder sync pilot only, an agent assigned as
+  a pilot host's lane by the pilot item may run Git in exactly these ways.
+  It may create the private bare repository `target/s3-pilot/folder.git`
+  in the Mac's Engram checkout and one pilot clone of it under
+  `target/s3-pilot/` on each host; a pilot clone has that bare repository
+  as its only remote. It may export task data from that host's fresh pilot
+  store (`target/s3-pilot/home-a` on Windows, `target/s3-pilot/home-b` on
+  the Mac; never an operational store) into its pilot clone's `.engram/`
+  folder, and commit there only `.engram/project.json` and files under
+  `.engram/tasks/`. The Windows pilot clone may fetch from and push to that
+  bare repository only over the existing Windows→Mac SSH path, with strict
+  host-key checking, as user greg; the Mac pilot clone uses it as a local
+  path. A push is only a fast-forward of the bare repository's single
+  branch `pilot`, never `--force`, `--force-with-lease` or a `+` refspec.
+  A diverged history is resolved by fetching, writing the agent-merged
+  folder on top of the fetched head and committing that as a new
+  fast-forward commit. Never origin, master, any other branch or remote, or
+  any code, documentation or other file outside those task files; never a
+  force-push, rebase or merge. Each commit and push is recorded on the
+  pilot item (host, commit id, tree id, time). The bare repository and
+  pilot clones are removed when the pilot item closes. This grants no
+  other commit, push, install or restart.
 - Implementers claim their own Engram items and complete them with the
   words; never place work refs in source comments, identifiers,
   documentation prose, or user-facing output.
