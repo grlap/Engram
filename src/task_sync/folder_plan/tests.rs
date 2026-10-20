@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, HashSet};
 
 use chrono::{DateTime, Utc};
 
-use super::{DeltaPlan, ProjectChange, ScalarChange, TaskChange, TaskDelta, TaskField, plan};
+use super::{
+    DeltaPlan, ProjectChange, RelationChange, ScalarChange, TaskChange, TaskDelta, TaskField, plan,
+};
 use crate::{
     ChildRequirement, ObjectId, ProjectId, WorkBlockerKind, WorkId, WorkItemKind, WorkLifecycle,
     domain::{
@@ -92,6 +94,7 @@ fn fields(unsupported: Vec<TaskField>) -> TaskDelta {
     TaskDelta::Changed(TaskChange {
         scalar: None,
         unsupported,
+        ..TaskChange::default()
     })
 }
 
@@ -99,6 +102,7 @@ fn scalar(change: ScalarChange) -> TaskDelta {
     TaskDelta::Changed(TaskChange {
         scalar: Some(change),
         unsupported: Vec::new(),
+        ..TaskChange::default()
     })
 }
 
@@ -241,7 +245,7 @@ fn a_scalar_edit_of_a_completed_task_is_left_to_admission() {
 #[test]
 fn every_other_field_change_is_unsupported_and_named() {
     type Edit = fn(&mut TaskDocument);
-    let cases: [(TaskField, Edit); 11] = [
+    let cases: [(TaskField, Edit); 10] = [
         (TaskField::ExternalRef, |task| {
             task.external_ref = Some("tracker#12".into());
         }),
@@ -274,15 +278,6 @@ fn every_other_field_change_is_unsupported_and_named() {
         (TaskField::ChildRequirement, |task| {
             task.child_requirement = ChildRequirement::Optional;
         }),
-        (TaskField::Blockers, |task| {
-            task.blockers = vec![SharedBlocker {
-                blocker_id: "waiting".into(),
-                kind: WorkBlockerKind::Manual,
-                detail: "Waiting on input".into(),
-                created_by: actor(),
-                created_at: at(),
-            }];
-        }),
     ];
     for (field, edit) in cases {
         let a = task("a");
@@ -303,7 +298,7 @@ fn every_other_field_change_is_unsupported_and_named() {
 }
 
 #[test]
-fn relation_changes_are_unsupported() {
+fn reparenting_stays_unsupported_while_prerequisites_are_planned() {
     let a = task("a");
     let b = task("b");
     let current = tree(&[a.clone(), b.clone()]);
@@ -322,7 +317,13 @@ fn relation_changes_are_unsupported() {
     let plan_ordered = deltas(plan(&current, &ordered, &membership));
     assert_eq!(
         delta(&plan_ordered, b.id),
-        &fields(vec![TaskField::Prerequisites])
+        &TaskDelta::Changed(TaskChange {
+            relations: RelationChange {
+                prerequisite_additions: vec![a.id],
+                ..RelationChange::default()
+            },
+            ..TaskChange::default()
+        })
     );
 }
 
@@ -411,6 +412,7 @@ fn scalar_and_other_changes_report_only_the_unsupported_fields() {
                 priority: None,
             }),
             unsupported: vec![TaskField::Labels],
+            ..TaskChange::default()
         })
     );
     assert_eq!(plan.scalar_changes().count(), 0);
@@ -599,4 +601,47 @@ fn every_task_field_has_its_document_name() {
     let mut expected = names.into_iter().collect::<HashSet<_>>();
     assert!(expected.remove("activity"));
     assert_eq!(keys, expected);
+}
+
+#[test]
+fn scalar_and_relation_differences_are_one_composed_change() {
+    let mut a = task("a");
+    let b = task("b");
+    let c = task("c");
+    a.prerequisites = vec![b.id];
+    let old = SharedBlocker {
+        blocker_id: "old".into(),
+        kind: WorkBlockerKind::Manual,
+        detail: "original".into(),
+        created_by: actor(),
+        created_at: at(),
+    };
+    a.blockers = vec![old.clone()];
+    let new = SharedBlocker {
+        blocker_id: "new".into(),
+        ..old.clone()
+    };
+    let incoming = edited(&a, |task| {
+        task.title = "new title".into();
+        task.prerequisites = vec![c.id];
+        task.blockers = vec![new.clone()];
+    });
+    let planned = deltas(plan(
+        &tree(&[a.clone(), b.clone(), c.clone()]),
+        &tree(&[incoming, b.clone(), c.clone()]),
+        &members(&[&a, &b, &c]),
+    ));
+    assert!(planned.is_applicable());
+    let TaskDelta::Changed(change) = delta(&planned, a.id) else {
+        panic!("composed change")
+    };
+    assert_eq!(
+        change.scalar.as_ref().unwrap().title.as_deref(),
+        Some("new title")
+    );
+    assert_eq!(change.relations.prerequisite_removals, vec![b.id]);
+    assert_eq!(change.relations.prerequisite_additions, vec![c.id]);
+    assert_eq!(change.relations.blocker_removals, vec!["old"]);
+    assert_eq!(change.relations.blocker_additions, vec![new]);
+    assert!(planned.is_applicable());
 }

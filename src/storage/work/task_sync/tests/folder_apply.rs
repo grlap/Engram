@@ -355,7 +355,7 @@ fn unsupported_deltas_and_blocked_edits_refuse_together_in_task_id_order() {
 }
 
 #[test]
-fn run_free_planning_history_refuses_as_planning_history() {
+fn ordinary_run_free_project_relation_history_keeps_later_scalar_import_admissible() {
     let (mut store, fixture) = enrolled();
     let redactor = crate::DevelopmentNoopRedactor;
     let other = store
@@ -378,16 +378,12 @@ fn run_free_planning_history_refuses_as_planning_history() {
             store.remove_work_prerequisite(&request, &redactor).unwrap();
         }
     }
-    let before = state(&store);
     let resolved = edited(&exported(&store), fixture.first, |task| {
         task.title = "Renamed first".into();
     });
-    let message = conflict(&exchange(&mut store, &resolved, "edit-1", 9).unwrap_err());
-    assert!(
-        message.contains(&format!("{}: planning_history (event ", fixture.first.0)),
-        "{message}"
-    );
-    assert_eq!(state(&store), before);
+    exchange(&mut store, &resolved, "edit-1", 9).unwrap();
+    assert_eq!(exported(&store), resolved);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]
@@ -822,6 +818,7 @@ fn a_refusal_beyond_the_limit_names_the_lowest_ids_and_counts_the_rest() {
 }
 
 mod adds;
+mod relations;
 
 /// Omission of a baseline member, unlike omission of never-enrolled local work.
 fn without(tree: &TaskTree, ids: &[WorkId]) -> TaskTree {
@@ -1103,9 +1100,10 @@ fn folder_removal_refuses_a_run_free_revision_with_root_bound_history() {
     let selected = without(&exported(&store), &[item.work_id]);
     let before = state(&store);
     let message = conflict(&exchange(&mut store, &selected, "remove-root-bound", 8).unwrap_err());
+    // Shared eligibility now rejects the root snapshot before the removal-only guards.
     assert!(
         message.contains(&format!(
-            "{}: execution_history (root-bound event {})",
+            "{}: execution_history (event {})",
             item.work_id.0,
             event_id.as_str()
         )),
@@ -1179,6 +1177,7 @@ fn folder_removal_uses_current_references_despite_refused_folder_edits() {
         fixture.first,
         |task| {
             task.prerequisites.clear();
+            task.labels.push("unsupported-edit".into());
         },
     );
     selected.validate_folder().unwrap();
@@ -1188,7 +1187,10 @@ fn folder_removal_uses_current_references_despite_refused_folder_edits() {
         message.contains(&format!("{}: retained_reference", fixture.second.0)),
         "{message}"
     );
-    assert!(message.contains(&fixture.first.0.to_string()), "{message}");
+    assert!(
+        message.contains(&format!("{}: unsupported_fields (labels)", fixture.first.0)),
+        "{message}"
+    );
     assert_eq!(state(&store), before);
 }
 
@@ -1200,7 +1202,7 @@ fn folder_removal_refusal_does_not_blame_an_added_indirect_dependent() {
     });
     let mut store = SqliteStore::open_in_memory().unwrap();
     exchange(&mut store, &fixture.tree, "enrol", 5).unwrap();
-    // Current H -> D survives: clearing H's edge is unsupported, and the
+    // Current H -> D survives: H also asks for an unsupported label edit, and the
     // requested deletion of D must retain it. X -> H is valid in both R
     // and the graph the import would leave, so X is no graph culprit.
     let mut selected = edited(
@@ -1208,6 +1210,7 @@ fn folder_removal_refusal_does_not_blame_an_added_indirect_dependent() {
         fixture.first,
         |task| {
             task.prerequisites.clear();
+            task.labels.push("unsupported-edit".into());
         },
     );
     let mut added = document("indirect dependent", None);

@@ -247,8 +247,7 @@ fn apply_planned_changes(
         request.now,
     )?;
     let changed = plan
-        .scalar_changes()
-        .map(|(id, _)| id)
+        .changed_ids()
         .chain(plan.additions())
         .collect::<HashSet<_>>();
     let removed = plan

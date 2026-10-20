@@ -264,7 +264,8 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 > `project.json` through `--basis FILE`. Local planning changed since that
 > export refuses the import. On an enrolled store, admitted additions, scalar
 > edits and removals apply together. Scalar edits require imported Open tasks
-> with no run and only run-free project revision history. Omitting an eligible
+> with no run and only admitted run-free project revision, prerequisite and
+> blocker history. Omitting an eligible
 > member cancels it locally and permanently retires its id; even a partial
 > folder can do this when its remaining graph is valid. Review with `--dry-run`
 > before applying it. See the

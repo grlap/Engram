@@ -44,9 +44,11 @@ mod tests;
 
 mod catalog_fts;
 mod detach;
+mod folder_relations;
 mod plan;
 mod relations;
 mod shape;
+pub(super) use folder_relations::{apply_folder_blocker_on, apply_folder_prerequisite_on};
 #[cfg(test)]
 pub(crate) use plan::plan_validations;
 pub(crate) use plan::validate_work_plan;

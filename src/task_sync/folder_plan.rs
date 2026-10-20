@@ -8,15 +8,15 @@
 //! (claims, runs, completion, provenance, identity) is a separate admission
 //! question, answered inside the applying transaction.
 //!
-//! Applicable deltas are additions, omissions of enrolled members, and scalar
-//! edits of tasks both sides hold: title, outcome and priority. Every other
+//! Applicable deltas are additions, omissions of enrolled members, and
+//! scalar and relation edits of tasks both sides hold. Every other
 //! requested delta is classified with a named reason so that the whole folder
 //! can be refused, never applied in part or dropped in silence.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::hash::BuildHasher;
 
-use super::{TaskDocument, TaskSyncRefusal, TaskTree};
+use super::{SharedBlocker, TaskDocument, TaskSyncRefusal, TaskTree};
 use crate::{WorkId, domain::WorkRevisionPatch, storage::StoreError};
 
 /// Every requested delta, classified.
@@ -62,15 +62,38 @@ pub enum TaskDelta {
 }
 
 /// What a resolved document changes in a task both sides hold: its scalar
-/// fields, which apply as a planning revision, and every other changed field,
-/// which this exchange does not apply. The parts are kept together so that a
+/// fields, net relation sets, and unsupported changed fields. The parts stay
+/// together so that a
 /// change of several kinds is judged once, as one change to one task.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TaskChange {
     /// The new title, outcome or priority, when any of them changes.
     pub scalar: Option<ScalarChange>,
+    /// Net changes to prerequisite and blocker sets, preserving blocker ids.
+    pub relations: RelationChange,
     /// The other changed fields, in document order.
     pub unsupported: Vec<TaskField>,
+}
+
+/// An ephemeral plan only; original imported documents are never rewritten.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RelationChange {
+    pub prerequisite_additions: Vec<WorkId>,
+    pub prerequisite_removals: Vec<WorkId>,
+    pub blocker_additions: Vec<SharedBlocker>,
+    pub blocker_removals: Vec<String>,
+    pub blocker_rewrites: Vec<String>,
+}
+
+impl RelationChange {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.prerequisite_additions.is_empty()
+            && self.prerequisite_removals.is_empty()
+            && self.blocker_additions.is_empty()
+            && self.blocker_removals.is_empty()
+            && self.blocker_rewrites.is_empty()
+    }
 }
 
 impl TaskChange {
@@ -182,7 +205,7 @@ impl DeltaPlan {
     }
 
     /// Whether every requested delta is of a kind this exchange applies:
-    /// an addition, enrolled removal or scalar edit. Admission may still refuse it.
+    /// an addition, enrolled removal, scalar or relation edit. Admission may still refuse it.
     #[must_use]
     pub fn is_applicable(&self) -> bool {
         self.project.is_empty()
@@ -201,6 +224,7 @@ impl DeltaPlan {
             TaskDelta::Changed(TaskChange {
                 scalar: Some(change),
                 unsupported,
+                ..
             }) if unsupported.is_empty() => Some((task.id, change)),
             _ => None,
         })
@@ -212,6 +236,25 @@ impl DeltaPlan {
             .iter()
             .filter(|task| task.delta == TaskDelta::Added)
             .map(|task| task.id)
+    }
+
+    /// Existing owners with net relation changes, in task-id order.
+    pub fn relation_changes(&self) -> impl Iterator<Item = (WorkId, &RelationChange)> {
+        self.tasks.iter().filter_map(|task| match &task.delta {
+            TaskDelta::Changed(change)
+                if change.is_applicable() && !change.relations.is_empty() =>
+            {
+                Some((task.id, &change.relations))
+            }
+            _ => None,
+        })
+    }
+
+    pub fn changed_ids(&self) -> impl Iterator<Item = WorkId> + '_ {
+        self.tasks.iter().filter_map(|task| match &task.delta {
+            TaskDelta::Changed(change) if change.is_applicable() => Some(task.id),
+            _ => None,
+        })
     }
 }
 
@@ -306,8 +349,8 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         lifecycle,
         parent_id,
         child_requirement,
-        prerequisites,
-        blockers,
+        prerequisites: _,
+        blockers: _,
         superseded_by,
         disposal_reason,
         completion,
@@ -326,8 +369,6 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         lifecycle => Lifecycle,
         parent_id => ParentId,
         child_requirement => ChildRequirement,
-        prerequisites => Prerequisites,
-        blockers => Blockers,
         superseded_by => SupersededBy,
         disposal_reason => DisposalReason,
         completion => Completion,
@@ -342,7 +383,8 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
         outcome: (*outcome != incoming.outcome).then(|| incoming.outcome.clone()),
         priority: (*priority != incoming.priority).then_some(incoming.priority),
     };
-    if unsupported.is_empty() && scalar.is_empty() {
+    let relations = compare_relations(held, incoming);
+    if unsupported.is_empty() && scalar.is_empty() && relations.is_empty() {
         return Ok(TaskDelta::Unchanged);
     }
     let scalar = (!scalar.is_empty()).then_some(scalar);
@@ -355,8 +397,53 @@ fn compare(held: &TaskDocument, incoming: &TaskDocument) -> Result<TaskDelta, St
     }
     Ok(TaskDelta::Changed(TaskChange {
         scalar,
+        relations,
         unsupported,
     }))
+}
+
+fn compare_relations(held: &TaskDocument, incoming: &TaskDocument) -> RelationChange {
+    let before = held
+        .prerequisites
+        .iter()
+        .map(|id| id.0)
+        .collect::<BTreeSet<_>>();
+    let after = incoming
+        .prerequisites
+        .iter()
+        .map(|id| id.0)
+        .collect::<BTreeSet<_>>();
+    let old_blockers = held
+        .blockers
+        .iter()
+        .map(|blocker| (blocker.blocker_id.as_str(), blocker))
+        .collect::<BTreeMap<_, _>>();
+    let mut change = RelationChange {
+        prerequisite_additions: after.difference(&before).copied().map(WorkId).collect(),
+        prerequisite_removals: before.difference(&after).copied().map(WorkId).collect(),
+        ..RelationChange::default()
+    };
+    let mut incoming_ids = HashSet::new();
+    for blocker in &incoming.blockers {
+        incoming_ids.insert(blocker.blocker_id.as_str());
+        match old_blockers.get(blocker.blocker_id.as_str()) {
+            Some(old) if *old != blocker => {
+                change.blocker_rewrites.push(blocker.blocker_id.clone());
+            }
+            None => change.blocker_additions.push(blocker.clone()),
+            Some(_) => {}
+        }
+    }
+    for id in old_blockers.keys() {
+        if !incoming_ids.contains(id) {
+            change.blocker_removals.push((*id).to_owned());
+        }
+    }
+    change
+        .blocker_additions
+        .sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
+    change.blocker_rewrites.sort();
+    change
 }
 
 #[cfg(test)]

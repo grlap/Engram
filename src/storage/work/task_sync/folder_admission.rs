@@ -14,7 +14,7 @@
 //! at folder level, naming no task. For deletion, a retained incoming edge
 //! precedes ancestor/root binding, after the target's own eligibility.
 //!
-//! The work is near-linear in the folder: every index is built once; a held
+//! Admission builds every index once; a held
 //! ancestor's eligibility, a referenced task's origin, a root's execution and
 //! a completion's provenance are each read once, however many additions
 //! share them; and each graph check validates its graph a fixed number of
@@ -22,6 +22,8 @@
 //! Each removal is independently rechecked at its writer.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
+mod relations;
 
 use super::{ImportOrigin, origin, query};
 use crate::{
@@ -74,6 +76,7 @@ pub(super) struct Prospective<'a> {
     /// Every origin-qualified activity identity the current documents hold,
     /// including host-local tasks the folder omits.
     current_activity: BTreeSet<(String, String)>,
+    notes_included: bool,
 }
 
 impl<'a> Prospective<'a> {
@@ -88,6 +91,7 @@ impl<'a> Prospective<'a> {
                 .map(|item| (item.work_id, item.root_id))
                 .collect(),
             current_activity: current.tasks.iter().flat_map(activity_keys).collect(),
+            notes_included: resolved.project.notes_included,
             current_roots: current
                 .snapshots()?
                 .into_iter()
@@ -153,10 +157,12 @@ impl OriginIdentities {
 #[derive(Default)]
 struct HeldReads {
     eligibility: HashMap<WorkId, Option<(&'static str, String)>>,
+    addition_eligibility: HashMap<WorkId, Option<(&'static str, String)>>,
     removal_eligibility: HashMap<WorkId, Option<(&'static str, String)>>,
     executions: HashMap<WorkId, Option<String>>,
     restored_completions: HashMap<WorkId, bool>,
     supported_origins: HashMap<WorkId, bool>,
+    relation_eligibility: HashMap<WorkId, Option<(&'static str, String)>>,
 }
 
 impl HeldReads {
@@ -193,6 +199,33 @@ impl HeldReads {
         }
         let found = eligible(transaction, id)?.map(|conflict| (conflict.reason, conflict.detail));
         self.eligibility.insert(id, found.clone());
+        Ok(found)
+    }
+
+    fn addition_eligibility(
+        &mut self,
+        transaction: &rusqlite::Transaction<'_>,
+        id: WorkId,
+    ) -> Result<Option<(&'static str, String)>, StoreError> {
+        if let Some(known) = self.addition_eligibility.get(&id) {
+            return Ok(known.clone());
+        }
+        let found = if let Some(conflict) = self.eligibility(transaction, id)? {
+            Some(conflict)
+        } else {
+            query::canonical_work_event_records_for_item(transaction, id)?
+                .into_iter()
+                .find_map(|(event_id, event)| {
+                    (!matches!(
+                        event.transition,
+                        WorkTransition::Revised {
+                            authority: WorkPlanningAuthority::Project
+                        }
+                    ))
+                    .then(|| ("planning_history", format!("event {}", event_id.as_str())))
+                })
+        };
+        self.addition_eligibility.insert(id, found.clone());
         Ok(found)
     }
 
@@ -246,8 +279,8 @@ fn activity_keys(task: &TaskDocument) -> impl Iterator<Item = (String, String)> 
 /// describes. The refusal names the first conflicts in task-id order, up to
 /// a fixed limit, and gives the exact count of the rest.
 ///
-/// Admitted changes then apply in a fixed order of phases: additions, then
-/// scalar edits, then removals in hierarchy postorder. The caller checks
+/// Admitted changes remove old relations, restore additions, apply scalars
+/// and new relations, then dispose removals in hierarchy postorder. The caller checks
 /// the result against the new membership and records it.
 pub(super) fn apply_plan(
     transaction: &rusqlite::Transaction<'_>,
@@ -273,6 +306,13 @@ pub(super) fn apply_plan(
             TaskDelta::Changed(change) if !change.is_applicable() => {
                 Some(unsupported_fields(task.id, change))
             }
+            TaskDelta::Changed(change) if !change.relations.is_empty() => relations::admit_owner(
+                transaction,
+                &prospective,
+                &mut reads,
+                task.id,
+                &change.relations,
+            )?,
             TaskDelta::Changed(TaskChange {
                 scalar: Some(_), ..
             }) => reads
@@ -299,8 +339,8 @@ pub(super) fn apply_plan(
         .iter()
         .filter_map(|task| matches!(task.delta, TaskDelta::Deleted).then_some(task.id))
         .collect::<HashSet<_>>();
-    // Judge the current graph: scalar edits do not change these edges, and
-    // refused structural edits in R must not hide a retained reference.
+    // Apply admitted owner relation edits to the retained-reference view.
+    // Unsupported changes must not hide a retained reference.
     // Keep ancestor reasons aside so a retained edge stays the more precise
     // graph-stage reason. A target's own first-stage refusal still wins.
     let mut bindings = BTreeMap::new();
@@ -323,10 +363,21 @@ pub(super) fn apply_plan(
         .copied()
         .filter(|id| !admitted_removals.contains(id))
         .collect::<Vec<_>>();
+    // Traverse retained seeds by task UUID, then newly retained removals
+    // in FIFO discovery order. Reference fields/sets have stable order, so
+    // the first encountered retained edge deterministically owns the detail.
     retained.sort_by_key(|id| id.0);
+    let relation_owners = plan
+        .relation_changes()
+        .map(|(id, _)| id)
+        .collect::<HashSet<_>>();
     let mut retained = std::collections::VecDeque::from(retained);
     while let Some(referrer) = retained.pop_front() {
-        let task = prospective.current[&referrer];
+        let task = if relation_owners.contains(&referrer) && !conflicts.contains_key(&referrer.0) {
+            prospective.resolved_task(referrer)?
+        } else {
+            prospective.current[&referrer]
+        };
         let references = task
             .parent_id
             .map(|id| ("parent_id", id))
@@ -363,7 +414,8 @@ pub(super) fn apply_plan(
     if identities.is_some() {
         for &id in &additions {
             if !conflicts.contains_key(&id.0)
-                && let Some(conflict) = ancestor_binding(transaction, &prospective, &mut reads, id)?
+                && let Some(conflict) =
+                    ancestor_binding(transaction, &prospective, &mut reads, &relation_owners, id)?
             {
                 conflicts.insert(id.0, conflict);
             }
@@ -377,7 +429,7 @@ pub(super) fn apply_plan(
             .filter(|id| !conflicts.contains_key(&id.0))
             .collect::<Vec<_>>()
     };
-    if !additions.is_empty() || !removals.is_empty() {
+    if plan.relation_changes().next().is_none() && (!additions.is_empty() || !removals.is_empty()) {
         let retained = retained_graph(
             &prospective,
             resolved,
@@ -394,6 +446,15 @@ pub(super) fn apply_plan(
         absorb(origins, &mut conflicts, &mut batch);
         name_dependents_of_refusals(&prospective, &additions, &mut conflicts);
     }
+    for (id, _) in plan.relation_changes() {
+        if !conflicts.contains_key(&id.0)
+            && let Some(conflict) =
+                relations::ancestor_binding(transaction, &prospective, &mut reads, id)?
+        {
+            conflicts.insert(id.0, conflict);
+        }
+    }
+    relations::graphs(transaction, plan, &prospective, &mut conflicts, &mut batch)?;
     if !plan.project.is_empty() || !conflicts.is_empty() || !batch.is_empty() {
         let conflicts = conflicts.into_values().collect::<Vec<_>>();
         return Err(
@@ -404,6 +465,7 @@ pub(super) fn apply_plan(
             )),
         );
     }
+    relations::apply_removals(transaction, plan, actor, now)?;
     if !additions.is_empty() {
         // Additions may reference one another in any order; the caller
         // checks every foreign key once they are all in place.
@@ -429,6 +491,17 @@ pub(super) fn apply_plan(
             actor,
             now,
         )?;
+    }
+    relations::apply_additions(transaction, plan, actor, now)?;
+    if plan.relation_changes().next().is_some()
+        && !super::super::integrity::combined_graph_is_acyclic(
+            transaction,
+            &resolved.project.project_id.0,
+        )?
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "a folder relation change left a durable dependency cycle".into(),
+        ));
     }
     let mut ordered = removals
         .into_iter()
@@ -506,15 +579,6 @@ fn removal_history(
             reason: "execution_history",
             detail: "a persisted run exists".into(),
         }));
-    }
-    for (event_id, event) in query::canonical_work_event_records_for_item(transaction, id)? {
-        if event.root_execution.is_some() {
-            return Ok(Some(Conflict {
-                id,
-                reason: "execution_history",
-                detail: format!("root-bound event {}", event_id.as_str()),
-            }));
-        }
     }
     Ok(None)
 }
@@ -631,7 +695,8 @@ fn eligible(
         let run_bound = event.run_id.is_some()
             || event.run.is_some()
             || event.claim.is_some()
-            || event.handoff_offer.is_some();
+            || event.handoff_offer.is_some()
+            || event.root_execution.is_some();
         if run_bound || !is_planning(&event.transition) {
             return conflict("execution_history", format!("event {}", event_id.as_str()));
         }
@@ -650,7 +715,14 @@ const fn admitted_history(transition: &WorkTransition) -> bool {
         transition,
         WorkTransition::Revised {
             authority: WorkPlanningAuthority::Project
-        }
+        } | WorkTransition::PrerequisiteAdded {
+            authority: WorkPlanningAuthority::Project,
+            ..
+        } | WorkTransition::PrerequisiteRemoved {
+            authority: WorkPlanningAuthority::Project,
+            ..
+        } | WorkTransition::Blocked { .. }
+            | WorkTransition::Unblocked { .. }
     )
 }
 
@@ -816,6 +888,7 @@ fn ancestor_binding(
     transaction: &rusqlite::Transaction<'_>,
     prospective: &Prospective<'_>,
     reads: &mut HeldReads,
+    relation_owners: &HashSet<WorkId>,
     id: WorkId,
 ) -> Result<Option<Conflict>, StoreError> {
     let binding = |detail: String| -> Result<Option<Conflict>, StoreError> {
@@ -829,6 +902,12 @@ fn ancestor_binding(
     for ancestor in prospective.ancestors(id) {
         let document = prospective.resolved_task(ancestor)?;
         if let Some(held) = prospective.current.get(&ancestor) {
+            if relation_owners.contains(&ancestor) {
+                return binding(format!(
+                    "ancestor {} has a relation change in this folder",
+                    ancestor.0
+                ));
+            }
             if held.lifecycle == WorkLifecycle::Completed {
                 if unfinished {
                     return binding(format!("ancestor {} is completed", ancestor.0));
@@ -841,7 +920,8 @@ fn ancestor_binding(
                 }
                 continue;
             }
-            if let Some((reason, detail)) = reads.eligibility(transaction, ancestor)? {
+            // Additions retain the original Revised(Project)-only ancestor history policy.
+            if let Some((reason, detail)) = reads.addition_eligibility(transaction, ancestor)? {
                 return binding(format!("ancestor {}: {reason} ({detail})", ancestor.0));
             }
         } else if unfinished && document.lifecycle != WorkLifecycle::Open {

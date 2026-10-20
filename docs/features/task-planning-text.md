@@ -115,13 +115,15 @@ task the destination holds outside the last applied exchange, which the
 folder omits, is host-local: it stays as it is and does not join the
 exchange.
 
-Three kinds of change apply. A task the folder adds is restored exactly as the
+A task the folder adds is restored exactly as the
 empty-graph import restores one: its UUID, an import origin and restored
 record, its prerequisites and blockers, and its notes and activity when the
 selection shares them, with no event and no run, claim or root execution. A
 completed addition keeps its reported completion, without a seal. An edit of
 a task's title, outcome or priority is recorded as an ordinary planning
-revision under project authority, attributed to the importing actor. Each
+revision under project authority, attributed to the importing actor.
+[Prerequisite and blocker changes](task-folder-relations.md) use their existing
+planning transitions in the same transaction, alongside scalar edits. Each
 added or edited task then exports exactly as the folder carries it, and an
 added task joins the exchange. An eligible task omitted from the last
 exchange is locally cancelled by an ordinary `Disposed` event, with no run
@@ -136,15 +138,18 @@ requested selection disagree.
 
 A task takes an edit only when nothing binds its current revision: it was
 restored by a task-sync import, it is Open, it has no run, and its history
-holds only run-free planning revisions, so a second edit after a first one
+holds only admitted run-free project revisions, prerequisite transitions and
+blocker transitions, so a second edit after a first one
 applies. A task with a run (`active_run`, kept after a release), a task whose
 history records execution (`execution_history`, which includes a
-required-child waiver), a task whose history holds another planning change,
-such as a prerequisite or blocker added and later removed
-(`planning_history`), a completed task (`restored_completion`), a task in
+required-child waiver), a task whose history holds a planning change outside
+that explicit whitelist (`planning_history`), a completed task
+(`restored_completion`), a task in
 another lifecycle state (`lifecycle`), and work created on this host
 (`unsupported_origin`) refuse. Execution of another task, such as a claimed
-parent, child or sibling, does not block an edit.
+parent, child or sibling, does not block a scalar edit. Relation edits also
+check the [affected ancestor chain and root](task-folder-relations.md);
+execution there refuses the relation change.
 
 A task takes an addition only when nothing the destination holds
 contradicts it:
@@ -164,8 +169,10 @@ contradicts it:
 - Its ancestors can take unfinished work, and its root has no active
   execution (`ancestor_binding`). A held ancestor must itself be free to take
   an edit. A blocker that came in through an import does not refuse an
-  addition, since blockers are planning, not execution; a blocker recorded on
-  this host leaves history, so that ancestor refuses as `planning_history`.
+  addition, since blockers are planning, not execution. Existing ancestors
+  keep the stricter addition policy: only run-free project revisions are
+  admitted history; relation transitions remain eligible for later scalar,
+  relation and deletion imports, but do not authorize a new child.
   Only a finished addition, such as completed history, may sit under a
   completed ancestor, and only under a completion this store restored: a
   completion sealed on this host accounts for exactly the children it named.
@@ -184,7 +191,8 @@ contradicts it:
   was imported with, so an edge the current planning no longer holds can
   still close a cycle there.
 
-Each graph check first validates its graph without the additions; a graph that
+For additions without existing-owner relation edits, each graph check first
+validates its graph without the additions; a graph that
 fails on its own refuses at folder level and names no addition. With the
 additions, it names exactly the additions the failure involves, looking for
 each kind in the order the validator checks them: a task holding a reference
@@ -198,7 +206,10 @@ before the check goes on, and refuses for that dependence: through its parent
 chain as `ancestor_binding`, through a prerequisite or replacement as
 `refused_reference`. A failure that no addition accounts for refuses at folder
 level, as the additions together making the graph invalid, never by blaming a
-task.
+task. A composed relation change instead checks the complete patched graph,
+including retained local tasks, before materializing removals or additions;
+the [relation contract](task-folder-relations.md) also checks durable retired
+edges separately from the immutable origin union.
 
 Existing tasks' notes and activity are compared exactly, so an unchanged note
 never blocks an addition. Unsupported changes, refused additions and blocked
@@ -227,16 +238,17 @@ affected ancestor must be eligible and the root must have no active execution
 (`ancestor_binding`), including execution started by a sibling. A surviving
 shared or host-local task that still names the removed task as parent,
 prerequisite or replacement refuses the removal (`retained_reference`, naming
-both tasks and the field). These checks use current retained documents;
-an unapplied structural edit in the folder cannot hide a reference. A refused
+both tasks and the field). These checks use retained documents after admitted prerequisite removals;
+an unsupported structural edit in the folder cannot hide a reference. A refused
 removal keeps its outgoing references, which can refuse further removals.
 Malformed input graphs still refuse earlier as `task_sync_invalid_graph`.
 Per-task reasons precede graph reasons; for a removal, a surviving reference
 precedes an ancestor-execution conflict. An unrelated executing root does not
 block removal. The remaining graph is validated even with no additions.
 
-Adds, scalar edits and children-before-parents removals apply in that order
-within one transaction. Removal retains the task row, original parent/root
+Old prerequisites and blockers are removed first, then additions are restored,
+scalar edits and new relations apply, and children-before-parents removals
+finish the transaction. Removal retains the task row, original parent/root
 and relations, import origins, notes/activity and all prior records. The
 event carries the importing actor and time, with every runtime snapshot
 absent. It creates no claim, run, root execution, grant, contributor, waiver
@@ -839,7 +851,7 @@ replacement.
 | `task_sync_destination_non_utf8_name` | A task filename is not valid UTF-8. |
 | `task_sync_destination_unknown_entry` | The candidate directory holds an entry the format does not define. |
 | `task_sync_destination_missing_tasks` | A plain candidate directory, as read by preparation and setup materialization, has no `tasks` directory. A folder import accepts a folder without one. |
-| `task_sync_import_conflict` | A folder imported into an enrolled destination asks for a changed field other than title, outcome and priority; a task it would edit or remove is not free to take that change; a retained task references a removed task; or an addition collides with a held identity, references a native task, sits under a bound ancestor or executing root, depends on a refused addition, or breaks the destination's planning or import-origin history. The message names the first 20 refused tasks with reasons in task-id order, counts the rest, and reports graph failures that cannot be attributed to a task at folder level. A changed note selection refuses earlier, as `task_sync_divergent_planning` or `task_sync_invalid_graph`. |
+| `task_sync_import_conflict` | A folder imported into an enrolled destination asks for an unsupported field change; a task it would edit or remove is not free to take that change; a retained task still references a removed task; a relation edit rewrites an immutable blocker, collides with a held id, adds an inadmissible prerequisite or breaks the durable graph; or an addition collides with a held identity, references a native task, sits under a bound ancestor or executing root, depends on a refused addition, or breaks the destination's planning or import-origin history. Title, outcome, priority, prerequisite and blocker edits have the admission rules above. The message names the first 20 refused tasks with reasons in task-id order, counts the rest, and reports graph failures that cannot be attributed to a task at folder level. A changed note selection refuses earlier, as `task_sync_divergent_planning` or `task_sync_invalid_graph`. |
 
 ## Local incremental preparation
 
