@@ -105,19 +105,11 @@ fn render_window(
         }
         lines.push(row_line(row));
     }
-    if let Some(diagnostic) = page.sealed_diagnostic() {
-        lines.push(format!("  historical sealed source: seal {}; evaluation {}; run {}; completion cut {}; fixed horizon {}. Observation intervals do not prove source-at-done or a write after seal.", diagnostic.seal, diagnostic.evaluation.as_ref().map_or("not recorded", |id| id.as_str()), diagnostic.run.0, diagnostic.completion_cut, diagnostic.horizon));
-    }
-    let mut work = json!({ "short_ref": work_ref, "title": page.title });
-    if page.title_truncated {
-        work["title_truncated"] = json!(true);
-        work["title_bytes"] = json!(page.title_bytes);
-    }
     // This page is the observation detail that show and next point into, so
     // its diagnostic names no observation-detail command; it pages through
     // the window's own continuation and next commands.
     let sealed_source = page.sealed_diagnostic().map(|diagnostic| {
-        let mut value = super::sealed_source::SourceDiagnostic::new(
+        let mut rendered = super::sealed_source::SourceDiagnostic::new(
             &crate::work_service::SealedSourceView {
                 seal: diagnostic.seal.clone(),
                 diagnostic: Some(diagnostic.clone()),
@@ -126,16 +118,23 @@ fn render_window(
                 details_omitted: false,
             },
             work_ref,
-        )
-        .value;
-        if let Some(object) = value.as_object_mut() {
+        );
+        if let Some(object) = rendered.value.as_object_mut() {
             object.remove("observations_detail");
         }
-        value
+        rendered
     });
+    if let Some(diagnostic) = &sealed_source {
+        lines.extend(diagnostic.lines.iter().cloned());
+    }
+    let mut work = json!({ "short_ref": work_ref, "title": page.title });
+    if page.title_truncated {
+        work["title_truncated"] = json!(true);
+        work["title_bytes"] = json!(page.title_bytes);
+    }
     let value = json!({
         "work": work,
-        "sealed_source": sealed_source,
+        "sealed_source": sealed_source.map(|diagnostic| diagnostic.value),
         "observations": shown.iter().map(|row| row_value(row)).collect::<Vec<_>>(),
         "observations_window": {
             "selection": "newest_first",
@@ -264,4 +263,92 @@ fn row_value(row: &WorkObservationRow) -> Value {
         "recorded_at": row.recorded_at,
         "unadmitted": row.unadmitted,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::SessionId;
+    use crate::storage::sealed_source_transport_fixture;
+    use crate::work_service::{ObservedCheckRow, UnadmittedObservationDetail};
+
+    #[test]
+    fn sealed_source_text_window_keeps_maximum_unadmitted_checks_with_disclosures() {
+        let fixture = sealed_source_transport_fixture("difference");
+        let words = AgentVerbs::new(
+            fixture.database.clone(),
+            fixture.work.project_id.clone(),
+            "runner".into(),
+            SessionId("runner".into()),
+            None,
+        );
+        let now = Utc::now();
+        let shown = words.show(&fixture.work.short_ref, now).unwrap();
+        let command = shown.value["sealed_source"]["observations_detail"]
+            .as_str()
+            .unwrap();
+        let token = command.split(" --after ").nth(1).unwrap();
+        let mut page = words
+            .service
+            .work_observation_window(&fixture.work.short_ref, Some(token), now)
+            .unwrap();
+        // Stress the renderer's transient rows at the service's display
+        // bounds, preserving the real pinned cursor and historical facts.
+        let displayed = crate::work_service::unadmitted::displayed;
+        for row in &mut page.rows {
+            row.admission = "unadmitted";
+            row.revision = Some(displayed(
+                &"\"".repeat(crate::domain::MAX_OBSERVED_SOURCE_BYTES),
+            ));
+            row.unadmitted = Some(UnadmittedObservationDetail {
+                occurrence: "a turn seen without admission, not a begun turn".into(),
+                observed_from: row.recorded_at,
+                observed_through: row.recorded_at,
+                cause: "cause unknown".into(),
+                accounting: "unadmitted",
+                checks: (0..crate::domain::MAX_OBSERVED_CHECKS)
+                    .map(|index| ObservedCheckRow {
+                        host_check_id: displayed(&format!(
+                            "{index:02}{}",
+                            "\u{1}".repeat(crate::domain::MAX_OBSERVATION_LABEL_BYTES - 2)
+                        )),
+                        kind: "test",
+                        result: "passed",
+                        credit: "uncredited",
+                        finished_at: Some(row.recorded_at),
+                        source_revision: row.revision.clone(),
+                        evidence_ref: Some(displayed(&format!(
+                            "r{}",
+                            "\u{1}".repeat(crate::domain::MAX_OBSERVED_EVIDENCE_REF_BYTES - 1)
+                        ))),
+                    })
+                    .collect(),
+            });
+        }
+        let budget = crate::verbs::MAX_AGENT_WORK_RESPONSE_BYTES;
+        let fitted = fit_window(&page, budget).expect("one complete row and its disclosures fit");
+        let text = fitted.text();
+        assert!(text.contains("judged source: workspace"));
+        assert!(text.contains("earlier differing observation"));
+        assert!(text.contains("latest comparable endpoint"));
+        assert!(text.contains("sealed evaluation detail:"));
+        let rows = fitted.value["observations"].as_array().unwrap();
+        assert_ne!(rows.as_slice(), &[] as &[Value]);
+        assert!(rows.len() < page.rows.len());
+        for row in rows {
+            let checks = row["unadmitted"]["checks"].as_array().unwrap();
+            assert_eq!(checks.len(), crate::domain::MAX_OBSERVED_CHECKS);
+            assert!(checks.iter().all(|check| check["credit"] == "uncredited"));
+        }
+        assert_eq!(
+            text.matches("observed check, uncredited").count(),
+            rows.len() * crate::domain::MAX_OBSERVED_CHECKS
+        );
+        assert!(
+            fitted.value["observations_window"]["after"]
+                .as_str()
+                .is_some()
+        );
+        assert!(super::super::receipts::agent_receipt_fits(&fitted, budget).unwrap());
+    }
 }

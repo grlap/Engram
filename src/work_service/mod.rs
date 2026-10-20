@@ -139,6 +139,9 @@ pub(crate) use evaluation_windows::{
 pub(crate) use observation_windows::{
     UnadmittedObservationDetail, WorkObservationRow, WorkObservationWindow,
 };
+// Test-only access for the observation renderer's maximum-check stress test.
+#[cfg(test)]
+pub(crate) use observation_windows::ObservedCheckRow;
 pub use operations::*;
 pub(crate) use projection::*;
 pub(crate) use record_windows::{

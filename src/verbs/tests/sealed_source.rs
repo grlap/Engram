@@ -454,3 +454,433 @@ fn sealed_source_without_an_evaluation_is_one_short_status_line() {
     assert!(rendered.detail.is_none());
     assert_terse_source(&rendered.value, &rendered.lines.join("\n"));
 }
+
+const UNAVAILABLE_JUDGED_BASIS: &str =
+    "judged source or retained matching root basis is unavailable";
+
+fn unavailable_judged_view(
+    words: &AgentVerbs,
+    fixture: &SealedSourceTransportFixture,
+    now: DateTime<Utc>,
+) -> crate::work_service::WorkFocusView {
+    let mut view = words
+        .service
+        .work_focus_for_agent(&fixture.work.short_ref, now)
+        .unwrap();
+    // Exercise a legitimate unavailable read-model state without altering
+    // canonical evaluation records or the fixture's sealed history.
+    let facts = view
+        .sealed_source
+        .as_mut()
+        .unwrap()
+        .diagnostic
+        .as_mut()
+        .unwrap();
+    assert!(facts.evaluation.is_some());
+    facts.judged = None;
+    facts.unavailable = Some(UNAVAILABLE_JUDGED_BASIS.into());
+    facts.incomparable = facts.total;
+    facts.differences = 0;
+    facts.agreements = 0;
+    facts.first_difference = None;
+    facts.latest_endpoint = None;
+    view
+}
+
+fn render_source_next(
+    view: &crate::work_service::WorkNextView,
+    changes: &[crate::verbs::next_context::CompactChange],
+) -> Receipt {
+    let compact = crate::verbs::receipts::compact_next_receipt(
+        view,
+        &[],
+        &[],
+        changes,
+        &std::collections::HashMap::new(),
+        &Guidance::default(),
+        None,
+    )
+    .unwrap();
+    Receipt::assemble(
+        crate::verbs::receipts::compact_next_lines(&compact),
+        compact.guidance.clone(),
+        crate::verbs::receipts::compact_next_value(&compact),
+        false,
+    )
+}
+
+#[test]
+fn sealed_source_text_unavailable_basis_survives_show_shedding() {
+    let fixture = sealed_source_transport_fixture("agreement");
+    let words = verbs(&fixture);
+    let now = Utc::now();
+    let mut view = unavailable_judged_view(&words, &fixture, now);
+    for shed in [false, true] {
+        view.sealed_source.as_mut().unwrap().details_omitted = shed;
+        let shown = words.render_show(&view, now).unwrap();
+        assert_eq!(
+            shown.value["sealed_source"]["status"],
+            UNAVAILABLE_JUDGED_BASIS
+        );
+        assert!(
+            shown
+                .text()
+                .contains(&format!("sealed source: {UNAVAILABLE_JUDGED_BASIS}"))
+        );
+        assert!(
+            !shown
+                .text()
+                .contains("no comparable later closing sighting")
+        );
+        assert_terse_source_receipt(&shown, &shown.value["sealed_source"]);
+        assert!(
+            crate::verbs::receipts::agent_receipt_fits(&shown, MAX_AGENT_WORK_RESPONSE_BYTES)
+                .unwrap()
+        );
+    }
+}
+
+#[test]
+fn sealed_source_text_unavailable_basis_survives_compact_focus() {
+    let fixture = sealed_source_transport_fixture("agreement");
+    let words = verbs(&fixture);
+    let now = Utc::now();
+    let mut view = words
+        .service
+        .work_next(50, WorkNextQuery::default(), now)
+        .unwrap();
+    view.focus = Some(unavailable_judged_view(&words, &fixture, now));
+    for shed in [false, true] {
+        view.focus
+            .as_mut()
+            .unwrap()
+            .sealed_source
+            .as_mut()
+            .unwrap()
+            .details_omitted = shed;
+        let next = render_source_next(&view, &[]);
+        assert_eq!(
+            next.value["focus"]["sealed_source"]["status"],
+            UNAVAILABLE_JUDGED_BASIS
+        );
+        assert!(next.text().contains(UNAVAILABLE_JUDGED_BASIS));
+        assert_terse_source_receipt(&next, &next.value["focus"]["sealed_source"]);
+        assert!(
+            crate::verbs::receipts::agent_receipt_fits(&next, MAX_AGENT_WORK_RESPONSE_BYTES)
+                .unwrap()
+        );
+    }
+}
+
+#[test]
+fn sealed_source_text_unavailable_basis_survives_compact_changes() {
+    let fixture = sealed_source_transport_fixture("agreement");
+    let words = verbs(&fixture);
+    let now = Utc::now();
+    let source = unavailable_judged_view(&words, &fixture, now)
+        .sealed_source
+        .unwrap();
+    let mut found = false;
+    for _ in 0..20 {
+        let mut view = words
+            .service
+            .work_next(
+                50,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Changes],
+                    ..Default::default()
+                },
+                now,
+            )
+            .unwrap();
+        let Some(mut change) = view
+            .changes
+            .as_ref()
+            .and_then(|changes| changes.iter().find(|change| change.sealed_source.is_some()))
+            .cloned()
+        else {
+            continue;
+        };
+        change.sealed_source = Some(source.clone());
+        view.focus = None;
+        let changes = collapsed_changes(&[change], words.service.display_identity());
+        let next = render_source_next(&view, &changes);
+        let line = next.value["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .find(|line| line.contains("sealed source:"))
+            .unwrap();
+        assert!(line.contains(UNAVAILABLE_JUDGED_BASIS), "{line}");
+        assert!(next.text().contains(UNAVAILABLE_JUDGED_BASIS));
+        let command =
+            crate::verbs::sealed_source::SourceDiagnostic::terse(&source, &fixture.work.short_ref)
+                .detail
+                .unwrap();
+        assert!(line.ends_with(&command));
+        assert_terse_source(&json!({"line": line}), line);
+        assert!(
+            crate::verbs::receipts::agent_receipt_fits(&next, MAX_AGENT_WORK_RESPONSE_BYTES)
+                .unwrap()
+        );
+        found = true;
+        break;
+    }
+    assert!(
+        found,
+        "a completed source observation reaches compact changes"
+    );
+}
+
+#[test]
+fn sealed_source_text_unavailable_basis_does_not_repeat_the_status_reason() {
+    let fixture = sealed_source_transport_fixture("agreement");
+    let words = verbs(&fixture);
+    let view = unavailable_judged_view(&words, &fixture, Utc::now());
+    let mut source = view.sealed_source.unwrap();
+    let distinct_reason = "the evaluation's source revision was not retained";
+    for reason in [None, Some(UNAVAILABLE_JUDGED_BASIS), Some(distinct_reason)] {
+        source.diagnostic.as_mut().unwrap().unavailable = reason.map(str::to_owned);
+        let rendered =
+            crate::verbs::sealed_source::SourceDiagnostic::new(&source, &fixture.work.short_ref);
+        let text = rendered.lines.join("\n");
+        assert_eq!(rendered.value["status"], UNAVAILABLE_JUDGED_BASIS);
+        assert_eq!(text.matches(UNAVAILABLE_JUDGED_BASIS).count(), 1);
+        if reason == Some(distinct_reason) {
+            assert!(text.contains(&format!("judged basis unavailable: {distinct_reason}")));
+        } else {
+            assert!(!text.contains("judged basis unavailable:"));
+        }
+    }
+}
+
+#[test]
+fn sealed_source_text_generation_without_a_value_is_not_recorded() {
+    let fixture = sealed_source_transport_fixture("agreement");
+    let words = verbs(&fixture);
+    let mut view = words
+        .service
+        .work_focus_for_agent(&fixture.work.short_ref, Utc::now())
+        .unwrap();
+    let source = view.sealed_source.as_mut().unwrap();
+    source
+        .diagnostic
+        .as_mut()
+        .unwrap()
+        .judged
+        .as_mut()
+        .unwrap()
+        .source_root_generation = None;
+    let rendered =
+        crate::verbs::sealed_source::SourceDiagnostic::new(source, &fixture.work.short_ref);
+    assert!(rendered.value["judged_source"]["root_generation"].is_null());
+    let text = rendered.lines.join("\n");
+    assert!(text.contains("; generation not recorded; revision "));
+    assert!(!text.contains("generation None"));
+    assert!(!text.contains("generation Some("));
+}
+
+fn sealed_source_token(words: &AgentVerbs, work_ref: &str, now: DateTime<Utc>) -> String {
+    let shown = words.show(work_ref, now).unwrap();
+    shown.value["sealed_source"]["observations_detail"]
+        .as_str()
+        .unwrap()
+        .split(" --after ")
+        .nth(1)
+        .unwrap()
+        .into()
+}
+
+fn assert_explicit_source_text(page: &Receipt, budget: usize) {
+    let source = &page.value["sealed_source"];
+    let judged = &source["judged_source"];
+    let text = page.text();
+    assert!(source.get("observations_detail").is_none());
+    assert!(!text.contains("retained observation details:"));
+    assert!(text.contains(&format!(
+        "judged source: workspace {}; generation {}; revision {}",
+        judged["workspace"].as_str().unwrap(),
+        judged["root_generation"].as_i64().map_or_else(
+            || "not recorded".into(),
+            |generation| generation.to_string(),
+        ),
+        judged["revision"].as_str().unwrap()
+    )));
+    let first = &source["first_difference"];
+    assert!(text.contains(&format!(
+        "earlier differing observation {} at run position {} (recorded after seal cut)",
+        first["observation"].as_str().unwrap(),
+        first["run_position"].as_i64().unwrap()
+    )));
+    let latest = &source["latest_endpoint"];
+    assert!(text.contains(&format!(
+        "latest comparable endpoint {} at run position {}: {}",
+        latest["observation"].as_str().unwrap(),
+        latest["run_position"].as_i64().unwrap(),
+        latest["comparison"].as_str().unwrap()
+    )));
+    assert!(text.contains(&format!(
+        "sealed evaluation detail: {}",
+        source["evaluation_detail"].as_str().unwrap()
+    )));
+    assert!(text.contains("Completion remains final"));
+    assert!(crate::verbs::receipts::agent_receipt_terminal_bytes(&text) < budget);
+    assert!(crate::verbs::receipts::compact_receipt_json_bytes(&page.value).unwrap() < budget);
+}
+
+#[test]
+fn sealed_source_text_window_retains_historical_facts_outside_visible_rows() {
+    let fixture = sealed_source_transport_fixture("difference");
+    let words = verbs(&fixture);
+    let now = Utc::now();
+    let token = sealed_source_token(&words, &fixture.work.short_ref, now);
+    let mut next = Some(token);
+    let mut seen = std::collections::HashSet::new();
+    let mut pages = 0;
+    while let Some(token) = next {
+        let page = words
+            .show_observations(
+                &fixture.work.short_ref,
+                Some(&token),
+                now,
+                MAX_AGENT_WORK_RESPONSE_BYTES,
+            )
+            .unwrap();
+        assert_explicit_source_text(&page, MAX_AGENT_WORK_RESPONSE_BYTES);
+        let rows = page.value["observations"].as_array().unwrap();
+        if pages == 0 {
+            assert!(rows.iter().all(|row| {
+                row["observation"] != page.value["sealed_source"]["first_difference"]["observation"]
+            }));
+            assert_eq!(
+                page.value["sealed_source"]["latest_endpoint"]["comparison"],
+                "agreement"
+            );
+        }
+        for row in rows {
+            assert!(seen.insert(row["observation"].as_str().unwrap().to_owned()));
+        }
+        pages += 1;
+        assert!(pages <= 40, "each continuation must make progress");
+        next = page.value["observations_window"]["after"]
+            .as_str()
+            .map(str::to_owned);
+    }
+    assert_eq!(seen.len(), 40);
+    assert!(pages > 1);
+}
+
+#[test]
+fn sealed_source_text_window_charges_disclosures_to_its_byte_budget() {
+    let fixture = sealed_source_transport_fixture("difference");
+    let words = verbs(&fixture);
+    let now = Utc::now();
+    let token = sealed_source_token(&words, &fixture.work.short_ref, now);
+    let full = words
+        .show_observations(
+            &fixture.work.short_ref,
+            Some(&token),
+            now,
+            MAX_AGENT_WORK_RESPONSE_BYTES,
+        )
+        .unwrap();
+    let budget = emitted_receipt_bytes(&full) - 1;
+    let bounded = words
+        .show_observations(&fixture.work.short_ref, Some(&token), now, budget)
+        .unwrap();
+    assert_explicit_source_text(&bounded, budget);
+    assert!(
+        bounded.value["observations_window"]["shown"]
+            .as_u64()
+            .unwrap()
+            < full.value["observations_window"]["shown"].as_u64().unwrap()
+    );
+    // Navigation advances by the selected row count; the historical facts
+    // and evaluation command remain fixed when fitting selects fewer rows.
+    for field in [
+        "seal",
+        "evaluation",
+        "run",
+        "completion_cut",
+        "horizon",
+        "judged_source",
+        "first_difference",
+        "latest_endpoint",
+        "total",
+        "evaluation_detail",
+        "limits",
+    ] {
+        assert_eq!(
+            bounded.value["sealed_source"][field],
+            full.value["sealed_source"][field]
+        );
+    }
+    assert!(
+        bounded.value["observations_window"]["after"]
+            .as_str()
+            .is_some()
+    );
+}
+
+#[test]
+fn sealed_source_text_basis_preview_bounds_utf8_and_escapes_controls() {
+    let fixture = sealed_source_transport_fixture("difference");
+    let words = verbs(&fixture);
+    let mut view = words
+        .service
+        .work_focus_for_agent(&fixture.work.short_ref, Utc::now())
+        .unwrap();
+    let source = view.sealed_source.as_mut().unwrap();
+    let facts = source.diagnostic.as_mut().unwrap();
+    // A multibyte character crosses the prefix boundary. Quotes and
+    // backslashes exercise JSON escaping; retained controls exercise text
+    // framing without adding a physical line to the disclosed basis.
+    let workspace = format!("{}é-tail", "w".repeat(255));
+    let revision = format!("\"\\\u{1}\n{}é-tail", "r".repeat(250));
+    let judged = facts.judged.as_mut().unwrap();
+    judged.workspace_id.clone_from(&workspace);
+    judged.source_revision.clone_from(&revision);
+    facts.first_difference.as_mut().unwrap().source_basis = Some(judged.clone());
+    let rendered =
+        crate::verbs::sealed_source::SourceDiagnostic::new(source, &fixture.work.short_ref);
+    let basis = &rendered.value["judged_source"];
+    assert_eq!(basis["workspace"], format!("{}…", "w".repeat(255)));
+    assert_eq!(basis["workspace_bytes"], workspace.len());
+    assert_eq!(basis["revision_bytes"], revision.len());
+    assert_eq!(basis["truncated"], true);
+    let preview = basis["revision"].as_str().unwrap();
+    assert!(preview.ends_with('…'));
+    assert!(preview.len() <= 256 + '…'.len_utf8());
+    let judged_line = rendered
+        .lines
+        .iter()
+        .find(|line| line.contains("judged source:"))
+        .unwrap();
+    assert!(judged_line.contains(&terminal_safe_line(preview)));
+    assert!(judged_line.contains(&format!(
+        " (previews truncated; workspace {} bytes, revision {} bytes)",
+        basis["workspace_bytes"], basis["revision_bytes"],
+    )));
+    assert!(!judged_line.contains("see sealed evaluation detail below"));
+    assert!(!judged_line.contains("observations detail retains"));
+    let evaluation = rendered.value["evaluation_detail"].as_str().unwrap();
+    assert!(
+        rendered
+            .lines
+            .contains(&format!("  sealed evaluation detail: {evaluation}"))
+    );
+    assert!(!judged_line.contains(['\u{1}', '\n', '\r']));
+    let closing_line = rendered
+        .lines
+        .iter()
+        .find(|line| line.contains("reported closing revision"))
+        .unwrap();
+    assert!(closing_line.contains(&terminal_safe_line(preview)));
+    assert!(closing_line.contains(" (truncated; see that observation's row)"));
+    assert!(!closing_line.contains("see observation details"));
+    assert_eq!(
+        rendered.value["first_difference"]["source_basis"]["revision"],
+        preview
+    );
+}

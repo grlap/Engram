@@ -2,6 +2,7 @@
 //! nor evidence that no intermediate write occurred.
 
 use super::{Value, json};
+use crate::storage::SealedSourceDiagnostic;
 use crate::work_service::SealedSourceView;
 
 #[derive(Clone, Debug)]
@@ -80,7 +81,9 @@ impl SourceDiagnostic {
                 value: json!({"status": "no bound evaluation", "seal": diagnostic.seal}),
             };
         }
-        let status = if diagnostic.differences > 0 {
+        let status = if diagnostic.judged.is_none() {
+            SealedSourceDiagnostic::JUDGED_BASIS_UNAVAILABLE
+        } else if diagnostic.differences > 0 {
             "later source sighting differs from sealed evaluated source"
         } else if diagnostic.agreements > 0 {
             "reported endpoint agreement"
@@ -110,7 +113,7 @@ impl SourceDiagnostic {
                 super::record_windows::safe_reference_argument(work_ref)
             )
         });
-        let mut basis = diagnostic.judged.as_ref().map(|basis| json!({
+        let basis = diagnostic.judged.as_ref().map(|basis| json!({
             "workspace": bounded(&basis.workspace_id), "revision": bounded(&basis.source_revision),
             "root_generation": basis.source_root_generation, "root_state": basis.source_root_state,
             "workspace_bytes": basis.workspace_id.len(), "revision_bytes": basis.source_revision.len(),
@@ -118,21 +121,31 @@ impl SourceDiagnostic {
         }));
         if let Some(basis) = &diagnostic.judged {
             lines.push(format!(
-                "  judged source: workspace {}; generation {:?}; revision {}{}",
+                "  judged source: workspace {}; generation {}; revision {}{}",
                 super::terminal_safe_line(&bounded(&basis.workspace_id)),
-                basis.source_root_generation,
+                basis.source_root_generation.map_or_else(
+                    || "not recorded".into(),
+                    |generation| generation.to_string(),
+                ),
                 super::terminal_safe_line(&bounded(&basis.source_revision)),
                 if basis.workspace_id.len() > 256 || basis.source_revision.len() > 256 {
-                    " (text truncated; observations detail retains the reported basis)"
+                    format!(
+                        " (previews truncated; workspace {} bytes, revision {} bytes)",
+                        basis.workspace_id.len(),
+                        basis.source_revision.len(),
+                    )
                 } else {
-                    ""
+                    String::new()
                 },
             ));
-        } else {
-            basis = None;
+        } else if let Some(reason) = diagnostic
+            .unavailable
+            .as_deref()
+            .filter(|reason| *reason != status)
+        {
             lines.push(format!(
                 "  judged basis unavailable: {}",
-                diagnostic.unavailable.as_deref().unwrap_or("not retained")
+                super::terminal_safe_line(reason)
             ));
         }
         if let Some(fact) = &diagnostic.first_difference {
@@ -145,7 +158,7 @@ impl SourceDiagnostic {
                     "  reported closing revision {}{}",
                     super::terminal_safe_line(&bounded(&basis.source_revision)),
                     if basis.source_revision.len() > 256 {
-                        " (truncated; see observation details)"
+                        " (truncated; see that observation's row)"
                     } else {
                         ""
                     }

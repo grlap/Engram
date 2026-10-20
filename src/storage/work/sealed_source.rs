@@ -44,6 +44,11 @@ pub(crate) struct SealedSourceDiagnostic {
     pub latest_endpoint: Option<SealedSourceFact>,
 }
 
+impl SealedSourceDiagnostic {
+    pub(crate) const JUDGED_BASIS_UNAVAILABLE: &str =
+        "judged source or retained matching root basis is unavailable";
+}
+
 pub(crate) struct SealedSourcePage {
     pub diagnostic: SealedSourceDiagnostic,
     pub rows: Vec<SealedSourceFact>,
@@ -85,7 +90,7 @@ impl SqliteStore {
             let unavailable = if evaluation.is_none() {
                 Some("seal has no bound evaluation".into())
             } else if judged.is_none() {
-                Some("judged source or retained matching root basis is unavailable".into())
+                Some(SealedSourceDiagnostic::JUDGED_BASIS_UNAVAILABLE.into())
             } else {
                 None
             };
