@@ -1,6 +1,8 @@
 use super::super::folder::TaskSyncFolderApply;
 use super::super::folder_admission::{Conflict, NAMED_CONFLICT_LIMIT, conflict_message};
 use super::*;
+
+mod failure_modes;
 use crate::{
     ClaimWorkRequest, ReleaseWorkRequest, SessionId, WorkClaim,
     domain::{WorkPlanningAuthority, WorkTransition},
