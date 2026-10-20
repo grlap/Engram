@@ -102,15 +102,35 @@ fn task_prepare_cli_pending_profile_guidance_preserves_operation_and_cut() {
                 assert!(!refused.status.success());
                 assert_eq!(refused.stdout, [] as [u8; 0]);
                 let stderr = String::from_utf8_lossy(&refused.stderr);
-                for guidance in [
-                    "original destination",
-                    "original include-notes setting",
-                    "origin-machine selection (including no origin-machine)",
-                    "without --rebaseline",
-                ] {
-                    assert!(stderr.contains(guidance), "{stderr}");
+                if !enabled && rebaseline {
+                    assert!(
+                        stderr.contains("task sync is not enabled; a new baseline cannot start"),
+                        "{stderr}"
+                    );
+                    assert!(
+                        stderr.contains(
+                            "engram task-sync enable --user-instruction \"<user's explicit request>\""
+                        ),
+                        "{stderr}"
+                    );
+                    assert!(
+                        stderr.contains(
+                            "or rerun without --rebaseline to finish a pending preparation"
+                        ),
+                        "{stderr}"
+                    );
+                    assert!(!stderr.contains("original destination"), "{stderr}");
+                } else {
+                    for guidance in [
+                        "original destination",
+                        "original include-notes setting",
+                        "origin-machine selection (including no origin-machine)",
+                        "without --rebaseline",
+                    ] {
+                        assert!(stderr.contains(guidance), "{stderr}");
+                    }
+                    assert!(!stderr.contains("use --rebaseline to change it"));
                 }
-                assert!(!stderr.contains("use --rebaseline to change it"));
                 assert_eq!(fixture_snapshot(fixture.path()), before);
             }
         }

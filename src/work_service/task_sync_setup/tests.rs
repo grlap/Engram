@@ -284,13 +284,32 @@ fn task_sync_pending_preparation_finishes_after_opt_out_without_capture() {
                 )
                 .unwrap_err();
             let message = error.to_string();
-            assert!(message.contains("original destination"), "{message}");
-            assert!(
-                message.contains("original include-notes setting"),
-                "{message}"
-            );
-            assert!(message.contains("without --rebaseline"), "{message}");
-            assert!(!message.contains("use --rebaseline to change it"));
+            if rebaseline {
+                assert!(
+                    message.contains(
+                        "engram task-sync enable --user-instruction \"<user's explicit request>\""
+                    ),
+                    "{message}"
+                );
+                assert!(!message.contains("original destination"), "{message}");
+                assert!(
+                    !message.contains("original include-notes setting"),
+                    "{message}"
+                );
+                assert!(
+                    message
+                        .contains("or rerun without --rebaseline to finish a pending preparation"),
+                    "{message}"
+                );
+            } else {
+                assert!(message.contains("original destination"), "{message}");
+                assert!(
+                    message.contains("original include-notes setting"),
+                    "{message}"
+                );
+                assert!(message.contains("without --rebaseline"), "{message}");
+                assert!(!message.contains("use --rebaseline to change it"));
+            }
             assert_eq!(entries(owned.path()), before);
         }
     }

@@ -19,6 +19,27 @@ fn assert_pending_guidance(message: &str) {
     assert!(!message.contains("use --rebaseline to change it"));
 }
 
+fn assert_disabled_rebaseline_guidance(message: &str) {
+    assert!(
+        message
+            .contains("engram task-sync enable --user-instruction \"<user's explicit request>\""),
+        "{message}"
+    );
+    assert!(
+        message.contains("or rerun without --rebaseline to finish a pending preparation"),
+        "{message}"
+    );
+    assert!(!message.contains("original destination"), "{message}");
+    assert!(
+        !message.contains("original include-notes setting"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("origin-machine selection (including no origin-machine)"),
+        "{message}"
+    );
+}
+
 #[test]
 fn task_prepare_pending_profile_drift_guides_without_changing_retained_operation() {
     let alias = selected(false, Some("host-a"));
@@ -94,7 +115,11 @@ fn task_prepare_pending_profile_drift_guides_without_changing_retained_operation
                             )
                         };
                         let message = result.unwrap_err().to_string();
-                        assert_pending_guidance(&message);
+                        if opted_out && rebaseline {
+                            assert_disabled_rebaseline_guidance(&message);
+                        } else {
+                            assert_pending_guidance(&message);
+                        }
                         let prefix = match (opted_out, rebaseline) {
                             (false, false) => "prepared profile or origin-machine is pinned",
                             (false, true) => "pending preparation must finish before rebaseline",
@@ -149,6 +174,53 @@ fn task_prepare_pending_profile_drift_guides_without_changing_retained_operation
                 assert_eq!(completed.meta.cut, pending.meta.cut);
             }
         }
+    }
+}
+
+#[test]
+fn task_prepare_disabled_rebaseline_guides_enable_without_admitted_pending() {
+    for completed_history in [false, true] {
+        let home = crate::test_support::temp_home().unwrap();
+        let store = home.path().join("store.db");
+        fs::write(&store, b"not SQLite; disabled rebaseline must not open it").unwrap();
+        let progress = home.path().join("progress");
+        let destination = home.path().join("candidate");
+        let snapshot = tree(1);
+        let profile = selected(false, Some("host-a"));
+        if completed_history {
+            prepare_with_producer(
+                &destination,
+                &progress,
+                &store,
+                &snapshot.project.project_id,
+                &profile,
+                false,
+                &producer(),
+                |_| Ok(capture(snapshot.clone())),
+            )
+            .unwrap();
+        }
+        let before = listing(home.path());
+        let error = resume_pending(
+            &destination,
+            &progress,
+            &store,
+            &snapshot.project.project_id,
+            &profile,
+            true,
+        )
+        .unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("task sync is not enabled; a new baseline cannot start"),
+            "{message}"
+        );
+        assert_disabled_rebaseline_guidance(&message);
+        assert_eq!(listing(home.path()), before);
+        assert_eq!(
+            fs::read(&store).unwrap(),
+            b"not SQLite; disabled rebaseline must not open it"
+        );
     }
 }
 

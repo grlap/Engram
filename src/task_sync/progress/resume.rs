@@ -9,6 +9,12 @@ use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::OpenOptions;
 use std::path::Path;
 
+const ENABLE_TASK_SYNC_GUIDANCE: &str = concat!(
+    "to start a new preparation, enable task sync with an explicit user instruction ",
+    "(`engram task-sync enable --user-instruction \"<user's explicit request>\"`), ",
+    "or rerun without --rebaseline to finish a pending preparation"
+);
+
 const DISABLED_PREPARATION: &str = concat!(
     "task sync is not enabled and no admitted pending preparation is available; ",
     "to start a new preparation, enable task sync with an explicit user instruction ",
@@ -25,8 +31,7 @@ pub(crate) fn resume_pending(
 ) -> Result<PrepareReceipt> {
     ensure!(
         !rebaseline,
-        "task sync is not enabled; a new baseline cannot start; {}",
-        super::PENDING_PROFILE_GUIDANCE
+        "task sync is not enabled; a new baseline cannot start; {ENABLE_TASK_SYNC_GUIDANCE}"
     );
     let supplied_progress = progress;
     let progress =

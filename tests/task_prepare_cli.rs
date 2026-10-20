@@ -90,9 +90,9 @@ fn task_prepare_cli_disabled_without_pending_guides_without_mutation() {
                     .to_string()
             });
             let before = fixture_snapshot(fixture.path());
-            let refused = command(&home, &marker)
-                .current_dir(fixture.path())
-                .args([
+            for rebaseline in [false, true] {
+                let mut invocation = command(&home, &marker);
+                invocation.current_dir(fixture.path()).args([
                     "task-sync",
                     "--actor-id",
                     "operator",
@@ -102,37 +102,54 @@ fn task_prepare_cli_disabled_without_pending_guides_without_mutation() {
                     "candidate",
                     "--progress-directory",
                     "progress",
-                ])
-                .output()
-                .unwrap();
-            assert!(!refused.status.success(), "{case}");
-            assert!(refused.stdout.is_empty(), "{case}");
-            let stderr = String::from_utf8_lossy(&refused.stderr);
-            assert!(
-                stderr.contains(
-                    "task sync is not enabled and no admitted pending preparation is available"
-                ),
-                "{case}: {stderr}"
-            );
-            assert!(
-                stderr.contains("explicit user instruction"),
-                "{case}: {stderr}"
-            );
-            assert!(
-                stderr.contains(
-                    "engram task-sync enable --user-instruction \"<user's explicit request>\""
-                ),
-                "{case}: {stderr}"
-            );
-            if let Some(cause) = missing_lock_cause {
-                assert!(stderr.contains(&cause), "{case}: {stderr}");
+                ]);
+                if rebaseline {
+                    invocation.arg("--rebaseline");
+                }
+                let refused = invocation.output().unwrap();
+                assert!(!refused.status.success(), "{case}");
+                assert!(refused.stdout.is_empty(), "{case}");
+                let stderr = String::from_utf8_lossy(&refused.stderr);
+                if rebaseline {
+                    assert!(
+                        stderr.contains("task sync is not enabled; a new baseline cannot start"),
+                        "{case}: {stderr}"
+                    );
+                    assert!(
+                        stderr.contains(
+                            "or rerun without --rebaseline to finish a pending preparation"
+                        ),
+                        "{case}: {stderr}"
+                    );
+                    assert!(!stderr.contains("original destination"), "{case}: {stderr}");
+                } else {
+                    assert!(
+                        stderr.contains(
+                            "task sync is not enabled and no admitted pending preparation is available"
+                        ),
+                        "{case}: {stderr}"
+                    );
+                }
+                assert!(
+                    stderr.contains("explicit user instruction"),
+                    "{case}: {stderr}"
+                );
+                assert!(
+                    stderr.contains(
+                        "engram task-sync enable --user-instruction \"<user's explicit request>\""
+                    ),
+                    "{case}: {stderr}"
+                );
+                if !rebaseline && let Some(cause) = missing_lock_cause.as_ref() {
+                    assert!(stderr.contains(cause), "{case}: {stderr}");
+                }
+                assert_eq!(fixture_snapshot(fixture.path()), before, "{case}");
+                assert!(!fixture.path().join("candidate").exists(), "{case}");
+                if !explicit_disable {
+                    assert!(!home.exists(), "{case}");
+                }
+                task_sync_opt_in::assert_no_database(&home);
             }
-            assert_eq!(fixture_snapshot(fixture.path()), before, "{case}");
-            assert!(!fixture.path().join("candidate").exists(), "{case}");
-            if !explicit_disable {
-                assert!(!home.exists(), "{case}");
-            }
-            task_sync_opt_in::assert_no_database(&home);
         }
     }
 }
