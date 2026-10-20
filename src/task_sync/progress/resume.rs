@@ -21,6 +21,17 @@ const DISABLED_PREPARATION: &str = concat!(
     "(`engram task-sync enable --user-instruction \"<user's explicit request>\"`)"
 );
 
+pub(super) fn remap_completed_only_recovery(error: anyhow::Error) -> anyhow::Error {
+    if error
+        .downcast_ref::<prepared::CompletedOnlyRecoveryRequired>()
+        .is_some()
+    {
+        anyhow::anyhow!(DISABLED_PREPARATION)
+    } else {
+        error
+    }
+}
+
 pub(crate) fn resume_pending(
     destination: &Path,
     progress: &Path,
@@ -86,13 +97,7 @@ pub(crate) fn resume_pending(
         },
         true,
     )
-    .map_err(|error| {
-        if error.to_string() == prepared::COMPLETED_ONLY_RECOVERY_REQUIRED {
-            anyhow::anyhow!(DISABLED_PREPARATION)
-        } else {
-            error
-        }
-    })?;
+    .map_err(remap_completed_only_recovery)?;
     ensure!(
         candidate.provenance.store == std::fs::canonicalize(store)?,
         "pending preparation must retain its original store binding"

@@ -5,7 +5,7 @@ use crate::{
     ObjectId, ProjectId,
     task_sync::{TaskTree, notes::NoteOmissions},
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -13,8 +13,10 @@ use std::{
 
 pub(super) const PENDING_RECOVERY_REQUIRED: &str =
     "only the latest admitted pending preparation can recover after opt-out";
-pub(super) const COMPLETED_ONLY_RECOVERY_REQUIRED: &str =
-    "only completed preparation history remains after opt-out";
+/// Emitted only when the latest generation and every predecessor are completed; opt-out recovery remaps it by type.
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[error("only completed preparation history remains after opt-out")]
+pub(super) struct CompletedOnlyRecoveryRequired;
 
 pub(super) mod files;
 use files::Directory;
@@ -180,7 +182,7 @@ pub(super) fn read_selected(
             .take(generations.len().saturating_sub(1))
             .all(|generation| !generation.4.is_empty());
         if latest_is_completed && predecessors_are_completed {
-            bail!(COMPLETED_ONLY_RECOVERY_REQUIRED);
+            return Err(CompletedOnlyRecoveryRequired.into());
         }
         ensure!(
             generations
