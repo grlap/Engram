@@ -1111,9 +1111,9 @@ fn task_sync_folder_apply_refuses_a_partial_baseline_without_deleting_local_work
             "folder-import-2",
         )
         .unwrap_err();
-    // An enrolled store sees the omitted members as deletions, which this
-    // exchange refuses by name rather than applying the rest.
-    assert!(error.to_string().contains("task_deleted"), "{error:#}");
+    // An enrolled store sees the omitted members as removals. These members
+    // are Proposed, so lifecycle admission refuses the whole folder by name.
+    assert!(error.to_string().contains("lifecycle"), "{error:#}");
     assert_eq!(refusal_code(&error), "task_sync_import_conflict");
     assert_eq!(state(&store), before);
 }

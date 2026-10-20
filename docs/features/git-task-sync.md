@@ -152,12 +152,18 @@ Project memories and complete native execution-history transfer are outside
 the initial task profile; unsupported data must be reported, never silently
 presented as a complete backup. Existing backup/migration formats remain separate.
 
-The initial profile has no task-deletion operation or invented tombstone:
-cancelled and superseded tasks remain documents with explicit terminal states.
-`forget` applies to memories, which are outside this profile. A missing task file
-is not deletion; refuse unexplained removal, including a partial checkout/input.
-A later deletion design must add a local source event and explicit tombstone
-before exchanging deletions. References resolve against the complete resulting task
+For the first import into an empty, unenrolled store, a missing task file
+cannot dispose an existing task: no prior exchange inventory exists. An
+omitted isolated task cannot be detected; omitted referenced tasks refuse.
+Cancelled and superseded tasks carried in the folder remain documents with
+explicit terminal states. `forget` applies only to memories outside this profile.
+An enrolled destination instead applies the
+[folder-removal rules](task-planning-text.md#edits-on-an-enrolled-destination):
+an omitted eligible member is cancelled by a local event and its id is retired
+from the exchange permanently (`id_collision` if reintroduced). A partial
+checkout or incomplete input whose remaining graph is valid can therefore
+cause irreversible cancellation. Review an import with `--dry-run` before
+applying it. References resolve against the complete resulting task
 graph, and dependency/parent cycles are refused. Unknown fields/versions,
 duplicate or mismatched ids and unresolved conflict markers are refused.
 
@@ -177,7 +183,7 @@ they never fall through the compatible-completion case:
 | Existing native completed run / same completed outcome | Preserve the immutable seal and its exact original basis; record compatible shared changes as later attributed versions, never revise the seal or claim that it covers those later changes. |
 | Existing completed task / reopened final state | Require an explicit locally admitted reopen with a new execution generation before applying the resolved open state. Preserve old completion and evidence as history, without crediting the new generation. |
 | Cancelled/superseded final state | Keep the task document and immutable history, reconcile any unfinished local run as above, and enforce explicit required-child disposal/waiver and remaining graph-reference rules. File removal is never a waiver. |
-| Missing document / existing task | Refuse the incomplete/removal candidate; preserve the local task. The initial profile has no task tombstone. |
+| Missing document / first import into an empty, unenrolled store | There is no prior exchange inventory or existing task to dispose. Missing referenced tasks refuse; an omitted isolated task is undetectable. On an enrolled destination, omission instead follows the [folder-removal rules](task-planning-text.md#edits-on-an-enrolled-destination), including permanent id retirement; inspect `--dry-run` before applying partial input. |
 
 For required-child accounting, use the existing explicit distinction between
 native seals and inert restored completions: an imported reported completion

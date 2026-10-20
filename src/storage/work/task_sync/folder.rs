@@ -251,7 +251,12 @@ fn apply_planned_changes(
         .map(|(id, _)| id)
         .chain(plan.additions())
         .collect::<HashSet<_>>();
-    if plan.additions().next().is_some() {
+    let removed = plan
+        .tasks
+        .iter()
+        .filter_map(|task| matches!(task.delta, folder_plan::TaskDelta::Deleted).then_some(task.id))
+        .collect::<HashSet<_>>();
+    if plan.additions().next().is_some() || !removed.is_empty() {
         // Admission named every predictable conflict; these remain as the
         // guards that roll the whole folder back.
         if transaction
@@ -275,7 +280,7 @@ fn apply_planned_changes(
     if result.changed {
         record_planning(transaction, request)?;
     }
-    if !changed.is_empty() {
+    if !changed.is_empty() || !removed.is_empty() {
         // Each added or edited task now exports exactly as the folder
         // carries it, whole document by whole document.
         let applied = folder_export_on(transaction, request.project, request.profile)?;
@@ -294,6 +299,28 @@ fn apply_planned_changes(
             if applied.get(&task.id).copied() != Some(task) {
                 return Err(StoreError::InvalidWorkProjection(
                     "a folder change does not export as the folder carries it".into(),
+                ));
+            }
+        }
+        if removed.iter().any(|id| applied.contains_key(id)) {
+            return Err(StoreError::InvalidWorkProjection(
+                "a folder removal remained in the new exchange membership".into(),
+            ));
+        }
+        // Omitted local nonmembers survive byte-for-byte alongside selected changes.
+        let current = current
+            .tasks
+            .iter()
+            .map(|task| (task.id, task))
+            .collect::<std::collections::HashMap<_, _>>();
+        for retained in plan
+            .tasks
+            .iter()
+            .filter(|task| matches!(task.delta, folder_plan::TaskDelta::RetainedLocal))
+        {
+            if applied.get(&retained.id).copied() != current.get(&retained.id).copied() {
+                return Err(StoreError::InvalidWorkProjection(
+                    "a folder change rewrote retained local work".into(),
                 ));
             }
         }

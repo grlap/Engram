@@ -675,9 +675,16 @@ opted-in generic/status notes under a narrow disclosure profile. Runtime
 evidence and path-bearing notes are excluded by default; repository visibility
 and readership are recorded at enablement. Changed note text becomes a new
 attributed note citing its original, never a rewrite under the original id.
-Cancelled/superseded tasks stay in the tree; the initial profile has no task
-deletion/tombstone producer, and missing documents are refused, never deleted
-locally. Initial export includes terminal tasks. Imported
+Cancelled/superseded documents carried in the folder retain their terminal
+states. For a first import into an empty, unenrolled store, a missing file
+cannot dispose an existing task: there is no prior exchange inventory. An
+omitted isolated task cannot be detected; omitted referenced tasks refuse.
+An enrolled destination instead applies the
+[folder-removal rules](features/task-planning-text.md#edits-on-an-enrolled-destination):
+omitting an eligible member cancels it locally and permanently retires its id
+from the exchange. A partial input whose remaining graph is valid can therefore
+cause irreversible cancellation; review with `--dry-run` before applying it.
+Initial export includes terminal tasks. Imported
 completion is attributed historical/reported outcome, not a fabricated local
 completion seal or an acceptance-policy bypass. Live claims, grants, sessions,
 retained prompts, delivery progress and private scratch stay local. Foreign

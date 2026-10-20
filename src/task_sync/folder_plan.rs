@@ -8,8 +8,8 @@
 //! (claims, runs, completion, provenance, identity) is a separate admission
 //! question, answered inside the applying transaction.
 //!
-//! Applicable deltas are a task the resolved tree adds, and a scalar edit of
-//! a task both sides hold: its title, outcome and priority. Every other
+//! Applicable deltas are additions, omissions of enrolled members, and scalar
+//! edits of tasks both sides hold: title, outcome and priority. Every other
 //! requested delta is classified with a named reason so that the whole folder
 //! can be refused, never applied in part or dropped in silence.
 
@@ -56,8 +56,8 @@ pub enum TaskDelta {
     Changed(TaskChange),
     /// The resolved tree adds a task the destination does not hold.
     Added,
-    /// The resolved tree omits a task of the last applied exchange. This
-    /// exchange does not apply deletions.
+    /// The resolved tree omits a task of the last applied exchange.
+    /// Storage admission decides whether it may be retired here.
     Deleted,
 }
 
@@ -182,14 +182,16 @@ impl DeltaPlan {
     }
 
     /// Whether every requested delta is of a kind this exchange applies:
-    /// an added task or a scalar edit. Admission may still refuse it.
+    /// an addition, enrolled removal or scalar edit. Admission may still refuse it.
     #[must_use]
     pub fn is_applicable(&self) -> bool {
         self.project.is_empty()
             && self.tasks.iter().all(|task| match &task.delta {
-                TaskDelta::Unchanged | TaskDelta::RetainedLocal | TaskDelta::Added => true,
+                TaskDelta::Unchanged
+                | TaskDelta::RetainedLocal
+                | TaskDelta::Added
+                | TaskDelta::Deleted => true,
                 TaskDelta::Changed(change) => change.is_applicable(),
-                TaskDelta::Deleted => false,
             })
     }
 

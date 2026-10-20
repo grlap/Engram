@@ -262,10 +262,14 @@ SQLite database on the developer's machine, behind a CLI and an MCP server.
 >
 > Folder import requires `--empty-basis` or this host's own pre-merge
 > `project.json` through `--basis FILE`. Local planning changed since that
-> export refuses the import. On a nonempty enrolled store, additions,
-> deletions and other field changes refuse the whole folder. Scalar edits
-> require imported Open tasks with no run and only run-free project revision
-> history. Claims and execution evidence stay local.
+> export refuses the import. On an enrolled store, admitted additions, scalar
+> edits and removals apply together. Scalar edits require imported Open tasks
+> with no run and only run-free project revision history. Omitting an eligible
+> member cancels it locally and permanently retires its id; even a partial
+> folder can do this when its remaining graph is valid. Review with `--dry-run`
+> before applying it. See the
+> [enrolled-folder rules](features/task-planning-text.md#edits-on-an-enrolled-destination).
+> Claims and execution evidence stay local.
 >
 > Under the existing test-ref rules, required reviews and fresh focused
 > compilation/tests finish before the landing agent publishes the frozen

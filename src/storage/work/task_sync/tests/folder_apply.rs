@@ -587,7 +587,7 @@ fn a_host_local_task_stays_until_enrolled_then_its_omission_is_a_refused_deletio
     omitted.tasks.retain(|task| task.id != local.work_id);
     let message = conflict(&exchange(&mut store, &omitted, "omit-enrolled", 9).unwrap_err());
     assert!(
-        message.contains(&format!("{}: task_deleted", local.work_id.0)),
+        message.contains(&format!("{}: unsupported_origin", local.work_id.0)),
         "{message}"
     );
     assert_eq!(state(&store), before);
@@ -706,34 +706,34 @@ fn a_required_child_waiver_on_the_parent_refuses_its_edit_as_execution_history()
     assert_eq!(state(&store), before);
 }
 
-fn deleted_conflicts(count: usize) -> Vec<Conflict> {
+fn lifecycle_conflicts(count: usize) -> Vec<Conflict> {
     (1_u128..)
         .take(count)
         .map(|value| Conflict {
             id: WorkId(uuid::Uuid::from_u128(value)),
-            reason: "task_deleted",
-            detail: "omitted from the folder".into(),
+            reason: "lifecycle",
+            detail: "the task is Cancelled".into(),
         })
         .collect()
 }
 
 #[test]
 fn a_refusal_names_at_most_the_limit_and_counts_the_rest_exactly() {
-    let named = |message: &str| message.matches(": task_deleted").count();
+    let named = |message: &str| message.matches(": lifecycle").count();
 
-    let at_limit = conflict_message(&[], &deleted_conflicts(NAMED_CONFLICT_LIMIT));
+    let at_limit = conflict_message(&[], &lifecycle_conflicts(NAMED_CONFLICT_LIMIT));
     assert_eq!(named(&at_limit), NAMED_CONFLICT_LIMIT, "{at_limit}");
     assert!(!at_limit.contains("more refused"), "{at_limit}");
     assert!(!at_limit.ends_with(';'), "{at_limit}");
 
-    let one_over = conflict_message(&[], &deleted_conflicts(NAMED_CONFLICT_LIMIT + 1));
+    let one_over = conflict_message(&[], &lifecycle_conflicts(NAMED_CONFLICT_LIMIT + 1));
     assert_eq!(named(&one_over), NAMED_CONFLICT_LIMIT, "{one_over}");
     assert!(
         one_over.ends_with("; and 1 more refused task"),
         "{one_over}"
     );
 
-    let conflicts = deleted_conflicts(NAMED_CONFLICT_LIMIT + 3);
+    let conflicts = lifecycle_conflicts(NAMED_CONFLICT_LIMIT + 3);
     let with_project = conflict_message(&[ProjectChange::NotesProfile], &conflicts);
     assert!(
         with_project.starts_with(
@@ -759,6 +759,12 @@ fn a_refusal_beyond_the_limit_names_the_lowest_ids_and_counts_the_rest() {
         .map(|index| document(&format!("root {index}"), None))
         .collect::<Vec<_>>();
     tasks.sort_by_key(|task| task.id.0);
+    // Terminal members still refuse retirement; use a graph-valid fixture
+    // whose tasks all exercise the same lifecycle boundary.
+    for task in &mut tasks {
+        task.lifecycle = WorkLifecycle::Cancelled;
+        task.disposal_reason = Some("already cancelled".into());
+    }
     let ids = tasks.iter().map(|task| task.id).collect::<Vec<_>>();
     let project_document = ProjectDocument {
         format: FORMAT.into(),
@@ -802,7 +808,7 @@ fn a_refusal_beyond_the_limit_names_the_lowest_ids_and_counts_the_rest() {
     let message = conflict(&real);
     let mut previous = 0;
     for id in &ids[..NAMED_CONFLICT_LIMIT] {
-        let entry = format!("{}: task_deleted", id.0);
+        let entry = format!("{}: lifecycle", id.0);
         let position = message
             .find(&entry)
             .unwrap_or_else(|| panic!("{entry} is named: {message}"));
@@ -816,3 +822,1069 @@ fn a_refusal_beyond_the_limit_names_the_lowest_ids_and_counts_the_rest() {
 }
 
 mod adds;
+
+/// Omission of a baseline member, unlike omission of never-enrolled local work.
+fn without(tree: &TaskTree, ids: &[WorkId]) -> TaskTree {
+    let mut selected = tree.clone();
+    selected.tasks.retain(|task| !ids.contains(&task.id));
+    selected
+}
+
+#[test]
+fn folder_removal_is_one_run_free_disposal_and_preserves_history() {
+    let (mut store, fixture) = enrolled();
+    let origins = durable(&store);
+    let tables_before = state(&store).rows;
+    let before = query::load_work_item(&store.connection, fixture.first).unwrap();
+    let resolved = without(&fixture.tree, &[fixture.first]);
+    super::super::folder_admission::RETAINED_VALIDATIONS.with(|count| count.set(0));
+    let result = exchange(&mut store, &resolved, "remove-leaf", 6).unwrap();
+    // A deletion-only import validates C minus D even with no additions.
+    assert_eq!(
+        super::super::folder_admission::RETAINED_VALIDATIONS.with(std::cell::Cell::get),
+        1
+    );
+    assert!(result.changed);
+    let removed = query::load_work_item(&store.connection, fixture.first).unwrap();
+    assert_eq!(removed.lifecycle, WorkLifecycle::Cancelled);
+    assert_eq!(removed.revision, before.revision + 1);
+    assert_eq!(removed.parent_id, before.parent_id);
+    assert_eq!(removed.root_id, before.root_id);
+    assert_eq!(removed.active_run_id, None);
+    let history = events(&store, fixture.first);
+    assert_eq!(history.len(), 1);
+    let event = &history[0];
+    assert!(matches!(
+        event.transition,
+        WorkTransition::Disposed {
+            lifecycle: WorkLifecycle::Cancelled,
+            replacement_id: None,
+            ..
+        }
+    ));
+    assert!(event.run_id.is_none() && event.run.is_none());
+    assert!(event.root_execution.is_none() && event.claim.is_none());
+    assert!(event.handoff_offer.is_none() && event.blocker.is_none());
+    assert_eq!(event.actor.actor_id, "folder-importer");
+    assert_eq!(event.created_at, at(6));
+    for table in [
+        "work_runs",
+        "work_claims",
+        "work_root_executions",
+        "work_root_members",
+    ] {
+        let count: i64 = store
+            .connection
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0, "{table}");
+    }
+    let run_feed: i64 = store
+        .connection
+        .query_row(
+            "SELECT count(*) FROM work_feed_entries WHERE feed_kind = 'run_execution'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(run_feed, 0);
+    let tables_after = state(&store).rows;
+    for (name, rows) in tables_before {
+        if matches!(
+            name.as_str(),
+            "objects"
+                | "work_items"
+                | "work_feed_entries"
+                | "work_feed_heads"
+                | "work_operation_results"
+        ) || name.starts_with("work_catalog_fts")
+        {
+            continue;
+        }
+        assert_eq!(
+            tables_after
+                .iter()
+                .find(|(table, _)| table == &name)
+                .map(|(_, rows)| rows),
+            Some(&rows),
+            "unchanged table {name}"
+        );
+    }
+    assert_eq!(durable(&store), origins);
+    assert_eq!(exported(&store), resolved);
+    assert_eq!(events(&store, fixture.completed), []);
+    assert!(store.verify_all().unwrap().is_healthy());
+    assert!(
+        !exchange(&mut store, &resolved, "remove-repeat", 7)
+            .unwrap()
+            .changed
+    );
+    assert_eq!(events(&store, fixture.first).len(), 1);
+}
+
+#[test]
+fn folder_removal_preserves_outgoing_edges_and_sequential_retirement() {
+    let mut fixture = fixture();
+    fixture.tree = edited(&fixture.tree, fixture.first, |task| {
+        task.prerequisites = vec![fixture.completed];
+        task.blockers.push(SharedBlocker {
+            blocker_id: uuid::Uuid::new_v4().to_string(),
+            kind: WorkBlockerKind::Manual,
+            detail: "historical input".into(),
+            created_by: SharedActor::from_actor(&actor("author")),
+            created_at: at(1),
+        });
+    });
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &fixture.tree, "enrol", 5).unwrap();
+    let origins = durable(&store);
+    let children_removed = without(&fixture.tree, &[fixture.first, fixture.second]);
+    exchange(&mut store, &children_removed, "children", 6).unwrap();
+    let parent_removed = without(&children_removed, &[fixture.parent]);
+    exchange(&mut store, &parent_removed, "parent", 7).unwrap();
+    let graph = store.export_task_tree(&project()).unwrap();
+    let retired_child = graph
+        .tasks
+        .iter()
+        .find(|task| task.id == fixture.first)
+        .unwrap();
+    assert_eq!(retired_child.parent_id, Some(fixture.parent));
+    assert_eq!(retired_child.prerequisites, vec![fixture.completed]);
+    assert_eq!(retired_child.blockers.len(), 1);
+    assert_eq!(durable(&store), origins);
+    assert_eq!(exported(&store), parent_removed);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_refuses_hidden_local_incoming_references_without_writes() {
+    let (mut store, fixture) = enrolled();
+    let local = store
+        .create_work(
+            &root_request(PROJECT, "local-root", 6),
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    store
+        .add_work_prerequisite(
+            &crate::domain::ChangeWorkPrerequisiteRequest {
+                work_id: local.work_id,
+                prerequisite_id: fixture.first,
+                expected_revision: local.revision,
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "local-needs-member".into(),
+                changed_at: at(7),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    // R omits native L, but current L still requires the removed member.
+    let resolved = without(&fixture.tree, &[fixture.first]);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &resolved, "remove-member", 8).unwrap_err());
+    assert!(
+        message.contains(&format!("{}: retained_reference", fixture.first.0)),
+        "{message}"
+    );
+    assert!(message.contains(&local.work_id.0.to_string()), "{message}");
+    assert_eq!(state(&store), before);
+}
+
+#[test]
+fn folder_removal_of_a_parent_refuses_when_its_claimed_child_stays() {
+    for claim_lower_id in [true, false] {
+        let (mut store, fixture) = enrolled();
+        let mut children = [fixture.first, fixture.second];
+        children.sort_by_key(|id| id.0);
+        let claimed = children[usize::from(!claim_lower_id)];
+        let sibling = children[usize::from(claim_lower_id)];
+        let claim = claim_restored(&mut store, claimed, "child-worker", 6);
+        let selected = without(
+            &exported(&store),
+            &[fixture.parent, fixture.first, fixture.second],
+        );
+        selected.validate_folder().unwrap();
+        let before = state(&store);
+        let message =
+            conflict(&exchange(&mut store, &selected, "remove-claimed-subtree", 7).unwrap_err());
+        assert!(
+            message.contains(&format!(
+                "{}: active_run (run {})",
+                claimed.0, claim.run_id.0
+            )),
+            "{message}"
+        );
+        assert!(
+            message.contains(&format!("{}: ancestor_binding", sibling.0)),
+            "{message}"
+        );
+        assert!(
+            message.contains(&format!("{}: retained_reference", fixture.parent.0)),
+            "{message}"
+        );
+        // Both refused children retain their parent edge. The diagnostic
+        // names the lower id, whether or not that child holds the claim.
+        assert!(
+            message.contains(&format!(
+                "retained task {} parent_id references {}",
+                children[0].0, fixture.parent.0
+            )),
+            "{message}"
+        );
+        assert_eq!(state(&store), before);
+    }
+}
+
+#[test]
+fn folder_removal_of_a_native_sealed_member_refuses_without_changing_its_seal() {
+    use crate::storage::work::test_support::{checkpoint, complete, evidence};
+    let root = document("root completed here", None);
+    let mut initial = fixture().tree;
+    initial.tasks = vec![root.clone()];
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &initial, "enrol", 5).unwrap();
+    let claim = claim_restored(&mut store, root.id, "worker", 6);
+    let current = query::load_work_item(&store.connection, root.id).unwrap();
+    let proof = evidence(&mut store, &current, &claim, "worker", "proof", 7);
+    checkpoint(
+        &mut store,
+        &current,
+        &claim,
+        "worker",
+        "checkpoint",
+        8,
+        std::slice::from_ref(&proof),
+    );
+    let seal = complete(
+        &mut store, &current, &claim, "worker", &proof, "complete", 9,
+    )
+    .unwrap();
+    assert_eq!(seal.work_id, root.id);
+    let selected = without(&exported(&store), &[root.id]);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &selected, "remove-sealed", 10).unwrap_err());
+    assert!(
+        message.contains(&format!("{}: sealed_completion", root.id.0)),
+        "{message}"
+    );
+    assert_eq!(state(&store), before);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_refuses_a_run_free_revision_with_root_bound_history() {
+    let (mut store, fixture) = enrolled();
+    claim_restored(&mut store, fixture.first, "sibling-worker", 6);
+    let root = query::active_root_execution(&store.connection, fixture.parent).unwrap();
+    let mut item = query::load_work_item(&store.connection, fixture.second).unwrap();
+    assert_eq!(item.active_run_id, None);
+    item.revision += 1;
+    item.updated_at = at(7);
+    // Exercise conservative historical admission directly: public scalar
+    // revision currently writes no root snapshot, but retained history may
+    // carry one. The event and root reference are stored canonically.
+    let transaction = store.connection.transaction().unwrap();
+    crate::storage::work::planning::persist_work_item(&transaction, &item).unwrap();
+    let mut event = crate::storage::work::planning::revised_event(
+        &item,
+        None,
+        None,
+        WorkPlanningAuthority::Project,
+        actor("planner"),
+        at(7),
+    );
+    event.root_execution = Some(root);
+    let (event_id, _) =
+        crate::storage::work::feeds::append_work_event(&transaction, &event).unwrap();
+    transaction.commit().unwrap();
+    let selected = without(&exported(&store), &[item.work_id]);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &selected, "remove-root-bound", 8).unwrap_err());
+    assert!(
+        message.contains(&format!(
+            "{}: execution_history (root-bound event {})",
+            item.work_id.0,
+            event_id.as_str()
+        )),
+        "{message}"
+    );
+    assert_eq!(state(&store), before);
+}
+
+#[test]
+fn folder_removal_of_an_optional_child_keeps_ordinary_parent_completion() {
+    use crate::storage::work::test_support::{checkpoint, complete, evidence};
+    let parent = document("parent", None);
+    let mut child = document("optional child", Some(parent.id));
+    child.child_requirement = ChildRequirement::Optional;
+    let mut initial = fixture().tree;
+    initial.tasks = vec![parent.clone(), child.clone()];
+    initial.tasks.sort_by_key(|task| task.id.0);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &initial, "enrol", 5).unwrap();
+    exchange(
+        &mut store,
+        &without(&initial, &[child.id]),
+        "remove-optional",
+        6,
+    )
+    .unwrap();
+    let claim = claim_restored(&mut store, parent.id, "parent-worker", 7);
+    let current = query::load_work_item(&store.connection, parent.id).unwrap();
+    let proof = evidence(&mut store, &current, &claim, "parent-worker", "proof", 8);
+    checkpoint(
+        &mut store,
+        &current,
+        &claim,
+        "parent-worker",
+        "checkpoint",
+        9,
+        std::slice::from_ref(&proof),
+    );
+    let seal = complete(
+        &mut store,
+        &current,
+        &claim,
+        "parent-worker",
+        &proof,
+        "complete-parent",
+        10,
+    )
+    .unwrap();
+    assert_eq!(seal.required_child_seals, []);
+    assert_eq!(seal.required_child_waivers, []);
+    // Ordinary completion lists optional children without a completed seal,
+    // including the retained Cancelled child; no waiver is manufactured.
+    assert_eq!(seal.unfinished_optional_children, vec![child.id]);
+    let retained = query::load_work_item(&store.connection, child.id).unwrap();
+    assert_eq!(retained.lifecycle, WorkLifecycle::Cancelled);
+    assert_eq!(retained.parent_id, Some(parent.id));
+    assert_eq!(retained.active_run_id, None);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_uses_current_references_despite_refused_folder_edits() {
+    let mut fixture = fixture();
+    fixture.tree = edited(&fixture.tree, fixture.first, |task| {
+        task.prerequisites = vec![fixture.second];
+    });
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &fixture.tree, "enrol", 5).unwrap();
+    let selected = edited(
+        &without(&fixture.tree, &[fixture.second]),
+        fixture.first,
+        |task| {
+            task.prerequisites.clear();
+        },
+    );
+    selected.validate_folder().unwrap();
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &selected, "remove-referenced", 6).unwrap_err());
+    assert!(
+        message.contains(&format!("{}: retained_reference", fixture.second.0)),
+        "{message}"
+    );
+    assert!(message.contains(&fixture.first.0.to_string()), "{message}");
+    assert_eq!(state(&store), before);
+}
+
+#[test]
+fn folder_removal_refusal_does_not_blame_an_added_indirect_dependent() {
+    let mut fixture = fixture();
+    fixture.tree = edited(&fixture.tree, fixture.first, |task| {
+        task.prerequisites = vec![fixture.second];
+    });
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &fixture.tree, "enrol", 5).unwrap();
+    // Current H -> D survives: clearing H's edge is unsupported, and the
+    // requested deletion of D must retain it. X -> H is valid in both R
+    // and the graph the import would leave, so X is no graph culprit.
+    let mut selected = edited(
+        &without(&fixture.tree, &[fixture.second]),
+        fixture.first,
+        |task| {
+            task.prerequisites.clear();
+        },
+    );
+    let mut added = document("indirect dependent", None);
+    added.prerequisites = vec![fixture.first];
+    let added_id = added.id;
+    selected.tasks.push(added);
+    selected.tasks.sort_by_key(|task| task.id.0);
+    selected.validate_folder().unwrap();
+    let before = state(&store);
+    let message =
+        conflict(&exchange(&mut store, &selected, "mixed-retained-reference", 6).unwrap_err());
+    assert!(
+        message.contains(&format!("{}: unsupported_fields", fixture.first.0)),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("{}: retained_reference", fixture.second.0)),
+        "{message}"
+    );
+    assert!(!message.contains(&added_id.0.to_string()), "{message}");
+    assert!(!message.contains("folder:"), "{message}");
+    assert_eq!(state(&store), before);
+}
+
+#[test]
+fn folder_removal_keeps_references_of_every_refused_deletion() {
+    let mut first = document("retained cancellation", None);
+    let mut second = document("middle root", None);
+    let third = document("last root", None);
+    first.prerequisites = vec![second.id];
+    first.lifecycle = WorkLifecycle::Cancelled;
+    first.disposal_reason = Some("cancelled by the source author".into());
+    second.prerequisites = vec![third.id];
+    let mut initial = fixture().tree;
+    initial.tasks = vec![first.clone(), second.clone(), third.clone()];
+    initial.tasks.sort_by_key(|task| task.id.0);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &initial, "enrol", 5).unwrap();
+    let selected = without(&exported(&store), &[first.id, second.id, third.id]);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &selected, "remove-chain", 7).unwrap_err());
+    assert!(
+        message.contains(&format!("{}: lifecycle", first.id.0)),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("{}: retained_reference", second.id.0)),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("{}: retained_reference", third.id.0)),
+        "{message}"
+    );
+    assert_eq!(state(&store), before);
+}
+
+#[test]
+fn folder_removal_checks_sibling_root_execution_but_not_unrelated_roots() {
+    let (mut store, fixture) = enrolled();
+    claim_restored(&mut store, fixture.first, "worker", 6);
+    let resolved = without(&exported(&store), &[fixture.second]);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &resolved, "remove-second", 7).unwrap_err());
+    assert!(message.contains("ancestor_binding"), "{message}");
+    assert!(message.contains("root execution"), "{message}");
+    assert_eq!(state(&store), before);
+
+    let unrelated = document("separate root", None);
+    let mut extended = exported(&store);
+    extended.tasks.push(unrelated.clone());
+    extended.tasks.sort_by_key(|task| task.id.0);
+    exchange(&mut store, &extended, "add-unrelated", 8).unwrap();
+    exchange(
+        &mut store,
+        &without(&extended, &[unrelated.id]),
+        "remove-unrelated",
+        9,
+    )
+    .unwrap();
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_delete_all_stays_enrolled_and_reserves_retired_ids() {
+    let root = document("only task", None);
+    let mut initial = fixture().tree;
+    initial.tasks = vec![root.clone()];
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &initial, "enrol", 5).unwrap();
+    let empty = without(&initial, &[root.id]);
+    exchange(&mut store, &empty, "delete-all", 6).unwrap();
+    assert_eq!(exported(&store), empty);
+    let mut added = empty.clone();
+    added.tasks.push(document("new task", None));
+    exchange(&mut store, &added, "add-after-empty", 7).unwrap();
+    let mut resurrection = added.clone();
+    resurrection.tasks.push(root.clone());
+    resurrection.tasks.sort_by_key(|task| task.id.0);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &resurrection, "resurrection", 8).unwrap_err());
+    assert!(message.contains("id_collision"), "{message}");
+    assert_eq!(state(&store), before);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_dry_run_replay_and_late_failure_are_atomic() {
+    let (mut store, fixture) = enrolled();
+    let resolved = without(&fixture.tree, &[fixture.first]);
+    let basis = basis(&store);
+    let project = project();
+    let importer = actor("folder-importer");
+    let profile = profile();
+    let request = TaskSyncFolderApply {
+        project: &project,
+        actor: &importer,
+        tree: &resolved,
+        export_basis: &basis,
+        profile: &profile,
+        complete: true,
+        now: at(6),
+    };
+    let before = state(&store);
+    assert!(
+        store
+            .dry_run_task_sync_folder(request, "remove")
+            .unwrap()
+            .dry_run
+    );
+    assert_eq!(state(&store), before);
+    // Failing baseline persistence is after item/events but before the new
+    // membership can affect the export check.
+    store.connection.execute_batch("CREATE TEMP TRIGGER refuse_folder_baseline BEFORE INSERT ON objects WHEN NEW.object_kind = 'task_sync_import_planning' BEGIN SELECT RAISE(ABORT, 'baseline failure'); END;").unwrap();
+    let before_baseline = state(&store);
+    assert!(store.apply_task_sync_folder(request, "remove").is_err());
+    assert_eq!(state(&store), before_baseline);
+    store
+        .connection
+        .execute_batch("DROP TRIGGER refuse_folder_baseline")
+        .unwrap();
+    // Failure at receipt persistence is later than the new membership/event writes.
+    store.connection.execute_batch("CREATE TEMP TRIGGER refuse_folder_result BEFORE INSERT ON work_operation_results WHEN NEW.operation = 'apply_task_sync_folder' BEGIN SELECT RAISE(ABORT, 'late result failure'); END;").unwrap();
+    let before_failure = state(&store);
+    assert!(store.apply_task_sync_folder(request, "remove").is_err());
+    assert_eq!(state(&store), before_failure);
+    store
+        .connection
+        .execute_batch("DROP TRIGGER refuse_folder_result")
+        .unwrap();
+    let first = store.apply_task_sync_folder(request, "remove").unwrap();
+    let committed = state(&store);
+    assert_eq!(
+        store.apply_task_sync_folder(request, "remove").unwrap(),
+        first
+    );
+    assert_eq!(state(&store), committed);
+    // A later legitimate local edit makes the old request's basis stale.
+    // Exact receipt replay must still precede freshness/admission checks.
+    let survivor = query::load_work_item(&store.connection, fixture.second).unwrap();
+    store
+        .revise_work(
+            &crate::domain::ReviseWorkRequest {
+                work_id: survivor.work_id,
+                expected_revision: survivor.revision,
+                patch: crate::domain::WorkRevisionPatch {
+                    title: Some("later local planning".into()),
+                    ..Default::default()
+                },
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("local-planner"),
+                idempotency_key: "later-local-revision".into(),
+                updated_at: at(7),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let later = state(&store);
+    assert_eq!(
+        store.apply_task_sync_folder(request, "remove").unwrap(),
+        first
+    );
+    assert_eq!(state(&store), later);
+    let changed_payload = edited(&resolved, fixture.second, |task| {
+        task.title = "different intent".into();
+    });
+    let changed_request = TaskSyncFolderApply {
+        tree: &changed_payload,
+        ..request
+    };
+    assert!(matches!(
+        store.apply_task_sync_folder(changed_request, "remove"),
+        Err(StoreError::WorkOperationIdempotencyConflict { .. })
+    ));
+    assert_eq!(state(&store), later);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_reopen_and_projection_repair_preserve_durable_rows() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("folder-removal.db");
+    let fixture = fixture();
+    let selected = without(&fixture.tree, &[fixture.first]);
+    let read_durable = |store: &SqliteStore| {
+        state(store)
+            .rows
+            .into_iter()
+            .filter(|(name, _)| {
+                !super::super::super::is_rebuilt_projection_table(name)
+                    && !name.starts_with("work_catalog_fts")
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = {
+        let mut store = SqliteStore::open(&database).unwrap();
+        exchange(&mut store, &fixture.tree, "enrol", 5).unwrap();
+        exchange(&mut store, &selected, "remove", 6).unwrap();
+        assert!(store.verify_all().unwrap().is_healthy());
+        read_durable(&store)
+    };
+    assert!(
+        SqliteStore::repair_rebuildable_projections(&database)
+            .unwrap()
+            .is_healthy()
+    );
+    let store = SqliteStore::open(&database).unwrap();
+    assert_eq!(exported(&store), selected);
+    assert_eq!(read_durable(&store), before);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_retains_required_child_barrier_until_explicit_waiver() {
+    use crate::storage::work::test_support::{checkpoint, complete, evidence};
+    let parent = document("parent", None);
+    let child = document("required child", Some(parent.id));
+    let mut initial = fixture().tree;
+    initial.tasks = vec![parent.clone(), child.clone()];
+    initial.tasks.sort_by_key(|task| task.id.0);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &initial, "enrol", 5).unwrap();
+    exchange(
+        &mut store,
+        &without(&initial, &[child.id]),
+        "remove-child",
+        6,
+    )
+    .unwrap();
+    assert_eq!(events(&store, parent.id), []);
+    let claim = claim_restored(&mut store, parent.id, "parent-worker", 7);
+    let current = query::load_work_item(&store.connection, parent.id).unwrap();
+    let proof = evidence(&mut store, &current, &claim, "parent-worker", "proof", 8);
+    checkpoint(
+        &mut store,
+        &current,
+        &claim,
+        "parent-worker",
+        "checkpoint",
+        9,
+        std::slice::from_ref(&proof),
+    );
+    assert!(matches!(
+        complete(&mut store, &current, &claim, "parent-worker", &proof, "before-waiver", 10),
+        Err(StoreError::WorkCompletionRecoveryRequired {
+            cause: crate::WorkCompletionRecoveryCause::RequiredChildUnsealed { child: blocked }, ..
+        }) if blocked == child.id
+    ));
+    let waiver = store
+        .waive_required_child(
+            &crate::domain::WaiveRequiredChildRequest {
+                parent_id: parent.id,
+                child_id: child.id,
+                expected_parent_revision: current.revision,
+                reason: "The removed child is explicitly accepted as omitted".into(),
+                actor: actor("parent-worker"),
+                idempotency_key: "explicit-waiver".into(),
+                waived_at: at(11),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    assert_eq!(waiver.waived_by, "parent-worker");
+    let current = query::load_work_item(&store.connection, parent.id).unwrap();
+    checkpoint(
+        &mut store,
+        &current,
+        &claim,
+        "parent-worker",
+        "checkpoint-after-waiver",
+        12,
+        std::slice::from_ref(&proof),
+    );
+    let seal = complete(
+        &mut store,
+        &current,
+        &claim,
+        "parent-worker",
+        &proof,
+        "after-waiver",
+        13,
+    )
+    .unwrap();
+    assert_eq!(seal.required_child_waivers.len(), 1);
+    assert_eq!(
+        query::load_work_item(&store.connection, child.id)
+            .unwrap()
+            .lifecycle,
+        WorkLifecycle::Cancelled
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_subtree_is_postorder_beside_additions_and_scalar_edits() {
+    let mut fixture = fixture();
+    let mut grandchild = document("grandchild", Some(fixture.first));
+    grandchild.child_requirement = ChildRequirement::Optional;
+    let grandchild_id = grandchild.id;
+    fixture.tree.tasks.push(grandchild);
+    fixture.tree.tasks.sort_by_key(|task| task.id.0);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &fixture.tree, "enrol", 5).unwrap();
+    let mut resolved = without(&fixture.tree, &[fixture.first, grandchild_id]);
+    resolved = edited(&resolved, fixture.second, |task| {
+        task.title = "edited sibling".into();
+    });
+    let added = document("new unrelated root", None);
+    let added_id = added.id;
+    resolved.tasks.push(added);
+    resolved.tasks.sort_by_key(|task| task.id.0);
+    exchange(&mut store, &resolved, "mixed", 6).unwrap();
+    let order = store.connection.prepare(
+        "SELECT work_id FROM work_feed_entries WHERE feed_kind = 'project' AND object_kind = 'work_event' ORDER BY position"
+    ).unwrap().query_map([], |row| row.get::<_, String>(0)).unwrap()
+        .collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(
+        order,
+        vec![
+            fixture.second.0.to_string(),
+            grandchild_id.0.to_string(),
+            fixture.first.0.to_string()
+        ]
+    );
+    assert_eq!(events(&store, added_id), []);
+    assert_eq!(exported(&store), resolved);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_refusals_collect_with_other_deltas_and_roll_back_everything() {
+    let (mut store, fixture) = enrolled();
+    let claim = claim_restored(&mut store, fixture.first, "worker", 6);
+    let mut resolved = without(&exported(&store), &[fixture.first, fixture.completed]);
+    resolved = edited(&resolved, fixture.second, |task| {
+        task.labels = vec!["unsupported".into()];
+    });
+    resolved.tasks.push(document("safe addition", None));
+    resolved.tasks.sort_by_key(|task| task.id.0);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &resolved, "blocked-mixed", 7).unwrap_err());
+    for expected in [
+        format!("{}: active_run (run {})", fixture.first.0, claim.run_id.0),
+        format!("{}: restored_completion", fixture.completed.0),
+        format!("{}: unsupported_fields", fixture.second.0),
+    ] {
+        assert!(message.contains(&expected), "{expected}: {message}");
+    }
+    assert_eq!(state(&store), before);
+}
+
+#[test]
+fn folder_removal_preserves_notes_and_retained_cancelled_members() {
+    use crate::task_sync::notes::{SharedNote, SharedNoteKind};
+    let mut fixture = fixture();
+    fixture.tree.project.notes_included = true;
+    let note = SharedNote {
+        id: ObjectId::mint(),
+        kind: SharedNoteKind::Generic,
+        body: "historical observation".into(),
+        author: SharedActor::from_actor(&actor("author")),
+        recorded_at: at(2),
+        origin_machine: "remote".into(),
+    };
+    fixture.tree = edited(&fixture.tree, fixture.first, |task| task.notes.push(note));
+    let mut cancelled = document("retained cancellation", None);
+    cancelled.lifecycle = WorkLifecycle::Cancelled;
+    cancelled.disposal_reason = Some("already retired by its author".into());
+    let cancelled_id = cancelled.id;
+    fixture.tree.tasks.push(cancelled);
+    fixture.tree.tasks.sort_by_key(|task| task.id.0);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let profile = ExportProfile {
+        include_notes: true,
+        origin_machine: Some("host".into()),
+    };
+    let apply = |store: &mut SqliteStore, tree: &TaskTree, key: &str, second: i64| {
+        let own = store.export_task_sync_folder(&project(), &profile).unwrap();
+        store.apply_task_sync_folder(
+            TaskSyncFolderApply {
+                project: &project(),
+                actor: &actor("folder-importer"),
+                tree,
+                export_basis: &own.export_basis,
+                profile: &profile,
+                complete: true,
+                now: at(second),
+            },
+            key,
+        )
+    };
+    apply(&mut store, &fixture.tree, "enrol", 5).unwrap();
+    let origins = durable(&store);
+    let resolved = without(&fixture.tree, &[fixture.first]);
+    apply(&mut store, &resolved, "remove", 6).unwrap();
+    assert_eq!(
+        store
+            .export_task_sync_folder(&project(), &profile)
+            .unwrap()
+            .tree,
+        resolved
+    );
+    assert_eq!(durable(&store), origins);
+    assert_eq!(events(&store, cancelled_id), []);
+    let all = store
+        .export_task_tree_with_options(&project(), &profile.options())
+        .unwrap();
+    assert_eq!(
+        all.tree
+            .tasks
+            .iter()
+            .find(|task| task.id == fixture.first)
+            .unwrap()
+            .notes
+            .len(),
+        1
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_preserves_imported_started_activity_after_reopen_and_repair() {
+    use crate::task_sync::activity::{ActivityMap, ActivityNotice, ActivityState};
+
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("folder-removal-activity.db");
+    let mut fixture = fixture();
+    fixture.tree.project.notes_included = true;
+    let activity_id = ObjectId::mint();
+    let notice = ActivityNotice {
+        activity_id: activity_id.clone(),
+        task_id: fixture.first,
+        origin_machine: "remote".into(),
+        actor: SharedActor::from_actor(&actor("remote-worker")),
+        state: ActivityState::Started,
+        state_revision: 1,
+        event_id: activity_id.clone(),
+    };
+    let activity: ActivityMap = std::iter::once((
+        "remote".into(),
+        std::iter::once((activity_id, notice)).collect(),
+    ))
+    .collect();
+    fixture.tree = edited(&fixture.tree, fixture.first, |task| {
+        task.activity = activity.clone();
+    });
+    let selected = without(&fixture.tree, &[fixture.first]);
+    let profile = ExportProfile {
+        include_notes: true,
+        origin_machine: Some("host".into()),
+    };
+    let assert_notices = |store: &SqliteStore| {
+        assert_eq!(
+            store
+                .export_task_sync_folder(&project(), &profile)
+                .unwrap()
+                .tree,
+            selected
+        );
+        let all = store
+            .export_task_tree_with_options(&project(), &profile.options())
+            .unwrap();
+        let retired = all
+            .tree
+            .tasks
+            .iter()
+            .find(|task| task.id == fixture.first)
+            .unwrap();
+        assert_eq!(retired.lifecycle, WorkLifecycle::Cancelled);
+        assert_eq!(retired.activity, activity);
+        assert!(
+            all.tree
+                .tasks
+                .iter()
+                .all(|task| !task.activity.contains_key("host"))
+        );
+        assert!(store.verify_all().unwrap().is_healthy());
+    };
+    let read_durable = |store: &SqliteStore| {
+        state(store)
+            .rows
+            .into_iter()
+            .filter(|(name, _)| {
+                !super::super::super::is_rebuilt_projection_table(name)
+                    && !name.starts_with("work_catalog_fts")
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = {
+        let mut store = SqliteStore::open(&database).unwrap();
+        for (tree, key, second) in [
+            (&fixture.tree, "enrol-activity", 5),
+            (&selected, "remove-activity", 6),
+        ] {
+            let own = store.export_task_sync_folder(&project(), &profile).unwrap();
+            store
+                .apply_task_sync_folder(
+                    TaskSyncFolderApply {
+                        project: &project(),
+                        actor: &actor("folder-importer"),
+                        tree,
+                        export_basis: &own.export_basis,
+                        profile: &profile,
+                        complete: true,
+                        now: at(second),
+                    },
+                    key,
+                )
+                .unwrap();
+        }
+        assert_notices(&store);
+        read_durable(&store)
+    };
+    {
+        let store = SqliteStore::open(&database).unwrap();
+        assert_notices(&store);
+        assert_eq!(read_durable(&store), before);
+    }
+    assert!(
+        SqliteStore::repair_rebuildable_projections(&database)
+            .unwrap()
+            .is_healthy()
+    );
+    let store = SqliteStore::open(&database).unwrap();
+    assert_notices(&store);
+    assert_eq!(read_durable(&store), before);
+}
+
+#[test]
+fn folder_removal_of_a_released_prior_run_refuses_without_expiring_authority() {
+    let (mut store, fixture) = enrolled();
+    let claim = claim_restored(&mut store, fixture.first, "worker", 6);
+    let item = query::load_work_item(&store.connection, fixture.first).unwrap();
+    store
+        .release_work(
+            &ReleaseWorkRequest {
+                work_id: fixture.first,
+                run_id: claim.run_id,
+                expected_work_revision: item.revision,
+                holder: SessionId("worker".into()),
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+                reason: "hand back before folder exchange".into(),
+                waiver_reason: Some("no contribution".into()),
+                actor: actor("worker"),
+                idempotency_key: "release-worker".into(),
+                released_at: at(7),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let selected = without(&exported(&store), &[fixture.first]);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &selected, "remove-released", 8).unwrap_err());
+    assert!(
+        message.contains(&format!(
+            "{}: active_run (run {})",
+            fixture.first.0, claim.run_id.0
+        )),
+        "{message}"
+    );
+    assert_eq!(state(&store), before);
+}
+
+#[test]
+fn folder_removal_shared_ancestors_are_read_once_per_admission() {
+    use super::super::folder_admission::ELIGIBILITY_READS;
+    let root = document("shared root", None);
+    let children = (0..40)
+        .map(|index| document(&format!("child {index}"), Some(root.id)))
+        .collect::<Vec<_>>();
+    let mut initial = fixture().tree;
+    initial.tasks = vec![root.clone()];
+    initial.tasks.extend(children.iter().cloned());
+    initial.tasks.sort_by_key(|task| task.id.0);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &initial, "enrol", 5).unwrap();
+    let selected = without(
+        &initial,
+        &children.iter().map(|task| task.id).collect::<Vec<_>>(),
+    );
+    ELIGIBILITY_READS.with(|count| count.set(0));
+    exchange(&mut store, &selected, "remove-children", 6).unwrap();
+    // One eligibility read for each child and their shared ancestor in
+    // preflight, and one deliberate write-boundary recheck per child.
+    assert_eq!(
+        ELIGIBILITY_READS.with(std::cell::Cell::get),
+        2 * children.len() + 1
+    );
+    assert_eq!(exported(&store), selected);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn folder_removal_mixed_with_addition_validates_the_retained_local_graph() {
+    let p = document("p", None);
+    let q = document("q", None);
+    let removed = document("disjoint removal", None);
+    let mut initial = fixture().tree;
+    initial.tasks = vec![p.clone(), q.clone(), removed.clone()];
+    initial.tasks.sort_by_key(|task| task.id.0);
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &initial, "enrol", 5).unwrap();
+    let parent = query::load_work_item(&store.connection, p.id).unwrap();
+    let decomposition = store
+        .decompose_work(
+            &crate::domain::DecomposeWorkRequest {
+                parent_id: p.id,
+                expected_parent_revision: parent.revision,
+                children: vec![crate::storage::work::test_support::child(
+                    "h",
+                    ChildRequirement::Required,
+                    "local-required-child",
+                )],
+                prerequisites: Vec::new(),
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "decompose-p".into(),
+                created_at: at(6),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let local =
+        query::load_work_item(&store.connection, decomposition.children[0].work_id).unwrap();
+    store
+        .add_work_prerequisite(
+            &crate::domain::ChangeWorkPrerequisiteRequest {
+                work_id: local.work_id,
+                prerequisite_id: q.id,
+                expected_revision: local.revision,
+                authority: WorkPlanningAuthority::Project,
+                actor: actor("planner"),
+                idempotency_key: "local-needs-q".into(),
+                changed_at: at(7),
+            },
+            &crate::DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let mut added = document("x", Some(q.id));
+    added.prerequisites = vec![p.id];
+    let added_id = added.id;
+    let mut selected = without(&initial, &[removed.id]);
+    selected.tasks.push(added);
+    selected.tasks.sort_by_key(|task| task.id.0);
+    selected.validate_folder().unwrap();
+    // R and the original import union omit native H. Only C minus D plus R
+    // sees the cycle P -> H -> Q -> X -> P. The safe disjoint removal must
+    // remain unapplied when the addition is refused.
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &selected, "mixed-cycle", 8).unwrap_err());
+    assert!(
+        message.contains(&format!("{}: retained_graph", added_id.0)),
+        "{message}"
+    );
+    assert!(
+        !message.contains(&format!("{}:", removed.id.0)),
+        "{message}"
+    );
+    assert_eq!(state(&store), before);
+}

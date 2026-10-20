@@ -96,7 +96,7 @@ its files: a merge that edits a task leaves the embedded fingerprint stale,
 and Git cannot regenerate it. A task file missing from a resolved folder
 therefore reads as the omission of that task. On a destination that holds an
 exchange baseline, omitting a task the last applied exchange held is a
-deletion, which refuses, as the next section describes. The reader and
+deletion subject to admission, as the next section describes. The reader and
 exporter limit each file to 1 MiB, the tree to 128 MiB, and the task count to
 100,000. Task graph limits also apply.
 
@@ -115,7 +115,7 @@ task the destination holds outside the last applied exchange, which the
 folder omits, is host-local: it stays as it is and does not join the
 exchange.
 
-Two kinds of change apply. A task the folder adds is restored exactly as the
+Three kinds of change apply. A task the folder adds is restored exactly as the
 empty-graph import restores one: its UUID, an import origin and restored
 record, its prerequisites and blockers, and its notes and activity when the
 selection shares them, with no event and no run, claim or root execution. A
@@ -123,10 +123,12 @@ completed addition keeps its reported completion, without a seal. An edit of
 a task's title, outcome or priority is recorded as an ordinary planning
 revision under project authority, attributed to the importing actor. Each
 added or edited task then exports exactly as the folder carries it, and an
-added task joins the exchange. Every other requested change refuses the
+added task joins the exchange. An eligible task omitted from the last
+exchange is locally cancelled by an ordinary `Disposed` event, with no run
+or other runtime state. Every other requested change refuses the
 whole folder with `task_sync_import_conflict`, which names refused tasks with
-their reasons: a task of the last exchange the folder omits
-(`task_deleted`), and a change to any other field (`unsupported_fields`, with
+their reasons: a task whose removal cannot be admitted, and a change to any
+other field (`unsupported_fields`, with
 the field names). A note selection that differs from the baseline's refuses
 earlier, as for every folder import: with `task_sync_divergent_planning`, or
 with `task_sync_invalid_graph` when the folder's `project.json` and the
@@ -172,8 +174,9 @@ contradicts it:
 - An addition that depends on a refused addition refuses too, naming it:
   through its parent chain as `ancestor_binding`, through a prerequisite or
   replacement as `refused_reference`.
-- The graph the import would leave, every task the destination holds plus the
-  additions, still forms a valid task graph (`retained_graph`). A host-local
+- The graph the import would leave, every current task the destination keeps
+  after admitted removals plus the additions, still forms a valid task graph
+  (`retained_graph`). A host-local
   task the folder omits can close a cycle that neither the folder nor the origin
   history holds.
 - The store's whole import-origin history, with the additions, still forms a
@@ -199,10 +202,10 @@ task.
 
 Existing tasks' notes and activity are compared exactly, so an unchanged note
 never blocks an addition. Unsupported changes, refused additions and blocked
-edits are judged together, one reason per task, and the refusal names the
+edits or removals are judged together, one reason per task, and the refusal names the
 first 20 refused tasks in task-id order, then gives the exact count of the
-rest. A task's own reasons come first: an unsupported change or deletion, the
-edit admission above, and for an addition its identities, pins and
+rest. A task's own reasons come first: unsupported fields, edit or removal
+eligibility, and for an addition its identities, pins and
 references. Then come an addition's ancestor chain and root, then an addition
 it depends on that was refused, then the graph the import would leave, and
 last the origin history. When any task refuses, nothing is written: no task,
@@ -210,10 +213,54 @@ revision, baseline or receipt. A completed task the folder leaves unchanged
 gains no event. The baseline records the folder whenever its inventory
 differs from the last one, even when no task changes, so a host-local task
 the folder now carries joins the exchange and its later omission is a
-refused deletion. After the additions, a foreign-key check and the
-import-origin audit run as rollback guards; admission has already judged
-everything they check, so a failure there is reported as a projection bug,
-not as a refusal of the folder.
+deletion subject to admission. After additions or removals, a foreign-key
+check and the import-origin audit run as rollback guards; admission has already
+judged everything they check, so a failure there is reported as a projection
+bug, not as a refusal of the folder.
+
+A removal uses the same restored, Open, run-free eligibility as a scalar
+edit and additionally refuses any prior run or root-bound history. A
+task-sync-restored member completed and sealed on this host refuses as
+`sealed_completion`; inert imported completion
+refuses as `restored_completion`. Every
+affected ancestor must be eligible and the root must have no active execution
+(`ancestor_binding`), including execution started by a sibling. A surviving
+shared or host-local task that still names the removed task as parent,
+prerequisite or replacement refuses the removal (`retained_reference`, naming
+both tasks and the field). These checks use current retained documents;
+an unapplied structural edit in the folder cannot hide a reference. A refused
+removal keeps its outgoing references, which can refuse further removals.
+Malformed input graphs still refuse earlier as `task_sync_invalid_graph`.
+Per-task reasons precede graph reasons; for a removal, a surviving reference
+precedes an ancestor-execution conflict. An unrelated executing root does not
+block removal. The remaining graph is validated even with no additions.
+
+Adds, scalar edits and children-before-parents removals apply in that order
+within one transaction. Removal retains the task row, original parent/root
+and relations, import origins, notes/activity and all prior records. The
+event carries the importing actor and time, with every runtime snapshot
+absent. It creates no claim, run, root execution, grant, contributor, waiver
+or completion. The new complete exchange baseline excludes removed ids;
+their durable history and identities remain reserved. Older retired tasks'
+historical edges do not block subsequent retirement waves. A Cancelled
+document retained in the folder stays a member; omitting an already terminal
+member refuses under the conservative lifecycle boundary. Delete-all leaves
+an enrolled empty baseline, so later additions receive full enrolled admission
+and a retired id cannot be resurrected.
+
+An incomplete checkout or input can omit an eligible member while leaving a
+valid graph. Import then cancels that task irreversibly and permanently retires
+its id from the exchange; adding the file back refuses as `id_collision`.
+Inspect `--dry-run` before applying a folder, especially a partial input.
+
+Removing a required child preserves the parent's required-child barrier.
+The parent's ordinary completion refuses until a project-bound session
+records an explicit attributed waiver through the existing waiver operation.
+Import never records that waiver or fabricates a child seal. Optional disposed
+children also keep their ordinary completion handling. Dry run executes the
+same transaction and rolls it back; exact receipt replay never reapplies a
+removal over later work. Projection repair rebuilds only declared disposable
+projections and preserves durable cancellation history and old receipts.
 
 A task this host created natively, which another host imported and returns
 unchanged, passes through untouched. An edit of it still refuses as
@@ -708,10 +755,13 @@ executes the same inserts and constraint checks, then rolls back, retaining no
 task, origin, baseline or execution records. Store initialization is a separate
 operator operation; a missing home is not silently configured by task import.
 
-Without an inventory or prior local state, an initial import cannot detect an
-omitted isolated task. It can detect an omitted referenced task. On repeat,
-comparison against the existing graph detects any missing task. File removal
-never disposes a task or waives a required child.
+Without an inventory or prior local state, a first import into an empty,
+unenrolled store cannot detect an omitted isolated task, but can refuse an
+omitted referenced task. This initial path never disposes an existing task.
+Once enrolled, [member omission](#edits-on-an-enrolled-destination) can cancel
+a task irreversibly and retire its id permanently (`id_collision` on return),
+even if the input was accidentally partial. Inspect `--dry-run` first.
+File removal never waives a required child.
 
 Open and proposed tasks become inert planning identities. Completed tasks keep
 an attributed restored completion, stay out of ready work and can satisfy an
@@ -789,7 +839,7 @@ replacement.
 | `task_sync_destination_non_utf8_name` | A task filename is not valid UTF-8. |
 | `task_sync_destination_unknown_entry` | The candidate directory holds an entry the format does not define. |
 | `task_sync_destination_missing_tasks` | A plain candidate directory, as read by preparation and setup materialization, has no `tasks` directory. A folder import accepts a folder without one. |
-| `task_sync_import_conflict` | A folder imported into an enrolled destination asks for a change this exchange does not apply (a deleted task, or a changed field other than title, outcome and priority), a task it would edit is not free to take the edit, or a task it adds collides with an identity the store holds, references a native task, sits under an ancestor or executing root that cannot take it, depends on a refused addition, or would break the destination's planning or the import-origin history. The message names the first 20 such tasks with their reasons, in task-id order, then gives the exact count of the rest. A changed note selection refuses earlier, as `task_sync_divergent_planning` or `task_sync_invalid_graph`. |
+| `task_sync_import_conflict` | A folder imported into an enrolled destination asks for a changed field other than title, outcome and priority; a task it would edit or remove is not free to take that change; a retained task references a removed task; or an addition collides with a held identity, references a native task, sits under a bound ancestor or executing root, depends on a refused addition, or breaks the destination's planning or import-origin history. The message names the first 20 refused tasks with reasons in task-id order, counts the rest, and reports graph failures that cannot be attributed to a task at folder level. A changed note selection refuses earlier, as `task_sync_divergent_planning` or `task_sync_invalid_graph`. |
 
 ## Local incremental preparation
 

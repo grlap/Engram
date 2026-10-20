@@ -439,17 +439,16 @@ fn an_enrolled_empty_destination_admits_additions_as_deltas() {
     assert_eq!(exported(&store), added);
 
     // Later folders keep the delta path: another addition joins, and the
-    // first one's omission is a refused deletion, not a fresh bootstrap.
+    // first one's omission is an admitted removal, not a fresh bootstrap.
     let again = with(&added, vec![document("second task", None)]);
     assert!(exchange(&mut store, &again, "add-2", 7).unwrap().changed);
     assert!(store.verify_all().unwrap().is_healthy());
     let mut omitted = again.clone();
     omitted.tasks.retain(|task| task.id != id);
-    let message = conflict(&exchange(&mut store, &omitted, "omit-1", 8).unwrap_err());
-    assert!(
-        message.contains(&format!("{}: task_deleted", id.0)),
-        "{message}"
-    );
+    assert!(exchange(&mut store, &omitted, "omit-1", 8).unwrap().changed);
+    assert_eq!(item(&store, id).lifecycle, WorkLifecycle::Cancelled);
+    assert_eq!(exported(&store), omitted);
+    assert!(store.verify_all().unwrap().is_healthy());
 }
 
 #[test]

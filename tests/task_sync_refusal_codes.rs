@@ -328,7 +328,7 @@ fn task_sync_import_refusals_carry_stable_codes_with_unchanged_text() {
 }
 
 #[test]
-fn task_sync_resolved_folder_edits_import_while_lost_task_files_refuse() {
+fn task_sync_resolved_folder_edits_import_and_omitted_members_are_cancelled() {
     let fixture = Fixture::new();
     let source = fixture.store("source");
     fixture.add(&source, "first task");
@@ -373,8 +373,8 @@ fn task_sync_resolved_folder_edits_import_while_lost_task_files_refuse() {
     let refused = refusal(&fixture.sync(&source, "import", &resolved, true));
     assert_eq!(refused["error"]["code"], "task_sync_divergent_planning");
 
-    // A resolved folder that lost a task file reads as a deletion, which a
-    // destination holding that task refuses, writing nothing.
+    // A resolved folder that lost a task file reads as a deletion, which an
+    // enrolled destination materializes without creating a local run.
     let lost = fixture.root.join("lost");
     fs::create_dir_all(lost.join("tasks")).unwrap();
     fs::copy(&target_basis, lost.join("project.json")).unwrap();
@@ -384,18 +384,36 @@ fn task_sync_resolved_folder_edits_import_while_lost_task_files_refuse() {
         lost.join("tasks").join(&kept),
     )
     .unwrap();
-    let refused = refusal(&fixture.import_with_basis(&target, &lost, &target_basis, true));
-    assert_eq!(refused["error"]["code"], "task_sync_import_conflict");
-    let lost_id = imported.tree.tasks[0].id.0.to_string();
-    let message = refused["error"]["message"].as_str().unwrap();
-    assert!(
-        message.contains(&format!("{lost_id}: task_deleted")),
-        "{message}"
-    );
+    let removed = fixture.import_with_basis(&target, &lost, &target_basis, true);
+    assert!(removed.status.success(), "{}", stderr(&removed));
+    let receipt: Value = serde_json::from_slice(&removed.stdout).unwrap();
+    assert_eq!(receipt["changed"], true);
     let after = fixture.root.join("after");
     let output = fixture.sync(&target, "export", &after, false);
     assert!(output.status.success(), "{}", stderr(&output));
-    assert_eq!(directory::read_folder(&after).unwrap().tree, imported.tree);
+    let after_tree = directory::read_folder(&after).unwrap().tree;
+    assert_eq!(after_tree.tasks, vec![imported.tree.tasks[1].clone()]);
+    let store = engram::SqliteStore::open(engram::project_database_path(
+        &target,
+        &engram::ProjectId(PROJECT.into()),
+    ))
+    .unwrap();
+    let removed_item = store.get_work_item(imported.tree.tasks[0].id).unwrap();
+    assert_eq!(removed_item.lifecycle, engram::WorkLifecycle::Cancelled);
+    assert_eq!(removed_item.active_run_id, None);
+    let connection = rusqlite::Connection::open(engram::project_database_path(
+        &target,
+        &engram::ProjectId(PROJECT.into()),
+    ))
+    .unwrap();
+    let runs: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_runs WHERE work_id = ?1",
+            [removed_item.work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(runs, 0);
 }
 
 #[test]

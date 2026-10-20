@@ -985,8 +985,9 @@ fn a_dependent_of_additions_over_the_open_descendant_limit_is_named_for_its_refe
 #[test]
 fn a_deletion_beside_a_host_local_child_does_not_blame_an_innocent_addition() {
     // The folder omits the second child, a member, whose host-local child
-    // stays: the deletion refuses on its own, and the graph the import would
-    // leave still holds both, so an unrelated addition is not blamed.
+    // stays. Decomposition gives the restored parent a run, so its deletion
+    // refuses as active_run. Both stay in the graph; an unrelated addition
+    // must not be blamed.
     let (mut store, fixture) = enrolled();
     let second = item(&store, fixture.second);
     store
@@ -1008,6 +1009,9 @@ fn a_deletion_beside_a_host_local_child_does_not_blame_an_innocent_addition() {
             &crate::DevelopmentNoopRedactor,
         )
         .unwrap();
+    let run_id = item(&store, fixture.second)
+        .active_run_id
+        .expect("decomposition bootstraps the restored parent's run");
     let innocent = document("an unrelated root", None);
     let innocent_id = innocent.id;
     let mut resolved = with(&fixture.tree, vec![innocent]);
@@ -1016,7 +1020,10 @@ fn a_deletion_beside_a_host_local_child_does_not_blame_an_innocent_addition() {
     reset_counters();
     let message = conflict(&exchange(&mut store, &resolved, "add-1", 7).unwrap_err());
     assert!(
-        message.contains(&format!("{}: task_deleted", fixture.second.0)),
+        message.contains(&format!(
+            "{}: active_run (run {})",
+            fixture.second.0, run_id.0
+        )),
         "{message}"
     );
     assert!(!message.contains(&innocent_id.0.to_string()), "{message}");

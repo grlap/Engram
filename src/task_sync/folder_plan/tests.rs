@@ -459,7 +459,7 @@ fn an_omitted_exchanged_task_is_a_deletion() {
         &members(&[&a, &d]),
     ));
     assert_eq!(delta(&plan, d.id), &TaskDelta::Deleted);
-    assert!(!plan.is_applicable());
+    assert!(plan.is_applicable());
 }
 
 #[test]
@@ -506,7 +506,7 @@ fn a_mixed_folder_lists_every_delta_in_task_id_order() {
     assert_eq!(plan.additions().collect::<Vec<_>>(), [n.id]);
     assert_eq!(delta(&plan, b.id), &fields(vec![TaskField::Labels]));
     assert_eq!(delta(&plan, d.id), &TaskDelta::Deleted);
-    // The labels change and the deletion make the folder inapplicable.
+    // The labels change makes the folder inapplicable; deletion needs admission.
     assert!(!plan.is_applicable());
 }
 

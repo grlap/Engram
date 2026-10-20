@@ -1336,6 +1336,49 @@ pub(super) fn apply_folder_scalar_revision_on(
     Ok(item)
 }
 
+/// Materializes an admitted folder removal without creating execution state.
+/// The caller owns the fresh eligibility check in this transaction.
+/// Ordinary disposal retains its separate runtime reconciliation contract.
+pub(super) fn apply_folder_disposal_on(
+    transaction: &Transaction<'_>,
+    mut item: WorkItem,
+    actor: &crate::domain::ActorContext,
+    at: DateTime<Utc>,
+) -> Result<WorkItem, StoreError> {
+    // Bind and validate retained relations before persisting the snapshot.
+    validated_current_work_relation_basis(transaction, item.work_id)?;
+    item.lifecycle = WorkLifecycle::Cancelled;
+    item.superseded_by = None;
+    item.revision += 1;
+    item.updated_at = at;
+    persist_work_item(transaction, &item)?;
+    append_work_event(
+        transaction,
+        &WorkEventDraft {
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: None,
+            revision: item.revision,
+            work: item.clone(),
+            run: None,
+            root_execution: None,
+            claim: None,
+            handoff_offer: None,
+            blocker: None,
+            transition: WorkTransition::Disposed {
+                lifecycle: WorkLifecycle::Cancelled,
+                replacement_id: None,
+                reason: "Removed by resolved task folder import".into(),
+            },
+            actor: actor.clone(),
+            created_at: at,
+        },
+    )?;
+    Ok(item)
+}
+
 pub(super) fn persist_operation_result<T: Serialize>(
     transaction: &Transaction<'_>,
     operation: &str,

@@ -234,8 +234,14 @@ another field.
 Fetch only an already authorized configured target. Prepare base/local/incoming documents
 and affected graph closure; mechanical one-sided merges are allowed, semantic overlaps go to
 the agent. Validate duplicate IDs/altered note bodies, unsupported schema,
-omissions/removals, activity regression, graph cycles and lifecycle compatibility. Missing
-task files are not deletion; cancellation/supersession remain explicit documents.
+omissions/removals, activity regression, graph cycles and lifecycle compatibility.
+On a first import into an empty, unenrolled store, a missing task file is not a deletion.
+An enrolled destination applies the
+[folder-removal rules](task-planning-text.md#edits-on-an-enrolled-destination):
+omitting an eligible member cancels it and permanently retires its id from the exchange.
+A partial input can therefore cause irreversible cancellation; review with `--dry-run`
+before applying it. Cancelled/superseded tasks carried in the folder remain explicit
+documents.
 
 Resolved bytes are committed under existing Git authority; import names that exact resolved
 commit/tree. In one SQLite write transaction compare the full relevant readset, including
