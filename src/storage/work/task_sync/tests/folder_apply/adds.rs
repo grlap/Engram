@@ -589,10 +589,11 @@ fn projection_repair_after_additions_preserves_every_durable_row() {
 #[test]
 fn a_failed_final_origin_audit_after_admission_is_a_projection_bug() {
     // Another project's import origin still decodes, but the task it
-    // restored no longer carries that origin's attribution. Neither this
-    // folder's admission nor this project's export reads that project, so
-    // only the final audit, which checks every origin the store holds, finds
-    // it: after the addition is admitted and inserted.
+    // restored no longer carries that origin's attribution. Admission
+    // decodes every stored import origin but leaves origin-to-work binding
+    // checks to the final store-wide audit, and this project's export reads
+    // only this project, so only that audit finds it: after the addition is
+    // admitted and inserted.
     let (mut store, fixture) = enrolled();
     let other = ProjectId("folder-apply-audit-other".into());
     let held = document("held by another project", None);
@@ -639,7 +640,7 @@ fn a_failed_final_origin_audit_after_admission_is_a_projection_bug() {
             &error,
             StoreError::InvalidWorkProjection(message)
                 if message.starts_with(
-                    "a folder addition failed the import origin audit: task_sync_import_origin:"
+                    "a folder change failed the import origin audit: task_sync_import_origin:"
                 )
         ),
         "{error:#}"

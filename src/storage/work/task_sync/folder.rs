@@ -223,8 +223,9 @@ pub(super) fn apply_task_sync_folder_on(
 }
 
 /// Applies a classified folder to an enrolled destination: every requested
-/// delta is an admitted addition or scalar edit, or the whole folder refuses,
-/// naming its refused tasks, and nothing is written. The baseline records the
+/// delta is an admitted addition, scalar edit, relation edit or
+/// execution-free removal, or the whole folder refuses, naming its refused
+/// tasks, and nothing is written. The baseline records the
 /// folder whenever its inventory differs from the latest baseline, even when
 /// no task changes, so a host-local task the folder now carries joins the
 /// exchange. It is recorded before the final export check, which therefore
@@ -265,7 +266,7 @@ fn apply_planned_changes(
             .is_some()
         {
             return Err(StoreError::InvalidWorkProjection(
-                "a folder addition left a dangling reference".into(),
+                "a folder change left a dangling reference".into(),
             ));
         }
         audit_origins(transaction)?;
@@ -334,10 +335,10 @@ fn apply_planned_changes(
     Ok(result)
 }
 
-/// The final import-origin audit after a folder's additions. Admission
-/// already judged every addition against the whole origin history, so a
-/// failure here is a projection bug that rolls the folder back, never an
-/// input refusal.
+/// The final import-origin audit after a folder's additions or removals.
+/// Admission already judged every addition against the whole origin
+/// history, and a removal leaves the origins unchanged, so a failure here is
+/// a projection bug that rolls the folder back, never an input refusal.
 fn audit_origins(connection: &rusqlite::Connection) -> Result<(), StoreError> {
     let mut checked = 0;
     let mut failures = Vec::new();
@@ -346,7 +347,7 @@ fn audit_origins(connection: &rusqlite::Connection) -> Result<(), StoreError> {
         Ok(())
     } else {
         Err(StoreError::InvalidWorkProjection(format!(
-            "a folder addition failed the import origin audit: {}",
+            "a folder change failed the import origin audit: {}",
             failures.join(", ")
         )))
     }

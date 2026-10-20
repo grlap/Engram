@@ -422,6 +422,49 @@ fn additions_beneath_a_bound_held_ancestor_refuse_together() {
 }
 
 #[test]
+fn an_addition_under_a_held_task_whose_move_is_refused_names_that_ancestor() {
+    // Held roots and a held task under the first. The folder moves that task
+    // under the second root, a change this destination refuses, and adds a
+    // task beneath it: the addition refuses for its ancestor, never for the
+    // root the refused move would have given it.
+    let first = document("first root", None);
+    let second = document("second root", None);
+    let held = document("held", Some(first.id));
+    let (second_id, held_id) = (second.id, held.id);
+    let mut tasks = vec![first, second, held];
+    tasks.sort_by_key(|task| task.id.0);
+    let tree = TaskTree {
+        project: ProjectDocument {
+            format: FORMAT.into(),
+            project_id: project(),
+            notes_included: false,
+        },
+        tasks,
+    };
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    exchange(&mut store, &tree, "enrol", 5).unwrap();
+    let moved = edited(&tree, held_id, |task| task.parent_id = Some(second_id));
+    let added = document("added under the moved task", Some(held_id));
+    let added_id = added.id;
+    let resolved = with(&moved, vec![added]);
+    let before = state(&store);
+    let message = conflict(&exchange(&mut store, &resolved, "add-1", 6).unwrap_err());
+    assert!(
+        message.contains(&format!("{}: unsupported_fields (", held_id.0)),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!(
+            "{}: ancestor_binding (held ancestor {} is refused (unsupported_fields))",
+            added_id.0, held_id.0
+        )),
+        "{message}"
+    );
+    assert!(!message.contains("retained_graph"), "{message}");
+    assert_eq!(state(&store), before);
+}
+
+#[test]
 fn an_addition_beneath_a_refused_addition_names_that_ancestor() {
     let (mut store, fixture) = enrolled();
     // The added parent collides with a host-local task's short ref; its

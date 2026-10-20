@@ -168,7 +168,9 @@ contradicts it:
   (`unsupported_origin`).
 - Its ancestors can take unfinished work, and its root has no active
   execution (`ancestor_binding`). A held ancestor must itself be free to take
-  an edit. A blocker that came in through an import does not refuse an
+  an edit, and a held ancestor whose own change in the folder is refused,
+  such as a move to another parent, refuses the additions beneath it. A
+  blocker that came in through an import does not refuse an
   addition, since blockers are planning, not execution. Existing ancestors
   keep the stricter addition policy: only run-free project revisions are
   admitted history; relation transitions remain eligible for later scalar,
@@ -198,10 +200,12 @@ additions, it names exactly the additions the failure involves, looking for
 each kind in the order the validator checks them: a task holding a reference
 to a missing task, an open descendant of a root over its limit, a member of a
 dependency cycle (a required child for its parent, a prerequisite, a
-replacement), or an addition whose root differs. A task on a path between two
-cycles is on neither and is not named. Each named addition gives its kind of
-failure; additions that share one cycle or one root over its limit are named
-as failing together. An addition that depends on a named one is set aside
+replacement), or, in a graph that is otherwise valid, an addition whose root
+there differs from the folder's. A task on a path between two cycles is on
+neither and is not named. Each named addition gives its kind of failure.
+Additions in one strongly connected component of the dependency graph, one
+cycle structure that may hold several cycles, or under one root over its
+limit, are named as failing together. An addition that depends on a named one is set aside
 before the check goes on, and refuses for that dependence: through its parent
 chain as `ancestor_binding`, through a prerequisite or replacement as
 `refused_reference`. A failure that no addition accounts for refuses at folder
@@ -225,9 +229,10 @@ gains no event. The baseline records the folder whenever its inventory
 differs from the last one, even when no task changes, so a host-local task
 the folder now carries joins the exchange and its later omission is a
 deletion subject to admission. After additions or removals, a foreign-key
-check and the import-origin audit run as rollback guards; admission has already
-judged everything they check, so a failure there is reported as a projection
-bug, not as a refusal of the folder.
+check and the import-origin audit run as rollback guards. Admission has
+already judged every addition against the store's whole import-origin
+history, and a removal leaves the origins unchanged, so a failure there is
+reported as a projection bug, not as a refusal of the folder.
 
 A removal uses the same restored, Open, run-free eligibility as a scalar
 edit and additionally refuses any prior run or root-bound history. A
@@ -238,7 +243,15 @@ affected ancestor must be eligible and the root must have no active execution
 (`ancestor_binding`), including execution started by a sibling. A surviving
 shared or host-local task that still names the removed task as parent,
 prerequisite or replacement refuses the removal (`retained_reference`, naming
-both tasks and the field). These checks use retained documents after admitted prerequisite removals;
+both tasks and the field). When several retained tasks name the same removed
+task, the refusal names the first retained referrer in this order. First come
+the current tasks other than the admitted removals, in task-id order. They
+include every removal held back before this check, for its own eligibility
+or for an ancestor binding, even when a retained task also names it; a
+removal held back for an ancestor binding then still reports
+`retained_reference`, since its binding is only applied after the check.
+Then come the removals first held back during the check, because a retained
+task names them, in the order they are found. These checks use retained documents after admitted prerequisite removals;
 an unsupported structural edit in the folder cannot hide a reference. A refused
 removal keeps its outgoing references, which can refuse further removals.
 Malformed input graphs still refuse earlier as `task_sync_invalid_graph`.

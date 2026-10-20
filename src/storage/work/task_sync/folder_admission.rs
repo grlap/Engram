@@ -414,8 +414,14 @@ pub(super) fn apply_plan(
     if identities.is_some() {
         for &id in &additions {
             if !conflicts.contains_key(&id.0)
-                && let Some(conflict) =
-                    ancestor_binding(transaction, &prospective, &mut reads, &relation_owners, id)?
+                && let Some(conflict) = ancestor_binding(
+                    transaction,
+                    &prospective,
+                    &mut reads,
+                    &relation_owners,
+                    &conflicts,
+                    id,
+                )?
             {
                 conflicts.insert(id.0, conflict);
             }
@@ -883,12 +889,16 @@ fn admit_addition(
 /// itself be free to change. A finished addition, such as a completed
 /// subtree restored as history, may sit under a completed ancestor only when
 /// that completion was itself restored: a completion sealed on this host
-/// accounts for exactly the children it named, so it takes no new one.
+/// accounts for exactly the children it named, so it takes no new one. A
+/// held ancestor whose own change in the folder is already refused, such as
+/// a move to another parent, refuses the addition too: its chain and root
+/// rest on that change.
 fn ancestor_binding(
     transaction: &rusqlite::Transaction<'_>,
     prospective: &Prospective<'_>,
     reads: &mut HeldReads,
     relation_owners: &HashSet<WorkId>,
+    conflicts: &BTreeMap<uuid::Uuid, Conflict>,
     id: WorkId,
 ) -> Result<Option<Conflict>, StoreError> {
     let binding = |detail: String| -> Result<Option<Conflict>, StoreError> {
@@ -902,6 +912,12 @@ fn ancestor_binding(
     for ancestor in prospective.ancestors(id) {
         let document = prospective.resolved_task(ancestor)?;
         if let Some(held) = prospective.current.get(&ancestor) {
+            if let Some(refused) = conflicts.get(&ancestor.0) {
+                return binding(format!(
+                    "held ancestor {} is refused ({})",
+                    ancestor.0, refused.reason
+                ));
+            }
             if relation_owners.contains(&ancestor) {
                 return binding(format!(
                     "ancestor {} has a relation change in this folder",
@@ -1030,26 +1046,34 @@ enum FaultClass {
 }
 
 impl FaultClass {
-    /// Why a named addition fails when no other named addition shares its
-    /// fault.
-    const fn alone(self) -> &'static str {
-        match self {
-            Self::MissingReference => "it references a missing task",
-            Self::OpenDescendantLimit => "it takes its root over the open-descendant limit",
-            Self::DependencyCycle => "it closes a dependency cycle",
-            Self::DifferingRoot => "its root differs from the folder's",
-        }
-    }
-
-    /// Why named additions fail when they share one fault.
-    const fn together(self) -> &'static str {
-        match self {
-            Self::MissingReference => "each references a missing task",
-            Self::OpenDescendantLimit => {
-                "together they take their root over the open-descendant limit"
+    /// Why a named addition fails in `what`, alone or `joint`ly with the
+    /// other named additions that share its fault. A differing root is found
+    /// only in a graph that is otherwise valid, so it never claims an
+    /// invalid graph.
+    fn detail(self, what: &str, joint: bool) -> String {
+        let invalid = |reason: &str| {
+            if joint {
+                format!(
+                    "{what} with this and the other named additions would not be a valid task graph: {reason}"
+                )
+            } else {
+                format!("{what} with this addition would not be a valid task graph: {reason}")
             }
-            Self::DependencyCycle => "together they close a dependency cycle",
-            Self::DifferingRoot => "each one's root differs from the folder's",
+        };
+        match (self, joint) {
+            (Self::MissingReference, false) => invalid("it references a missing task"),
+            (Self::MissingReference, true) => invalid("each references a missing task"),
+            (Self::OpenDescendantLimit, false) => {
+                invalid("it takes its root over the open-descendant limit")
+            }
+            (Self::OpenDescendantLimit, true) => {
+                invalid("together they take their root over the open-descendant limit")
+            }
+            (Self::DependencyCycle, false) => invalid("it closes a dependency cycle"),
+            (Self::DependencyCycle, true) => invalid("together they close a dependency cycle"),
+            (Self::DifferingRoot, _) => format!(
+                "{what} with this addition is a valid task graph, but this addition's computed root there differs from the folder's"
+            ),
         }
     }
 }
@@ -1357,17 +1381,9 @@ fn check_graph(
             let Some(group) = located.groups.get(&id) else {
                 continue;
             };
-            let detail = if named_in_group.get(group).copied().unwrap_or(0) > 1 {
-                format!(
-                    "{what} with this and the other named additions would not be a valid task graph: {}",
-                    located.class.together()
-                )
-            } else {
-                format!(
-                    "{what} with this addition would not be a valid task graph: {}",
-                    located.class.alone()
-                )
-            };
+            let detail = located
+                .class
+                .detail(what, named_in_group.get(group).copied().unwrap_or(0) > 1);
             findings.conflicts.push(Conflict { id, reason, detail });
             removed.insert(id);
         }
@@ -1538,3 +1554,6 @@ fn conflict_message_with(
         entries.join("; ")
     )
 }
+
+#[cfg(test)]
+mod tests;
