@@ -1945,7 +1945,7 @@ pub(in crate::storage) fn refresh_work_catalog_projection(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<(), StoreError> {
-    write_work_catalog_projection(connection, item, true)
+    write_work_catalog_projection(connection, item, CatalogProjectionMode::Refresh)
 }
 
 fn initialize_new_work_catalog_projection(
@@ -1953,13 +1953,20 @@ fn initialize_new_work_catalog_projection(
     item: &WorkItem,
 ) -> Result<(), StoreError> {
     // Creation has just minted this UUID and inserted its work item.
-    write_work_catalog_projection(connection, item, false)
+    write_work_catalog_projection(connection, item, CatalogProjectionMode::Create)
+}
+
+#[derive(Clone, Copy)]
+enum CatalogProjectionMode {
+    Create,
+    Refresh,
+    Restore,
 }
 
 fn write_work_catalog_projection(
     connection: &Connection,
     item: &WorkItem,
-    replace_existing: bool,
+    mode: CatalogProjectionMode,
 ) -> Result<(), StoreError> {
     let assigned_to_key = item.assigned_to.as_deref().map(normalize_work_catalog_key);
     let search_text_key = work_catalog_search_text(connection, item)?;
@@ -1970,15 +1977,23 @@ fn write_work_catalog_projection(
         params![item.work_id.0.to_string(), assigned_to_key, search_text_key],
     )?;
     if changed != 1 {
+        let action = if matches!(mode, CatalogProjectionMode::Restore) {
+            "initialization"
+        } else {
+            "refresh"
+        };
         return Err(StoreError::InvalidWorkProjection(format!(
-            "work catalog refresh lost item {:?}",
+            "work catalog {action} lost item {:?}",
             item.work_id
         )));
     }
-    connection.execute(
-        "DELETE FROM work_item_labels WHERE work_id = ?1",
-        [item.work_id.0.to_string()],
-    )?;
+    // Restore must not silently clear unexpected destination projection rows.
+    if !matches!(mode, CatalogProjectionMode::Restore) {
+        connection.execute(
+            "DELETE FROM work_item_labels WHERE work_id = ?1",
+            [item.work_id.0.to_string()],
+        )?;
+    }
     let mut label_keys = item
         .labels
         .iter()
@@ -1992,7 +2007,7 @@ fn write_work_catalog_projection(
             params![item.work_id.0.to_string(), label_key],
         )?;
     }
-    if replace_existing {
+    if matches!(mode, CatalogProjectionMode::Refresh) {
         #[cfg(test)]
         WORK_CATALOG_FTS_DELETE_STATEMENTS.with(|count| count.set(count.get().saturating_add(1)));
         catalog_fts::remove_prior_rows(connection, item)?;
@@ -2012,38 +2027,7 @@ pub(in crate::storage) fn initialize_work_catalog_projection(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<(), StoreError> {
-    let assigned_to_key = item.assigned_to.as_deref().map(normalize_work_catalog_key);
-    let search_text_key = work_catalog_search_text(connection, item)?;
-    let changed = connection.execute(
-        "UPDATE work_items
-         SET assigned_to_key = ?2, search_text_key = ?3
-         WHERE work_id = ?1",
-        params![item.work_id.0.to_string(), assigned_to_key, search_text_key],
-    )?;
-    if changed != 1 {
-        return Err(StoreError::InvalidWorkProjection(format!(
-            "work catalog initialization lost item {:?}",
-            item.work_id
-        )));
-    }
-    let mut label_keys = item
-        .labels
-        .iter()
-        .map(|label| normalize_work_catalog_key(label))
-        .collect::<Vec<_>>();
-    label_keys.sort();
-    label_keys.dedup();
-    for label_key in label_keys {
-        connection.execute(
-            "INSERT INTO work_item_labels (work_id, label_key) VALUES (?1, ?2)",
-            params![item.work_id.0.to_string(), label_key],
-        )?;
-    }
-    connection.execute(
-        "INSERT INTO work_catalog_fts (work_id, search_text) VALUES (?1, ?2)",
-        params![item.work_id.0.to_string(), search_text_key],
-    )?;
-    Ok(())
+    write_work_catalog_projection(connection, item, CatalogProjectionMode::Restore)
 }
 
 pub(super) fn persist_work_item(
