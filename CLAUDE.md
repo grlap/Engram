@@ -93,7 +93,16 @@ their presence in a file alone does not prove delivery.
     independent root with provenance. An in-scope finding of Medium or
     higher left unfixed, even one rejected on evidence, goes to Greg;
   - the changeset delivers its items' acceptance criteria, and a
-    criterion bound to host-observed evidence has that evidence;
+    criterion bound to host-observed evidence has that evidence. A
+    criterion that only the landing itself can satisfy, namely that the
+    change is committed, pushed, on master or installed, counts as
+    delivered for this condition when every other condition here holds
+    and an independent acceptance evaluation of the frozen tree found
+    every other criterion, and every other part of that criterion, met;
+    a criterion that needs the build running, a restart, or a live or
+    remote observation is not one of these. The landing then makes it
+    true, and the item completes only after a post-landing evaluation
+    passes it;
   - before committing, the changeset was judged as the next rule
     describes, and `readiness` with the new build reported every live
     store ready.
