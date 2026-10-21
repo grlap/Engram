@@ -55,7 +55,9 @@ Keep two or three independent candidates moving in parallel when the backlog
 allows it. Parallelize implementation, tests, review and carry preparation.
 Carry candidates onto the current mainline one at a time, then freeze and
 validate the exact combined tree. A completed review or gate applies only to
-the frozen tree it names; re-carry after mainline movement when required.
+the frozen tree it names, except that a clean review round may be adopted
+across a base-only carry as `/review-changes` section 6a allows; a gate never
+carries. Re-carry after mainline movement when required.
 
 Choose candidates with non-overlapping owned paths where possible. When their
 surfaces overlap, serialize the implementation or explicitly give one owner

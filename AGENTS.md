@@ -90,7 +90,13 @@ their presence in a file alone does not prove delivery.
     refusal text), Kimi stands in for the unavailable reviewer, Kimi never
     stands in for both reviewers of the same round, and every other condition
     is unchanged; any out-of-scope finding was filed as an
-    independent root with provenance. An in-scope finding of Medium or
+    independent root with provenance. A clean latest round on an earlier
+    freeze also counts for a tree carried onto a newer master when every
+    base-only carry condition of `/review-changes` section 6a holds and is
+    recorded on the item, including a dependency assessment attested by the
+    other project's coordinator; such an adopted round never carries a gate,
+    a check, readiness or an acceptance evaluation.
+    An in-scope finding of Medium or
     higher left unfixed, even one rejected on evidence, goes to Greg;
   - the changeset delivers its items' acceptance criteria, and a
     criterion bound to host-observed evidence has that evidence. A

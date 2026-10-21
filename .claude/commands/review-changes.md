@@ -443,6 +443,15 @@ The fallback establishes identity only after landing. The wording audit and
 existing concurrence, notice, gate, review and landing requirements still
 apply before landing; the fallback grants no additional authority.
 
+When an audited authority change is carried onto a new base, the auditing
+coordinator repeats the identity part above in full on the carried input: the
+diff read from the new frozen worktree against its base, the compiled checker
+before and after that reading, and the passage script. It records a new audit
+for that input. When the authority diff, its placement and its context are
+byte-identical to the audited ones, the new audit may cite the earlier
+wording judgment and its concurrence and notice records instead of
+gathering them again; any difference means a full audit.
+
 The auditing coordinator is the project's coordinator; where the project's
 coordinator worded the change, it is the other project's coordinator. A
 changed passage is each sentence or heading of authority text that the
@@ -472,6 +481,54 @@ and audit. A concurrence recorded after the freeze leaves the input
 unchanged: it needs no new freeze, gate or review pair, but the audit is
 repeated, and the conditions of the Authority and Git section hold for that
 wording as for any other.
+
+## 6a. Adopt a clean round across a base-only carry
+
+When master moves after a clean review round, and the reviewed changeset is
+carried onto the new master without any change of its own (a fresh worktree,
+the staged diff applied unchanged, a new freeze), the parent may adopt that
+round for the carried tree instead of commissioning a new pair, but only when
+every condition below holds. Otherwise the carried tree gets a new round.
+
+1. The carried tree's freeze verifies with the compiled checker run in the
+   new root, before and after the carry proof is read, and the parent records
+   a carry proof on the item: the old and new base commits, roots, manifests
+   and fingerprints; for every changed path, its status, its pre-image and
+   post-image blob ids and its modes in both trees, all equal, with the
+   reviewed side read either from the reviewed root while the compiled checker
+   passes on that root's manifest and fingerprint before and after the read,
+   or from a staged diff or tree id recorded on the item while the reviewed
+   freeze verified; both inputs fully staged, with no unstaged change and no
+   untracked file; and the complete list of paths the base changed between
+   the two bases, none of them a changed path or a prefix of one. Compute both
+   path sets without rename detection. When the reviewed side cannot be read
+   this way, the carried tree gets a new round.
+2. No path the base changed is executable code (source, scripts or tests), a
+   build input (manifests, lockfiles, toolchain files, build scripts, fixtures
+   or configuration) or a governing instruction (AGENTS.md, CLAUDE.md, skills,
+   commands, reviewer lenses or feature contracts, or any document that a
+   governing instruction names as normative, for example a test or review
+   procedure it points to).
+3. The other project's coordinator attests on the item a dependency
+   assessment that names every path the base changed and states why the
+   change neither reads, calls, builds nor is governed by it. An unknown,
+   partial or uncertain assessment means a new round; the attestor cannot
+   waive it.
+4. The adopted round is the latest round on the earlier freeze, it has no
+   outstanding in-scope finding of Medium or higher, the earlier-round
+   conditions of the standing approval hold as for any landing, and the
+   carried tree contains the same items as the reviewed one (no member added
+   to or removed from a batch).
+
+Record an adopted round as adopted, citing both freezes; never describe it as
+a new review of the carried tree. Adoption never carries a gate, a Markdown
+check, readiness or an acceptance evaluation. The full gate, or for a
+Markdown-only changeset the link and identity checks, runs on the carried
+tree, and section 6 then compares against the carried freeze's fingerprint.
+A failed gate or check on the carried tree ends the adoption, and the carried
+tree gets a new round. After several carries in a row, conditions 1 to 3 are
+computed and attested between the reviewed freeze and the final carried
+freeze, covering the base change accumulated across all of them.
 
 ## 7. Record findings in Engram from the parent
 
