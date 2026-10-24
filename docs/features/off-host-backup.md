@@ -251,10 +251,24 @@ kept per project and kind, under one contract:
   concurrent `target set` may be between its state and configuration writes;
   a held lock returns `backup_push_running`. This brief reader lock can also
   make a concurrent `target set`, `target clear` or `backup restore` refuse
-  busy. A mismatch that remains under the lock
+  busy, make `backup push` report `Busy` and skip that invocation, or keep a
+  `status --check-target` result from being recorded. The check still reports
+  its result. A mismatch that remains under the lock
   is still `backup_record_unreadable`. If the reread lock cannot be opened or
-  locked for another reason, the original record diagnosis is kept. A
+  locked for another reason, the original record diagnosis is kept. This
+  fallback applies only to the mismatch reread: `clear` still reports
+  `backup_io` if its own writer lock cannot be opened or locked. A
   consistent `show`, including one on a clean home, takes no lock.
+- Status, the backup reminder, and the initial target selection for list,
+  fetch and target checking take no lock. On a configuration/state identity
+  mismatch they discard both reads and reread both files once. A valid pair
+  published before the retry reads its configuration, with no further change,
+  is accepted. This does not wait for a writer or provide an atomic snapshot:
+  publication still in flight or repeated changes may leave another mismatch.
+  That remains `backup_record_unreadable`, with a hint that a target set may
+  be in progress and to retry the read. Other malformed or unreadable records
+  retain their existing diagnoses. A check's later recording step still takes
+  the lock and revalidates its evidence before writing.
 - They hold no secret. They are operational records of this host: not
   canonical work state, not part of any copy, and never authority for a
   restore.

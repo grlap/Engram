@@ -1948,18 +1948,31 @@ code applies; a request it accepts but Engram refuses is
 and `clear` also try that lock to reread both records: a concurrent `set`
 may be between writing its state and configuration. A held lock returns
 `backup_push_running`; a mismatch that remains after the locked reread is
-`backup_record_unreadable`. A `show` briefly holding the lock can make a
-concurrent `set`, `clear` or restore refuse
-busy. If acquiring the reread lock fails for another reason, the original
+`backup_record_unreadable`. A `show` or `clear` briefly holding the reread lock
+can make a concurrent `set`, `clear` or restore refuse busy, make `backup push`
+report `Busy` and skip that invocation, or keep a `status --check-target`
+result from being recorded. The check still reports its result.
+If acquiring the mismatch reread lock fails for another reason, the original
 `backup_record_unreadable` diagnosis is kept. A consistent `show` takes no
 lock. A `set` whose state was written but whose
 configuration was not reports `backup_record_partial` and is repeated. A
 record that exists but cannot be read is `backup_record_unreadable` like any
 other record this build cannot use; a record that cannot be written or
 removed, and a writer's lock file that cannot be opened or locked, is
-`backup_io`.
+`backup_io`. This includes `clear`'s own writer lock; only its earlier
+mismatch reread preserves the original record diagnosis on a lock-file error.
 `show` on a clean home prints that no target is configured. See
 [off-host backup](off-host-backup.md#configuration).
+
+Status, the backup reminder, and initial target selection for list, fetch and
+target checking remain lock-free. On an identity mismatch they discard both
+reads and reread the pair once. A valid pair settled before the retry reads
+its configuration is accepted if nothing changes again. A writer still
+publishing, or repeated changes, may leave another mismatch: this remains
+`backup_record_unreadable`, with a hint that a target set may be in progress
+and to retry the read. This bounded reread does not wait for a writer or
+provide an atomic snapshot. Other record failures keep their existing
+diagnoses; a check still revalidates under the lock before recording a result.
 
 `backup push [--kind store] [--json]` is an operator word too. For each
 configured kind it takes the kind's push lock and brings the copy at its

@@ -756,13 +756,21 @@ pub(super) fn held(paths: &RecordPaths, lock: &PushLock) -> Result<(), TargetErr
 ///
 /// # Errors
 ///
-/// Refuses a record this build cannot use, as the target words do.
+/// Refuses a record this build cannot use. On an identity mismatch, rereads
+/// both records once without taking the lock and validates the new pair.
+/// Publication still in flight, or another change during that reread, may
+/// leave a mismatch; the refusal then suggests retrying the read.
 pub fn read_kind_records(
     paths: &RecordPaths,
     project: &ProjectId,
     kind: CopyKind,
 ) -> Result<Option<(TargetConfig, ObjectId, Option<TargetState>)>, TargetError> {
-    let (config, state) = read_records(paths, project, kind, ReadConsistency::Strict)?;
+    let (config, state) = read_records(
+        paths,
+        project,
+        kind,
+        ReadConsistency::RereadMismatchUnlocked,
+    )?;
     Ok(config.map(|(config, identity)| (config, identity, state)))
 }
 
@@ -773,6 +781,9 @@ type Records = (Option<(TargetConfig, ObjectId)>, Option<TargetState>);
 enum ReadConsistency {
     Strict,
     RecheckMismatch,
+    RereadMismatchUnlocked,
+    /// Strict validation of the unlocked retry, with a hint only on mismatch.
+    RefuseMismatchWithRetryHint,
 }
 
 /// Reads both records of one kind, refusing either when it exists but cannot
@@ -785,6 +796,8 @@ fn read_records(
     consistency: ReadConsistency,
 ) -> Result<Records, TargetError> {
     let config = read_record::<TargetConfig>(&paths.config)?;
+    #[cfg(test)]
+    tests::after_config_read(paths);
     let state = read_record::<TargetState>(&paths.state)?;
     validate_records(paths, project, kind, config, state, consistency)
 }
@@ -810,6 +823,18 @@ fn validate_records(
     if let Some(state) = &state
         && state.target_identity != identity
     {
+        if matches!(consistency, ReadConsistency::RereadMismatchUnlocked) {
+            // These readers must not lock: restore can already hold the push
+            // lock when fetch selects its target. Discard BOTH earlier reads.
+            // One fresh pair can recover a completed set, but cannot wait for
+            // an in-flight publication or guarantee an atomic snapshot.
+            return read_records(
+                paths,
+                project,
+                kind,
+                ReadConsistency::RefuseMismatchWithRetryHint,
+            );
+        }
         if matches!(consistency, ReadConsistency::RecheckMismatch) {
             // Set publishes state before config. It may still hold the lock,
             // or may have completed between our two reads. Discard BOTH old
@@ -827,7 +852,12 @@ fn validate_records(
         }
         return Err(TargetError::Unreadable {
             path: paths.state.clone(),
-            reason: "it was recorded for another target than the configured one; `engram backup target set` writes both anew".into(),
+            reason: if matches!(consistency, ReadConsistency::RefuseMismatchWithRetryHint) {
+                "it was recorded for another target than the configured one after one reread; a target set may be in progress; retry the read; if the mismatch persists, `engram backup target set` writes both anew"
+            } else {
+                "it was recorded for another target than the configured one; `engram backup target set` writes both anew"
+            }
+            .into(),
         });
     }
     if let Some(problem) = state.as_ref().and_then(TargetState::evidence_problem) {

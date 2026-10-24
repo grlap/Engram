@@ -16,6 +16,87 @@ use crate::backup::{
 };
 use crate::test_support::temp_home;
 
+mod unlocked_read;
+
+struct RecordReadHook {
+    config: PathBuf,
+    reads: usize,
+    action: Option<(usize, Box<dyn FnOnce()>)>,
+}
+
+thread_local! {
+    static RECORD_READ_HOOK: std::cell::RefCell<Option<RecordReadHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs a scoped fixture action after config was sampled, outside the borrow.
+pub(super) fn after_config_read(paths: &RecordPaths) {
+    let action = RECORD_READ_HOOK.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let hook = slot.as_mut().filter(|hook| hook.config == paths.config)?;
+        hook.reads += 1;
+        if hook
+            .action
+            .as_ref()
+            .is_some_and(|(read, _)| *read == hook.reads)
+        {
+            hook.action.take().map(|(_, action)| action)
+        } else {
+            None
+        }
+    });
+    if let Some(action) = action {
+        action();
+    }
+}
+
+/// Disarms on panic too; other tests and paths on this thread stay untouched.
+struct ReadHook {
+    config: PathBuf,
+}
+
+impl ReadHook {
+    fn count(paths: &RecordPaths) -> Self {
+        RECORD_READ_HOOK.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            assert!(slot.is_none(), "a record read hook is already armed");
+            *slot = Some(RecordReadHook {
+                config: paths.config.clone(),
+                reads: 0,
+                action: None,
+            });
+        });
+        Self {
+            config: paths.config.clone(),
+        }
+    }
+
+    fn on_read(paths: &RecordPaths, read: usize, action: impl FnOnce() + 'static) -> Self {
+        let hook = Self::count(paths);
+        RECORD_READ_HOOK.with(|slot| {
+            slot.borrow_mut().as_mut().unwrap().action = Some((read, Box::new(action)));
+        });
+        hook
+    }
+
+    fn reads(&self) -> usize {
+        RECORD_READ_HOOK.with(|slot| {
+            let slot = slot.borrow();
+            let hook = slot
+                .as_ref()
+                .filter(|hook| hook.config == self.config)
+                .expect("the guard's record read hook must be armed");
+            hook.reads
+        })
+    }
+}
+
+impl Drop for ReadHook {
+    fn drop(&mut self) {
+        RECORD_READ_HOOK.with(|slot| slot.borrow_mut().take());
+    }
+}
+
 fn at(second: i64) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 10, 2, 12, 0, 0)
         .single()
