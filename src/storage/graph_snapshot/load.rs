@@ -190,7 +190,8 @@ impl SqliteStore {
     ///
     /// Returns a typed graph refusal when the destination is nonempty, the
     /// file belongs to another project/build, or any carried relation,
-    /// history layer, source, memory, or manifest binding is invalid.
+    /// history layer, source, memory, or manifest binding is invalid. Reports
+    /// destination catalog inconsistencies as projection faults.
     pub fn load_work_graph_snapshot<R: Redactor>(
         &mut self,
         project_id: &ProjectId,
@@ -1583,6 +1584,19 @@ fn ensure_restore_catalog_slots_empty(
     while let Some(row) = rows.next()? {
         let work_id: String = row.get(0)?;
         if incoming.contains(&work_id) {
+            // A real item in another project is an ID conflict, not damage
+            // that projection repair can resolve. Only the refusal path needs
+            // this indexed lookup; healthy restores retain one FTS pass.
+            let item_exists: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM work_items WHERE work_id = ?1)",
+                [work_id],
+                |row| row.get(0),
+            )?;
+            if !item_exists {
+                return Err(StoreError::InvalidWorkProjection(
+                    "destination work_catalog_fts projection contains an orphan row for an incoming work item; run `engram doctor --repair-projections` on the destination store before retrying".into(),
+                ));
+            }
             return Err(corrupt(
                 "snapshot work item already has a catalog FTS row in the destination",
             ));
