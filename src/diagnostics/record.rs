@@ -87,6 +87,13 @@ struct WriterAdmission {
 }
 
 impl Fault {
+    pub(crate) fn mcp_verb(error: &crate::verbs::VerbError) -> Self {
+        Self {
+            code: error.code(),
+            ..Self::store(&error.error)
+        }
+    }
+
     pub fn store(error: &crate::StoreError) -> Self {
         if let crate::StoreError::WorkWriterAdmissionRefused {
             reason,

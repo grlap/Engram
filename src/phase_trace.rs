@@ -217,6 +217,8 @@ fn record(phase: Phase, elapsed: Duration) {
 /// leading keywords and records only the category and its duration. The
 /// statement text is never kept.
 pub(crate) fn sql_profile(event: rusqlite::trace::TraceEvent<'_>) {
+    #[cfg(test)]
+    crate::storage::work_cost::sqlite::observe(&event);
     let rusqlite::trace::TraceEvent::Profile(statement, elapsed) = event else {
         return;
     };

@@ -221,12 +221,13 @@ pub(super) fn completion_run_feed_head(service: &LocalWorkService, work_id: Work
         .expect("completion run-feed head")
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct ScaleSample {
     pub(super) elapsed_us: u128,
     pub(super) canonical_decodes: usize,
     pub(super) work_event_decodes: usize,
     pub(super) item_decodes: usize,
+    pub(super) sql: crate::storage::work_cost::sqlite::Metrics,
 }
 
 pub(super) fn measure_scale_operation<T>(
@@ -236,13 +237,21 @@ pub(super) fn measure_scale_operation<T>(
     crate::canonical::reset_canonical_decode_count();
     crate::storage::reset_work_event_decode_count();
     crate::storage::reset_work_item_projection_decode_count();
+    let sql = crate::storage::work_cost::sqlite::start();
     let started = std::time::Instant::now();
     let result = operation();
+    let elapsed_us = started.elapsed().as_micros();
+    let sql = sql.finish();
+    assert!(
+        sql.total.statements > 0,
+        "scale operation executed no observed SQLite statements"
+    );
     samples.push(ScaleSample {
-        elapsed_us: started.elapsed().as_micros(),
+        elapsed_us,
         canonical_decodes: crate::canonical::canonical_decode_count(),
         work_event_decodes: crate::storage::work_event_decode_count(),
         item_decodes: crate::storage::work_item_projection_decode_count(),
+        sql,
     });
     result
 }
@@ -278,6 +287,91 @@ pub(super) fn report_scale_samples(operation: &str, samples: &[ScaleSample]) {
             .max()
             .expect("scale samples"),
     );
+    eprintln!(
+        "claim mutation SQL scale {operation}: {}",
+        scale_sql_report(samples)
+    );
+}
+
+pub(super) fn scale_sql_report(samples: &[ScaleSample]) -> serde_json::Value {
+    let summary = |get: fn(&ScaleSample) -> u64| {
+        serde_json::json!({
+            "count": samples.len(),
+            "total": samples.iter().map(get).sum::<u64>(),
+            "p95": scale_p95(samples.iter().map(get)),
+            "max": samples.iter().map(get).max().expect("scale samples"),
+        })
+    };
+    let mut categories =
+        std::collections::BTreeMap::<&str, crate::storage::work_cost::sqlite::Counters>::new();
+    for sample in samples {
+        for (kind, counters) in &sample.sql.by_kind {
+            let total = categories.entry(kind).or_default();
+            total.statements += counters.statements;
+            total.fullscan_steps += counters.fullscan_steps;
+            total.sorts += counters.sorts;
+            total.vm_steps += counters.vm_steps;
+        }
+    }
+    serde_json::json!({
+        "statements": summary(|sample| sample.sql.total.statements),
+        "fullscan_steps": summary(|sample| sample.sql.total.fullscan_steps),
+        "sorts": summary(|sample| sample.sql.total.sorts),
+        "vm_steps": summary(|sample| sample.sql.total.vm_steps),
+        "statement_categories": categories,
+    })
+}
+
+#[test]
+fn scale_sql_report_keeps_operation_totals_percentiles_and_categories() {
+    let connection = crate::storage::open_sqlite_file(
+        std::path::Path::new(":memory:"),
+        rusqlite::OpenFlags::default(),
+    )
+    .unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE scale_control(value INTEGER);
+         WITH RECURSIVE fixture(value) AS (
+             SELECT 0 UNION ALL SELECT value + 1 FROM fixture WHERE value < 127
+         ) INSERT INTO scale_control SELECT value FROM fixture;",
+        )
+        .unwrap();
+    let mut samples = Vec::new();
+    for _ in 0..20 {
+        measure_scale_operation(&mut samples, || {
+            let mut statement = connection
+                .prepare_cached("SELECT value FROM scale_control ORDER BY value DESC")
+                .unwrap();
+            let values = statement
+                .query_map([], |row| row.get::<_, i64>(0))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap();
+            assert_eq!(values.len(), 128);
+        });
+    }
+    let report = scale_sql_report(&samples);
+    assert_eq!(
+        report["fullscan_steps"],
+        serde_json::json!({
+            "count": 20, "total": 2_540, "p95": 127, "max": 127,
+        })
+    );
+    assert_eq!(
+        report["sorts"],
+        serde_json::json!({
+            "count": 20, "total": 20, "p95": 1, "max": 1,
+        })
+    );
+    assert_eq!(report["statements"]["total"], 20);
+    assert_eq!(
+        report["statement_categories"]["select"]["fullscan_steps"],
+        2_540
+    );
+    assert!(samples.iter().all(|sample| sample.canonical_decodes == 0
+        && sample.work_event_decodes == 0
+        && sample.item_decodes == 0));
 }
 
 pub(super) fn assert_lapsed_completion_refuses_without_mutation(

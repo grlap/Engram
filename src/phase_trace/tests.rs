@@ -222,6 +222,215 @@ fn captured_trace() -> (PhaseTrace, Captured) {
     )
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum FlushFailure {
+    NoWriter,
+    QueueTimeout,
+    QueueDisconnected,
+    AckTimeout,
+    AckDisconnected,
+}
+
+// Acknowledgement proves the writer processed the marker after earlier lines;
+// it does not turn the production writer's best-effort sink I/O into a guarantee.
+fn acknowledged_flush(writer: &LineWriter, budget: Duration) -> Result<(), FlushFailure> {
+    acknowledged_flush_with_backoff(writer, budget, std::thread::park_timeout)
+}
+
+fn acknowledged_flush_with_backoff(
+    writer: &LineWriter,
+    budget: Duration,
+    mut backoff: impl FnMut(Duration),
+) -> Result<(), FlushFailure> {
+    use std::sync::mpsc::{RecvTimeoutError, TrySendError, sync_channel};
+
+    let started = Instant::now();
+    let sender = writer.sender.as_ref().ok_or(FlushFailure::NoWriter)?;
+    let (written, done) = sync_channel(1);
+    let mut marker = Message::Flush(written);
+    loop {
+        match sender.try_send(marker) {
+            Ok(()) => break,
+            Err(TrySendError::Disconnected(_)) => return Err(FlushFailure::QueueDisconnected),
+            Err(TrySendError::Full(returned)) => {
+                marker = returned;
+                let remaining = budget.saturating_sub(started.elapsed());
+                if remaining.is_zero() {
+                    return Err(FlushFailure::QueueTimeout);
+                }
+                backoff(remaining.min(Duration::from_millis(1)));
+            }
+        }
+    }
+    done.recv_timeout(budget.saturating_sub(started.elapsed()))
+        .map_err(|error| match error {
+            RecvTimeoutError::Timeout => FlushFailure::AckTimeout,
+            RecvTimeoutError::Disconnected => FlushFailure::AckDisconnected,
+        })
+}
+
+#[track_caller]
+pub(super) fn assert_flushed(writer: &LineWriter, budget: Duration) {
+    if let Err(failure) = acknowledged_flush(writer, budget) {
+        panic!("phase-trace flush failed: {failure:?} (budget {budget:?})");
+    }
+}
+
+fn writer_with_sender(sender: Option<std::sync::mpsc::SyncSender<Message>>) -> LineWriter {
+    LineWriter {
+        sender,
+        dropped: std::sync::atomic::AtomicU64::new(0),
+    }
+}
+
+#[test]
+fn acknowledged_flush_reports_an_absent_writer() {
+    let writer = writer_with_sender(None);
+    assert_eq!(
+        acknowledged_flush(&writer, Duration::ZERO),
+        Err(FlushFailure::NoWriter)
+    );
+}
+
+#[test]
+fn acknowledged_flush_reports_a_full_queue_without_replacing_its_line() {
+    let (sender, queue) = std::sync::mpsc::sync_channel(1);
+    assert!(sender.try_send(Message::Line("queued".into())).is_ok());
+    let writer = writer_with_sender(Some(sender));
+    assert_eq!(
+        acknowledged_flush(&writer, Duration::ZERO),
+        Err(FlushFailure::QueueTimeout)
+    );
+    assert!(matches!(queue.try_recv(), Ok(Message::Line(line)) if line == "queued"));
+    assert!(matches!(
+        queue.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
+    assert_eq!(writer.dropped(), 0);
+}
+
+#[test]
+fn acknowledged_flush_retries_a_full_queue_then_observes_acknowledgement() {
+    use std::sync::mpsc::{TryRecvError, sync_channel};
+
+    const HANG_GUARD: Duration = Duration::from_secs(60);
+    let (sender, queue) = sync_channel(1);
+    assert!(sender.try_send(Message::Line("queued".into())).is_ok());
+    let writer = writer_with_sender(Some(sender));
+    let (retry, observe_retry) = sync_channel(1);
+    let (drained, observe_drained) = sync_channel(1);
+    let receiver = std::thread::spawn(move || {
+        observe_retry
+            .recv_timeout(HANG_GUARD)
+            .expect("helper observed the full queue");
+        assert!(matches!(queue.try_recv(), Ok(Message::Line(line)) if line == "queued"));
+        drained.send(()).expect("queue drained");
+        let Message::Flush(written) = queue
+            .recv_timeout(HANG_GUARD)
+            .expect("retried flush marker")
+        else {
+            panic!("expected the flush marker");
+        };
+        written.send(()).expect("flush acknowledgement");
+        assert!(matches!(queue.try_recv(), Err(TryRecvError::Empty)));
+    });
+    let mut retries = 0;
+    let result = acknowledged_flush_with_backoff(&writer, HANG_GUARD, |delay| {
+        retries += 1;
+        // The consumer stays blocked until this helper has actually seen Full.
+        retry.try_send(()).expect("notify the waiting consumer");
+        observe_drained
+            .recv_timeout(HANG_GUARD)
+            .expect("consumer drained the line");
+        std::thread::park_timeout(delay);
+    });
+    receiver.join().expect("flush receiver");
+    assert_eq!(result, Ok(()));
+    assert_eq!(retries, 1);
+    assert_eq!(writer.dropped(), 0);
+}
+
+#[test]
+fn acknowledged_flush_times_out_when_a_full_queue_is_never_drained() {
+    let (sender, queue) = std::sync::mpsc::sync_channel(1);
+    assert!(sender.try_send(Message::Line("queued".into())).is_ok());
+    let writer = writer_with_sender(Some(sender));
+    assert_eq!(
+        acknowledged_flush(&writer, Duration::from_millis(2)),
+        Err(FlushFailure::QueueTimeout)
+    );
+    assert!(matches!(queue.try_recv(), Ok(Message::Line(line)) if line == "queued"));
+    assert!(matches!(
+        queue.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
+    assert_eq!(writer.dropped(), 0);
+}
+
+#[test]
+fn acknowledged_flush_reports_a_disconnected_queue() {
+    let (sender, queue) = std::sync::mpsc::sync_channel(1);
+    drop(queue);
+    let writer = writer_with_sender(Some(sender));
+    assert_eq!(
+        acknowledged_flush(&writer, Duration::ZERO),
+        Err(FlushFailure::QueueDisconnected)
+    );
+}
+
+#[test]
+fn acknowledged_flush_reports_missing_acknowledgement_and_rejects_a_late_one() {
+    let (sender, queue) = std::sync::mpsc::sync_channel(1);
+    let writer = writer_with_sender(Some(sender));
+    assert_eq!(
+        acknowledged_flush(&writer, Duration::ZERO),
+        Err(FlushFailure::AckTimeout)
+    );
+    let Message::Flush(written) = queue.try_recv().expect("one queued flush marker") else {
+        panic!("expected the flush marker");
+    };
+    assert!(written.send(()).is_err(), "timed-out waiter must be gone");
+    assert!(matches!(
+        queue.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
+}
+
+#[test]
+fn acknowledged_flush_reports_a_dropped_acknowledgement() {
+    let (sender, queue) = std::sync::mpsc::sync_channel(1);
+    let writer = writer_with_sender(Some(sender));
+    let receiver = std::thread::spawn(move || {
+        let Message::Flush(written) = queue
+            .recv_timeout(Duration::from_secs(60))
+            .expect("flush marker")
+        else {
+            panic!("expected the flush marker");
+        };
+        drop(written);
+    });
+    let result = acknowledged_flush(&writer, Duration::from_secs(60));
+    receiver.join().expect("acknowledgement receiver");
+    assert_eq!(result, Err(FlushFailure::AckDisconnected));
+}
+
+#[test]
+fn a_failed_flush_stops_before_captured_output_is_inspected() {
+    let writer = writer_with_sender(None);
+    let mut inspected = false;
+    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert_flushed(&writer, Duration::ZERO);
+        inspected = true;
+    }))
+    .expect_err("missing writer must stop capture assertions");
+    let diagnostic = failure.downcast_ref::<String>().expect("flush diagnostic");
+    assert_eq!(
+        diagnostic,
+        "phase-trace flush failed: NoWriter (budget 0ns)"
+    );
+    assert!(!inspected);
+}
+
 #[test]
 fn line_writer_submits_each_record_with_its_newline() {
     #[derive(Clone, Default)]
@@ -242,7 +451,7 @@ fn line_writer_submits_each_record_with_its_newline() {
     let record_sink = LineWriter::new(Box::new(writes.clone()), 4, "trace-record-write-test");
     let record = serde_json::json!({ "stage": "trace_flush_finished" }).to_string();
     record_sink.emit(record.clone());
-    record_sink.flush(Duration::from_secs(5));
+    assert_flushed(&record_sink, Duration::from_secs(5));
     assert_eq!(
         *writes.0.lock().expect("writes"),
         vec![format!("{record}\n").into_bytes()]
@@ -251,7 +460,7 @@ fn line_writer_submits_each_record_with_its_newline() {
 
 /// The lines written so far, once the writer has caught up.
 fn written(trace: &PhaseTrace, captured: &Captured) -> Vec<serde_json::Value> {
-    trace.flush(Duration::from_secs(5));
+    assert_flushed(&trace.lines, Duration::from_secs(5));
     captured
         .lines()
         .into_iter()
@@ -480,7 +689,7 @@ fn an_undrained_sink_drops_and_counts_lines_without_blocking() {
     // One line may be held by the blocked writer and four queued.
     assert!(trace.dropped() >= 35, "{}", trace.dropped());
     sink.open();
-    trace.flush(Duration::from_secs(5));
+    assert_flushed(&trace.lines, Duration::from_secs(5));
 }
 
 // A record is one bounded line naming phases only. A string request id is
@@ -607,7 +816,7 @@ fn shutdown_milestones_distinguish_input_end_and_a_pending_transport_close() {
             .poll(&mut Context::from_waker(std::task::Waker::noop()))
             .is_pending()
     );
-    trace.flush(Duration::from_secs(5));
+    assert_flushed(&trace.lines, Duration::from_secs(5));
     let before = captured.lines();
     assert_eq!(before.len(), 2);
     assert_eq!(before[0]["stage"], "input_ended");
@@ -615,7 +824,7 @@ fn shutdown_milestones_distinguish_input_end_and_a_pending_transport_close() {
     released.store(true, std::sync::atomic::Ordering::Relaxed);
     block_on(closing).expect("released close");
     trace.shutdown_stage(ShutdownStage::ServiceWaitingReturned);
-    trace.flush(Duration::from_secs(5));
+    assert_flushed(&trace.lines, Duration::from_secs(5));
     let lines = captured.lines();
     let stages: Vec<_> = lines
         .iter()
@@ -696,7 +905,7 @@ fn retained_store_owner_is_released_only_after_the_service_join() {
         .expect("shutdown completed after retained owner release");
     runner.join().expect("shutdown runner");
 
-    trace.flush(Duration::from_secs(5));
+    assert_flushed(&trace.lines, Duration::from_secs(5));
     let stages: Vec<_> = captured
         .lines()
         .into_iter()

@@ -62,11 +62,52 @@ fn open_server(database: &std::path::Path) -> HostControlServer {
     .expect("control server")
 }
 
+#[test]
+fn sqlite_metrics_and_control_phase_profile_share_one_callback() {
+    let (trace, captured) = traced(ProgressTiming::DEFAULT);
+    trace.install();
+    let directory = crate::test_support::temp_home().unwrap();
+    let scope = crate::storage::work_cost::sqlite::start();
+    let _store =
+        crate::SqliteStore::open_for_control_host(directory.path().join("shared.db"), None)
+            .unwrap();
+    let metrics = scope.finish();
+    assert!(metrics.total.statements > 0);
+    trace.startup_finished(None);
+    let startup = terminal(&written(&trace, &captured), 0);
+    assert!(
+        startup["begin_immediate"]["count"].as_u64() >= Some(1),
+        "{startup}"
+    );
+    assert!(startup["commit"]["count"].as_u64() >= Some(1), "{startup}");
+}
+
+#[test]
+fn sqlite_metrics_do_not_enable_control_phases_on_a_raw_connection() {
+    let (trace, captured) = traced(ProgressTiming::DEFAULT);
+    trace.install();
+    let connection = crate::storage::open_sqlite_file(
+        std::path::Path::new(":memory:"),
+        rusqlite::OpenFlags::default(),
+    )
+    .unwrap();
+    let scope = crate::storage::work_cost::sqlite::start();
+    connection
+        .execute_batch("BEGIN IMMEDIATE; COMMIT;")
+        .unwrap();
+    let metrics = scope.finish();
+    assert_eq!(metrics.total.statements, 2);
+    trace.startup_finished(None);
+    let startup = terminal(&written(&trace, &captured), 0);
+    assert!(startup.get("begin_immediate").is_none(), "{startup}");
+    assert!(startup.get("commit").is_none(), "{startup}");
+}
+
 /// The lines written so far, after `close`, once the writer has caught up:
 /// close waits only briefly, so a loaded host is given longer here.
 fn written(trace: &ControlTrace, captured: &Captured) -> Vec<serde_json::Value> {
     trace.close();
-    trace.lines.flush(Duration::from_secs(10));
+    crate::phase_trace::tests::assert_flushed(&trace.lines, Duration::from_secs(10));
     captured.lines()
 }
 

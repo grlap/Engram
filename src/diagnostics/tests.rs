@@ -54,6 +54,12 @@ fn diagnostics_writer_admission_keeps_native_fields_without_source_text() {
         Duration::from_millis(10_011),
         Fault::store(&error),
     ));
+    sink.emit(Event::failure(
+        "note",
+        Correlation::default(),
+        Duration::ZERO,
+        Fault::mcp_verb(&error.into()),
+    ));
     drain(&sink);
     let rows = records(home.path());
     let event = &rows
@@ -72,7 +78,60 @@ fn diagnostics_writer_admission_keeps_native_fields_without_source_text() {
         rusqlite::ffi::SQLITE_BUSY
     );
     assert_eq!(event["elapsed_ms"], 10_011);
+    let mcp_event = &rows
+        .iter()
+        .find(|row| row["event"]["code"] == "engram_store_error")
+        .unwrap()["event"];
+    assert_eq!(mcp_event["sqlite_code"], rusqlite::ffi::SQLITE_BUSY);
+    assert!(mcp_event["writer_admission"].is_object());
+    assert_eq!(mcp_event["writer_admission"], event["writer_admission"]);
+    assert_eq!(mcp_event["reason"], event["reason"]);
     assert!(!serde_json::to_string(&rows).unwrap().contains(sentinel));
+}
+
+#[test]
+fn mcp_verb_faults_keep_native_sqlite_details_and_control_codes() {
+    for (native_code, control_busy, control_code) in [
+        (rusqlite::ffi::SQLITE_BUSY_SNAPSHOT, false, "sqlite_busy"),
+        (
+            rusqlite::ffi::SQLITE_LOCKED_SHAREDCACHE,
+            false,
+            "sqlite_locked",
+        ),
+        (rusqlite::ffi::SQLITE_IOERR, false, "sqlite_error"),
+        (
+            rusqlite::ffi::SQLITE_BUSY_SNAPSHOT,
+            true,
+            "control_store_busy",
+        ),
+    ] {
+        let source = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(native_code),
+            Some("PRIVATE SQL path and argument".into()),
+        );
+        let error: crate::verbs::VerbError = if control_busy {
+            crate::StoreError::ControlStoreBusy {
+                source: Box::new(source),
+            }
+        } else {
+            crate::StoreError::Sqlite(source)
+        }
+        .into();
+        let control = serde_json::to_value(Fault::store(&error.error)).unwrap();
+        let mcp = serde_json::to_value(Fault::mcp_verb(&error)).unwrap();
+        assert_eq!(control["code"], control_code);
+        assert_eq!(mcp["code"], "engram_store_error");
+        assert_eq!(mcp["sqlite_code"], native_code);
+        assert_eq!(mcp["reason"], control["reason"]);
+        assert!(!serde_json::to_string(&mcp).unwrap().contains("PRIVATE"));
+    }
+    let error: crate::verbs::VerbError =
+        crate::StoreError::InvalidWork("PRIVATE refusal".into()).into();
+    let control = serde_json::to_value(Fault::store(&error.error)).unwrap();
+    let mcp = serde_json::to_value(Fault::mcp_verb(&error)).unwrap();
+    assert_eq!(control["code"], "storage_error");
+    assert_eq!(mcp["code"], "work_invalid");
+    assert!(!serde_json::to_string(&mcp).unwrap().contains("PRIVATE"));
 }
 
 #[test]

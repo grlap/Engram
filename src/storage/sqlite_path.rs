@@ -13,7 +13,10 @@ use super::StoreError;
 /// Refuses unrepresentable filenames and reports SQLite open failures.
 pub fn open_sqlite_file(path: &Path, flags: OpenFlags) -> Result<Connection, StoreError> {
     if path.as_os_str().is_empty() || path == Path::new(":memory:") {
-        return Connection::open_with_flags(path, flags).map_err(StoreError::Sqlite);
+        let connection = Connection::open_with_flags(path, flags)?;
+        #[cfg(test)]
+        super::work_cost::sqlite::install(&connection);
+        return Ok(connection);
     }
     open_filename(path, &sqlite_filename(path)?, flags)
 }
@@ -23,7 +26,7 @@ fn open_filename(path: &Path, name: &str, flags: OpenFlags) -> Result<Connection
     let opened = Connection::open_with_flags_and_vfs(name, flags, "win32-longpath");
     #[cfg(not(windows))]
     let opened = Connection::open_with_flags(name, flags);
-    opened.map_err(|source| match source.sqlite_error_code() {
+    let connection = opened.map_err(|source| match source.sqlite_error_code() {
         Some(rusqlite::ErrorCode::CannotOpen | rusqlite::ErrorCode::SystemIoFailure) => {
             StoreError::SqliteFile {
                 path: path.to_path_buf(),
@@ -32,7 +35,10 @@ fn open_filename(path: &Path, name: &str, flags: OpenFlags) -> Result<Connection
             }
         }
         _ => StoreError::Sqlite(source),
-    })
+    })?;
+    #[cfg(test)]
+    super::work_cost::sqlite::install(&connection);
+    Ok(connection)
 }
 
 /// Checks filename conversion and capacity without opening or creating a file.

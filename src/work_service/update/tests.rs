@@ -1611,19 +1611,71 @@ fn gate_heavy_evidence_membership_has_constant_decode_cost() {
 
 #[test]
 #[ignore = "runs separately so the project-scale fixture and decode samples stay out of the ordinary suite"]
+fn claim_validated_mutations_are_bounded_at_project_scale() {
+    crate::storage::work_cost::sqlite::assert_calibrated();
+    let first = measure_claim_validated_mutations_at_project_scale(5_000, 500);
+    let second = measure_claim_validated_mutations_at_project_scale(10_000, 1_000);
+    assert_eq!(first.len(), 11);
+    assert_eq!(second.len(), first.len());
+    for (operation, short_history) in &first {
+        let long_history = second
+            .get(operation)
+            .expect("same operations in both fixtures");
+        let short_scan = scale_p95(
+            short_history
+                .iter()
+                .map(|sample| sample.sql.total.fullscan_steps),
+        );
+        let long_scan = scale_p95(
+            long_history
+                .iter()
+                .map(|sample| sample.sql.total.fullscan_steps),
+        );
+        let short_sort = scale_p95(short_history.iter().map(|sample| sample.sql.total.sorts));
+        let long_sort = scale_p95(long_history.iter().map(|sample| sample.sql.total.sorts));
+        // These are investigation triggers fixed before measurement, not new
+        // zero-scan budgets for legitimate discovery and ordering queries.
+        eprintln!(
+            "claim mutation history comparison {operation}: {}",
+            serde_json::json!({
+                "short_events": 5_000, "long_events": 10_000,
+                "fullscan_steps_p95": [short_scan, long_scan],
+                "sorts_p95": [short_sort, long_sort],
+                "investigate_query_plan": long_scan > short_scan.saturating_add(64) || long_sort > short_sort,
+                "investigate_warm_latency": scale_p95(long_history.iter().map(|sample| sample.elapsed_us)) > 500_000,
+            })
+        );
+    }
+}
+
 #[allow(
     clippy::too_many_lines,
-    reason = "one scale regression measures the complete claim-validated mutation family against one fixed project fixture"
+    reason = "one fixed fixture covers the complete claim-validated operation family"
 )]
-fn claim_validated_mutations_are_bounded_at_project_scale() {
+fn measure_claim_validated_mutations_at_project_scale(
+    total_event_count: usize,
+    deep_event_count: usize,
+) -> std::collections::BTreeMap<&'static str, Vec<ScaleSample>> {
     // The long-lived MCP server retains one service for its process
     // lifetime, so these samples include exactly the production warm-call
     // lifecycle rather than silently omitting a per-request reopen.
     const ITEM_COUNT: usize = 500;
-    const TOTAL_EVENT_COUNT: usize = 5_000;
-    const DEEP_EVENT_COUNT: usize = 500;
     const SAMPLE_COUNT: usize = 20;
     const GATE_TRANSITION_COUNT: usize = 128;
+
+    eprintln!(
+        "claim mutation fixture: {}",
+        serde_json::json!({
+            "items": ITEM_COUNT, "events": total_event_count, "deepest_history": deep_event_count,
+            "samples": SAMPLE_COUNT, "gate_transitions": GATE_TRANSITION_COUNT,
+            "sqlite": rusqlite::version(), "build": crate::build_identity::current(),
+            "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
+            "service_lifecycle": "retained writer and reader; operation-created connections included",
+            "coverage": "executing thread; store connections through instrumented openers; completed or reset statements inside each sample",
+            "fixture_preparation_included": false,
+            "sql_counter_method": "outer STMT baseline to PROFILE delta; trigger subprograms counted in parent",
+        })
+    );
 
     let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
@@ -1664,7 +1716,7 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
     }
 
     let mut event_store = SqliteStore::open(&database).expect("event store");
-    let mut synthetic_events = Vec::with_capacity(TOTAL_EVENT_COUNT - ITEM_COUNT);
+    let mut synthetic_events = Vec::with_capacity(total_event_count - ITEM_COUNT);
     for (item_index, work) in work_items.iter().enumerate() {
         let entry = event_store
             .work_event_tail(work.work_id, 1)
@@ -1676,15 +1728,18 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
             .expect("load base event")
             .expect("base event object");
         let event_count = if item_index == ITEM_COUNT - 1 {
-            DEEP_EVENT_COUNT
-        } else if item_index < 9 {
-            10
+            deep_event_count
         } else {
-            9
+            let remaining = total_event_count - deep_event_count;
+            remaining / (ITEM_COUNT - 1) + usize::from(item_index < remaining % (ITEM_COUNT - 1))
         };
         for event_index in 1..event_count {
             let mut event = base.clone();
-            event.created_at = at(600 + i64::try_from(event_index).expect("event timestamp"));
+            // Both history sizes precede the identical operation timestamps.
+            event.created_at = at(600)
+                + chrono::Duration::milliseconds(
+                    i64::try_from(event_index).expect("event timestamp"),
+                );
             event.actor.reason =
                 format!("claim mutation scale item {item_index:03} event {event_index:02}");
             synthetic_events.push(event);
@@ -1697,7 +1752,7 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
         event_store
             .work_feed_head(&FeedId::Project(project.clone()))
             .expect("scale project feed head"),
-        i64::try_from(TOTAL_EVENT_COUNT).expect("scale feed head")
+        i64::try_from(total_event_count).expect("scale feed head")
     );
     drop(event_store);
 
@@ -2008,4 +2063,17 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
             );
         }
     }
+    std::collections::BTreeMap::from([
+        ("claim", claim_samples),
+        ("evidence", evidence_samples),
+        ("gate", gate_samples),
+        ("note", note_samples),
+        ("checkpoint", checkpoint_samples),
+        ("revise", revise_samples),
+        ("block", block_samples),
+        ("unblock", unblock_samples),
+        ("handoff", handoff_samples),
+        ("complete", complete_samples),
+        ("work_next", work_next_samples),
+    ])
 }

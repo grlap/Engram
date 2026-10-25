@@ -14,6 +14,12 @@ use remedies::{
 };
 use serde_json::{Value, json};
 
+impl super::VerbError {
+    pub(crate) fn code(&self) -> &'static str {
+        error_code(&self.error)
+    }
+}
+
 /// Stable structured rendering shared by MCP and native JSON/core errors.
 #[must_use]
 #[allow(

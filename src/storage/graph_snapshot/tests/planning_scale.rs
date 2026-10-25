@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use super::super::load::GRAPH_VALIDATION_WORK;
+use super::super::load::{GRAPH_VALIDATION_WORK, LoadStage, LoadStageTimings, capture_load_stages};
 use super::*;
 use crate::{
     WorkGraphSnapshotDocument, WorkGraphSnapshotEvent, WorkGraphSnapshotHistory,
@@ -426,7 +426,71 @@ fn present(value: bool) -> usize {
     usize::from(value)
 }
 
-fn validate_one_sample(label: &str, document: &WorkGraphSnapshotDocument) {
+fn report_load_stages(label: &str, timings: &LoadStageTimings, loaded: bool) {
+    // The combined insert row summarizes two of the six disjoint stages; it
+    // is excluded from the sum used to compute residual time.
+    let before = timings.elapsed[LoadStage::InsertBeforeCatalog as usize];
+    let after = timings.elapsed[LoadStage::InsertAfterCatalog as usize];
+    let non_catalog = before.zip(after).map(|(a, b)| a + b).or(before).or(after);
+    let completed = |stage: LoadStage| timings.completed[stage as usize];
+    let elapsed = |stage: LoadStage| timings.elapsed[stage as usize];
+    for (stage, duration, complete) in [
+        (
+            "prepare_validation",
+            elapsed(LoadStage::PrepareValidation),
+            completed(LoadStage::PrepareValidation),
+        ),
+        (
+            "transaction_begin",
+            elapsed(LoadStage::TransactionBegin),
+            completed(LoadStage::TransactionBegin),
+        ),
+        (
+            "insert_before_catalog",
+            before,
+            completed(LoadStage::InsertBeforeCatalog),
+        ),
+        (
+            "insert_after_catalog",
+            after,
+            completed(LoadStage::InsertAfterCatalog),
+        ),
+        (
+            "insert_non_catalog",
+            non_catalog,
+            completed(LoadStage::InsertBeforeCatalog) && completed(LoadStage::InsertAfterCatalog),
+        ),
+        (
+            "per_item_projection_catalog_fts_total",
+            elapsed(LoadStage::ProjectionCatalogFts),
+            completed(LoadStage::ProjectionCatalogFts),
+        ),
+        (
+            "commit",
+            elapsed(LoadStage::Commit),
+            completed(LoadStage::Commit),
+        ),
+    ] {
+        let milliseconds = duration.map_or_else(
+            || "unreached".to_owned(),
+            |duration| format!("{:.3}", duration.as_secs_f64() * 1_000.0),
+        );
+        eprintln!(
+            "planning_scale fixture={label} stage={stage} elapsed_ms={milliseconds} completed={complete} load_succeeded={loaded}"
+        );
+    }
+    eprintln!(
+        "planning_scale fixture={label} materialized_items={} stage=residual elapsed_ms={:.3} load_succeeded={loaded}",
+        timings.catalog_items,
+        timings.residual().as_secs_f64() * 1_000.0,
+    );
+    eprintln!(
+        "planning_scale fixture={label} stage=instrumented_call_total elapsed_ms={:.3} load_succeeded={loaded}",
+        timings.total.as_secs_f64() * 1_000.0,
+    );
+}
+
+fn validate_one_sample(label: &str, document: &WorkGraphSnapshotDocument, report_stages: bool) {
     let bytes = document.container_bytes().expect("snapshot container");
     assert!(
         bytes.len() <= CONTAINER_LIMIT,
@@ -450,36 +514,40 @@ fn validate_one_sample(label: &str, document: &WorkGraphSnapshotDocument) {
     let preparation_document = document.clone();
     GRAPH_VALIDATION_WORK.with(|work| work.set(0));
     let start = Instant::now();
-    super::super::load::prepare_snapshot_for_scale_test(preparation_document, &preparation_project)
-        .expect("planning scale snapshot prepares");
+    let preparation = super::super::load::prepare_snapshot_for_scale_test(
+        preparation_document,
+        &preparation_project,
+    );
     let prepare_elapsed = start.elapsed();
     let validation_work = GRAPH_VALIDATION_WORK.with(std::cell::Cell::get);
     let bound = counts.total().saturating_mul(20).saturating_add(64);
     eprintln!(
-        "planning_scale fixture={label} prepare_load_ms={} graph_validation_work={validation_work} graph_validation_bound={bound}",
+        "planning_scale fixture={label} prepare_load_ms={} prepare_succeeded={} graph_validation_work={validation_work} graph_validation_bound={bound}",
         prepare_elapsed.as_millis(),
+        preparation.is_ok(),
     );
+    preparation.expect("planning scale snapshot prepares");
     let mut validation_destination =
         SqliteStore::open_in_memory().expect("validation destination store");
     GRAPH_VALIDATION_WORK.with(|work| work.set(0));
     let start = Instant::now();
-    validation_destination
-        .load_work_graph_snapshot(
-            &project,
-            &actor("planning-scale-loader"),
-            &bytes,
-            true,
-            at(900),
-            &DevelopmentNoopRedactor,
-        )
-        .expect("planning scale snapshot validates without writes");
+    let validation = validation_destination.load_work_graph_snapshot(
+        &project,
+        &actor("planning-scale-loader"),
+        &bytes,
+        true,
+        at(900),
+        &DevelopmentNoopRedactor,
+    );
     let validation_elapsed = start.elapsed();
     let validation_work = GRAPH_VALIDATION_WORK.with(std::cell::Cell::get);
     eprintln!(
-        "planning_scale fixture={label} validation_ms={} prepare_load_ms={} graph_validation_work={validation_work} graph_validation_bound={bound}",
+        "planning_scale fixture={label} validation_ms={} validation_succeeded={} prepare_load_ms={} graph_validation_work={validation_work} graph_validation_bound={bound}",
         validation_elapsed.as_millis(),
+        validation.is_ok(),
         prepare_elapsed.as_millis(),
     );
+    validation.expect("planning scale snapshot validates without writes");
     assert!(
         validation_work <= bound,
         "{label}: validation work exceeded its structural bound"
@@ -490,21 +558,28 @@ fn validate_one_sample(label: &str, document: &WorkGraphSnapshotDocument) {
     );
 
     let mut commit_destination = SqliteStore::open_in_memory().expect("commit destination store");
-    let start = Instant::now();
-    let result = commit_destination.load_work_graph_snapshot(
-        &project,
-        &actor("planning-scale-loader"),
-        &bytes,
-        false,
-        at(900),
-        &DevelopmentNoopRedactor,
-    );
-    let commit_elapsed = start.elapsed();
+    let (result, timings) = capture_load_stages(|| {
+        commit_destination.load_work_graph_snapshot(
+            &project,
+            &actor("planning-scale-loader"),
+            &bytes,
+            false,
+            at(900),
+            &DevelopmentNoopRedactor,
+        )
+    });
+    if report_stages {
+        report_load_stages(label, &timings, result.is_ok());
+    }
     eprintln!(
         "planning_scale fixture={label} commit_load_ms={}",
-        commit_elapsed.as_millis(),
+        timings.total.as_millis(),
     );
     result.expect("planning scale snapshot validates and loads");
+    assert!(timings.completed.iter().all(|complete| *complete));
+    assert!(timings.elapsed.iter().all(Option::is_some));
+    assert_eq!(timings.catalog_items, document.body.items.len());
+    let _residual = timings.residual();
 }
 
 #[test]
@@ -512,7 +587,51 @@ fn compact_mixed_forest_graph_validation_work_is_bounded() {
     let template = root_template();
     let mixed = build_document(&template, 300, ForestShape::Mixed, 1, 0, true);
     let mixed_with_blockers = add_blockers(mixed, 1, true);
-    validate_one_sample("compact-mixed-forest", &mixed_with_blockers);
+    validate_one_sample("compact-mixed-forest", &mixed_with_blockers, false);
+}
+
+#[test]
+fn load_stage_capture_isolated_after_refusal_and_unwind() {
+    let project = root_template().body.summary.project_id;
+    let mut destination = SqliteStore::open_in_memory().unwrap();
+    let (refused, timings) = capture_load_stages(|| {
+        destination.load_work_graph_snapshot(
+            &project,
+            &actor("planning-scale-loader"),
+            b"{}",
+            false,
+            at(900),
+            &DevelopmentNoopRedactor,
+        )
+    });
+    assert!(refused.is_err());
+    assert!(timings.elapsed[0].is_some());
+    assert!(!timings.completed[0]);
+    assert!(timings.elapsed[1..].iter().all(Option::is_none));
+    let panicked = std::panic::catch_unwind(|| {
+        capture_load_stages(|| panic!("load timing unwind fixture"));
+    });
+    assert!(panicked.is_err());
+    let document = build_document(&root_template(), 6, ForestShape::Independent, 1, 0, true);
+    let bytes = document.container_bytes().unwrap();
+    let mut dry_run_destination = SqliteStore::open_in_memory().unwrap();
+    let (dry_run, timings) = capture_load_stages(|| {
+        dry_run_destination.load_work_graph_snapshot(
+            &project,
+            &actor("planning-scale-loader"),
+            &bytes,
+            true,
+            at(900),
+            &DevelopmentNoopRedactor,
+        )
+    });
+    assert!(!dry_run.unwrap().loaded);
+    assert!(timings.completed[LoadStage::PrepareValidation as usize]);
+    assert!(timings.elapsed[1..].iter().all(Option::is_none));
+    assert_eq!(timings.catalog_items, 0);
+    let _residual = timings.residual();
+    validate_one_sample("capture-after-refusal-and-unwind", &document, false);
+    validate_one_sample("fresh-capture", &document, false);
 }
 
 fn validate_independent_fraction(label: &str, divisor: usize) {
@@ -520,7 +639,7 @@ fn validate_independent_fraction(label: &str, divisor: usize) {
     let nmax = largest_item_count(&template, ForestShape::Independent, 1, 0);
     let count = (nmax / divisor).max(1);
     let document = build_document(&template, count, ForestShape::Independent, 1, 0, true);
-    validate_one_sample(label, &document);
+    validate_one_sample(label, &document, true);
 }
 
 #[test]
@@ -583,13 +702,13 @@ fn graph_snapshot_nmax_validation_quiet_slot() {
     let half = (nmax / 2).max(1);
     for (label, count) in [("independent-quarter", quarter), ("independent-half", half)] {
         let document = build_document(&template, count, ForestShape::Independent, 1, 0, true);
-        validate_one_sample(label, &document);
+        validate_one_sample(label, &document, true);
     }
-    validate_one_sample("independent-Nmax", &largest);
+    validate_one_sample("independent-Nmax", &largest, true);
 
     let mixed_count = largest_item_count(&template, ForestShape::Mixed, 1, 0);
     let mixed = build_document(&template, mixed_count, ForestShape::Mixed, 1, 0, true);
-    validate_one_sample("mixed-forest-Nmax", &mixed);
+    validate_one_sample("mixed-forest-Nmax", &mixed, true);
 
     // Each complete root group has one root, 300 terminal children, and 255
     // open children. A final partial group is retained only when it still has
@@ -651,11 +770,11 @@ fn graph_snapshot_nmax_validation_quiet_slot() {
         fanout.body.items.len(),
         descendants_per_root.len(),
     );
-    validate_one_sample("terminal-fanout-Nmax", &fanout);
+    validate_one_sample("terminal-fanout-Nmax", &fanout, true);
 
     let history_count = largest_item_count(&template, ForestShape::Chained, 4, 4);
     let history = build_document(&template, history_count, ForestShape::Chained, 4, 4, true);
-    validate_one_sample("concentrated-history-relation-Nmax", &history);
+    validate_one_sample("concentrated-history-relation-Nmax", &history, true);
 
     let blocker_count = largest_blocker_item_count(&template, 4);
     let blocker_roots = build_document(
@@ -667,5 +786,5 @@ fn graph_snapshot_nmax_validation_quiet_slot() {
         false,
     );
     let blockers = add_blockers(blocker_roots, 4, true);
-    validate_one_sample("independent-blockers-Nmax", &blockers);
+    validate_one_sample("independent-blockers-Nmax", &blockers, true);
 }

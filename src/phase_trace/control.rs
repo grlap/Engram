@@ -627,6 +627,8 @@ fn monitor_loop(trace: &std::sync::Weak<ControlTrace>) {
 /// `BEGIN IMMEDIATE` or `COMMIT` starts and how long it ran, and records
 /// nothing of any statement's text.
 pub(crate) fn sql_event(event: rusqlite::trace::TraceEvent<'_>) {
+    #[cfg(test)]
+    crate::storage::work_cost::sqlite::observe(&event);
     match event {
         rusqlite::trace::TraceEvent::Stmt(_, sql) => {
             if let Some(statement) = Statement::classify(sql) {

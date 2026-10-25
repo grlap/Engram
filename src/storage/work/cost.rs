@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use crate::domain::RootExecutionMember as Member;
 use rusqlite::{Statement, StatementStatus};
 
+pub(crate) mod sqlite;
+
 #[derive(Clone, Default, serde::Serialize)]
 struct SqlCost {
     calls: usize,

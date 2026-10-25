@@ -74,6 +74,126 @@ fn validation_presence(present: bool) -> usize {
     usize::from(present)
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LoadStage {
+    PrepareValidation,
+    TransactionBegin,
+    InsertBeforeCatalog,
+    ProjectionCatalogFts,
+    InsertAfterCatalog,
+    Commit,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+pub(super) struct LoadStageTimings {
+    pub(super) elapsed: [Option<std::time::Duration>; 6],
+    pub(super) completed: [bool; 6],
+    pub(super) total: std::time::Duration,
+    pub(super) catalog_items: usize,
+    next_stage: usize,
+    active: Option<LoadStage>,
+}
+
+#[cfg(test)]
+impl LoadStageTimings {
+    pub(super) fn residual(&self) -> std::time::Duration {
+        let measured: std::time::Duration = self.elapsed.iter().flatten().copied().sum();
+        self.total
+            .checked_sub(measured)
+            .expect("load stages exceed the instrumented call elapsed time")
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static LOAD_STAGE_TIMINGS: std::cell::RefCell<Option<LoadStageTimings>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Captures one load on this thread, clearing state even on unwind. Total time
+/// includes the closure's argument construction and collector extraction; its
+/// residual also includes destruction and error rollback outside named stages.
+#[cfg(test)]
+pub(super) fn capture_load_stages<T>(operation: impl FnOnce() -> T) -> (T, LoadStageTimings) {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            LOAD_STAGE_TIMINGS.with(|slot| {
+                *slot.borrow_mut() = None;
+            });
+        }
+    }
+
+    LOAD_STAGE_TIMINGS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        assert!(slot.is_none(), "nested load timing capture");
+        *slot = Some(LoadStageTimings::default());
+    });
+    let reset = Reset;
+    let started = std::time::Instant::now();
+    let result = operation();
+    let mut timings = LOAD_STAGE_TIMINGS.with(|slot| slot.borrow_mut().take().unwrap());
+    timings.total = started.elapsed();
+    assert!(timings.active.is_none(), "load stage escaped its capture");
+    drop(reset);
+    (result, timings)
+}
+
+#[cfg(test)]
+struct LoadStageTimer {
+    stage: LoadStage,
+    started: std::time::Instant,
+    completed: bool,
+    items: usize,
+}
+
+#[cfg(test)]
+impl LoadStageTimer {
+    fn start(stage: LoadStage) -> Option<Self> {
+        LOAD_STAGE_TIMINGS.with(|slot| {
+            slot.borrow_mut().as_mut().map(|timings| {
+                assert!(timings.active.is_none(), "overlapping load timing stages");
+                assert_eq!(
+                    stage as usize, timings.next_stage,
+                    "load stages must be visited once in order"
+                );
+                timings.next_stage += 1;
+                timings.active = Some(stage);
+                Self {
+                    stage,
+                    started: std::time::Instant::now(),
+                    completed: false,
+                    items: 0,
+                }
+            })
+        })
+    }
+
+    fn complete(mut self) {
+        self.completed = true;
+    }
+}
+
+#[cfg(test)]
+impl Drop for LoadStageTimer {
+    fn drop(&mut self) {
+        LOAD_STAGE_TIMINGS.with(|slot| {
+            if let Some(timings) = slot.borrow_mut().as_mut() {
+                let index = self.stage as usize;
+                assert_eq!(timings.active, Some(self.stage));
+                timings.elapsed[index] = Some(self.started.elapsed());
+                timings.completed[index] = self.completed;
+                if self.stage == LoadStage::ProjectionCatalogFts {
+                    timings.catalog_items = self.items;
+                }
+                timings.active = None;
+            }
+        });
+    }
+}
+
 /// Each item's relation basis (prerequisites sorted by id, blockers in
 /// blocker-id order), built once on first demand from the item and blocker
 /// sections. A native record is minted from it, and the lifecycle check
@@ -201,6 +321,8 @@ impl SqliteStore {
         loaded_at: DateTime<Utc>,
         redactor: &R,
     ) -> Result<WorkGraphSnapshotLoadResult, StoreError> {
+        #[cfg(test)]
+        let preparation_timer = LoadStageTimer::start(LoadStage::PrepareValidation);
         crate::storage::admit_live_actor_session(actor)?;
         if !graph_destination_is_empty_on(&self.connection, project_id)? {
             return Err(StoreError::GraphDestinationNotEmpty);
@@ -214,6 +336,10 @@ impl SqliteStore {
             .map_err(|error| StoreError::InvalidGraphSnapshot(error.to_string()))?;
         let prepared = prepare_load(document, project_id)?;
         ensure_restore_catalog_slots_empty(&self.connection, &prepared)?;
+        #[cfg(test)]
+        if let Some(timer) = preparation_timer {
+            timer.complete();
+        }
         if dry_run {
             return Ok(WorkGraphSnapshotLoadResult {
                 loaded: false,
@@ -221,11 +347,23 @@ impl SqliteStore {
             });
         }
 
+        #[cfg(test)]
+        let begin_timer = LoadStageTimer::start(LoadStage::TransactionBegin);
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        #[cfg(test)]
+        if let Some(timer) = begin_timer {
+            timer.complete();
+        }
         insert_prepared_load_on(&transaction, project_id, actor, loaded_at, &prepared)?;
+        #[cfg(test)]
+        let commit_timer = LoadStageTimer::start(LoadStage::Commit);
         transaction.commit()?;
+        #[cfg(test)]
+        if let Some(timer) = commit_timer {
+            timer.complete();
+        }
         Ok(WorkGraphSnapshotLoadResult {
             loaded: true,
             preview: prepared.preview,
@@ -1400,6 +1538,8 @@ fn insert_prepared_load_on(
     loaded_at: DateTime<Utc>,
     prepared: &PreparedLoad,
 ) -> Result<(), StoreError> {
+    #[cfg(test)]
+    let before_catalog_timer = LoadStageTimer::start(LoadStage::InsertBeforeCatalog);
     if !graph_destination_is_empty_on(transaction, project_id)? {
         return Err(StoreError::GraphDestinationNotEmpty);
     }
@@ -1525,13 +1665,29 @@ fn insert_prepared_load_on(
             ],
         )?;
     }
+    #[cfg(test)]
+    if let Some(timer) = before_catalog_timer {
+        timer.complete();
+    }
+    #[cfg(test)]
+    let mut catalog_timer = LoadStageTimer::start(LoadStage::ProjectionCatalogFts);
     for snapshot in &prepared.document.body.items {
         let item = super::super::work::load_work_item_projection_for_restore(
             transaction,
             snapshot.work_id,
         )?;
         super::super::work::initialize_work_catalog_for_restore(transaction, &item)?;
+        #[cfg(test)]
+        if let Some(timer) = catalog_timer.as_mut() {
+            timer.items += 1;
+        }
     }
+    #[cfg(test)]
+    if let Some(timer) = catalog_timer {
+        timer.complete();
+    }
+    #[cfg(test)]
+    let after_catalog_timer = LoadStageTimer::start(LoadStage::InsertAfterCatalog);
 
     for memory in &prepared.document.body.memories {
         insert_memory_on(
@@ -1562,6 +1718,10 @@ fn insert_prepared_load_on(
     };
     let object = CanonicalObject::mint(&loaded)?;
     SqliteStore::insert_object(transaction, "work_graph_snapshot_loaded", &object)?;
+    #[cfg(test)]
+    if let Some(timer) = after_catalog_timer {
+        timer.complete();
+    }
     Ok(())
 }
 
@@ -1830,4 +1990,63 @@ fn graph_destination_is_empty_on(
 
 fn corrupt(detail: impl Into<String>) -> StoreError {
     StoreError::InvalidGraphSnapshot(detail.into())
+}
+
+#[cfg(test)]
+mod load_timing_tests {
+    use super::*;
+
+    #[test]
+    fn captures_are_thread_local_and_nested_capture_preserves_outer_state() {
+        let ((), timings) = capture_load_stages(|| {
+            assert!(std::panic::catch_unwind(|| capture_load_stages(|| ())).is_err());
+            std::thread::spawn(|| {
+                assert!(LoadStageTimer::start(LoadStage::PrepareValidation).is_none());
+                let ((), timings) = capture_load_stages(|| {
+                    LoadStageTimer::start(LoadStage::PrepareValidation)
+                        .unwrap()
+                        .complete();
+                });
+                assert_eq!(timings.next_stage, 1);
+            })
+            .join()
+            .unwrap();
+            LoadStageTimer::start(LoadStage::PrepareValidation)
+                .unwrap()
+                .complete();
+        });
+        assert_eq!(timings.next_stage, 1);
+        assert!(timings.completed[0]);
+        assert!(timings.elapsed[1..].iter().all(Option::is_none));
+        assert!(LoadStageTimer::start(LoadStage::PrepareValidation).is_none());
+    }
+
+    #[test]
+    fn active_stage_unwind_and_invalid_sequences_leave_no_capture() {
+        for failure in 0..4 {
+            let panicked = std::panic::catch_unwind(|| {
+                capture_load_stages(|| {
+                    let timer = LoadStageTimer::start(LoadStage::PrepareValidation).unwrap();
+                    match failure {
+                        0 => panic!("active load stage unwind"),
+                        1 => {
+                            let _overlap = LoadStageTimer::start(LoadStage::TransactionBegin);
+                        }
+                        2 => {
+                            timer.complete();
+                            let _repeated_load =
+                                LoadStageTimer::start(LoadStage::PrepareValidation);
+                        }
+                        _ => {
+                            timer.complete();
+                            let _skipped_stage =
+                                LoadStageTimer::start(LoadStage::ProjectionCatalogFts);
+                        }
+                    }
+                });
+            });
+            assert!(panicked.is_err());
+            assert!(LoadStageTimer::start(LoadStage::PrepareValidation).is_none());
+        }
+    }
 }

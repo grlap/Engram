@@ -80,10 +80,11 @@ impl SqliteStore {
     /// Only an open inside a traced MCP call registers it; it records a statement
     /// category and its duration, never the statement.
     fn enable_phase_profile(&self) {
-        self.connection.trace_v2(
-            rusqlite::trace::TraceEventCodes::SQLITE_TRACE_PROFILE,
-            Some(crate::phase_trace::sql_profile),
-        );
+        let events = rusqlite::trace::TraceEventCodes::SQLITE_TRACE_PROFILE;
+        #[cfg(test)]
+        let events = events | rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT;
+        self.connection
+            .trace_v2(events, Some(crate::phase_trace::sql_profile));
     }
 
     /// Opens a local database without asserting the project root's filesystem
@@ -847,7 +848,10 @@ impl SqliteStore {
     pub fn open_in_memory_with_host_path_identity(
         identity: Option<HostPathPolicy>,
     ) -> Result<Self, StoreError> {
-        Self::from_connection(Connection::open_in_memory()?, identity, None)
+        let connection = Connection::open_in_memory()?;
+        #[cfg(test)]
+        super::work_cost::sqlite::install(&connection);
+        Self::from_connection(connection, identity, None)
     }
 
     fn from_connection(

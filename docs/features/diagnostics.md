@@ -35,7 +35,15 @@ shutdown traces, including detailed store timing. Default diagnostics use
 cheap front-door timing and do not install SQLite statement profiling.
 See [CLI/MCP tracing](cli-and-mcp.md#host-and-operator-cli).
 
-A typed `writer_admission_refused` retains the native admission reason,
+For MCP verb refusals, the record's `code` is the code received by the client,
+such as `work_invalid` or `engram_store_error`. Native store failures retain
+their fixed reason and `sqlite_code`: inspect that SQLite extended code to
+distinguish busy from locked failures, and the `writer_admission` block for
+writer admission classification. Control-surface records keep their existing
+native codes, including `sqlite_busy`, `sqlite_locked` and
+`writer_admission_refused`.
+
+A typed writer-admission refusal retains the native admission reason,
 elapsed wait, budget and SQLite primary/extended codes in `writer_admission`.
 These timings describe admission for that transaction; they are distinct from
 the surrounding handler duration. The refusal proves that transaction was

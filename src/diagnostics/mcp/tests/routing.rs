@@ -55,6 +55,7 @@ async fn routed(server: McpServer, observer: Arc<Observer>) -> Vec<String> {
             serde_json::json!({"PRIVATE-unknown-field":"PRIVATE-argument"}),
         ),
         (4, "PRIVATE-unknown-word", serde_json::json!({})),
+        (5, "note", serde_json::json!({"text":" \t "})),
     ] {
         line(&mut writer, &serde_json::json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":arguments}})).await;
         replies.push(
@@ -95,8 +96,27 @@ async fn actual_mcp_routing_errors_keep_response_bytes_and_typed_faults() {
     let observer = Observer::new(sink.clone());
     let candidate = routed(make().with_diagnostics(Arc::clone(&observer)), observer).await;
     assert_eq!(baseline, candidate);
+    let reply = candidate
+        .iter()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|reply| reply["id"] == 5)
+        .unwrap();
+    assert_eq!(reply["result"]["isError"], true);
+    let client_code = &reply["result"]["structuredContent"]["error"]["code"];
+    assert_eq!(client_code, "work_invalid");
     drain(&sink);
     let rows = records(home.path());
+    let failures = rows
+        .iter()
+        .filter(|row| {
+            row["event"]["operation"] == "note"
+                && row["event"]["request_id"] == 5
+                && row["event"]["kind"] == "failure"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(&failures[0]["event"]["code"], client_code);
+    assert!(failures[0]["event"]["request_seq"].as_u64().is_some());
     assert!(rows.iter().any(|row| row["event"]["operation"] == "show"));
     assert!(rows.iter().any(|row| row["event"]["code"] == "rpc_error"));
     assert!(!serde_json::to_string(&rows).unwrap().contains("PRIVATE"));

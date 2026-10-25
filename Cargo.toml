@@ -45,7 +45,7 @@ tokio = { version = "1.47", features = ["process", "io-util", "time"] }
 windows = { version = "0.62.2", features = ["Win32_System_Threading"] }
 
 [dev-dependencies]
-rusqlite = { version = "0.40", default-features = false, features = ["trace"] }
+rusqlite = { version = "0.40", default-features = false, features = ["cache", "trace"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 junction = "2.1"

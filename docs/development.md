@@ -95,6 +95,28 @@ gate. The shell entry point also raises the Unix
 file-descriptor soft limit when the host permits it; that step is not
 applicable on Windows.
 
+The claim-mutation scale phase also reports executing-thread SQLite statement,
+fullscan-step, sort and VM-step totals, p95 and maxima beside the existing decode
+budgets. A calibration first checks a drained, unindexed 128-row sort (127 scan
+steps and one sort), including cached reuse. Samples cover retained and newly
+opened store connections; fixture setup and target selection are excluded.
+Trigger subprograms belong to their parent statement, and a dropped iterator
+is counted when SQLite resets it. A statement that outlives a sample, or an
+unattributable counter observation, fails the collector instead of producing
+partial numbers. The collector exists only in library test builds and shares
+the phase-trace callback; it changes no live-store schema or durability setting.
+
+Each of two 500-item fixtures reports the same eleven operations: twenty samples
+each of claim, evidence, checkpoint, revise, block, unblock, handoff, completion
+and `work_next`, plus 128 gate transitions and one gate-heavy note. Histories
+contain 5,000 events with a deepest history of 500, then 10,000 with a deepest
+history of 1,000. Decode limits remain unchanged. Reports identify statement
+categories and flag a scan-step p95 increase above 64, an additional sort at p95,
+or larger-fixture elapsed p95 above 500 ms for investigation; these are not new
+failure budgets or evidence that a slower operation is defective. The services are retained,
+but the reader's first call may open its connection. These instrumented times
+are not an OS-cold benchmark or a claim about an unloaded host.
+
 The Windows task-sync refusal tests create a real file symbolic link. Their
 host must have Developer Mode enabled or grant the test process symbolic-link
 creation privilege. A directory junction cannot substitute for this file

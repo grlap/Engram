@@ -172,7 +172,7 @@ impl McpServer {
 
     fn verb(&self, outcome: Result<Receipt, VerbError>) -> CallToolResult {
         if let Err(error) = &outcome {
-            crate::diagnostics::mcp::typed_fault(crate::diagnostics::Fault::store(&error.error));
+            crate::diagnostics::mcp::typed_fault(crate::diagnostics::Fault::mcp_verb(error));
         }
         tools::verb(outcome, &self.verbs())
     }
