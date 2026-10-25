@@ -492,6 +492,65 @@ mod listing_cursor_tests {
     }
 
     #[test]
+    fn listing_cursor_predecessor_shapes_are_refused() {
+        let fresh_cursor = |basis| {
+            let token = listing_continuation(
+                &ProjectId("customer-workflow".into()),
+                &sample_filters(),
+                sample_after(),
+                3,
+                basis,
+            )
+            .expect("fresh token");
+            decode_cursor(&token).expect("current token must decode");
+            listing_cursor_json(&token).expect("json")
+        };
+        let membership = fresh_cursor(sample_membership());
+        let project_cut = fresh_cursor(ListingBasis::ProjectCut { cut: sample_cut() });
+
+        let mut top_level_cut = project_cut.clone();
+        let basis = top_level_cut
+            .as_object_mut()
+            .expect("cursor")
+            .remove("basis")
+            .expect("existing basis");
+        let cut = basis.get("cut").expect("existing cut").clone();
+        top_level_cut["cut"] = cut.clone();
+
+        let mut membership_without_time = membership;
+        membership_without_time["basis"]
+            .as_object_mut()
+            .expect("membership basis")
+            .remove("observed_at")
+            .expect("existing observed time");
+
+        let mut project_cut_without_cut = project_cut.clone();
+        project_cut_without_cut["basis"]
+            .as_object_mut()
+            .expect("project-cut basis")
+            .remove("cut")
+            .expect("existing cut");
+
+        // Keep a valid basis so this control isolates unknown-field refusal
+        // from the missing-basis refusal in the predecessor shape above.
+        let mut extra_top_level_cut = project_cut;
+        extra_top_level_cut["cut"] = cut;
+        for (shape, cursor) in [
+            ("top-level cut without basis", top_level_cut),
+            ("membership without observed_at", membership_without_time),
+            ("project_cut without cut", project_cut_without_cut),
+            ("top-level cut with valid basis", extra_top_level_cut),
+        ] {
+            let token = encode_listing_cursor_json(&cursor).expect("encoded fixture");
+            let error = decode_cursor(&token).expect_err(shape);
+            assert!(
+                matches!(&error, StoreError::WorkCatalogCursorInvalid { .. }),
+                "{shape}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
     fn listing_cursor_roundtrips_filters_and_position() {
         assert_roundtrip(&sample_filters(), 3);
         assert_roundtrip(&default_ready_filters(), 3);

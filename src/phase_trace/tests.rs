@@ -647,6 +647,8 @@ fn shutdown_milestones_distinguish_input_end_and_a_pending_transport_close() {
 
 #[test]
 fn retained_store_owner_is_released_only_after_the_service_join() {
+    const COORDINATION_HANG_GUARD: Duration = Duration::from_secs(60);
+
     struct HeldOwner {
         entered: std::sync::mpsc::Sender<()>,
         release: std::sync::mpsc::Receiver<()>,
@@ -682,7 +684,7 @@ fn retained_store_owner_is_released_only_after_the_service_join() {
     });
 
     entered
-        .recv_timeout(Duration::from_secs(1))
+        .recv_timeout(COORDINATION_HANG_GUARD)
         .expect("service join reached the retained owner drop");
     assert!(
         finished.try_recv().is_err(),
@@ -690,7 +692,7 @@ fn retained_store_owner_is_released_only_after_the_service_join() {
     );
     release.send(()).expect("release retained owner");
     finished
-        .recv_timeout(Duration::from_secs(1))
+        .recv_timeout(COORDINATION_HANG_GUARD)
         .expect("shutdown completed after retained owner release");
     runner.join().expect("shutdown runner");
 

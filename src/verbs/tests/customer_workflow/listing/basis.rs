@@ -38,11 +38,18 @@ fn ready_next(receipt: &Receipt) -> LsInput {
     input
 }
 
-fn refused(result: Result<Receipt, crate::verbs::VerbError>) -> bool {
-    matches!(
-        result.map(|_| ()).unwrap_err().error,
-        StoreError::WorkCatalogCursorInvalid { .. }
-    )
+fn assert_catalog_changed(result: Result<Receipt, crate::verbs::VerbError>) {
+    let error = result
+        .expect_err("catalog change must refuse continuation")
+        .error;
+    assert!(
+        matches!(
+            &error,
+            StoreError::WorkCatalogCursorInvalid { reason }
+                if reason == "catalog changed; start a fresh listing"
+        ),
+        "{error:?}"
+    );
 }
 
 fn candidates(verbs: &AgentVerbs) -> Vec<String> {
@@ -101,7 +108,7 @@ fn next_minted_ready_continuation_is_refused_by_an_unrelated_note_unlike_ls() {
         .unwrap();
     // The project cut moved, so compact next's navigation is refused; the
     // listing's own sequence did not, so its continuation survives.
-    assert!(refused(verbs.ls(&navigation, at(103))));
+    assert_catalog_changed(verbs.ls(&navigation, at(103)));
     assert!(verbs.ls(&continued, at(103)).is_ok());
     assert!(
         verbs
@@ -135,10 +142,10 @@ fn next_minted_ready_continuation_is_refused_inside_a_sub_millisecond_expiry() {
         token["basis"]["cut"]["valid_until_ms"],
         (at(40) + chrono::Duration::milliseconds(123)).timestamp_millis()
     );
-    assert!(refused(verbs.ls(
+    assert_catalog_changed(verbs.ls(
         &navigation,
-        at(40) + chrono::Duration::microseconds(123_200)
-    )));
+        at(40) + chrono::Duration::microseconds(123_200),
+    ));
     let after = at(40) + chrono::Duration::milliseconds(124);
     let fresh = ready_next(&peek(&verbs, after));
     assert!(

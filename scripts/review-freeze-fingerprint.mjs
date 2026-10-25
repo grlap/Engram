@@ -10,15 +10,16 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 
-function git(root, args, { allowFailure = false } = {}) {
+function git(root, args, { allowFailure = false, env = process.env } = {}) {
   // The test launcher's detached worker has no console. Without windowsHide,
   // Windows opens a visible terminal window for every git call it makes.
   const result = spawnSync("git", args, {
@@ -26,6 +27,7 @@ function git(root, args, { allowFailure = false } = {}) {
     encoding: null,
     maxBuffer: 128 * 1024 * 1024,
     windowsHide: true,
+    env,
   });
   if (result.error) throw result.error;
   if (result.status !== 0 && !allowFailure) {
@@ -100,6 +102,61 @@ function worktreeRoot(startDirectory) {
   return realpathSync.native(topLevelResult.stdout.toString("utf8").trim());
 }
 
+function physicalManifestPath(path) {
+  let existing = path;
+  const missing = [];
+  for (;;) {
+    try {
+      lstatSync(existing);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      const parent = dirname(existing);
+      if (parent === existing) throw error;
+      missing.unshift(basename(existing));
+      existing = parent;
+      continue;
+    }
+    // Keep resolution outside the missing-path catch: a dangling link must
+    // refuse, rather than fall back to its lexical parent as an unowned path.
+    const canonical = realpathSync.native(existing);
+    if (missing.length && !statSync(canonical).isDirectory()) {
+      throw new Error(`review manifest parent is not a directory: ${JSON.stringify(existing)}`);
+    }
+    return resolve(canonical, ...missing);
+  }
+}
+
+function admitManifestLocation(root, snapshotPath) {
+  const currentGitDir = realpathSync.native(
+    git(root, ["rev-parse", "--absolute-git-dir"]).stdout.toString("utf8").trim(),
+  );
+  const physical = physicalManifestPath(snapshotPath);
+  // A linked private Git directory sits below the common main directory.
+  // The nearest actual admin directory wins, regardless of its name.
+  for (let candidate = dirname(physical); ; candidate = dirname(candidate)) {
+    const result = git(root, ["rev-parse", "--resolve-git-dir", candidate], {
+      allowFailure: true,
+      // Distinguish Git's ordinary negative probe from an operational error
+      // without depending on the user's message locale.
+      env: { ...process.env, LC_ALL: "C" },
+    });
+    if (result.status === 0) {
+      const ownerGitDir = realpathSync.native(result.stdout.toString("utf8").trim());
+      if (ownerGitDir !== currentGitDir) {
+        throw new Error(
+          `review manifest Git directory mismatch: manifest ${JSON.stringify(physical)} resolves under ${JSON.stringify(ownerGitDir)}; current worktree ${JSON.stringify(root)} uses ${JSON.stringify(currentGitDir)}. Run from the owning worktree, or choose this worktree's manifest path using git rev-parse --path-format=absolute --git-path engram-review-freeze.json.`,
+        );
+      }
+      return;
+    }
+    const stderr = result.stderr.toString("utf8");
+    if (result.status !== 128 || !stderr.startsWith("fatal: not a gitdir ")) {
+      throw new Error(`cannot determine review manifest Git directory (${result.status}): ${stderr}`);
+    }
+    if (dirname(candidate) === candidate) return; // Custom non-admin output.
+  }
+}
+
 export function captureFingerprint(startDirectory = process.cwd()) {
   return captureWorktree(worktreeRoot(startDirectory));
 }
@@ -148,8 +205,15 @@ export const fingerprintLimitations = (platform = process.platform) =>
 export function runCli(arguments_, startDirectory = process.cwd()) {
   const options = parseArguments(arguments_);
   process.stderr.write(`${fingerprintLimitations().join("\n")}\n`);
+  if (options.mode === "print") {
+    process.stdout.write(`${JSON.stringify(captureFingerprint(startDirectory), null, 2)}\n`);
+    return;
+  }
+
+  const root = worktreeRoot(startDirectory);
+  const snapshotPath = resolve(startDirectory, options.path);
+  admitManifestLocation(root, snapshotPath);
   if (options.mode === "check") {
-    const snapshotPath = resolve(startDirectory, options.path);
     const expected = JSON.parse(readFileSync(snapshotPath, "utf8"));
     if (
       expected === null || typeof expected !== "object" || Array.isArray(expected) ||
@@ -159,7 +223,6 @@ export function runCli(arguments_, startDirectory = process.cwd()) {
     ) {
       throw new Error("invalid review freeze manifest: expected current schema, absolute root, and SHA-256 fingerprint; create a new freeze");
     }
-    const root = worktreeRoot(startDirectory);
     // Root identity is an admission check, not content drift. Do not inspect a
     // different tree's index or files just because its bytes might match.
     if (expected.root !== root) {
@@ -177,13 +240,7 @@ export function runCli(arguments_, startDirectory = process.cwd()) {
     return;
   }
 
-  const actual = captureFingerprint(startDirectory);
-  if (options.mode === "print") {
-    process.stdout.write(`${JSON.stringify(actual, null, 2)}\n`);
-    return;
-  }
-
-  const snapshotPath = resolve(startDirectory, options.path);
+  const actual = captureWorktree(root);
   mkdirSync(dirname(snapshotPath), { recursive: true });
   writeFileSync(snapshotPath, `${JSON.stringify(actual, null, 2)}\n`, {
     encoding: "utf8",
