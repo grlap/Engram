@@ -55,19 +55,21 @@ Keep two or three independent candidates moving in parallel when the backlog
 allows it. Parallelize implementation, tests, review and carry preparation.
 Carry candidates onto the current mainline one at a time, then freeze and
 validate the exact combined tree. A completed review or gate applies only to
-the frozen tree it names, except that a clean review round may be adopted
-across a base-only carry as `/review-changes` section 6a allows; a gate never
+the frozen tree it names, except that a completed Coder review round may be
+adopted across a clean carry as `/review-changes` section 6a allows; a gate never
 carries. Re-carry after mainline movement when required.
 
 Choose candidates with non-overlapping owned paths where possible. When their
 surfaces overlap, serialize the implementation or explicitly give one owner
-the shared boundary. The Merger owns queue order and conflict resolution; it
-does not replace the required project validation or reviews.
+the shared boundary. The Merger owns queue order and conflict detection; it
+returns a conflicted package to its Coder and does not replace the required
+project validation or reviews.
 
 ### Keep the Merger non-authoring
 
-The Merger only receives worker-delivered patches, resolves actual merge
-conflicts, carries candidates onto the selected mainline, freezes the tree,
+The Merger only receives worker-delivered patches, returns a package with an
+actual merge conflict to its Coder, carries candidates onto the selected
+mainline, freezes the tree,
 coordinates validation and reviews, and lands a result that meets the
 project's landing conditions (in Engram, the Authority and Git section of
 AGENTS.md). It never

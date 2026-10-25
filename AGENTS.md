@@ -90,12 +90,19 @@ their presence in a file alone does not prove delivery.
     refusal text), Kimi stands in for the unavailable reviewer, Kimi never
     stands in for both reviewers of the same round, and every other condition
     is unchanged; any out-of-scope finding was filed as an
-    independent root with provenance. A clean latest round on an earlier
-    freeze also counts for a tree carried onto a newer master when every
-    base-only carry condition of `/review-changes` section 6a holds and is
-    recorded on the item, including a dependency assessment attested by the
-    other project's coordinator; such an adopted round never carries a gate,
-    a check, readiness or an acceptance evaluation.
+    independent root with provenance.
+    A clean latest round completed by the Coder on a verified frozen
+    package before its complete READY handoff also counts when the Merger
+    cleanly carries its reviewed changes onto current master under
+    `/review-changes` section 6a. Master movement, including executable,
+    build-input or governing changes, does not by itself require a new review
+    pair. A recorded unchanged-contribution proof may establish a clean
+    carry when another part of the same text file changed. The Merger owns
+    the dependency/conflict assessment; another project's coordinator need
+    not attest it. Several complete READY packages may be integrated
+    together when each meets section 6a and no unreviewed change is added.
+    Conflicts or changed package content return to the Coder. An adopted
+    round never carries a gate, a check, readiness or an acceptance evaluation.
     An in-scope finding of Medium or
     higher left unfixed, even one rejected on evidence, goes to Greg;
   - the changeset delivers its items' acceptance criteria, and a
@@ -524,6 +531,9 @@ authority.
    Use supported host tools for required checks. Keep host-security acceptance
    separate from product review, with no competing owners or duplicate proof
    obligations. Other projects retain their applicable review requirements.
+   The Merger may adopt completed Coder reviews under `/review-changes`
+   section 6a and does not commission a new pair solely because master
+   moved or complete READY packages were cleanly integrated.
 3. **Repeat verification for a reason.** A changed input or a concrete failure
    can require renewed validation and review under project policy. Name that
    reason and the input covered by each result. First recover existing results

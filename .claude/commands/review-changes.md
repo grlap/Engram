@@ -482,53 +482,67 @@ unchanged: it needs no new freeze, gate or review pair, but the audit is
 repeated, and the conditions of the Authority and Git section hold for that
 wording as for any other.
 
-## 6a. Adopt a clean round across a base-only carry
+## 6a. Adopt a completed Coder review after a clean carry
 
-When master moves after a clean review round, and the reviewed changeset is
-carried onto the new master without any change of its own (a fresh worktree,
-the staged diff applied unchanged, a new freeze), the parent may adopt that
-round for the carried tree instead of commissioning a new pair, but only when
-every condition below holds. Otherwise the carried tree gets a new round.
+Required independent reviews finish on the Coder's frozen package before its
+complete READY handoff. The Merger may adopt those reviews when carrying the
+reviewed changes unchanged onto current master. Master movement alone does
+not require a new review pair, including executable, build-input or governing
+changes. The Merger assesses dependency and conflict impact; another project's
+coordinator need not attest that assessment.
 
-1. The carried tree's freeze verifies with the compiled checker run in the
-   new root, before and after the carry proof is read, and the parent records
-   a carry proof on the item: the old and new base commits, roots, manifests
-   and fingerprints; for every changed path, its status, its pre-image and
-   post-image blob ids and its modes in both trees, all equal, with the
-   reviewed side read either from the reviewed root while the compiled checker
-   passes on that root's manifest and fingerprint before and after the read,
-   or from a staged diff or tree id recorded on the item while the reviewed
-   freeze verified; both inputs fully staged, with no unstaged change and no
-   untracked file; and the complete list of paths the base changed between
-   the two bases, none of them a changed path or a prefix of one. Compute both
-   path sets without rename detection. When the reviewed side cannot be read
-   this way, the carried tree gets a new round.
-2. No path the base changed is executable code (source, scripts or tests), a
-   build input (manifests, lockfiles, toolchain files, build scripts, fixtures
-   or configuration) or a governing instruction (AGENTS.md, CLAUDE.md, skills,
-   commands, reviewer lenses or feature contracts, or any document that a
-   governing instruction names as normative, for example a test or review
-   procedure it points to).
-3. The other project's coordinator attests on the item a dependency
-   assessment that names every path the base changed and states why the
-   change neither reads, calls, builds nor is governed by it. An unknown,
-   partial or uncertain assessment means a new round; the attestor cannot
-   waive it.
-4. The adopted round is the latest round on the earlier freeze, it has no
-   outstanding in-scope finding of Medium or higher, the earlier-round
-   conditions of the standing approval hold as for any landing, and the
-   carried tree contains the same items as the reviewed one (no member added
-   to or removed from a batch).
+A clean carry satisfies all of the following:
 
-Record an adopted round as adopted, citing both freezes; never describe it as
-a new review of the carried tree. Adoption never carries a gate, a Markdown
-check, readiness or an acceptance evaluation. The full gate, or for a
-Markdown-only changeset the link and identity checks, runs on the carried
-tree, and section 6 then compares against the carried freeze's fingerprint.
-A failed gate or check on the carried tree ends the adoption, and the carried
-tree gets a new round. After several carries in a row, conditions 1 to 3 are
-computed and attested between the reviewed freeze and the final carried
-freeze, covering the base change accumulated across all of them.
+1. The latest required review round has no outstanding in-scope Medium or
+   higher finding and meets the standing approval's remaining review
+   conditions. Full results, coverage and finding disposition are available.
+2. Record the reviewed and current bases, roots, manifests and fingerprints,
+   all package paths, statuses and modes, the pre-image and post-image blob
+   ids on each side, and the paths changed between bases. Read the reviewed
+   side while its freeze verifies before and after the read, or from a staged
+   diff or tree id recorded while that freeze verified. Verify the final
+   carried freeze before and after reading the proof. Inputs are fully staged,
+   without unstaged or untracked changes. Compute paths without rename
+   detection. Prove each package's unchanged contribution by either:
+   - equal pre-image and post-image blob ids, statuses and modes; or
+   - for regular text files, a recorded three-way blob/hunk proof that applies
+     the reviewed changes without conflict or manual edits and preserves
+     exactly the reviewed changes. Compare the reviewed and carried
+     contribution diffs using the same Git options with no rename detection,
+     full index and zero context. Discard only diff `index` metadata lines and
+     `@@` hunk-position header lines; every remaining byte, path, status, mode,
+     added/deleted line and no-newline marker must match. Record the compared
+     diffs and both sets of blob ids. Do not use this alternative for binary
+     content or symlinks. Base changes in another part of the same text file
+     do not by themselves require a new pair.
+3. The Merger records its dependency/conflict assessment of the changed base
+   and carried contribution. An actual conflict, a required content or
+   contract correction, or an unproven unchanged contribution goes back to
+   the Coder; a changed base path or dependency alone is not a reason for a
+   fresh pair. Do not treat unchanged hunk bytes as proof of unchanged
+   dependencies or behavior; the final integration still needs its gate.
+4. Several complete READY packages may share one integration tree when each
+   satisfies these conditions. Record their application order and intermediate
+   tree ids when needed to identify each carried contribution. The final tree
+   must contain only master plus those unchanged reviewed contributions,
+   with no unreviewed path, mode or manual integration change. Do not silently
+   discard a review finding.
+
+Conflicts or changed package content return to the Coder for a complete,
+applicably reviewed READY. The Merger does not commission a second review.
+Record an adopted round as adopted, citing its original review and freeze and
+its carried contribution and final freeze; do not describe it as a new review
+of the full integration tree.
+
+Adoption carries no gate, Markdown check, readiness or acceptance evaluation.
+Run the required full gate, or the applicable Markdown-only checks, on the
+exact final integration tree, with matching input fingerprints before and
+after. A missing or failing check is not a pass. Diagnose a failure through
+its existing owner; a resulting content correction needs the Coder's required
+review before READY and applicable validation of the new final input. Adding
+review evidence alone does not invalidate a check on identical final input.
+Across successive carries, prove unchanged contributions from the reviewed
+input through the final integration tree.
 
 ## 7. Record findings in Engram from the parent
 
