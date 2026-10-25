@@ -18,8 +18,8 @@ impl LocalWorkService {
         self.work_propose_on(None, input, now)
     }
 
-    /// Like [`Self::work_propose`], but first binds `work_ref` as the ambient
-    /// focus and the decomposition target inside the same call. A complete new
+    /// Like [`Self::work_propose`], with a pinned decomposition target selected
+    /// as ambient focus only after success. A complete new
     /// plan refuses `work_ref` and preserves the existing focus.
     ///
     /// # Errors
@@ -53,7 +53,7 @@ impl LocalWorkService {
             ),
         };
         validate_proposal_shape(&input)?;
-        // The session registers at bind_target, after the checks below.
+        // The session registers at prepare_target, after the checks below.
         let mut store = self.lock_store_at(now)?;
         // A pin naming a stored record is refused by a read alone, before the
         // proposal moves focus.
@@ -103,7 +103,7 @@ impl LocalWorkService {
             }
             WorkProposeInput::Plan { .. } => {}
         }
-        let target = self.bind_target(&mut store, work_ref, now)?;
+        let mut target = self.prepare_target(&mut store, work_ref, now)?;
         let intent = self.protocol_intent(&input);
         // A decomposition acts on the focus when it names no parent, under
         // the same implicit-target rule as the agent words; a root binds none.
@@ -184,7 +184,7 @@ impl LocalWorkService {
             }
             fit_replayed_root(&mut replay)?;
             ensure_agent_response_budget(&replay, "work_propose")?;
-            return Ok(replay);
+            return self.focus_result(&mut store, target, Ok(replay), now);
         }
         let basis_matches = auto_decomposition
             || retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
@@ -234,12 +234,16 @@ impl LocalWorkService {
             } => {
                 if let Some(value) = core_result {
                     let work: WorkItem = serde_json::from_value(value)?;
+                    // Creation already committed. The work-memory view must
+                    // use the persisted focus; a later projection error is
+                    // partial success and the journal keeps this real move.
                     store.focus_work_session(
                         &self.project_id,
                         &self.session_id,
                         work.work_id,
                         now,
                     )?;
+                    target = None;
                     let focus = self.focus_view(&store, work.work_id, true, false, now)?;
                     let result = WorkProposeResult::Root {
                         work: work_item_summary(&work),
@@ -253,7 +257,7 @@ impl LocalWorkService {
                         &raw_key,
                         &result,
                     )?;
-                    return Ok(result);
+                    return self.focus_result(&mut store, target, Ok(result), now);
                 }
                 let work = store.create_work(
                     &CreateWorkRequest {
@@ -281,6 +285,7 @@ impl LocalWorkService {
                     &DevelopmentNoopRedactor,
                 )?;
                 store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
+                target = None;
                 let focus = self.focus_view(&store, work.work_id, true, false, now)?;
                 WorkProposeResult::Root {
                     work: work_item_summary(&work),
@@ -376,7 +381,7 @@ impl LocalWorkService {
             &raw_key,
             &result,
         )?;
-        Ok(result)
+        self.focus_result(&mut store, target, Ok(result), now)
     }
 }
 

@@ -1647,6 +1647,15 @@ authority. `not_found` never proves that a turn was never begun. A found
 issued row is no fence against a concurrent begin. The host retains its
 serialized recovery and ordinary turn-begin/dispatch rules.
 
+An operator inspecting another session can instead use the read-only
+[`control-session-inspect` receipt](control-session-inspection.md). Its existing
+presence booleans remain unconditional; additive selected-project details report
+stored phase, begun-row presence, retained grant state and issued/expiry/begin/
+completion times in the same snapshot. `completed` is the stored checkpoint
+state and `exited` is a valid session phase. Inspection never expires a still
+`issued` grant, predicts a refusal, or establishes that a historical invocation
+replayed a result. The host keeps its existing recovery and identity fences.
+
 `doctor` verifies canonical intent/result bytes plus their redundant row
 bindings. It audits recorded state and reports the configured assurance
 requirement; it does not verify that every caller is mediated by a host.

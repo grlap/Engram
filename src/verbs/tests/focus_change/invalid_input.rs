@@ -1238,7 +1238,7 @@ fn malformed_evaluate_citation_leaves_focus_and_delivery_unchanged() {
 }
 
 #[test]
-fn valid_evaluation_with_foreign_run_citation_retains_disclosed_move() {
+fn valid_evaluation_with_foreign_run_citation_preserves_focus() {
     let (agent, _peer, database) = sessions();
     let first = add(&agent.verbs, "First", None, 1);
     let second = add(&agent.verbs, "Second", None, 2);
@@ -1265,8 +1265,8 @@ fn valid_evaluation_with_foreign_run_citation_retains_disclosed_move() {
     let value = agent
         .verbs
         .project_error(&error, crate::store_error_value(&error.error));
-    assert_eq!(value["focus_change"]["from"], second);
-    assert_eq!(value["focus_change"]["to"], first);
+    assert_eq!(error.focus_change_line(), None);
+    assert!(value.get("focus_change").is_none(), "{value}");
     assert_eq!(
         store
             .work_session_state(
@@ -1278,8 +1278,8 @@ fn valid_evaluation_with_foreign_run_citation_retains_disclosed_move() {
             .focused_work_id,
         Some(
             store
-                .resolve_work_ref(&ProjectId("focus-change".into()), &first)
-                .expect("first")
+                .resolve_work_ref(&ProjectId("focus-change".into()), &second)
+                .expect("second")
                 .work_id
         )
     );

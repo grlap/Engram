@@ -1,5 +1,9 @@
 use super::*;
 
+mod contention;
+mod lane_workload;
+mod transaction_diagnostics;
+
 fn timeout(store: &SqliteStore) -> u32 {
     store
         .connection

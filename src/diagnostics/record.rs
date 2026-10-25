@@ -26,6 +26,14 @@ impl Fingerprint {
     pub(super) fn request(value: &str) -> Self {
         Self::of(b"engram-diagnostic-request-v1", value)
     }
+
+    /// Compares selected path bytes, not physical-file identity or authority.
+    pub(crate) fn store(path: &std::path::Path) -> Self {
+        let mut digest = Sha256::new();
+        digest.update(b"engram-diagnostic-store-path-v1\0");
+        digest.update(path.as_os_str().as_encoded_bytes());
+        Self(digest.finalize().into())
+    }
 }
 
 impl Serialize for Fingerprint {
@@ -181,6 +189,10 @@ impl Fault {
         Self::fixed("loss_summary")
     }
 
+    pub(super) fn transaction_observation() -> Self {
+        Self::fixed("store_transaction_observation")
+    }
+
     fn fixed(code: &'static str) -> Self {
         let reason = match code {
             "invalid_argument" | "invalid_request" => "Check the documented input schema.",
@@ -194,6 +206,9 @@ impl Fault {
             "shutdown_overrun" => "Inspect the last observed shutdown milestone.",
             "slow_call" => "Compare server timing with host-side observations.",
             "loss_summary" => "Inspect diagnostic loss counters and log availability.",
+            "store_transaction_observation" => {
+                "Compare observed transaction intervals and coverage; this is not a current lock-owner certificate."
+            }
             _ => "Recover current session state and inspect the fixed refusal code.",
         };
         Self {
@@ -211,6 +226,8 @@ pub(super) enum EventKind {
     Failure,
     Shutdown,
     Summary,
+    StoreTransaction,
+    StoreMutex,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -225,8 +242,33 @@ pub struct Event {
     pub(super) dispatch_wait_ms: Option<u64>,
     pub(super) send_ms: Option<u64>,
     pub(super) stage: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) store_write: Option<StoreWrite>,
     #[serde(flatten)]
     pub(super) fault: Fault,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) store_transaction: Option<super::transaction::Record>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) store_mutex: Option<super::transaction::MutexRecord>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub(super) struct StoreWrite {
+    pub(super) attempted: u64,
+    pub(super) acquired: u64,
+    pub(super) wait_ms: u64,
+    pub(super) hold_ms: u64,
+}
+
+impl From<crate::storage::ControlWriteTiming> for StoreWrite {
+    fn from(timing: crate::storage::ControlWriteTiming) -> Self {
+        Self {
+            attempted: timing.attempted,
+            acquired: timing.acquired,
+            wait_ms: millis(timing.wait),
+            hold_ms: millis(timing.hold),
+        }
+    }
 }
 
 pub(super) fn millis(value: Duration) -> u64 {
@@ -261,7 +303,10 @@ impl Event {
             dispatch_wait_ms: None,
             send_ms: None,
             stage: None,
+            store_write: None,
             fault,
+            store_transaction: None,
+            store_mutex: None,
         }
     }
 

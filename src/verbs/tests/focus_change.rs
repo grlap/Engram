@@ -1,5 +1,6 @@
-//! A word that moves this session's focus says so: on its receipt, or on its
-//! refusal when it moved focus and then refused. An unchanged call, a peer's
+//! A successful word that moves focus says so. A post-success receipt error
+//! still discloses its committed move; admission refusals do not navigate.
+//! An unchanged call, a peer's
 //! call and a word that ends where it started say nothing, and a retry says
 //! only what that retry itself did.
 
@@ -10,6 +11,7 @@ use crate::storage::{FOCUS_CHANGE_RESERVE, FocusBinding, FocusChange};
 use crate::verbs::focus_change::FocusDisclosure;
 
 mod invalid_input;
+mod refusals;
 mod update_handoff;
 
 struct Session {
@@ -282,11 +284,10 @@ fn a_holder_evaluation_of_another_held_item_discloses_the_move() {
     assert_eq!(moved(&replayed), None, "the resend moved nothing");
 }
 
-// A word that moves focus and then refuses says so beside its refusal, in
-// JSON and in text; a refusal that moved nothing carries no change.
+// A claim refused by stored authority preserves focus and discloses no move.
 #[test]
-fn a_refusal_after_a_move_discloses_it() {
-    let (agent, peer, _database) = sessions();
+fn a_refused_claim_preserves_focus() {
+    let (agent, peer, database) = sessions();
     let first = add(&agent.verbs, "First", None, 1);
     let held = add(&peer.verbs, "Held by the peer", None, 2);
     claim(&peer.verbs, &held, 3).expect("peer claims");
@@ -297,23 +298,17 @@ fn a_refusal_after_a_move_discloses_it() {
     let value = agent
         .verbs
         .project_error(&refused, crate::store_error_value(&refused.error));
-    assert_eq!(value["focus_change"]["from"], json!(first));
-    assert_eq!(value["focus_change"]["to"], json!(held));
-    assert!(value["focus_change"].get("claim_fence").is_none());
-    assert_eq!(
-        refused.focus_change_line(),
-        Some(
-            format!("focus moved from {first} to {held}; {held} has no live claim to bind")
-                .as_str()
-        )
-    );
+    assert!(value.get("focus_change").is_none());
+    assert_eq!(refused.focus_change_line(), None);
+    refusals::assert_focus(&database, &first);
 
     let again = claim(&agent.verbs, &held, 6).expect_err("still held");
-    assert_eq!(again.focus_change_line(), None, "focus was already there");
+    assert_eq!(again.focus_change_line(), None);
     let value = agent
         .verbs
         .project_error(&again, crate::store_error_value(&again.error));
     assert!(value.get("focus_change").is_none());
+    refusals::assert_focus(&database, &first);
 }
 
 // Claiming under a parent focuses the parent and then the child. The first

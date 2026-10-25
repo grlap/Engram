@@ -1333,6 +1333,17 @@ indicates whether a page is retained. The focus-only call does not stage or
 acknowledge delivery, but is not a promise of no session writes. Agent `peek`
 is not this host cursor-recovery interface.
 
+Mutation admission resolves explicit targets without navigating. An admission
+refusal, including a typed completion refusal, leaves session focus and the
+staged delivery payload unchanged. Successful operations then apply their
+existing navigation policy; peer observations and late evidence retain their
+no-navigation behavior. Protocol attempts, evidence capture and checkpoints
+committed before refusal may remain. Business mutations, focus selection and
+agent receipt construction use separate steps, so a later receipt/projection
+error can report partial success with a truthful focus-change disclosure.
+No compensating focus rollback overwrites another connection's selection.
+See [focus disclosure](cli-and-mcp.md#using-engram-as-an-agent).
+
 Serialize that whole read/replay/ACK sequence against other advancing calls
 and focus changes for the same session. Replay preserves the retained change
 payload, `delivered_through` and `delivery_token`, not the dynamic advisory

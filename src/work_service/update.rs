@@ -7,6 +7,15 @@ mod reject_retry;
 thread_local! {
     static BEFORE_SELECTED_CLEAR: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
         const { std::cell::RefCell::new(None) };
+    static BEFORE_NOTE_CAPTURE: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn before_note_capture(hook: impl FnOnce() + 'static) {
+    BEFORE_NOTE_CAPTURE.with(|slot| {
+        assert!(slot.borrow_mut().replace(Box::new(hook)).is_none());
+    });
 }
 
 #[cfg(test)]
@@ -83,8 +92,6 @@ impl LocalWorkService {
         let target = self.resolve_target(&store, work_ref)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         self.register_on(&mut store, now)?;
-        // A late gate on someone else's or completed work leaves focus.
-        self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("gate attempt has no bound focused work".into())
         })?;
@@ -110,11 +117,18 @@ impl LocalWorkService {
                 },
                 &DevelopmentNoopRedactor,
             )?;
-            return self.work_update_result(
+            let result = self.work_update_result(
                 &store,
                 "evidence",
                 work.work_id,
                 serde_json::to_value(&evidence)?,
+                now,
+            )?;
+            return self.focus_held_result(
+                &mut store,
+                target,
+                basis.claim.as_ref(),
+                Ok(result),
                 now,
             );
         }
@@ -180,7 +194,13 @@ impl LocalWorkService {
         if let Some(result) = attempt.result {
             let mut result: WorkUpdateResult = serde_json::from_value(result)?;
             replayed_obligation_page(&store, Some(run_id), &mut result.obligation_page)?;
-            return Ok(result);
+            return self.focus_held_result(
+                &mut store,
+                target,
+                basis.claim.as_ref(),
+                Ok(result),
+                now,
+            );
         }
         let result = self.work_update_result(
             &store,
@@ -196,7 +216,7 @@ impl LocalWorkService {
             &attempt.idempotency_key,
             &result,
         )?;
-        Ok(result)
+        self.focus_held_result(&mut store, target, basis.claim.as_ref(), Ok(result), now)
     }
 
     pub(crate) fn work_note_on(
@@ -244,9 +264,6 @@ impl LocalWorkService {
         // The store is already inside the note's admission window, so the
         // session registers there, before the note's first write.
         self.initialize_process_default_session_on(store, now)?;
-        // A holder's note moves focus; anyone else's note is an observation
-        // and leaves focus where it was.
-        self.focus_if_held(store, target, basis.claim.as_ref(), now)?;
         let note = WorkNoteIntent {
             status,
             summary,
@@ -272,7 +289,7 @@ impl LocalWorkService {
                 replayed_run_id(attempt.basis.as_ref(), &result.receipt),
                 &mut result.obligation_page,
             )?;
-            return Ok(result);
+            return self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now);
         }
         let basis_matches =
             retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
@@ -302,7 +319,7 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
-            return Ok(result);
+            return self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now);
         }
         // A restored late note committed before an interrupted response is
         // recovered under the same key when its content is this intent's;
@@ -335,7 +352,7 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
-            return Ok(result);
+            return self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now);
         }
         ensure_protocol_basis(basis_matches, protocol_operation, &raw_key, false)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
@@ -374,13 +391,17 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
-            return Ok(result);
+            return self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now);
         }
         let holds_live_claim = basis.claim.as_ref().is_some_and(|claim| {
             claim.holder == self.session_id
                 && claim.state == WorkClaimState::Active
                 && claim.expires_at > now
         });
+        #[cfg(test)]
+        if let Some(hook) = BEFORE_NOTE_CAPTURE.with(|slot| slot.borrow_mut().take()) {
+            hook();
+        }
         let capture = if work.lifecycle == WorkLifecycle::Open && !holds_live_claim {
             store.record_work_observation(
                 &crate::domain::RecordWorkObservationRequest {
@@ -426,7 +447,7 @@ impl LocalWorkService {
             &raw_key,
             &result,
         )?;
-        Ok(result)
+        self.focus_held_result(store, target, basis.claim.as_ref(), Ok(result), now)
     }
 
     fn work_note_result(
@@ -561,8 +582,8 @@ impl LocalWorkService {
         })
     }
 
-    /// Like [`Self::work_update`], but first binds `work_ref` as the ambient
-    /// focus and the mutation target inside the same call.
+    /// Like [`Self::work_update`], with a pinned explicit target selected as
+    /// ambient focus only after the service succeeds.
     ///
     /// # Errors
     ///
@@ -579,7 +600,7 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
         validate_update_shape(&input, now)?;
-        // The session registers at bind_target, after every check below.
+        // The session registers at prepare_target, after every check below.
         let mut store = self.lock_store_at(now)?;
         // The target (named, or the current focus unless this repeats an
         // admitted act), read alone, so a ref the request names can be
@@ -639,7 +660,7 @@ impl LocalWorkService {
             }
             _ => {}
         }
-        let target = self.bind_target(&mut store, work_ref, now)?;
+        let target = self.prepare_target(&mut store, work_ref, now)?;
         let (operation, core_operation, raw_key) = update_metadata(&input);
         let protocol_operation = if matches!(&input, WorkUpdateInput::Reject { .. }) {
             REJECT_PROTOCOL_OPERATION.to_owned()
@@ -703,13 +724,14 @@ impl LocalWorkService {
                     &DevelopmentNoopRedactor,
                 )?;
                 let work_id = selection.work_id;
-                return self.work_update_result(
+                let result = self.work_update_result(
                     &store,
                     "claim_next_ready",
                     work_id,
                     agent_update_receipt("claim_next_ready", serde_json::to_value(selection)?)?,
                     now,
-                );
+                )?;
+                return self.focus_result(&mut store, target, Ok(result), now);
             }
             let claim = store.claim_work(
                 &ClaimWorkRequest {
@@ -725,13 +747,14 @@ impl LocalWorkService {
                 },
                 &DevelopmentNoopRedactor,
             )?;
-            return self.work_update_result(
+            let result = self.work_update_result(
                 &store,
                 "claim",
                 work.work_id,
                 serde_json::to_value(claim)?,
                 now,
-            );
+            )?;
+            return self.focus_result(&mut store, target, Ok(result), now);
         }
         // A selected clear is one intent for its one blocker, and a blocker
         // is cleared at most once, so its keyless retry identity binds the
@@ -803,7 +826,7 @@ impl LocalWorkService {
                 replayed_run_id(attempt.basis.as_ref(), &result.receipt),
                 &mut result.obligation_page,
             )?;
-            return Ok(result);
+            return self.focus_result(&mut store, target, Ok(result), now);
         }
         let core_receipt = if auto_rejection {
             core_receipt
@@ -841,7 +864,7 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
-            return Ok(result);
+            return self.focus_result(&mut store, target, Ok(result), now);
         }
         if let Err(error) =
             ensure_protocol_basis(basis_matches, &protocol_operation, &raw_key, false)
@@ -1321,7 +1344,7 @@ impl LocalWorkService {
             &raw_key,
             &result,
         )?;
-        Ok(result)
+        self.focus_result(&mut store, target, Ok(result), now)
     }
 
     pub(super) fn work_update_result(

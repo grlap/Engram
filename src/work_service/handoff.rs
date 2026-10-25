@@ -15,8 +15,8 @@ impl LocalWorkService {
         self.work_handoff_on(None, input, now)
     }
 
-    /// Like [`Self::work_handoff`], but first binds `work_ref` as the ambient
-    /// focus and the handoff target inside the same call.
+    /// Like [`Self::work_handoff`], with a pinned explicit target selected as
+    /// ambient focus only after the service succeeds.
     ///
     /// # Errors
     ///
@@ -61,10 +61,10 @@ impl LocalWorkService {
             }
             WorkHandoffInput::Accept { .. } => {}
         }
-        // The session registers at bind_target, after the named target
+        // The session registers at prepare_target, after the named target
         // resolves.
         let mut store = self.lock_store_at(now)?;
-        let target = self.bind_target(&mut store, work_ref, now)?;
+        let target = self.prepare_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, true, target, now)?;
         let intent = self.protocol_intent(&input);
         let (operation, core_operation, raw_key) = handoff_metadata(&input);
@@ -81,7 +81,8 @@ impl LocalWorkService {
             now,
         })?;
         if let Some(result) = attempt.result {
-            return serde_json::from_value(result).map_err(StoreError::from);
+            let result = serde_json::from_value(result)?;
+            return self.focus_result(&mut store, target, Ok(result), now);
         }
         let basis_matches =
             retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
@@ -109,7 +110,7 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
-            return Ok(result);
+            return self.focus_result(&mut store, target, Ok(result), now);
         }
         ensure_protocol_basis(basis_matches, &protocol_operation, &raw_key, false)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
@@ -131,7 +132,7 @@ impl LocalWorkService {
             &raw_key,
             &result,
         )?;
-        Ok(result)
+        self.focus_result(&mut store, target, Ok(result), now)
     }
 
     fn work_handoff_result(

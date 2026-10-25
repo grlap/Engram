@@ -4,6 +4,8 @@ use rusqlite::hooks::{AuthAction, AuthContext, Authorization, TransactionOperati
 
 use super::*;
 
+mod diagnostics;
+
 fn busy_error(code: i32) -> StoreError {
     StoreError::Sqlite(rusqlite::Error::SqliteFailure(
         rusqlite::ffi::Error::new(code),

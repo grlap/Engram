@@ -52,6 +52,7 @@ pub(crate) fn run(
             identity,
             session_id,
             retained_grant_id,
+            project,
         )?;
         Ok((path, report))
     })();
@@ -89,6 +90,7 @@ fn report_receipt(
             value["session_present"] = json!(report.session_present);
             value["session_grants_present"] = json!(report.session_grants_present);
             value["retained_grant_present"] = json!(report.retained_grant_present);
+            value["details"] = json!(report.details);
             envelope(value)
         }
         Err(error) => {
@@ -129,9 +131,37 @@ mod tests {
             "session_present",
             "session_grants_present",
             "retained_grant_present",
+            "details",
         ] {
             assert!(value.get(key).is_none(), "unexpected {key}");
         }
+    }
+
+    #[test]
+    fn control_inspection_absence_has_versioned_details() {
+        let directory = crate::test_support::temp_home().unwrap();
+        let database = directory.path().join("inspect.db");
+        drop(SqliteStore::open(&database).unwrap());
+        let identity = Some(HostPathPolicy::host_default());
+        let path = canonical_database_path(&database).unwrap();
+        let report = SqliteStore::inspect_control_session(
+            &database,
+            identity,
+            "target",
+            "grant",
+            &ProjectId("project".into()),
+        )
+        .unwrap();
+        let value = report_receipt(&database, identity, json!({}), Ok((path, report)));
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["mutation_enabled"], false);
+        assert_eq!(value["session_present"], false);
+        assert_eq!(value["session_grants_present"], false);
+        assert_eq!(value["retained_grant_present"], false);
+        assert_eq!(value["details"]["schema_version"], 1);
+        assert_eq!(value["details"]["session"]["status"], "not_found");
+        assert_eq!(value["details"]["retained_grant"]["status"], "not_found");
+        assert!(value["details"]["session_begun_grant_present"].is_null());
     }
 
     #[test]
@@ -142,7 +172,14 @@ mod tests {
         let identity = Some(HostPathPolicy::host_default());
         let path = canonical_database_path(&database).unwrap();
         let read = || {
-            SqliteStore::inspect_control_session(&database, identity, "target", "grant").unwrap()
+            SqliteStore::inspect_control_session(
+                &database,
+                identity,
+                "target",
+                "grant",
+                &ProjectId("project".into()),
+            )
+            .unwrap()
         };
         let report = read();
         let good = report_receipt(&database, identity, json!({}), Ok((path.clone(), report)));

@@ -131,7 +131,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Inspect session/grant presence read-only; never reconcile or authorize.
+    /// Inspect session/grant presence and state read-only; never reconcile or authorize.
     ControlSessionInspect {
         /// Exact session to inspect, not the ambient caller; at most 64 bytes.
         #[arg(long, value_parser = bin_support::control_session_inspect::selector)]

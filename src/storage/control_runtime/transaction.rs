@@ -3,7 +3,7 @@ use super::{Connection, StoreError, Transaction};
 use rusqlite::TransactionBehavior;
 use std::time::Duration;
 
-pub(super) fn control_transaction<T>(
+pub(in crate::storage) fn control_transaction<T>(
     connection: &mut Connection,
     apply: impl FnOnce(&Transaction<'_>) -> Result<T, StoreError>,
 ) -> Result<T, StoreError> {
@@ -27,7 +27,13 @@ fn budgeted_transaction<T>(
     let budget = request_budget::current();
     check_budget(budget)?;
     let policy = BusyPolicy::cap(connection, budget)?;
-    let result = apply_transaction(connection, apply, budget, certify_busy);
+    let result = apply_transaction(
+        connection,
+        apply,
+        budget,
+        certify_busy,
+        policy.diagnostic_budget,
+    );
     policy.finish(result)
 }
 
@@ -40,6 +46,7 @@ fn apply_transaction<T>(
     apply: impl FnOnce(&Transaction<'_>) -> Result<T, StoreError>,
     budget: Option<ControlRequestBudget>,
     certify_busy: bool,
+    diagnostic_budget: crate::diagnostics::transaction::Budget,
 ) -> Result<T, StoreError> {
     // Reading/restoring the busy policy must not give a delayed frame a fresh
     // opportunity to enter its transaction.
@@ -47,9 +54,15 @@ fn apply_transaction<T>(
     // The caller lends its connection exclusively to this wrapper. The
     // shared reborrow lets a failed BEGIN be checked for autocommit without
     // retaining a failed mutable transaction borrow.
+    let mut timing = crate::storage::transaction_timing::TransactionTiming::start(
+        connection,
+        crate::diagnostics::transaction::Boundary::ControlMutation,
+        diagnostic_budget,
+    );
     let transaction = match Transaction::new_unchecked(connection, TransactionBehavior::Immediate) {
         Ok(transaction) => transaction,
         Err(error) => {
+            timing.begin_failed(&error, connection.is_autocommit());
             let error = StoreError::Sqlite(error);
             return Err(if certify_busy && connection.is_autocommit() {
                 classify_busy(error)
@@ -58,20 +71,23 @@ fn apply_transaction<T>(
             });
         }
     };
+    timing.acquired();
     if let Err(error) = check_budget(budget) {
-        transaction.rollback()?;
+        rollback_observed(transaction, &mut timing)?;
         return Err(error);
     }
     match apply(&transaction) {
         Ok(result) => {
             if let Err(error) = check_budget(budget) {
-                transaction.rollback()?;
+                rollback_observed(transaction, &mut timing)?;
                 return Err(error);
             }
             // A failed COMMIT never certifies the no-application guarantee.
             // Once COMMIT starts, its late result is settled and replayed;
             // no subsequent clock check may turn it into an expiry refusal.
-            transaction.commit()?;
+            let committed = transaction.commit();
+            timing.committed(committed.is_ok());
+            committed?;
             Ok(result)
         }
         Err(error)
@@ -80,7 +96,7 @@ fn apply_transaction<T>(
         {
             // Drop discards rollback errors. Observe an explicit rollback
             // before telling the host that this attempt applied nothing.
-            transaction.rollback()?;
+            rollback_observed(transaction, &mut timing)?;
             Err(if certify_busy {
                 classify_busy(error)
             } else {
@@ -91,12 +107,22 @@ fn apply_transaction<T>(
     }
 }
 
+fn rollback_observed(
+    transaction: Transaction<'_>,
+    timing: &mut crate::storage::transaction_timing::TransactionTiming<'_>,
+) -> Result<(), StoreError> {
+    let result = transaction.rollback();
+    timing.rolled_back(result.is_ok());
+    result.map_err(StoreError::Sqlite)
+}
+
 /// Control hosts use an ordinary busy timeout. Cap its current configured
 /// value, then restore that actual value on success, failure and unwinding.
 /// Native sleeps and filesystem calls remain cooperative, not preemptible.
 struct BusyPolicy<'a> {
     connection: &'a Connection,
     previous: Option<Duration>,
+    diagnostic_budget: crate::diagnostics::transaction::Budget,
 }
 
 impl<'a> BusyPolicy<'a> {
@@ -107,13 +133,20 @@ impl<'a> BusyPolicy<'a> {
         let mut guard = Self {
             connection,
             previous: None,
+            diagnostic_budget: crate::diagnostics::transaction::Budget::default(),
         };
         if let Some(budget) = budget {
             let milliseconds: u32 =
                 connection.query_row("PRAGMA busy_timeout", [], |row| row.get(0))?;
             let previous = Duration::from_millis(u64::from(milliseconds));
             guard.previous = Some(previous);
-            connection.busy_timeout(previous.min(budget.remaining()))?;
+            let allowance = previous.min(budget.remaining());
+            guard.diagnostic_budget = crate::diagnostics::transaction::Budget {
+                configured_ms: Some(u64::from(milliseconds)),
+                allowance_ms: Some(u64::try_from(allowance.as_millis()).unwrap_or(u64::MAX)),
+                ..Default::default()
+            };
+            connection.busy_timeout(allowance)?;
         }
         Ok(guard)
     }

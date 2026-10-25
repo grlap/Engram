@@ -291,27 +291,31 @@ transferred to this session is named.
 
 The change is what this invocation did, computed when the word finishes and
 never stored. A call that leaves focus where it was says nothing, and so does
-one that ends where it started: `claim --under` passes through the parent on
-its way to the child. A peer's `note`, `gate` or `evaluate` moves nothing, and
-an exact retry reports only a move the retry itself made. A word that moved
-focus and then refused (a claim held elsewhere, a refused `done`, a note
-whose later check fails, an `update` of an item another session holds, a
-`handoff --accept` with no offer to accept) carries the same `focus_change`
-beside `error` in CLI JSON and MCP, and its line after the message on the CLI
-text surface.
-A request whose input is malformed on its face (its shape, sizes, counts,
-duplicates, or its fields' relations with each other) refuses before moving
-focus. So do some refusals that read stored state: a work reference inside
-the request that does not resolve, a binding pinned to a stored record, and a
-proposed child's edge onto its parent or past the prerequisite bound. Other
-refusals that need the named item's stored state may keep the move: evidence
-or a locator that is not on its run, a criterion position or name it lacks,
-an unnamed result when it has several criteria, a criterion reported unmet, a
-result count other than its criteria's, a read basis it has moved past, a
-bound against its stored edges, and claim, lifecycle, execution or authority
-admission. A fresh `done` with malformed input on already completed work is
-refused too, while an exact resend of an admitted completion still returns
-its seal. Every word that moves focus discloses the move with the refusal.
+one that ends where it started. `claim --under` ends on its selected child,
+and `add --under` on the child it creates. A peer's `note`, `gate` or
+`evaluate` moves nothing, and an exact retry reports only a move that retry
+itself made.
+
+Mutation admission resolves the target without selecting it. A refused verb
+leaves focus and staged delivery unchanged and carries no `focus_change`,
+whether it refuses malformed input, stored state, authority, or a live
+handoff offer. This includes a typed `done` refusal returned in a successful
+protocol envelope. Existing protocol attempts, capture evidence or checkpoints
+from before a refusal may remain; this is not database-wide rollback.
+Successful operations apply their navigation policy after admission, capturing
+claim and named-root fields in that focus transaction. Root creation and its
+committed-core recovery select the created root before projecting its work
+memory, whose access guard requires that persisted focus.
+A fresh `done` with malformed input on completed work still refuses, while
+an exact resend of an admitted completion still returns its seal.
+
+Business writes, navigation and agent receipt construction are separate
+steps. A receipt or projection error after a successful service committed its
+focus is partial success, not an admission refusal: CLI JSON and MCP carry
+the actual `focus_change` beside `error`, and CLI text puts its line after
+the message. The journal never hides a committed move or restores an earlier
+focus over another concurrent call's selection. Name explicit targets when
+sharing a session; later successful navigation still selects its pinned item.
 
 The claiming turn keeps the binding the host admitted it with. The new
 target is only a candidate for the host's next admission, and the receipt
@@ -3320,8 +3324,8 @@ the reason. Candidate selection, the completion-only recording-order
 fallback, and admissible bindings and waivers retain their existing rules.
 This is an error, not an owed-result completion receipt. The storage
 completion transaction rolls back temporary waivers and all completion
-effects on refusal; service preparation such as target focus, capture and
-checkpoint remains recorded as before.
+effects on refusal; service preparation such as capture and checkpoint
+remains recorded as before. The refusal preserves session focus.
 
 `work_complete` returns a typed `open_work_obligations` result with the same
 `obligation_page` used by `work_focus`, nested `work_next.focus`, and

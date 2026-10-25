@@ -1280,6 +1280,7 @@ test("control session inspection emits scoped absence and refuses uncertainty", 
     for (const key of ["session_present", "session_grants_present", "retained_grant_present"]) {
       assert.equal(Object.hasOwn(receipt, key), false, key);
     }
+    assert.equal(Object.hasOwn(receipt, "details"), false);
   };
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
@@ -1310,6 +1311,14 @@ test("control session inspection emits scoped absence and refuses uncertainty", 
     assert.equal(receipt.session_present, false);
     assert.equal(receipt.session_grants_present, false);
     assert.equal(receipt.retained_grant_present, false);
+    assert.equal(receipt.details.schema_version, 1);
+    assert.equal(receipt.details.session.status, "not_found");
+    assert.equal(receipt.details.session_begun_grant_present, null);
+    assert.equal(receipt.details.retained_grant.status, "not_found");
+    const text = invoke(inspectArgs.filter((arg) => arg !== "--json"));
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /details:/);
+    assert.match(text.stdout, /not_found/);
     assert.equal(Object.hasOwn(receipt, "routing_token"), false);
     assert.deepEqual(readFileSync(database), before);
     const opposite = receipt.host_path_policy.stored.startsWith("case_fold") ? "case_sensitive" : "case_fold";
@@ -1324,6 +1333,11 @@ test("control session inspection emits scoped absence and refuses uncertainty", 
     const present = invoke(inspectArgs);
     assert.equal(present.status, 0, present.stderr);
     assert.equal(JSON.parse(present.stdout).retained_grant_present, true);
+    const orphan = JSON.parse(present.stdout).details.retained_grant;
+    assert.equal(orphan.status, "withheld");
+    assert.equal(orphan.project_match, null);
+    assert.equal(orphan.state, null);
+    assert.equal(orphan.session_id, null);
     executeSql(database, "DROP TABLE control_turn_grants");
     assertRefusal(invoke(inspectArgs));
   } finally {

@@ -25,8 +25,7 @@ pub(crate) mod request_budget;
 mod tests;
 mod transaction;
 
-pub(super) use transaction::control_lifecycle_transaction;
-use transaction::control_transaction;
+pub(super) use transaction::{control_lifecycle_transaction, control_transaction};
 
 impl SqliteStore {
     /// Records the host's explicit source-root selection for the exact live

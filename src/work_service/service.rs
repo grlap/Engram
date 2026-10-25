@@ -442,7 +442,9 @@ impl LocalWorkService {
             )
         })?;
         let started = crate::phase_trace::start();
+        let mutex_started = crate::diagnostics::transaction::mutex_start();
         let store = cached.lock();
+        crate::diagnostics::transaction::mutex_finished(mutex_started);
         crate::phase_trace::finish(crate::phase_trace::Phase::StoreMutexWait, started);
         let store = store.map_err(|_| {
             StoreError::InvalidWorkProjection(
@@ -450,6 +452,10 @@ impl LocalWorkService {
             )
         })?;
         Ok(store)
+    }
+
+    pub(crate) fn diagnostic_store_fingerprint(&self) -> crate::diagnostics::Fingerprint {
+        crate::diagnostics::Fingerprint::store(&self.database)
     }
 
     #[cfg(test)]
@@ -771,27 +777,66 @@ impl LocalWorkService {
         Ok(format!("auto:{}", key.key().as_str()))
     }
 
-    /// Resolves an optional caller-supplied target, makes it the ambient
-    /// focus on this connection, and returns its id so the mutation binds to
-    /// it regardless of any concurrent focus change by the same session.
-    /// It is a word's first write: the session registers here, after the
-    /// named target resolves and every request check before it, whether or
-    /// not a target is named.
+    /// Resolves and selects an optional target for explicit navigation.
+    /// The session registers after the named target resolves, even when no
+    /// target is named. Mutations use `prepare_target` to defer navigation
+    /// until success instead.
     pub(super) fn bind_target(
         &self,
         store: &mut SqliteStore,
         work_ref: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<Option<WorkId>, StoreError> {
-        let work = work_ref
-            .map(|work_ref| store.resolve_work_ref(&self.project_id, work_ref))
-            .transpose()?;
+        let target = self.prepare_target(store, work_ref, now)?;
+        if let Some(target) = target {
+            store.focus_work_session(&self.project_id, &self.session_id, target, now)?;
+        }
+        Ok(target)
+    }
+
+    /// Resolves and registers at the existing admission boundary without
+    /// navigating. A mutation retains this pinned target through its refusal
+    /// and replay paths, then selects it only on success.
+    pub(super) fn prepare_target(
+        &self,
+        store: &mut SqliteStore,
+        work_ref: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<Option<WorkId>, StoreError> {
+        let target = self.resolve_target(store, work_ref)?;
         self.register_on(store, now)?;
-        let Some(work) = work else {
-            return Ok(None);
-        };
-        store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
-        Ok(Some(work.work_id))
+        Ok(target)
+    }
+
+    /// Navigation is a separate transaction after the service result is
+    /// ready. A refusal neither selects focus nor discards staged delivery.
+    /// The focus journal records the binding from this actual transaction.
+    pub(super) fn focus_result<T>(
+        &self,
+        store: &mut SqliteStore,
+        target: Option<WorkId>,
+        result: Result<T, StoreError>,
+        now: DateTime<Utc>,
+    ) -> Result<T, StoreError> {
+        let result = result?;
+        if let Some(target) = target {
+            store.focus_work_session(&self.project_id, &self.session_id, target, now)?;
+        }
+        Ok(result)
+    }
+
+    /// Peer and late evidence retain the admission-basis navigation policy.
+    pub(super) fn focus_held_result<T>(
+        &self,
+        store: &mut SqliteStore,
+        target: Option<WorkId>,
+        claim: Option<&WorkClaim>,
+        result: Result<T, StoreError>,
+        now: DateTime<Utc>,
+    ) -> Result<T, StoreError> {
+        let result = result?;
+        self.focus_if_held(store, target, claim, now)?;
+        Ok(result)
     }
 
     /// The item a request acts on, read without navigating: the named item,

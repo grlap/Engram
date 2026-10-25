@@ -24,6 +24,7 @@ impl Fixture {
             .unwrap();
         let server = HostControlServer {
             store,
+            diagnostic_store: crate::diagnostics::Fingerprint::store(&database),
             project_id: ProjectId("busy-project".into()),
             actor_id: "busy-host".into(),
             session_id,

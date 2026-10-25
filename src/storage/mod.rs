@@ -6,6 +6,10 @@ mod control_grant_read;
 mod control_inspection;
 mod control_runtime;
 pub(crate) use control_runtime::request_budget::ControlRequestScope;
+pub(crate) use transaction_timing::control::now as control_diagnostic_now;
+#[cfg(test)]
+pub(crate) use transaction_timing::control::test_clock as control_diagnostic_test_clock;
+pub(crate) use transaction_timing::control::{ControlDiagnosticScope, ControlWriteTiming};
 mod control_support;
 mod doctor;
 mod fts_verification;
@@ -34,6 +38,7 @@ mod schema_diagnostics;
 mod sqlite_path;
 pub use sqlite_path::{open_sqlite_file, validate_sqlite_file_path};
 mod task_memory;
+mod transaction_timing;
 mod unadmitted_observation;
 mod verification_bind;
 mod work;
@@ -94,7 +99,7 @@ pub(crate) const PLAN_CORE_OPERATION: &str = "propose_work_plan";
 
 pub(crate) const DECOMPOSITION_RETRY_REMEDY: &str = "inspect the parent and its existing children; reuse the already-created child when present; add new work only for a genuinely different child intent";
 
-pub use control_inspection::ControlSessionInspection;
+pub use control_inspection::{ControlInspectionDetails, ControlSessionInspection};
 pub use schema_diagnostics::{
     StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
 };

@@ -3320,27 +3320,21 @@ test("a word that moves focus says so on CLI and MCP", async (t) => {
     const observed = cliJson(engramHome, "focus-change-peer", "note", first, "peer observation");
     assert.equal("focus_change" in observed, false);
 
-    // A claim that moves focus and is then refused says so beside its
-    // refusal: its own line after the error on the CLI, and beside error on MCP.
+    // Refused claims preserve focus and carry no change on either surface.
     const peerHeld = cliJson(engramHome, "focus-change-peer", "add", "Held by the peer").work.short_ref;
     cliJson(engramHome, "focus-change-peer", "claim", peerHeld);
     const refused = cliWord(engramHome, session, "claim", peerHeld);
     assert.notEqual(refused.status, 0);
     const refusedLines = refused.stderr.split(/\r?\n/u);
     assert.match(refusedLines[0], /^error: work .* is claimed by /u, refused.stderr);
-    assert.equal(
-      refusedLines[1],
-      `focus moved from ${second} to ${peerHeld}; ${peerHeld} has no live claim to bind`,
-      refused.stderr,
-    );
+    assert.doesNotMatch(refused.stderr, /focus moved/u);
+    assert.equal(cliJson(engramHome, session, "show", peerHeld).session_focus, second);
     assert.doesNotMatch(refused.stderr, /fence/u);
     receipt(await client.call("note", { work_ref: first, text: "focus on the first item again" }));
     const mcpRefused = await client.call("claim", { work_ref: peerHeld });
     structuredError(mcpRefused, "work_claim_held");
-    assert.deepEqual(
-      [mcpRefused.structuredContent.focus_change.from, mcpRefused.structuredContent.focus_change.to],
-      [first, peerHeld],
-    );
+    assert.equal("focus_change" in mcpRefused.structuredContent, false);
+    assert.equal(receipt(await client.call("show", { work_ref: peerHeld })).session_focus, first);
   } finally {
     try {
       if (client) await client.close();
@@ -6148,12 +6142,14 @@ test("two MCP sessions complete ambient work through a fenced handoff", async (t
       0,
     );
 
-    const held = structuredError(
-      await b.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
-      "work_claim_held",
-    );
+    assert.equal(receipt(await b.call("show", { work_ref: workRef })).session_focus, null);
+    const refusedClaim = await b.call("claim", { work_ref: workRef, ttl_seconds: 300 });
+    const held = structuredError(refusedClaim, "work_claim_held");
+    assert.equal("focus_change" in refusedClaim.structuredContent, false);
     assert.equal(held.details.holder_session_id, undefined);
-    const holderLabel = receipt(await b.call("show", { work_ref: workRef })).holder;
+    const afterRefusedClaim = receipt(await b.call("show", { work_ref: workRef }));
+    assert.equal(afterRefusedClaim.session_focus, null);
+    const holderLabel = afterRefusedClaim.holder;
     assert.match(holderLabel, /^peer-[0-9a-f]{24}$/u);
     assert.equal(held.details.holder, holderLabel);
     assert.ok(held.reminders[0].startsWith(`held by ${holderLabel} until `));
@@ -6183,9 +6179,15 @@ test("two MCP sessions complete ambient work through a fenced handoff", async (t
     const recipientFocus = receipt(await b.call("show", { work_ref: workRef }));
     assert.ok(recipientFocus.allowed_next.includes("work_handoff:accept"));
     assert.equal(recipientFocus.next[0], `engram work handoff ${workRef} --accept`);
-    const accepted = receipt(await b.call("handoff", { action: "accept" }));
+    assert.equal(recipientFocus.session_focus, null);
+    // The refusal and read-only show leave B unfocused. Accepting the explicit
+    // target establishes focus for B's ambient note and done below.
+    const accepted = receipt(await b.call("handoff", { work_ref: workRef, action: "accept" }));
     assert.equal(accepted.operation, "accept");
+    assert.equal(accepted.focus_change.to, workRef);
     const acceptedFocus = receipt(await b.call("show", { work_ref: workRef }));
+    assert.equal(acceptedFocus.session_focus, workRef);
+    assert.equal(acceptedFocus.holder, "you");
     assert.ok(
       acceptedFocus.history.items.some(
         ({ kind, summary }) =>

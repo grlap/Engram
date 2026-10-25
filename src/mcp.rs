@@ -217,8 +217,13 @@ impl ServerHandler for McpServer {
     ) -> Result<CallToolResponse, ErrorData> {
         if let Some(observer) = &self.diagnostics {
             let ticket = observer.started(&context, &request.name);
-            let (result, fault) =
-                crate::diagnostics::mcp::scoped(self.call_tool_traced(request, context)).await;
+            let transaction_context = observer
+                .transaction_context(ticket, self.work_service.diagnostic_store_fingerprint());
+            let (result, fault) = crate::diagnostics::transaction::scoped(
+                transaction_context,
+                crate::diagnostics::mcp::scoped(self.call_tool_traced(request, context)),
+            )
+            .await;
             let fault = fault.or_else(|| match &result {
                 Err(_) => Some(crate::diagnostics::Fault::rpc_error()),
                 Ok(CallToolResponse::Complete(response)) if response.is_error == Some(true) => {

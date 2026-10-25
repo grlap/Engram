@@ -18,6 +18,8 @@ pub(super) struct WorkMutation<'connection> {
     // Drop the scope before the transaction rolls back on an early return.
     origin_scope: super::task_sync::OriginScopeGuard,
     transaction: Transaction<'connection>,
+    // Field order is significant: implicit rollback precedes observation.
+    timing: crate::storage::transaction_timing::TransactionTiming<'connection>,
 }
 
 impl<'connection> Deref for WorkMutation<'connection> {
@@ -33,18 +35,24 @@ impl WorkMutation<'_> {
         let Self {
             origin_scope,
             transaction,
+            mut timing,
         } = self;
         drop(origin_scope);
-        transaction.commit()
+        let result = transaction.commit();
+        timing.committed(result.is_ok());
+        result
     }
 
     pub(super) fn rollback(self) -> rusqlite::Result<()> {
         let Self {
             origin_scope,
             transaction,
+            mut timing,
         } = self;
         drop(origin_scope);
-        transaction.rollback()
+        let result = transaction.rollback();
+        timing.rolled_back(result.is_ok());
+        result
     }
 }
 
@@ -178,7 +186,20 @@ impl SqliteStore {
         // The shared connection borrow allows restoring the handler before
         // returning the guard. Autocommit is checked; a nested BEGIN refuses
         // without rolling back the caller's transaction.
+        let mut timing = crate::storage::transaction_timing::TransactionTiming::start(
+            &self.connection,
+            crate::diagnostics::transaction::Boundary::WorkMutation,
+            crate::diagnostics::transaction::Budget {
+                configured_ms: Some(millis(ordinary_timeout)),
+                allowance_ms: Some(millis(allowance)),
+                shared_window_ms: window.map(|window| millis(window.budget)),
+            },
+        );
         let acquired = Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate);
+        match &acquired {
+            Ok(_) => timing.acquired(),
+            Err(error) => timing.begin_failed(error, autocommit),
+        }
         if window.is_some() && autocommit {
             // Restore on both acquisition outcomes, before any body runs.
             self.connection.busy_timeout(ordinary_timeout)?;
@@ -190,6 +211,7 @@ impl SqliteStore {
         Ok(WorkMutation {
             origin_scope,
             transaction,
+            timing,
         })
     }
 }

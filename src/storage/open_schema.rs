@@ -195,10 +195,11 @@ impl SqliteStore {
         Ok(result)
     }
 
-    /// Inspects exact-session and retained-grant presence without establishing
+    /// Inspects presence and selected-project scalar state without establishing
     /// a control connection, expiring grants, binding paths or changing rows.
     /// This is snapshot evidence only; the host owns quiescence and reconciliation.
     /// SQLite may maintain its shared-memory sidecar, never database/WAL bytes.
+    /// `project` limits diagnostic disclosure, never the presence booleans.
     ///
     /// # Errors
     /// Refuses invalid selectors, incompatible stores, unavailable or mismatched
@@ -214,6 +215,7 @@ impl SqliteStore {
         host_path_policy: Option<HostPathPolicy>,
         session_id: &str,
         retained_grant_id: &str,
+        project: &crate::ProjectId,
     ) -> Result<super::ControlSessionInspection, StoreError> {
         for (name, value) in [
             ("session", session_id),
@@ -243,8 +245,13 @@ impl SqliteStore {
         let snapshot = store.connection.unchecked_transaction()?;
         // Admission and presence must describe the SAME snapshot, even if the
         // schema/policy changed after the preliminary ordinary read-only open.
-        let result =
-            Self::inspect_control_session_on(&snapshot, requested, session_id, retained_grant_id)?;
+        let result = Self::inspect_control_session_on(
+            &snapshot,
+            requested,
+            session_id,
+            retained_grant_id,
+            project,
+        )?;
         snapshot.commit()?;
         Ok(result)
     }
@@ -254,6 +261,7 @@ impl SqliteStore {
         requested: HostPathPolicy,
         session_id: &str,
         retained_grant_id: &str,
+        project: &crate::ProjectId,
     ) -> Result<super::ControlSessionInspection, StoreError> {
         if Self::current_core_durable_schema_issue(snapshot)?.is_some() {
             return Err(different_build_store_error());
@@ -291,7 +299,7 @@ impl SqliteStore {
         let policy = Self::verify_control_policy_history(snapshot)?;
         Self::load_obligation_rule_set_on(snapshot, &policy.obligation_rule_set)?;
         Self::load_acceptance_evaluation_policy_on(snapshot)?;
-        Self::control_session_presence_on(snapshot, session_id, retained_grant_id, stored)
+        Self::control_session_presence_on(snapshot, session_id, retained_grant_id, stored, project)
     }
 
     /// Inspects only the control-policy family through a read-only connection.

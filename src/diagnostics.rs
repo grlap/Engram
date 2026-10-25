@@ -7,6 +7,7 @@ pub(crate) mod control;
 pub mod mcp;
 mod record;
 mod ring;
+pub(crate) mod transaction;
 mod writer;
 
 pub use record::{Correlation, CorrelationLoss, Event, Fault, Fingerprint, Surface};
@@ -23,13 +24,24 @@ pub const QUEUE_CAPACITY: usize = 256;
 #[derive(Clone, Debug)]
 pub struct Diagnostics {
     writer: Arc<Writer>,
+    transaction_sequence: Arc<std::sync::atomic::AtomicU64>,
+    full_transactions: bool,
 }
 
 impl Diagnostics {
+    #[cfg(test)]
+    pub(crate) fn capture_transactions_for_test(mut self) -> Self {
+        self.full_transactions = true;
+        self
+    }
+
     /// Uses the explicitly selected home; never discovers or opens a store.
     pub fn start(home: &Path, session: &str, surface: Surface) -> Self {
         Self {
             writer: Writer::start(home, session, surface),
+            transaction_sequence: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            full_transactions: std::env::var_os("ENGRAM_STORE_TRANSACTION_TRACE")
+                .is_some_and(|value| value == "1"),
         }
     }
 

@@ -222,6 +222,7 @@ fn store_error_details(error: &StoreError) -> Option<Value> {
 /// Long-lived host-private service over one project-local store.
 pub struct HostControlServer {
     store: SqliteStore,
+    diagnostic_store: crate::diagnostics::Fingerprint,
     project_id: ProjectId,
     actor_id: String,
     session_id: SessionId,
@@ -249,7 +250,7 @@ impl HostControlServer {
     }
 
     fn observe_fault(&self, fault: crate::diagnostics::Fault) {
-        if let (Some(sink), Some(frame)) = (&self.diagnostics, self.diagnostic_frame) {
+        if let (Some(sink), Some(frame)) = (&self.diagnostics, &self.diagnostic_frame) {
             frame.emit(sink, fault);
         }
     }
@@ -306,6 +307,7 @@ impl HostControlServer {
         source_skill: Option<String>,
     ) -> Result<Self, StoreError> {
         crate::storage::admit_session_id(&session_id)?;
+        let diagnostic_store = crate::diagnostics::Fingerprint::store(database.as_ref());
         let mut store = SqliteStore::open_for_control_host(database, identity)?;
         crate::phase_trace::control::enter(
             crate::phase_trace::control::ControlPhase::ConnectionResume,
@@ -313,6 +315,7 @@ impl HostControlServer {
         let connection_token = store.resume_control_connection(&session_id, Utc::now())?;
         Ok(Self {
             store,
+            diagnostic_store,
             project_id,
             actor_id,
             session_id,
@@ -706,6 +709,10 @@ impl HostControlServer {
             // The first byte is available. Keep parsing and all transaction
             // admission on this frame's allowance; do not reset it at dispatch.
             let _budget = crate::storage::ControlRequestScope::frame();
+            let diagnostic_timing = self
+                .diagnostics
+                .as_ref()
+                .map(|_| crate::storage::ControlDiagnosticScope::enter());
             self.diagnostic_frame = self
                 .diagnostics
                 .as_ref()
@@ -741,6 +748,18 @@ impl HostControlServer {
                     if let Some(frame) = &mut self.diagnostic_frame {
                         frame.request(&request);
                     }
+                    let _transaction_scope = self.diagnostics.as_ref().and_then(|sink| {
+                        self.diagnostic_frame.as_ref().map(|frame| {
+                            crate::diagnostics::transaction::Scope::enter(
+                                crate::diagnostics::transaction::Context::new(
+                                    sink.clone(),
+                                    frame.operation,
+                                    frame.correlation,
+                                    self.diagnostic_store,
+                                ),
+                            )
+                        })
+                    });
                     self.respond(request)
                 }
                 Err(refusal) => {
@@ -755,6 +774,9 @@ impl HostControlServer {
                 HostControlResponse::Ok { .. } => "ok",
                 HostControlResponse::Error { error } => error.code,
             };
+            if let (Some(frame), Some(timing)) = (&mut self.diagnostic_frame, &diagnostic_timing) {
+                frame.handler_finished(timing.snapshot());
+            }
             if let Some(trace) = trace {
                 trace.enter(ControlPhase::ResponseSerialize);
             }
@@ -792,7 +814,9 @@ impl HostControlServer {
             if let Some(trace) = trace {
                 trace.finish(Terminal::Complete, Some(outcome));
             }
-            self.diagnostic_frame = None;
+            if let (Some(sink), Some(frame)) = (&self.diagnostics, self.diagnostic_frame.take()) {
+                frame.complete(sink);
+            }
         }
     }
 

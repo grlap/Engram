@@ -1,6 +1,10 @@
 //! Bounded presence evidence, not control admission or a reconciliation fence.
 
 use super::{Connection, HostPathPolicy, SqliteStore, StoreError};
+use crate::ProjectId;
+
+mod details;
+pub use details::ControlInspectionDetails;
 
 /// Presence checks over one current-schema read snapshot. Any presence blocks
 /// absence-based host recovery, regardless of project, grant state or payload.
@@ -14,6 +18,8 @@ pub struct ControlSessionInspection {
     pub session_present: bool,
     pub session_grants_present: bool,
     pub retained_grant_present: bool,
+    /// Selected-project facts, distinct from the unconditional presence bits.
+    pub details: ControlInspectionDetails,
 }
 
 impl SqliteStore {
@@ -22,23 +28,25 @@ impl SqliteStore {
         session_id: &str,
         retained_grant_id: &str,
         stored_host_path_policy: HostPathPolicy,
+        project: &ProjectId,
     ) -> Result<ControlSessionInspection, StoreError> {
-        // No project/state joins or payload decoding: even an orphan,
+        // These booleans use no project/state joins or payload decoding: even an orphan,
         // cross-project or malformed grant is present, never clearance.
-        Ok(connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM control_sessions WHERE session_id = ?1),
+        let (session_present, session_grants_present, retained_grant_present) = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM control_sessions WHERE session_id = ?1),
                     EXISTS(SELECT 1 FROM control_turn_grants WHERE session_id = ?1),
                     EXISTS(SELECT 1 FROM control_turn_grants WHERE grant_id = ?2)",
-            [session_id, retained_grant_id],
-            |row| {
-                Ok(ControlSessionInspection {
-                    stored_host_path_policy,
-                    session_present: row.get(0)?,
-                    session_grants_present: row.get(1)?,
-                    retained_grant_present: row.get(2)?,
-                })
-            },
-        )?)
+                [session_id, retained_grant_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )?;
+        Ok(ControlSessionInspection {
+            stored_host_path_policy,
+            session_present,
+            session_grants_present,
+            retained_grant_present,
+            details: details::read(connection, project, session_id, retained_grant_id)?,
+        })
     }
 }
 
@@ -52,7 +60,11 @@ mod tests {
     }
 
     fn inspect(path: &Path) -> Result<ControlSessionInspection, StoreError> {
-        SqliteStore::inspect_control_session(path, Some(policy()), "target", "retained")
+        SqliteStore::inspect_control_session(path, Some(policy()), "target", "retained", &project())
+    }
+
+    fn project() -> ProjectId {
+        ProjectId("selected-project".into())
     }
 
     fn grant(connection: &Connection, id: &str, session: &str, state: &str) {
@@ -171,15 +183,29 @@ mod tests {
         let reader = SqliteStore::open_existing_read_only(&path).unwrap();
         let snapshot = reader.connection.unchecked_transaction().unwrap();
         let read = || {
-            SqliteStore::control_session_presence_on(&snapshot, "target", "retained", policy())
-                .unwrap()
+            SqliteStore::control_session_presence_on(
+                &snapshot,
+                "target",
+                "retained",
+                policy(),
+                &project(),
+            )
+            .unwrap()
         };
         assert!(!read().session_grants_present);
         grant(&writer.connection, "retained", "target", "begun");
         assert!(!read().session_grants_present);
+        assert_eq!(
+            serde_json::to_value(read().details).unwrap()["retained_grant"]["status"],
+            "not_found"
+        );
         snapshot.commit().unwrap();
         let report = inspect(&path).unwrap();
         assert!(report.session_grants_present && report.retained_grant_present);
+        assert_eq!(
+            serde_json::to_value(report.details).unwrap()["retained_grant"]["status"],
+            "withheld"
+        );
     }
 
     #[test]
@@ -195,11 +221,21 @@ mod tests {
         assert!(bytes(&path) == before, "database/WAL bytes changed");
         drop(unbound);
         let store = SqliteStore::open(&path).unwrap();
-        assert!(SqliteStore::inspect_control_session(&path, None, "target", "retained").is_err());
+        assert!(
+            SqliteStore::inspect_control_session(&path, None, "target", "retained", &project())
+                .is_err()
+        );
         let mut other = policy();
         other.case_fold_paths = !other.case_fold_paths;
         assert!(
-            SqliteStore::inspect_control_session(&path, Some(other), "target", "retained").is_err()
+            SqliteStore::inspect_control_session(
+                &path,
+                Some(other),
+                "target",
+                "retained",
+                &project()
+            )
+            .is_err()
         );
         for invalid in [
             String::new(),
@@ -207,12 +243,24 @@ mod tests {
             "bad\nid".into(),
         ] {
             assert!(
-                SqliteStore::inspect_control_session(&path, Some(policy()), &invalid, "retained")
-                    .is_err()
+                SqliteStore::inspect_control_session(
+                    &path,
+                    Some(policy()),
+                    &invalid,
+                    "retained",
+                    &project()
+                )
+                .is_err()
             );
             assert!(
-                SqliteStore::inspect_control_session(&path, Some(policy()), "target", &invalid)
-                    .is_err()
+                SqliteStore::inspect_control_session(
+                    &path,
+                    Some(policy()),
+                    "target",
+                    &invalid,
+                    &project()
+                )
+                .is_err()
             );
         }
         store
@@ -235,7 +283,8 @@ mod tests {
         let before = bytes(&path);
         let exact = "a".repeat(crate::MAX_SESSION_ID_BYTES);
         let report =
-            SqliteStore::inspect_control_session(&path, Some(policy()), &exact, &exact).unwrap();
+            SqliteStore::inspect_control_session(&path, Some(policy()), &exact, &exact, &project())
+                .unwrap();
         assert!(
             !report.session_present
                 && !report.session_grants_present
@@ -244,7 +293,13 @@ mod tests {
         let too_long = format!("{exact}a");
         for (session, grant) in [(&too_long, &exact), (&exact, &too_long)] {
             assert!(matches!(
-                SqliteStore::inspect_control_session(&path, Some(policy()), session, grant),
+                SqliteStore::inspect_control_session(
+                    &path,
+                    Some(policy()),
+                    session,
+                    grant,
+                    &project()
+                ),
                 Err(StoreError::InvalidControlSession(_))
             ));
         }
@@ -265,9 +320,14 @@ mod tests {
             writer.connection.execute_batch(statement).unwrap();
             let before = bytes(&path);
             let snapshot = reader.connection.unchecked_transaction().unwrap();
-            let error =
-                SqliteStore::inspect_control_session_on(&snapshot, policy(), "target", "retained")
-                    .unwrap_err();
+            let error = SqliteStore::inspect_control_session_on(
+                &snapshot,
+                policy(),
+                "target",
+                "retained",
+                &project(),
+            )
+            .unwrap_err();
             assert_eq!(
                 crate::storage::store_open_refusal_kind(&error),
                 crate::storage::StoreOpenRefusalKind::ProjectionRepairRequired,

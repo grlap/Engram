@@ -33,6 +33,7 @@ Exit 0 emits one JSON object with these required fields:
 | `session_present` | Any physical session row with this id, regardless of project |
 | `session_grants_present` | Any grant row for this session, regardless of state |
 | `retained_grant_present` | Any grant row with this id anywhere in the selected store |
+| `details` | Versioned diagnostic facts described below; never absence clearance or authorization |
 
 Build fields are informational, not authentication. No routing token or stored
 payload is returned. Selectors must be nonblank, control-free and at most 64
@@ -68,6 +69,61 @@ non-running eligibility, and recheck the same old connection and persisted
 store identity plus session/token/grant ownership before committing its local
 reconciliation. A copied or replaced store cannot be authenticated by this
 receipt. No snapshot fences later writes or grants permission to clear state.
+
+## Stored diagnostic facts
+
+The additive `details` object has its own `schema_version:1`. The outer version,
+scope and three presence booleans retain their existing meaning. A consumer
+that needs only absence evidence may ignore the additional object.
+
+- `session` contains `status` (`found`, `not_found` or `withheld`), nullable
+  `project_match`, `phase` and `phase_status`. A session in the selected project
+  exposes its recognized stored phase: `ready`, `sync_required`, `turn_open`
+  or `exited`. An unknown value is null with `phase_status:"unrecognized"`;
+  arbitrary stored strings are never echoed. A foreign session has withheld
+  details and `project_match:false`.
+- `session_begun_grant_present` is a stored `state='begun'` row's presence for
+  the selected-project session, independent of its phase. It is null when
+  the session is missing or withheld. It neither validates that grant nor
+  grants authority; `turn_open` alone does not prove a turn was begun.
+- `retained_grant` contains `status`, nullable `project_match`, `state`,
+  `state_status`, `session_id`, `session_relation` (`target` or `other`),
+  `owner_session_present`, `matches_current_task`, `issued_at`, `expires_at`,
+  `begun_at`, `completed_at` and `timestamps_status`.
+
+Grant attribution follows its task anchor, not its owner's current project:
+an old grant remains in its original project after a session rebind. Only a
+grant attributed to the selected project exposes state, times and a validated
+owner session id. Foreign grants have `status:"withheld"` and
+`project_match:false`; an orphan anchor has withheld details and a null match.
+Withheld or missing details are null, not default state or timestamp values.
+The top-level presence booleans still count those rows. Invalid owner ids are
+not echoed. Relationship fields describe stored rows, not credential validity.
+
+Recognized grant states are `issued`, `begun`, `completed`, `expired` and
+`superseded`. A successful checkpoint stores `completed`; `checkpointed` and
+`consumed` are not alternative stored states. Unknown state is null with
+`state_status:"unrecognized"`. Timestamps are RFC 3339 UTC values from stored
+millisecond columns. Nullable begin/completion times remain null when absent;
+invalid values are null with `timestamps_status:"invalid"`. State/time shape
+disagreement is `inconsistent`; otherwise it is `valid`. Timestamp ordering
+is not assumed, and an unrecognized state cannot establish shape coherence.
+There is no separate consumption or expiration-transition timestamp.
+
+In particular, inspection distinguishes `begun`, stored `expired`, and still
+`issued` with an elapsed `expires_at` deadline. It never changes the last case
+to expired. These facts do not prove that any particular historical request
+was replayed, that expiry came from a particular attempt, or that a checkpoint
+will pass its other scope/schema/fence checks. No predicted refusal or replay
+outcome is returned. Routing tokens, connection credentials, actors, intents,
+idempotency keys, stored bodies and checkpoint directives are not disclosed.
+
+The facts are read inside the same admitted snapshot as presence. The
+diagnostic reads have a fixed 100,000 SQLite VM-instruction budget because
+checking for any begun grant can scan a session's history. Exhaustion refuses
+the whole inspection, with no presence booleans or partial details. This is
+not a wall-clock deadline or a bound on filesystem stalls; normal admission
+and the host's end-to-end deadline remain separate.
 
 ## Refusals
 

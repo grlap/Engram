@@ -201,6 +201,7 @@ fn a_control_session_inspection_returns_the_refusal_without_a_retry() {
         Some(HostPathPolicy::host_default()),
         "session",
         "grant",
+        &crate::ProjectId("project".into()),
     )
     .map(drop)
     .expect_err("refused at once");

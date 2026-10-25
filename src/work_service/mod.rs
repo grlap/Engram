@@ -3,7 +3,7 @@
 const REJECT_PROTOCOL_OPERATION: &str = "work_update:reject";
 
 #[cfg(test)]
-pub(crate) use update::before_selected_clear;
+pub(crate) use update::{before_note_capture, before_selected_clear};
 
 pub(crate) const MULTIPLE_BLOCKERS_REFUSAL: &str =
     "focused work has multiple active blockers; supply blocker_id";

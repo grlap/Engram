@@ -44,6 +44,7 @@ fn turn_grant_read_round_trips_on_the_host_channel() {
         .unwrap();
     let mut server = HostControlServer {
         store,
+        diagnostic_store: crate::diagnostics::Fingerprint::store(Path::new(":memory:")),
         project_id: ProjectId("grant-read-project".into()),
         actor_id: "host-test".into(),
         session_id,
@@ -290,6 +291,7 @@ fn oversized_control_frame_is_rejected_and_drained() {
     let mut output = Vec::new();
     let mut server = HostControlServer {
         store: SqliteStore::open_in_memory().expect("store"),
+        diagnostic_store: crate::diagnostics::Fingerprint::store(Path::new(":memory:")),
         project_id: ProjectId("frame-project".into()),
         actor_id: "frame-agent".into(),
         session_id: SessionId("frame-session".into()),

@@ -278,14 +278,14 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkCompleteResult, StoreError> {
         validate_completion_request(&input)?;
-        // The session registers at bind_target, after the checks below.
+        // The session registers at prepare_target, after the checks below.
         let mut store = self.lock_store_at(now)?;
         if let Some(acceptance) = &input.acceptance
             && let Some(item) = self.preview_target(&store, work_ref, now)?
         {
             refuse_misaddressed_acceptance(&item, acceptance, &input.evidence)?;
         }
-        let target = self.bind_target(&mut store, work_ref, now)?;
+        let target = self.prepare_target(&mut store, work_ref, now)?;
         // The work and retained claim jointly identify the run, including
         // after sealing. Do not combine two cuts across a concurrent reopen.
         // A completion that named no item also reads this session's live
@@ -401,7 +401,7 @@ impl LocalWorkService {
                         Some(receipt.run_id),
                         &mut receipt.obligation_page,
                     );
-                    return Ok(result);
+                    return self.focus_completion_result(&mut store, target, result, now);
                 }
                 WorkCompleteResult::Refused(_) => {
                     return Err(StoreError::InvalidWorkProjection(
@@ -483,7 +483,7 @@ impl LocalWorkService {
                     &raw_key,
                     &result,
                 )?;
-                return Ok(result);
+                return self.focus_completion_result(&mut store, target, result, now);
             }
         }
         let mut basis_matches =
@@ -538,7 +538,7 @@ impl LocalWorkService {
                 &raw_key,
                 &result,
             )?;
-            return Ok(result);
+            return self.focus_completion_result(&mut store, target, result, now);
         }
         if !basis_matches && !input.links.is_empty() {
             return Err(StoreError::WorkCriterionLinkInvalid {
@@ -582,7 +582,7 @@ impl LocalWorkService {
                     snapshot.required_child_successor,
                     &remedy_modes,
                 );
-                return Ok(result);
+                return self.focus_completion_result(&mut store, target, result, now);
             }
             Err(error) => return Err(error),
         };
@@ -667,7 +667,7 @@ impl LocalWorkService {
                     snapshot.required_child_successor,
                     &remedy_modes,
                 );
-                return Ok(result);
+                return self.focus_completion_result(&mut store, target, result, now);
             }
         };
         store.finish_work_protocol_attempt(
@@ -677,7 +677,22 @@ impl LocalWorkService {
             &raw_key,
             &result,
         )?;
-        Ok(result)
+        self.focus_completion_result(&mut store, target, result, now)
+    }
+
+    fn focus_completion_result(
+        &self,
+        store: &mut SqliteStore,
+        target: Option<WorkId>,
+        result: WorkCompleteResult,
+        now: DateTime<Utc>,
+    ) -> Result<WorkCompleteResult, StoreError> {
+        // Recovery is a typed refusal inside Ok, not a successful completion.
+        if matches!(result, WorkCompleteResult::Completed(_)) {
+            self.focus_result(store, target, Ok(result), now)
+        } else {
+            Ok(result)
+        }
     }
 
     pub(super) fn prepare_completion_evidence(

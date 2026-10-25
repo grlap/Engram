@@ -174,11 +174,9 @@ impl LocalWorkService {
         }
         // A fresh process-default session registers inside the evaluation's
         // own write transaction below, or on a replay just before it answers,
-        // so no refusal leaves a session behind. It holds no claim, so this
-        // moves no focus before then.
-        // An independent evaluator does not hold the item; its evaluation
-        // leaves its focus where it was.
-        self.focus_if_held(&mut store, target, basis.claim.as_ref(), now)?;
+        // so no refusal leaves a session behind. Successful results navigate
+        // under the holder policy; an independent evaluator does not hold
+        // the item and leaves its focus where it was.
         // The run an attempt binds: the active run, or the latest run when
         // the item has since completed, so an exact resend can still find
         // the committed attempt. Fresh writes are admitted only further down.
@@ -288,7 +286,13 @@ impl LocalWorkService {
             // A replay answers without a write of its own; the session
             // registers here, after its last refusal.
             self.register_on(&mut store, now)?;
-            return Ok(result);
+            return self.focus_held_result(
+                &mut store,
+                target,
+                basis.claim.as_ref(),
+                Ok(result),
+                now,
+            );
         }
         if work.revision != input.acceptance_basis {
             return Err(StoreError::WorkRevisionConflict {
@@ -338,7 +342,7 @@ impl LocalWorkService {
         // covers drift and keeps every count exact.
         fit_projection(&mut result)?;
         ensure_agent_response_budget(&result, "work_evaluate")?;
-        Ok(result)
+        self.focus_held_result(&mut store, target, basis.claim.as_ref(), Ok(result), now)
     }
 
     fn assemble(

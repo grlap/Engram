@@ -151,6 +151,24 @@ pub struct Observer {
 pub struct Ticket(Option<u64>, Pending);
 
 impl Observer {
+    pub(crate) fn transaction_context(
+        &self,
+        ticket: Ticket,
+        store: Fingerprint,
+    ) -> super::transaction::Context {
+        super::transaction::Context::new(
+            self.sink.clone(),
+            ticket.1.operation,
+            Correlation {
+                request_id: ticket.1.key.number(),
+                request_seq: ticket.0,
+                uncorrelated_reason: ticket.1.uncorrelated,
+                ..Correlation::default()
+            },
+            store,
+        )
+    }
+
     pub fn new(sink: Diagnostics) -> Arc<Self> {
         Self::thresholds(sink, super::SLOW_CALL, super::SHUTDOWN_OVERRUN)
     }

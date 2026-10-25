@@ -1,5 +1,5 @@
 //! `update` and `handoff` disclose the focus move they made, on their receipt
-//! or beside a refusal that came after the move, and the claim they leave:
+//! and preserve focus on admission refusal. The disclosed claim is the one left:
 //! none after a release or a disposal, the transferred one after an accept.
 
 use super::*;
@@ -19,7 +19,7 @@ fn update(
     )
 }
 
-fn handoff(
+pub(super) fn handoff(
     verbs: &AgentVerbs,
     work_ref: &str,
     action: HandoffAction,
@@ -46,11 +46,10 @@ fn refusal_moved(verbs: &AgentVerbs, refused: &VerbError) -> Option<(Value, Valu
     ))
 }
 
-// A valid update refused after it moved focus says so beside the refusal; a
-// repeat that found focus already there says nothing.
+// A valid update refused by stored authority preserves focus on every try.
 #[test]
-fn an_update_refused_after_its_move_discloses_it() {
-    let (agent, peer, _database) = sessions();
+fn a_refused_update_preserves_focus() {
+    let (agent, peer, database) = sessions();
     let first = add(&agent.verbs, "First", None, 1);
     let held = add(&peer.verbs, "Held by the peer", None, 2);
     claim(&peer.verbs, &held, 3).expect("peer claims");
@@ -62,27 +61,23 @@ fn an_update_refused_after_its_move_discloses_it() {
     let refused = update(&agent.verbs, &held, cancel(), 5).expect_err("held elsewhere");
     assert_eq!(
         refusal_moved(&agent.verbs, &refused),
-        Some((json!(first), json!(held), false)),
+        None,
         "{:?}",
         refused.error
     );
-    assert_eq!(
-        refused.focus_change_line(),
-        Some(
-            format!("focus moved from {first} to {held}; {held} has no live claim to bind")
-                .as_str()
-        )
-    );
+    assert_eq!(refused.focus_change_line(), None);
+    refusals::assert_focus(&database, &first);
 
     let again = update(&agent.verbs, &held, cancel(), 6).expect_err("still held");
-    assert_eq!(again.focus_change_line(), None, "focus was already there");
+    assert_eq!(again.focus_change_line(), None);
     assert_eq!(refusal_moved(&agent.verbs, &again), None);
+    refusals::assert_focus(&database, &first);
 }
 
-// A valid handoff refused after it moved focus says so beside the refusal.
+// No incoming offer means no navigation, as well as no claim transfer.
 #[test]
-fn a_handoff_refused_after_its_move_discloses_it() {
-    let (agent, _peer, _database) = sessions();
+fn a_refused_handoff_preserves_focus() {
+    let (agent, _peer, database) = sessions();
     let first = add(&agent.verbs, "First", None, 1);
     let second = add(&agent.verbs, "Second", None, 2);
     claim(&agent.verbs, &first, 3).expect("claim first");
@@ -91,15 +86,17 @@ fn a_handoff_refused_after_its_move_discloses_it() {
         handoff(&agent.verbs, &second, HandoffAction::Accept, 4).expect_err("no offer to accept");
     assert_eq!(
         refusal_moved(&agent.verbs, &refused),
-        Some((json!(first), json!(second), false)),
+        None,
         "{:?}",
         refused.error
     );
-    assert!(refused.focus_change_line().is_some());
+    assert_eq!(refused.focus_change_line(), None);
+    refusals::assert_focus(&database, &first);
 
     let again =
         handoff(&agent.verbs, &second, HandoffAction::Accept, 5).expect_err("still no offer");
-    assert_eq!(again.focus_change_line(), None, "focus was already there");
+    assert_eq!(again.focus_change_line(), None);
+    refusals::assert_focus(&database, &first);
 }
 
 // Releasing another held item moves focus there and ends the claim, so the
