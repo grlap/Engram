@@ -242,12 +242,12 @@ impl McpServer {
         let Some(trace) = self.phase_trace.as_ref() else {
             return self.call_tool_untraced(request, context).await;
         };
-        let id = context.id.clone();
         let tool = request.name.to_string();
+        let ticket = trace.handler_started(&context.id, &tool, || context.ct.is_cancelled());
         let started = std::time::Instant::now();
         let (result, phases) =
             crate::phase_trace::scoped(self.call_tool_untraced(request, context)).await;
-        trace.handler_settled(id, &tool, started.elapsed(), phases);
+        trace.handler_settled(ticket, &tool, started.elapsed(), &phases);
         result
     }
 }

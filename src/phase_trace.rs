@@ -2,8 +2,9 @@
 //!
 //! It is enabled once, at `engram mcp` start, by `ENGRAM_MCP_PHASE_TRACE=1`.
 //! Each tool call then runs with a per-call accumulator that the store hooks
-//! fill, and after its response is sent the server writes one bounded JSON
-//! line to stderr, correlated by the call's numeric request id. Unset, no
+//! fill. Bounded stage lines expose unfinished calls; a settled handler also
+//! gets a final summary. Numeric IDs are associated only when unambiguous;
+//! string IDs are never retained. Unset, no
 //! accumulator is ever installed, so every hook returns at once without
 //! taking a timestamp, no profile callback is registered, the transport is
 //! not wrapped, and nothing is written.
@@ -18,7 +19,6 @@
 //! stderr reader received them; a missing line never proves a stalled stage.
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::future::Future;
 use std::io::Write as _;
 use std::pin::Pin;
@@ -26,9 +26,11 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use rmcp::model::{ClientNotification, JsonRpcMessage, NumberOrString};
+use rmcp::model::{ClientNotification, ClientRequest, JsonRpcMessage, NumberOrString};
 use rmcp::service::{RoleServer, RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
+
+mod call;
 
 /// The environment variable that enables the trace at server start.
 pub const PHASE_TRACE_ENV: &str = "ENGRAM_MCP_PHASE_TRACE";
@@ -83,7 +85,7 @@ where
     stopped
 }
 
-/// The most handler records kept while their responses are being sent.
+/// The maximum shared receive, handler, settled-summary and quarantine slots.
 const MAX_PENDING: usize = 256;
 
 /// The most bytes one record line may take.
@@ -109,6 +111,12 @@ pub(crate) enum Phase {
     Commit,
     /// Rendering the receipt into the tool result.
     ReceiptSerialize,
+    /// A work read snapshot, including nested/reused snapshots.
+    ReadSnapshot,
+    /// Every statement covered by the existing SQLite profile callback.
+    SqliteStatement,
+    /// Project-home lookup and the local backup reminder's filesystem work.
+    BackupReminder,
 }
 
 /// Count, total and longest duration of one phase within a call.
@@ -135,6 +143,9 @@ pub struct Phases {
     pub begin_immediate: Summary,
     pub commit: Summary,
     pub receipt_serialize: Summary,
+    pub read_snapshot: Summary,
+    pub sqlite_statement: Summary,
+    pub backup_reminder: Summary,
 }
 
 impl Phases {
@@ -145,6 +156,9 @@ impl Phases {
             Phase::BeginImmediate => &mut self.begin_immediate,
             Phase::Commit => &mut self.commit,
             Phase::ReceiptSerialize => &mut self.receipt_serialize,
+            Phase::ReadSnapshot => &mut self.read_snapshot,
+            Phase::SqliteStatement => &mut self.sqlite_statement,
+            Phase::BackupReminder => &mut self.backup_reminder,
         }
     }
 }
@@ -172,6 +186,25 @@ pub(crate) fn finish(phase: Phase, started: Option<Instant>) {
     }
 }
 
+/// An empty guard outside a traced poll: no timestamp or allocation.
+pub(crate) fn span(phase: Phase) -> Span {
+    Span {
+        phase,
+        started: start(),
+    }
+}
+
+pub(crate) struct Span {
+    phase: Phase,
+    started: Option<Instant>,
+}
+
+impl Drop for Span {
+    fn drop(&mut self) {
+        finish(self.phase, self.started);
+    }
+}
+
 fn record(phase: Phase, elapsed: Duration) {
     CURRENT.with(|current| {
         if let Some(phases) = current.borrow_mut().as_mut() {
@@ -190,6 +223,7 @@ pub(crate) fn sql_profile(event: rusqlite::trace::TraceEvent<'_>) {
     if !active() {
         return;
     }
+    record(Phase::SqliteStatement, elapsed);
     let sql = statement.sql();
     let words: Vec<&str> = sql.split_ascii_whitespace().take(2).collect();
     let phase = match words.as_slice() {
@@ -264,13 +298,12 @@ enum Outcome {
     Complete,
     /// Sending its response failed; nothing was delivered.
     SendFailed,
-    /// The client cancelled it before its response was handed over, and by
-    /// close no response had been sent.
-    Cancelled,
     /// The transport closed before its response was sent.
     Incomplete,
-    /// Too many records waited for their sends; this, the oldest, was let go.
-    Evicted,
+    /// The handler settled, but no safe receive/send association is available.
+    Uncorrelated,
+    /// The send future was destroyed without a result.
+    SendDropped,
 }
 
 impl Outcome {
@@ -278,47 +311,22 @@ impl Outcome {
         match self {
             Self::Complete => "complete",
             Self::SendFailed => "send_failed",
-            Self::Cancelled => "cancelled",
             Self::Incomplete => "incomplete",
-            Self::Evicted => "evicted",
+            Self::Uncorrelated => "uncorrelated",
+            Self::SendDropped => "send_dropped",
         }
     }
 }
 
-/// One tool call's handler record, waiting for its response to be sent.
-///
-/// rmcp's serve loop handles a client's `notifications/cancelled` and hands
-/// a response to the transport on one task, one event at a time. The trace
-/// sees the cancel as the transport yields it, before the loop handles it,
-/// and sees a response handed over (`dispatched`) in the same synchronous
-/// step in which the loop hands it over. So a cancel seen while a call's
-/// response is not yet dispatched (`cancel_requested`) is one the serve loop
-/// honours by dropping that response, and a cancel seen after dispatch comes
-/// too late to stop it. After input ends, though, rmcp drains the responses
-/// still queued straight to the transport, a cancelled call's included. So a
-/// cancel only marks the record: a later send completes it as usual, and
-/// close writes a record still unsent as cancelled.
+/// A completed handler: only fixed-size tracing metadata is retained.
 #[derive(Clone, Debug)]
 struct HandlerRecord {
-    id: NumberOrString,
+    ticket: call::Ticket,
     tool: &'static str,
     handler: Duration,
     phases: Phases,
-    dispatched: bool,
-    cancel_requested: bool,
-}
-
-#[derive(Debug, Default)]
-struct Pending {
-    records: VecDeque<HandlerRecord>,
-    /// Calls their clients cancelled before they settled, newest last and
-    /// bounded; a call settling with its id here is marked cancelled.
-    cancels: VecDeque<NumberOrString>,
-    evicted: u64,
-    unmatched_sends: u64,
-    /// Set once the transport closed: a record settling later is written at
-    /// once, since no send or close will come for it.
-    closed: bool,
+    cancel_requested: Option<bool>,
+    dispatch_send: Option<Duration>,
 }
 
 /// The counters every record line reports.
@@ -327,6 +335,8 @@ struct Counters {
     evicted: u64,
     unmatched_sends: u64,
     dropped_lines: u64,
+    unassociated: u64,
+    association_disabled: bool,
 }
 
 /// Where record lines go: stderr for the server.
@@ -417,9 +427,10 @@ impl LineWriter {
 /// records. Writing never happens on a request or send path, so a reader
 /// that stops draining stderr costs dropped lines, never a stalled server.
 pub struct PhaseTrace {
-    pending: Mutex<Pending>,
+    pending: Mutex<call::Pending>,
     lines: LineWriter,
     started: Instant,
+    instance: uuid::Uuid,
     diagnostics: Mutex<Option<Arc<crate::diagnostics::mcp::Observer>>>,
 }
 
@@ -435,9 +446,10 @@ impl std::fmt::Debug for PhaseTrace {
 impl PhaseTrace {
     fn new(sink: Sink, capacity: usize) -> Self {
         Self {
-            pending: Mutex::new(Pending::default()),
+            pending: Mutex::new(call::Pending::default()),
             lines: LineWriter::new(sink, capacity, "engram-phase-trace"),
             started: Instant::now(),
+            instance: uuid::Uuid::new_v4(),
             diagnostics: Mutex::new(None),
         }
     }
@@ -445,8 +457,19 @@ impl PhaseTrace {
     /// The trace when `ENGRAM_MCP_PHASE_TRACE=1` at start, otherwise none.
     #[must_use]
     pub fn from_env() -> Option<Arc<Self>> {
-        (std::env::var(PHASE_TRACE_ENV).as_deref() == Ok("1"))
-            .then(|| Arc::new(Self::new(Box::new(std::io::stderr()), WRITER_CAPACITY)))
+        (std::env::var(PHASE_TRACE_ENV).as_deref() == Ok("1")).then(|| {
+            let trace = Arc::new(Self::new(Box::new(std::io::stderr()), WRITER_CAPACITY));
+            trace.emit(
+                serde_json::json!({
+                    "engram_mcp_trace_instance": 1,
+                    "trace_instance": trace.instance,
+                    "pid": std::process::id(),
+                    "server_elapsed_ms": millis(trace.started.elapsed()),
+                })
+                .to_string(),
+            );
+            trace
+        })
     }
 
     /// Queues a fixed, content-free stage record without waiting for its sink.
@@ -476,11 +499,13 @@ impl PhaseTrace {
         }
     }
 
-    fn counters(&self, pending: &Pending) -> Counters {
+    fn counters(&self, pending: &call::Pending) -> Counters {
         Counters {
             evicted: pending.evicted,
             unmatched_sends: pending.unmatched_sends,
             dropped_lines: self.lines.dropped(),
+            unassociated: pending.unassociated,
+            association_disabled: pending.disabled,
         }
     }
 
@@ -492,178 +517,44 @@ impl PhaseTrace {
         self.lines.flush(timeout);
     }
 
-    /// A request arrived: an earlier cancel naming its id was for an older
-    /// call, so it no longer applies.
+    fn received(&self, id: &NumberOrString, tool: &str) {
+        call::received(self, id, tool);
+    }
+
+    #[cfg(test)]
     fn requested(&self, id: &NumberOrString) {
-        let Ok(mut pending) = self.pending.lock() else {
-            return;
-        };
-        pending.cancels.retain(|cancelled| cancelled != id);
+        self.received(id, "unknown");
     }
 
-    /// The client cancelled the call `id`. When a settled call's response
-    /// was not yet handed to the transport, its record is marked. Otherwise
-    /// the id is remembered, so a call with it that is still running is
-    /// marked when it settles. A cancel arriving after its response was
-    /// dispatched, or naming a request that was no tool call, never reaches
-    /// a record: the next request with that id clears it.
     fn client_cancelled(&self, id: &NumberOrString) {
-        let Ok(mut pending) = self.pending.lock() else {
-            return;
-        };
-        if let Some(record) = pending
-            .records
-            .iter_mut()
-            .rev()
-            .find(|record| record.id == *id && !record.dispatched)
-        {
-            record.cancel_requested = true;
-            return;
-        }
-        if pending.cancels.len() >= MAX_PENDING {
-            pending.cancels.pop_front();
-        }
-        pending.cancels.push_back(id.clone());
+        call::cancelled(self, id);
     }
 
-    /// Takes a settled call's record, which waits for its response's send. A
-    /// call settling after close gets no send, so it is written at once: as
-    /// cancelled when its client cancelled it, otherwise as incomplete. When
-    /// the bound is reached the oldest waiting record is written as evicted.
+    pub(crate) fn handler_started(
+        &self,
+        id: &NumberOrString,
+        tool: &str,
+        cancelled: impl FnOnce() -> bool,
+    ) -> call::Ticket {
+        call::started(self, id, tool, cancelled)
+    }
+
     pub(crate) fn handler_settled(
         &self,
-        id: NumberOrString,
+        ticket: call::Ticket,
         tool: &str,
         handler: Duration,
-        phases: Phases,
+        phases: &Phases,
     ) {
-        let tool = TOOL_LABELS
-            .iter()
-            .copied()
-            .find(|label| *label == tool)
-            .unwrap_or("unknown");
-        let mut record = HandlerRecord {
-            id,
-            tool,
-            handler,
-            phases,
-            dispatched: false,
-            cancel_requested: false,
-        };
-        let lines: Vec<String> = {
-            let Ok(mut pending) = self.pending.lock() else {
-                return;
-            };
-            let mut lines = Vec::new();
-            record.cancel_requested = pending
-                .cancels
-                .iter()
-                .position(|cancelled| *cancelled == record.id)
-                .and_then(|index| pending.cancels.remove(index))
-                .is_some();
-            if pending.closed {
-                lines.push(render(
-                    &record,
-                    unsent(&record),
-                    None,
-                    self.counters(&pending),
-                ));
-            } else {
-                if pending.records.len() >= MAX_PENDING
-                    && let Some(oldest) = pending.records.pop_front()
-                {
-                    pending.evicted = pending.evicted.saturating_add(1);
-                    lines.push(render(
-                        &oldest,
-                        Outcome::Evicted,
-                        None,
-                        self.counters(&pending),
-                    ));
-                }
-                pending.records.push_back(record);
-            }
-            lines
-        };
-        for line in lines {
-            self.emit(line);
-        }
+        call::settled(self, ticket, tool, handler, phases);
     }
 
-    /// Marks the newest waiting record of the call `id` answers as handed to
-    /// the transport. It runs in the same synchronous step in which rmcp
-    /// hands the response over, before the send is awaited.
-    pub(crate) fn dispatching(&self, id: &NumberOrString) {
-        let Ok(mut pending) = self.pending.lock() else {
-            return;
-        };
-        if let Some(record) = pending
-            .records
-            .iter_mut()
-            .rev()
-            .find(|record| record.id == *id && !record.dispatched)
-        {
-            record.dispatched = true;
-        }
+    fn dispatching(&self, id: &NumberOrString) -> call::Dispatched {
+        call::dispatching(self, id)
     }
 
-    /// Completes the record of the call `id` answered, by the newest record
-    /// with that id, and writes it: sent, or the send failed. A send matching
-    /// no record, such as initialize's or tools/list's, is counted.
-    pub(crate) fn sent(&self, id: &NumberOrString, send: Duration, delivered: bool) {
-        let line = {
-            let Ok(mut pending) = self.pending.lock() else {
-                return;
-            };
-            let index = pending
-                .records
-                .iter()
-                .rposition(|record| record.id == *id && record.dispatched)
-                .or_else(|| pending.records.iter().rposition(|record| record.id == *id));
-            if let Some(record) = index.and_then(|index| pending.records.remove(index)) {
-                let outcome = if delivered {
-                    Outcome::Complete
-                } else {
-                    Outcome::SendFailed
-                };
-                Some(render(
-                    &record,
-                    outcome,
-                    Some(send),
-                    self.counters(&pending),
-                ))
-            } else {
-                pending.unmatched_sends = pending.unmatched_sends.saturating_add(1);
-                None
-            }
-        };
-        if let Some(line) = line {
-            self.emit(line);
-        }
-    }
-
-    /// Writes every record still waiting: as cancelled when its client
-    /// cancelled it before its response was handed over, otherwise as
-    /// incomplete. rmcp closes the transport only after its shutdown drain,
-    /// so no send can follow. It marks the trace closed so a later settle is
-    /// written at once, and waits briefly for the queued lines to reach the
-    /// sink. Lines queued at or after close are best effort: the process may
-    /// exit before the writer reaches them.
-    pub(crate) fn closed(&self) {
-        let lines: Vec<String> = {
-            let Ok(mut pending) = self.pending.lock() else {
-                return;
-            };
-            pending.closed = true;
-            let records: Vec<HandlerRecord> = pending.records.drain(..).collect();
-            let counters = self.counters(&pending);
-            records
-                .iter()
-                .map(|record| render(record, unsent(record), None, counters))
-                .collect()
-        };
-        for line in lines {
-            self.emit(line);
-        }
+    fn closed(&self) {
+        call::closed(self);
         self.shutdown_stage(ShutdownStage::TraceFlushStarted);
         self.flush(CLOSE_FLUSH);
         self.shutdown_stage(ShutdownStage::TraceFlushFinished);
@@ -671,25 +562,12 @@ impl PhaseTrace {
 
     #[cfg(test)]
     fn pending_len(&self) -> usize {
-        self.pending
-            .lock()
-            .map_or(0, |pending| pending.records.len())
+        self.pending.lock().map_or(0, |pending| pending.records())
     }
 
     #[cfg(test)]
     fn dropped(&self) -> u64 {
         self.lines.dropped()
-    }
-}
-
-/// How a record whose response was never sent ends: cancelled when its
-/// client cancelled it before the response was handed over, otherwise
-/// incomplete.
-const fn unsent(record: &HandlerRecord) -> Outcome {
-    if record.cancel_requested && !record.dispatched {
-        Outcome::Cancelled
-    } else {
-        Outcome::Incomplete
     }
 }
 
@@ -713,9 +591,11 @@ fn render(
     send: Option<Duration>,
     counters: Counters,
 ) -> String {
-    let (id, correlation) = match &record.id {
-        NumberOrString::Number(number) => (serde_json::json!(number), "numeric"),
-        NumberOrString::String(_) => (serde_json::Value::Null, "unavailable"),
+    let id = record.ticket.id;
+    let correlation = if record.ticket.loss.is_none() {
+        "numeric"
+    } else {
+        "unavailable"
     };
     let value = serde_json::json!({
         "engram_mcp_phase_trace": 1,
@@ -724,16 +604,26 @@ fn render(
         "tool": record.tool,
         "state": outcome.as_str(),
         "cancel_requested": record.cancel_requested,
+        "call_seq": record.ticket.loss.is_none().then_some(record.ticket.sequence).flatten(),
+        "uncorrelated_reason": record.ticket.loss,
+        "receive_ms": record.ticket.received.map(millis),
+        "handler_start_ms": millis(record.ticket.started),
         "handler_total_ms": millis(record.handler),
         "store_open_total": summary_value(&record.phases.store_open),
         "store_mutex_wait": summary_value(&record.phases.store_mutex_wait),
         "begin_immediate": summary_value(&record.phases.begin_immediate),
         "commit": summary_value(&record.phases.commit),
         "receipt_serialize": summary_value(&record.phases.receipt_serialize),
+        "read_snapshot": summary_value(&record.phases.read_snapshot),
+        "sqlite_statement": summary_value(&record.phases.sqlite_statement),
+        "backup_reminder": summary_value(&record.phases.backup_reminder),
         "wire_encode_send_inclusive_ms": send.map(millis),
+        "dispatch_send_inclusive_ms": record.dispatch_send.map(millis),
         "evicted": counters.evicted,
         "unmatched_sends": counters.unmatched_sends,
         "dropped_lines": counters.dropped_lines,
+        "unassociated": counters.unassociated,
+        "association_disabled": counters.association_disabled,
     });
     let mut line = value.to_string();
     if line.len() > MAX_RECORD_BYTES {
@@ -774,20 +664,21 @@ where
         item: TxJsonRpcMessage<RoleServer>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
         let id = match &item {
-            JsonRpcMessage::Response(response) => Some(response.id.clone()),
-            JsonRpcMessage::Error(error) => error.id.clone(),
+            JsonRpcMessage::Response(response) => Some(&response.id),
+            JsonRpcMessage::Error(error) => error.id.as_ref(),
             JsonRpcMessage::Request(_) | JsonRpcMessage::Notification(_) => None,
         };
-        let trace = Arc::clone(&self.trace);
-        if let Some(id) = &id {
-            trace.dispatching(id);
-        }
-        let sending = self.inner.send(item);
+        // Ownership begins synchronously, before inner.send or the first poll.
+        let mut sending =
+            id.map(|id| call::Sending::new(Arc::clone(&self.trace), self.trace.dispatching(id)));
+        let future = self.inner.send(item);
         async move {
-            let started = Instant::now();
-            let result = sending.await;
-            if let Some(id) = id {
-                trace.sent(&id, started.elapsed(), result.is_ok());
+            if let Some(sending) = &mut sending {
+                sending.polled();
+            }
+            let result = future.await;
+            if let Some(sending) = sending.take() {
+                sending.finished(result.is_ok());
             }
             result
         }
@@ -803,7 +694,15 @@ where
             let message = receiving.await;
             match &message {
                 None => trace.shutdown_stage(ShutdownStage::InputEnded),
-                Some(JsonRpcMessage::Request(request)) => trace.requested(&request.id),
+                Some(JsonRpcMessage::Request(request)) => {
+                    if let ClientRequest::CallToolRequest(tool) = &request.request {
+                        trace.received(&request.id, &tool.params.name);
+                    } else {
+                        // A metadata response carries the same wire-ID type.
+                        // Observe it too, or it could claim a tool's slot.
+                        call::metadata_received(&trace, &request.id);
+                    }
+                }
                 Some(JsonRpcMessage::Notification(notification)) => {
                     if let ClientNotification::CancelledNotification(cancelled) =
                         &notification.notification

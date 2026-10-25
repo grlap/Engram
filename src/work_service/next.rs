@@ -37,6 +37,7 @@ impl LocalWorkService {
     /// under the Engram home that holds this store; `None` when the store is
     /// not in a home layout, no target is configured or all is well.
     pub(crate) fn backup_reminder(&self) -> Option<String> {
+        let _phase = crate::phase_trace::span(crate::phase_trace::Phase::BackupReminder);
         let home = crate::project_home_of(&self.database, &self.project_id)?;
         crate::backup::reminder::backup_reminder(&home, &self.project_id)
     }

@@ -2561,32 +2561,37 @@ described under the
 diagnosing slow calls. Any other value, or none, leaves stderr phase tracing
 and detailed SQLite profiling disabled. The default
 [operational diagnostics](diagnostics.md) remain active. With tracing on, every tool call whose
-handler returns ends in exactly one JSON line on stderr, at most 4 KiB,
-keyed `engram_mcp_phase_trace`; a handler that panics writes none.
+handler returns ends in one final JSON summary on stderr, at most 4 KiB,
+keyed `engram_mcp_phase_trace`. Separate stage lines can precede that summary,
+including for a handler that has not returned. A handler that panics has no
+final summary.
 
 The line carries:
-- the call's numeric request `id`, with `correlation` `numeric`. A string id
-  is never echoed: `id` is null and `correlation` is `unavailable`;
+- the call's numeric request `id`, with `correlation` `numeric` and a local
+  `call_seq` only when receive, handler and send association is unambiguous.
+  A string id is never retained or echoed: `id` is null and `correlation` is
+  `unavailable`. Lost association also has a null `call_seq` and a fixed
+  `uncorrelated_reason`;
 - the `tool` label (`unknown` for an unlisted name);
 - `state`, one of:
   - `complete`: its response was sent;
   - `send_failed`: sending the response failed;
-  - `cancelled`: the client sent `notifications/cancelled` for the call
-    before its response was handed to the transport, and no response was
-    sent. rmcp drops such a response while it serves. After the input
-    ends, though, rmcp still sends the responses already queued, a
-    cancelled call's included. So the line is written at close, or at once
-    for a call that settles after close. A cancelled call whose response
-    went out all the same reads `complete`. A cancel arriving after the
-    response was handed over has no effect. Only the client's cancel
-    counts: a server shutdown is not a cancel;
-  - `incomplete`: the transport closed before the response was sent, or the
-    call settled after the close;
-  - `evicted`: more than 256 settled calls waited for their sends, and this
-    one, the oldest, was let go;
-- `cancel_requested`, true when the client cancelled the call before its
-  response was handed over, whatever `state` says;
+  - `incomplete`: a uniquely associated settled handler was still waiting
+    for its response's dispatch when the transport closed;
+  - `uncorrelated`: the handler settled, but its response cannot safely be
+    associated by the wire ID. Cancellation, overlapping duplicate IDs,
+    missing receive observation, string IDs, saturation and late settlement
+    can produce this state; it supplies no send duration;
+  - `send_dropped`: the send future was destroyed without a result, even
+    when it had never been polled;
+- `cancel_requested`, true when a client cancellation notification was
+  attributed to this call before response dispatch, false when none was
+  observed for its known generation, or null when attribution is unavailable.
+  A token cancelled by rmcp alone never proves a client notification. An
+  attributed notification survives later duplicate-ID or saturation loss;
 - `handler_total_ms`;
+- `receive_ms` when known and `handler_start_ms`, relative to this trace's
+  monotonic origin;
 - `count`, `total_ms` and `max_ms` for each of:
   - `store_open_total`: opening a connection, schema checks included; a read
     word, `next` with peek included, opens its own read-only connection per
@@ -2596,9 +2601,69 @@ The line carries:
     ends in the lock or in the 5-second busy timeout;
   - `commit`, which counts every `COMMIT`, read transactions' included;
   - `receipt_serialize`;
+  - `read_snapshot`, including nested and reused `work_read_snapshot` calls,
+    but not every direct `on_one_snapshot` caller;
+  - `sqlite_statement`, every statement covered by the existing profile
+    callback, including writes and transaction statements. Profiling begins
+    after store admission: schema-preflight work remains in `store_open_total`;
+  - `backup_reminder`, project-home lookup and local backup-record reads,
+    including an early return with no reminder;
 - `wire_encode_send_inclusive_ms`, the encode, write and flush of the
   response together, for `complete` and `send_failed`;
-- the `evicted`, `unmatched_sends` and `dropped_lines` counters.
+- `dispatch_send_inclusive_ms`, which also includes scheduling between
+  dispatch and the send future's first poll;
+- `unmatched_sends`, `unassociated`, `association_disabled`, `dropped_lines`
+  and the retained `evicted` counter (this implementation sacrifices
+  association on saturation rather than evicting a slot for reuse).
+  `unassociated` counts lossy observations, not calls: a string-ID call can
+  increment it at receive, handler start and settlement.
+
+`uncorrelated_reason` reports the latest loss reason available to that
+observation. A later cancellation, token cancellation or duplicate can replace
+an earlier reason; changing this label never clears lifecycle ambiguity.
+
+The lifecycle, settled-summary, cancellation and quarantine state share at most
+256 fixed-size slots. Numeric keys and static labels are retained, never raw
+string IDs. Cancellation of an observed live entry and duplicate IDs quarantine
+a key; an unknown or already-dispatched ID adds no cancellation tombstone. A
+new request cannot clear quarantine. A cancelled entry is retired only when
+its original, single-generation handler has settled and its response dispatch
+is observed, with no duplicate, unowned invocation or other unsafe lifecycle.
+Any held summary is emitted at that dispatch as `uncorrelated`, with its
+client-cancellation fact preserved and its call sequence and send durations
+unavailable. If settlement already emitted the summary, dispatch emits no
+second summary. The send attempt can then finish or be dropped without
+claiming a later request that reuses the ID.
+
+This reclaims only observed dispatched cancellations. In rmcp's ordinary
+response loop, a client cancellation removes the request token and its
+response can be dropped before transport dispatch. Such an entry remains
+quarantined; the trace cannot prove a response was handed over. Duplicate,
+token-cancelled-before-start and missing-receive entries also remain
+quarantined. If a tombstone cannot fit, or the sequence is exhausted,
+association stays disabled for the rest of that process, even after later
+dispatches. A normal send captures its immutable instance synchronously at
+dispatch; a later ID reuse, close or cancellation cannot reassign completion.
+
+An enabled process emits an `engram_mcp_trace_instance: 1` descriptor with a
+random local `trace_instance`, PID and monotonic origin offset. Separate
+`engram_mcp_call_stage: 1` lines carry that instance, the sanitized ID and tool,
+safe `call_seq` or an explicit unavailable reason, and `server_elapsed_ms` for
+`receive`, `handler_start`, `handler_settle`, `send_dispatch` and `send_finish`.
+`send_finish` includes `send_succeeded`; cancellation and dropped sends may add
+`cancel_requested` and `send_dropped`. These are observed stages, not a claim
+that every call reaches every stage. Trace tokens are local correlation, not
+authenticated identity.
+
+`receive` observes a decoded message when the transport future is polled,
+not raw bytes reaching the OS pipe. `send_finish` observes the send future's
+result, not client receipt. Stages can narrow handler scheduling, handler work
+and response dispatch/send delay. Delay before decoded receipt may still be
+client delivery, input/decode or server runtime starvation. Client write
+completion alone does not distinguish them. Correlate client and server
+records without subtracting unrelated monotonic clocks; otherwise leave the
+cause unknown. A synchronous stall interrupted before its guard/profile
+finishes may have only a `handler_start` record, not a phase duration.
 
 Records are written by their own thread through a bounded queue, never on a
 request or send path. A host that stops reading stderr therefore costs
@@ -2606,6 +2671,10 @@ dropped lines, counted in `dropped_lines`, and never a stalled server. Read
 stderr while the trace is on. Close waits up to a second for queued lines;
 lines queued at or after close are best effort, since the process may exit
 before they are written.
+The counter records queue submission failures, not sink write/flush failures;
+zero drops does not establish complete capture. Missing lines remain unknown.
+The new synchronous hooks add only the existing TLS-active check when tracing
+is disabled: no timestamp, allocation, profile registration or writer is added.
 
 The same opt-in trace also writes a separate `engram_mcp_shutdown_trace: 1`
 record at each observed shutdown boundary: `input_ended` (the transport
@@ -2646,8 +2715,8 @@ timing line when the call is slow, or says why there is none. A slow call
 whose record has not arrived yet prints `unavailable (record not yet
 received)` at once, and its record follows when it arrives; one that never
 comes reads `unavailable (no record before close)` when the client closes. A
-record in a state that did not time the whole call (`evicted`, `incomplete`
-or `cancelled`) reads `unavailable (record STATE)` followed by its fields, so
+record in a state that did not time the whole call (`incomplete`, `uncorrelated`
+or `send_dropped`) reads `unavailable (record STATE)` followed by its fields, so
 it never passes for a fast call; only `complete` and `send_failed` records
 are printed as the call's timing.
 

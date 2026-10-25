@@ -58,8 +58,8 @@ function timingLine(kind, name, elapsed, bytes) {
   return `MCP timing: ${kind}=${JSON.stringify(name)} elapsed_ms=${elapsed.toFixed(1)} soft_threshold_ms=${SOFT_TIMING_MS} wal_bytes=${bytes ?? "unavailable"} (sampled floor; close may truncate WAL)`;
 }
 
-// The server's opt-in phase trace: one stderr JSON record per tool call,
-// correlated by the call's numeric request id. A bounded number are kept.
+// The opt-in trace emits lifecycle stages and a settled-handler summary.
+// Only safely correlated summaries are indexed, within a fixed bound.
 const PHASE_TRACE_ENV = "ENGRAM_MCP_PHASE_TRACE";
 const MAX_PHASE_RECORDS = 256;
 
@@ -68,8 +68,8 @@ const PHASE_TIMED_STATES = new Set(["complete", "send_failed"]);
 
 /**
  * The line printed beside a slow call: its phase record, or why there is
- * none. A record that did not time the whole call, such as an evicted,
- * incomplete or cancelled one, reads as unavailable, so it never passes for
+ * none. A record that did not time the whole call, such as an incomplete,
+ * uncorrelated or send_dropped one, reads as unavailable, so it never passes for
  * a fast call; its fields follow for diagnosis.
  */
 function phaseTraceLine(id, record, why = "no record received") {
@@ -143,6 +143,9 @@ class McpClient {
     this.phaseTrace = phaseTrace;
     this.phaseRecords = new Map();
     this.phaseLines = 0;
+    this.callStages = new Map();
+    this.stageLines = 0;
+    this.traceInstance = undefined;
     // Slow calls whose record had not arrived when they settled.
     this.awaitingPhase = new Set();
     // The calls at or above this many milliseconds get a phase line.
@@ -232,6 +235,30 @@ class McpClient {
       const line = this.stderrBuffer.slice(0, newline + 1);
       this.stderrBuffer = this.stderrBuffer.slice(newline + 1);
       let record;
+      if (line.startsWith('{"') && (line.includes('"engram_mcp_call_stage"') || line.includes('"engram_mcp_trace_instance"'))) {
+        try { record = JSON.parse(line); } catch { record = undefined; }
+        if (record?.engram_mcp_trace_instance === 1) {
+          this.traceInstance = record.trace_instance;
+          console.error(`MCP trace instance: ${line.trimEnd()}`);
+          continue;
+        }
+        if (record?.engram_mcp_call_stage === 1) {
+          this.stageLines = (this.stageLines ?? 0) + 1;
+          console.error(`MCP call stage: ${line.trimEnd()}`);
+          // Only the explicit safe association is indexed. Raw unassociated
+          // rows remain in the log, never joined by a guessed wire ID.
+          if (record.correlation === "numeric" && Number.isSafeInteger(record.call_seq)) {
+            this.callStages ??= new Map();
+            const key = `${record.trace_instance}:${record.call_seq}`;
+            const rows = this.callStages.get(key) ?? [];
+            if (rows.length < 8) rows.push(record);
+            this.callStages.set(key, rows);
+            if (this.callStages.size > MAX_PHASE_RECORDS) this.callStages.delete(this.callStages.keys().next().value);
+          }
+          continue;
+        }
+        record = undefined;
+      }
       if (line.startsWith('{"') && line.includes('"engram_mcp_shutdown_trace"')) {
         try { record = JSON.parse(line); } catch { record = undefined; }
         if (record && this.closeObservation?.shutdownMilestone(record)) {
@@ -858,7 +885,7 @@ test("a slow call prints its phase record, or says why there is none", () => {
   const failed = { engram_mcp_phase_trace: 1, id: 7, state: "send_failed" };
   assert.equal(phaseTraceLine(7, failed), `MCP phase trace: id=7 ${JSON.stringify(failed)}`);
   // A record that did not time the whole call never passes for a fast one.
-  for (const state of ["evicted", "incomplete", "cancelled"]) {
+  for (const state of ["evicted", "incomplete", "cancelled", "uncorrelated", "send_dropped"]) {
     const partial = { engram_mcp_phase_trace: 1, id: 7, state, handler_total_ms: 1 };
     assert.equal(phaseTraceLine(7, partial), `MCP phase trace: id=7 unavailable (record ${state}) ${JSON.stringify(partial)}`);
   }
@@ -988,6 +1015,7 @@ test("the opt-in phase trace correlates every call and an unset server writes no
     const added = await client.call("add", { title: "Traced work", acceptance: ["traced"] });
     const work_ref = receipt(added).work.short_ref;
     await client.call("claim", { work_ref });
+    await client.call("next", { peek: true });
     const elapsed = [];
     for (let index = 0; index < 10; index++) {
       const started = performance.now();
@@ -1016,6 +1044,16 @@ test("the opt-in phase trace correlates every call and an unset server writes no
       assert.equal(record.state, "complete");
       assert.equal(typeof record.handler_total_ms, "number");
       assert.equal(typeof record.wire_encode_send_inclusive_ms, "number");
+      const stages = [...traced.callStages.values()].find((rows) => rows[0].id === id);
+      assert.ok(stages, `no stage records for call ${id}`);
+      assert.deepEqual(stages.map((row) => row.stage), ["receive", "handler_start", "handler_settle", "send_dispatch", "send_finish"]);
+      assert.ok(stages.every((row) => row.call_seq === record.call_seq && row.trace_instance === traced.traceInstance));
+      assert.ok(stages.every((row, index) => index === 0 || stages[index - 1].server_elapsed_ms <= row.server_elapsed_ms));
+      for (const row of stages) {
+        const stageLine = JSON.stringify(row);
+        assert.ok(Buffer.byteLength(stageLine) <= 4096, stageLine);
+        assert.ok(!stageLine.includes(engramHome) && !stageLine.includes("Traced work"), stageLine);
+      }
       const line = JSON.stringify(record);
       assert.ok(Buffer.byteLength(line) <= 4096, line);
       assert.ok(!line.includes(engramHome) && !line.includes("Traced work"), line);
@@ -1027,6 +1065,10 @@ test("the opt-in phase trace correlates every call and an unset server writes no
     assert.ok(write.begin_immediate.count >= 1, JSON.stringify(write));
     assert.ok(write.commit.count >= 1, JSON.stringify(write));
     assert.equal(traced.phaseRecords.get(on.last).tool, "show");
+    const peek = [...traced.phaseRecords.values()].find((record) => record.tool === "next");
+    assert.ok(peek.read_snapshot.count >= 1, JSON.stringify(peek));
+    assert.ok(peek.sqlite_statement.count >= 1, JSON.stringify(peek));
+    assert.equal(peek.backup_reminder.count, 1);
     assert.doesNotMatch(traced.stderr, /engram_mcp_phase_trace/u);
 
     const untraced = new McpClient(engramHome, "trace-off", undefined, "trace-off", [], { phaseTrace: false });
@@ -1049,6 +1091,8 @@ test("the opt-in phase trace correlates every call and an unset server writes no
     await second.close();
     await untraced.close();
     assert.equal(untraced.phaseLines, 0);
+    assert.equal(untraced.stageLines, 0);
+    assert.equal(untraced.traceInstance, undefined);
     assert.doesNotMatch(untraced.stderr, /engram_mcp_phase_trace/u);
     // A comparison report, not a benchmark. That an unset server adds no
     // work rests on its structure, not on these numbers: it installs no

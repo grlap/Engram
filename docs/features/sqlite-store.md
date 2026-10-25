@@ -365,10 +365,12 @@ relational bindings, but `--repair-projections` never reconstructs them from
 
 Ordinary existing-item catalog refresh locates FTS rows with a quoted MATCH on
 the item's immutable short reference, filters by exact work UUID, and deletes
-the matching rowids before inserting the replacement. This is index-assisted
-lookup, O(H) in rows mentioning the ref, not a constant-time or bounded locator:
-other items may mention the same ref. If no matching UUID row is found, the
-existing UUID-scan deletion remains the fallback, O(N) in the catalog size.
+the matching rowids before inserting the replacement. This index-assisted
+lookup depends on the reference's trigram posting lists and candidate rows,
+with worst-case O(N) in the catalog size; other items may mention the same
+reference. It is not a constant-time or bounded locator. If no matching UUID
+row is found, the existing UUID-scan deletion remains the fallback, O(N) in
+the catalog size.
 That includes missing rows and a row whose text lost its short reference.
 Creating a root or decomposing children mints fresh work UUIDs and inserts their
 FTS rows directly, without looking up or deleting prior FTS rows.

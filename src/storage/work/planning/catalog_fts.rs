@@ -13,8 +13,10 @@ pub(super) fn remove_prior_rows(
     item: &WorkItem,
 ) -> Result<(), StoreError> {
     // The immutable reference is already part of the stored search text.
-    // Other items may mention it: MATCH costs O(H) in those candidate rows,
-    // and the exact UUID predicate prevents deleting their rows.
+    // MATCH cost depends on trigram posting lists and candidate rows, with
+    // worst-case O(N) in catalog size. Other items may mention the reference;
+    // the exact UUID predicate prevents deleting their rows. This is not a
+    // constant-time or bounded locator.
     let phrase = format!(
         "\"{}\"",
         normalize_work_catalog_key(&item.short_ref).replace('"', "\"\"")

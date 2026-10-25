@@ -2,6 +2,9 @@ use super::*;
 use crate::domain::{ProjectId, SessionId};
 use crate::verbs::{AddInput, AgentVerbs};
 use chrono::{TimeZone, Utc};
+use std::collections::VecDeque;
+
+mod call_timeline;
 
 fn at(second: i64) -> chrono::DateTime<Utc> {
     Utc.timestamp_opt(1_790_000_000 + second, 0)
@@ -147,6 +150,9 @@ fn a_traced_call_times_the_store_and_returns_the_same_result() {
     }));
     assert_eq!(peeked.store_open.count, 1, "{peeked:?}");
     assert!(peeked.commit.count >= 1, "{peeked:?}");
+    assert!(peeked.read_snapshot.count >= 1, "{peeked:?}");
+    assert!(peeked.sqlite_statement.count >= 1, "{peeked:?}");
+    assert_eq!(peeked.backup_reminder.count, 1, "{peeked:?}");
 }
 
 // A writer holding the lock shows up in begin_immediate, not elsewhere: the
@@ -265,7 +271,16 @@ fn some_phases() -> Phases {
 }
 
 fn settle(trace: &PhaseTrace, id: i64, tool: &str) {
-    trace.handler_settled(numeric(id), tool, Duration::from_millis(1), some_phases());
+    if !trace.pending.lock().unwrap().observed(&numeric(id)) {
+        trace.received(&numeric(id), tool);
+    }
+    let ticket = trace.handler_started(&numeric(id), tool, || false);
+    trace.handler_settled(ticket, tool, Duration::from_millis(1), &some_phases());
+}
+
+fn send(trace: &PhaseTrace, id: i64, delivered: bool) {
+    let data = trace.dispatching(&numeric(id));
+    super::call::ended(trace, data, Some(Instant::now()), Some(delivered));
 }
 
 fn states(lines: &[serde_json::Value]) -> Vec<(serde_json::Value, serde_json::Value)> {
@@ -275,185 +290,142 @@ fn states(lines: &[serde_json::Value]) -> Vec<(serde_json::Value, serde_json::Va
         .collect()
 }
 
-// The pending records are bounded: the oldest is written as evicted and
-// counted, a send with no record is counted, and close writes what is left as
-// incomplete. Every settled call ends in exactly one line.
+// Saturation sacrifices association, never a capacity bound or an honest result.
 #[test]
 fn every_record_ends_in_one_line_and_the_wait_is_bounded() {
     let (trace, captured) = captured_trace();
     for id in 0..300 {
         settle(&trace, id, "note");
+        if id % 50 == 49 {
+            trace.flush(Duration::from_secs(5));
+        }
     }
+    assert_eq!(trace.pending.lock().unwrap().retained(), MAX_PENDING);
     assert_eq!(trace.pending_len(), MAX_PENDING);
-    // The evicted call's response finds no record.
-    trace.dispatching(&numeric(0));
-    trace.sent(&numeric(0), Duration::from_millis(1), true);
-    trace.dispatching(&numeric(299));
-    trace.sent(&numeric(299), Duration::from_millis(1), true);
-    assert_eq!(trace.pending_len(), MAX_PENDING - 1);
+    assert!(trace.pending.lock().unwrap().disabled);
+    send(&trace, 299, true);
     trace.closed();
     assert_eq!(trace.pending_len(), 0);
     let lines = written(&trace, &captured);
-    assert_eq!(lines.len(), 300, "one line for each settled call");
-    let state = |id: i64| {
+    assert_eq!(
+        lines.len(),
+        300,
+        "one final record for every settled handler"
+    );
+    assert!(lines.iter().all(|line| line["state"] == "uncorrelated"));
+    assert!(
         lines
             .iter()
-            .find(|line| line["id"] == id)
-            .map(|line| line["state"].clone())
-    };
-    assert_eq!(state(0), Some(serde_json::json!("evicted")));
-    assert_eq!(state(43), Some(serde_json::json!("evicted")));
-    assert_eq!(state(299), Some(serde_json::json!("complete")));
-    assert_eq!(state(44), Some(serde_json::json!("incomplete")));
-    let last = lines.last().expect("a line");
-    assert_eq!(last["evicted"], 300 - MAX_PENDING as u64);
-    assert_eq!(last["unmatched_sends"], 1);
-    assert_eq!(last["dropped_lines"], 0);
+            .all(|line| line["wire_encode_send_inclusive_ms"].is_null())
+    );
+    assert!(lines.iter().all(|line| line["call_seq"].is_null()));
 }
 
-// A call its client cancelled before its response was handed over is only
-// marked: rmcp may still send that response while it drains at shutdown. At
-// close a marked call never sent reads cancelled, and a call settling after
-// close is written at once. A failed send is never reported as delivered.
 #[test]
 fn cancelled_late_and_failed_calls_are_written_with_their_state() {
     let (trace, captured) = captured_trace();
+    trace.received(&numeric(1), "note");
+    let ticket = trace.handler_started(&numeric(1), "note", || false);
     trace.client_cancelled(&numeric(1));
-    settle(&trace, 1, "note");
-    assert_eq!(trace.pending_len(), 1, "a cancelled call waits for close");
+    trace.handler_settled(ticket, "note", Duration::ZERO, &Phases::default());
     settle(&trace, 2, "gate");
-    trace.dispatching(&numeric(2));
-    trace.sent(&numeric(2), Duration::from_millis(1), false);
+    send(&trace, 2, false);
     trace.closed();
-    trace.client_cancelled(&numeric(4));
     settle(&trace, 3, "done");
-    settle(&trace, 4, "show");
-    assert_eq!(trace.pending_len(), 0, "a settle after close does not wait");
     let lines = written(&trace, &captured);
     assert_eq!(
         states(&lines),
         vec![
+            (serde_json::json!(1), serde_json::json!("uncorrelated")),
             (serde_json::json!(2), serde_json::json!("send_failed")),
-            (serde_json::json!(1), serde_json::json!("cancelled")),
-            (serde_json::json!(3), serde_json::json!("incomplete")),
-            (serde_json::json!(4), serde_json::json!("cancelled")),
-        ]
-    );
-    assert!(lines[0]["wire_encode_send_inclusive_ms"].is_number());
-    assert_eq!(lines[0]["cancel_requested"], false);
-    assert_eq!(
-        lines[1]["wire_encode_send_inclusive_ms"],
-        serde_json::Value::Null
-    );
-    assert_eq!(lines[1]["cancel_requested"], true);
-}
-
-// A cancel reaching the server after the handler settled but before its
-// response was handed over marks the record, so it never reads incomplete:
-// unsent at close, it reads cancelled. When rmcp's shutdown drain sends the
-// response after all, the record completes as sent, with the cancel noted.
-#[test]
-fn a_cancel_before_dispatch_reads_cancelled_unless_the_response_is_sent() {
-    let (trace, captured) = captured_trace();
-    settle(&trace, 1, "note");
-    settle(&trace, 2, "show");
-    trace.client_cancelled(&numeric(1));
-    assert_eq!(trace.pending_len(), 2, "the cancelled record waits");
-    settle(&trace, 5, "gate");
-    trace.client_cancelled(&numeric(5));
-    trace.dispatching(&numeric(5));
-    trace.sent(&numeric(5), Duration::from_millis(1), true);
-    trace.closed();
-    let lines = written(&trace, &captured);
-    assert_eq!(
-        states(&lines),
-        vec![
-            (serde_json::json!(5), serde_json::json!("complete")),
-            (serde_json::json!(1), serde_json::json!("cancelled")),
-            (serde_json::json!(2), serde_json::json!("incomplete")),
+            (serde_json::json!(3), serde_json::json!("uncorrelated")),
         ]
     );
     assert_eq!(lines[0]["cancel_requested"], true);
-    assert_eq!(lines[0]["unmatched_sends"], 0);
-    assert_eq!(lines[2]["cancel_requested"], false);
+    assert!(lines[0]["wire_encode_send_inclusive_ms"].is_null());
+    assert!(lines[1]["wire_encode_send_inclusive_ms"].is_number());
 }
 
-// Only a client's cancel marks a call cancelled. rmcp also cancels a request
-// token on its normal path, just before it hands the response over, and other
-// calls may settle in between; none of that is taken for a cancel. A cancel
-// arriving after the response was handed over leaves it complete, and the next
-// request reusing that id clears it, so the new call waits for its own send.
+// After cancel, rmcp may drop or drain a response. A wire ID alone cannot
+// prove which generation it answers; do not manufacture complete timing.
+#[test]
+fn a_cancel_before_dispatch_is_explicitly_uncorrelated() {
+    let (trace, captured) = captured_trace();
+    settle(&trace, 5, "gate");
+    trace.client_cancelled(&numeric(5));
+    send(&trace, 5, true);
+    trace.closed();
+    let lines = written(&trace, &captured);
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0]["state"], "uncorrelated");
+    assert_eq!(lines[0]["uncorrelated_reason"], "cancel_requested");
+    assert_eq!(lines[0]["cancel_requested"], true);
+    assert!(lines[0]["wire_encode_send_inclusive_ms"].is_null());
+}
+
+// A send already owns its old generation. A later cancel/reuse cannot
+// reassign that guard or tombstone an already-dispatched ID.
 #[test]
 fn a_normal_response_is_never_taken_for_cancelled() {
     let (trace, captured) = captured_trace();
     settle(&trace, 7, "note");
-    settle(&trace, 8, "show");
-    settle(&trace, 9, "show");
-    trace.dispatching(&numeric(7));
+    let sending = trace.dispatching(&numeric(7));
     trace.client_cancelled(&numeric(7));
-    settle(&trace, 10, "show");
-    trace.sent(&numeric(7), Duration::from_millis(1), true);
+    super::call::ended(&trace, sending, Some(Instant::now()), Some(true));
     trace.requested(&numeric(7));
     settle(&trace, 7, "gate");
-    assert_eq!(trace.pending_len(), 4, "8, 9, 10 and the new 7 wait");
+    trace.closed();
     let lines = written(&trace, &captured);
-    assert_eq!(
-        states(&lines),
-        vec![(serde_json::json!(7), serde_json::json!("complete"))]
-    );
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["state"], "complete");
     assert_eq!(lines[0]["tool"], "note");
     assert_eq!(lines[0]["cancel_requested"], false);
+    assert_eq!(lines[1]["state"], "incomplete");
+    assert_eq!(lines[1]["tool"], "gate");
+    assert!(lines[1]["call_seq"].is_number());
 }
 
-// Cancels naming no waiting call are remembered within the same bound as the
-// records, so cancels for requests that were no tool call cannot grow it.
 #[test]
 fn remembered_cancels_are_bounded() {
     let (trace, captured) = captured_trace();
     for id in 0..300 {
+        trace.received(&numeric(id), "next");
         trace.client_cancelled(&numeric(id));
     }
-    assert_eq!(
-        trace.pending.lock().expect("pending").cancels.len(),
-        MAX_PENDING
-    );
-    // The oldest were let go: that call is no longer marked.
+    assert_eq!(trace.pending.lock().unwrap().retained(), MAX_PENDING);
+    assert!(trace.pending.lock().unwrap().disabled);
     settle(&trace, 0, "note");
     settle(&trace, 299, "note");
     trace.closed();
     let lines = written(&trace, &captured);
-    assert_eq!(
-        states(&lines),
-        vec![
-            (serde_json::json!(0), serde_json::json!("incomplete")),
-            (serde_json::json!(299), serde_json::json!("cancelled")),
-        ]
+    assert_eq!(lines.len(), 2);
+    assert!(lines.iter().all(|line| line["state"] == "uncorrelated"));
+    assert!(
+        lines
+            .iter()
+            .all(|line| line["association_disabled"] == true)
     );
 }
 
-// A reused request id completes the newest record carrying it, so a send
-// never pairs with an older call's phases.
+// The old newest-ID policy guessed under either response order. Both
+// generations must now remain unassociated until the process ends.
 #[test]
-fn a_reused_id_completes_the_newest_record() {
+fn a_reused_id_never_completes_the_newest_record_by_guessing() {
     let (trace, captured) = captured_trace();
-    trace.handler_settled(
-        numeric(9),
-        "note",
-        Duration::from_millis(100),
-        Phases::default(),
-    );
-    trace.handler_settled(
-        numeric(9),
-        "gate",
-        Duration::from_millis(1),
-        Phases::default(),
-    );
-    trace.dispatching(&numeric(9));
-    trace.sent(&numeric(9), Duration::from_millis(1), true);
+    settle(&trace, 9, "note");
+    trace.requested(&numeric(9));
+    settle(&trace, 9, "gate");
+    send(&trace, 9, true);
+    trace.closed();
     let lines = written(&trace, &captured);
-    assert_eq!(lines.len(), 1);
-    assert_eq!(lines[0]["tool"], "gate");
-    assert_eq!(trace.pending_len(), 1);
+    assert_eq!(lines.len(), 2);
+    assert!(lines.iter().all(|line| line["state"] == "uncorrelated"));
+    assert!(
+        lines
+            .iter()
+            .all(|line| line["uncorrelated_reason"] == "ambiguous_id")
+    );
+    assert!(lines.iter().all(|line| line["call_seq"].is_null()));
 }
 
 /// A sink that blocks every write until it is opened, as a stderr nobody
@@ -498,8 +470,7 @@ fn an_undrained_sink_drops_and_counts_lines_without_blocking() {
     let started = Instant::now();
     for id in 0..40 {
         settle(&trace, id, "note");
-        trace.dispatching(&numeric(id));
-        trace.sent(&numeric(id), Duration::from_millis(1), true);
+        send(&trace, id, true);
     }
     assert!(
         started.elapsed() < Duration::from_secs(2),
@@ -518,19 +489,20 @@ fn an_undrained_sink_drops_and_counts_lines_without_blocking() {
 #[test]
 fn a_record_is_bounded_and_carries_no_caller_text() {
     let record = HandlerRecord {
-        id: NumberOrString::String("SELECT secret FROM C:\\private".into()),
+        ticket: super::call::Ticket {
+            id: None,
+            sequence: None,
+            received: None,
+            started: Duration::ZERO,
+            loss: Some("string_id"),
+        },
         tool: "unknown",
         handler: Duration::from_millis(12),
         phases: some_phases(),
-        dispatched: false,
-        cancel_requested: false,
+        cancel_requested: Some(false),
+        dispatch_send: None,
     };
-    let line = render(
-        &record,
-        Outcome::Complete,
-        Some(Duration::from_millis(2)),
-        Counters::default(),
-    );
+    let line = render(&record, Outcome::Uncorrelated, None, Counters::default());
     assert!(line.len() <= MAX_RECORD_BYTES);
     assert!(
         !line.contains("SELECT") && !line.contains("private"),
@@ -539,16 +511,14 @@ fn a_record_is_bounded_and_carries_no_caller_text() {
     let value: serde_json::Value = serde_json::from_str(&line).expect("one JSON line");
     assert_eq!(value["correlation"], "unavailable");
     assert_eq!(value["id"], serde_json::Value::Null);
-    assert_eq!(value["state"], "complete");
+    assert_eq!(value["state"], "uncorrelated");
     assert_eq!(value["begin_immediate"]["count"], 1);
     assert_eq!(value["tool"], "unknown");
 
-    let (trace, _) = captured_trace();
-    trace.handler_settled(numeric(1), "drop table", Duration::ZERO, Phases::default());
-    assert_eq!(
-        trace.pending.lock().expect("pending").records[0].tool,
-        "unknown"
-    );
+    let (trace, captured) = captured_trace();
+    settle(&trace, 1, "drop table");
+    trace.closed();
+    assert_eq!(written(&trace, &captured)[0]["tool"], "unknown");
 }
 
 /// A transport whose send takes `delay`, or fails, standing in for a pipe.
@@ -795,9 +765,8 @@ fn client_message(value: serde_json::Value) -> RxJsonRpcMessage<RoleServer> {
 
 // The transport passes client messages through unchanged and reads a client's
 // cancel as rmcp's serve loop is about to handle it: a call settled but not
-// yet answered, or one still running, is marked. A response sent all the same
-// completes its record; one never sent reads cancelled at close. A request
-// reusing an id clears an earlier cancel of it.
+// yet answered, or one still running, is quarantined. The wire response is
+// unchanged, but neither cancellation nor reuse can invent send correlation.
 #[test]
 fn the_transport_reads_a_client_cancel_on_receive() {
     let (trace, captured) = captured_trace();
@@ -845,27 +814,43 @@ fn the_transport_reads_a_client_cancel_on_receive() {
     );
     assert_eq!(trace.pending_len(), 1, "the settled call is only marked");
     block_on(transport.send(response(3))).expect("send");
+    assert_eq!(
+        trace.pending_len(),
+        0,
+        "the cancelled summary was released at dispatch"
+    );
+    assert_eq!(
+        written(&trace, &captured).len(),
+        1,
+        "no close is needed for its summary"
+    );
     block_on(transport.receive()).expect("cancel 4");
     settle(&trace, 4, "gate");
-    // A cancel for 5 is cleared by the next request with that id.
+    // Reusing 5 cannot clear its quarantine.
     for _ in 0..3 {
         block_on(transport.receive()).expect("message");
     }
     settle(&trace, 5, "done");
-    assert_eq!(trace.pending_len(), 2, "4 and the new 5 wait");
+    assert_eq!(trace.pending_len(), 1, "only the uncancelled 4 waits");
     assert!(block_on(transport.receive()).is_none());
     block_on(transport.close()).expect("close");
     let lines = written(&trace, &captured);
     assert_eq!(
         states(&lines),
         vec![
-            (serde_json::json!(3), serde_json::json!("complete")),
-            (serde_json::json!(4), serde_json::json!("cancelled")),
-            (serde_json::json!(5), serde_json::json!("incomplete")),
+            (serde_json::json!(3), serde_json::json!("uncorrelated")),
+            (serde_json::json!(5), serde_json::json!("uncorrelated")),
+            (serde_json::json!(4), serde_json::json!("incomplete")),
         ]
     );
     assert_eq!(lines[0]["cancel_requested"], true);
+    assert!(lines[1]["cancel_requested"].is_null());
     assert_eq!(lines[2]["cancel_requested"], false);
+    assert!(
+        lines
+            .iter()
+            .all(|line| line["wire_encode_send_inclusive_ms"].is_null())
+    );
 }
 
 /// A transport that says when its input ended: rmcp's serve loop breaks in
@@ -873,6 +858,7 @@ fn the_transport_reads_a_client_cancel_on_receive() {
 struct EndSignal<T> {
     inner: T,
     ended: Arc<tokio::sync::Notify>,
+    trace: Arc<PhaseTrace>,
 }
 
 impl<T: Transport<RoleServer>> Transport<RoleServer> for EndSignal<T> {
@@ -882,6 +868,13 @@ impl<T: Transport<RoleServer>> Transport<RoleServer> for EndSignal<T> {
         &mut self,
         item: TxJsonRpcMessage<RoleServer>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
+        if matches!(&item, JsonRpcMessage::Response(response) if response.id == numeric(2)) {
+            assert_eq!(
+                self.trace.pending.lock().unwrap().retained(),
+                0,
+                "the drain's observed cancelled response retires its slot before inner.send"
+            );
+        }
         self.inner.send(item)
     }
 
@@ -907,6 +900,7 @@ impl<T: Transport<RoleServer>> Transport<RoleServer> for EndSignal<T> {
 /// server's traced call does.
 struct HeldUntilEnd {
     trace: Arc<PhaseTrace>,
+    started: Arc<tokio::sync::Notify>,
     cancel_seen: Arc<tokio::sync::Notify>,
     ended: Arc<tokio::sync::Notify>,
 }
@@ -925,14 +919,18 @@ impl rmcp::ServerHandler for HeldUntilEnd {
         request: rmcp::model::CallToolRequestParams,
         context: rmcp::service::RequestContext<RoleServer>,
     ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
+        let ticket = self
+            .trace
+            .handler_started(&context.id, &request.name, || context.ct.is_cancelled());
+        self.started.notify_one();
         context.ct.cancelled().await;
         self.cancel_seen.notify_one();
         self.ended.notified().await;
         self.trace.handler_settled(
-            context.id.clone(),
+            ticket,
             &request.name,
             Duration::from_millis(1),
-            Phases::default(),
+            &Phases::default(),
         );
         Ok(rmcp::model::CallToolResult::success(Vec::new()).into())
     }
@@ -950,20 +948,22 @@ async fn write_line(writer: &mut (impl tokio::io::AsyncWrite + Unpin), value: &s
 
 // Over rmcp's real serve loop: rmcp drains the responses still queued after
 // its input ends straight to the transport, a cancelled call's included. A
-// call its client cancelled, whose handler finishes during that drain, has
-// its response delivered, so its record reads complete with the cancel noted,
-// never cancelled beside an unmatched send.
+// call its client cancelled still has its response delivered. Because wire
+// IDs alone cannot prove which cancelled generation it answers, its trace
+// stays uncorrelated instead of asserting a completed association.
 #[test]
-fn a_cancelled_call_drained_after_input_ends_reads_complete() {
+fn a_cancelled_call_drained_after_input_ends_keeps_response_and_loses_correlation() {
     use rmcp::ServiceExt as _;
     use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
 
     let (trace, captured) = captured_trace();
     let trace = Arc::new(trace);
     let ended = Arc::new(tokio::sync::Notify::new());
+    let started = Arc::new(tokio::sync::Notify::new());
     let cancel_seen = Arc::new(tokio::sync::Notify::new());
     let handler = HeldUntilEnd {
         trace: Arc::clone(&trace),
+        started: Arc::clone(&started),
         cancel_seen: Arc::clone(&cancel_seen),
         ended: Arc::clone(&ended),
     };
@@ -983,6 +983,7 @@ fn a_cancelled_call_drained_after_input_ends_reads_complete() {
             EndSignal {
                 inner: transport,
                 ended,
+                trace: Arc::clone(&trace),
             },
             Arc::clone(&trace),
         );
@@ -1028,6 +1029,9 @@ fn a_cancelled_call_drained_after_input_ends_reads_complete() {
             }),
         )
         .await;
+        tokio::time::timeout(bound, started.notified())
+            .await
+            .expect("the handler owns its generation before client cancellation");
         write_line(
             &mut writer,
             &serde_json::json!({
@@ -1063,10 +1067,12 @@ fn a_cancelled_call_drained_after_input_ends_reads_complete() {
     let lines = written(&trace, &captured);
     assert_eq!(
         states(&lines),
-        vec![(serde_json::json!(2), serde_json::json!("complete"))]
+        vec![(serde_json::json!(2), serde_json::json!("uncorrelated"))]
     );
     assert_eq!(lines[0]["cancel_requested"], true);
     assert_eq!(lines[0]["unmatched_sends"], 1, "only initialize's");
+    assert!(lines[0]["wire_encode_send_inclusive_ms"].is_null());
+    assert!(lines[0]["call_seq"].is_null());
 }
 
 fn verbs_on(database: &std::path::Path, session: &str) -> AgentVerbs {

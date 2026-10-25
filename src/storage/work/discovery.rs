@@ -217,6 +217,7 @@ impl SqliteStore {
     ) -> Result<T, StoreError> {
         // The snapshot is taken on this store's own connection, so `read`
         // keeps using the store rather than the connection handed back.
+        let _phase = crate::phase_trace::span(crate::phase_trace::Phase::ReadSnapshot);
         on_one_snapshot(&self.connection, |_| read(self))
     }
 

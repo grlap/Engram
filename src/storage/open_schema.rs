@@ -75,9 +75,9 @@ impl SqliteStore {
         Self::open_with_host_path_identity(path, Some(HostPathPolicy::host_default()))
     }
 
-    /// Times this connection's `BEGIN IMMEDIATE` and `COMMIT` statements
-    /// into the phase trace of the call running them. Only an open inside a
-    /// traced MCP call registers it; the callback records a statement
+    /// Times this connection's profiled statements, with separate summaries
+    /// for `BEGIN IMMEDIATE` and `COMMIT`, into the running call's trace.
+    /// Only an open inside a traced MCP call registers it; it records a statement
     /// category and its duration, never the statement.
     fn enable_phase_profile(&self) {
         self.connection.trace_v2(
