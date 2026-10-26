@@ -73,6 +73,7 @@ mod root_read;
 mod root_state;
 pub(crate) use root_read::RootReadScope;
 mod schema;
+pub(crate) mod search_budget;
 mod session;
 mod writer_admission;
 pub(crate) use session::PendingWorkProtocolAttempt;

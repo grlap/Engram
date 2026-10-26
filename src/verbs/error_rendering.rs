@@ -150,6 +150,14 @@ pub fn store_error_value(error: &StoreError) -> Value {
                 "remedy": "cancel the handoff offer, or let it be accepted or expire before retrying",
             })
         }
+        StoreError::SearchBudgetExhausted {
+            dimension,
+            limit,
+            used_at_least,
+        } => json!({
+            "dimension": dimension, "limit": limit, "used_at_least": used_at_least,
+            "remedy": "narrow the search filters or parent scope; no partial matches were returned",
+        }),
         StoreError::WorkCatalogCursorInvalid { reason } => json!({
             "reason": reason,
             "remedy": CATALOG_CURSOR_REMEDY.cli,
@@ -426,6 +434,8 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkParentNotOpen { .. } => "work_parent_not_open",
         StoreError::WorkDetachRefused { .. } => "work_detach_refused",
         StoreError::WorkRejectRefused { .. } => "work_reject_refused",
+        StoreError::SearchBudgetExhausted { .. } => "search_budget_exhausted",
+        StoreError::SearchCancelled => "search_cancelled",
         StoreError::WorkCatalogCursorInvalid { .. } => "work_catalog_cursor_invalid",
         StoreError::WorkShowCursorInvalid { .. } => "work_show_cursor_invalid",
         StoreError::WorkNoteReferenceInvalid { .. } => "work_note_reference_invalid",

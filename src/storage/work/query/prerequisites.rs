@@ -47,6 +47,7 @@ pub(in crate::storage) fn load_prerequisite_projection_ids(
         )?;
         statement
             .query_map([work_id.0.to_string()], |row| {
+                super::super::search_budget::record_row(connection, row)?;
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
             .map(|row| {

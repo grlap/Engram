@@ -17,8 +17,41 @@ use crate::{
     RememberInput, UpdateAction, UpdateInput, VerbError, parse_defer_date, store_error_value,
 };
 use chrono::Utc;
+use rmcp::{RoleServer, service::RequestContext};
 use rmcp::{model::CallToolResult, tool, tool_router};
 use serde_json::json;
+
+impl From<LsArgs> for LsInput {
+    fn from(args: LsArgs) -> Self {
+        Self {
+            search: args.search,
+            blocked: args.blocked.unwrap_or(false),
+            ready: args.ready.unwrap_or(false),
+            mine: args.mine.unwrap_or(false),
+            all: args.all.unwrap_or(false),
+            label: args.label,
+            under: args.under,
+            optional: args.optional.unwrap_or(false),
+            required: args.required.unwrap_or(false),
+            after: args.after,
+            limit: args.limit,
+            verbose: args.verbose.unwrap_or(false),
+        }
+    }
+}
+
+#[cfg(test)]
+impl McpServer {
+    pub(super) fn ls_sync(&self, Parameters(args): Parameters<LsArgs>) -> CallToolResult {
+        self.verb(self.verbs().ls(&args.into(), Utc::now()))
+    }
+    pub(super) fn search_sync(
+        &self,
+        Parameters(args): Parameters<WorkSearchArgs>,
+    ) -> CallToolResult {
+        self.verb(self.verbs().search(&args.query, args.limit, Utc::now()))
+    }
+}
 
 #[tool_router(router = agent_tool_router, vis = "pub(super)")]
 impl McpServer {
@@ -59,24 +92,18 @@ impl McpServer {
         name = "ls",
         description = "List open work; search matches metadata and complete note/gate text and refs; ready, blocked, mine, all, label, and under with optional/required narrow it; after continues the same listing"
     )]
-    pub(super) fn ls(&self, Parameters(args): Parameters<LsArgs>) -> CallToolResult {
-        self.verb(self.verbs().ls(
-            &LsInput {
-                search: args.search,
-                blocked: args.blocked.unwrap_or(false),
-                ready: args.ready.unwrap_or(false),
-                mine: args.mine.unwrap_or(false),
-                all: args.all.unwrap_or(false),
-                label: args.label,
-                under: args.under,
-                optional: args.optional.unwrap_or(false),
-                required: args.required.unwrap_or(false),
-                after: args.after,
-                limit: args.limit,
-                verbose: args.verbose.unwrap_or(false),
-            },
-            Utc::now(),
-        ))
+    pub(super) async fn ls(
+        &self,
+        Parameters(args): Parameters<LsArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> CallToolResult {
+        let input = LsInput::from(args);
+        if input.search.is_some() {
+            self.blocking_search(context.ct, move |verbs| verbs.ls(&input, Utc::now()))
+                .await
+        } else {
+            self.verb(self.verbs().ls(&input, Utc::now()))
+        }
     }
 
     /// Inspect one item without changing focus or claims.
@@ -397,8 +424,15 @@ impl McpServer {
         name = "search",
         description = "Search every item, including closed ones, by literal case-insensitive metadata and complete note/gate text and refs"
     )]
-    pub(super) fn search(&self, Parameters(args): Parameters<WorkSearchArgs>) -> CallToolResult {
-        self.verb(self.verbs().search(&args.query, args.limit, Utc::now()))
+    pub(super) async fn search(
+        &self,
+        Parameters(args): Parameters<WorkSearchArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> CallToolResult {
+        self.blocking_search(context.ct, move |verbs| {
+            verbs.search(&args.query, args.limit, Utc::now())
+        })
+        .await
     }
 
     /// Offer, accept, or cancel a transfer.

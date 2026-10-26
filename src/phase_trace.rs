@@ -99,6 +99,7 @@ const TOOL_LABELS: &[&str] = &[
 ];
 
 /// A phase the store and server hooks time inside one call.
+/// When adding a variant, also extend `Phases` and the worker list in `merge`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Phase {
     /// Opening a store connection, schema checks included.
@@ -171,6 +172,43 @@ thread_local! {
 /// Whether a traced call is being polled on this thread.
 pub(crate) fn active() -> bool {
     CURRENT.with(|current| current.borrow().is_some())
+}
+
+/// Capture synchronous work on a blocking thread using the existing accumulator.
+pub(crate) fn capture<T>(read: impl FnOnce() -> T) -> (T, Phases) {
+    let mut phases = Some(Phases::default());
+    let previous = CURRENT.with(|current| current.replace(phases.take()));
+    let installed = Installed {
+        phases: &mut phases,
+        previous,
+    };
+    let result = read();
+    drop(installed);
+    (result, phases.unwrap_or_default())
+}
+
+/// Merge a joined worker's phases into its awaiting request's accumulator.
+pub(crate) fn merge(mut joined: Phases) {
+    CURRENT.with_borrow_mut(|current| {
+        if let Some(current) = current {
+            for phase in [
+                Phase::StoreOpen,
+                Phase::StoreMutexWait,
+                Phase::BeginImmediate,
+                Phase::Commit,
+                Phase::ReceiptSerialize,
+                Phase::ReadSnapshot,
+                Phase::SqliteStatement,
+                Phase::BackupReminder,
+            ] {
+                let source = *joined.summary(phase);
+                let target = current.summary(phase);
+                target.count = target.count.saturating_add(source.count);
+                target.total = target.total.saturating_add(source.total);
+                target.max = target.max.max(source.max);
+            }
+        }
+    });
 }
 
 /// The start of a timed phase, or `None` when no traced call is running, in

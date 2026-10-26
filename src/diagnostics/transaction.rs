@@ -61,7 +61,7 @@ impl Context {
         event
     }
 }
-fn current() -> Option<Context> {
+pub(crate) fn current() -> Option<Context> {
     ASYNC_CONTEXT
         .try_with(Clone::clone)
         .ok()

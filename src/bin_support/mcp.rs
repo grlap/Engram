@@ -30,8 +30,13 @@ pub(crate) async fn serve(server: McpServer, home: &Path, session: &str) -> Resu
         match result {
             Ok(server) => {
                 let store_owner = server.service().shutdown_store_owner();
-                let stopped =
-                    wait_then_drop_store_owner(&trace, store_owner, server.waiting()).await;
+                let shutdown = server.service().clone();
+                let waiting = async move {
+                    let result = server.waiting().await;
+                    shutdown.shutdown_searches().await;
+                    result
+                };
+                let stopped = wait_then_drop_store_owner(&trace, store_owner, waiting).await;
                 stopped
                     .map(|_| ())
                     .context("Engram MCP stdio server stopped with an error")
@@ -40,11 +45,14 @@ pub(crate) async fn serve(server: McpServer, home: &Path, session: &str) -> Resu
         }
     } else {
         match server.serve(transport).await {
-            Ok(server) => server
-                .waiting()
-                .await
-                .map(|_| ())
-                .context("Engram MCP stdio server stopped with an error"),
+            Ok(server) => {
+                let shutdown = server.service().clone();
+                let result = server.waiting().await;
+                shutdown.shutdown_searches().await;
+                result
+                    .map(|_| ())
+                    .context("Engram MCP stdio server stopped with an error")
+            }
             Err(error) => Err(error).context("failed to start Engram MCP stdio server"),
         }
     };

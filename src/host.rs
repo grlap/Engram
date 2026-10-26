@@ -1037,6 +1037,8 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::ControlStoreBusy { .. } => "control_store_busy",
         StoreError::ControlRequestExpired => "control_request_expired",
+        StoreError::SearchBudgetExhausted { .. } => "search_budget_exhausted",
+        StoreError::SearchCancelled => "search_cancelled",
         StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::InvalidControlSession(_) => "invalid_control_session",
         StoreError::NamedRootBindingRefused(_) => "named_root_binding_refused",

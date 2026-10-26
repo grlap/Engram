@@ -7,6 +7,7 @@ use super::{
     parse_work_id, work_catalog_sql,
 };
 use crate::storage::work::record_windows::{WorkRecordContent, WorkRecordFamily, WorkRecordKind};
+use crate::storage::work::search_budget;
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct WorkNoteSearchMatch {
@@ -52,6 +53,8 @@ impl SqliteStore {
         else {
             return Ok(matches);
         };
+        #[cfg(test)]
+        search_budget::pause(&self.connection)?;
         // Discover the entire eligible set, never just this page or seek suffix.
         let mut eligible = query.clone();
         eligible.search = None;
@@ -71,6 +74,7 @@ impl SqliteStore {
         let mut statement = self.connection.prepare(&sql)?;
         let ids = statement
             .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+                search_budget::record_row(&self.connection, row)?;
                 row.get::<_, String>(0)
             })?
             .map(|row| parse_work_id(&row?))
@@ -86,13 +90,21 @@ impl SqliteStore {
                 };
                 // Match public note text only, not JSON keys, identity, raw
                 // environment evidence, private scratch or history-only events.
-                let contains = |text: &str| normalize_work_catalog_key(text).contains(&search);
-                if contains(&note.summary)
-                    || note.refs.iter().any(|text| contains(text))
-                    || note.gate.as_ref().is_some_and(|gate| {
-                        contains(&gate.name) || gate.failed.iter().any(|text| contains(text))
-                    })
-                {
+                let fields = std::iter::once(note.summary.as_str())
+                    .chain(note.refs.iter().map(String::as_str))
+                    .chain(note.gate.iter().flat_map(|gate| {
+                        std::iter::once(gate.name.as_str())
+                            .chain(gate.failed.iter().map(String::as_str))
+                    }));
+                let mut found = false;
+                for field in fields {
+                    if search_budget::contains(&self.connection, field, &search)? {
+                        found = true;
+                        break;
+                    }
+                }
+                if found {
+                    search_budget::record(&self.connection)?;
                     matches.insert(
                         id.0,
                         WorkNoteSearchMatch {

@@ -1,4 +1,98 @@
 //! Explicit measurements only; the copied store may contain private state.
+
+#[test]
+#[ignore = "explicit supported-copy comparison; private store bytes stay under target/tmp"]
+fn note_search_supported_copy_calibration() {
+    let path = snapshot_path();
+    let before = file_digest(&path);
+    let project = ProjectId(std::env::var("ENGRAM_NOTE_SEARCH_PROJECT").unwrap());
+    let byte_override = std::env::var("ENGRAM_NOTE_SEARCH_CALIBRATION_BYTES")
+        .ok()
+        .map(|value| value.parse::<u64>().unwrap());
+    let now = DateTime::parse_from_rfc3339(&std::env::var("ENGRAM_NOTE_SEARCH_AT").unwrap())
+        .unwrap()
+        .with_timezone(&Utc);
+    let opened = Instant::now();
+    let store = SqliteStore::open_existing_read_only(&path).unwrap();
+    let open_us = opened.elapsed().as_micros();
+    assert!(store.connection.is_readonly("main").unwrap());
+    assert!(
+        store
+            .connection
+            .pragma_query_value(None, "query_only", |row| row.get::<_, bool>(0))
+            .unwrap()
+    );
+    let service = crate::work_service::LocalWorkService::new(
+        path.clone(),
+        project.clone(),
+        "calibration-reader".into(),
+        crate::SessionId("search-copy-calibration".into()),
+        None,
+    );
+    for (case, query) in [
+        ("present-reference", "3312"),
+        ("present-reference", "772b"),
+        ("present-phrase", "gated control"),
+        ("absent", "calibration-absent-zqxjkvbp"),
+        ("broad-present", "the"),
+    ] {
+        cost::start();
+        let started = Instant::now();
+        let read = || {
+            crate::storage::search_budget::Request::new(tokio_util::sync::CancellationToken::new())
+                .run(|| {
+                    Ok(service.work_catalog_page(
+                        &WorkCatalogQuery {
+                            search: Some(query.into()),
+                            limit: 20,
+                            ..WorkCatalogQuery::default()
+                        },
+                        None,
+                        None,
+                        now,
+                    )?)
+                })
+        };
+        let result = byte_override.map_or_else(read, |bytes| {
+            crate::storage::search_budget::with_limits(
+                crate::storage::search_budget::Limits {
+                    bytes,
+                    ..crate::storage::search_budget::Limits::default()
+                },
+                read,
+            )
+        });
+        let elapsed_us = started.elapsed().as_micros();
+        let counters = cost::finish();
+        let outcome = match result {
+            Ok(page) => serde_json::json!({
+                "completed": true, "matches": page.total, "rows": page.items.len(),
+                "ordered_ids": page.items.iter().map(|row| row.work.work_id).collect::<Vec<_>>(),
+            }),
+            Err(error) => {
+                serde_json::json!({"completed": false, "refusal": crate::verbs::store_error_value(&error.error)})
+            }
+        };
+        println!(
+            "supported-copy search calibration: {}",
+            serde_json::json!({
+                "case": case, "query": query, "limit": 20, "lifecycles": "all",
+                "elapsed_us": elapsed_us, "read_only_open_us": open_us, "cost": counters, "outcome": outcome,
+                "snapshot_sha256": before, "snapshot_bytes": std::fs::metadata(&path).unwrap().len(),
+                "observed_at": now, "build": crate::build_identity::current(),
+                "debug_assertions": cfg!(debug_assertions), "measurement_byte_override": byte_override,
+                "coverage": "Complete service catalog including successor/root/waiver enrichment and each service reader open, with request allowance created before opening; note_index_visits counts window entries, search_budget counters are policy charges; no CLI/MCP scheduling; supported captured copy only. Earlier master control was storage-only after admission, so elapsed comparison includes that surface difference.",
+            })
+        );
+    }
+    drop(store);
+    assert_eq!(
+        file_digest(&path),
+        before,
+        "query-only calibration changed snapshot bytes"
+    );
+}
+
 use super::*;
 use crate::storage::work::record_windows::{WorkRecordContent, WorkRecordKind};
 use sha2::{Digest, Sha256};

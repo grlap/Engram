@@ -190,51 +190,54 @@ impl LocalWorkService {
             ));
         }
         let store = self.read_store_at(now)?;
-        store.work_read_snapshot(|store| {
-            let mut query = query.clone();
-            if let Some(parent) = under {
-                query.parent_id = Some(store.resolve_work_ref(&self.project_id, parent)?.work_id);
-            }
-            let mut filters = query.clone();
-            SqliteStore::normalize_catalog_filters(&mut filters);
-            if let Some(cursor) = &cursor {
-                if cursor.filters.to_query() != filters {
-                    return Err(invalid(
-                        "continuation belongs to different filters or project",
-                    ));
+        store.with_search_budget(query.search.as_deref(), || {
+            store.work_read_snapshot(|store| {
+                let mut query = query.clone();
+                if let Some(parent) = under {
+                    query.parent_id =
+                        Some(store.resolve_work_ref(&self.project_id, parent)?.work_id);
                 }
-                if cursor.filters.ready_priority_order != cursor.after_priority.is_some() {
-                    return Err(invalid("continuation item no longer matches this listing"));
+                let mut filters = query.clone();
+                SqliteStore::normalize_catalog_filters(&mut filters);
+                if let Some(cursor) = &cursor {
+                    if cursor.filters.to_query() != filters {
+                        return Err(invalid(
+                            "continuation belongs to different filters or project",
+                        ));
+                    }
+                    if cursor.filters.ready_priority_order != cursor.after_priority.is_some() {
+                        return Err(invalid("continuation item no longer matches this listing"));
+                    }
+                    query.after = Some(cursor.after);
+                    query.after_priority = cursor.after_priority;
                 }
-                query.after = Some(cursor.after);
-                query.after_priority = cursor.after_priority;
-            }
-            let (page, total, preceding, claims, membership, note_matches) = store
-                .query_work_catalog_continuation(
-                    &self.project_id,
-                    now,
-                    &query,
-                    cursor.as_ref().map(|cursor| cursor.basis.expectation()),
-                )?;
-            Ok(WorkListingPage {
-                items: page
-                    .items
-                    .into_iter()
-                    .map(|item| {
-                        let successor = store.required_child_successor(&item.work)?;
-                        let mut summary = ready_work_summary(item);
-                        summary.work.required_child_successor = successor;
-                        Ok(summary)
-                    })
-                    .collect::<Result<_, StoreError>>()?,
-                total,
-                preceding,
-                claims,
-                note_matches,
-                project: self.project_id.clone(),
-                filters,
-                observed_at: now,
-                membership,
+                let (page, total, preceding, claims, membership, note_matches) = store
+                    .query_work_catalog_continuation(
+                        &self.project_id,
+                        now,
+                        &query,
+                        cursor.as_ref().map(|cursor| cursor.basis.expectation()),
+                    )?;
+                Ok(WorkListingPage {
+                    items: page
+                        .items
+                        .into_iter()
+                        .map(|item| {
+                            let successor = store.required_child_successor(&item.work)?;
+                            let mut summary = ready_work_summary(item);
+                            summary.work.required_child_successor = successor;
+                            Ok(summary)
+                        })
+                        .collect::<Result<_, StoreError>>()?,
+                    total,
+                    preceding,
+                    claims,
+                    note_matches,
+                    project: self.project_id.clone(),
+                    filters,
+                    observed_at: now,
+                    membership,
+                })
             })
         })
     }

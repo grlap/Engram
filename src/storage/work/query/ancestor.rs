@@ -37,7 +37,7 @@ pub(super) fn parent_execution_guidance(
     }
 }
 
-pub(super) fn projected_blocking_ancestor(
+pub(in crate::storage::work) fn projected_blocking_ancestor(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<Option<crate::domain::WorkBlockingAncestor>, StoreError> {
@@ -48,6 +48,7 @@ pub(super) fn projected_blocking_ancestor(
                  FROM work_items WHERE work_id = ?1",
                 [parent.0.to_string()],
                 |row| {
+                    super::super::search_budget::record_row(connection, row)?;
                     Ok((
                         row.get(0)?,
                         row.get(1)?,

@@ -15,6 +15,8 @@ struct SqlCost {
 
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct Snapshot {
+    search_budget: Option<serde_json::Value>,
+    note_index_visits: usize,
     root: super::root_state::Cost,
     canonical_decodes: usize,
     work_event_decodes: usize,
@@ -25,6 +27,8 @@ pub(crate) struct Snapshot {
 
 #[derive(Default)]
 struct Capture {
+    search_budget: Option<serde_json::Value>,
+    note_index_visits: usize,
     active: bool,
     typed_work_object_decodes: BTreeMap<String, usize>,
     sql: BTreeMap<&'static str, SqlCost>,
@@ -50,6 +54,8 @@ pub(crate) fn start() {
 
 pub(crate) fn snapshot() -> Snapshot {
     Snapshot {
+        search_budget: CAPTURE.with_borrow(|capture| capture.search_budget.clone()),
+        note_index_visits: CAPTURE.with_borrow(|capture| capture.note_index_visits),
         root: super::root_state::cost_snapshot(),
         canonical_decodes: crate::canonical::canonical_decode_count(),
         work_event_decodes: super::work_event_decode_count(),
@@ -58,6 +64,26 @@ pub(crate) fn snapshot() -> Snapshot {
             .with_borrow(|capture| capture.typed_work_object_decodes.clone()),
         sql: CAPTURE.with_borrow(|capture| capture.sql.clone()),
     }
+}
+
+/// Records indexed note/history entries for explicit search measurements.
+pub(crate) fn note_index_visit() {
+    CAPTURE.with_borrow_mut(|capture| {
+        if capture.active {
+            capture.note_index_visits += 1;
+        }
+    });
+}
+
+pub(crate) fn search_budget_finished(steps: u64, records: u64, bytes: u64, max_unit_bytes: u64) {
+    CAPTURE.with_borrow_mut(|capture| {
+        if capture.active {
+            capture.search_budget = Some(serde_json::json!({
+                "sql_vm_steps": steps, "record_visits": records, "work_bytes": bytes,
+                "max_unit_bytes": max_unit_bytes,
+            }));
+        }
+    });
 }
 
 pub(crate) fn phase(label: &'static str) {

@@ -5,6 +5,7 @@ use super::{
     work_catalog_sql,
 };
 use crate::domain::{FeedId, ProjectId, WorkCatalogReadCut};
+use crate::storage::work::search_budget;
 use sha2::{Digest, Sha256};
 
 /// What a listing continuation is checked against.
@@ -94,63 +95,65 @@ impl SqliteStore {
         ),
         StoreError,
     > {
-        self.work_read_snapshot(|store| {
-            let matches = store.catalog_note_matches(project, now, query)?;
-            let ids = super::note_search::matching_ids(&matches)?;
-            let membership =
-                catalog_membership(&store.connection, project, now, query, ids.as_deref())?;
-            if let Some(expected) = expected {
-                let changed = match expected {
-                    ListingExpectation::Membership {
-                        observed_at,
-                        fingerprint,
-                    } => now < observed_at || membership.fingerprint != fingerprint,
-                    ListingExpectation::ProjectCut(cut) => {
-                        now < cut.observed_at
-                            || store.work_feed_head(&FeedId::Project(project.clone()))?
-                                != cut.project_position
-                            || cut
-                                .valid_until_ms
-                                .is_some_and(|until| now.timestamp_millis() >= until)
+        search_budget::run(&self.connection, query.search.as_deref(), || {
+            self.work_read_snapshot(|store| {
+                let matches = store.catalog_note_matches(project, now, query)?;
+                let ids = super::note_search::matching_ids(&matches)?;
+                let membership =
+                    catalog_membership(&store.connection, project, now, query, ids.as_deref())?;
+                if let Some(expected) = expected {
+                    let changed = match expected {
+                        ListingExpectation::Membership {
+                            observed_at,
+                            fingerprint,
+                        } => now < observed_at || membership.fingerprint != fingerprint,
+                        ListingExpectation::ProjectCut(cut) => {
+                            now < cut.observed_at
+                                || store.work_feed_head(&FeedId::Project(project.clone()))?
+                                    != cut.project_position
+                                || cut
+                                    .valid_until_ms
+                                    .is_some_and(|until| now.timestamp_millis() >= until)
+                        }
+                    };
+                    if changed {
+                        return Err(cursor_invalid("catalog changed; start a fresh listing"));
                     }
-                };
-                if changed {
-                    return Err(cursor_invalid("catalog changed; start a fresh listing"));
                 }
-            }
-            if let Some((encoded, after)) = ready_seek_key(query)?
-                && current_work_priority(&store.connection, after)? != Some(encoded)
-            {
-                return Err(cursor_invalid(
-                    "continuation item no longer matches this listing",
-                ));
-            }
-            let Membership {
-                fingerprint,
-                total,
-                preceding,
-                anchor,
-            } = membership;
-            if query.after.is_some() && !anchor {
-                return Err(cursor_invalid(
-                    "continuation item no longer matches this listing",
-                ));
-            }
-            #[cfg(test)]
-            super::tests::after_catalog_count();
-            let page =
-                work_catalog_page_on(&store.connection, project, now, query, ids.as_deref())?;
-            let mut claims = Vec::new();
-            for item in &page.items {
-                if let Some(run_id) = item.work.active_run_id
-                    && let Some(claim) = load_work_claim_optional(&store.connection, run_id)?
-                    && claim.state == WorkClaimState::Active
-                    && claim.expires_at > now
+                if let Some((encoded, after)) = ready_seek_key(query)?
+                    && current_work_priority(&store.connection, after)? != Some(encoded)
                 {
-                    claims.push(claim);
+                    return Err(cursor_invalid(
+                        "continuation item no longer matches this listing",
+                    ));
                 }
-            }
-            Ok((page, total, preceding, claims, fingerprint, matches))
+                let Membership {
+                    fingerprint,
+                    total,
+                    preceding,
+                    anchor,
+                } = membership;
+                if query.after.is_some() && !anchor {
+                    return Err(cursor_invalid(
+                        "continuation item no longer matches this listing",
+                    ));
+                }
+                #[cfg(test)]
+                super::tests::after_catalog_count();
+                let page =
+                    work_catalog_page_on(&store.connection, project, now, query, ids.as_deref())?;
+                let mut claims = Vec::new();
+                for item in &page.items {
+                    if let Some(run_id) = item.work.active_run_id
+                        && let Some(claim) = load_work_claim_optional(&store.connection, run_id)?
+                        && claim.state == WorkClaimState::Active
+                        && claim.expires_at > now
+                    {
+                        claims.push(claim);
+                    }
+                }
+                Ok((page, total, preceding, claims, fingerprint, matches))
+            })
         })
     }
 }
@@ -199,6 +202,7 @@ fn catalog_membership(
     let mut hasher = Sha256::new();
     let (mut total, mut preceding, mut anchor) = (0_usize, 0_usize, false);
     while let Some(row) = rows.next()? {
+        search_budget::record_row(connection, row)?;
         let work: String = row.get(0)?;
         let priority: i64 = row.get(1)?;
         total += 1;

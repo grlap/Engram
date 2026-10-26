@@ -518,6 +518,7 @@ pub(super) fn latest_named_root_binding_on(
                 released.unwrap_or(0)
             ],
             |row| {
+                super::search_budget::record_row(connection, row)?;
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
@@ -768,7 +769,10 @@ pub(in crate::storage) fn source_observation_if_accounted_on(
         .query_row(
             "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
             [record.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| {
+                super::search_budget::record_row(connection, row)?;
+                Ok((row.get(0)?, row.get(1)?))
+            },
         )
         .optional()?
         .ok_or_else(|| {
@@ -1148,7 +1152,7 @@ pub(in crate::storage) fn load_typed_work_object<T: DeserializeOwned>(
         .query_row(
             "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
             [hash.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, super::search_budget::blob(connection, row, 1)?)),
         )
         .optional()?;
     let (stored_kind, bytes) = stored

@@ -5,6 +5,7 @@ use crate::storage::work::*;
 
 mod note_search_followups;
 mod note_search_measurement;
+mod note_search_synthetic;
 
 thread_local! {
     static AFTER_CATALOG_COUNT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };

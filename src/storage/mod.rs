@@ -49,6 +49,7 @@ pub(crate) use work::WriterAdmissionWindow;
 pub(crate) use work::before_refused_retirement;
 #[cfg(test)]
 pub(crate) use work::last_writer_admission_allowance;
+pub(crate) use work::search_budget;
 #[cfg(test)]
 pub(crate) use work::take_work_catalog_fts_delete_statements;
 pub(crate) use work::validate_work_import_input;
@@ -1500,6 +1501,16 @@ pub enum StoreError {
     WorkNotFound(crate::domain::WorkId),
     #[error("local work input is invalid: {0}")]
     InvalidWork(String),
+    #[error(
+        "search budget exhausted: {dimension} used at least {used_at_least}, limit {limit}; narrow the search scope"
+    )]
+    SearchBudgetExhausted {
+        dimension: &'static str,
+        limit: u64,
+        used_at_least: u64,
+    },
+    #[error("search cancelled; no partial search result is returned")]
+    SearchCancelled,
     /// A task export or import refusal with its stable family; the text is
     /// the classified refusal's own, unchanged.
     #[error("{inner}")]

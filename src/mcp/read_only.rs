@@ -575,8 +575,8 @@ mod tests {
             reader.next(Parameters(
                 serde_json::from_value(json!({ "peek": true })).expect("next"),
             )),
-            reader.ls(Parameters(serde_json::from_value(json!({})).expect("ls"))),
-            reader.search(Parameters(
+            reader.ls_sync(Parameters(serde_json::from_value(json!({})).expect("ls"))),
+            reader.search_sync(Parameters(
                 serde_json::from_value(json!({ "query": "Read" })).expect("search"),
             )),
             reader.show(Parameters(
@@ -636,7 +636,7 @@ mod tests {
             reader.next(Parameters(
                 serde_json::from_value(json!({ "peek": true })).expect("next"),
             )),
-            reader.ls(Parameters(
+            reader.ls_sync(Parameters(
                 serde_json::from_value(json!({ "all": true })).expect("ls"),
             )),
             reader.show(Parameters(

@@ -457,12 +457,14 @@ pub(in crate::storage::work) fn first_blocking_ancestor(
     let mut visited = HashSet::new();
     let mut reached_root = item.work_id == item.root_id;
     while let Some(parent) = parent_id {
-        if !visited.insert(parent) || visited.len() > 1_024 {
+        if visited.contains(&parent) || visited.len() >= 1_024 {
             return Err(StoreError::InvalidWorkProjection(
                 "work hierarchy is cyclic or exceeds the corruption guard".into(),
             ));
         }
         let state = load(parent)?;
+        // The reader charges this traversal entry before its set allocation.
+        visited.insert(parent);
         if state.project_id != item.project_id || state.root_id != item.root_id {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "work ancestor {:?} crosses its project or root boundary",

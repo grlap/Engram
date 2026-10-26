@@ -5,6 +5,7 @@ use super::{
     live_handoff_on, load_work_claim_optional, load_work_item_projection,
     normalize_work_catalog_key, params, parse_work_id, projected_prerequisite_state,
 };
+use crate::storage::work::search_budget;
 use rusqlite::OptionalExtension;
 
 #[cfg(test)]
@@ -279,10 +280,12 @@ impl SqliteStore {
         now: DateTime<Utc>,
         query: &WorkCatalogQuery,
     ) -> Result<WorkCatalogPage, StoreError> {
-        self.work_read_snapshot(|store| {
-            let matches = store.catalog_note_matches(project_id, now, query)?;
-            let ids = note_search::matching_ids(&matches)?;
-            work_catalog_page_on(&store.connection, project_id, now, query, ids.as_deref())
+        search_budget::run(&self.connection, query.search.as_deref(), || {
+            self.work_read_snapshot(|store| {
+                let matches = store.catalog_note_matches(project_id, now, query)?;
+                let ids = note_search::matching_ids(&matches)?;
+                work_catalog_page_on(&store.connection, project_id, now, query, ids.as_deref())
+            })
         })
     }
 
@@ -361,6 +364,7 @@ fn work_catalog_page_on(
     let mut statement = connection.prepare(&sql)?;
     let ids = statement
         .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+            search_budget::record_row(connection, row)?;
             row.get::<_, String>(0)
         })?
         .map(|row| parse_work_id(&row?))
@@ -585,6 +589,7 @@ fn load_active_blocker_catalog_rows(
     )?;
     statement
         .query_map([work_id.0.to_string()], |row| {
+            search_budget::record_row(connection, row)?;
             Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, bool>(1)?))
         })?
         .map(|row| {
@@ -617,6 +622,7 @@ fn classified_prerequisite_catalog_rows(
     )?;
     statement
         .query_map([work_id.0.to_string()], |row| {
+            search_budget::record_row(connection, row)?;
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, Option<String>>(1)?,

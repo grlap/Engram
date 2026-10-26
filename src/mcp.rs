@@ -8,6 +8,7 @@ mod parameters;
 #[cfg(test)]
 pub(crate) mod prose_sweep;
 mod read_only;
+mod search;
 #[cfg(test)]
 mod tests;
 mod tools;
@@ -34,6 +35,7 @@ pub struct McpServer {
     /// The opt-in phase trace, when enabled at server start.
     phase_trace: Option<Arc<crate::phase_trace::PhaseTrace>>,
     diagnostics: Option<Arc<crate::diagnostics::mcp::Observer>>,
+    searches: Arc<search::Searches>,
 }
 
 impl McpServer {
@@ -126,6 +128,7 @@ impl McpServer {
             read_only,
             phase_trace: None,
             diagnostics: None,
+            searches: Arc::default(),
         }
     }
 
@@ -147,6 +150,11 @@ impl McpServer {
     #[must_use]
     pub fn shutdown_store_owner(&self) -> Arc<LocalWorkService> {
         Arc::clone(&self.work_service)
+    }
+
+    /// Close search admission, cancel and join any worker before store teardown.
+    pub async fn shutdown_searches(&self) {
+        self.searches.shutdown().await;
     }
 
     /// One tool call: the read-only admission, then the routed tool.

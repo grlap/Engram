@@ -218,7 +218,10 @@ impl SqliteStore {
             .query_row(
                 "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
                 [hash.as_str()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| {
+                    super::search_budget::record_row(connection, row)?;
+                    Ok((row.get(0)?, row.get(1)?))
+                },
             )
             .optional()?;
         let Some((stored_kind, bytes)) = stored else {

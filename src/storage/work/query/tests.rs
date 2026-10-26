@@ -2,6 +2,7 @@ use super::super::feeds::reserve_feed_position;
 use super::super::test_support::*;
 use super::super::*;
 use super::prerequisites::classify_prerequisite_state;
+use super::references::MAX_AMBIGUOUS_WORK_CANDIDATES;
 use super::*;
 use crate::storage::concurrent_commit::{ITEM_FEED_HEAD, read_across_a_concurrent_commit};
 

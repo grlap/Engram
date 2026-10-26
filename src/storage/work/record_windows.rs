@@ -167,6 +167,9 @@ impl SqliteStore {
                 }
             }
             for (position, member) in members.into_iter().enumerate() {
+                #[cfg(test)]
+                super::cost::note_index_visit();
+                super::search_budget::record(&self.connection)?;
                 let record_family = match member {
                     RestoredMember::Note(index) => {
                         let note = &record.history.notes[index - 1];
@@ -230,6 +233,9 @@ impl SqliteStore {
         let mut statement = self.connection.prepare(&sql)?;
         let mut rows = statement.query(params![work_id.0.to_string(), project.0])?;
         while let Some(row) = rows.next()? {
+            #[cfg(test)]
+            super::cost::note_index_visit();
+            super::search_budget::record_row(&self.connection, row)?;
             let position: Option<i64> = row.get(2)?;
             indexed.push(WorkRecordIndex {
                 record_family: match row.get::<_, String>(4)?.as_str() {

@@ -19,6 +19,7 @@ pub(in crate::storage::work) fn current_required_child_waivers(
     let mut seen = HashSet::new();
     let mut direct = HashSet::new();
     for waiver in &execution.required_child_waivers {
+        super::super::search_budget::record(connection)?;
         let child = load_work_item(connection, waiver.work_id)?;
         if !seen.insert(waiver.work_id)
             || child.root_id != execution.root_id

@@ -387,7 +387,10 @@ pub(in crate::storage) fn work_graph_snapshot_load_origin_on(
                AND json_extract(canonical_json, '$.project_id') = ?1
              ORDER BY json_extract(canonical_json, '$.attempt_id') DESC LIMIT 1",
             [project_id.0.as_str()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            |row| {
+                super::search_budget::record_row(connection, row)?;
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            },
         )
         .optional()?;
     let (stored_hash, bytes) = row.ok_or_else(|| {

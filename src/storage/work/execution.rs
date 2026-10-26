@@ -2162,6 +2162,7 @@ pub(super) fn work_evidence_kind_on(
              WHERE run_id = ?1 AND evidence_id = ?2",
             params![run_id.0.to_string(), evidence_id.as_str()],
             |row| {
+                super::search_budget::record_row(connection, row)?;
                 Ok(EvidenceProjectionRow {
                     work_id: row.get(0)?,
                     run_id: row.get(1)?,

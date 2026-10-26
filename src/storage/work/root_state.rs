@@ -389,7 +389,10 @@ fn projected_with_head(
              revision = json_extract(header_json, '$.revision')
          FROM work_root_executions WHERE root_execution_id = ?1",
             [id.0.to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| {
+                super::search_budget::record_row(connection, row)?;
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            },
         )
         .optional()?
         .ok_or_else(|| invalid("current projection is missing"))?;
@@ -409,6 +412,7 @@ fn projected_with_head(
     )?;
     let mut values = BTreeMap::new();
     for row in statement.query_map([id.0.to_string()], |row| {
+        super::search_budget::record_row(connection, row)?;
         Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
     })? {
         let (stored_hash, bytes) = row?;

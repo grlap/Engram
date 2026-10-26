@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 mod activity;
+mod references;
 pub(in crate::storage) use activity::canonical_work_event_records_for_item;
+pub(in crate::storage) use references::resolve_work_ref_on;
 /// Test builds observe the executed statement, rather than estimating SQL work.
 pub(super) fn query_row_with_cost<T, P, F>(
     connection: &rusqlite::Connection,
@@ -13,6 +15,10 @@ where
     P: rusqlite::Params,
     F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
 {
+    let mapper = |row: &rusqlite::Row<'_>| {
+        super::search_budget::record(connection).map_err(|_| rusqlite::Error::InvalidQuery)?;
+        mapper(row)
+    };
     #[cfg(not(test))]
     {
         let _ = label;
@@ -71,7 +77,8 @@ mod tests;
 
 mod ancestor;
 mod stranded;
-use ancestor::{parent_execution_guidance, projected_blocking_ancestor};
+use ancestor::parent_execution_guidance;
+pub(super) use ancestor::projected_blocking_ancestor;
 
 mod catalog;
 pub(crate) use catalog::{CHILD_REQUIREMENT_NEEDS_PARENT_REFUSAL, ListingExpectation};
@@ -871,61 +878,6 @@ impl SqliteStore {
     }
 }
 
-const MAX_AMBIGUOUS_WORK_CANDIDATES: usize = 8;
-
-pub(in crate::storage) fn resolve_work_ref_on(
-    connection: &Connection,
-    project_id: &crate::domain::ProjectId,
-    work_ref: &str,
-) -> Result<WorkItem, StoreError> {
-    let work_ref = work_ref.trim();
-    if work_ref.is_empty() {
-        return Err(StoreError::InvalidWork(
-            "work reference must not be empty".into(),
-        ));
-    }
-    let mut statement = connection.prepare(
-        "SELECT work_id, COUNT(*) OVER()
-         FROM work_items
-         WHERE project_id = ?1 AND (short_ref = ?2 OR work_id = ?2)
-         ORDER BY work_id LIMIT ?3",
-    )?;
-    let matches = statement
-        .query_map(
-            params![
-                project_id.0,
-                work_ref,
-                i64::try_from(MAX_AMBIGUOUS_WORK_CANDIDATES).map_err(|_| {
-                    StoreError::InvalidWorkProjection(
-                        "ambiguous-work candidate limit overflowed SQLite".into(),
-                    )
-                })?
-            ],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
-        )?
-        .collect::<Result<Vec<_>, _>>()?;
-    match matches.as_slice() {
-        [(work_id, _)] => load_work_item(connection, parse_work_id(work_id)?),
-        [] => Err(StoreError::InvalidWork(format!(
-            "work reference {work_ref:?} does not exist in project {:?}",
-            project_id.0
-        ))),
-        _ => {
-            let total = usize::try_from(matches[0].1).map_err(|_| {
-                StoreError::InvalidWorkProjection(
-                    "ambiguous-work candidate count overflowed usize".into(),
-                )
-            })?;
-            let candidates = matches
-                .iter()
-                .map(|(work_id, _)| load_work_item(connection, parse_work_id(work_id)?))
-                .collect::<Result<Vec<_>, StoreError>>()?;
-            let more = total.saturating_sub(candidates.len());
-            Err(ambiguous_work_reference_error(work_ref, candidates, more))
-        }
-    }
-}
-
 fn command_work_ref_on(
     connection: &Connection,
     project_id: &crate::domain::ProjectId,
@@ -1362,7 +1314,10 @@ fn projected_claim_availability(
              LEFT JOIN work_claims claim ON claim.run_id = run.run_id
              WHERE run.run_id = ?1 AND run.work_id = ?2",
             params![run_id.0.to_string(), work.work_id.0.to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| {
+                super::search_budget::record_row(connection, row)?;
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            },
         )
         .optional()?;
     let (checkpoint, claim_state, expires_at) =
@@ -1446,7 +1401,12 @@ fn latest_canonical_work_event_on_snapshot(
                AND entry.work_id = ?1
              ORDER BY entry.position DESC LIMIT 1",
             [work_id.0.to_string()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    super::search_budget::blob(connection, row, 1)?,
+                ))
+            },
         )
         .optional()?;
     match (projected_hash.flatten(), latest) {
@@ -1593,7 +1553,12 @@ fn latest_canonical_work_event_on_feed(
                AND json_type(object.canonical_json, ?3) != 'null'
              ORDER BY entry.position DESC LIMIT 1",
         params![feed_kind, feed_id, required_snapshot],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                super::search_budget::blob(connection, row, 1)?,
+            ))
+        },
     )
     .optional()?
     .ok_or_else(|| {
@@ -1668,7 +1633,7 @@ pub(super) fn load_work_item_projection(
                             ELSE 0 END
              FROM work_items WHERE work_id = ?1",
             [work_id.0.to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((super::search_budget::blob(connection, row, 0)?, row.get(1)?)),
         )
         .optional()?;
     let (bytes, scalar_bound) = row.ok_or(StoreError::WorkNotFound(work_id))?;
@@ -1867,6 +1832,7 @@ pub(super) fn restored_records_with_id_for_item(
              WHERE work_id = ?1 ORDER BY generation_index",
         )?
         .query_map([work_id.0.to_string()], |row| {
+            super::search_budget::record_row(connection, row)?;
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1921,7 +1887,12 @@ fn native_work_event_optional(
         .query_row(
             "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
             [hash.as_str()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    super::search_budget::blob(connection, row, 1)?,
+                ))
+            },
         )
         .optional()?;
     let Some((kind, bytes)) = stored else {
@@ -2035,7 +2006,7 @@ fn load_work_run_on_snapshot(
                     COALESCE(completion_seal_id, '') = COALESCE(json_extract(run_json, '$.completion_seal'), '')
              FROM work_runs WHERE run_id = ?1",
             [run_id.0.to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| super::search_budget::bound_json_row(connection, row),
         )
         .optional()?;
     let (bytes, scalar_bound) =
@@ -2145,7 +2116,10 @@ pub(super) fn verify_retained_root_execution_reference_on(
                 root_execution_id.0.to_string(),
                 execution.generation
             ],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            |row| {
+                super::search_budget::record_row(connection, row)?;
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            },
         )
         .optional()?
         .ok_or_else(|| {
@@ -2267,7 +2241,7 @@ fn load_work_claim_on_snapshot(
                             ELSE 0 END
              FROM work_claims WHERE run_id = ?1",
             [run_id.0.to_string()],
-            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, bool>(1)?)),
+            |row| super::search_budget::bound_json_row(connection, row),
         )
         .optional()?;
     let required_snapshot = if row.is_some() { "$.claim" } else { "$.run" };
@@ -2308,6 +2282,7 @@ pub(in crate::storage) fn load_active_blocker_projections(
     )?;
     statement
         .query_map([work_id.0.to_string()], |row| {
+            super::search_budget::record_row(connection, row)?;
             Ok((
                 row.get::<_, Vec<u8>>(0)?,
                 row.get::<_, String>(1)?,

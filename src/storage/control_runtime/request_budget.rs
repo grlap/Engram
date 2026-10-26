@@ -10,30 +10,58 @@ use crate::storage::StoreError;
 pub(crate) const CONTROL_REQUEST_ALLOWANCE: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy)]
-pub(crate) struct ControlRequestBudget {
+pub(crate) struct Allowance {
     started: Instant,
     now: fn() -> Instant,
+    duration: Duration,
+}
+
+impl Allowance {
+    pub(crate) fn new(duration: Duration) -> Self {
+        Self::with_clock(duration, Instant::now)
+    }
+
+    pub(crate) fn with_clock(duration: Duration, now: fn() -> Instant) -> Self {
+        Self {
+            started: now(),
+            now,
+            duration,
+        }
+    }
+
+    pub(crate) fn elapsed(self) -> Duration {
+        (self.now)().saturating_duration_since(self.started)
+    }
+
+    pub(crate) fn remaining(self) -> Duration {
+        self.duration.saturating_sub(self.elapsed())
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ControlRequestBudget {
+    allowance: Allowance,
 }
 
 impl ControlRequestBudget {
     fn new() -> Self {
-        let now = current().map_or(Instant::now as fn() -> Instant, |budget| budget.now);
+        let now = current().map_or(Instant::now as fn() -> Instant, |budget| {
+            budget.allowance.now
+        });
         Self {
-            started: now(),
-            now,
+            allowance: Allowance::with_clock(CONTROL_REQUEST_ALLOWANCE, now),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn with_clock(now: fn() -> Instant) -> Self {
         Self {
-            started: now(),
-            now,
+            allowance: Allowance::with_clock(CONTROL_REQUEST_ALLOWANCE, now),
         }
     }
 
     pub(super) fn remaining(self) -> Duration {
-        CONTROL_REQUEST_ALLOWANCE.saturating_sub((self.now)().duration_since(self.started))
+        self.allowance.remaining()
     }
 
     pub(super) fn check(self) -> Result<(), StoreError> {

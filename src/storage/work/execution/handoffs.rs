@@ -28,6 +28,7 @@ pub(in crate::storage::work) fn live_handoff_on(
     let rows = statement.query_map(
         params![run_id.0.to_string(), now.timestamp_millis()],
         |row| {
+            super::super::search_budget::record_row(connection, row)?;
             Ok((
                 row.get::<_, Option<String>>(0)?,
                 row.get::<_, Vec<u8>>(1)?,
@@ -71,6 +72,7 @@ pub(in crate::storage::work) fn latest_canonical_handoff_offer(
              ORDER BY entry.position DESC LIMIT 1",
             params![offer_id, work_id],
             |row| {
+                super::super::search_budget::record_row(connection, row)?;
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,

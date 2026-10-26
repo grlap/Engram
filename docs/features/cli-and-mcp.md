@@ -1136,6 +1136,56 @@ Rules that matter:
   match set. A new matching item invalidates the continuation; another match
   within an existing member does not. Search scans eligible canonical notes
   on demand for each requested page and creates no durable search index.
+  Every storage catalog search, including a stateful `next` with search,
+  shares a finite allowance for that scan: 10 million SQL progress steps
+  (one-step callbacks, with clock polling every 1,024 steps), 100,000 visited
+  index/result records, 384 MiB of cumulative charged work bytes, and a
+  ten-second cooperative deadline. Record visits count selected catalog and
+  note-index entries, retained matches, relation and ancestor rows, handoff
+  projections/events, evidence-binding projections, root headers/members and
+  waiver entries. Repeated visits consume the same cumulative allowance,
+  including availability guidance and successor enrichment. Charged bytes
+  include canonical blobs before copying, text before normalization, selected
+  text/blob fields and a conservative 512-byte charge per counted entry.
+  Canonical validation reads charge their input bytes even when they do not
+  count as another index/result entry. Single-identifier, position, existence
+  and aggregate navigation lookups are exempt from the cumulative record/byte
+  counters; their SQL, including joins, FTS candidates and recursive SQL
+  traversal, remains subject to the VM-step, SQLite length and elapsed limits.
+  Derived values and clones of already charged input are not separately
+  counted allocations. This is work accounting, not peak heap usage.
+  SQLite strings, blobs and rows are capped at 1 MiB inside the catalog scope;
+  this bounds SQLite input units, not every Rust allocation. Exhaustion returns `search_budget_exhausted` with
+  the dimension, limit and observed lower bound, without partial matches,
+  counts or a continuation. Narrow the parent or other filters to reduce work.
+  A direct storage query starts its allowance after connection admission.
+  MCP `search` and search-bearing `ls` start it before blocking-worker
+  submission and share it through read opening and the complete word.
+  Store admission precedes the catalog scope and retains its existing limits.
+  The ordinary claim-lapse prelude also precedes that scope: like other read
+  verbs, it checks at most eight lapsed items. It is exempt from the catalog's
+  cumulative, VM-step and SQLite length caps; eight items is not a byte limit.
+  The outer MCP request checks elapsed time and cancellation before and after
+  the word, including admission and that prelude, but does not interrupt them
+  mid-read. Keeping this ordinary prelude outside the catalog allowance avoids
+  changing claim-lapse guidance when a search budget is exhausted.
+  Each MCP server admits one search worker, with no waiting queue; another
+  search receives `search_busy` while it is occupied. Ordinary verbs retain
+  their independent execution path. Search uses the existing read-only
+  snapshot connection, without holding the service's writable-store mutex
+  during the scan. Request cancellation reports `search_cancelled` when a
+  response can still be delivered. Caller destruction signals cancellation;
+  the server retains the worker handle until joined. Process shutdown closes
+  search admission, cancels and joins the worker before releasing the store
+  owner. A failed worker reports `search_worker_failed` without partial data.
+  Native/filesystem stalls and
+  the existing SQLite busy wait must return before a cooperative check can
+  run, so ten seconds is not a hard response-time guarantee. The synchronous
+  query stops before returning a refusal. Non-search reads retain their
+  existing limits, and existing stored oversized notes are not rewritten.
+  Core `next` with search remains stateful: a refusal does not undo session
+  registration, acknowledgement or delivery transactions committed before
+  the catalog scan. MCP `next` exposes no search argument.
 - Shell notes take the target positionally: `engram work note REF "text"`.
   MCP uses `note { work_ref: REF, text: TEXT }`; the shell has no `note
   --work-ref` flag (that flag belongs to `gate`).
