@@ -5,7 +5,7 @@ use super::doctor::{
     refusals::{emit, with_build},
 };
 use anyhow::{Result, bail};
-use engram::storage::ControlSessionInspection;
+use engram::storage::{ControlOperationSelector, ControlSessionInspection};
 use engram::{
     HostPathPolicy, MAX_SESSION_ID_BYTES, ProjectId, SqliteStore, describe_host_path_policy,
 };
@@ -39,12 +39,18 @@ pub(crate) fn run(
     session_id: &str,
     retained_grant_id: &str,
     json_output: bool,
+    operation_selectors: (Option<&str>, Option<&str>),
 ) -> Result<()> {
     let mut value = json!({
         "project_id": project, "database": null,
         "session_id": session_id, "retained_grant_id": retained_grant_id,
     });
     let result = (|| -> Result<_> {
+        let operation = match operation_selectors {
+            (None, None) => None,
+            (Some(operation), Some(key)) => Some(ControlOperationSelector::new(operation, key)?),
+            _ => bail!("inspection operation and idempotency key must be supplied together"),
+        };
         let path = canonical_database_path(database)?;
         value["database"] = json!(path);
         let report = SqliteStore::inspect_control_session(
@@ -53,6 +59,7 @@ pub(crate) fn run(
             session_id,
             retained_grant_id,
             project,
+            operation,
         )?;
         Ok((path, report))
     })();
@@ -150,6 +157,7 @@ mod tests {
             "target",
             "grant",
             &ProjectId("project".into()),
+            None,
         )
         .unwrap();
         let value = report_receipt(&database, identity, json!({}), Ok((path, report)));
@@ -178,6 +186,7 @@ mod tests {
                 "target",
                 "grant",
                 &ProjectId("project".into()),
+                None,
             )
             .unwrap()
         };

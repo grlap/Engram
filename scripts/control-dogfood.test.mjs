@@ -1345,6 +1345,109 @@ test("control session inspection emits scoped absence and refuses uncertainty", 
   }
 });
 
+test("control operation inspection projects recorded refusal without replay claim", async (t) => {
+  const home = fixtureHome("engram-control-operation-inspect-", t);
+  const session = "operation-inspection";
+  const key = "PRIVATE-OPERATION-INSPECTION-KEY";
+  let client;
+  let failure;
+  try {
+    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
+      cwd: root, encoding: "utf8",
+    });
+    assert.equal(built.status, 0, built.stderr);
+    const initialized = spawnSync(binary, ["--home", home, "init"], {
+      cwd: root, encoding: "utf8",
+    });
+    assert.equal(initialized.status, 0, initialized.stderr);
+    client = new ControlClient(home, session);
+    const binding = ok(await client.request({
+      operation: "session_bind",
+      external_ref: "dummy:OPERATION-INSPECTION",
+      title: "Inspect recorded control outcomes",
+      assurance: "turn_gated",
+      mediated_effects: ["observe"],
+      capability_map_revision: 1,
+      idempotency_key: "operation-inspection-bind",
+    }));
+    const evaluated = ok(await client.request({
+      operation: "turn_evaluate",
+      routing_token: binding.routing_token,
+      idempotency_key: "operation-inspection-evaluate",
+      intent_fingerprint: fingerprint("operation-inspection-evaluate"),
+      purpose: "ordinary",
+      requested_effects: ["observe"],
+    }));
+    assert.equal(evaluated.decision, "grant");
+    const grant = evaluated.grant.grant_id;
+    const recorded = ok(await client.request({
+      operation: "turn_checkpoint",
+      routing_token: binding.routing_token,
+      grant_id: grant,
+      next_intent: "continue",
+      idempotency_key: key,
+    }));
+    assert.equal(recorded.decision, "refuse");
+    assert.equal(recorded.code, "grant_not_begun");
+    await client.close();
+    client = undefined;
+    const database = join(home, "projects", fingerprint(projectId), "engram.db");
+    const before = readFileSync(database);
+    const inspected = spawnSync(binary, ["--home", home, "control-session-inspect",
+      `--target-session-id=${session}`, `--retained-grant-id=${grant}`,
+      "--operation=turn_checkpoint", `--idempotency-key=${key}`, "--json"], {
+      cwd: root, encoding: "utf8", timeout: 30000,
+    });
+    assert.equal(inspected.status, 0, inspected.stderr);
+    const receipt = JSON.parse(inspected.stdout);
+    assert.equal(receipt.schema_version, 1);
+    assert.equal(receipt.mutation_enabled, false);
+    assert.equal(receipt.session_present, true);
+    assert.equal(receipt.session_grants_present, true);
+    assert.equal(receipt.retained_grant_present, true);
+    const outcome = receipt.details.operation_result;
+    assert.equal(outcome.schema_version, 1);
+    assert.equal(outcome.status, "found");
+    assert.equal(outcome.operation, "turn_checkpoint");
+    assert.equal(outcome.decision, "refuse");
+    assert.equal(outcome.refusal_code, "grant_not_begun");
+    assert.ok(Number.isFinite(Date.parse(outcome.recorded_at)));
+    const inspect = (...extra) => spawnSync(binary, ["--home", home, "control-session-inspect",
+      `--target-session-id=${session}`, `--retained-grant-id=${grant}`, ...extra, "--json"], {
+      cwd: root, encoding: "utf8", timeout: 30000,
+    });
+    for (const exactKey of ["not-found", "-leading-hyphen"]) {
+      const absent = inspect("--operation=turn_checkpoint", `--idempotency-key=${exactKey}`);
+      assert.equal(absent.status, 0, absent.stderr);
+      assert.deepEqual(JSON.parse(absent.stdout).details.operation_result, {
+        schema_version: 1, operation: "turn_checkpoint", status: "not_found",
+      });
+    }
+    for (const extra of [[`--idempotency-key=${key}`], ["--operation=turn_checkpoint"],
+      ["--operation=PRIVATE-INVALID-OPERATION", `--idempotency-key=${key}`],
+      ["--operation=turn_checkpoint", `--idempotency-key=${key}\n`],
+      ["--operation=turn_checkpoint", `--idempotency-key=${key.repeat(200)}`]]) {
+      const refused = inspect(...extra);
+      assert.notEqual(refused.status, 0);
+      const value = JSON.parse(refused.stdout);
+      assert.equal(value.code, "control_session_inspection_refused");
+      for (const member of ["details", "session_present", "session_grants_present", "retained_grant_present"]) {
+        assert.equal(Object.hasOwn(value, member), false);
+      }
+      assert.equal((refused.stdout + refused.stderr).includes(key), false);
+      assert.equal((refused.stdout + refused.stderr).includes("PRIVATE-INVALID-OPERATION"), false);
+    }
+    for (const secret of [key, binding.routing_token, "was_replayed", "directive"]) {
+      assert.equal((inspected.stdout + inspected.stderr).includes(secret), false, secret);
+    }
+    assert.deepEqual(readFileSync(database), before);
+  } catch (error) {
+    failure = error;
+  } finally {
+    await finishFixture(failure, [client], () => removeFixtureHomes(home));
+  }
+});
+
 test("doctor recovery reports a corrupt policy through a read-only surface", (t) => {
   const engramHome = fixtureHome("engram-control-policy-recovery-", t);
   try {

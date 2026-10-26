@@ -216,6 +216,7 @@ impl SqliteStore {
         session_id: &str,
         retained_grant_id: &str,
         project: &crate::ProjectId,
+        operation: Option<super::ControlOperationSelector<'_>>,
     ) -> Result<super::ControlSessionInspection, StoreError> {
         for (name, value) in [
             ("session", session_id),
@@ -251,6 +252,7 @@ impl SqliteStore {
             session_id,
             retained_grant_id,
             project,
+            operation,
         )?;
         snapshot.commit()?;
         Ok(result)
@@ -262,6 +264,7 @@ impl SqliteStore {
         session_id: &str,
         retained_grant_id: &str,
         project: &crate::ProjectId,
+        operation: Option<super::ControlOperationSelector<'_>>,
     ) -> Result<super::ControlSessionInspection, StoreError> {
         if Self::current_core_durable_schema_issue(snapshot)?.is_some() {
             return Err(different_build_store_error());
@@ -299,7 +302,14 @@ impl SqliteStore {
         let policy = Self::verify_control_policy_history(snapshot)?;
         Self::load_obligation_rule_set_on(snapshot, &policy.obligation_rule_set)?;
         Self::load_acceptance_evaluation_policy_on(snapshot)?;
-        Self::control_session_presence_on(snapshot, session_id, retained_grant_id, stored, project)
+        Self::control_session_presence_on(
+            snapshot,
+            session_id,
+            retained_grant_id,
+            stored,
+            project,
+            operation,
+        )
     }
 
     /// Inspects only the control-policy family through a read-only connection.

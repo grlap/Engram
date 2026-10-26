@@ -453,6 +453,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::ControlRequestExpired
         | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::Sqlite(_)
+        | StoreError::ControlInspectionBudgetExceeded { .. }
         | StoreError::SqlitePath { .. }
         | StoreError::SqliteFile { .. }
         | StoreError::StoreFileIo { .. }

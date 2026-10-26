@@ -119,11 +119,51 @@ outcome is returned. Routing tokens, connection credentials, actors, intents,
 idempotency keys, stored bodies and checkpoint directives are not disclosed.
 
 The facts are read inside the same admitted snapshot as presence. The
-diagnostic reads have a fixed 100,000 SQLite VM-instruction budget because
+diagnostic reads share a callback-granular allowance of approximately 100,000
+SQLite VM instructions because
 checking for any begun grant can scan a session's history. Exhaustion refuses
 the whole inspection, with no presence booleans or partial details. This is
 not a wall-clock deadline or a bound on filesystem stalls; normal admission
 and the host's end-to-end deadline remain separate.
+
+## Recorded operation outcomes
+
+The same command optionally accepts the paired selectors
+`--operation=turn_begin|turn_checkpoint --idempotency-key=KEY`. Use the actual
+operation value, not the pipe-separated alternatives. Both flags must be
+present together. Keys are queried exactly, without trimming, and must be
+nonblank, control-free and at most 4,096 UTF-8 bytes. Use `--flag=value` so
+leading hyphens remain data. These are diagnostic limits, not new producer
+limits. Without these selectors, `details.operation_result` is omitted.
+
+With them, `details.operation_result` has `schema_version:1`, the selected
+`operation` and `status:"found"` or `"not_found"`. A found outcome adds its
+original stored `recorded_at`, a typed `decision` (`begin`, `checkpointed` or
+`refuse`), and only for refusal an allowlisted `refusal_code`. A missing exact
+row omits time, decision and code. The outer version and all three presence
+booleans retain their meaning. The lookup uses that same admitted snapshot.
+
+Before consulting the key, the grant must belong to the target session and
+its anchor to the selected project. Missing grants, other-session grants,
+foreign anchors and orphan anchors refuse the whole inspection, identically
+for present and absent keys. Attribution follows the historical grant anchor
+even after a session rebind or owner-row deletion. The stored intent must
+name the exact selected session, grant and key and have the supported
+operation-specific shape. Both stored intent and result are bounded in SQL
+to 1 MiB each before transfer and decoding. Oversized or malformed payloads,
+unknown versions/decisions/codes, mismatched receipt identities or invalid
+timestamps refuse the whole inspection, with no partial details or presence
+booleans. Budget exhaustion retains its SQLite cause and identifies this
+diagnostic scan's VM-step allowance in the reason.
+
+A found outcome proves only that a recorded outcome is available for an
+exact replay of its original intent. It does not prove that an invocation
+replayed it, that these partial selectors reproduce delivery tokens or a
+checkpoint report, or that a live retry passes preceding checks. No
+`was_replayed` member, key, intent fingerprint, raw intent/result, receipt
+body or directive is returned. The reader never calls the live replay path
+and never changes a grant or session. Hosts retain their own ownership,
+reset and deadline fences; this diagnostic grants no dispatch authority.
 
 ## Refusals
 

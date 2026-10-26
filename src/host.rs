@@ -1111,6 +1111,7 @@ pub fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::TaskSyncRefused { inner, .. } => store_error_code(inner),
         StoreError::Json(_)
         | StoreError::Sqlite(_)
+        | StoreError::ControlInspectionBudgetExceeded { .. }
         | StoreError::WorkWriterAdmissionRefused { .. }
         | StoreError::SqlitePath { .. }
         | StoreError::SqliteFile { .. }

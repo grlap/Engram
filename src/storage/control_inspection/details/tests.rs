@@ -47,6 +47,7 @@ fn view(store: &SqliteStore, binding: &TestControlBinding, grant: &str) -> Json 
         &project(),
         &binding.status.session_id.0,
         grant,
+        None,
     )
     .unwrap();
     assert_eq!(store.connection.total_changes(), changes);
@@ -190,6 +191,7 @@ fn control_inspection_details_public_snapshot_keeps_database_and_wal_bytes() {
         &binding.status.session_id.0,
         &grant.grant_id,
         &project(),
+        None,
     )
     .unwrap();
     assert!(
@@ -243,6 +245,7 @@ fn control_inspection_details_preserve_grant_project_after_session_rebind() {
             &foreign,
             &binding.status.session_id.0,
             &grant.grant_id,
+            None,
         )
         .unwrap(),
     )
@@ -307,6 +310,7 @@ fn control_inspection_details_do_not_echo_unknown_scalars_or_hide_presence() {
         &grant.grant_id,
         HostPathPolicy::host_default(),
         &project(),
+        None,
     )
     .unwrap();
     assert!(report.session_present && report.retained_grant_present);
@@ -372,10 +376,19 @@ fn control_inspection_details_scan_budget_refuses_and_is_removed_after_error() {
         &binding.status.session_id.0,
         &grant.grant_id,
         1,
+        None,
     );
     assert!(
-        matches!(result, Err(StoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _))) if error.code == rusqlite::ErrorCode::OperationInterrupted)
+        result
+            .as_ref()
+            .unwrap_err()
+            .to_string()
+            .contains("VM-step budget")
     );
+    assert!(matches!(
+        result,
+        Err(StoreError::ControlInspectionBudgetExceeded { .. })
+    ));
     assert_eq!(store.connection.total_changes(), changes);
     assert_eq!(
         view(&store, &binding, &grant.grant_id)["retained_grant"]["state"],
@@ -385,12 +398,47 @@ fn control_inspection_details_scan_budget_refuses_and_is_removed_after_error() {
         WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<25000)
         INSERT INTO control_turn_grants(grant_id,session_id,task_id,request_key,grant_json,state,issued_at_ms,expires_at_ms)
         SELECT 'history-'||x,'control-session','orphan','history-'||x,x'ff','completed',0,1 FROM n;").unwrap();
-    assert!(
-        matches!(read(&store.connection, &project(), &binding.status.session_id.0, &grant.grant_id), Err(StoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _))) if error.code == rusqlite::ErrorCode::OperationInterrupted)
-    );
+    assert!(matches!(
+        read(
+            &store.connection,
+            &project(),
+            &binding.status.session_id.0,
+            &grant.grant_id,
+            None
+        ),
+        Err(StoreError::ControlInspectionBudgetExceeded { .. })
+    ));
     let one: i64 = store
         .connection
         .query_row("SELECT 1", [], |row| row.get(0))
         .unwrap();
     assert_eq!(one, 1);
+}
+
+#[test]
+fn control_inspection_budget_does_not_label_unrelated_interrupt_or_io_error() {
+    let connection = Connection::open_in_memory().unwrap();
+    let budget = VmBudget::install(&connection, 100_000).unwrap();
+    let interrupted = || {
+        StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_INTERRUPT),
+            None,
+        ))
+    };
+    assert!(matches!(
+        budget.annotate(interrupted()),
+        StoreError::Sqlite(_)
+    ));
+    budget.exhausted.store(true, Ordering::Relaxed);
+    let io = StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
+        None,
+    ));
+    assert!(matches!(budget.annotate(io), StoreError::Sqlite(_)));
+    let annotated = budget.annotate(interrupted());
+    assert!(matches!(
+        annotated,
+        StoreError::ControlInspectionBudgetExceeded { .. }
+    ));
+    assert!(std::error::Error::source(&annotated).is_some());
 }

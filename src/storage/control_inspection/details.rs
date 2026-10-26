@@ -1,8 +1,13 @@
 //! Selected-project diagnostic facts, separate from absence evidence.
 
+use super::operation::{self, ControlOperationSelector, OperationResult};
 use chrono::{DateTime, Datelike, Utc};
 use rusqlite::{Connection, OptionalExtension, types::Value};
 use serde::Serialize;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crate::{ProjectId, SessionPhase, TurnGrantState};
 
@@ -17,6 +22,8 @@ pub struct ControlInspectionDetails {
     session: SessionDetails,
     session_begun_grant_present: Option<bool>,
     retained_grant: GrantDetails,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_result: Option<OperationResult>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -96,26 +103,54 @@ impl GrantDetails {
 
 /// This is installed only on the inspector's private, read-only connection.
 /// Always remove it, including after an interrupted query or unwind.
-struct VmBudget<'a>(&'a Connection);
+struct VmBudget<'a> {
+    connection: &'a Connection,
+    exhausted: Arc<AtomicBool>,
+}
 
 impl<'a> VmBudget<'a> {
     fn install(connection: &'a Connection, steps: usize) -> Result<Self, StoreError> {
         let stride = steps.clamp(1, 1_000);
         let mut remaining = steps;
+        let exhausted = Arc::new(AtomicBool::new(false));
+        let callback_exhausted = Arc::clone(&exhausted);
         connection.progress_handler(
             i32::try_from(stride).unwrap_or(1_000),
             Some(move || {
                 remaining = remaining.saturating_sub(stride);
-                remaining == 0
+                if remaining == 0 {
+                    callback_exhausted.store(true, Ordering::Relaxed);
+                    true
+                } else {
+                    false
+                }
             }),
         )?;
-        Ok(Self(connection))
+        Ok(Self {
+            connection,
+            exhausted,
+        })
+    }
+
+    fn annotate(&self, error: StoreError) -> StoreError {
+        match error {
+            StoreError::Sqlite(source)
+                if self.exhausted.load(Ordering::Relaxed)
+                    && source.sqlite_error_code()
+                        == Some(rusqlite::ErrorCode::OperationInterrupted) =>
+            {
+                StoreError::ControlInspectionBudgetExceeded {
+                    source: Box::new(source),
+                }
+            }
+            other => other,
+        }
     }
 }
 
 impl Drop for VmBudget<'_> {
     fn drop(&mut self) {
-        let _ = self.0.progress_handler(0, None::<fn() -> bool>);
+        let _ = self.connection.progress_handler(0, None::<fn() -> bool>);
     }
 }
 
@@ -124,8 +159,9 @@ pub(super) fn read(
     project: &ProjectId,
     session: &str,
     grant: &str,
+    operation: Option<ControlOperationSelector<'_>>,
 ) -> Result<ControlInspectionDetails, StoreError> {
-    read_with_budget(connection, project, session, grant, VM_STEPS)
+    read_with_budget(connection, project, session, grant, VM_STEPS, operation)
 }
 
 fn read_with_budget(
@@ -134,55 +170,62 @@ fn read_with_budget(
     session: &str,
     grant: &str,
     steps: usize,
+    operation: Option<ControlOperationSelector<'_>>,
 ) -> Result<ControlInspectionDetails, StoreError> {
-    let _budget = VmBudget::install(connection, steps)?;
-    let row = connection
-        .query_row(
-            "SELECT project_id = ?2,
+    let budget = VmBudget::install(connection, steps)?;
+    let result = (|| {
+        let row = connection
+            .query_row(
+                "SELECT project_id = ?2,
                     CASE WHEN phase IN ('ready','sync_required','turn_open','exited')
                          THEN phase END
              FROM control_sessions WHERE session_id = ?1",
-            [session, project.0.as_str()],
-            |row| Ok((row.get::<_, bool>(0)?, row.get::<_, Option<String>>(1)?)),
-        )
-        .optional()?;
-    let session_details = match row {
-        None => SessionDetails {
-            status: RowStatus::NotFound,
-            project_match: None,
-            phase: None,
-            phase_status: None,
-        },
-        Some((false, _)) => SessionDetails {
-            status: RowStatus::Withheld,
-            project_match: Some(false),
-            phase: None,
-            phase_status: None,
-        },
-        Some((true, phase)) => SessionDetails {
-            status: RowStatus::Found,
-            project_match: Some(true),
-            phase: phase.as_deref().and_then(phase_value),
-            phase_status: Some(scalar_status(phase.is_some())),
-        },
-    };
-    let session_begun_grant_present = if session_details.project_match == Some(true) {
-        Some(connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM control_turn_grants
+                [session, project.0.as_str()],
+                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?;
+        let session_details = match row {
+            None => SessionDetails {
+                status: RowStatus::NotFound,
+                project_match: None,
+                phase: None,
+                phase_status: None,
+            },
+            Some((false, _)) => SessionDetails {
+                status: RowStatus::Withheld,
+                project_match: Some(false),
+                phase: None,
+                phase_status: None,
+            },
+            Some((true, phase)) => SessionDetails {
+                status: RowStatus::Found,
+                project_match: Some(true),
+                phase: phase.as_deref().and_then(phase_value),
+                phase_status: Some(scalar_status(phase.is_some())),
+            },
+        };
+        let session_begun_grant_present = if session_details.project_match == Some(true) {
+            Some(connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM control_turn_grants
                            WHERE session_id = ?1 AND state = 'begun')",
-            [session],
-            |row| row.get(0),
-        )?)
-    } else {
-        None
-    };
-    let retained_grant = read_grant(connection, project, session, grant)?;
-    Ok(ControlInspectionDetails {
-        schema_version: 1,
-        session: session_details,
-        session_begun_grant_present,
-        retained_grant,
-    })
+                [session],
+                |row| row.get(0),
+            )?)
+        } else {
+            None
+        };
+        let retained_grant = read_grant(connection, project, session, grant)?;
+        Ok(ControlInspectionDetails {
+            schema_version: 1,
+            session: session_details,
+            session_begun_grant_present,
+            retained_grant,
+            operation_result: operation
+                .map(|selector| operation::read(connection, project, session, grant, selector))
+                .transpose()?,
+        })
+    })();
+    result.map_err(|error| budget.annotate(error))
 }
 
 fn read_grant(
@@ -294,7 +337,7 @@ fn state_value(value: &str) -> Option<TurnGrantState> {
     }
 }
 
-fn timestamp(value: &Value, nullable: bool) -> (Option<DateTime<Utc>>, bool) {
+pub(super) fn timestamp(value: &Value, nullable: bool) -> (Option<DateTime<Utc>>, bool) {
     match value {
         Value::Null => (None, nullable),
         Value::Integer(ms) => {

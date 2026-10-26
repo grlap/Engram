@@ -202,6 +202,7 @@ fn a_control_session_inspection_returns_the_refusal_without_a_retry() {
         "session",
         "grant",
         &crate::ProjectId("project".into()),
+        None,
     )
     .map(drop)
     .expect_err("refused at once");

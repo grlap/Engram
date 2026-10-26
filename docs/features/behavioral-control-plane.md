@@ -1648,7 +1648,7 @@ issued row is no fence against a concurrent begin. The host retains its
 serialized recovery and ordinary turn-begin/dispatch rules.
 
 An operator inspecting another session can instead use the read-only
-[`control-session-inspect` receipt](control-session-inspection.md). Its existing
+[`control-session-inspect` receipt](control-session-inspection.md). Its optional exact operation/key selection reports only the original recorded outcome, never proof of replay or authorization. Its existing
 presence booleans remain unconditional; additive selected-project details report
 stored phase, begun-row presence, retained grant state and issued/expiry/begin/
 completion times in the same snapshot. `completed` is the stored checkpoint

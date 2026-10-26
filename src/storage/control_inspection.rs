@@ -4,7 +4,11 @@ use super::{Connection, HostPathPolicy, SqliteStore, StoreError};
 use crate::ProjectId;
 
 mod details;
+mod operation;
 pub use details::ControlInspectionDetails;
+pub use operation::{
+    ControlInspectionOperation, ControlOperationSelector, MAX_INSPECTION_KEY_BYTES,
+};
 
 /// Presence checks over one current-schema read snapshot. Any presence blocks
 /// absence-based host recovery, regardless of project, grant state or payload.
@@ -29,6 +33,7 @@ impl SqliteStore {
         retained_grant_id: &str,
         stored_host_path_policy: HostPathPolicy,
         project: &ProjectId,
+        operation: Option<ControlOperationSelector<'_>>,
     ) -> Result<ControlSessionInspection, StoreError> {
         // These booleans use no project/state joins or payload decoding: even an orphan,
         // cross-project or malformed grant is present, never clearance.
@@ -45,7 +50,13 @@ impl SqliteStore {
             session_present,
             session_grants_present,
             retained_grant_present,
-            details: details::read(connection, project, session_id, retained_grant_id)?,
+            details: details::read(
+                connection,
+                project,
+                session_id,
+                retained_grant_id,
+                operation,
+            )?,
         })
     }
 }
@@ -60,7 +71,14 @@ mod tests {
     }
 
     fn inspect(path: &Path) -> Result<ControlSessionInspection, StoreError> {
-        SqliteStore::inspect_control_session(path, Some(policy()), "target", "retained", &project())
+        SqliteStore::inspect_control_session(
+            path,
+            Some(policy()),
+            "target",
+            "retained",
+            &project(),
+            None,
+        )
     }
 
     fn project() -> ProjectId {
@@ -189,6 +207,7 @@ mod tests {
                 "retained",
                 policy(),
                 &project(),
+                None,
             )
             .unwrap()
         };
@@ -222,8 +241,15 @@ mod tests {
         drop(unbound);
         let store = SqliteStore::open(&path).unwrap();
         assert!(
-            SqliteStore::inspect_control_session(&path, None, "target", "retained", &project())
-                .is_err()
+            SqliteStore::inspect_control_session(
+                &path,
+                None,
+                "target",
+                "retained",
+                &project(),
+                None
+            )
+            .is_err()
         );
         let mut other = policy();
         other.case_fold_paths = !other.case_fold_paths;
@@ -233,7 +259,8 @@ mod tests {
                 Some(other),
                 "target",
                 "retained",
-                &project()
+                &project(),
+                None
             )
             .is_err()
         );
@@ -248,7 +275,8 @@ mod tests {
                     Some(policy()),
                     &invalid,
                     "retained",
-                    &project()
+                    &project(),
+                    None
                 )
                 .is_err()
             );
@@ -258,7 +286,8 @@ mod tests {
                     Some(policy()),
                     "target",
                     &invalid,
-                    &project()
+                    &project(),
+                    None
                 )
                 .is_err()
             );
@@ -282,9 +311,15 @@ mod tests {
         let _store = SqliteStore::open(&path).unwrap();
         let before = bytes(&path);
         let exact = "a".repeat(crate::MAX_SESSION_ID_BYTES);
-        let report =
-            SqliteStore::inspect_control_session(&path, Some(policy()), &exact, &exact, &project())
-                .unwrap();
+        let report = SqliteStore::inspect_control_session(
+            &path,
+            Some(policy()),
+            &exact,
+            &exact,
+            &project(),
+            None,
+        )
+        .unwrap();
         assert!(
             !report.session_present
                 && !report.session_grants_present
@@ -298,7 +333,8 @@ mod tests {
                     Some(policy()),
                     session,
                     grant,
-                    &project()
+                    &project(),
+                    None
                 ),
                 Err(StoreError::InvalidControlSession(_))
             ));
@@ -326,6 +362,7 @@ mod tests {
                 "target",
                 "retained",
                 &project(),
+                None,
             )
             .unwrap_err();
             assert_eq!(

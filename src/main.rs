@@ -139,6 +139,12 @@ enum Command {
         /// Host's retained grant id to check anywhere in this store; at most 64 bytes.
         #[arg(long, value_parser = bin_support::control_session_inspect::selector)]
         retained_grant_id: String,
+        /// Optional exact recorded operation: `turn_begin` or `turn_checkpoint`.
+        #[arg(long)]
+        operation: Option<String>,
+        /// Exact recorded-operation key (paired with --operation); at most 4096 bytes.
+        #[arg(long, allow_hyphen_values = true)]
+        idempotency_key: Option<String>,
         /// Emit the versioned `control_session_inspect` host receipt.
         #[arg(long)]
         json: bool,
@@ -1200,6 +1206,8 @@ async fn run_cli() -> Result<ExitCode> {
         Command::ControlSessionInspect {
             target_session_id,
             retained_grant_id,
+            operation,
+            idempotency_key,
             json,
         } => {
             bin_support::control_session_inspect::run(
@@ -1209,6 +1217,7 @@ async fn run_cli() -> Result<ExitCode> {
                 &target_session_id,
                 &retained_grant_id,
                 json,
+                (operation.as_deref(), idempotency_key.as_deref()),
             )?;
         }
         Command::Doctor {

@@ -99,7 +99,10 @@ pub(crate) const PLAN_CORE_OPERATION: &str = "propose_work_plan";
 
 pub(crate) const DECOMPOSITION_RETRY_REMEDY: &str = "inspect the parent and its existing children; reuse the already-created child when present; add new work only for a genuinely different child intent";
 
-pub use control_inspection::{ControlInspectionDetails, ControlSessionInspection};
+pub use control_inspection::{
+    ControlInspectionDetails, ControlInspectionOperation, ControlOperationSelector,
+    ControlSessionInspection, MAX_INSPECTION_KEY_BYTES,
+};
 pub use schema_diagnostics::{
     StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
 };
@@ -1266,6 +1269,11 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("control inspection diagnostic scan exceeded its SQLite VM-step budget")]
+    ControlInspectionBudgetExceeded {
+        #[source]
+        source: Box<rusqlite::Error>,
+    },
     #[error("{CONTROL_STORE_BUSY_MESSAGE}")]
     ControlStoreBusy {
         #[source]
