@@ -118,14 +118,15 @@ their presence in a file alone does not prove delivery.
     passes it;
   - before committing, the changeset was judged as the next rule
     describes, and `readiness` with the new build reported every live
-    store ready.
+    store ready, or reported `projection_repair_required` with the cutover
+    the next rule describes planned for that store.
 
   The same standing approval applies to Engram and TermAl. A pre-existing
   problem outside the changeset's scope, filed as an independent root with
   provenance, does not block landing.
 
   Otherwise stop and ask Greg before committing: when a store needs
-  projection repair or migration, a criterion cannot be met or is
+  migration, a criterion cannot be met or is
   disputed, the changeset goes beyond its items' scope, a rebase,
   force-push or history rewrite is needed, or one of the two reviews the
   review condition requires is unavailable and no stand-in under the review
@@ -147,8 +148,17 @@ their presence in a file alone does not prove delivery.
   keep the old one as a backup (a running Windows executable can be
   renamed aside); running processes keep the old build until they
   restart. A store reporting `projection_repair_required` needs its
-  consumers stopped, `engram doctor --repair-projections` run with the new
-  build, and the consumers restarted on it. A store reporting
+  consumers stopped, `engram doctor --repair-projections` (or the narrower
+  one-time step the changeset documents) run with the new build, and the
+  consumers restarted on it. Under the standing approval the Merger (the
+  integration owner), not the coordinator, may commit and push such a
+  changeset and prepare its cutover; stopping and
+  restarting the consumers stays Greg's act at a moment the coordinators
+  agree, as for a TermAl restart, and the new build is installed only while
+  they are stopped. Until that cutover completes, the landing report tells
+  Greg that the installed build stays in place and that no consumer may be
+  restarted on a build made from the new master, and nothing builds from
+  that master into the installed path. A store reporting
   `different_build_schema` (a durable schema change, or a projection the
   new build no longer declares) needs migration export and import too.
   Repair and migration interrupt sessions, so say so when presenting the
