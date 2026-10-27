@@ -34,7 +34,7 @@ impl Default for Limits {
             records: 100_000,
             bytes: 384 * 1024 * 1024,
             unit_bytes: 1024 * 1024,
-            elapsed: Duration::from_secs(10),
+            elapsed: Duration::from_secs(60),
         }
     }
 }

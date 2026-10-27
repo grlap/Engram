@@ -1140,7 +1140,8 @@ Rules that matter:
   shares a finite allowance for that scan: 10 million SQL progress steps
   (one-step callbacks, with clock polling every 1,024 steps), 100,000 visited
   index/result records, 384 MiB of cumulative charged work bytes, and a
-  ten-second cooperative deadline. Record visits count selected catalog and
+  sixty-second cooperative deadline. The 60 s value is temporary containment
+  until note search no longer decodes every note per call. Record visits count selected catalog and
   note-index entries, retained matches, relation and ancestor rows, handoff
   projections/events, evidence-binding projections, root headers/members and
   waiver entries. Repeated visits consume the same cumulative allowance,
@@ -1180,7 +1181,7 @@ Rules that matter:
   owner. A failed worker reports `search_worker_failed` without partial data.
   Native/filesystem stalls and
   the existing SQLite busy wait must return before a cooperative check can
-  run, so ten seconds is not a hard response-time guarantee. The synchronous
+  run, so sixty seconds is not a hard response-time guarantee. The synchronous
   query stops before returning a refusal. Non-search reads retain their
   existing limits, and existing stored oversized notes are not rewritten.
   Core `next` with search remains stateful: a refusal does not undo session
