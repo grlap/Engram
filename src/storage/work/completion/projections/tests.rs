@@ -4,6 +4,7 @@ use crate::storage::work::*;
 
 use crate::storage::work::query::load_work_claim_optional;
 
+mod obligation_audit;
 mod snapshot;
 
 // Seed valid canonical representations with omitted serde defaults, not a

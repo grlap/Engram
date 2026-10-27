@@ -13,8 +13,15 @@ struct SqlCost {
     vm_steps: u64,
 }
 
+#[derive(Clone, Default, serde::Serialize)]
+struct ObligationAuditLoads {
+    successful: usize,
+    failed: usize,
+}
+
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct Snapshot {
+    obligation_audit_runs: BTreeMap<String, ObligationAuditLoads>,
     search_budget: Option<serde_json::Value>,
     note_index_visits: usize,
     root: super::root_state::Cost,
@@ -27,6 +34,7 @@ pub(crate) struct Snapshot {
 
 #[derive(Default)]
 struct Capture {
+    obligation_audit_runs: BTreeMap<String, ObligationAuditLoads>,
     search_budget: Option<serde_json::Value>,
     note_index_visits: usize,
     active: bool,
@@ -54,6 +62,7 @@ pub(crate) fn start() {
 
 pub(crate) fn snapshot() -> Snapshot {
     Snapshot {
+        obligation_audit_runs: CAPTURE.with_borrow(|capture| capture.obligation_audit_runs.clone()),
         search_budget: CAPTURE.with_borrow(|capture| capture.search_budget.clone()),
         note_index_visits: CAPTURE.with_borrow(|capture| capture.note_index_visits),
         root: super::root_state::cost_snapshot(),
@@ -64,6 +73,23 @@ pub(crate) fn snapshot() -> Snapshot {
             .with_borrow(|capture| capture.typed_work_object_decodes.clone()),
         sql: CAPTURE.with_borrow(|capture| capture.sql.clone()),
     }
+}
+
+/// Strict loads performed by the two audit callers sharing one snapshot reader.
+pub(super) fn obligation_audit_run_loaded(run: crate::WorkRunId, successful: bool) {
+    CAPTURE.with_borrow_mut(|capture| {
+        if capture.active {
+            let loads = capture
+                .obligation_audit_runs
+                .entry(run.0.to_string())
+                .or_default();
+            if successful {
+                loads.successful += 1;
+            } else {
+                loads.failed += 1;
+            }
+        }
+    });
 }
 
 /// Records indexed note/history entries for explicit search measurements.

@@ -4,10 +4,10 @@ use crate::storage::work::observation;
 
 use super::{
     CanonicalObject, ChildRequirement, CompletionSeal, Connection, EvidenceProjectionRow, FeedId,
-    HashMap, HashSet, MemoryAssertionEvent, MemoryVersion, ObjectId, OptionalExtension,
-    RestoredRecord, SCHEMA_VERSION, SqliteStore, StoreError, WorkBlocker, WorkClaim,
-    WorkClaimState, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkId, WorkItem,
-    WorkLifecycle, WorkRelationBasis, WorkRelationBlockerBasis, WorkRun, WorkRunState,
+    HashMap, HashSet, MemoryAssertionEvent, MemoryVersion, ObjectId, ObligationAudit,
+    OptionalExtension, RestoredRecord, SCHEMA_VERSION, SqliteStore, StoreError, WorkBlocker,
+    WorkClaim, WorkClaimState, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkId,
+    WorkItem, WorkLifecycle, WorkRelationBasis, WorkRelationBlockerBasis, WorkRun, WorkRunState,
     WorkTransition, apply_work_relation_transition, empty_work_relation_basis,
     expected_environment_projection, expected_verification_projection,
     latest_canonical_work_event_for_item_optional, load_typed_work_object, load_work_item,
@@ -48,6 +48,14 @@ impl SqliteStore {
             snapshot.commit()?;
             return Ok(report);
         }
+        let mut obligations = ObligationAudit::new(connection);
+        Self::verify_work_projections_with_obligations_on(connection, &mut obligations)
+    }
+
+    fn verify_work_projections_with_obligations_on(
+        connection: &Connection,
+        obligations: &mut ObligationAudit<'_>,
+    ) -> Result<(usize, Vec<String>), StoreError> {
         let _origin_scope = super::super::task_sync::enter_origin_scope(connection)?;
         let mut checked = 0_usize;
         let mut invalid = Vec::new();
@@ -498,9 +506,15 @@ impl SqliteStore {
         verify_evidence_rows(connection, &evidence_rows, &mut checked, &mut invalid)?;
         verify_restored_evidence_rows(connection, &mut checked, &mut invalid)?;
         observation::verify_rows(connection, &mut checked, &mut invalid)?;
-        verify_obligation_rows(connection, &mut checked, &mut invalid)?;
+        verify_obligation_rows(connection, obligations, &mut checked, &mut invalid)?;
         verify_completion_rows(connection, &completion_rows, &mut checked, &mut invalid)?;
-        verify_work_feed_integrity(connection, &work_items, &mut checked, &mut invalid)?;
+        verify_work_feed_integrity(
+            connection,
+            &work_items,
+            obligations,
+            &mut checked,
+            &mut invalid,
+        )?;
         verify_work_catalog_projections(connection, &mut checked, &mut invalid)?;
         super::super::note_index::verify(connection, &mut checked, &mut invalid)?;
         verify_work_scalar_bindings(connection, &mut checked, &mut invalid)?;

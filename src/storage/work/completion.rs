@@ -72,6 +72,8 @@ mod landings;
 pub use landings::RecordedLanding;
 mod lifecycle;
 mod named_root;
+mod obligation_audit;
+pub(super) use obligation_audit::ObligationAudit;
 mod obligation_guidance;
 pub(super) use obligation_guidance::finished_run_cut_on;
 pub(crate) use obligation_guidance::{
@@ -1091,6 +1093,8 @@ pub(super) fn load_complete_work_obligation_records_on(
     Ok(records)
 }
 
+// Retain the original one-shot audit lookup as the equivalence test oracle.
+#[cfg(test)]
 pub(super) fn load_work_obligation_by_id_on(
     connection: &Connection,
     obligation_id: WorkObligationId,

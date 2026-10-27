@@ -7,9 +7,8 @@ use serde::de::DeserializeOwned;
 use super::super::{StoreError, decode_failure_label};
 use super::EvidenceProjectionRow;
 use super::completion::{
-    load_work_obligation_by_id_on, obligation_rule_set_for_observation_on,
-    validate_completion_seal_children_on, validate_completion_seal_environment_basis_on,
-    validate_completion_seal_obligation_basis_on,
+    ObligationAudit, obligation_rule_set_for_observation_on, validate_completion_seal_children_on,
+    validate_completion_seal_environment_basis_on, validate_completion_seal_obligation_basis_on,
 };
 use super::feeds::{
     load_typed_work_object, run_feed_position_for_object_on, validate_work_protocol_result_binding,
@@ -734,6 +733,7 @@ fn restored_gate_chain_is_linear(chain: &HashMap<ObjectId, Option<ObjectId>>) ->
 
 pub(super) fn verify_obligation_rows(
     connection: &Connection,
+    obligations: &mut ObligationAudit<'_>,
     checked: &mut usize,
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
@@ -757,9 +757,9 @@ pub(super) fn verify_obligation_rows(
                     "obligation projection id {stored_id:?} is invalid: {error}"
                 ))
             });
-        if let Ok(record) = id.and_then(|id| load_work_obligation_by_id_on(connection, id)) {
-            projected_definitions.insert(record.definition_id);
-            if let Some(resolution) = record.resolution_id {
+        if let Ok(record) = id.and_then(|id| obligations.binding(id)) {
+            projected_definitions.insert(record.definition);
+            if let Some(resolution) = record.resolution {
                 projected_resolutions.insert(resolution);
             }
         } else {
@@ -994,6 +994,7 @@ pub(super) fn verify_completion_rows(
 pub(super) fn verify_work_feed_integrity(
     connection: &Connection,
     work_items: &HashMap<String, serde_json::Value>,
+    obligations: &mut ObligationAudit<'_>,
     checked: &mut usize,
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
@@ -1182,9 +1183,10 @@ pub(super) fn verify_work_feed_integrity(
                 .decode::<WorkObligation>()
                 .ok()
                 .and_then(|obligation| {
-                    load_work_obligation_by_id_on(connection, obligation.obligation_id)
+                    obligations
+                        .binding(obligation.obligation_id)
                         .ok()
-                        .filter(|record| record.definition_id == hash)
+                        .filter(|record| record.definition == hash)
                         .map(|_| obligation)
                 })
                 .map(|obligation| {
@@ -1198,16 +1200,16 @@ pub(super) fn verify_work_feed_integrity(
                 .decode::<WorkObligationResolutionEvent>()
                 .ok()
                 .and_then(|event| {
-                    load_work_obligation_by_id_on(connection, event.obligation_id)
+                    obligations
+                        .binding(event.obligation_id)
                         .ok()
-                        .filter(|record| record.resolution_id.as_ref() == Some(&hash))
-                        .map(|record| record.obligation)
+                        .filter(|record| record.resolution.as_ref() == Some(&hash))
                 })
                 .map(|obligation| {
                     expected_work_feeds(
-                        &obligation.project_id.0,
-                        obligation.root_id,
-                        Some(obligation.run_id),
+                        &obligation.project.0,
+                        obligation.root,
+                        Some(obligation.run),
                     )
                 }),
             "memory_version" => object
